@@ -181,7 +181,7 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 - **Team** (live 2026-10-17). Positioned's u16 at `+0x1e0` (after x, y and the f32 at `+0x29c`) is the object's team;
   the .ot `team` values are only defaults. The player is sent team 0. Monsters sent with 0 had a **green** (friendly)
   hover outline; with 1 the outline is **red** and on The Coast a life bar shows over the head (towns hide hostile life
-  bars). The Gateway sends 1, or 0 with `/spawn_mob … friendly`.
+  bars). The Gateway sends 1, or 0 with `/spawn_mob … friendly` (both verified live: red and green outlines).
 - **Combat: not working yet, skills are missing.** Clicking a monster sends only Move (0x2909) and nothing else: the
   player has no skills granted, not even the default attack, and neither do monsters (live 2026-10-17: in a whole
   session the client used only skills 0x2909 Move and 0x0266 interact). The server side is ready for the first hit:
