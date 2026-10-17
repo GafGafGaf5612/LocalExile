@@ -18,6 +18,7 @@ only ERROR/Exception/SCRIPT lines (`GLINES=<n>` for more). Arguments go through 
 | Script | Usage | Use it for |
 |---|---|---|
 | `Decomp.java` | `<out> <addr[:depth]>…` | decompile the function containing each address, with `:N` also its callees to depth N |
+| `DecompAll.java` | `<outdir> [threads] [limit] [indexonly]` | the full dump below (every function + `index.tsv`) |
 | `Range.java` | range in `Tools/re/out/range.txt` ("lo hi") → `range.c` | decompile every function in an address range (class methods sit together) |
 | `Callers.java` | `<out> <symbol\|0xaddr>…` | every function that references a symbol (import, thunks followed) or an address, data refs included. Used for imports (`connect`, `send`), strings, pools, setters |
 | `FindSenders.java` | `<out> <disp>…` | every function using a displacement, with the ids passed to `htons`. Found login senders (`0xdd0`) and state writers (`0xc3a0`) |
@@ -27,6 +28,43 @@ only ERROR/Exception/SCRIPT lines (`GLINES=<n>` for more). Arguments go through 
 | `Syms.java` | `<out> <regex>` | symbols matching a regex |
 | `ComponentRegistry.java` | `<out.json>` | the component registry (section 7) |
 | `ReadSchema.java` | `<out.json> <components.json> [factory:a+b] [only:f+g] [withc]` | read-sequence summaries (section 7) |
+
+### Full decompilation dump (grep before you run Ghidra)
+
+`Tools/re/out/decomp-all/` (git-ignored, never commit it) holds the whole client decompiled, one file per function:
+`<hex digits 3–5 of the VA>/FUN_<addr>.c`, e.g. `0x1e5123450` → `1e5/FUN_1e5123450.c`. Each file starts with
+`// ===== <name> @ <addr> =====`; a function the decompiler gave up on (60 s timeout) has `// decompile failed: …`
+instead of code. `index.tsv` has one row per non-thunk function: `addr size name callers status strings`, where
+`callers` counts calling functions and `strings` lists the ASCII/UTF-16 strings the function references (directly or
+through one pointer), separated by ` | `. `progress.log` records each run (counts, rate, failures).
+
+Regenerate (about 1 h on 4 threads; resumable, it skips files that exist, so rerun the same command after a crash):
+
+```bash
+JAVA_HOME="$PWD/Tools/jdk-21" GHIDRA_HEADLESS_MAXMEM=4G cmd //c "Tools\ghidra_12.1.4_PUBLIC_20260921\ghidra_12.1.4_PUBLIC\support\analyzeHeadless.bat Tools\ghidra-projects poe3293 -process PathOfExile.exe -noanalysis -readOnly -scriptPath scripts\re\ghidra -postScript DecompAll.java C:\…\Tools\re\out\decomp-all 4"
+```
+
+Arguments: `<outdir> [threads] [limit] [indexonly]` (`limit` stops after N functions for a test; `indexonly` only
+rebuilds `index.tsv`). Delete the directory first to redo everything.
+
+The full run (111,248 functions, 183 thunks excluded) took 52 min on 4 threads and 4 GB of heap; 14 functions failed
+(12 timeouts on 12–95 KB functions; `0x140f61a30` crashed the decompiler, `0x1413696c0` hit "Flow exceeded maximum
+allowable instructions"). Search the `.c` files with ripgrep (the agent Grep tool,
+seconds); `grep -r` from Git Bash over 111k files takes minutes. `index.tsv` is small enough for plain `grep`/`awk`.
+
+Example searches (from the repo root, `D=Tools/re/out/decomp-all`; for the `.c` files the same patterns work in Grep/`rg`):
+
+```bash
+grep -F 'Metadata/Terrain' $D/index.tsv | cut -f1,3,6          # functions referencing a string (ASCII or UTF-16)
+grep -rlF '+ 0x2b4) =' $D --include=*.c                        # writers of a field at displacement 0x2b4
+grep -rF 'FUN_1410ddcfd(' $D -l                                 # callers of a function (calls in the C text)
+cat $D/141/FUN_1410ddcfd.c                                      # one function, no Ghidra run
+awk -F'\t' '$5=="failed"' $D/index.tsv                          # functions to decompile by hand (Decomp.java, longer timeout)
+sort -t$'\t' -k4,4nr $D/index.tsv | head                       # most-called functions
+```
+
+The decompiler sometimes hides field writes in casts (`*(undefined4 *)(param_1 + 0x2b4)` vs `param_1[0xad]`), so
+grep both forms or fall back to `finddisp.py` for the instruction level.
 
 Earlier decompile output is kept in `Tools/re/out/*.c` (untracked). The files used this session: `inst*.c` (instance
 connection), `inst11.c` (the whole instance dispatcher, 5275 lines), `inst10.c` (instance factory), `obj1.c` (world
