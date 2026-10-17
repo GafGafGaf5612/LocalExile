@@ -67,14 +67,14 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/raw <hex>` | sends the bytes as one S→C message (dev probe; spaces allowed) |
 | `/set_speed <percent>` | 0x1b3 `movement_velocity_+%` = percent − 100 on the player; the server's walk estimate uses 37 × percent / 100 cells/s |
 | `/set_stat <client key> <value>` | 0x1b3 for any stat, by client key (not the Stats.json row) |
-| `/spawn_mob <row, Id or name>[@level]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), a few cells from the player (§5) |
+| `/spawn_mob <row, Id or name>[@level] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), with a rarity and an optional name, a few cells from the player (§5) |
 
 Every player can use every command; there are no permissions yet.
 
 ## 5. Monsters (`/spawn_mob`)
 
 **Live 2026-10-17:** `/spawn_mob ZombieBite@13` three times put three Hungry Corpses next to the player, standing
-idle, each with an "Unidentified" tag. `check-components.js` traced all three: 11 components read in the order below,
+idle (first with an "Unidentified" tag, gone once the identified bit was set). `check-components.js` traced all three: 11 components read in the order below,
 198 bytes consumed, 0 left. Code: `MonsterObject`, `InstanceEntities.MonsterTypes` (`InstanceEntities.cs`),
 `MonsterCatalog.cs` and the `spawn_mob` command in the Gateway. Tests: `InstanceEntitiesTests.Minimal_monster_blob_layout`,
 `Monster_types_message_and_type_path`.
@@ -110,6 +110,13 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   - Actor: the two conditional u8 are read when `components[type+0xbc] + 0x1a8 < 1`. +0x1a8 is the Life component's
     first pool `+0x178 + 0x30`, the **current life** just read from the blob, so a living monster has 17 bytes.
   - Animated: bit0 + the variety's first `AOFiles` path, as for the player.
+  - ObjectMagicProperties (base part `0x142201d70`): u16 flags, u8 `+0x7a`, then the component's own u8 flags.
+    Flags bits 0–2 = **rarity** (`+0x7c`: 0 normal, 1 magic, 2 rare, 3 unique); bit 3 = **identified** (`+0x78`;
+    without it the client tags the monster "Unidentified"). Only when identified: bit 7 (0x80) → u32 UTF-16 unit count +
+    units, a **custom name** (`+0x18`, shown instead of the variety name); else bit 8 → u8 n + n × u32 keys (name parts,
+    looked up by `0x14225a4d0`, not mapped); then bit 5 → mod list. Before them: bit 9 → 2 × u8, bits 0x10/0x40/0x400/0x800 →
+    u8 n + n mod records (`0x142430380`). Live 2026-10-17: flags 0x08/0x09/0x0a/0x0b showed normal, magic, rare and
+    unique monsters; 0x8b with "Headhunt" showed a unique named Headhunt (ObjectMagicProperties 24 bytes, 0 left).
   - Life: (100, 0, …) for life; mana and energy shield 0. The maximum comes from stats, which are empty. The monster
     stands and shows no life bar problem so far; combat will need real values.
   - Blob: 112 bytes with the base list, plus the Animated path (198 bytes for Hungry Corpse).
@@ -128,6 +135,6 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 - The chat line message, and the channel join request and its answer.
 - A correct stat id ↔ name table: re-extract Stats.dat from this client's GGPK, or find why our table's row order
   differs.
-- Monsters: the "Unidentified" tag (probably ObjectMagicProperties: rarity, mods or the identified flag), stats
+- Monsters: mods (the ObjectMagicProperties mod lists), stats
   (maximum life), the StateMachine and DiesAfterTime types (verify the Transitionable / MinimapIcon writers live
   too), AI and combat.

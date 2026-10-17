@@ -290,11 +290,16 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(stat, value)]),
             $"0x01b3 stats: row {stat} = {value}");
     })
-    .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level]", async args =>
+    .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [normal|magic|rare|unique] [name]", async args =>
     {
         if (args.Length == 0) throw new ArgumentException("which monster");
         if (Monsters.Error is { } error) { await conn.Commands!.Reply(error); return; }
-        string query = string.Join(' ', args);
+        // Words up to a rarity keyword name the monster; words after it are a custom name.
+        int r = Array.FindIndex(args, a => Enum.TryParse<MonsterRarity>(a, ignoreCase: true, out _));
+        var rarity = r < 0 ? MonsterRarity.Normal : Enum.Parse<MonsterRarity>(args[r], ignoreCase: true);
+        string? name = r < 0 || r == args.Length - 1 ? null : string.Join(' ', args[(r + 1)..]);
+        if (r == 0) throw new ArgumentException("which monster");
+        string query = string.Join(' ', r < 0 ? args : args[..r]);
         byte level = 1;
         if (query.LastIndexOf('@') is int at and > 0)
         {
@@ -311,7 +316,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         }
         var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
         uint id = conn.NextObjectId++;
-        var monster = new MonsterObject(x, y, Life: 100, variety.ComponentsOrBase, variety.AnimatedObject);
+        var monster = new MonsterObject(x, y, Life: 100, variety.ComponentsOrBase, variety.AnimatedObject, rarity, name);
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
@@ -319,7 +324,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
         // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
-            $"0x02b9 create monster 0x{id:x} {variety} type=0x{type:x8} at ({x}, {y}), components {string.Join(", ", variety.ComponentsOrBase)}");
+            $"0x02b9 create {rarity} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
     });
 }

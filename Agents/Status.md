@@ -20,7 +20,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Instances: one per town; other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs` | [09](docs/protocol/09-area-change.md) |
 | Walk maps captured from the client on first visit; the Gateway uses them for position estimates and spawns | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8 |
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed` (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
-| Monsters: `/spawn_mob <row, Id or name>[@level]` puts a visible, idle monster next to the player (0x20 monster type at a level, 0x2b9, wake zone), for the ~5 400 varieties whose components are known | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
+| Monsters: `/spawn_mob <row, Id or name>[@level] [rarity] [name]` puts a visible, idle monster next to the player (0x20 monster type at a level, 0x2b9, wake zone), for the ~5 400 varieties whose components are known | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 
 ## Partly working
@@ -32,7 +32,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   the vendored schema fixes this is not checked.
 - **Spawn points.** The Coast uses the walkable cell farthest from any edge, not the arrival point next to the exit.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
-- **Monsters.** Spawned monsters have no stats, AI or combat, and show an "Unidentified" tag.
+- **Monsters.** Spawned monsters have no stats, AI or combat, and no mods.
 
 ## Not working yet
 
@@ -47,7 +47,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (154 tests) and `dotnet test tests/GameServer.Data.Tests` (8 tests) pass.
+`dotnet test tests/GameServer.Core.Tests` (155 tests) and `dotnet test tests/GameServer.Data.Tests` (8 tests) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

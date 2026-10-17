@@ -204,7 +204,8 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 /// +0x30, read just before) is below 1, so a living monster has the player's 17 bytes. Positioned's 8-byte prefix belongs
 /// to types with a Sector component, which monsters lack.</para>
 /// </summary>
-public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyList<string> Components, string? AnimatedObject = null)
+public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyList<string> Components, string? AnimatedObject = null,
+    MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null)
 {
     /// <summary>Deserialized components of `Metadata/Monsters/Monster` in read order (scripts/re/ot_components.py).</summary>
     public static readonly string[] BaseComponents =
@@ -237,8 +238,15 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 // x, y, u32, u16, flags; flags1 0x02 + (hidden 0, shown 1) as for the player.
                 case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(0).U8(0).U8(0x02).U8(0).U8(1); break;
                 case "Stats": w.U8(0).U32(0).U32(0).U8(0); break;
-                // base magic properties (u16 flags: rarity = low 3 bits, 0 = normal; u8 +0x7a), then the own flags.
-                case "ObjectMagicProperties": w.U16(0).U8(0).U8(0); break;
+                // base magic properties (0x142201d70): u16 flags (bits 0-2 rarity → +0x7c, 0 = normal; bit 3 identified
+                // → +0x78, which gates the bit 7 / bit 8 / bit 5 sections, all off here), u8 +0x7a; then the own flags.
+                // Without bit 3 the client tags the monster "Unidentified". Identified, bit 7 (0x80) adds a name: u32
+                // UTF-16 unit count + units (→ +0x18), what rare and unique monsters show.
+                case "ObjectMagicProperties":
+                    w.U16((ushort)((ushort)Rarity | Identified | (Name is null ? 0 : CustomName))).U8(0);
+                    if (Name is not null) w.WStr32(Name);
+                    w.U8(0);
+                    break;
                 case "Buffs": w.U16(0); break;
                 // life, mana, energy shield pools (current, reserved, i16, u32, u32), then the flags byte.
                 case "Life": Pool(w, Life); Pool(w, 0); Pool(w, 0); w.U8(0); break;
@@ -259,7 +267,13 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
     }
 
     private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
+
+    /// <summary>ObjectMagicProperties flags bit 3: identified (+0x78); bit 7: a custom name follows.</summary>
+    const ushort Identified = 0x08, CustomName = 0x80;
 }
+
+/// <summary>ObjectMagicProperties rarity (flags bits 0-2 → +0x7c).</summary>
+public enum MonsterRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
 
 /// <summary>Little-endian writer for 0x2b9 component blobs.</summary>
 public sealed class BlobWriter

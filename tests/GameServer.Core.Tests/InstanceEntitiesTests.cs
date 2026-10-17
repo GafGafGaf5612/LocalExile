@@ -57,7 +57,7 @@ public class InstanceEntitiesTests
             "00" + "00" +                                                     // flags, base data
             "73000000" + "45000000" + "00000000" + "0000" + "0002" + "0001" + // Positioned (no Sector prefix), shown
             "00" + "00000000" + "00000000" + "00" +                           // Stats
-            "0000" + "00" + "00" +                                            // ObjectMagicProperties: base part, flags
+            "0800" + "00" + "00" +                                            // ObjectMagicProperties: identified, normal; flags
             "0000" +                                                          // Buffs (BaseEvents, Pathfinding: none)
             pool(100) + pool(0) + pool(0) + "00" +                            // Life
             "00" +                                                            // Animated
@@ -87,6 +87,17 @@ public class InstanceEntitiesTests
         Assert.Equal(plain.Length + 1, new MonsterObject(1, 2, 100, withExtras).Blob().Length);
         byte[] withAo = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents, "A.ao").Blob();
         Assert.Equal(plain.Length + 4 + 2 * 4, withAo.Length);
+    }
+
+    [Fact]
+    public void Monster_rarity_and_name_go_in_object_magic_properties()
+    {
+        string plain = Convert.ToHexString(new MonsterObject(1, 2, 100, MonsterObject.BaseComponents).Blob());
+        string rare = Convert.ToHexString(new MonsterObject(1, 2, 100, MonsterObject.BaseComponents, Rarity: MonsterRarity.Rare, Name: "Ab").Blob());
+        // Positioned (18) + Stats (10) after flags/base (2): ObjectMagicProperties starts at byte 30.
+        Assert.Equal("0800" + "00" + "00", plain.Substring(60, 8));
+        Assert.Equal("8A00" + "00" + "02000000" + "41006200" + "00", rare.Substring(60, 24));
+        Assert.Equal(plain.Length + 2 * (4 + 4), rare.Length);
     }
 
     [Fact]

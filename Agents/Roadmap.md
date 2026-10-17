@@ -49,10 +49,9 @@ Items are in rough priority order within each section. "Known" says what is alre
 ### Monsters: beyond `/spawn_mob`
 - **Known:** `/spawn_mob` works for the varieties whose components are the base Monster list (+ a few extras):
   0x20 registers `<Id>@<level>`, then 0x2b9 + 0x1a9 ([10](docs/protocol/10-chat-and-commands.md) §5).
-- **Start:** the "Unidentified" tag (ObjectMagicProperties, [08](docs/protocol/08-area-transitions.md) §2 has its
-  read sequence); the StateMachine (`0x141e3ee40`) and DiesAfterTime component data; stats such as maximum life.
+- **Start:** the StateMachine (`0x141e3ee40`) and DiesAfterTime component data; stats such as maximum life.
   Check every new component with `scripts/re/frida/check-components.js`.
-- **Done when:** any MonsterVarieties row spawns, named and with a life bar matching its level.
+- **Done when:** any MonsterVarieties row spawns, with mods and a life bar matching its level.
 
 ### NPCs in town
 - Same object mechanism as monsters, with NPC types and their dialogue components. Depends on the monster work.
