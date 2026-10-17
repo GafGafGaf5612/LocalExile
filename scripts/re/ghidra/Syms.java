@@ -8,7 +8,8 @@ public class Syms extends GhidraScript {
     @Override
     public void run() throws Exception {
         // I/O via fixed files (shell quoting of args is unreliable): regex in rx.txt, results in syms.txt
-        String dir = "C:/Users/Frost/Desktop/Projects/Game/Tools/re/out/";
+        String dir = new java.io.File(getSourceFile().getAbsolutePath()).getParentFile().getParentFile()
+            .getParentFile().getParentFile().getPath().replace('\\', '/') + "/Tools/re/out/";
         PrintWriter out = new PrintWriter(new FileWriter(dir + "syms.txt"));
         Pattern p = Pattern.compile(new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(dir + "rx.txt"))).trim(), Pattern.CASE_INSENSITIVE);
         SymbolIterator it = currentProgram.getSymbolTable().getAllSymbols(true);

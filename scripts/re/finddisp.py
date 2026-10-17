@@ -2,7 +2,8 @@
 # instruction whose operands contain <substring> (e.g. "+ 0x980]"); used to find writers of a struct field
 import sys, pefile
 from capstone import *
-EXE = r"C:\Users\Frost\Desktop\Projects\Game\Client\Game.exe"
+import os
+EXE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Client", "Game.exe")
 pe = pefile.PE(EXE, fast_load=True); base = pe.OPTIONAL_HEADER.ImageBase
 data = open(EXE,'rb').read()
 lo=int(sys.argv[1],16); hi=int(sys.argv[2],16); pat=sys.argv[3]

@@ -1,6 +1,7 @@
 # usage: strexact.py <name> [...]   -- addresses of exact NUL-terminated ASCII (a:) and UTF-16LE (u:) strings
 import sys, re, pefile
-EXE = r"C:\Users\Frost\Desktop\Projects\Game\Client\Game.exe"
+import os
+EXE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Client", "Game.exe")
 pe = pefile.PE(EXE, fast_load=True); base = pe.OPTIONAL_HEADER.ImageBase
 data = open(EXE,'rb').read()
 for n in sys.argv[1:]:

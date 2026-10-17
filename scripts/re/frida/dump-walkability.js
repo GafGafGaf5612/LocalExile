@@ -2,7 +2,8 @@
 // Hook: right after the provider call `call r10` (vtable +0x50) in 0x1410ddb90, rax points to
 //   { i32 w, i32 h; vector<T> a [+0x08 begin, +0x10 end]; vector<T> b [+0x20 begin, +0x28 end] }.
 // Files: Tools/re/out/walk-{meta.json,a.bin,b.bin}. The texture itself is (w+2)/3 x (h+2)/3.
-const OUT = 'C:/Users/Frost/Desktop/Projects/Game/Tools/re/out/';
+// <repo>/Tools/re/out/, from the client's own path (<repo>/Client/Game.patched.exe).
+const OUT = Process.enumerateModules()[0].path.replace(/[\\/][^\\/]+[\\/][^\\/]+$/, '') + '/Tools/re/out/';
 let dumps = 0;
 function save(name, p, n) {
   if (p.isNull() || n <= 0) return 0;

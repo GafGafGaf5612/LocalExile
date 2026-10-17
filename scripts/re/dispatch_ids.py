@@ -1,7 +1,8 @@
 # usage: dispatch_ids.py [id ...]   -- instance S→C dispatcher 0x14214a190: switch index = byte table at 0x142154e14
 # indexed by (id - 0x0d), 0x2ed entries. Prints id → case for the given ids, or every non-default case.
 import sys, pefile
-EXE = r"C:\Users\Frost\Desktop\Projects\Game\Client\Game.exe"
+import os
+EXE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Client", "Game.exe")
 pe = pefile.PE(EXE, fast_load=True); base = pe.OPTIONAL_HEADER.ImageBase
 data = open(EXE, 'rb').read()
 off = pe.get_offset_from_rva(0x142154e14 - base)

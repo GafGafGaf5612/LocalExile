@@ -11,7 +11,8 @@ import java.util.*;
 public class Refs extends GhidraScript {
     @Override
     public void run() throws Exception {
-        String dir = "C:/Users/Frost/Desktop/Projects/Game/Tools/re/out/";
+        String dir = new java.io.File(getSourceFile().getAbsolutePath()).getParentFile().getParentFile()
+            .getParentFile().getParentFile().getPath().replace('\\', '/') + "/Tools/re/out/";
         PrintWriter out = new PrintWriter(new FileWriter(dir + "refs.txt"));
         for (String line : Files.readAllLines(Paths.get(dir + "rx.txt"))) {
             line = line.trim();

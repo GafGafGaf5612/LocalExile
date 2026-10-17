@@ -1,16 +1,16 @@
-# usage: schema_md.py [readschema.json]   -- ReadSchema.java output -> docs/protocol/schema.md
+# usage: schema_md.py [readschema.json]   -- ReadSchema.java output -> Agents/docs/protocol/schema.md
 # Regenerate the input with (about 10 minutes):
-#   bash scripts/re/ghidra/g.sh ReadSchema.java 'C:\...\Tools\re\out\readschema.json' 'C:\...\docs\re\components.json'
+#   bash scripts/re/ghidra/g.sh ReadSchema.java 'C:\...\Tools\re\out\readschema.json' 'C:\...\Agents\docs\re\components.json'
 import json, os, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SRC = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\Frost\Desktop\Projects\Game\Tools\re\out\readschema.json"
-OUT = os.path.join(REPO, "docs", "protocol", "schema.md")
-COMPONENTS = os.path.join(REPO, "docs", "re", "components.json")
-EXE = r"C:\Users\Frost\Desktop\Projects\Game\Client\Game.exe"
+SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO, "Tools", "re", "out", "readschema.json")
+OUT = os.path.join(REPO, "Agents", "docs", "protocol", "schema.md")
+COMPONENTS = os.path.join(REPO, "Agents", "docs", "re", "components.json")
+EXE = os.path.join(REPO, "Client", "Game.exe")
 FACTORIES = {"0x1421b5c40": "instance", "0x1421c6150": "world"}
 
-# Bytes consumed per component, traced live (docs/protocol/04 section 3 and 08 section 2). "min" is what the summary
+# Bytes consumed per component, traced live (Agents/docs/protocol/04 section 3 and 08 section 2). "min" is what the summary
 # must give: the bytes read outside every condition and loop.
 TRACED = [
     ("Positioned", "0x141e2f0b0", 16, 16, "player and exit"),

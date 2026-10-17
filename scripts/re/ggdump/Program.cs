@@ -2,7 +2,11 @@
 using GameServer.Data.Ggpk;
 using GgDump;
 // usage: GgDump <ggpk> <outDir> <path>...   (or "list <substring>" as first path to search the index)
-string root = @"C:\Users\Frost\Desktop\Projects\Game";
+// The repository root: the first parent of the build output that has Tools/ooz.
+string root = AppContext.BaseDirectory;
+while (!File.Exists(Path.Combine(root, "Tools", "ooz", "ooz_worker.mjs")))
+    root = Path.GetDirectoryName(root.TrimEnd(Path.DirectorySeparatorChar))
+        ?? throw new InvalidOperationException("Tools/ooz/ooz_worker.mjs not found above the build output");
 using var oodle = new NodeOodleDecoder("node", Path.Combine(root, @"Tools\ooz\ooz_worker.mjs"));
 using var fs = GameFileSystem.Open(args[0], oodle);
 foreach (var path in args.Skip(2))

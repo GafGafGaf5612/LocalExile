@@ -9,7 +9,8 @@ import java.nio.file.*;
 public class Range extends GhidraScript {
     @Override
     public void run() throws Exception {
-        String dir = "C:/Users/Frost/Desktop/Projects/Game/Tools/re/out/";
+        String dir = new java.io.File(getSourceFile().getAbsolutePath()).getParentFile().getParentFile()
+            .getParentFile().getParentFile().getPath().replace('\\', '/') + "/Tools/re/out/";
         String[] r = new String(Files.readAllBytes(Paths.get(dir + "range.txt"))).trim().split("\\s+");
         PrintWriter out = new PrintWriter(new FileWriter(dir + "range.c"));
         DecompInterface di = new DecompInterface();

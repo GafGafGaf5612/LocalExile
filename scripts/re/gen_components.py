@@ -1,14 +1,14 @@
-# usage: gen_components.py   -- docs/re/components.json -> docs/re/components.md and the VT/DESER tables of
+# usage: gen_components.py   -- Agents/docs/re/components.json -> Agents/docs/re/components.md and the VT/DESER tables of
 # scripts/re/frida/check-components.js (run it again after schema_md.py: DESER keeps the functions that read). Regenerate
 # the JSON first with
-#   bash scripts/re/ghidra/g.sh ComponentRegistry.java 'C:\...\docs\re\components.json'
+#   bash scripts/re/ghidra/g.sh ComponentRegistry.java 'C:\...\Agents\docs\re\components.json'
 import importlib.util, json, os, re, sys
 
 sys.dont_write_bytecode = True
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SRC = os.path.join(REPO, "docs", "re", "components.json")
-MD = os.path.join(REPO, "docs", "re", "components.md")
+SRC = os.path.join(REPO, "Agents", "docs", "re", "components.json")
+MD = os.path.join(REPO, "Agents", "docs", "re", "components.md")
 JS = os.path.join(REPO, "scripts", "re", "frida", "check-components.js")
 
 spec = importlib.util.spec_from_file_location("ot", os.path.join(REPO, "scripts", "re", "ot_components.py"))
@@ -83,13 +83,13 @@ for r in comps:
             deser.setdefault(v["slot17"], set()).add(f"{r['name']} {v['vt']} slot17")
         if v.get("slot17Kind") == "fwd20" and v.get("slot20"):
             deser.setdefault(v["slot20"], set()).add(f"{r['name']} {v['vt']} slot20")
-# Keep only functions that read (docs/protocol/schema.json, from schema_md.py): slot-17 stubs shared by many classes
+# Keep only functions that read (Agents/docs/protocol/schema.json, from schema_md.py): slot-17 stubs shared by many classes
 # (0x1400ed4a0, ...) are hot code elsewhere and read nothing.
-SCHEMA = os.path.join(REPO, "docs", "protocol", "schema.json")
+SCHEMA = os.path.join(REPO, "Agents", "docs", "protocol", "schema.json")
 if os.path.exists(SCHEMA):
     sums = json.load(open(SCHEMA, encoding="utf-8"))["summaries"]
     deser = {k: v for k, v in deser.items() if k in sums and sums[k]["reads"]}
-gen = ["// BEGIN GENERATED (scripts/re/gen_components.py from docs/re/components.json)",
+gen = ["// BEGIN GENERATED (scripts/re/gen_components.py from Agents/docs/re/components.json)",
        "const VT = " + json.dumps({k: "/".join(v) for k, v in sorted(vt_names.items())}, separators=(",", ":")) + ";",
        "const DESER = " + json.dumps({k: sorted(v) for k, v in sorted(deser.items())}, separators=(",", ":")) + ";",
        "// END GENERATED"]

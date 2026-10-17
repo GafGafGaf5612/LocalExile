@@ -1,7 +1,8 @@
 # usage: xr.py <string> [ctx]  -- find string (ascii/utf16) in PE, list code xrefs (RIP-relative), disasm context
 import sys, struct, pefile, re
 from capstone import *
-EXE = r"C:\Users\Frost\Desktop\Projects\Game\Client\Game.exe"
+import os
+EXE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Client", "Game.exe")
 pe = pefile.PE(EXE, fast_load=True)
 base = pe.OPTIONAL_HEADER.ImageBase
 data = open(EXE,'rb').read()

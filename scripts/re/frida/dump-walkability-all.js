@@ -1,6 +1,7 @@
 // Like dump-walkability.js, but dumps every generated area (load after common.js): Tools/re/out/walk-<n>-{a,b}.bin and
 // walk-<n>-meta.json, n = 0, 1, … in generation order. Used to capture generated areas (e.g. The Coast) per seed.
-const OUT = 'C:/Users/Frost/Desktop/Projects/Game/Tools/re/out/';
+// <repo>/Tools/re/out/, from the client's own path (<repo>/Client/Game.patched.exe).
+const OUT = Process.enumerateModules()[0].path.replace(/[\\/][^\\/]+[\\/][^\\/]+$/, '') + '/Tools/re/out/';
 let dumps = 0;
 function save(name, p, n) {
   if (p.isNull() || n <= 0) return 0;

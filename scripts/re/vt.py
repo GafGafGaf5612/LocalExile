@@ -1,6 +1,7 @@
 # usage: vt.py <vtable_va> [...]   -- print slots 0-5 of each vtable (Client/Game.exe)
 import sys, struct, pefile
-EXE = r"C:\Users\Frost\Desktop\Projects\Game\Client\Game.exe"
+import os
+EXE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Client", "Game.exe")
 pe = pefile.PE(EXE, fast_load=True); base = pe.OPTIONAL_HEADER.ImageBase
 data = open(EXE,'rb').read()
 for a in sys.argv[1:]:

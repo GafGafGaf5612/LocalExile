@@ -38,6 +38,56 @@ Use the standalone layout.
 **Getting 3.29.3b:** this repository cannot provide the client. The official launcher always updates to the newest
 version, so you need a copy that is still at 3.29.3b. Never let a newer launcher touch your copy.
 
+### Third-party tools (only to extend the server)
+
+Playing needs nothing beyond the table above. To work out more of the protocol, as
+[docs/re/tooling.md](docs/re/tooling.md) describes, you also need these. None of them are in the repository; install
+them yourself. Programs go under `Tools\` at the repository root (git-ignored), where the scripts look for them.
+
+| Tool | Version we used | Where it goes | Used for |
+|---|---|---|---|
+| [Ghidra](https://github.com/NationalSecurityAgency/ghidra/releases) | 12.1.4 (`ghidra_12.1.4_PUBLIC_20260921`) | `Tools\ghidra_12.1.4_PUBLIC_20260921\ghidra_12.1.4_PUBLIC\` | static analysis: decompiling, references, the Java scripts in `scripts/re/ghidra/` |
+| [Microsoft Build of OpenJDK](https://learn.microsoft.com/java/openjdk/download) | 21 (21.0.12.1) | `Tools\jdk-21\` (so `Tools\jdk-21\bin\java.exe` exists) | runs Ghidra |
+| [Frida](https://frida.re) | Python package `frida` | `pip install frida` (or `.venv`, step 8) | live tracing of the client: `scripts/re/frida/*.js`, walk maps |
+| REA (reverse-engineering MCP server) | 6.5.0 (`rea` on PATH) | anywhere on PATH | lets an AI agent drive Ghidra and Frida; see `.mcp.json` below |
+| Python packages `pefile`, `capstone` | 2024.8.26, 5.0.7 | `pip install pefile capstone` | the helpers in `scripts/re/*.py` (disassembly, string and vtable search) |
+| [Node.js](https://nodejs.org) + npm package `ooz-wasm` | Node 24, ooz-wasm 2.x | Node on PATH; then `cd Tools\ooz; npm install` | Oodle decompression of the game's bundles, for `scripts/re/ggdump` and `Tools/PoEDataExtractor` |
+| [dat-schema](https://github.com/poe-tool-dev/dat-schema) `schema.min.json` | release matching 3.29 | `data\schema\schema.min.json` | column layouts of the game's `.datc64` tables, for `Tools/PoEDataExtractor` |
+| LibGGPK3 (NuGet) | 2.7.5 | restored by `dotnet build` | reads `Content.ggpk` and its bundles |
+
+One-time Ghidra setup, after Ghidra, the JDK and `Client\Game.exe` are in place (takes hours; the analysis of the 79 MB
+executable is large):
+
+```powershell
+.\scripts\re\ghidra\import.ps1
+```
+
+It creates `Tools\ghidra-projects\poe3293`, which `scripts/re/ghidra/g.sh` and `run.ps1` open read-only.
+
+For an AI agent, register REA as an MCP server in `.mcp.json` at the repository root (git-ignored, because the paths are
+specific to your PC):
+
+```json
+{
+  "mcpServers": {
+    "rea": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "rea", "--mcp"],
+      "env": {
+        "GHIDRA_INSTALL_DIR": "<repo>\\Tools\\ghidra_12.1.4_PUBLIC_20260921\\ghidra_12.1.4_PUBLIC",
+        "JAVA_HOME": "<repo>\\Tools\\jdk-21",
+        "REA_ANALYSIS_PROVIDER": "ghidra",
+        "REA_GHIDRA_STARTUP_TIMEOUT_MS": "3600000"
+      }
+    }
+  }
+}
+```
+
+Never put these tools, their outputs (`Tools\re\out`, the Ghidra project) or game files in a commit. The `.gitignore`
+already keeps them out.
+
 ## 1. Clone and build
 
 ```powershell
