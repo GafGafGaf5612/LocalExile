@@ -32,9 +32,9 @@ https://github.com/user-attachments/assets/7b732013-2d04-4e81-a2fa-5437099f4b6d
 - **Lioneye's Watch → The Coast:** the exit loads the area. Ctrl+click opens the Instance Manager (list, join or create
   instances). Towns have one instance, and empty instances expire after 6 minutes.
 - **Chat commands:** `/help`, `/set_speed <percent>`, `/set_stat <key> <value>`, `/raw <hex>`,
-  `/spawn_mob <monster>[@level]` (an idle monster next to you).
+  `/spawn_mob <monster>[@level] [friendly] [rarity] [name]` (a monster next to you that chases you), `/despawn`.
 
-Not done yet: monster AI and combat, server text as chat lines, exit to character selection, and exits
+Not done yet: skills and combat, server text as chat lines, exit to character selection, and exits
 beyond town. Details: [Agents/Status.md](Agents/Status.md).
 
 ## Contributing

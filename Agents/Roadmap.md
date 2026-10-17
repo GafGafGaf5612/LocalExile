@@ -47,11 +47,12 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** The Coast's exits (back to town, to The Mud Flats) work, then the rest of Act 1.
 
 ### Monsters: beyond `/spawn_mob`
-- **Known:** `/spawn_mob` works for the varieties whose components are the base Monster list (+ a few extras):
-  0x20 registers `<Id>@<level>`, then 0x2b9 + 0x1a9 ([10](docs/protocol/10-chat-and-commands.md) §5).
-- **Start:** the 346 varieties with NPC / ControlZone / … components; mods; the boss life bar; the Emerge action (an action like Move); attacks (the monster AI only chases).
-  Check every new component with `scripts/re/frida/check-components.js`.
-- **Done when:** any MonsterVarieties row spawns, with mods and a life bar matching its level.
+- **Known:** spawning, levels, rarity, names, team, life, StateMachine / Transitionable types, walking and chasing all
+  work ([10](docs/protocol/10-chat-and-commands.md) §5). Combat waits for skills (below).
+- **Start:** the "emerge" action for emerge monsters, mods, the boss life bar (StateMachine `boss_life_bar`), the 346
+  varieties with NPC / ControlZone / BlightTower … components (each needs its deserializer, schema.md), spawning packs
+  in areas. Check every new component with `scripts/re/frida/check-components.js`.
+- **Done when:** areas are populated with monsters that fight back.
 
 ### NPCs in town
 - Same object mechanism as monsters, with NPC types and their dialogue components. Depends on the monster work.
@@ -81,8 +82,16 @@ Items are in rough priority order within each section. "Known" says what is alre
   [05](docs/protocol/05-inventories-and-ui.md) "Open".
 - **Done when:** a new character has its starting weapon and flasks, then items can be moved and dropped.
 
-### Skills and combat
-- Nothing is mapped yet. Starts with the client's skill-use messages and the server's answers.
+### Skills and combat (next)
+- **Known:** nobody has a skill: in game the client only ever uses Move (0x2909) and interact (0x0266), so clicking a
+  monster just walks to it. The server already answers a C→S 0x24 on a monster with a hit (0x1ab aimed at it) and
+  lowers its life with S→C 0x1b1, whose life-to-0 transition runs the client's death
+  ([10](docs/protocol/10-chat-and-commands.md) §5, "Combat").
+- **Start:** how skills are granted. Suspects: the Actor component's flag-gated sections (slot 20 `0x1421932b0`, sent
+  empty for the player and monsters), and the skill-bar / gem messages (0xc3 sockets and gems,
+  [05](docs/protocol/05-inventories-and-ui.md)). Give the player the default attack first, then monsters their
+  MonsterVarieties GrantedEffects.
+- **Done when:** clicking a monster attacks it, three hits kill it, and a monster hits back.
 
 ### Saving progress
 - Persist the character's area, position, level and items in the account store (`GameServer.Storage`).

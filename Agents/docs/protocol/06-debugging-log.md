@@ -174,6 +174,19 @@ and what changed. Times are local. Logs: `Tools/re/out/live-{auth,gateway,patch}
 - **Saw:** three Hungry Corpses next to the player, idle, tagged "Unidentified". Each blob: 11 components exactly as
   predicted from the .ot and schema.md, 198 bytes consumed, 0 left.
 
+### More component lists, movement, AI (afternoon)
+- **StateMachine:** two counts, then per `define_shared_state` a compact int + u8 and per `define_shared_timer` a u32 +
+  u8, in .ot order. Frost Bishop, Arakaali, Haku: 0 bytes left.
+- **Transitionable crash:** Alira and Gravel Eater hung the client after a fully consumed blob: access violation at
+  `0x141ded7b9` in the animation-event interpreter. Cause: transition state 0. The post-create slot `0x1421c26f0` runs
+  the event at index `state − 1`; states run 1..`num_states`. Sending `num_states` fixed it. Not sending the Animated
+  path (tried first) was not the cause.
+- **Movement:** 0x1ba slides an object in a straight line through walls; 0x1ab with the Move skill 0x2909 makes a
+  monster walk, animated and pathed by the client. The monster AI chases with it.
+- **Team:** the green hover outline came from Positioned's u16 team at `+0x1e0`, sent as 0 like the player's; 1 made it
+  red (hostile).
+- **No skills:** clicking a monster sends Move only. Neither the player nor monsters have skills yet.
+
 ## Lessons
 
 - Static analysis gave correct per-component field layouts but the **wrong component order and set**. Trace the live

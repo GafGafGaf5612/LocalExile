@@ -67,7 +67,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/raw <hex>` | sends the bytes as one S→C message (dev probe; spaces allowed) |
 | `/set_speed <percent>` | 0x1b3 `movement_velocity_+%` = percent − 100 on the player; the server's walk estimate uses 37 × percent / 100 cells/s |
 | `/set_stat <client key> <value>` | 0x1b3 for any stat, by client key (not the Stats.json row) |
-| `/spawn_mob <row, Id or name>[@level] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), with a rarity and an optional name, a few cells from the player (§5) |
+| `/spawn_mob <row, Id or name>[@level] [friendly] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), hostile unless `friendly`, with a rarity and an optional name, a few cells from the player (§5) |
 | `/mobs` | lists the monsters spawned on this connection (message box) |
 | `/despawn [all \| <id>]` | S→C 0x2bb (remove object, header only) for the last spawned monster, all of them, or one id |
 | `/mob_walk [0x<id>] [skill hex]` | 0x1ab: the monster starts its Move action (skill 0x2909) toward the player; it walks, animated, along the client's path |
@@ -178,6 +178,19 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   a `WalkEstimator` (A* on the walk map) at MonsterVarieties `MovementSpeed` cells/s (8 for Hungry Corpse, 44 for Haku)
   and reports that position as the action's start; live, the chase showed no snapping, so the estimate keeps up. All
   sends go through one lock per connection (the AI tick and the read loop share the Salsa20 stream).
+- **Team** (live 2026-10-17). Positioned's u16 at `+0x1e0` (after x, y and the f32 at `+0x29c`) is the object's team;
+  the .ot `team` values are only defaults. The player is sent team 0. Monsters sent with 0 had a **green** (friendly)
+  hover outline; with 1 the outline is **red** and on The Coast a life bar shows over the head (towns hide hostile life
+  bars). The Gateway sends 1, or 0 with `/spawn_mob … friendly`.
+- **Combat: not working yet, skills are missing.** Clicking a monster sends only Move (0x2909) and nothing else: the
+  player has no skills granted, not even the default attack, and neither do monsters (live 2026-10-17: in a whole
+  session the client used only skills 0x2909 Move and 0x0266 interact). The server side is ready for the first hit:
+  C→S 0x24 on a monster is answered with 0x1ab aimed at it (flags | 0x80 + u32 target id after the flags, write
+  `0x141fdd990`), then **S→C 0x1b1** lowers its life: `header, u32 current, u32 reserved, u8 pool (0 life, 1 mana,
+  2 ES), u16 (+0x2a), u8 (+0x2c)`, big-endian (read `0x141fe0790`); the world handler (case 0x1b1) applies it to the
+  pool (`0x141e69fb0`) and calls the Life component's death slot (vtable +0xe8) when life goes from ≥ 1 to < 1, revive
+  (+0x100) the other way. A dead monster is removed (0x2bb) 10 s later. Skill granting is probably in the Actor
+  component's flag-gated sections (slot 20 `0x1421932b0`), which are sent empty.
 - **Placement.** The nearest walkable cell 6–20 cells from the server's estimate of the player; ids from 0x3000. The
   world is active, so 0x2b9 is created at once; 0x1a9 puts it in the wake zone.
 
@@ -186,5 +199,6 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 - The chat line message, and the channel join request and its answer.
 - A correct stat id ↔ name table: re-extract Stats.dat from this client's GGPK, or find why our table's row order
   differs.
-- Monsters: mods (the ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
+- Monsters: **skills** (the player's default attack and the monsters' GrantedEffects: needed for any combat), mods (the
+  ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
   varieties with other components (NPC, ControlZone, …), AI and combat.
