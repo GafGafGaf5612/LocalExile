@@ -316,7 +316,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         }
         var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
         uint id = conn.NextObjectId++;
-        var monster = new MonsterObject(x, y, Life: 100, variety.ComponentsOrBase, variety.AnimatedObject, rarity, name);
+        // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
+        uint life = (uint)(Monsters.BaseLife(variety, level) ?? 100);
+        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, variety.AnimatedObject, rarity, name);
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
@@ -324,7 +326,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
         // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
-            $"0x02b9 create {rarity} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), components {string.Join(", ", variety.ComponentsOrBase)}");
+            $"0x02b9 create {rarity} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
     });
 }

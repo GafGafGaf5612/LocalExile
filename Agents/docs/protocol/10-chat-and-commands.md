@@ -117,8 +117,13 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
     looked up by `0x14225a4d0`, not mapped); then bit 5 → mod list. Before them: bit 9 → 2 × u8, bits 0x10/0x40/0x400/0x800 →
     u8 n + n mod records (`0x142430380`). Live 2026-10-17: flags 0x08/0x09/0x0a/0x0b showed normal, magic, rare and
     unique monsters; 0x8b with "Headhunt" showed a unique named Headhunt (ObjectMagicProperties 24 bytes, 0 left).
-  - Life: (100, 0, …) for life; mana and energy shield 0. The maximum comes from stats, which are empty. The monster
-    stands and shows no life bar problem so far; combat will need real values.
+  - Life: (current, 0, …) for life; mana and energy shield 0. The **maximum is the client's own**: its Monster type
+    (`0x141e701d0`) sets stat 0x7d (and other default stats: 0x142–0x147, 0x75, 0x78, 0x87, …) from DefaultMonsterStats
+    row `level − 1` (0x48-byte rows) and the variety: life = max(1, column × LifeMultiplier / 100), the column being
+    AltLife1 (`+0x2c`) if the MonsterTypes row has AltLife1, else AltLife2 (`+0x38`), else MinionLife (`+0x1c`) for
+    IsPlayerMinion, else MonsterLife (`+0x14`). The Gateway computes the same (`MonsterCatalog.BaseLife`) and sends it as
+    the current life. Live 2026-10-17: Hungry Corpse at levels 13 (77 life) and 70 showed full life bars; the level-70 one
+    also showed a cold icon (probably the resistance profile of its MonsterTypes row growing with level; not checked).
   - Blob: 112 bytes with the base list, plus the Animated path (198 bytes for Hungry Corpse).
 - **Other component lists.** Of the 10 691 varieties, 4 513 have exactly the base list; most others append
   DiesAfterTime, StateMachine or Transitionable. The blob also writes Transitionable (`0x1421c24b0`, u8 flags),
@@ -135,6 +140,5 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 - The chat line message, and the channel join request and its answer.
 - A correct stat id ↔ name table: re-extract Stats.dat from this client's GGPK, or find why our table's row order
   differs.
-- Monsters: mods (the ObjectMagicProperties mod lists), stats
-  (maximum life), the StateMachine and DiesAfterTime types (verify the Transitionable / MinimapIcon writers live
+- Monsters: mods (the ObjectMagicProperties mod lists; rarity life bonuses come from mods), the StateMachine and DiesAfterTime types (verify the Transitionable / MinimapIcon writers live
   too), AI and combat.

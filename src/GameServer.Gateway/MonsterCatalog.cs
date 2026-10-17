@@ -11,7 +11,8 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class MonsterCatalog(string folder = "data")
 {
-    public sealed record Variety(int Row, string Id, string Name, string BaseType, string? AnimatedObject, IReadOnlyList<string>? Components)
+    public sealed record Variety(int Row, string Id, string Name, string BaseType, string? AnimatedObject, IReadOnlyList<string>? Components,
+        int LifeMultiplier = 100, int MonsterType = -1)
     {
         public IReadOnlyList<string> ComponentsOrBase => Components ?? MonsterObject.BaseComponents;
         public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase);
@@ -19,8 +20,41 @@ sealed class MonsterCatalog(string folder = "data")
     }
 
     private readonly Lazy<(List<Variety> Rows, string? Error)> _rows = new(() => Load(folder));
+    private readonly Lazy<LifeTables?> _life = new(() => LifeTables.Load(folder));
 
     public string? Error => _rows.Value.Error;
+
+    /// <summary>
+    /// The maximum life the client gives a monster of this variety at this level, before mods: the client's Monster type
+    /// (0x141e701d0) sets stat 0x7d to max(1, column × LifeMultiplier / 100) from DefaultMonsterStats row level − 1 (0x48-byte
+    /// rows). The column depends on the variety's MonsterTypes row: AltLife1 → AltLife1, else AltLife2 → AltLife2, else
+    /// IsPlayerMinion → MinionLife, else MonsterLife. Null when the tables are missing.
+    /// </summary>
+    public int? BaseLife(Variety v, byte level)
+    {
+        if (_life.Value is not { } t || level < 1 || level > t.Levels.Count) return null;
+        var row = t.Levels[level - 1];
+        var type = v.MonsterType >= 0 && v.MonsterType < t.Types.Count ? t.Types[v.MonsterType] : default;
+        int column = type.AltLife1 ? row.AltLife1 : type.AltLife2 ? row.AltLife2 : type.Minion ? row.MinionLife : row.MonsterLife;
+        return Math.Max(1, column * v.LifeMultiplier / 100);
+    }
+
+    private sealed record LifeTables(List<(int MonsterLife, int MinionLife, int AltLife1, int AltLife2)> Levels,
+        List<(bool Minion, bool AltLife1, bool AltLife2)> Types)
+    {
+        public static LifeTables? Load(string folder)
+        {
+            string stats = Path.Combine(folder, "tables", "DefaultMonsterStats.json"), types = Path.Combine(folder, "tables", "MonsterTypes.json");
+            if (!File.Exists(stats) || !File.Exists(types)) return null;
+            using var s = JsonDocument.Parse(File.ReadAllBytes(stats));
+            using var t = JsonDocument.Parse(File.ReadAllBytes(types));
+            return new LifeTables(
+                [.. s.RootElement.EnumerateArray().Select(r => (r.GetProperty("MonsterLife").GetInt32(), r.GetProperty("MinionLife").GetInt32(),
+                    r.GetProperty("AltLife1").GetInt32(), r.GetProperty("AltLife2").GetInt32()))],
+                [.. t.RootElement.EnumerateArray().Select(r => (r.GetProperty("IsPlayerMinion").GetBoolean(), r.GetProperty("AltLife1").GetBoolean(),
+                    r.GetProperty("AltLife2").GetBoolean()))]);
+        }
+    }
 
     /// <summary>A MonsterVarieties row by number, or by Id: exact, then the last path segment, then any part of it,
     /// then the display name. Several matches: the first one the blob writer supports.</summary>
@@ -67,7 +101,9 @@ sealed class MonsterCatalog(string folder = "data")
                 string baseType = r.GetProperty("BaseMonsterTypeIndex").GetString() ?? "";
                 string? ao = r.GetProperty("AOFiles").EnumerateArray().Select(a => a.GetString()).FirstOrDefault();
                 rows.Add(new Variety(rows.Count, id, r.GetProperty("Name").GetString() ?? "", baseType, ao,
-                    components.Count == 0 ? null : components.GetValueOrDefault(baseType)));
+                    components.Count == 0 ? null : components.GetValueOrDefault(baseType),
+                    r.GetProperty("LifeMultiplier").GetInt32(),
+                    r.GetProperty("MonsterTypesKey").ValueKind == JsonValueKind.Number ? r.GetProperty("MonsterTypesKey").GetInt32() : -1));
             }
         }
         // With object-types.json, a type missing from it has no .ot: do not guess.
