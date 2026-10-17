@@ -41,7 +41,7 @@ version, so you need a copy that is still at 3.29.3b. Never let a newer launcher
 ### Third-party tools (only to extend the server)
 
 Playing needs nothing beyond the table above. To work out more of the protocol, as
-[docs/re/tooling.md](docs/re/tooling.md) describes, you also need these. None of them are in the repository; install
+[docs/re/tooling.md](docs/re/tooling.md) describes, you also need these. Apart from the dat-schema file, none of them are in the repository; install
 them yourself. Programs go under `Tools\` at the repository root (git-ignored), where the scripts look for them.
 
 | Tool | Version we used | Where it goes | Used for |
@@ -52,7 +52,7 @@ them yourself. Programs go under `Tools\` at the repository root (git-ignored), 
 | REA (reverse-engineering MCP server) | 6.5.0 (`rea` on PATH) | anywhere on PATH | lets an AI agent drive Ghidra and Frida; see `.mcp.json` below |
 | Python packages `pefile`, `capstone` | 2024.8.26, 5.0.7 | `pip install pefile capstone` | the helpers in `scripts/re/*.py` (disassembly, string and vtable search) |
 | [Node.js](https://nodejs.org) + npm package `ooz-wasm` | Node 24, ooz-wasm 2.x | Node on PATH; then `cd Tools\ooz; npm install` | Oodle decompression of the game's bundles, for `scripts/re/ggdump` and `Tools/PoEDataExtractor` |
-| [dat-schema](https://github.com/poe-tool-dev/dat-schema) `schema.min.json` | release matching 3.29 | `data\schema\schema.min.json` | column layouts of the game's `.datc64` tables, for `Tools/PoEDataExtractor` |
+| [dat-schema](https://github.com/poe-tool-dev/dat-schema) `schema.min.json` | release matching 3.29 | already in the repository: `data\schema\schema.min.json` (MIT, see `data\schema\LICENSE`) | column layouts of the game's `.datc64` tables, for `Tools/PoEDataExtractor` |
 | LibGGPK3 (NuGet) | 2.7.5 | restored by `dotnet build` | reads `Content.ggpk` and its bundles |
 
 One-time Ghidra setup, after Ghidra, the JDK and `Client\Game.exe` are in place (takes hours; the analysis of the 79 MB
