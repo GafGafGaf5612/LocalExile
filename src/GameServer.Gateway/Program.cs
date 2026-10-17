@@ -116,6 +116,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
                 total += n;
                 await OnClientData(remote, stream, ciphers, buffer.AsSpan(0, n).ToArray(), conn);
             }
+            conn.Closed = true;
         }
     }
     catch (Exception ex)
@@ -195,6 +196,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 }
                 await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character);
                 conn.PlayerSent = true;
+                _ = RunMonsterAi(remote, stream, ciphers, conn);
             }
         }
     }
@@ -331,11 +333,14 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
             $"0x02b9 create {rarity} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
-        conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", x, y);
+        lock (conn.Monsters)
+            conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
+                variety.AggroRange, Math.Max(2, variety.ObjectSize + 1));
     })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
-            string.Join(", ", conn.Monsters.Select(m => $"0x{m.Key:x} {m.Value.Label} ({m.Value.X}, {m.Value.Y})"))))
+            string.Join(", ", conn.Monsters.Select(m =>
+                $"0x{m.Key:x} {m.Value.Label} {m.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)}{(m.Value.Aggro ? " (chasing)" : "")}"))))
     .Add("despawn", "/despawn [all | <id>] (default: the last one spawned)", async args =>
     {
         IEnumerable<uint> ids = args.Length == 0 ? conn.Monsters.Keys.TakeLast(1)
@@ -343,7 +348,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             : [Convert.ToUInt32(args[0], args[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)];
         foreach (uint id in ids.ToList())
         {
-            if (!conn.Monsters.Remove(id)) { await conn.Commands!.Reply($"No monster 0x{id:x}."); continue; }
+            bool removed;
+            lock (conn.Monsters) removed = conn.Monsters.Remove(id);
+            if (!removed) { await conn.Commands!.Reply($"No monster 0x{id:x}."); continue; }
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove monster 0x{id:x}");
         }
     })
@@ -355,7 +362,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         float speed = sp is null ? 20f : float.Parse(sp, System.Globalization.CultureInfo.InvariantCulture);
         var (x, y) = NextToPlayer(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, x, y, speed), $"0x01ba move monster 0x{id:x} to ({x}, {y}) speed {speed}");
-        conn.Monsters[id] = conn.Monsters[id] with { X = x, Y = y };
+        lock (conn.Monsters) conn.Monsters[id].Walk = conn.NewWalk(x, y, conn.Monsters[id].Walk.Speed);
     })
     // Action probe: start the monster's Move action (0x1ab) toward the player, like the echo of a player's click. The skill
     // id is the player's Move (0x2909) unless given (hex); sequence 0xffff (the monster is not client-predicted).
@@ -364,19 +371,74 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
         string? sk = args.FirstOrDefault(a => !a.StartsWith("0x", StringComparison.OrdinalIgnoreCase));
         ushort skill = sk is null ? (ushort)0x2909 : Convert.ToUInt16(sk, 16);
-        var m = conn.Monsters[id];
         var (x, y) = NextToPlayer(conn);
-        await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, m.X, m.Y, x, y, skill, 0xffff, 0x0408),
-            $"0x01ab monster 0x{id:x} action skill 0x{skill:x4} from ({m.X}, {m.Y}) to ({x}, {y})");
-        conn.Monsters[id] = m with { X = x, Y = y };
+        (int X, int Y) from;
+        lock (conn.Monsters) from = conn.Monsters[id].Walk.Order(x, y, conn.Clock.Elapsed.TotalSeconds);
+        await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, x, y, skill, 0xffff, 0x0408),
+            $"0x01ab monster 0x{id:x} action skill 0x{skill:x4} from {from} to ({x}, {y})");
     })
     .Add("mob_tp", "/mob_tp [id] (0x1b7 next to you; default the last monster)", async args =>
     {
         if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
         var (x, y) = NextToPlayer(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y), $"0x01b7 teleport monster 0x{id:x} to ({x}, {y})");
-        conn.Monsters[id] = conn.Monsters[id] with { X = x, Y = y };
+        lock (conn.Monsters) conn.Monsters[id].Walk = conn.NewWalk(x, y, conn.Monsters[id].Walk.Speed);
+    })
+    .Add("ai", "/ai [on|off] (monsters chase you when you come near)", async args =>
+    {
+        if (args.Length > 0) conn.AiEnabled = !args[0].Equals("off", StringComparison.OrdinalIgnoreCase);
+        await conn.Commands!.Reply($"Monster AI is {(conn.AiEnabled ? "on" : "off")}.");
     });
+}
+
+// Monster AI, one tick every 500 ms per connection. A monster within its aggro range (MonsterVarieties MaxAgroRange, in
+// cells) of the player starts chasing: it walks (Move action 0x1ab, skill 0x2909; the client paths it) to a cell
+// StopRange from the player, re-ordered when that cell has moved by 3+ cells. Beyond twice the range it gives up and stops.
+// Positions are the server's estimates (WalkEstimator at MonsterVarieties MovementSpeed cells/s).
+static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    const ushort Move = 0x2909;
+    try
+    {
+        while (!conn.Closed)
+        {
+            await Task.Delay(500);
+            if (!conn.AiEnabled) continue;
+            var orders = new List<(uint Id, (int X, int Y) From, (int X, int Y) To, string Why)>();
+            double now = conn.Clock.Elapsed.TotalSeconds;
+            var (px, py) = conn.Walk.Position(now);
+            lock (conn.Monsters)
+            {
+                foreach (var (id, m) in conn.Monsters)
+                {
+                    var (mx, my) = m.Walk.Position(now);
+                    double d = Math.Sqrt((double)(mx - px) * (mx - px) + (double)(my - py) * (my - py));
+                    if (!m.Aggro && d <= m.AggroRange) { m.Aggro = true; m.LastTarget = null; }
+                    else if (m.Aggro && d > 2 * m.AggroRange)
+                    {
+                        m.Aggro = false;
+                        orders.Add((id, m.Walk.Order(mx, my, now), (mx, my), "gives up"));
+                        continue;
+                    }
+                    if (!m.Aggro || d <= m.StopRange) continue;
+                    // The cell StopRange - 1 from the player on the line toward the monster (the player's cell if blocked).
+                    double f = (m.StopRange - 1) / d;
+                    (int X, int Y) to = ((int)Math.Round(px + (mx - px) * f), (int)Math.Round(py + (my - py) * f));
+                    if (conn.Layout.Walkable is { } w && !w(to.X, to.Y)) to = (px, py);
+                    if (m.LastTarget is { } last && Math.Abs(last.X - to.X) + Math.Abs(last.Y - to.Y) < 3) continue;
+                    m.LastTarget = to;
+                    orders.Add((id, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
+                }
+            }
+            foreach (var (id, from, to, why) in orders)
+                await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, to.X, to.Y, Move, 0xffff, 0x0408),
+                    $"0x01ab monster 0x{id:x} {why}: move from {from} to {to}");
+        }
+    }
+    catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+    {
+        // The connection closed while sending.
+    }
 }
 
 // A spawned monster's id from the argument if it is 0x hex, else the last spawned one.
@@ -399,11 +461,19 @@ static (int X, int Y) NextToPlayer(ClientState conn)
     return (px, py);
 }
 
+// One sender at a time per connection: the Salsa20 keystream must be applied and written in the same order (the read
+// loop, the monster AI tick and the transfer timer all send).
 static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log)
 {
-    if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
-    ciphers.Send.Process(bytes);
-    await stream.WriteAsync(bytes);
+    var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
+    await gate.WaitAsync();
+    try
+    {
+        if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
+        ciphers.Send.Process(bytes);
+        await stream.WriteAsync(bytes);
+    }
+    finally { gate.Release(); }
 }
 
 // The player is always a Witch for now (the only class whose object is mapped); the name is the character's.
@@ -442,6 +512,8 @@ sealed partial class Program
 
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
+
+    internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ConnectionCiphers, SemaphoreSlim> SendGates = new();
 
     // The client's walking speed in grid cells per second at 100% (measured live: ~37 = Character.ot Pathfinding
     // base_speed). Game_WALK_SPEED overrides it.
@@ -591,8 +663,16 @@ static class AreaLayouts
 
 sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
 
-// A monster this connection spawned: label for /mobs and where the server last put it.
-sealed record SpawnedMonster(string Label, int X, int Y);
+// A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
+sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange)
+{
+    public string Label => label;
+    public WalkEstimator Walk { get; set; } = walk;
+    public int AggroRange => aggroRange;
+    public int StopRange => stopRange;
+    public bool Aggro;
+    public (int X, int Y)? LastTarget;
+}
 
 // The last instance list shown (0xae); 0xaf picks a row of it.
 sealed record ChooserList(ushort Area, IReadOnlyList<ulong> Ids);
@@ -631,6 +711,11 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
+    public volatile bool AiEnabled = true, Closed;
+
+    /// <summary>A walk estimate for a server object on this area's walk map.</summary>
+    public WalkEstimator NewWalk(int x, int y, double speed) =>
+        new(x, y, Math.Max(1, speed), Layout.Walkable, Layout.GridW > 0 ? Layout.GridW : 4096, Layout.GridH > 0 ? Layout.GridH : 4096);
 
     /// <summary>A walkable cell a few cells from (x, y), nearest first; (x + 8, y) without a walk map.</summary>
     public (int X, int Y) SpawnNear((int X, int Y) at)

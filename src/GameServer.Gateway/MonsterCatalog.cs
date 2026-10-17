@@ -12,7 +12,8 @@ using GameServer.Core.Protocol.Instance;
 sealed class MonsterCatalog(string folder = "data")
 {
     public sealed record Variety(int Row, string Id, string Name, string BaseType, string? AnimatedObject, IReadOnlyList<string>? Components,
-        int LifeMultiplier = 100, int MonsterType = -1, StateMachineData? StateMachine = null, byte TransitionStates = 1)
+        int LifeMultiplier = 100, int MonsterType = -1, StateMachineData? StateMachine = null, byte TransitionStates = 1,
+        int MovementSpeed = 30, int ObjectSize = 3, int AggroRange = 60)
     {
         public IReadOnlyList<string> ComponentsOrBase => Components ?? MonsterObject.BaseComponents;
         public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase, StateMachine is not null);
@@ -111,7 +112,8 @@ sealed class MonsterCatalog(string folder = "data")
                     components.Count == 0 ? null : components.GetValueOrDefault(baseType),
                     r.GetProperty("LifeMultiplier").GetInt32(),
                     r.GetProperty("MonsterTypesKey").ValueKind == JsonValueKind.Number ? r.GetProperty("MonsterTypesKey").GetInt32() : -1,
-                    stateMachines.GetValueOrDefault(baseType), transitionStates.GetValueOrDefault(baseType, (byte)1)));
+                    stateMachines.GetValueOrDefault(baseType), transitionStates.GetValueOrDefault(baseType, (byte)1),
+                    r.GetProperty("MovementSpeed").GetInt32(), r.GetProperty("ObjectSize").GetInt32(), r.GetProperty("MaxAgroRange").GetInt32()));
             }
         }
         // With object-types.json, a type missing from it has no .ot: do not guess.

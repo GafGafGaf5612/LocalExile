@@ -279,6 +279,9 @@ Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and 
 
 `live.ps1` options:
 - `-NoClient` restarts the servers but keeps the running client.
+- `-Only Gateway` (or `Auth`, `Patch`, comma-separated) rebuilds and restarts only those servers; the client and the
+  other servers keep running. After a Gateway change this is all you need: the client drops to the login screen, log in
+  and Play again.
 - `-NoBuild` skips the builds.
 
 ## Troubleshooting

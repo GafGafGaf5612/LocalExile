@@ -5,7 +5,9 @@
 #   -NoBuild    skip the builds
 #   -Walkmaps   also run scripts/walkmaps/walkmaps.py (needs Python + `pip install frida`): captures the walk map of every
 #               area the client generates into data/walkability/
-param([switch]$NoClient, [switch]$NoBuild, [switch]$Walkmaps)
+#   -Only Gateway[,Auth,Patch]   rebuild and restart only these servers; the others and the client keep running (implies
+#               -NoClient). Restarting the Gateway drops the client to the login screen, but Auth keeps the login session.
+param([switch]$NoClient, [switch]$NoBuild, [switch]$Walkmaps, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -33,11 +35,17 @@ if ($Walkmaps) {
 # Without this the Gateway stops after creating the player and the client never enters the area.
 if (-not $env:Game_GATEWAY_ENTER) { $env:Game_GATEWAY_ENTER = '1' }
 
+$servers = if ($Only) { $Only } else { @('Auth', 'Patch', 'Gateway') }
+if ($Only) { $NoClient = $true }
+$ports = @{ Auth = @(20493); Patch = @(12995, 8080); Gateway = @(6112) }
+
 if (-not $NoClient) { Get-Process -Name 'Game.patched' -ErrorAction SilentlyContinue | Stop-Process -Force }
-Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like '*walkmaps.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+if (-not $Only) {
+    Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*walkmaps.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
 # Stop only our own servers (dotnet) on the dev ports; anything else there is reported, not killed.
-foreach ($port in 20493, 12995, 8080, 6112) {
+foreach ($port in ($servers | ForEach-Object { $ports[$_] })) {
     foreach ($c in Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
         $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
         if ($proc -and $proc.ProcessName -eq 'dotnet') { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
@@ -45,34 +53,40 @@ foreach ($port in 20493, 12995, 8080, 6112) {
     }
 }
 Start-Sleep -Milliseconds 500
-Remove-Item (Join-Path $out 'live-*.log'), (Join-Path $out 'live-*.err'), (Join-Path $out 'walkmaps.*') -ErrorAction SilentlyContinue
+foreach ($s in $servers) {
+    Remove-Item (Join-Path $out "live-$($s.ToLower()).log"), (Join-Path $out "live-$($s.ToLower()).err") -ErrorAction SilentlyContinue
+}
+if (-not $Only) { Remove-Item (Join-Path $out 'walkmaps.*') -ErrorAction SilentlyContinue }
 
 if (-not $NoBuild) {
-    foreach ($p in 'GameServer.Auth', 'GameServer.Patch', 'GameServer.Gateway') {
-        dotnet build (Join-Path $repo "src\$p") -v q -nologo | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "build failed: $p (run: dotnet build src\$p)" }
+    foreach ($s in $servers) {
+        dotnet build (Join-Path $repo "src\GameServer.$s") -v q -nologo | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "build failed: GameServer.$s (run: dotnet build src\GameServer.$s)" }
     }
 }
 
 $bin = 'bin\Debug\net10.0'
-Start-Process dotnet -ArgumentList "src\GameServer.Patch\$bin\GameServer.Patch.dll" -WorkingDirectory $repo -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $out 'live-patch.log') -RedirectStandardError (Join-Path $out 'live-patch.err')
-Start-Process dotnet -ArgumentList "src\GameServer.Gateway\$bin\GameServer.Gateway.dll" -WorkingDirectory $repo -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $out 'live-gateway.log') -RedirectStandardError (Join-Path $out 'live-gateway.err')
-Start-Process dotnet -ArgumentList "src\GameServer.Auth\$bin\GameServer.Auth.dll", 'serve' -WorkingDirectory $repo -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $out 'live-auth.log') -RedirectStandardError (Join-Path $out 'live-auth.err')
+$serverArgs = @{ Auth = @('serve'); Patch = @(); Gateway = @() }
+foreach ($s in 'Patch', 'Gateway', 'Auth') {
+    if ($servers -notcontains $s) { continue }
+    Start-Process dotnet -ArgumentList (@("src\GameServer.$s\$bin\GameServer.$s.dll") + $serverArgs[$s]) -WorkingDirectory $repo `
+        -WindowStyle Hidden -RedirectStandardOutput (Join-Path $out "live-$($s.ToLower()).log") `
+        -RedirectStandardError (Join-Path $out "live-$($s.ToLower()).err")
+}
 
 # The patch server must read the GGPK root hash before the client locks the file.
-$deadline = (Get-Date).AddSeconds(30)
-while (-not (Select-String -Path (Join-Path $out 'live-patch.log') -Pattern 'patching protocol on' -Quiet -ErrorAction SilentlyContinue)) {
-    if ((Get-Date) -gt $deadline) {
-        $err = Get-Content (Join-Path $out 'live-patch.err') -Raw -ErrorAction SilentlyContinue
-        throw "patch server did not start (logs\live-patch.err):`n$err"
+if ($servers -contains 'Patch') {
+    $deadline = (Get-Date).AddSeconds(30)
+    while (-not (Select-String -Path (Join-Path $out 'live-patch.log') -Pattern 'patching protocol on' -Quiet -ErrorAction SilentlyContinue)) {
+        if ((Get-Date) -gt $deadline) {
+            $err = Get-Content (Join-Path $out 'live-patch.err') -Raw -ErrorAction SilentlyContinue
+            throw "patch server did not start (logs\live-patch.err):`n$err"
+        }
+        Start-Sleep -Milliseconds 300
     }
-    Start-Sleep -Milliseconds 300
 }
 Start-Sleep -Seconds 1
-foreach ($name in 'auth', 'gateway') {
+foreach ($name in ($servers | Where-Object { $_ -ne 'Patch' } | ForEach-Object { $_.ToLower() })) {
     $err = Get-Content (Join-Path $out "live-$name.err") -Raw -ErrorAction SilentlyContinue
     if ($err) { throw "$name failed to start (logs\live-$name.err):`n$err" }
 }
@@ -88,4 +102,4 @@ if (-not $NoClient) {
     $p = Start-Process (Join-Path $client 'Game.patched.exe') -ArgumentList '--patching-server', '127.0.0.1:12995' -WorkingDirectory $client -PassThru
     Write-Output "client pid $($p.Id)"
 }
-Write-Output 'servers up'
+Write-Output $(if ($Only) { "restarted: $($Only -join ', ')" } else { 'servers up' })
