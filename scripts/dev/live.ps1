@@ -1,4 +1,4 @@
-# One run against the official client (see GettingStarted.md):
+# One run against the official client (see Agents/GettingStarted.md):
 #   checks the one-time setup, stops anything on the dev ports and the patched client, builds Auth, Patch and Gateway,
 #   starts all three (logs in logs/live-*.log) and launches Client/Game.patched.exe through the local patching server.
 #   -NoClient   keep a running client (it drops to the login screen; log in again)
@@ -12,7 +12,7 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $out = Join-Path $repo 'logs'
 New-Item -ItemType Directory -Force $out | Out-Null
 
-function Need($ok, $message) { if (-not $ok) { throw "setup incomplete: $message (see GettingStarted.md)" } }
+function Need($ok, $message) { if (-not $ok) { throw "setup incomplete: $message (see Agents/GettingStarted.md)" } }
 Need (Get-Command dotnet -ErrorAction SilentlyContinue) '.NET SDK not found (dotnet)'
 Need (Test-Path (Join-Path $repo 'data\login-keys.json')) 'data\login-keys.json missing: run GameServer.Auth keygen'
 Need (Test-Path (Join-Path $repo 'Client\Game.exe')) 'Client\Game.exe missing: copy the client and its PathOfExile.exe'
@@ -41,7 +41,7 @@ foreach ($port in 20493, 12995, 8080, 6112) {
     foreach ($c in Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
         $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
         if ($proc -and $proc.ProcessName -eq 'dotnet') { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-        elseif ($proc) { throw "port $port is used by $($proc.ProcessName) (pid $($proc.Id)); close it or change the port (GettingStarted.md)" }
+        elseif ($proc) { throw "port $port is used by $($proc.ProcessName) (pid $($proc.Id)); close it or change the port (Agents/GettingStarted.md)" }
     }
 }
 Start-Sleep -Milliseconds 500

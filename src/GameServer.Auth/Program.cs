@@ -59,7 +59,7 @@ catch (FormatException ex)
 }
 catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
 {
-    Console.Error.WriteLine($"[auth] file not found: {ex.Message} (run from the repository root; see GettingStarted.md)");
+    Console.Error.WriteLine($"[auth] file not found: {ex.Message} (run from the repository root; see Agents/GettingStarted.md)");
     return 1;
 }
 

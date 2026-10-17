@@ -48,7 +48,7 @@ beyond town.
 
 ## Getting Started
 
-**Full guide: [GettingStarted.md](GettingStarted.md).** It covers every step with its expected output, the edge cases
+**Full guide: [Agents/GettingStarted.md](Agents/GettingStarted.md).** It covers every step with its expected output, the edge cases
 and a troubleshooting table. It is written for people and for AI agents setting this up.
 
 In short (Windows, .NET 10 SDK, a standalone Path of Exile **3.29.3b** client):
@@ -59,7 +59,7 @@ robocopy "<your PoE 3.29.3b folder>" Client /E; Copy-Item Client\PathOfExile.exe
 dotnet run --project src/GameServer.Auth -- keygen Client/Game.exe
 dotnet run --project src/GameServer.Auth -- patch Client/Game.exe Client/Game.patched.exe
 dotnet run --project src/GameServer.Patch -- gateway --login 127.0.0.1:20493
-# create an account + character: GameServer.Host and GameServer.DevClient (GettingStarted.md, step 7)
+# create an account + character: GameServer.Host and GameServer.DevClient (Agents/GettingStarted.md, step 7)
 .\scripts\dev\live.ps1 -Walkmaps   # -Walkmaps is optional: needs `pip install frida`, captures walk maps
 ```
 
