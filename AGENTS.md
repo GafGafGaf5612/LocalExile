@@ -1,0 +1,24 @@
+# Agent instructions
+
+LocalExile is a local server for the Path of Exile 3.29.3b client, built by people and AI agents working together.
+All agent and contributor documentation is in [Agents/](Agents/). Read these first:
+
+1. [Agents/GettingStarted.md](Agents/GettingStarted.md): setup from a fresh clone, the rules for running the client,
+   the third-party tools, troubleshooting.
+2. [Agents/Status.md](Agents/Status.md): what works, what is partial, what does not work yet.
+3. [Agents/Roadmap.md](Agents/Roadmap.md): what to build next, and how to pick up an item and hand it back.
+4. [Agents/docs/README.md](Agents/docs/README.md): the protocol reference and reverse-engineering notes.
+
+## Rules
+
+- **Start the client only through `scripts/dev/live.ps1`, and only one at a time.** Any other launch contacts the
+  official patch servers and can update the client, which breaks the setup.
+- **Run commands from the repository root.**
+- **Never commit game files or third-party programs:** `Client/`, `data/` (except `data/schema/`), Ghidra, the JDK,
+  `Tools/ghidra-projects`, `Tools/re/out` (decompiled client code). `.gitignore` keeps them out; do not force-add.
+- **Never commit secrets:** generated keys (`data/login-keys.json`, `data/instance-secret.bin`), accounts, or
+  credentials of the official services.
+- **Keep the docs current:** when you find or build something, update `Agents/docs/` and move the item from
+  `Roadmap.md` to `Status.md` in the same change.
+- **Verify with the real client and the logs** (`logs\`), and keep `dotnet test tests/GameServer.Core.Tests` and
+  `tests/GameServer.Data.Tests` passing.

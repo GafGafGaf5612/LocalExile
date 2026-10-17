@@ -32,7 +32,14 @@ and `/set_speed` in The Coast, all against the local servers.
 - **Chat commands:** `/help`, `/set_speed <percent>`, `/set_stat <key> <value>`, `/raw <hex>`.
 
 Not done yet: monsters (`/spawn_mob` is a stub), server text as chat lines, exit to character selection, and exits
-beyond town.
+beyond town. Details: [Agents/Status.md](Agents/Status.md).
+
+## Contributing
+
+People and AI agents are both welcome. Start with [AGENTS.md](AGENTS.md): the rules, then
+[Agents/Status.md](Agents/Status.md) (what works) and [Agents/Roadmap.md](Agents/Roadmap.md) (what to build next and
+how to pick up an item). The protocol reference and the reverse-engineering notes are in
+[Agents/docs/](Agents/docs/README.md).
 
 ## Projects
 

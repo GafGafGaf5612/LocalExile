@@ -14,7 +14,7 @@ what success looks like and what to do when it fails. It is written to be follow
 3. **Run every command from the repository root.** The tools read and write `data/` and `Client/` relative to the
    current directory.
 4. **Never commit `data/` or `Client/`.** They hold your keys, accounts and the game. Both are git-ignored; keep it
-   that way.
+   that way. The one exception is `data/schema/`, the community table schema, which is tracked.
 5. **Run `live.ps1` directly** (`.\scripts\dev\live.ps1` in a PowerShell session). Do not wrap it in a pipe or
    capture its output (for example `powershell -File live.ps1 | Out-String`). The servers it starts keep the pipe
    open, so the call never returns. Read `logs\` instead.
@@ -49,7 +49,8 @@ them yourself. Programs go under `Tools\` at the repository root (git-ignored), 
 | [Ghidra](https://github.com/NationalSecurityAgency/ghidra/releases) | 12.1.4 (`ghidra_12.1.4_PUBLIC_20260921`) | `Tools\ghidra_12.1.4_PUBLIC_20260921\ghidra_12.1.4_PUBLIC\` | static analysis: decompiling, references, the Java scripts in `scripts/re/ghidra/` |
 | [Microsoft Build of OpenJDK](https://learn.microsoft.com/java/openjdk/download) | 21 (21.0.12.1) | `Tools\jdk-21\` (so `Tools\jdk-21\bin\java.exe` exists) | runs Ghidra |
 | [Frida](https://frida.re) | Python package `frida` | `pip install frida` (or `.venv`, step 8) | live tracing of the client: `scripts/re/frida/*.js`, walk maps |
-| REA (reverse-engineering MCP server) | 6.5.0 (`rea` on PATH) | anywhere on PATH | lets an AI agent drive Ghidra and Frida; see `.mcp.json` below |
+| REA (reverse-engineering MCP server), npm package `rea-agents` | 6.5.0 | `npm install -g rea-agents` (needs Node.js, below); check with `rea --version` | lets an AI agent drive Ghidra and Frida; see `.mcp.json` below |
+| [Git for Windows](https://git-scm.com/download/win) (Git Bash) | any | `bash` on PATH | `scripts/re/ghidra/g.sh`. Without it, use the PowerShell runner `scripts/re/ghidra/run.ps1` |
 | Python packages `pefile`, `capstone` | 2024.8.26, 5.0.7 | `pip install pefile capstone` | the helpers in `scripts/re/*.py` (disassembly, string and vtable search) |
 | [Node.js](https://nodejs.org) + npm package `ooz-wasm` | Node 24, ooz-wasm 2.x | Node on PATH; then `cd Tools\ooz; npm install` | Oodle decompression of the game's bundles, for `scripts/re/ggdump` and `Tools/PoEDataExtractor` |
 | [dat-schema](https://github.com/poe-tool-dev/dat-schema) `schema.min.json` | release matching 3.29 | already in the repository: `data\schema\schema.min.json` (MIT, see `data\schema\LICENSE`) | column layouts of the game's `.datc64` tables, for `Tools/PoEDataExtractor` |
@@ -63,6 +64,16 @@ executable is large):
 ```
 
 It creates `Tools\ghidra-projects\poe3293`, which `scripts/re/ghidra/g.sh` and `run.ps1` open read-only.
+
+Extracting the game's data tables (needs Node.js and `npm install` in `Tools\ooz`; about 20 seconds):
+
+```powershell
+dotnet run --project Tools/PoEDataExtractor -- decode Client/Content.ggpk
+```
+
+Success: the summary ends with `schema mismatch: 0`, and `data\tables\` holds about 940 `<Table>.json` files
+(git-ignored: they are game data), with the full report in `data\extract-report.json`. Code that needs game data (stats, levels, areas) reads these
+files; `ot_components.py --all` reads them too. `--out <dir>` writes elsewhere, and `--schema <file>` uses another schema.
 
 For an AI agent, register REA as an MCP server in `.mcp.json` at the repository root (git-ignored, because the paths are
 specific to your PC):

@@ -1,7 +1,8 @@
 # Documentation index
 
-Private server for the Path of Exile 3.29.3b client. Where things stand (2026-10-16): the patched client logs in to our
-servers and reaches the in-game HUD in Lioneye's Watch. Start with **[protocol/00-overview.md](protocol/00-overview.md)**.
+Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b client. What works now is in
+[../Status.md](../Status.md), what to build next in [../Roadmap.md](../Roadmap.md). Start with
+**[protocol/00-overview.md](protocol/00-overview.md)**.
 
 ## Protocol (consolidated, current)
 | Doc | Content |
@@ -14,18 +15,30 @@ servers and reaches the in-game HUD in Lioneye's Watch. Start with **[protocol/0
 | [protocol/05-inventories-and-ui.md](protocol/05-inventories-and-ui.md) | inventory manager, 0xc0, Inventories.dat, 0x3d passive slots |
 | [protocol/07-latency-visibility-movement.md](protocol/07-latency-visibility-movement.md) | tick/ack and HNC, wake zone (visibility), movement |
 | [protocol/08-area-transitions.md](protocol/08-area-transitions.md) | area exits: AreaTransition object, blob, positions from DGR/.arm named points (The Coast in Lioneye's Watch) |
+| [protocol/09-area-change.md](protocol/09-area-change.md) | changing area through an exit, instance details (0x27), the instance chooser |
+| [protocol/10-chat-and-commands.md](protocol/10-chat-and-commands.md) | chat input (0x15), server replies, stats update (0x1b3), dev commands |
 | [protocol/06-debugging-log.md](protocol/06-debugging-log.md) | every live run, crash and fix, and lessons |
 | [protocol/address-index.md](protocol/address-index.md) | all client addresses by subsystem |
+
+## Generated references
+| Doc | Content |
+|---|---|
+| [protocol/schema.md](protocol/schema.md) ([json](protocol/schema.json)) | read sequence of every component deserializer and of 333 instance/world message classes |
+| [re/components.md](re/components.md) ([json](re/components.json)) | every component class the client registers: pool, factory, vtables |
+| [re/object-types.md](re/object-types.md) | component list of every object type (`Metadata/...`), from the `.ot` files |
+
+How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 
 ## How-to
 | Doc | Content |
 |---|---|
-| [dev/live-testing.md](dev/live-testing.md) | running the real client safely, expected output, troubleshooting, env vars |
+| [../GettingStarted.md](../GettingStarted.md) | setup from a fresh clone, third-party tools, troubleshooting |
 | [re/tooling.md](re/tooling.md) | Ghidra headless scripts, Python helpers, GGPK dump tool, Frida through REA, recipes |
+| [dev/live-testing.md](dev/live-testing.md) | the older live-testing notes (GettingStarted supersedes them) |
 | [dev-server.md](dev-server.md) | the JSON-lines dev server, `GameServer.Auth` and `GameServer.Patch` usage |
 
 ## Working notes (history)
 - `re/007`–`010`: the notes these documents were consolidated from (login TCP, handshake, message tables, live instance
   notes). `re/009` still has the most complete login message tables.
 - `re/001`–`006`: early notes with known errors (for example "login is HTTPS"). Verify before use.
-- `superpowers/`: the original design spec and milestone plan.
+- `superpowers/` and `history/`: the original design spec, milestone plan and agent prompt.

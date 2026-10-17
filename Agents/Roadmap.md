@@ -1,0 +1,105 @@
+# Roadmap
+
+What to build next, for anyone (person or agent) who wants to help. What already works is in [Status.md](Status.md).
+
+## How to pick up an item
+
+1. Open a GitHub issue named after the item (or comment on an existing one) so two people don't do the same work.
+2. Read the docs the item links to. Most items start with reverse engineering: find how the client reads a message,
+   then send it from the server. [docs/re/tooling.md](docs/re/tooling.md) has the workflow and recipes.
+3. Verify with the real client through `.\scripts\dev\live.ps1`, and check the logs in `logs\`. Add tests for any
+   message layout you implement (see `tests/GameServer.Core.Tests`).
+4. In the same pull request: document what you found in `docs/protocol/` (new message ids, layouts, client addresses
+   in [address-index.md](docs/protocol/address-index.md)), move the item to [Status.md](Status.md), and remove or
+   update it here.
+
+Items are in rough priority order within each section. "Known" says what is already found; "Start" says where to look.
+
+## 1. Quality of life
+
+### Exit to character selection (Esc)
+- **Known:** Esc → "Exit to character selection" sends C→S 0x153 (2 bytes). Nothing answers, so the client waits forever.
+- **Start:** find what the client expects after 0x153 (probably a reply on the instance connection, then the login
+  connection's character list again). [09](docs/protocol/09-area-change.md) §5.
+- **Done when:** Esc returns to character select and Play enters the game again.
+
+### Chat lines and the global channel
+- **Known:** C→S 0x15 (chat text) is parsed; replies use S→C 0x0d (message box). 0x12d shows BackendErrors rows, 0x157 is
+  a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".
+- **Start:** [10](docs/protocol/10-chat-and-commands.md) §5. Find the S→C message that adds a line (sender + text) to the
+  chat panel, and the channel join request and its answer.
+- **Done when:** command replies and server messages appear as chat lines, and the channel join stops timing out.
+
+### Arrival points next to exits
+- **Known:** exit positions come from the area's DGR/.arm named points ([08](docs/protocol/08-area-transitions.md) §3).
+  The Coast spawns the player on its deepest walkable cell.
+- **Start:** [08](docs/protocol/08-area-transitions.md) §4, [09](docs/protocol/09-area-change.md) §5.
+- **Done when:** coming back from The Coast puts the player next to The Coast exit in town, and entering The Coast
+  puts them at its entrance.
+
+## 2. The world
+
+### Exits in every area
+- **Known:** an exit is an AreaTransition object (0x2b9) with a 41-byte component blob; its position and target come
+  from the area's layout files. Only Lioneye's Watch → The Coast is placed.
+- **Start:** [08](docs/protocol/08-area-transitions.md) ("All zones: what it takes"), `AreaLayouts` in the Gateway.
+  `scripts/re/ot_components.py` lists the components of any object type.
+- **Done when:** The Coast's exits (back to town, to The Mud Flats) work, then the rest of Act 1.
+
+### Monsters (`/spawn_mob`)
+- **Known:** a monster is a 0x2b9 object of a `Metadata/Monsters/...` type. Its component list comes from the `.ot`
+  chain; [object-types.md](docs/re/object-types.md) and [components.md](docs/re/components.md) have every type's
+  components, and [schema.md](docs/protocol/schema.md) the read sequence of each component deserializer.
+- **Start:** [10](docs/protocol/10-chat-and-commands.md) §5, [04](docs/protocol/04-player-entity.md) (how the
+  player's blob was built and traced with `scripts/re/frida/check-components.js`).
+- **Done when:** `/spawn_mob <id>` puts a visible, idle monster next to the player.
+
+### NPCs in town
+- Same object mechanism as monsters, with NPC types and their dialogue components. Depends on the monster work.
+
+## 3. Gameplay
+
+### A correct stat table
+- **Known:** the client's stat keys (for example `0xf5` = `movement_velocity_+%`) did not match the rows of the
+  extracted `Stats.json` with the old schema. `data/schema/` now has a newer dat-schema that decodes every table without
+  a mismatch.
+- **Start:** extract the tables again ([GettingStarted](GettingStarted.md), "Extracting the game's data tables") and
+  compare `Stats.json` with keys read from the client (Frida on the stat getter `0x1424cfa40`).
+- **Done when:** `/set_stat <name> <value>` works by stat name.
+
+### Character progression
+- Use `data/tables/ExperienceLevels.json` and `Characters.json` (class base life, mana, attributes) through an adapter
+  in Host or Gateway, keeping `GameServer.Core` free of game-data files.
+- The player blob's stats component ([04](docs/protocol/04-player-entity.md), "Open") needs the pairs the client
+  expects for a real character.
+
+### Classes other than the Witch
+- Characters of any class can be created, but every one appears as a Witch. The player object type and blob are built
+  for `Metadata/Characters/Int/Int`.
+
+### Items and inventories
+- **Known:** inventories are sent empty (0xc0); item serialization is at `0x1421ec1d0`.
+  [05](docs/protocol/05-inventories-and-ui.md) "Open".
+- **Done when:** a new character has its starting weapon and flasks, then items can be moved and dropped.
+
+### Skills and combat
+- Nothing is mapped yet. Starts with the client's skill-use messages and the server's answers.
+
+### Saving progress
+- Persist the character's area, position, level and items in the account store (`GameServer.Storage`).
+
+## 4. Server design
+
+- **Server-side movement:** validate moves against the walk map instead of only estimating
+  ([07](docs/protocol/07-latency-visibility-movement.md) "Open"; messages 0x0099 and 0x004e).
+- **HNC packets from the client** (type 0xDD): what the server should do with them
+  ([07](docs/protocol/07-latency-visibility-movement.md)).
+- **`GameServer.Sim`** is an empty placeholder: a home for a server-side world simulation (monsters, combat) when it is
+  needed.
+- **Several players** in one instance: the instance registry already supports it; the Gateway sends only the local player.
+
+## 5. Project
+
+- Rebuild the reverse-engineering setup from a fresh clone (Ghidra import, REA, Frida) and fix whatever the guide misses.
+- Unnamed fields: [04](docs/protocol/04-player-entity.md), [05](docs/protocol/05-inventories-and-ui.md) and
+  [09](docs/protocol/09-area-change.md) list fields whose meaning is unknown. Naming them is a good first task.
