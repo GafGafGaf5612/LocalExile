@@ -127,11 +127,25 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   - Blob: 112 bytes with the base list, plus the Animated path (198 bytes for Hungry Corpse).
 - **Other component lists.** Of the 10 691 varieties, 4 513 have exactly the base list; most others append
   DiesAfterTime, StateMachine or Transitionable. The blob also writes Transitionable (`0x1421c24b0`, u8 flags),
-  MinimapIcon (u8), and Preload, Functions, PlayerClass (no data). **StateMachine** (`0x141e3ee40`: 2 bytes, then
-  entries per state of the type's .ot) and **DiesAfterTime** (live vtable unknown: `ret` or `0x141e40a80`) are refused
-  with a message box. The Gateway knows each type's list from `data/object-types.json`
+  MinimapIcon (u8), Preload, Functions, PlayerClass (no data) and StateMachine (below): **8 000 varieties** are
+  supported. **DiesAfterTime** (live vtable unknown: `ret` or `0x141e40a80`) is refused with a message box. The Gateway
+  knows each type's list and StateMachine data from `data/object-types.json`
   (`python -I scripts/re/ot_components.py --all --json data/object-types.json`, about 2 minutes); without it, it
-  assumes the base list.
+  assumes the base list and refuses StateMachine types.
+- **StateMachine** (live vtable `ClientInternalStateMachine` `0x1435da8b8`, slot 17 `0x142191f10` → base
+  `0x141e3ee40`):
+  ```
+  u8 shared-state count, u8 shared-timer count       (the client throws unless both match the type)
+  per shared state, in definition order:  compact int value (0x141e490e0), u8 flags (0x02 keeps the sent value)
+  per shared timer:                       u32, u8
+  ```
+  Only states declared with `define_shared_state` and timers with `define_shared_timer` in the type's .ot chain
+  (top-level StateMachine sections, parents first; a string is a `;` list of `name` or `name = default`; a
+  redefinition keeps the first position and takes the later default) are networked; `define_state` / `define_timer`
+  stay on the client. `ot_components.py` extracts them (`shared_states`, `shared_timers`); the Gateway sends the
+  defaults. Live 2026-10-17: Frost Bishop (1 state, 4 bytes), Arakaali (4 states, 10 bytes) and Haku (8 states, one
+  defaulting to 1, and 2 timers: 28 bytes) all consumed exactly. Arakaali showed no hover nameplate: bosses carry
+  `boss_life_bar` / `disable_life_bar` / `global_first_aggro` states, probably the top-of-screen boss bar on aggro.
 - **Placement.** The nearest walkable cell 6–20 cells from the server's estimate of the player; ids from 0x3000. The
   world is active, so 0x2b9 is created at once; 0x1a9 puts it in the wake zone.
 
@@ -140,5 +154,5 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 - The chat line message, and the channel join request and its answer.
 - A correct stat id ↔ name table: re-extract Stats.dat from this client's GGPK, or find why our table's row order
   differs.
-- Monsters: mods (the ObjectMagicProperties mod lists; rarity life bonuses come from mods), the StateMachine and DiesAfterTime types (verify the Transitionable / MinimapIcon writers live
-  too), AI and combat.
+- Monsters: mods (the ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), DiesAfterTime types (verify the Transitionable / MinimapIcon
+  writers live too), AI and combat.

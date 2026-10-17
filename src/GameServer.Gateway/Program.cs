@@ -318,7 +318,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         uint id = conn.NextObjectId++;
         // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
         uint life = (uint)(Monsters.BaseLife(variety, level) ?? 100);
-        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, variety.AnimatedObject, rarity, name);
+        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, variety.AnimatedObject, rarity, name, variety.StateMachine);
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),

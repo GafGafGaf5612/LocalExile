@@ -85,7 +85,8 @@ TOKEN = re.compile(r'"[^"]*"|\'[^\']*\'|[{}=]|[^\s{}=]+')
 def parse(text):
     """-> {extends: [...], abstract, sections: [names], client: [names], server: [names]}"""
     toks = TOKEN.findall(re.sub(r"//[^\n]*", "", text))
-    r = {"extends": [], "abstract": False, "sections": [], "client": [], "server": [], "version": None}
+    r = {"extends": [], "abstract": False, "sections": [], "client": [], "server": [], "version": None,
+         "shared_states": [], "shared_timers": []}
     i = 0
 
     def block(i):  # i at '{' -> index after matching '}', plus the names of sections directly inside
@@ -116,10 +117,36 @@ def parse(text):
                 r[t] += inner
             elif t != "GEAL":
                 r["sections"].append(t)
+                if t == "StateMachine":
+                    state_machine(toks[i + 2:j - 1], r)
             i = j
         else:
             i += 1
     return r
+
+
+def state_machine(toks, r):
+    """Networked StateMachine data (0x141e3ee40 reads it): `define_shared_state = "a; b = 2;"` -> [(a, 0), (b, 2)],
+    `define_shared_timer = "t;"` -> [t]. Plain define_state / define_timer stay on the client. Only top-level
+    tokens of the section: nested blocks (event handlers) are skipped."""
+    depth = 0
+    for k, t in enumerate(toks):
+        if t == "{": depth += 1
+        elif t == "}": depth -= 1
+        elif depth == 0 and t in ("define_shared_state", "define_shared_timer") and k + 2 < len(toks) and toks[k + 1] == "=":
+            for item in toks[k + 2].strip("\"'").split(";"):
+                name, _, value = item.partition("=")
+                name = name.strip()
+                if not name:
+                    continue
+                if t == "define_shared_timer":
+                    r["shared_timers"].append(name)
+                else:
+                    try:
+                        v = int(value.strip() or 0)
+                    except ValueError:
+                        v = 0
+                    r["shared_states"].append([name, v])
 
 
 def chain(type_path, files, seen=None):
@@ -149,8 +176,18 @@ def merge(type_path, files, otc):
         for s in (f or {}).get("client", []) + otc.get(p, []):
             if s not in comps:
                 comps.append(s)
+    # Shared states/timers in definition order, parents first; a redefinition keeps the first position and takes the
+    # later default.
+    states, timers = {}, []
+    for _, f in ch:
+        for name, v in (f or {}).get("shared_states", []):
+            states[name] = v
+        for name in (f or {}).get("shared_timers", []):
+            if name not in timers:
+                timers.append(name)
     return {"type": type_path, "chain": [p for p, _ in ch], "missing": [p for p, f in ch if f is None],
-            "abstract": bool(files.get(type_path, {}).get("abstract")), "components": comps, "read": read}
+            "abstract": bool(files.get(type_path, {}).get("abstract")), "components": comps, "read": read,
+            "shared_states": [[k, v] for k, v in states.items()], "shared_timers": timers}
 
 
 def load(types):

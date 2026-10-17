@@ -12,10 +12,10 @@ using GameServer.Core.Protocol.Instance;
 sealed class MonsterCatalog(string folder = "data")
 {
     public sealed record Variety(int Row, string Id, string Name, string BaseType, string? AnimatedObject, IReadOnlyList<string>? Components,
-        int LifeMultiplier = 100, int MonsterType = -1)
+        int LifeMultiplier = 100, int MonsterType = -1, StateMachineData? StateMachine = null)
     {
         public IReadOnlyList<string> ComponentsOrBase => Components ?? MonsterObject.BaseComponents;
-        public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase);
+        public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase, StateMachine is not null);
         public override string ToString() => $"{Name} ({Id}, row {Row})";
     }
 
@@ -81,6 +81,7 @@ sealed class MonsterCatalog(string folder = "data")
         string varieties = Path.Combine(folder, "tables", "MonsterVarieties.json");
         if (!File.Exists(varieties)) return ([], $"{varieties} is missing: extract the game tables (Tools/PoEDataExtractor)");
         var components = new Dictionary<string, IReadOnlyList<string>>();
+        var stateMachines = new Dictionary<string, StateMachineData>();
         string types = Path.Combine(folder, "object-types.json");
         if (File.Exists(types))
         {
@@ -88,8 +89,11 @@ sealed class MonsterCatalog(string folder = "data")
             foreach (var t in doc.RootElement.GetProperty("types").EnumerateArray())
             {
                 int read = t.GetProperty("read").GetInt32();
-                components[t.GetProperty("type").GetString()!] =
-                    [.. t.GetProperty("components").EnumerateArray().Take(read).Select(c => c.GetString()!)];
+                string type = t.GetProperty("type").GetString()!;
+                components[type] = [.. t.GetProperty("components").EnumerateArray().Take(read).Select(c => c.GetString()!)];
+                // Files generated before the StateMachine data have no "shared_states": those types stay unsupported.
+                if (t.TryGetProperty("shared_states", out var ss) && t.TryGetProperty("shared_timers", out var st))
+                    stateMachines[type] = new([.. ss.EnumerateArray().Select(e => e[1].GetInt32())], st.GetArrayLength());
             }
         }
         var rows = new List<Variety>();
@@ -103,7 +107,8 @@ sealed class MonsterCatalog(string folder = "data")
                 rows.Add(new Variety(rows.Count, id, r.GetProperty("Name").GetString() ?? "", baseType, ao,
                     components.Count == 0 ? null : components.GetValueOrDefault(baseType),
                     r.GetProperty("LifeMultiplier").GetInt32(),
-                    r.GetProperty("MonsterTypesKey").ValueKind == JsonValueKind.Number ? r.GetProperty("MonsterTypesKey").GetInt32() : -1));
+                    r.GetProperty("MonsterTypesKey").ValueKind == JsonValueKind.Number ? r.GetProperty("MonsterTypesKey").GetInt32() : -1,
+                    stateMachines.GetValueOrDefault(baseType)));
             }
         }
         // With object-types.json, a type missing from it has no .ot: do not guess.

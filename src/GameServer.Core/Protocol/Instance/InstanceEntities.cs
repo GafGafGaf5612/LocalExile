@@ -205,7 +205,7 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 /// to types with a Sector component, which monsters lack.</para>
 /// </summary>
 public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyList<string> Components, string? AnimatedObject = null,
-    MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null)
+    MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null, StateMachineData? StateMachine = null)
 {
     /// <summary>Deserialized components of `Metadata/Monsters/Monster` in read order (scripts/re/ot_components.py).</summary>
     public static readonly string[] BaseComponents =
@@ -214,20 +214,21 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 
     /// <summary>Components a type may add after the base list that this blob can write. StateMachine (per-type state
     /// lists from the .ot) and DiesAfterTime (live vtable unknown) are not handled yet.</summary>
-    static readonly HashSet<string> Extras = ["Transitionable", "MinimapIcon", "Preload", "Functions", "PlayerClass"];
+    static readonly HashSet<string> Extras = ["Transitionable", "MinimapIcon", "Preload", "Functions", "PlayerClass", "StateMachine"];
 
     /// <summary>The registered type path of a variety at a level (1..100), after S→C 0x20 has registered it:
     /// "&lt;variety Id&gt;@&lt;level&gt;" (0x141ec2540; the Monster type parses the number after the last '@').</summary>
     public static string TypePath(string varietyId, byte level) => $"{varietyId}@{level}";
 
     /// <summary>Whether <see cref="Blob"/> can serialize a type with these deserialized components.</summary>
-    public static bool CanSerialize(IReadOnlyList<string> components) =>
+    /// StateMachine needs the type's shared states and timers (<see cref="StateMachineData"/>).
+    public static bool CanSerialize(IReadOnlyList<string> components, bool haveStateMachine = false) =>
         components.Count >= BaseComponents.Length && components.Take(BaseComponents.Length).SequenceEqual(BaseComponents) &&
-        components.Skip(BaseComponents.Length).All(Extras.Contains);
+        components.Skip(BaseComponents.Length).All(c => Extras.Contains(c) && (c != "StateMachine" || haveStateMachine));
 
     public byte[] Blob()
     {
-        if (!CanSerialize(Components)) throw new ArgumentException($"unsupported components: {string.Join(", ", Components)}");
+        if (!CanSerialize(Components, StateMachine is not null)) throw new ArgumentException($"unsupported components: {string.Join(", ", Components)}");
         var w = new BlobWriter();
         w.U8(0);            // object flags
         w.U8(0);            // base data entry count
@@ -259,6 +260,15 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 case "Actor": w.WStr32("").U16(0).U8(0).U32(0).U32(0).U8(0).U8(0); break;
                 case "Transitionable": w.U8(0); break;   // 0x1421c24b0: u8 flags
                 case "MinimapIcon": w.U8(0); break;      // slot 20 0x141e6f5d0: u8 flags
+                // 0x141e3ee40: u8 shared-state count, u8 shared-timer count (the client throws unless they match the
+                // type); per define_shared_state a compact int value + u8 flags (0x02 keeps the sent value), per
+                // define_shared_timer a u32 + u8. The .ot defaults are sent.
+                case "StateMachine":
+                    var sm = StateMachine!;
+                    w.U8((byte)sm.SharedStates.Count).U8((byte)sm.SharedTimers);
+                    foreach (int v in sm.SharedStates) { CompactInt(w, v); w.U8(0); }
+                    for (int i = 0; i < sm.SharedTimers; i++) w.U32(0).U8(0);
+                    break;
                 // BaseEvents, Pathfinding, Monster, Preload, Functions, PlayerClass: no data.
             }
         }
@@ -268,9 +278,22 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 
     private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
 
+    /// <summary>Signed compact int as the blob reader 0x141e490e0 reads it (big-endian groups: 1 byte for -0x40..0x3f,
+    /// 0x80 + 14 bits, 0xc0 + 21 bits, 0xe0 + 28 bits), the same encoding as InstanceProtocol.CompactInt.</summary>
+    static void CompactInt(BlobWriter w, int v)
+    {
+        var lw = new LoginWriter();
+        InstanceProtocol.CompactInt(lw, v);
+        foreach (byte b in lw.ToArray()) w.U8(b);
+    }
+
     /// <summary>ObjectMagicProperties flags bit 3: identified (+0x78); bit 7: a custom name follows.</summary>
     const ushort Identified = 0x08, CustomName = 0x80;
 }
+
+/// <summary>A type's networked StateMachine data: the define_shared_state defaults in order and the number of
+/// define_shared_timer entries (scripts/re/ot_components.py "shared_states" / "shared_timers").</summary>
+public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int SharedTimers);
 
 /// <summary>ObjectMagicProperties rarity (flags bits 0-2 → +0x7c).</summary>
 public enum MonsterRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }

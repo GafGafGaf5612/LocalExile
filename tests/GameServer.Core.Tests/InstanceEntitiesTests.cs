@@ -101,6 +101,19 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Monster_state_machine_writes_shared_states_and_timers()
+    {
+        string[] list = [.. MonsterObject.BaseComponents, "StateMachine"];
+        Assert.False(MonsterObject.CanSerialize(list));
+        Assert.True(MonsterObject.CanSerialize(list, haveStateMachine: true));
+        byte[] plain = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents).Blob();
+        byte[] b = new MonsterObject(1, 2, 100, list, StateMachine: new([0, 2, 5000], 1)).Blob();
+        // counts 03 01; states: compact 0, 2, 5000 (0x80 | 0x13, 0x88) each + u8 flags 0; one timer u32 + u8; then tasks.
+        Assert.Equal("0301" + "0000" + "0200" + "938800" + "0000000000" + "00",
+            Convert.ToHexString(b.AsSpan(plain.Length - 1)));
+    }
+
+    [Fact]
     public void Monster_blob_refuses_components_it_cannot_write()
     {
         Assert.False(MonsterObject.CanSerialize([.. MonsterObject.BaseComponents, "StateMachine"]));
