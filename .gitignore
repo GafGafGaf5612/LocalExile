@@ -48,6 +48,8 @@ TestResults/
 # --- Node / Python ---
 node_modules/
 __pycache__/
+.venv*/
+venv/
 *.pyc
 
 # --- Logs / temp ---

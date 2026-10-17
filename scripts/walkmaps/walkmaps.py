@@ -78,6 +78,8 @@ def on_message(message, data, out):
     kind = payload.get("type")
     if kind == "ready":
         log(f"hook installed in {payload.get('module')}")
+    elif kind == "refused":
+        log(f"not hooking: {payload.get('reason')}")
     elif kind == "skip":
         log(f"ignored a grid with unexpected size {payload}")
     elif kind == "error":
