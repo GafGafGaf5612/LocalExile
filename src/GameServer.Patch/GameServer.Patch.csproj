@@ -9,6 +9,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- `dotnet run` from the repository root must work on Client/ and data/ there (the Web SDK default is the project folder). -->
+    <RunWorkingDirectory>$(MSBuildStartupDirectory)</RunWorkingDirectory>
   </PropertyGroup>
 
 </Project>

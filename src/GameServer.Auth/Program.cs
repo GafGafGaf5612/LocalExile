@@ -18,6 +18,8 @@ using GameServer.Storage;
 const string DefaultKeys = "data/login-keys.json";
 string cmd = args.Length > 0 ? args[0] : "serve";
 
+try
+{
 switch (cmd)
 {
     case "keygen" when args.Length >= 2:
@@ -48,6 +50,17 @@ switch (cmd)
     default:
         Console.Error.WriteLine("usage: GameServer.Auth keygen <Game.exe> [keys.json] | patch <Game.exe> <out.exe> [keys.json] | serve [keys.json]");
         return 2;
+}
+}
+catch (FormatException ex)
+{
+    Console.Error.WriteLine($"[auth] {ex.Message}: the file is not the 3.29.3b client executable (PathOfExile.exe copied to Client/Game.exe).");
+    return 1;
+}
+catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+{
+    Console.Error.WriteLine($"[auth] file not found: {ex.Message} (run from the repository root; see GettingStarted.md)");
+    return 1;
 }
 
 static async Task Serve(LoginServerKeys keys)

@@ -26,7 +26,20 @@ using GameServer.Data.Ggpk;
 //                                         is saved once to data/gateway_list.original.txt
 //   gateway [ggpk] --restore              write the saved original back
 
-if (args.Length > 0 && args[0] is "root-hash" or "gateway") return GgpkTool(args);
+if (args.Length > 0 && args[0] is "root-hash" or "gateway")
+{
+    try { return GgpkTool(args); }
+    catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+    {
+        Console.Error.WriteLine($"[patch] GGPK not found ({ex.Message}). Copy the standalone client into Client/ (Client/Content.ggpk) and run from the repository root.");
+        return 1;
+    }
+    catch (IOException ex)
+    {
+        Console.Error.WriteLine($"[patch] cannot open the GGPK ({ex.Message}). Close the client first.");
+        return 1;
+    }
+}
 
 bool passthroughFlag = args.Contains(PatchServerConfig.PassthroughFlag);
 args = args.Where(a => a != PatchServerConfig.PassthroughFlag).ToArray();
