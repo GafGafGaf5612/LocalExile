@@ -2,7 +2,8 @@
 
 Status (live, 2026-10-16): everything typed in the chat box reaches the Gateway. Slash commands run on the server and
 answer with a message box. `/set_speed` works since 2026-10-17: the client reads the new `movement_velocity_+%` and
-walks faster. The first version sent the wrong key (see §3). `/spawn_mob` is a stub.
+walks faster. The first version sent the wrong key (see §3). `/spawn_mob` works since 2026-10-17: it puts a visible,
+idle monster next to the player (§5).
 
 ## 1. C→S 0x15: chat input
 
@@ -66,15 +67,67 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/raw <hex>` | sends the bytes as one S→C message (dev probe; spaces allowed) |
 | `/set_speed <percent>` | 0x1b3 `movement_velocity_+%` = percent − 100 on the player; the server's walk estimate uses 37 × percent / 100 cells/s |
 | `/set_stat <client key> <value>` | 0x1b3 for any stat, by client key (not the Stats.json row) |
-| `/spawn_mob <id>` | not implemented: monster objects need their own component data (see below) |
+| `/spawn_mob <row, Id or name>[@level]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), a few cells from the player (§5) |
 
 Every player can use every command; there are no permissions yet.
 
-## 5. Open
+## 5. Monsters (`/spawn_mob`)
+
+**Live 2026-10-17:** `/spawn_mob ZombieBite@13` three times put three Hungry Corpses next to the player, standing
+idle, each with an "Unidentified" tag. `check-components.js` traced all three: 11 components read in the order below,
+198 bytes consumed, 0 left. Code: `MonsterObject`, `InstanceEntities.MonsterTypes` (`InstanceEntities.cs`),
+`MonsterCatalog.cs` and the `spawn_mob` command in the Gateway. Tests: `InstanceEntitiesTests.Minimal_monster_blob_layout`,
+`Monster_types_message_and_type_path`.
+
+Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**, **0x1a9**.
+
+- **Type.** The object-type register ([04](04-player-entity.md) §1) files every row of the 0x31a-byte table, which is
+  **MonsterVarieties.dat** (10 691 rows × 0x31a in 3.29.3b), under the row's `Id` with `BaseMonsterTypeIndex` (row
+  +0x48) as its .ot, e.g. `Metadata/Monsters/Zombies/ZombieBite` (Hungry Corpse) on
+  `Metadata/Monsters/Zombies/Drowned/BiteZombie`. The variety Ids have no .ot of their own.
+- **Level: S→C 0x20.** A monster type needs a level. The Monster component's factory (`0x141e6fd00`) throws
+  **"Creating monster with no level"** when its type's `+0x20` is 0. The Monster type (vtable `0x1435a5a28`, parser
+  slot 9 `0x141e701d0`) parses the number after the last **`@`** of the type path into `+0x20` (1..100; otherwise
+  "Unable to parse monster level of …" / "Unable to create a monster type at level …"). The register files the plain Id
+  only; the server registers the levelled path with **0x20** (instance group, dispatcher case 9, class `0x1435dc320`,
+  read `0x1421a4f30`):
+  ```
+  u16 0x0020, u16 n (BE), u16 preload (BE, +0x10), n × u16 MonsterVarieties row (raw, little-endian), n × u8 level
+  ```
+  Per pair the handler looks the row up (`0x142288c90`, a row index into Data/MonsterVarieties.dat) and registers
+  `"<Id>@<level>"` extending the plain Id (`0x141ec2540`; level 0 → the plain Id through `0x141ec28e0`), appending the
+  type to instance `+0xc828`; then it loads the first `preload` new types (`0x140685030`). The 0x2b9 type is then
+  `ObjectTypeHash("<Id>@<level>")`.
+  - Without 0x20 (the first live try) the exception is thrown while the components are built (`0x142427510`, before
+    the blob is read), and the cleanup then frees a Targetable component that was never created: an access violation
+    in its deleter `0x14161d160`. So the client hangs and crashes instead of showing a message.
+- **Components.** `Metadata/Monsters/Monster.ot`: Positioned, Stats, ObjectMagicProperties, BaseEvents, Pathfinding,
+  Buffs, Life, Animated, Inventories, Actor, Monster ([../re/object-types.md](../re/object-types.md)). Every one that
+  reads is already known from the player or the exit; Monster (`0x1435a6778`), BaseEvents and Pathfinding read nothing.
+  - Positioned: 16 bytes. Its 8-byte prefix (`param_1[0x2b] + 0x21`) is written into the object's **Sector** component,
+    so it is for types with one; the .ot keys (`0x141e2d860`) set +0x14..+0x20, +0x22, +0x23 but not +0x21.
+    `serialise_collidable` (Monster.ot) sets +0x1b.
+  - Actor: the two conditional u8 are read when `components[type+0xbc] + 0x1a8 < 1`. +0x1a8 is the Life component's
+    first pool `+0x178 + 0x30`, the **current life** just read from the blob, so a living monster has 17 bytes.
+  - Animated: bit0 + the variety's first `AOFiles` path, as for the player.
+  - Life: (100, 0, …) for life; mana and energy shield 0. The maximum comes from stats, which are empty. The monster
+    stands and shows no life bar problem so far; combat will need real values.
+  - Blob: 112 bytes with the base list, plus the Animated path (198 bytes for Hungry Corpse).
+- **Other component lists.** Of the 10 691 varieties, 4 513 have exactly the base list; most others append
+  DiesAfterTime, StateMachine or Transitionable. The blob also writes Transitionable (`0x1421c24b0`, u8 flags),
+  MinimapIcon (u8), and Preload, Functions, PlayerClass (no data). **StateMachine** (`0x141e3ee40`: 2 bytes, then
+  entries per state of the type's .ot) and **DiesAfterTime** (live vtable unknown: `ret` or `0x141e40a80`) are refused
+  with a message box. The Gateway knows each type's list from `data/object-types.json`
+  (`python -I scripts/re/ot_components.py --all --json data/object-types.json`, about 2 minutes); without it, it
+  assumes the base list.
+- **Placement.** The nearest walkable cell 6–20 cells from the server's estimate of the player; ids from 0x3000. The
+  world is active, so 0x2b9 is created at once; 0x1a9 puts it in the wake zone.
+
+## 6. Open
 
 - The chat line message, and the channel join request and its answer.
 - A correct stat id ↔ name table: re-extract Stats.dat from this client's GGPK, or find why our table's row order
   differs.
-- `/spawn_mob`: a monster is a 0x2b9 object of a `Metadata/Monsters/...` type. Its component list (Monster, Life,
-  Actor, Positioned, Animated, Stats, …) has to be serialized like the player's ([04](04-player-entity.md)). The
-  Monster component's deserializer and the MonsterVarieties row id are not mapped yet.
+- Monsters: the "Unidentified" tag (probably ObjectMagicProperties: rarity, mods or the identified flag), stats
+  (maximum life), the StateMachine and DiesAfterTime types (verify the Transitionable / MinimapIcon writers live
+  too), AI and combat.

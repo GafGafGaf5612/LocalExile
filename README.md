@@ -29,9 +29,10 @@ and `/set_speed` in The Coast, all against the local servers.
   click-to-move.
 - **Lioneye's Watch → The Coast:** the exit loads the area. Ctrl+click opens the Instance Manager (list, join or create
   instances). Towns have one instance, and empty instances expire after 6 minutes.
-- **Chat commands:** `/help`, `/set_speed <percent>`, `/set_stat <key> <value>`, `/raw <hex>`.
+- **Chat commands:** `/help`, `/set_speed <percent>`, `/set_stat <key> <value>`, `/raw <hex>`,
+  `/spawn_mob <monster>[@level]` (an idle monster next to you).
 
-Not done yet: monsters (`/spawn_mob` is a stub), server text as chat lines, exit to character selection, and exits
+Not done yet: monster AI and combat, server text as chat lines, exit to character selection, and exits
 beyond town. Details: [Agents/Status.md](Agents/Status.md).
 
 ## Contributing

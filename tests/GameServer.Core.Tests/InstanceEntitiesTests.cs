@@ -49,6 +49,56 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Minimal_monster_blob_layout()
+    {
+        byte[] b = new MonsterObject(0x73, 0x45, Life: 100, MonsterObject.BaseComponents).Blob();
+        string pool(uint v) => Convert.ToHexString(BitConverter.GetBytes(v)) + "00000000" + "0000" + "00000000" + "00000000";
+        string expected =
+            "00" + "00" +                                                     // flags, base data
+            "73000000" + "45000000" + "00000000" + "0000" + "0002" + "0001" + // Positioned (no Sector prefix), shown
+            "00" + "00000000" + "00000000" + "00" +                           // Stats
+            "0000" + "00" + "00" +                                            // ObjectMagicProperties: base part, flags
+            "0000" +                                                          // Buffs (BaseEvents, Pathfinding: none)
+            pool(100) + pool(0) + pool(0) + "00" +                            // Life
+            "00" +                                                            // Animated
+            "0000" +                                                          // Inventories
+            "00000000" + "0000" + "00" + "00000000" + "00000000" + "0000" +    // Actor (life >= 1: no conditional u8s)
+            "00";                                                             // Monster reads nothing; tasks
+        Assert.Equal(expected, Convert.ToHexString(b));
+        Assert.Equal(112, b.Length);
+    }
+
+    [Fact]
+    public void Monster_types_message_and_type_path()
+    {
+        // u16 count, u16 preload (big-endian), rows as raw little-endian u16, then one level byte each.
+        Assert.Equal("0020" + "0002" + "0002" + "8704" + "0100" + "0D" + "01",
+            Convert.ToHexString(InstanceEntities.MonsterTypes([(1159, 13), (1, 1)])));
+        Assert.Equal("0020" + "0001" + "0000" + "8704" + "0D",
+            Convert.ToHexString(InstanceEntities.MonsterTypes([(1159, 13)], preload: 0)));
+        Assert.Equal("Metadata/Monsters/Zombies/ZombieBite@13", MonsterObject.TypePath("Metadata/Monsters/Zombies/ZombieBite", 13));
+    }
+
+    [Fact]
+    public void Monster_blob_writes_known_extras_and_the_animated_object()
+    {
+        string[] withExtras = [.. MonsterObject.BaseComponents, "Transitionable", "Preload"];
+        byte[] plain = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents).Blob();
+        Assert.Equal(plain.Length + 1, new MonsterObject(1, 2, 100, withExtras).Blob().Length);
+        byte[] withAo = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents, "A.ao").Blob();
+        Assert.Equal(plain.Length + 4 + 2 * 4, withAo.Length);
+    }
+
+    [Fact]
+    public void Monster_blob_refuses_components_it_cannot_write()
+    {
+        Assert.False(MonsterObject.CanSerialize([.. MonsterObject.BaseComponents, "StateMachine"]));
+        Assert.False(MonsterObject.CanSerialize(["Positioned", "Animated"]));
+        Assert.False(MonsterObject.CanSerialize([]));
+        Assert.Throws<ArgumentException>(() => new MonsterObject(0, 0, 1, [.. MonsterObject.BaseComponents, "DiesAfterTime"]).Blob());
+    }
+
+    [Fact]
     public void Add_inventory_layout()
     {
         var flask = InstanceInventories.PlayerDefaults[11];

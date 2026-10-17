@@ -1,4 +1,4 @@
-# 06 — Debugging log (2026-10-16)
+# 06 — Debugging log (2026-10-16, 2026-10-17)
 
 Every live run against the patched 3.29.3b client, in order. Shows what was sent, what happened, how the cause was found
 and what changed. Times are local. Logs: `Tools/re/out/live-{auth,gateway,patch}.log` and the client's own
@@ -143,6 +143,36 @@ and what changed. Times are local. Logs: `Tools/re/out/live-{auth,gateway,patch}
   handled yet.
 - **Note:** computer-use hides non-allowlisted windows (the user's Chrome) when it takes screenshots. Verify through
   logs and Frida where possible.
+
+## 2026-10-17: monsters (`/spawn_mob`)
+
+### Incident: a client started without live.ps1 (12:05)
+- **Saw:** `Client.txt` has a run (pid 13464) with web root `https://patch.poecdn.com/3.29.3.3/`, queueing
+  `PathOfExile.exe`, `PathOfExile_x64.exe` and `gateway_list.txt`. Who started it is unknown (not `live.ps1`, which ran
+  at 12:07).
+- **Damage:** `Client/PathOfExile.exe` and `PathOfExile_x64.exe` were replaced by the current official files (unused:
+  we run `Game.patched.exe`). Inside `Content.ggpk` the official `gateway_list.txt` came back, and the root PDIR hash
+  was set to **zero**. `Game.exe`, `Game.patched.exe` and the other GGPK records were unchanged.
+- **Symptoms:** with a zero root hash the client never logs "No patching required": `0x1428eb82e` requires
+  `0x1421ccaf0` (local root hash ≠ 0) and the welcome hash to match, otherwise it asks for the root contents, which our
+  patch server does not serve ("Timed out while waiting for packet from the patching server"). With the official
+  gateway list the client then logged in to `ams.login.pathofexile.com:20484`, which failed the DSA check ("General
+  Rhoa Failure #3") before any credentials were sent.
+- **Fixed:** wrote SHA-256 of the root's child hashes back into the root PDIR (old bytes saved in
+  `data/ggpk-root-hash.backup.txt`), then `GameServer.Patch gateway --login 127.0.0.1:20493` again.
+
+### Monster without a level (12:17)
+- **Sent:** 0x2b9 type `ObjectTypeHash("Metadata/Monsters/Zombies/ZombieBite")`, 198-byte blob, 0x1a9.
+- **Saw:** "Not Responding", then an access violation at `0x14161d166` (Targetable's deleter, null component).
+  `check-components.js` showed a C++ throw at blob position 0 from `0x141e6fd6f`, the Monster factory: "Creating
+  monster with no level". The deleter crash is the cleanup of the half-built object.
+- **Found:** the level is the `@N` suffix of the type path; S→C **0x20** registers `<Id>@<level>` per MonsterVarieties
+  row (dispatcher case 9 → `0x141ec2540`). See [10](10-chat-and-commands.md) §5.
+
+### Monsters in town (12:40)
+- **Sent:** 0x20 (row 1159, level 13), then 0x2b9 with `ZombieBite@13`, three times.
+- **Saw:** three Hungry Corpses next to the player, idle, tagged "Unidentified". Each blob: 11 components exactly as
+  predicted from the .ot and schema.md, 198 bytes consumed, 0 left.
 
 ## Lessons
 

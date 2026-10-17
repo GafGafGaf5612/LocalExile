@@ -60,6 +60,24 @@ public static class InstanceEntities
     public static byte[] CreateObject(uint entityId, uint objectType, byte[] blob, uint headerU32 = 0, ushort headerU16 = 0) =>
         new LoginWriter().U16(CreateObjectId).U32(entityId).U32(headerU32).U16(headerU16).U32(objectType).Blob(blob).ToArray();
 
+    public const ushort MonsterTypesId = 0x20;
+
+    /// <summary>
+    /// S→C 0x20 (instance group, dispatcher case 9, class 0x1435dc320, read 0x1421a4f30): monster types at a level.
+    /// u16 count, u16 preload (+0x10, the first n new types are loaded at once), then count × raw u16 (little-endian)
+    /// MonsterVarieties row and count × u8 level. Per pair the client registers "&lt;variety Id&gt;@&lt;level&gt;"
+    /// (0x141ec2540; level 0 registers the plain Id, 0x141ec28e0). The Monster component takes its level from that
+    /// suffix (1..100) and throws "Creating monster with no level" without one, so a monster's 0x2b9 type is
+    /// <see cref="MonsterObject.TypePath"/>.
+    /// </summary>
+    public static byte[] MonsterTypes(IReadOnlyList<(ushort Row, byte Level)> types, ushort preload = ushort.MaxValue)
+    {
+        var w = new LoginWriter().U16(MonsterTypesId).U16((ushort)types.Count).U16(Math.Min(preload, (ushort)types.Count));
+        foreach (var (row, _) in types) w.U8((byte)row).U8((byte)(row >> 8));
+        foreach (var (_, level) in types) w.U8(level);
+        return w.ToArray();
+    }
+
     public const ushort StatsUpdateId = 0x1b3;
 
     /// <summary>
@@ -172,6 +190,75 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
         w.U8(0);            // tasks
         return w.ToArray();
     }
+}
+
+/// <summary>
+/// A monster: a 0x2b9 object whose type is a MonsterVarieties row. The client's object-type register files every
+/// MonsterVarieties row (0x31a bytes) under its Id with the row's BaseMonsterTypeIndex (+0x48) as the .ot, but a monster
+/// also needs a level: the server registers "&lt;Id&gt;@&lt;level&gt;" with S→C 0x20 (<see cref="InstanceEntities.MonsterTypes"/>)
+/// and the 0x2b9 type is <c>ObjectTypeHash(TypePath(Id, level))</c>. The components come from the .ot chain
+/// (`Metadata/Monsters/Monster`: Positioned, Stats, ObjectMagicProperties, BaseEvents, Pathfinding, Buffs, Life,
+/// Animated, Inventories, Actor, Monster, then whatever the type adds).
+/// <para>Every component that reads is one the player or the exit already uses; Monster itself (vtable 0x1435a6778),
+/// BaseEvents and Pathfinding read nothing. Actor reads its two conditional bytes only when the current life (Life pool
+/// +0x30, read just before) is below 1, so a living monster has the player's 17 bytes. Positioned's 8-byte prefix belongs
+/// to types with a Sector component, which monsters lack.</para>
+/// </summary>
+public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyList<string> Components, string? AnimatedObject = null)
+{
+    /// <summary>Deserialized components of `Metadata/Monsters/Monster` in read order (scripts/re/ot_components.py).</summary>
+    public static readonly string[] BaseComponents =
+        ["Positioned", "Stats", "ObjectMagicProperties", "BaseEvents", "Pathfinding", "Buffs", "Life", "Animated",
+         "Inventories", "Actor", "Monster"];
+
+    /// <summary>Components a type may add after the base list that this blob can write. StateMachine (per-type state
+    /// lists from the .ot) and DiesAfterTime (live vtable unknown) are not handled yet.</summary>
+    static readonly HashSet<string> Extras = ["Transitionable", "MinimapIcon", "Preload", "Functions", "PlayerClass"];
+
+    /// <summary>The registered type path of a variety at a level (1..100), after S→C 0x20 has registered it:
+    /// "&lt;variety Id&gt;@&lt;level&gt;" (0x141ec2540; the Monster type parses the number after the last '@').</summary>
+    public static string TypePath(string varietyId, byte level) => $"{varietyId}@{level}";
+
+    /// <summary>Whether <see cref="Blob"/> can serialize a type with these deserialized components.</summary>
+    public static bool CanSerialize(IReadOnlyList<string> components) =>
+        components.Count >= BaseComponents.Length && components.Take(BaseComponents.Length).SequenceEqual(BaseComponents) &&
+        components.Skip(BaseComponents.Length).All(Extras.Contains);
+
+    public byte[] Blob()
+    {
+        if (!CanSerialize(Components)) throw new ArgumentException($"unsupported components: {string.Join(", ", Components)}");
+        var w = new BlobWriter();
+        w.U8(0);            // object flags
+        w.U8(0);            // base data entry count
+        foreach (string c in Components)
+        {
+            switch (c)
+            {
+                // x, y, u32, u16, flags; flags1 0x02 + (hidden 0, shown 1) as for the player.
+                case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(0).U8(0).U8(0x02).U8(0).U8(1); break;
+                case "Stats": w.U8(0).U32(0).U32(0).U8(0); break;
+                // base magic properties (u16 flags: rarity = low 3 bits, 0 = normal; u8 +0x7a), then the own flags.
+                case "ObjectMagicProperties": w.U16(0).U8(0).U8(0); break;
+                case "Buffs": w.U16(0); break;
+                // life, mana, energy shield pools (current, reserved, i16, u32, u32), then the flags byte.
+                case "Life": Pool(w, Life); Pool(w, 0); Pool(w, 0); w.U8(0); break;
+                case "Animated":
+                    if (AnimatedObject is null) w.U8(0);
+                    else w.U8(1).WStr32(AnimatedObject);
+                    break;
+                case "Inventories": w.U8(0).U8(0); break;
+                // path, u16, u8, (life >= 1: no conditional bytes), u32, u32, then slot 20's two flag bytes.
+                case "Actor": w.WStr32("").U16(0).U8(0).U32(0).U32(0).U8(0).U8(0); break;
+                case "Transitionable": w.U8(0); break;   // 0x1421c24b0: u8 flags
+                case "MinimapIcon": w.U8(0); break;      // slot 20 0x141e6f5d0: u8 flags
+                // BaseEvents, Pathfinding, Monster, Preload, Functions, PlayerClass: no data.
+            }
+        }
+        w.U8(0);            // tasks
+        return w.ToArray();
+    }
+
+    private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
 }
 
 /// <summary>Little-endian writer for 0x2b9 component blobs.</summary>

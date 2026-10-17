@@ -106,6 +106,24 @@ G = global / static data.
 | `0x142f496a0` | G | static initializer table entry (Positioned) |
 | `0x1445bb240`, `0x1445bb6f0`, `0x1445bbe50`, `0x1445bbd60`, `0x1445bb760`, `0x1445bbd10`, `0x1445ba850`, `0x1445bc610` | G | component pools (Positioned, Stats, Pathfinding, Life, Animated, Player, Inventories, Actor) |
 
+## Monsters ([10](10-chat-and-commands.md) §5)
+| Address | Kind | What |
+|---|---|---|
+| `0x1435dc320` (read `0x1421a4f30`, write `0x1421a4e70`) | Cls | S→C 0x20 monster types at a level (dispatcher case 9) |
+| `0x141ec2540` / `0x141ec28e0` | Fn | register `"<variety Id>@<level>"` / the plain variety Id |
+| `0x142288c90` | Fn | MonsterVarieties row by index (0x31a-byte rows) |
+| `0x1435a6778` / `0x141e6fd00` | Vt / Fn | Monster component (slot 17 `ret`) / its factory ("Creating monster with no level") |
+| `0x1435a5a28`, `0x141e701d0` | Vt, Fn | Monster component type; slot 9 parses the `@level` suffix |
+| `0x141e2d860` | Fn | Positioned .ot keys (`serialise_collidable` → +0x1b, …) |
+| `0x14161d160` | Fn | Targetable deleter (where a failed object build crashes) |
+
+## Patching
+| Address | Kind | What |
+|---|---|---|
+| `0x1428eb82e` | call site | "No patching required" decision |
+| `0x1421ccaf0` | Fn | local GGPK root hash is non-zero |
+| `0x1428ead70` | Fn | compare a local directory hash with the welcome |
+
 ## Inventories and UI
 | Address | Kind | What |
 |---|---|---|

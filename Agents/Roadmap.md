@@ -26,7 +26,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 ### Chat lines and the global channel
 - **Known:** C→S 0x15 (chat text) is parsed; replies use S→C 0x0d (message box). 0x12d shows BackendErrors rows, 0x157 is
   a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".
-- **Start:** [10](docs/protocol/10-chat-and-commands.md) §5. Find the S→C message that adds a line (sender + text) to the
+- **Start:** [10](docs/protocol/10-chat-and-commands.md) §2 and §6. Find the S→C message that adds a line (sender + text) to the
   chat panel, and the channel join request and its answer.
 - **Done when:** command replies and server messages appear as chat lines, and the channel join stops timing out.
 
@@ -46,13 +46,13 @@ Items are in rough priority order within each section. "Known" says what is alre
   `scripts/re/ot_components.py` lists the components of any object type.
 - **Done when:** The Coast's exits (back to town, to The Mud Flats) work, then the rest of Act 1.
 
-### Monsters (`/spawn_mob`)
-- **Known:** a monster is a 0x2b9 object of a `Metadata/Monsters/...` type. Its component list comes from the `.ot`
-  chain; [object-types.md](docs/re/object-types.md) and [components.md](docs/re/components.md) have every type's
-  components, and [schema.md](docs/protocol/schema.md) the read sequence of each component deserializer.
-- **Start:** [10](docs/protocol/10-chat-and-commands.md) §5, [04](docs/protocol/04-player-entity.md) (how the
-  player's blob was built and traced with `scripts/re/frida/check-components.js`).
-- **Done when:** `/spawn_mob <id>` puts a visible, idle monster next to the player.
+### Monsters: beyond `/spawn_mob`
+- **Known:** `/spawn_mob` works for the varieties whose components are the base Monster list (+ a few extras):
+  0x20 registers `<Id>@<level>`, then 0x2b9 + 0x1a9 ([10](docs/protocol/10-chat-and-commands.md) §5).
+- **Start:** the "Unidentified" tag (ObjectMagicProperties, [08](docs/protocol/08-area-transitions.md) §2 has its
+  read sequence); the StateMachine (`0x141e3ee40`) and DiesAfterTime component data; stats such as maximum life.
+  Check every new component with `scripts/re/frida/check-components.js`.
+- **Done when:** any MonsterVarieties row spawns, named and with a life bar matching its level.
 
 ### NPCs in town
 - Same object mechanism as monsters, with NPC types and their dialogue components. Depends on the monster work.

@@ -290,8 +290,38 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(stat, value)]),
             $"0x01b3 stats: row {stat} = {value}");
     })
-    .Add("spawn_mob", "/spawn_mob <id> (not implemented yet)", async _ =>
-        await Send(remote, stream, ciphers, InstanceChat.MessageBox("Spawning monsters is not implemented yet: the monster object components are not mapped."), "0x000d spawn_mob not implemented"));
+    .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level]", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("which monster");
+        if (Monsters.Error is { } error) { await conn.Commands!.Reply(error); return; }
+        string query = string.Join(' ', args);
+        byte level = 1;
+        if (query.LastIndexOf('@') is int at and > 0)
+        {
+            level = byte.Parse(query[(at + 1)..]);
+            if (level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
+            query = query[..at];
+        }
+        if (Monsters.Find(query) is not { } variety) { await conn.Commands!.Reply($"No monster matches \"{query}\"."); return; }
+        if (!variety.Supported)
+        {
+            await conn.Commands!.Reply($"{variety} is not supported yet: its type has components " +
+                $"{string.Join(", ", variety.ComponentsOrBase.Except(MonsterObject.BaseComponents))} that are not serialized.");
+            return;
+        }
+        var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
+        uint id = conn.NextObjectId++;
+        var monster = new MonsterObject(x, y, Life: 100, variety.ComponentsOrBase, variety.AnimatedObject);
+        // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
+        if (conn.MonsterTypes.Add((variety.Row, level)))
+            await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
+                $"0x0020 monster type {variety.Id}@{level} (row {variety.Row})");
+        uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
+        // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
+            $"0x02b9 create monster 0x{id:x} {variety} type=0x{type:x8} at ({x}, {y}), components {string.Join(", ", variety.ComponentsOrBase)}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
+    });
 }
 
 static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log)
@@ -334,6 +364,9 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
 sealed partial class Program
 {
     internal const uint PlayerId = 0x1000;
+
+    // Shared by every connection; loaded on the first /spawn_mob.
+    internal static readonly MonsterCatalog Monsters = new();
 
     // The client's walking speed in grid cells per second at 100% (measured live: ~37 = Character.ot Pathfinding
     // base_speed). Game_WALK_SPEED overrides it.
@@ -514,4 +547,22 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // 0x1c's u32 is an HNC carrier and must decrypt to idle zero bytes, or the client throws "HNC Protocol Violated".
     public HncSender? Hnc;
     public InstanceKeyring Keyring = null!;
+    // Server objects created after entering (monsters); the player is 0x1000 and exits start at 0x2000.
+    public uint NextObjectId = 0x3000;
+    // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
+    public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
+
+    /// <summary>A walkable cell a few cells from (x, y), nearest first; (x + 8, y) without a walk map.</summary>
+    public (int X, int Y) SpawnNear((int X, int Y) at)
+    {
+        if (Layout.Walkable is not { } walkable) return (at.X + 8, at.Y);
+        for (int r = 6; r <= 20; r++)
+            for (int dy = -r; dy <= r; dy++)
+                foreach (int dx in new[] { -r, r })
+                {
+                    if (walkable(at.X + dx, at.Y + dy)) return (at.X + dx, at.Y + dy);
+                    if (walkable(at.X + dy, at.Y + dx)) return (at.X + dy, at.Y + dx);
+                }
+        return at;
+    }
 }
