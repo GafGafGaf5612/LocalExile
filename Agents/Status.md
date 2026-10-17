@@ -16,7 +16,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Player object (0x2b9) with its component blob; the character's name; Witch model | `InstanceEntities.cs` | [04](docs/protocol/04-player-entity.md) |
 | Inventories and passive slots the UI needs (empty) | Gateway | [05](docs/protocol/05-inventories-and-ui.md) |
 | Latency acks (0x1b/0x1c) and the HNC side channel, visibility (wake zone), click-to-move | Gateway, `Hnc.cs` | [07](docs/protocol/07-latency-visibility-movement.md) |
-| The Coast exit in town; area change through it; Ctrl+click opens the Instance Manager (list, join, create) | Gateway, Auth's instance registry | [08](docs/protocol/08-area-transitions.md), [09](docs/protocol/09-area-change.md) |
+| The Coast exit in town, on the gate with its arch highlighted on hover (the tile's `.tmd` object); area change through it; Ctrl+click opens the Instance Manager (list, join, create) | Gateway, Auth's instance registry | [08](docs/protocol/08-area-transitions.md), [09](docs/protocol/09-area-change.md) |
 | Instances: one per town; other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs` | [09](docs/protocol/09-area-change.md) |
 | Walk maps captured from the client on first visit; the Gateway uses them for position estimates and spawns | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8 |
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed` (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
@@ -48,8 +48,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   (the client logs "Timeout while joining global chat channel").
 - Esc → "Exit to character selection": the client sends 0x153, gets no answer and hangs. Workaround:
   `.\scripts\dev\live.ps1 -NoClient`.
-- Exits beyond town: The Coast's own exits, and every other area. The town's Coast exit sits a little off and has no
-  model or hover outline (a bare AreaTransition).
+- Exits beyond town: The Coast's own exits, and every other area.
 - Items, gem skills, levelling, saving the character's position or progress. Hardcore's "Exit" on the death screen
   (C→S 0x153, like Esc → Exit).
 - `GameServer.Sim` is an empty placeholder project.

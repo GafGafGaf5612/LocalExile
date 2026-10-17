@@ -57,6 +57,9 @@ public sealed class GameFileSystem : IDisposable
         return true;
     }
 
+    /// <summary>Every file path in the bundle index (decompresses the path table once per call).</summary>
+    public IEnumerable<string> EnumeratePaths() => Index.Paths(BundleFile.DecompressWhole(Index.PathTableBundle, _oodle));
+
     public byte[] ReadFile(string path)
     {
         if (!TryReadFile(path, out var data))

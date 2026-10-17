@@ -1,7 +1,7 @@
 // usage: dotnet run --project scripts/re/ggdump -- <Content.ggpk> <outDir> <path>...   (e.g. Data/Inventories.datc64)
 using GameServer.Data.Ggpk;
 using GgDump;
-// usage: GgDump <ggpk> <outDir> <path>...   (or "list <substring>" as first path to search the index)
+// usage: GgDump <ggpk> <outDir> <path>...   (or "list <regex>" as first path to search every path in the index)
 // The repository root: the first parent of the build output that has Tools/ooz.
 string root = AppContext.BaseDirectory;
 while (!File.Exists(Path.Combine(root, "Tools", "ooz", "ooz_worker.mjs")))
@@ -9,6 +9,15 @@ while (!File.Exists(Path.Combine(root, "Tools", "ooz", "ooz_worker.mjs")))
         ?? throw new InvalidOperationException("Tools/ooz/ooz_worker.mjs not found above the build output");
 using var oodle = new NodeOodleDecoder("node", Path.Combine(root, @"Tools\ooz\ooz_worker.mjs"));
 using var fs = GameFileSystem.Open(args[0], oodle);
+// "list <regex>" (as the first path): print every path in the index that matches, case-insensitive.
+if (args.Length > 3 && args[2] == "list")
+{
+    var re = new System.Text.RegularExpressions.Regex(args[3], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    int n = 0;
+    foreach (var p in fs.EnumeratePaths()) { n++; if (re.IsMatch(p)) Console.WriteLine(p); }
+    Console.Error.WriteLine($"{n} paths in the index");
+    return;
+}
 foreach (var path in args.Skip(2))
 {
     if (!fs.TryReadFile(path, out var d)) { Console.WriteLine($"{path}: not found"); continue; }

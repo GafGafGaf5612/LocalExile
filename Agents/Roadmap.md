@@ -30,13 +30,6 @@ Items are in rough priority order within each section. "Known" says what is alre
   chat panel, and the channel join request and its answer.
 - **Done when:** command replies and server messages appear as chat lines, and the channel join stops timing out.
 
-### The town's Coast exit: position, model, hover outline
-- **Known:** the exit is a bare `Metadata/MiscellaneousObjects/AreaTransition` placed at the layout's named point
-  ([08](docs/protocol/08-area-transitions.md)); it sits a little off and shows no model or outline on mouse-over.
-- **Start:** the town's own exit object in the area's .arm/.tgt (its type, which brings the model and the client-side
-  Render/Targetable components), and its exact position.
-- **Done when:** the exit looks and highlights like in the real game, at the right spot.
-
 ### A server tick loop
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
@@ -52,7 +45,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ### Exits in every area
 - **Known:** an exit is an AreaTransition object (0x2b9) with a 41-byte component blob; its position and target come
-  from the area's layout files. Only Lioneye's Watch → The Coast is placed.
+  from the area's layout files. Only Lioneye's Watch → The Coast is placed. An exit that is a tile object (a `.tmd`
+  record) also needs its model, rotation and height from that record ([08](docs/protocol/08-area-transitions.md) §5).
 - **Start:** [08](docs/protocol/08-area-transitions.md) ("All zones: what it takes"), `AreaLayouts` in the Gateway.
   `scripts/re/ot_components.py` lists the components of any object type.
 - **Done when:** The Coast's exits (back to town, to The Mud Flats) work, then the rest of Act 1.

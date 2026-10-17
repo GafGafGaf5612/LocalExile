@@ -486,6 +486,77 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         byte flags = args.Length > 0 ? Convert.ToByte(args[0].Replace("0x", ""), 16) : DeathScreenFlags;
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(flags), $"0x0055 death screen flags 0x{flags:x2}");
     })
+    .Add("exit_pos", "/exit_pos [here | x y | +dx +dy] (dev: where the first exit is; move it)", async args =>
+    {
+        var (px, py) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
+        var (id, exit) = conn.Layout.Exits[0];
+        if (args.Length == 0)
+        {
+            await conn.Commands!.Reply($"Exit 0x{id:x} at ({exit.GridX}, {exit.GridY}); you at ({px}, {py}).");
+            return;
+        }
+        (int X, int Y) to = args[0] == "here" ? (px, py)
+            : args[0].StartsWith('+') || args[0].StartsWith('-')
+                ? (exit.GridX + int.Parse(args[0]), exit.GridY + int.Parse(args[1]))
+                : (int.Parse(args[0]), int.Parse(args[1]));
+        conn.MoveExit(id, to.X, to.Y);
+        var moved = conn.Layout.Exits[0].Exit;
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), moved.Blob()),
+            $"0x02b9 create exit {moved}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
+        await conn.Commands!.Reply($"Exit 0x{id:x} moved to ({to.X}, {to.Y}) (was ({exit.GridX}, {exit.GridY})); you at ({px}, {py}).");
+    })
+    .Add("exit_index", "/exit_index <n> (dev: re-create the first exit with AreaTransition +0xa4 = n)", async args =>
+    {
+        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
+        uint id = conn.Layout.Exits[0].Id;
+        conn.SetExitIndex(id, int.Parse(args[0]));
+        var exit = conn.Layout.Exits[0].Exit;
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
+            $"0x02b9 create exit {exit}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
+        await conn.Commands!.Reply($"Exit 0x{id:x} index {exit.Index}");
+    })
+    .Add("exit_rot", "/exit_rot <degrees> (dev: re-create the first exit with this Positioned rotation)", async args =>
+    {
+        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
+        uint id = conn.Layout.Exits[0].Id;
+        float degrees = float.Parse(args[0], System.Globalization.CultureInfo.InvariantCulture);
+        conn.SetExitRotation(id, degrees * MathF.PI / 180f);
+        var exit = conn.Layout.Exits[0].Exit;
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
+            $"0x02b9 create exit {exit}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
+        await conn.Commands!.Reply($"Exit 0x{id:x} rotation {degrees} degrees ({exit.Rotation} rad)");
+    })
+    .Add("exit_z", "/exit_z <z | none> (dev: re-create the first exit with this fixed height, world z)", async args =>
+    {
+        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
+        uint id = conn.Layout.Exits[0].Id;
+        conn.SetExitHeight(id, args[0] == "none" ? null : float.Parse(args[0], System.Globalization.CultureInfo.InvariantCulture));
+        var exit = conn.Layout.Exits[0].Exit;
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
+            $"0x02b9 create exit {exit}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
+        await conn.Commands!.Reply($"Exit 0x{id:x} height {exit.Height?.ToString() ?? "terrain"}");
+    })
+    .Add("exit_model", "/exit_model [path | none] (dev: re-create the first exit with this Animated model path)", async args =>
+    {
+        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
+        uint id = conn.Layout.Exits[0].Id;
+        if (args.Length > 0) conn.SetExitModel(id, args[0] == "none" ? null : string.Join(' ', args));
+        var exit = conn.Layout.Exits[0].Exit;
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
+            $"0x02b9 create exit {exit}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
+        await conn.Commands!.Reply($"Exit 0x{id:x} model: {exit.Model ?? "none"}");
+    })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
             string.Join(", ", conn.Monsters.Select(m =>
@@ -812,8 +883,17 @@ static class AreaLayouts
     // entrance2 (196, 384) → (384, 217) on the east edge is the exit to The Coast (1_1_2, 0x7ad2); entrance1 is the
     // disabled one-way Twilight Strand side; default (178, 346) → (346, 235). Agents/docs/protocol/08-area-transitions.md.
     // Spawn (197, 261): the walkable cell farthest from any edge (Agents/docs/protocol/03 §7).
+    // The exit object sits on the gate's transition marker, not on entrance2 (the arrival spot in front of it): the
+    // terrain sub-tiles drawn with Art/Textures/Misc/map_areatransitionc.mat. The room's 15 x 18 tile
+    // beachencampment_v01_01 (room tile (3, 3)) has that material in its sub-tiles (5, 13) and (5, 14) (.tgt
+    // SubTileMaterialIndices, row-major, 15 per row, one column right of the raw index), i.e. room cells x 184..206,
+    // y 368..413, centre (195, 390.5) → grid (391, 218). 08-area-transitions.md §3.
+    // Its model is the tile object's virtual .ao: the client turns each .tmd record into
+    // "<.tdt folder>/<record name>.ao" (here the arch mesh beachencampment_v01_01_area_transition2.fmt), seen live.
     static readonly (uint Id, AreaTransitionObject Exit)[] TownExits =
-        [(0x2000, new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: TheCoast))];
+        [(0x2000, new AreaTransitionObject(GridX: 388, GridY: 230, DestinationHash16: TheCoast,
+            Model: "Metadata/Terrain/Beach/Town_v2/beachencampment_v01_01_area_transition2.ao",
+            Rotation: MathF.PI / 2, Height: -351.04f))];
 
     static readonly Dictionary<ushort, string> Ids = new() { [LioneyesWatch] = "1_1_town", [TheCoast] = "1_1_2" };
 
@@ -984,6 +1064,26 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
         Layout = better;
         Walk = NewWalk(better);
     }
+
+    /// <summary>Moves an exit of this connection's layout (the walk estimate keeps going).</summary>
+    public void MoveExit(uint id, int x, int y) =>
+        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { GridX = x, GridY = y }) : e)] };
+
+    /// <summary>Sets an exit's AreaTransition compact int (+0xa4).</summary>
+    public void SetExitIndex(uint id, int index) =>
+        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Index = index }) : e)] };
+
+    /// <summary>Sets an exit's fixed height (world z), or none (terrain height).</summary>
+    public void SetExitHeight(uint id, float? z) =>
+        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Height = z }) : e)] };
+
+    /// <summary>Sets an exit's Positioned rotation (radians).</summary>
+    public void SetExitRotation(uint id, float radians) =>
+        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Rotation = radians }) : e)] };
+
+    /// <summary>Gives an exit of this connection's layout a model (Animated path), or none.</summary>
+    public void SetExitModel(uint id, string? model) =>
+        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Model = model }) : e)] };
 
     private static WalkEstimator NewWalk(AreaLayout l) =>
         new(l.SpawnX, l.SpawnY, Program.WalkSpeed, l.Walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096);

@@ -55,7 +55,8 @@ dotnet run --project scripts/re/ggdump -- "Client\Content.ggpk" "<outDir>" Data/
 
 It uses `GameServer.Data`'s `GameFileSystem` (bundle index + bundles) and a Node-based Oodle decoder
 (`Tools/ooz/ooz_worker.mjs`; the managed decoder lacks Selkie). The GGPK opens read-only and shared, so this works while
-the client runs. Paths are hashed in the index, so there is no listing: ask for exact paths. `.ot` files are UTF-16
+the client runs. The bundle index also stores every path (about 1.2 million): `list <regex>` as the first path prints the matching
+ones (e.g. `dotnet run --project scripts/re/ggdump -- Client/Content.ggpk out list "beachtown_v2/"`). `.ot` files are UTF-16
 with a BOM; `.datc64` files are rows followed by `0xbb×8` and the variable data section.
 
 ## 4. Frida through REA (live client)
@@ -84,6 +85,7 @@ Workflow per run:
 | `trace-action-life.js` | how long actions stay current, and the attack-time stats' values |
 | `trace-queued-check.js` | why the runner 0x141e8e060 drops a queued action |
 | `dump-stats-object.js` | the stored (key, value) pairs of every stats object asked for one key (set `KEY`) |
+| `find-string-refs.js` | standalone: finds a UTF-16 string (`NEEDLE`) in the client's writable memory, then the pointers to each hit. Asynchronous and slow (minutes over ~6 GB); found the tile objects' virtual `.ao` names. Wait for `done` before closing the session: closing waits for running scans, and a synchronous `scanSync` over all memory hung the session and lost the client |
 | `trace-enter-area.js` | milestones (SetLocalPlayerId, EnterArea, WorldActivate, CreateObject, UI `0x140785160`), inventory registrations, passive slot creation and **inventory lookups that return null** (with the row and caller) |
 
 Notes:

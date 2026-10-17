@@ -173,7 +173,8 @@ public static partial class InstanceInventories
 /// `0x141e77990`: u8 flags (bit1 → u16 key, bit2 → string …). InteractionAction `0x141e1e240`: u8 flags (bit2 → u8 [+ u16]).
 /// Stats as the player's comp1 (`0x1421c2f40`).</para>
 /// </summary>
-public sealed record AreaTransitionObject(int GridX, int GridY, ushort DestinationHash16)
+public sealed record AreaTransitionObject(int GridX, int GridY, ushort DestinationHash16, string? Model = null, int Index = 0,
+    float Rotation = 0, float? Height = null)
 {
     public const string MetadataPath = "Metadata/MiscellaneousObjects/AreaTransition";
 
@@ -192,11 +193,21 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
         {
             switch (c)
             {
-                case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(0).U8(0).U8(0); break;
-                case "Animated": w.U8(0); break;
+                // the float after x, y is stored at +0x29c: the object's rotation (radians), which turns its model.
+                // flags0 bit2: a fixed height, u32 +0x290 (whole steps of 7.8125; 0x7fffffff = none) and the float
+                // world z +0x2b4, used instead of the terrain height (0x141e35800). Tile objects need it: their .tmd
+                // record has its own z.
+                case "Positioned":
+                    w.I32(GridX).I32(GridY).F32(Rotation).U16(0).U8((byte)(Height is null ? 0 : 0x04)).U8(0);
+                    if (Height is float z) w.I32((int)MathF.Round(z / 7.8125f)).F32(z);
+                    break;
+                // Animated (0x141e56a80): bit0 + a u32-counted UTF-16 .ao path (anything else throws "Filename must
+                // end with .ao"): the exit's model, the white surface highlighted on hover. For a tile object it is the
+                // client's virtual "<.tdt folder>/<.tmd record name>.ao" around the record's fixed mesh.
+                case "Animated": if (Model is null) w.U8(0); else w.U8(1).WStr32(Model); break;
                 // state 0, variant 2 = HASH16, then a compact int (+0xa4) that is read when the type's flag
                 // (type+0x78 → +0xb0 → +0x14) is set and the state is 0: true for AreaTransition (traced live).
-                case "AreaTransition": w.U8(0).U8(2).U16(DestinationHash16).U8(0); break;
+                case "AreaTransition": w.U8(0).U8(2).U16(DestinationHash16).CompactI(Index); break;
                 case "Stats": w.U8(0).U32(0).U32(0).U8(0); break;
                 // base magic properties first (0x142201d70: u16 flags, rarity = low 3 bits; u8 +0x7a; sections behind
                 // flag bits 0x10/0x40/0x200/0x400/0x800 and, with bit3, 0x80/0x100/0x20), then the component's u8 flags.
@@ -342,6 +353,7 @@ public sealed class BlobWriter
     public BlobWriter U16(ushort v) { _b.Add((byte)v); _b.Add((byte)(v >> 8)); return this; }
     public BlobWriter U32(uint v) { U16((ushort)v); return U16((ushort)(v >> 16)); }
     public BlobWriter I32(int v) => U32((uint)v);
+    public BlobWriter F32(float v) => U32(BitConverter.SingleToUInt32Bits(v));
     public BlobWriter Zeros(int n) { for (int i = 0; i < n; i++) _b.Add(0); return this; }
     /// <summary>u32 UTF-16 unit count, then the units (0x140e28d60).</summary>
     public BlobWriter WStr32(string s) { U32((uint)s.Length); foreach (byte x in Encoding.Unicode.GetBytes(s)) _b.Add(x); return this; }
