@@ -161,6 +161,14 @@ python -m pip install frida
 python -c "import frida; print(frida.__version__)"
 ```
 
+Or keep Frida in a virtual environment in the repository; `live.ps1` uses `.venv` automatically when it exists
+(`.venv` is git-ignored):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install frida
+```
+
 If `python` opens the Microsoft Store, the Windows app alias is in the way. Install Python from python.org, or turn
 the alias off under Settings → Apps → App execution aliases.
 

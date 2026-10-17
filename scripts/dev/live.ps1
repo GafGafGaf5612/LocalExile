@@ -21,7 +21,9 @@ Need (Test-Path (Join-Path $repo 'Client\Content.ggpk')) 'Client\Content.ggpk mi
 
 $python = $null
 if ($Walkmaps) {
-    $python = (Get-Command python -ErrorAction SilentlyContinue).Source
+    # A virtual environment in the repository (.venv) wins over the python on PATH.
+    $venv = Join-Path $repo '.venv\Scripts\python.exe'
+    $python = if (Test-Path $venv) { $venv } else { (Get-Command python -ErrorAction SilentlyContinue).Source }
     if (-not $python) { $python = (Get-Command py -ErrorAction SilentlyContinue).Source }
     Need $python 'Python not found (needed for -Walkmaps)'
     & $python -c 'import frida' 2>$null
