@@ -5,8 +5,8 @@ namespace GameServer.Core.World;
 /// Rules (as on the official servers):
 /// <list type="bullet">
 /// <item>A town has at most one live instance; entering a town always joins it.</item>
-/// <item>Other areas can have any number of instances. A plain exit click joins the character's previous live instance of
-/// that area, else creates one; the instance chooser (Ctrl+click on an exit) lists them and can create a new one.</item>
+/// <item>Other areas can have any number of instances. A plain area transition click joins the character's previous live instance of
+/// that area, else creates one; the instance chooser (Ctrl+click on an area transition) lists them and can create a new one.</item>
 /// <item>An instance is kept for <see cref="Lifetime"/> (default 6 minutes, within the observed 5–7) after its last player
 /// leaves, then it is gone; a town is recreated on the next entry.</item>
 /// </list>

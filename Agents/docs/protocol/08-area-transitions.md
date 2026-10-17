@@ -143,9 +143,12 @@ must end with .ao", `0x141da7d80`); its bit1 form is a `Data/MiscAnimated.dat` r
   −45 and **−351.04**. Without it the arch's base sat on the terrain and the beam hid its top.
 
 The server's blob: Positioned `84010000 E6000000 DB0FC93F 0000 04 00 D3FFFFFF 1F85AFC3`, Animated `01 49000000` + the
-path. Dev commands in the Gateway: `/exit_pos`, `/exit_rot <degrees>`, `/exit_z <z | none>`, `/exit_model <path |
-none>`, `/exit_index <n>` (the AreaTransition compact int; the client reads it as a teleport/door destination, not a
-mesh link).
+path. Dev command in the Gateway: `/transition [pos [here | x y | +dx +dy] | rot <degrees> | z <z | none> | model
+<path | none> | index <n>]` re-creates the first area transition with that change (`index` is the AreaTransition compact
+int; the client reads it as a teleport/door destination, not a mesh link). Every position the client has seen stays
+on its map: the minimap cache (`%LOCALAPPDATA%\Path of Exile\Minimap\`) remembers icons per area across restarts,
+so after moving an area transition around, clear that cache before judging the map
+([../dev/live-testing.md](../dev/live-testing.md), Troubleshooting).
 
 Other exits: an exit that is a `.tmd` record takes its model, rotation and height this way. The Twilight Strand gate is
 `transition_twilightstrand` (type `AreaTransitionMapMarker`) at tile cell (37.5, 45.5), grid (114.5, 306.5).
@@ -156,3 +159,120 @@ Other exits: an exit that is a `.tmd` record takes its model, rotation and heigh
   symmetric before placing other tile exits.
 - Arrival points: when coming back from The Coast, the player should appear at entrance2. A fresh login should
   probably use "default" (346, 235) instead of today's (197, 261).
+
+## 6. The area transition atlas (every WorldAreas row, offline)
+
+State of 2026-10-17. `scripts/re/atlas` derives every area's transitions and where each leads from the game files
+alone. It writes **`data/area-transitions.json`** (not committed, because it is derived from the client) and prints the
+coverage report below. Parsers live in `src/GameServer.Data/Terrain` (`TileObjectFile` .tmd, `TilePlacement` codes,
+`GraphFile`, `RoomFile`, `TileDefinition`). Tests are in `tests/GameServer.Data.Tests/TerrainTests.cs`: the .tmd
+binary and text forms, room and graph parsing, the town placement (388, 231) / 3π/2 and the waypoint (256, 169), and
+code composition.
+
+```bash
+dotnet run --project scripts/re/atlas -- Client/Content.ggpk
+```
+
+A run takes about 3 minutes. Other modes: `… survey` (tile key vs .tdt conventions), `… survey2 <graph regex>` (which
+key index is which side) and `… debug <area id>` (per room slot: the tile set's tiles with that tag, the codes they
+match, their .tmd).
+
+### How it resolves an area
+
+1. `WorldAreas.datc64` gives Id, Name, Connections and HASH16 (read directly). `TopologiesKeys` come from
+   `data/tables/WorldAreas.json` (checked row by row by Id) and lead to `Topologies.DGRFile`.
+2. Graph (.dgr / .tgr, versions 19 and 25): a node line is `x y edgeCount edges… "tag" rotation nameCount "names"… …`.
+   A node tagged **`graph`** embeds a sub-graph. Its first name is either a graph path or a group of the master's
+   `FileGroups` (.fgp: `"group"`, then graph paths relative to the .fgp, of which the generator picks one). Every
+   candidate is walked.
+3. Master (.tsi) → `RoomSet` (.rs → .arm rooms) and `TileSet` (.tst → .tdt tiles). A node's rooms are the rooms whose
+   tag (the first quoted line after the dictionary) equals the node tag. With several, the generator picks one.
+4. Room (.arm): dictionary (1-based), tag, room key `k W H …`, named points `x y angle "name"` (room cells), the slot
+   grid (H lines of W slots: `k` + 24 numbers = a tile key at its top-left slot, `n`, `s`, `o`, `f N`), doodads after it.
+5. Tile key ↔ .tdt. A key is `w h, E0..E3, 8 edge points, G0..G3, 4 heights, tag, ?`. The .tdt (version 10) header
+   after its string table is `u32 "", u32 .tgt, u32 tag, 4 × u32 edge types, u8 w, u8 h, 4 × u32 corner grounds, u32,
+   8 bytes edge points (a0..a3, b0..b3)`. **E0..E3 = top, right, bottom, left; G0..G3 = corners (0,0), (W,0), (W,H),
+   (0,H)** (from the borders of 2850 rooms, `survey2`). A tile fits a slot under placement code c (§5's client codes)
+   when all of these match:
+   - size (swapped for odd codes) and tag;
+   - edges permuted by c;
+   - corners permuted by c's corner partner (the same rotation; a mirror m_j on edges is m_(j+1) on corners).
+
+   When several codes fit, the edge point pairs (a_i, b_i), swapped by a mirror, pick among them. For the town tile,
+   edges and corners alone also fit a vertical mirror; the points pick code 0.
+6. Transition objects are the tile's .tmd records (the .tmd next to the .tgt, else next to the .tdt) and the room's
+   doodads whose object type is an area transition. A type counts when it, or a type its `.ot` extends, contains
+   `AreaTransition`, or when its .ot has an `AreaTransition` component. That includes quest exits like
+   `Metadata/QuestObjects/SouthBeachTownEntrance` and `…/Act4/MineEntranceTransition`. The model is §5's virtual
+   `<.tdt folder>/<record name>.ao`, with the folder spelled as the .tst writes it (e.g. `BeachToSwamp`).
+7. **Point ↔ object:** the named point (any except `default`) inside the transition tile's slot rectangle, else the
+   nearest one. `matched` says which, with the distance; more than 80 cells adds a "guess" note.
+8. **Point ↔ graph name:**
+   - Matching: the same name, or the name + `disabled`. A generic room point (`entrance`) takes the one numbered node
+     name no other room point has (Coast `town_entrance_exclude.arm`: `entrance` ↔ node `entrance1`). With several
+     generic points and as many names, they pair in order (noted as assumed).
+   - **`entranceN` → `Connections[N − 1]`.** `…disabled` means `enabled: false`, a one-way exit (the town's Twilight
+     Strand marker).
+   - `teleportN` / `telepadN` (also with `-ArenaName` suffixes) are in-area teleports (`status: internal`). `sidearea…`
+     names are side-area links; `link` / `subarea=…` are sub-area links.
+   - A room point the node does not name is not used in that layout (`status: unused`).
+9. An entrance that the node names but no object belongs to becomes a `source: point` entry (`status: point-only`):
+   destination and the point's cell, no model.
+10. **Grid placement** is only computed for `fixed` layouts (a .dgr with one node, a fixed rotation, one room and one
+    orientation):
+    - room cell = slot × 23 + `TilePlacement.Cell(tileCode, …)`;
+    - grid = `Cell(roomCode, …)`, where the node rotation `I`, `R90`… gives 0..3 and `F…` gives 4..7 (assumed to mirror
+      first);
+    - rotation = `Angle(room ∘ tile, record angle)`; the .tmd's 5th field is the record angle (f32, π/2 on Highgate's
+      `AscentTransition`);
+    - z = the record's z. Text .tmd (version 8) gives no z.
+
+### Results (run of 2026-10-17)
+
+- **Lioneye's Watch** (fixed): `beachencampment_v01_01_area_transition2.ao` → 1_1_2 The Coast (0x7ad2) at grid
+  **(388, 231)**, rotation **3π/2**, z **−351.04**, the same as live. `…_transition_twilightstrand.ao`
+  (AreaTransitionMapMarker) → 1_1_1 via `entrance1disabled` at (114, 307).
+- **The Coast** (18 topologies, all generated), in every topology:
+  `Beach/Transitions/beachtown_north_entrance_v02_01_area_transition.ao` → 1_1_town,
+  `BeachToSwamp/act1_area2_transition_v01_01_area_transition.ao` → 1_1_3 The Mud Flats,
+  `TidalIsland/act1_karui_coast_to_island_transition_v01_01_area_transition.ao` → 1_1_2a The Tidal Island. These are
+  the three models of the live capture, with the expected destinations.
+
+Coverage:
+
+| | Count |
+|---|---|
+| WorldAreas rows | 1932 (1915 with a topology, 340 with connections) |
+| area × topology | 5736 generated, 2909 fixed-graph (.dgr with several nodes), 316 fixed (310 areas, all fixed) |
+| connections (area → destination, 720) | **438 resolved** (an enabled transition object in every topology), 230 disabled (only `…disabled`: one-way back links), 41 point-only, **11 unresolved** |
+| transition objects (area × topology × room, 23891) | 11730 resolved, 270 point-only, 6693 in-area teleports, 3711 unused by their node, 1487 unresolved |
+| with grid placement | 72 objects in 24 fixed areas |
+
+Unresolved objects, by reason:
+- 1291 "the area has no connections" (maps and league areas, whose exits are not in `Connections`);
+- 151 "the room has no named point" (mostly side-area and sub-area links);
+- 25 generic points with a different number of node names;
+- 20 tiles whose possible orientations put them nearest to different points.
+
+877 objects also note that the tile key fits several orientations. That is harmless for generated areas, where only
+the destination and model matter; a fixed layout gets no grid position then. 162 objects note a nearest-point pairing
+more than 80 cells away.
+
+The 11 unresolved connections:
+- Named by a node, but the object there is unresolved or missing: 1_5_2 → 1_5_town (×2), 2_6_6 → 2_6_5,
+  2_7_3 → SanctumFoyer_Fellshrine, 2_7_12_1 → 2_7_12_2, 2_8_6 → 2_8_13, 2_10_6 → 2_10_town,
+  Descent2_6_boss → Descent2_6_1, Descent2_9_2 → Descent2_8_1, Descent2_9_boss2 → Descent2_10.
+- No node names it: TGRMulti → 1_4_7.
+
+Files: 12 .tdt that are not version 10 do not parse (wall chests, theatre walls, abyss holes, templar doors; none is a
+transition tile seen so far), and 2 referenced files are not in the index.
+
+### Not derived / next
+
+- Generated areas: only room-local positions, because the generator places rooms by seed. Use the Frida capture
+  (`scripts/re/frida/trace-tile-transitions.js`) per (area, seed), or reproduce the generator.
+- Fixed layouts with an outer buffer (`OuterBufferSize` ≠ 0) are flagged: the grid offset may need the buffer added.
+- Mirrored room rotations (`F…`) and the edge-point rule under quarter turns are inferred, not verified live. The
+  Twilight Strand's `zombie_bite` key fits no orientation by points; the edge/corner set is kept and flagged.
+- Point-only entrances (e.g. 2_11_endgame_town → 2_10_town, Menagerie) need the object's model from elsewhere: the
+  room's tile .tgt, or a live capture.

@@ -3,8 +3,8 @@ using GameServer.Core.Protocol.Login;
 namespace GameServer.Core.Protocol.Instance;
 
 /// <summary>
-/// Changing area through an exit, and the instance chooser (Agents/docs/protocol/09-area-change.md).
-/// <para>Flow: C→S 0x24 (use skill on the exit object) → S→C 0x2b2 (change area: the client shows the loading screen and
+/// Changing area through an area transition, and the instance chooser (Agents/docs/protocol/09-area-change.md).
+/// <para>Flow: C→S 0x24 (use skill on the area transition object) → S→C 0x2b2 (change area: the client shows the loading screen and
 /// answers C→S 0x2cb, built by 0x142148690) → S→C 0x27 (the destination instance's address, ticket and key, on the
 /// current instance connection) → the client connects to it. In game nothing listens to login 0x14 (the login
 /// connection's listener list at +0x298 is empty), so an area change cannot come from Auth.
@@ -20,12 +20,12 @@ public static class InstanceTransfer
     /// for the "New" row (captured live 2026-10-16: 00AFFF on New with an empty list).</summary>
     public const byte NewInstanceRow = 0xff;
 
-    /// <summary>0x24 flag bit set when Ctrl is held (seen as 0x040c vs 0x0408 on exit clicks).</summary>
+    /// <summary>0x24 flag bit set when Ctrl is held (seen as 0x040c vs 0x0408 on area transition clicks).</summary>
     public const ushort CtrlFlag = 0x0004;
 
     /// <summary>
     /// C→S 0x24 (12 bytes, 0x25's sibling aimed at an object): u32 target object id, u16 skill id (0x0266 = interact,
-    /// seen on exits), u16 sequence, u16 flags (0x0408; | 0x0004 with Ctrl).
+    /// seen on area transitions), u16 sequence, u16 flags (0x0408; | 0x0004 with Ctrl).
     /// </summary>
     public sealed record UseSkillOnObject(uint TargetId, ushort SkillId, ushort Sequence, ushort Flags)
     {

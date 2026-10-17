@@ -88,6 +88,7 @@ Source [Lioneye's Watch]". Then the HUD appears.
 | "Area reported by instance does not exist" | the 0x14 area hash is not a WorldAreas.HASH16 |
 | client back at the login screen, "An unexpected disconnection occurred" | the instance connection closed (Gateway restarted or crashed) |
 | nothing after 0x7d | 0x21 not sent (`Game_GATEWAY_ENTER` unset). The world queues 0x2b9 and waits |
+| extra map icons with no label (e.g. three area transition icons at the town gate) | the client's **minimap cache** remembers icons of objects it has seen, per area, in `%LOCALAPPDATA%\Path of Exile\Minimap\` (hash-named, encrypted files). Moving an object around (dev commands, changed defaults) leaves its old icons there, across restarts. Close the client and move the files away; seen 2026-10-17 |
 
 Window position and size change between launches; take a screenshot before clicking. At half scale, the password
 field, character row and Play button were near (245, 217), (375, 61) and (455, 263) in one layout and moved in others.

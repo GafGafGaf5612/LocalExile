@@ -202,7 +202,7 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
                     if (Height is float z) w.I32((int)MathF.Round(z / 7.8125f)).F32(z);
                     break;
                 // Animated (0x141e56a80): bit0 + a u32-counted UTF-16 .ao path (anything else throws "Filename must
-                // end with .ao"): the exit's model, the white surface highlighted on hover. For a tile object it is the
+                // end with .ao"): the area transition's model, the white surface highlighted on hover. For a tile object it is the
                 // client's virtual "<.tdt folder>/<.tmd record name>.ao" around the record's fixed mesh.
                 case "Animated": if (Model is null) w.U8(0); else w.U8(1).WStr32(Model); break;
                 // state 0, variant 2 = HASH16, then a compact int (+0xa4) that is read when the type's flag
@@ -228,7 +228,7 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 /// and the 0x2b9 type is <c>ObjectTypeHash(TypePath(Id, level))</c>. The components come from the .ot chain
 /// (`Metadata/Monsters/Monster`: Positioned, Stats, ObjectMagicProperties, BaseEvents, Pathfinding, Buffs, Life,
 /// Animated, Inventories, Actor, Monster, then whatever the type adds).
-/// <para>Every component that reads is one the player or the exit already uses; Monster itself (vtable 0x1435a6778),
+/// <para>Every component that reads is one the player or the area transition already uses; Monster itself (vtable 0x1435a6778),
 /// BaseEvents and Pathfinding read nothing. Actor reads its two conditional bytes only when the current life (Life pool
 /// +0x30, read just before) is below 1, so a living monster has the player's 17 bytes. Positioned's 8-byte prefix belongs
 /// to types with a Sector component, which monsters lack.</para>

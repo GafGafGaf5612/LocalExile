@@ -9,8 +9,8 @@ using WalkEstimator = GameServer.Core.World.WalkEstimator;
 // change (Agents/docs/protocol/02, 09).
 // Reads the plaintext opening (0x0F ticket + 0x0E hello), asks GameServer.Auth which area/instance the ticket belongs to
 // (InstanceControl "resolve"), answers 0x11 so both directions switch to Salsa20 keyed by the ticket's instance key,
-// sends the area (0x1d), answers the client's 0x7d with the player and the area's exits, and handles ticks, movement and
-// exit clicks (0x24: change area, or with Ctrl the instance chooser; Agents/docs/protocol/09-area-change.md).
+// sends the area (0x1d), answers the client's 0x7d with the player and the area's area transitions, and handles ticks,
+// movement and area transition clicks (0x24: change area, or with Ctrl the instance chooser; Agents/docs/protocol/09-area-change.md).
 // Port: Game_GATEWAY_PORT (default 6112). Instance keys: data/instance-secret.bin (Game_INSTANCE_SECRET), shared with
 // GameServer.Auth. Auth control: 127.0.0.1:Game_AUTH_CONTROL_PORT (20495); without it every ticket gets Lioneye's Watch.
 
@@ -128,9 +128,9 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
 }
 
 // Decrypts client bytes and handles the messages we can frame (InstanceProtocol.SplitClientMessages):
-// 0x7d (area generated) → the local player id (0x22), the player object (0x2b9), inventories, passive slots, the exits,
+// 0x7d (area generated) → the local player id (0x22), the player object (0x2b9), inventories, passive slots, the area transitions,
 // and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x1b (tick) → 0x1c (ack); 0x25 (move) → 0x1ab echo;
-// 0x24 on an exit → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
+// 0x24 on an area transition → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
 // Anything else is logged in hex: those are the next messages to map.
 static async Task OnClientData(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] data, ClientState conn)
 {
@@ -213,7 +213,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
     }
 }
 
-// An exit click. Plain: change area (0x2b2 now, the move itself once the client acknowledges with 0x2cb).
+// An area transition click. Plain: change area (0x2b2 now, the move itself once the client acknowledges with 0x2cb).
 // With Ctrl: list the destination's instances (0xae) for the client's instance chooser.
 static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
 {
@@ -224,23 +224,23 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await Attack(remote, stream, ciphers, conn, use, target);
         return;
     }
-    var exit = conn.Layout.Exits.FirstOrDefault(e => e.Id == use.TargetId);
-    if (exit.Exit is null)
+    var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
+    if (transition is null)
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x0024 use object {use} (not an exit)");
+        Console.WriteLine($"[gateway] {remote} <= 0x0024 use object {use} (not an area transition)");
         return;
     }
-    ushort dest = exit.Exit.DestinationHash16;
-    // The client walks to the exit first; follow it and act once the player is there (a move meanwhile cancels).
+    ushort dest = transition.DestinationHash16;
+    // The client walks to the area transition first; follow it and act once the player is there (a move meanwhile cancels).
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(exit.Exit.GridX, exit.Exit.GridY, ExitReach, now);
-    Console.WriteLine($"[gateway] {remote} <= 0x0024 exit 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    var (here, stop, arrive) = conn.Walk.Approach(transition.GridX, transition.GridY, AreaTransitionReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 area transition 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
-    if (Dist(stop, (exit.Exit.GridX, exit.Exit.GridY)) > ExitReach + 2)
+    if (Dist(stop, (transition.GridX, transition.GridY)) > AreaTransitionReach + 2)
     {
-        Console.WriteLine($"[gateway] {remote} exit 0x{use.TargetId:x} out of reach from ({stop.X}, {stop.Y})");
+        Console.WriteLine($"[gateway] {remote} area transition 0x{use.TargetId:x} out of reach from ({stop.X}, {stop.Y})");
         return;
     }
     if (use.Ctrl)
@@ -486,76 +486,38 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         byte flags = args.Length > 0 ? Convert.ToByte(args[0].Replace("0x", ""), 16) : DeathScreenFlags;
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(flags), $"0x0055 death screen flags 0x{flags:x2}");
     })
-    .Add("exit_pos", "/exit_pos [here | x y | +dx +dy] (dev: where the first exit is; move it)", async args =>
+    .Add("transition", "/transition [pos [here | x y | +dx +dy] | rot <degrees> | z <z | none> | model <path | none> | index <n>] " +
+        "(dev: show or change the first area transition; it is re-created)", async args =>
     {
         var (px, py) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
-        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
-        var (id, exit) = conn.Layout.Exits[0];
-        if (args.Length == 0)
+        if (conn.Layout.AreaTransitions.Length == 0) { await conn.Commands!.Reply("This area has no area transition."); return; }
+        var (id, at) = conn.Layout.AreaTransitions[0];
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string? what = args.Length > 0 ? args[0] : null;
+        string[] rest = args.Skip(1).ToArray();
+        AreaTransitionObject? changed = what switch
         {
-            await conn.Commands!.Reply($"Exit 0x{id:x} at ({exit.GridX}, {exit.GridY}); you at ({px}, {py}).");
-            return;
+            "pos" when rest.Length > 0 => rest[0] == "here" ? at with { GridX = px, GridY = py }
+                : rest[0].StartsWith('+') || rest[0].StartsWith('-')
+                    ? at with { GridX = at.GridX + int.Parse(rest[0]), GridY = at.GridY + int.Parse(rest[1]) }
+                    : at with { GridX = int.Parse(rest[0]), GridY = int.Parse(rest[1]) },
+            "rot" => at with { Rotation = float.Parse(rest[0], inv) * MathF.PI / 180f },
+            "z" => at with { Height = rest[0] == "none" ? null : float.Parse(rest[0], inv) },
+            "model" => at with { Model = rest[0] == "none" ? null : string.Join(' ', rest) },
+            "index" => at with { Index = int.Parse(rest[0]) },
+            _ => null,
+        };
+        if (changed is not null)
+        {
+            conn.ReplaceAreaTransition(id, changed);
+            at = changed;
+            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove area transition 0x{id:x}");
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), at.Blob()),
+                $"0x02b9 create area transition {at}");
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 area transition 0x{id:x} enters wake zone");
         }
-        (int X, int Y) to = args[0] == "here" ? (px, py)
-            : args[0].StartsWith('+') || args[0].StartsWith('-')
-                ? (exit.GridX + int.Parse(args[0]), exit.GridY + int.Parse(args[1]))
-                : (int.Parse(args[0]), int.Parse(args[1]));
-        conn.MoveExit(id, to.X, to.Y);
-        var moved = conn.Layout.Exits[0].Exit;
-        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), moved.Blob()),
-            $"0x02b9 create exit {moved}");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
-        await conn.Commands!.Reply($"Exit 0x{id:x} moved to ({to.X}, {to.Y}) (was ({exit.GridX}, {exit.GridY})); you at ({px}, {py}).");
-    })
-    .Add("exit_index", "/exit_index <n> (dev: re-create the first exit with AreaTransition +0xa4 = n)", async args =>
-    {
-        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
-        uint id = conn.Layout.Exits[0].Id;
-        conn.SetExitIndex(id, int.Parse(args[0]));
-        var exit = conn.Layout.Exits[0].Exit;
-        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
-            $"0x02b9 create exit {exit}");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
-        await conn.Commands!.Reply($"Exit 0x{id:x} index {exit.Index}");
-    })
-    .Add("exit_rot", "/exit_rot <degrees> (dev: re-create the first exit with this Positioned rotation)", async args =>
-    {
-        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
-        uint id = conn.Layout.Exits[0].Id;
-        float degrees = float.Parse(args[0], System.Globalization.CultureInfo.InvariantCulture);
-        conn.SetExitRotation(id, degrees * MathF.PI / 180f);
-        var exit = conn.Layout.Exits[0].Exit;
-        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
-            $"0x02b9 create exit {exit}");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
-        await conn.Commands!.Reply($"Exit 0x{id:x} rotation {degrees} degrees ({exit.Rotation} rad)");
-    })
-    .Add("exit_z", "/exit_z <z | none> (dev: re-create the first exit with this fixed height, world z)", async args =>
-    {
-        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
-        uint id = conn.Layout.Exits[0].Id;
-        conn.SetExitHeight(id, args[0] == "none" ? null : float.Parse(args[0], System.Globalization.CultureInfo.InvariantCulture));
-        var exit = conn.Layout.Exits[0].Exit;
-        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
-            $"0x02b9 create exit {exit}");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
-        await conn.Commands!.Reply($"Exit 0x{id:x} height {exit.Height?.ToString() ?? "terrain"}");
-    })
-    .Add("exit_model", "/exit_model [path | none] (dev: re-create the first exit with this Animated model path)", async args =>
-    {
-        if (conn.Layout.Exits.Length == 0) { await conn.Commands!.Reply("This area has no exit."); return; }
-        uint id = conn.Layout.Exits[0].Id;
-        if (args.Length > 0) conn.SetExitModel(id, args[0] == "none" ? null : string.Join(' ', args));
-        var exit = conn.Layout.Exits[0].Exit;
-        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove exit 0x{id:x}");
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), exit.Blob()),
-            $"0x02b9 create exit {exit}");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 exit 0x{id:x} enters wake zone");
-        await conn.Commands!.Reply($"Exit 0x{id:x} model: {exit.Model ?? "none"}");
+        await conn.Commands!.Reply($"Area transition 0x{id:x} at ({at.GridX}, {at.GridY}), {at.Rotation * 180 / MathF.PI:0.#} degrees, " +
+            $"height {at.Height?.ToString(inv) ?? "terrain"}, model {at.Model ?? "none"}; you at ({px}, {py}).");
     })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
@@ -795,16 +757,16 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     foreach (var slot in InstanceInventories.PlayerDefaults)
         messages.Add(($"0x00c0 inventory {inventoryId} row {slot.Row}", InstanceInventories.AddInventory(inventoryId++, slot)));
     messages.Add(("0x003d passive slots 0-2", InstanceEntities.PassiveSlots()));
-    // Area exits. Like the player they are queued by the world and created when 0x21 activates it.
+    // Area transitions. Like the player they are queued by the world and created when 0x21 activates it.
     uint transitionType = InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath);
-    foreach (var (id, exit) in layout.Exits)
-        messages.Add(($"0x02b9 create exit {exit} type=0x{transitionType:x8}", InstanceEntities.CreateObject(id, transitionType, exit.Blob())));
+    foreach (var (id, transition) in layout.AreaTransitions)
+        messages.Add(($"0x02b9 create area transition {transition} type=0x{transitionType:x8}", InstanceEntities.CreateObject(id, transitionType, transition.Blob())));
     if (Environment.GetEnvironmentVariable("Game_GATEWAY_ENTER") == "1")
     {
         messages.Add(("0x0021 enter area", InstanceProtocol.EnterArea()));
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
-        foreach (var (id, _) in layout.Exits) messages.Add(($"0x01a9 exit 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
+        foreach (var (id, _) in layout.AreaTransitions) messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
     }
     foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
 }
@@ -820,8 +782,8 @@ sealed partial class Program
     // bit0 (a single Exit button, "Exit to the character selection screen", which sends C→S 0x153).
     internal static byte DeathScreenFlags => League == "hardcore" ? (byte)0x01 : (byte)0x0c;
     internal const double TickSeconds = 1.0 / TickRate;
-    // How close (cells, centre to centre) the player must be to use an exit.
-    internal const double ExitReach = 6;
+    // How close (cells, centre to centre) the player must be to use an area transition.
+    internal const double AreaTransitionReach = 6;
 
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
@@ -865,13 +827,13 @@ static class StatKeys
 }
 
 /// <summary>What the Gateway knows about an area's layout: the terrain grid (for movement estimates), where the player
-/// appears and the exits. Towns are fixed; other areas are generated from the seed, so their walkability only exists as
+/// appears and the area transitions. Towns are fixed; other areas are generated from the seed, so their walkability only exists as
 /// a dump of the client's walkability grid per (area, seed).</summary>
 sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int SpawnX, int SpawnY,
-    Func<int, int, bool>? Walkable, (uint Id, AreaTransitionObject Exit)[] Exits)
+    Func<int, int, bool>? Walkable, (uint Id, AreaTransitionObject Transition)[] AreaTransitions)
 {
     public string Describe() =>
-        $"area {Id} (0x{Hash:x4}) grid {GridW}x{GridH} spawn ({SpawnX}, {SpawnY}), {(Walkable is null ? "no walkability" : "walkability")}, {Exits.Length} exit(s)";
+        $"area {Id} (0x{Hash:x4}) grid {GridW}x{GridH} spawn ({SpawnX}, {SpawnY}), {(Walkable is null ? "no walkability" : "walkability")}, {AreaTransitions.Length} area transition(s)";
 }
 
 static class AreaLayouts
@@ -880,17 +842,17 @@ static class AreaLayouts
 
     // Lioneye's Watch is one room, Metadata/Terrain/Act1/Town/Rooms/beach_town_unique_normal.arm (18 x 30 tiles), placed
     // R270 by Graphs/beachtown.dgr ("default" "entrance2" "entrance1disabled"). Room (x, y) → grid (y, 413 - x):
-    // entrance2 (196, 384) → (384, 217) on the east edge is the exit to The Coast (1_1_2, 0x7ad2); entrance1 is the
+    // entrance2 (196, 384) → (384, 217) on the east edge is the area transition to The Coast (1_1_2, 0x7ad2); entrance1 is the
     // disabled one-way Twilight Strand side; default (178, 346) → (346, 235). Agents/docs/protocol/08-area-transitions.md.
     // Spawn (197, 261): the walkable cell farthest from any edge (Agents/docs/protocol/03 §7).
-    // The exit object sits on the gate's transition marker, not on entrance2 (the arrival spot in front of it): the
+    // The area transition sits on the gate's transition marker, not on entrance2 (the arrival spot in front of it): the
     // terrain sub-tiles drawn with Art/Textures/Misc/map_areatransitionc.mat. The room's 15 x 18 tile
     // beachencampment_v01_01 (room tile (3, 3)) has that material in its sub-tiles (5, 13) and (5, 14) (.tgt
     // SubTileMaterialIndices, row-major, 15 per row, one column right of the raw index), i.e. room cells x 184..206,
     // y 368..413, centre (195, 390.5) → grid (391, 218). 08-area-transitions.md §3.
     // Its model is the tile object's virtual .ao: the client turns each .tmd record into
     // "<.tdt folder>/<record name>.ao" (here the arch mesh beachencampment_v01_01_area_transition2.fmt), seen live.
-    static readonly (uint Id, AreaTransitionObject Exit)[] TownExits =
+    static readonly (uint Id, AreaTransitionObject Transition)[] TownAreaTransitions =
         [(0x2000, new AreaTransitionObject(GridX: 388, GridY: 230, DestinationHash16: TheCoast,
             Model: "Metadata/Terrain/Beach/Town_v2/beachencampment_v01_01_area_transition2.ao",
             Rotation: MathF.PI / 2, Height: -351.04f))];
@@ -908,7 +870,7 @@ static class AreaLayouts
             // Older dumps were saved as data/walkability/1_1_town.bin without a .json.
             if (cells is null && File.Exists($"{Folder}/1_1_town.bin")) { cells = File.ReadAllBytes($"{Folder}/1_1_town.bin"); (w, h) = (690, 414); }
             bool fits = cells is not null && cells.Length == 690 * 414 && (w, h) == (690, 414);
-            return new AreaLayout(hash, id, 690, 414, 197, 261, fits ? Walkable(cells!, w, h) : null, TownExits);
+            return new AreaLayout(hash, id, 690, 414, 197, 261, fits ? Walkable(cells!, w, h) : null, TownAreaTransitions);
         }
         if (cells is not null)
         {
@@ -1065,25 +1027,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
         Walk = NewWalk(better);
     }
 
-    /// <summary>Moves an exit of this connection's layout (the walk estimate keeps going).</summary>
-    public void MoveExit(uint id, int x, int y) =>
-        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { GridX = x, GridY = y }) : e)] };
-
-    /// <summary>Sets an exit's AreaTransition compact int (+0xa4).</summary>
-    public void SetExitIndex(uint id, int index) =>
-        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Index = index }) : e)] };
-
-    /// <summary>Sets an exit's fixed height (world z), or none (terrain height).</summary>
-    public void SetExitHeight(uint id, float? z) =>
-        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Height = z }) : e)] };
-
-    /// <summary>Sets an exit's Positioned rotation (radians).</summary>
-    public void SetExitRotation(uint id, float radians) =>
-        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Rotation = radians }) : e)] };
-
-    /// <summary>Gives an exit of this connection's layout a model (Animated path), or none.</summary>
-    public void SetExitModel(uint id, string? model) =>
-        Layout = Layout with { Exits = [.. Layout.Exits.Select(e => e.Id == id ? (e.Id, e.Exit with { Model = model }) : e)] };
+    /// <summary>Replaces an area transition of this connection's layout (dev changes; the walk estimate keeps going).</summary>
+    public void ReplaceAreaTransition(uint id, AreaTransitionObject transition) =>
+        Layout = Layout with { AreaTransitions = [.. Layout.AreaTransitions.Select(e => e.Id == id ? (e.Id, transition) : e)] };
 
     private static WalkEstimator NewWalk(AreaLayout l) =>
         new(l.SpawnX, l.SpawnY, Program.WalkSpeed, l.Walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096);
@@ -1096,7 +1042,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // 0x1c's u32 is an HNC carrier and must decrypt to idle zero bytes, or the client throws "HNC Protocol Violated".
     public HncSender? Hnc;
     public InstanceKeyring Keyring = null!;
-    // Server objects created after entering (monsters); the player is 0x1000 and exits start at 0x2000.
+    // Server objects created after entering (monsters); the player is 0x1000 and area transitions start at 0x2000.
     public uint NextObjectId = 0x3000;
     // The player's attacks: the next time one may start (Clock seconds). The client repeats 0x24 while the button is held.
     public double NextAttackAt;
