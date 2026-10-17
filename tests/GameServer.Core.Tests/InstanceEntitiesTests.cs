@@ -82,9 +82,11 @@ public class InstanceEntitiesTests
     [Fact]
     public void Monster_blob_writes_known_extras_and_the_animated_object()
     {
-        string[] withExtras = [.. MonsterObject.BaseComponents, "Transitionable", "Preload"];
+        string[] withExtras = [.. MonsterObject.BaseComponents, "Transitionable", "Preload", "DiesAfterTime"];
         byte[] plain = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents).Blob();
-        Assert.Equal(plain.Length + 1, new MonsterObject(1, 2, 100, withExtras).Blob().Length);
+        byte[] extras = new MonsterObject(1, 2, 100, withExtras, TransitionState: 4).Blob();
+        Assert.Equal(plain.Length + 1, extras.Length);
+        Assert.Equal(4, extras[^2]);   // Transitionable: fully transitioned (state = num_states), then tasks
         byte[] withAo = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents, "A.ao").Blob();
         Assert.Equal(plain.Length + 4 + 2 * 4, withAo.Length);
     }
@@ -119,7 +121,7 @@ public class InstanceEntitiesTests
         Assert.False(MonsterObject.CanSerialize([.. MonsterObject.BaseComponents, "StateMachine"]));
         Assert.False(MonsterObject.CanSerialize(["Positioned", "Animated"]));
         Assert.False(MonsterObject.CanSerialize([]));
-        Assert.Throws<ArgumentException>(() => new MonsterObject(0, 0, 1, [.. MonsterObject.BaseComponents, "DiesAfterTime"]).Blob());
+        Assert.Throws<ArgumentException>(() => new MonsterObject(0, 0, 1, [.. MonsterObject.BaseComponents, "ControlZone"]).Blob());
     }
 
     [Fact]

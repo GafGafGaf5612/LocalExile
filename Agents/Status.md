@@ -20,7 +20,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Instances: one per town; other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs` | [09](docs/protocol/09-area-change.md) |
 | Walk maps captured from the client on first visit; the Gateway uses them for position estimates and spawns | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8 |
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed` (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
-| Monsters: `/spawn_mob <row, Id or name>[@level] [rarity] [name]` puts a visible, idle monster next to the player (0x20 monster type at a level, 0x2b9, wake zone), for the 8 000 of 10 691 varieties whose components are known | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
+| Monsters: `/spawn_mob <row, Id or name>[@level] [rarity] [name]` puts a visible, idle monster next to the player (0x20 monster type at a level, 0x2b9, wake zone), for the 10 345 of 10 691 varieties whose components are known | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 
 ## Partly working
@@ -36,7 +36,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Not working yet
 
-- NPCs, and monster types with a DiesAfterTime component.
+- NPCs, and the 346 monster varieties with NPC, ControlZone, BlightTower … components. "Emerge" monsters (Gravel Eater …)
+  are created but stay hidden until an Emerge action, which the server does not send.
 - Chat lines: server text only appears as a message box. The chat-line message and the global channel join are unknown
   (the client logs "Timeout while joining global chat channel").
 - Esc → "Exit to character selection": the client sends 0x153, gets no answer and hangs. Workaround:

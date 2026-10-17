@@ -205,7 +205,7 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 /// to types with a Sector component, which monsters lack.</para>
 /// </summary>
 public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyList<string> Components, string? AnimatedObject = null,
-    MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null, StateMachineData? StateMachine = null)
+    MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null, StateMachineData? StateMachine = null, byte TransitionState = 1)
 {
     /// <summary>Deserialized components of `Metadata/Monsters/Monster` in read order (scripts/re/ot_components.py).</summary>
     public static readonly string[] BaseComponents =
@@ -213,8 +213,9 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
          "Inventories", "Actor", "Monster"];
 
     /// <summary>Components a type may add after the base list that this blob can write. StateMachine (per-type state
-    /// lists from the .ot) and DiesAfterTime (live vtable unknown) are not handled yet.</summary>
-    static readonly HashSet<string> Extras = ["Transitionable", "MinimapIcon", "Preload", "Functions", "PlayerClass", "StateMachine"];
+    /// lists from the .ot) needs <see cref="StateMachineData"/>; DiesAfterTime's primary vtable 0x14359f478 has a
+    /// bare `ret` slot 17, so it reads nothing.</summary>
+    static readonly HashSet<string> Extras = ["Transitionable", "MinimapIcon", "Preload", "Functions", "PlayerClass", "StateMachine", "DiesAfterTime"];
 
     /// <summary>The registered type path of a variety at a level (1..100), after S→C 0x20 has registered it:
     /// "&lt;variety Id&gt;@&lt;level&gt;" (0x141ec2540; the Monster type parses the number after the last '@').</summary>
@@ -258,7 +259,11 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 case "Inventories": w.U8(0).U8(0); break;
                 // path, u16, u8, (life >= 1: no conditional bytes), u32, u32, then slot 20's two flag bytes.
                 case "Actor": w.WStr32("").U16(0).U8(0).U32(0).U32(0).U8(0).U8(0); break;
-                case "Transitionable": w.U8(0); break;   // 0x1421c24b0: u8 flags
+                // 0x1421c24b0: u8 = state (low 7 bits, → +0x120) | bit 7 (+0x122, "transitioning"). States run 1..num_states
+                // (.ot Transitionable num_states, default 1); num_states = fully transitioned (create_transitioned).
+                // State 0 is invalid: the post-create slot 0x1421c26f0 runs event [(state − 1) × 0x18] and crashed in the
+                // event interpreter (0x141ded7b9).
+                case "Transitionable": w.U8((byte)(TransitionState & 0x7f)); break;
                 case "MinimapIcon": w.U8(0); break;      // slot 20 0x141e6f5d0: u8 flags
                 // 0x141e3ee40: u8 shared-state count, u8 shared-timer count (the client throws unless they match the
                 // type); per define_shared_state a compact int value + u8 flags (0x02 keeps the sent value), per

@@ -49,7 +49,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 ### Monsters: beyond `/spawn_mob`
 - **Known:** `/spawn_mob` works for the varieties whose components are the base Monster list (+ a few extras):
   0x20 registers `<Id>@<level>`, then 0x2b9 + 0x1a9 ([10](docs/protocol/10-chat-and-commands.md) §5).
-- **Start:** DiesAfterTime component data; mods; the boss life bar.
+- **Start:** the 346 varieties with NPC / ControlZone / … components; mods; the boss life bar; the Emerge action.
   Check every new component with `scripts/re/frida/check-components.js`.
 - **Done when:** any MonsterVarieties row spawns, with mods and a life bar matching its level.
 

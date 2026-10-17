@@ -12,7 +12,7 @@ using GameServer.Core.Protocol.Instance;
 sealed class MonsterCatalog(string folder = "data")
 {
     public sealed record Variety(int Row, string Id, string Name, string BaseType, string? AnimatedObject, IReadOnlyList<string>? Components,
-        int LifeMultiplier = 100, int MonsterType = -1, StateMachineData? StateMachine = null)
+        int LifeMultiplier = 100, int MonsterType = -1, StateMachineData? StateMachine = null, byte TransitionStates = 1)
     {
         public IReadOnlyList<string> ComponentsOrBase => Components ?? MonsterObject.BaseComponents;
         public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase, StateMachine is not null);
@@ -82,6 +82,7 @@ sealed class MonsterCatalog(string folder = "data")
         if (!File.Exists(varieties)) return ([], $"{varieties} is missing: extract the game tables (Tools/PoEDataExtractor)");
         var components = new Dictionary<string, IReadOnlyList<string>>();
         var stateMachines = new Dictionary<string, StateMachineData>();
+        var transitionStates = new Dictionary<string, byte>();
         string types = Path.Combine(folder, "object-types.json");
         if (File.Exists(types))
         {
@@ -94,6 +95,8 @@ sealed class MonsterCatalog(string folder = "data")
                 // Files generated before the StateMachine data have no "shared_states": those types stay unsupported.
                 if (t.TryGetProperty("shared_states", out var ss) && t.TryGetProperty("shared_timers", out var st))
                     stateMachines[type] = new([.. ss.EnumerateArray().Select(e => e[1].GetInt32())], st.GetArrayLength());
+                if (t.TryGetProperty("transitionable", out var tr) && tr.TryGetProperty("num_states", out var ns))
+                    transitionStates[type] = (byte)Math.Clamp(ns.GetInt32(), 1, 127);
             }
         }
         var rows = new List<Variety>();
@@ -108,7 +111,7 @@ sealed class MonsterCatalog(string folder = "data")
                     components.Count == 0 ? null : components.GetValueOrDefault(baseType),
                     r.GetProperty("LifeMultiplier").GetInt32(),
                     r.GetProperty("MonsterTypesKey").ValueKind == JsonValueKind.Number ? r.GetProperty("MonsterTypesKey").GetInt32() : -1,
-                    stateMachines.GetValueOrDefault(baseType)));
+                    stateMachines.GetValueOrDefault(baseType), transitionStates.GetValueOrDefault(baseType, (byte)1)));
             }
         }
         // With object-types.json, a type missing from it has no .ot: do not guess.

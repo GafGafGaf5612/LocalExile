@@ -86,7 +86,7 @@ def parse(text):
     """-> {extends: [...], abstract, sections: [names], client: [names], server: [names]}"""
     toks = TOKEN.findall(re.sub(r"//[^\n]*", "", text))
     r = {"extends": [], "abstract": False, "sections": [], "client": [], "server": [], "version": None,
-         "shared_states": [], "shared_timers": []}
+         "shared_states": [], "shared_timers": [], "transitionable": {}}
     i = 0
 
     def block(i):  # i at '{' -> index after matching '}', plus the names of sections directly inside
@@ -119,6 +119,8 @@ def parse(text):
                 r["sections"].append(t)
                 if t == "StateMachine":
                     state_machine(toks[i + 2:j - 1], r)
+                elif t == "Transitionable":
+                    top_level_keys(toks[i + 2:j - 1], r["transitionable"], ("num_states", "no_serialise"))
             i = j
         else:
             i += 1
@@ -147,6 +149,16 @@ def state_machine(toks, r):
                     except ValueError:
                         v = 0
                     r["shared_states"].append([name, v])
+
+
+def top_level_keys(toks, out, keys):
+    """`key = value` pairs at the top level of a section (nested event blocks skipped)."""
+    depth = 0
+    for k, t in enumerate(toks):
+        if t == "{": depth += 1
+        elif t == "}": depth -= 1
+        elif depth == 0 and t in keys and k + 2 < len(toks) and toks[k + 1] == "=":
+            out[t] = toks[k + 2].strip("\"'")
 
 
 def chain(type_path, files, seen=None):
@@ -185,9 +197,20 @@ def merge(type_path, files, otc):
         for name in (f or {}).get("shared_timers", []):
             if name not in timers:
                 timers.append(name)
+    # Transitionable (type +0xb0 = num_states, default 1; states run 1..num_states, num_states = fully transitioned):
+    # later files in the chain override.
+    trans = {}
+    for _, f in ch:
+        trans.update((f or {}).get("transitionable", {}))
+    try:
+        num_states = int(trans.get("num_states", 1))
+    except ValueError:
+        num_states = 1
     return {"type": type_path, "chain": [p for p, _ in ch], "missing": [p for p, f in ch if f is None],
             "abstract": bool(files.get(type_path, {}).get("abstract")), "components": comps, "read": read,
-            "shared_states": [[k, v] for k, v in states.items()], "shared_timers": timers}
+            "shared_states": [[k, v] for k, v in states.items()], "shared_timers": timers,
+            "transitionable": {"num_states": num_states,
+                               "no_serialise": str(trans.get("no_serialise", "false")).lower() == "true"}}
 
 
 def load(types):

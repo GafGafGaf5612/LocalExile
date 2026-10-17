@@ -109,7 +109,6 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
     `serialise_collidable` (Monster.ot) sets +0x1b.
   - Actor: the two conditional u8 are read when `components[type+0xbc] + 0x1a8 < 1`. +0x1a8 is the Life component's
     first pool `+0x178 + 0x30`, the **current life** just read from the blob, so a living monster has 17 bytes.
-  - Animated: bit0 + the variety's first `AOFiles` path, as for the player.
   - ObjectMagicProperties (base part `0x142201d70`): u16 flags, u8 `+0x7a`, then the component's own u8 flags.
     Flags bits 0–2 = **rarity** (`+0x7c`: 0 normal, 1 magic, 2 rare, 3 unique); bit 3 = **identified** (`+0x78`;
     without it the client tags the monster "Unidentified"). Only when identified: bit 7 (0x80) → u32 UTF-16 unit count +
@@ -126,12 +125,24 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
     also showed a cold icon (probably the resistance profile of its MonsterTypes row growing with level; not checked).
   - Blob: 112 bytes with the base list, plus the Animated path (198 bytes for Hungry Corpse).
 - **Other component lists.** Of the 10 691 varieties, 4 513 have exactly the base list; most others append
-  DiesAfterTime, StateMachine or Transitionable. The blob also writes Transitionable (`0x1421c24b0`, u8 flags),
-  MinimapIcon (u8), Preload, Functions, PlayerClass (no data) and StateMachine (below): **8 000 varieties** are
-  supported. **DiesAfterTime** (live vtable unknown: `ret` or `0x141e40a80`) is refused with a message box. The Gateway
-  knows each type's list and StateMachine data from `data/object-types.json`
-  (`python -I scripts/re/ot_components.py --all --json data/object-types.json`, about 2 minutes); without it, it
-  assumes the base list and refuses StateMachine types.
+  DiesAfterTime, StateMachine or Transitionable. The blob also writes MinimapIcon (u8), DiesAfterTime (no data: its
+  live vtable is the factory's `0x14359f478`, slot 17 `ret`), Preload, Functions, PlayerClass (no data), Transitionable
+  and StateMachine (below): **10 345 varieties** are supported; the other 346 have NPC, ControlZone, BlightTower,
+  Mercenary, LimitedLifespan … components and are refused with a message box. The Gateway knows each type's list and
+  data from `data/object-types.json` (`python -I scripts/re/ot_components.py --all --json data/object-types.json`,
+  about 2 minutes); without it, it assumes the base list and refuses StateMachine types.
+- **Transitionable** (`ClientInternalTransitionable` `0x1435dd290`, slot 17 `0x1421c24b0`): u8 = state (low 7 bits,
+  `+0x120`) | bit 7 (`+0x122`, transition in progress). States run **1..num_states** (.ot `Transitionable { num_states
+  = N }`, default 1, the type's `+0xb0`); `num_states` = fully transitioned (`create_transitioned`), lower =
+  untransitioned (`create_untransitioned`). The post-create slot `0x1421c26f0` always runs the event at index
+  `(state − 1)` of a 0x18-byte array, so **state 0 is invalid**: it read a garbage script pointer and crashed in the
+  animation-event interpreter (`0x141ded7b9`, live 2026-10-17, Alira and Gravel Eater). The Gateway sends
+  `num_states` (extracted by `ot_components.py` as `transitionable.num_states`).
+  - "Emerge" monsters (Gravel Eater, Disbanded Dead …) are created and stay hidden or lie as a corpse: their .ot pauses
+    the `emerge` animation at creation and only their `Emerge` action (`on_transition`) shows them. That needs the
+    server to start the action.
+- **Animated path.** Not sent (flags 0): the type supplies the animated object. `Game_MONSTER_AO=1` sends the variety's
+  first `AOFiles` path instead (bit 0), which also works for plain monsters but is not needed.
 - **StateMachine** (live vtable `ClientInternalStateMachine` `0x1435da8b8`, slot 17 `0x142191f10` → base
   `0x141e3ee40`):
   ```
@@ -154,5 +165,5 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 - The chat line message, and the channel join request and its answer.
 - A correct stat id ↔ name table: re-extract Stats.dat from this client's GGPK, or find why our table's row order
   differs.
-- Monsters: mods (the ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), DiesAfterTime types (verify the Transitionable / MinimapIcon
-  writers live too), AI and combat.
+- Monsters: mods (the ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
+  varieties with other components (NPC, ControlZone, …), AI and combat.
