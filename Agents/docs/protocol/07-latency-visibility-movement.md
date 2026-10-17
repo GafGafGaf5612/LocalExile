@@ -102,5 +102,6 @@ and crawled (~1 cell per 1.5 s), so it is not sent for the local player (`Game_M
   walking to the town edge just stops there.
 
 - What the server should do with the client's HNC packets (type 0xDD).
-- The real meaning of 0x1ba's speed and +0x28, and moving other (non-predicted) objects.
+- The meaning of 0x1ba's +0x28 and u8. Moving other (non-predicted) objects works with 0x1ab and the Move skill
+  0x2909 (monsters, [10](10-chat-and-commands.md) §5); 0x1ba's float is distance per second (duration = distance / value).
 - 0x0099, 0x004e and validation of moves against the walkability grid ([03](03-area-and-world.md) §7).

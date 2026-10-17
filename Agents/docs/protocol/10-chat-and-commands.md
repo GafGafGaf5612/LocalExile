@@ -70,6 +70,9 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/spawn_mob <row, Id or name>[@level] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), with a rarity and an optional name, a few cells from the player (§5) |
 | `/mobs` | lists the monsters spawned on this connection (message box) |
 | `/despawn [all \| <id>]` | S→C 0x2bb (remove object, header only) for the last spawned monster, all of them, or one id |
+| `/mob_walk [0x<id>] [skill hex]` | 0x1ab: the monster starts its Move action (skill 0x2909) toward the player; it walks, animated, along the client's path |
+| `/mob_move [0x<id>] [cells/s]` | 0x1ba: slides the monster in a straight line (probe; no animation or pathing) |
+| `/mob_tp [0x<id>]` | 0x1b7: teleports the monster next to the player |
 
 Every player can use every command; there are no permissions yet.
 
@@ -161,6 +164,12 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   `boss_life_bar` / `disable_life_bar` / `global_first_aggro` states, probably the top-of-screen boss bar on aggro.
 - **Removal.** S→C **0x2bb** (world group, header only: `u16 id, u32 object id, u32 0, u16 0`) removes the object;
   live 2026-10-17 `/despawn` and `/despawn all` removed spawned monsters.
+- **Movement** (live 2026-10-17). **S→C 0x1ab "action started"** on the monster, with the Move skill **0x2909**
+  (the same id as the player's Move: a basic action every Actor has, Monster.ot `basic_action = "Move"`), sequence
+  0xffff (not client-predicted), flags 0x0408, the monster's position and the target: the monster **walks with its
+  animation, along the client's own path around walls, on the terrain height**. Alternatives: **0x1ba** (Positioned
+  move) only slides it in a straight line through walls, at `duration = cell distance / value` (value ≈ cells per
+  second; `0x141e30c90` → `0x141e34120`), keeping the old height; **0x1b7** teleports it.
 - **Placement.** The nearest walkable cell 6–20 cells from the server's estimate of the player; ids from 0x3000. The
   world is active, so 0x2b9 is created at once; 0x1a9 puts it in the wake zone.
 

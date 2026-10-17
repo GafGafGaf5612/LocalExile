@@ -331,11 +331,11 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
             $"0x02b9 create {rarity} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
-        conn.Monsters[id] = $"{variety.Name}@{level}";
+        conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", x, y);
     })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
-            string.Join(", ", conn.Monsters.Select(m => $"0x{m.Key:x} {m.Value}"))))
+            string.Join(", ", conn.Monsters.Select(m => $"0x{m.Key:x} {m.Value.Label} ({m.Value.X}, {m.Value.Y})"))))
     .Add("despawn", "/despawn [all | <id>] (default: the last one spawned)", async args =>
     {
         IEnumerable<uint> ids = args.Length == 0 ? conn.Monsters.Keys.TakeLast(1)
@@ -346,7 +346,57 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             if (!conn.Monsters.Remove(id)) { await conn.Commands!.Reply($"No monster 0x{id:x}."); continue; }
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove monster 0x{id:x}");
         }
+    })
+    // Movement probes: walk (0x1ba, Positioned move with a speed) or teleport (0x1b7) a monster to a few cells from the player.
+    .Add("mob_move", "/mob_move [id] [speed] (0x1ba toward you; default the last monster, speed 20)", async args =>
+    {
+        if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
+        string? sp = args.FirstOrDefault(a => !a.StartsWith("0x", StringComparison.OrdinalIgnoreCase));
+        float speed = sp is null ? 20f : float.Parse(sp, System.Globalization.CultureInfo.InvariantCulture);
+        var (x, y) = NextToPlayer(conn);
+        await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, x, y, speed), $"0x01ba move monster 0x{id:x} to ({x}, {y}) speed {speed}");
+        conn.Monsters[id] = conn.Monsters[id] with { X = x, Y = y };
+    })
+    // Action probe: start the monster's Move action (0x1ab) toward the player, like the echo of a player's click. The skill
+    // id is the player's Move (0x2909) unless given (hex); sequence 0xffff (the monster is not client-predicted).
+    .Add("mob_walk", "/mob_walk [id] [skill hex] (0x1ab Move toward you)", async args =>
+    {
+        if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
+        string? sk = args.FirstOrDefault(a => !a.StartsWith("0x", StringComparison.OrdinalIgnoreCase));
+        ushort skill = sk is null ? (ushort)0x2909 : Convert.ToUInt16(sk, 16);
+        var m = conn.Monsters[id];
+        var (x, y) = NextToPlayer(conn);
+        await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, m.X, m.Y, x, y, skill, 0xffff, 0x0408),
+            $"0x01ab monster 0x{id:x} action skill 0x{skill:x4} from ({m.X}, {m.Y}) to ({x}, {y})");
+        conn.Monsters[id] = m with { X = x, Y = y };
+    })
+    .Add("mob_tp", "/mob_tp [id] (0x1b7 next to you; default the last monster)", async args =>
+    {
+        if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
+        var (x, y) = NextToPlayer(conn);
+        await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y), $"0x01b7 teleport monster 0x{id:x} to ({x}, {y})");
+        conn.Monsters[id] = conn.Monsters[id] with { X = x, Y = y };
     });
+}
+
+// A spawned monster's id from the argument if it is 0x hex, else the last spawned one.
+static uint? MonsterArg(ClientState conn, string[] args, int i)
+{
+    if (args.Length > i && (args[i].StartsWith("0x", StringComparison.OrdinalIgnoreCase)))
+    {
+        uint id = Convert.ToUInt32(args[i], 16);
+        return conn.Monsters.ContainsKey(id) ? id : null;
+    }
+    return conn.Monsters.Count == 0 ? null : conn.Monsters.Keys.Last();
+}
+
+// A cell 3 cells from the server's estimate of the player, walkable if the walk map says so.
+static (int X, int Y) NextToPlayer(ClientState conn)
+{
+    var (px, py) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+    foreach (var (dx, dy) in new[] { (3, 0), (-3, 0), (0, 3), (0, -3), (2, 2), (-2, -2) })
+        if (conn.Layout.Walkable is not { } w || w(px + dx, py + dy)) return (px + dx, py + dy);
+    return (px, py);
 }
 
 static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log)
@@ -541,6 +591,9 @@ static class AreaLayouts
 
 sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
 
+// A monster this connection spawned: label for /mobs and where the server last put it.
+sealed record SpawnedMonster(string Label, int X, int Y);
+
 // The last instance list shown (0xae); 0xaf picks a row of it.
 sealed record ChooserList(ushort Area, IReadOnlyList<ulong> Ids);
 
@@ -577,7 +630,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
-    public readonly SortedDictionary<uint, string> Monsters = [];
+    public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
 
     /// <summary>A walkable cell a few cells from (x, y), nearest first; (x + 8, y) without a walk map.</summary>
     public (int X, int Y) SpawnNear((int X, int Y) at)
