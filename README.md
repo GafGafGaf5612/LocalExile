@@ -16,7 +16,9 @@ You need your own installed copy of the client, and everything the servers need 
 
 ## Showcase
 
-[▶ Watch the showcase video](media/showcase.mp4) (50 s, 25 MB): character select, Lioneye's Watch, taking The Coast exit,
+https://github.com/user-attachments/assets/ebb49e70-93aa-464f-a6cd-c6c130dd8c5a
+
+Character select, Lioneye's Watch, taking The Coast exit,
 and `/set_speed` in The Coast, all against the local servers.
 
 ## What works
