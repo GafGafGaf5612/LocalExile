@@ -55,7 +55,7 @@ public class InstanceEntitiesTests
         string pool(uint v) => Convert.ToHexString(BitConverter.GetBytes(v)) + "00000000" + "0000" + "00000000" + "00000000";
         string expected =
             "00" + "00" +                                                     // flags, base data
-            "73000000" + "45000000" + "00000000" + "0000" + "0002" + "0001" + // Positioned (no Sector prefix), shown
+            "73000000" + "45000000" + "00000000" + "0100" + "0002" + "0001" + // Positioned (no Sector prefix), team 1, shown
             "00" + "00000000" + "00000000" + "00" +                           // Stats
             "0800" + "00" + "00" +                                            // ObjectMagicProperties: identified, normal; flags
             "0000" +                                                          // Buffs (BaseEvents, Pathfinding: none)
@@ -66,6 +66,22 @@ public class InstanceEntitiesTests
             "00";                                                             // Monster reads nothing; tasks
         Assert.Equal(expected, Convert.ToHexString(b));
         Assert.Equal(112, b.Length);
+    }
+
+    [Fact]
+    public void Life_update_layout()
+    {
+        // header, u32 current, u32 reserved, u8 pool (0 = life), u16, u8 — all big-endian.
+        Assert.Equal("01B1" + "00003000" + "00000000" + "0000" + "0000004D" + "00000000" + "00" + "0000" + "00",
+            Convert.ToHexString(InstanceProtocol.LifeUpdate(0x3000, 77)));
+    }
+
+    [Fact]
+    public void Action_started_on_an_object_carries_its_id_after_the_flags()
+    {
+        string hex = Convert.ToHexString(InstanceProtocol.ActionStarted(0x1000, 1, 2, 3, 4, 0x4000, 7, 0x0408, targetObjectId: 0x3000));
+        Assert.StartsWith("01AB" + "00001000" + "00000000" + "0000" + "0488" + "00003000" + "01020304" + "4000" + "0007", hex);
+        Assert.DoesNotContain("00003000", Convert.ToHexString(InstanceProtocol.ActionStarted(0x1000, 1, 2, 3, 4, 0x4000, 7, 0x0488))[14..]);
     }
 
     [Fact]

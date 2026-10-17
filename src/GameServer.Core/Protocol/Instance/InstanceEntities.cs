@@ -205,7 +205,8 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 /// to types with a Sector component, which monsters lack.</para>
 /// </summary>
 public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyList<string> Components, string? AnimatedObject = null,
-    MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null, StateMachineData? StateMachine = null, byte TransitionState = 1)
+    MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null, StateMachineData? StateMachine = null, byte TransitionState = 1,
+    ushort Team = 1)
 {
     /// <summary>Deserialized components of `Metadata/Monsters/Monster` in read order (scripts/re/ot_components.py).</summary>
     public static readonly string[] BaseComponents =
@@ -237,8 +238,9 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
         {
             switch (c)
             {
-                // x, y, u32, u16, flags; flags1 0x02 + (hidden 0, shown 1) as for the player.
-                case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(0).U8(0).U8(0x02).U8(0).U8(1); break;
+                // x, y, f32 +0x29c, u16 team (+0x1e0; the player is team 0: 0 = friendly, green outline; 1 = hostile, red),
+                // flags; flags1 0x02 + (hidden 0, shown 1) as for the player.
+                case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(Team).U8(0).U8(0x02).U8(0).U8(1); break;
                 case "Stats": w.U8(0).U32(0).U32(0).U8(0); break;
                 // base magic properties (0x142201d70): u16 flags (bits 0-2 rarity → +0x7c, 0 = normal; bit 3 identified
                 // → +0x78, which gates the bit 7 / bit 8 / bit 5 sections, all off here), u8 +0x7a; then the own flags.

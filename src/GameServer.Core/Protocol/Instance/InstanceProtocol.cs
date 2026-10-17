@@ -76,12 +76,28 @@ public static class InstanceProtocol
     /// (live 2026-10-16: sending the target in that pair teleported the player on long clicks, onto unwalkable cells).
     /// Otherwise it looks the skill up in the actor's granted skills and starts the action (0x141ee97f0 → 0x141e8cf10).
     /// </summary>
-    public static byte[] ActionStarted(uint objectId, int posX, int posY, int targetX, int targetY, ushort skillId, ushort sequence, ushort flags)
+    public static byte[] ActionStarted(uint objectId, int posX, int posY, int targetX, int targetY, ushort skillId, ushort sequence, ushort flags,
+        uint? targetObjectId = null)
     {
-        var w = new LoginWriter().U16(ActionStartedId).U32(objectId).U32(0).U16(0).U16((ushort)(flags & 0xff7f));
+        // Flags bit 0x80: a u32 target object id follows the flags (an action aimed at an object, like C→S 0x24).
+        var w = new LoginWriter().U16(ActionStartedId).U32(objectId).U32(0).U16(0)
+            .U16((ushort)(targetObjectId is null ? flags & 0xff7f : flags | 0x80));
+        if (targetObjectId is { } t) w.U32(t);
         CompactInt(w, posX); CompactInt(w, posY); CompactInt(w, targetX); CompactInt(w, targetY);
         return w.U16(skillId).U16(sequence).ToArray();
     }
+
+    public const ushort LifeUpdateId = 0x1b1;
+
+    /// <summary>
+    /// S→C 0x1b1 (world group, class 0x1435dd878, read 0x141fe0790; world handler 0x142187480 → the object's Life
+    /// component): object header, u32 current (+0x20), u32 reserved (+0x24), u8 pool (+0x28: 0 life, 1 mana, 2 energy
+    /// shield), u16 (+0x2a → pool +0x14, probably reserved percent), u8 (+0x2c), all big-endian. 0x141e69fb0 stores the
+    /// values in the pool. For the life pool the handler also calls the Life component's death slot (vtable +0xe8, with
+    /// the +0x2c byte) when life drops from ≥ 1 to &lt; 1, and its revive slot (+0x100) on the way back.
+    /// </summary>
+    public static byte[] LifeUpdate(uint objectId, uint current, uint reserved = 0, byte pool = 0, ushort u2a = 0, byte u2c = 0) =>
+        new LoginWriter().U16(LifeUpdateId).U32(objectId).U32(0).U16(0).U32(current).U32(reserved).U8(pool).U16(u2a).U8(u2c).ToArray();
 
     public const ushort TeleportId = 0x1b7, MoveToId = 0x1ba, EnterWakeZoneId = 0x1a9, LeaveWakeZoneId = 0x1aa;
 

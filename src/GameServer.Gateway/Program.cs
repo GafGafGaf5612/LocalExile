@@ -213,6 +213,14 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
 // With Ctrl: list the destination's instances (0xae) for the client's instance chooser.
 static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
 {
+    SpawnedMonster? target;
+    lock (conn.Monsters) target = conn.Monsters.GetValueOrDefault(use.TargetId);
+    if (target is not null)
+    {
+        // In the background: the hit lands later, and the read loop must keep answering ticks meanwhile.
+        _ = Attack(remote, stream, ciphers, conn, use, target);
+        return;
+    }
     var exit = conn.Layout.Exits.FirstOrDefault(e => e.Id == use.TargetId);
     if (exit.Exit is null)
     {
@@ -232,6 +240,42 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         return;
     }
     await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(dest, 0, false), use.ToString());
+}
+
+// The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). Echo it as the player's
+// action aimed at the monster (0x1ab, flags | 0x80 + target id) so the client plays it, then, when the hit lands, lower
+// the monster's life (0x1b1). A third of the maximum per hit for now (no damage model yet). At 0 the client's Life
+// component runs its death; the corpse is removed 10 s later.
+static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
+{
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (px, py) = conn.Walk.Position(now);
+    (int X, int Y) at;
+    lock (conn.Monsters) at = m.Walk.Position(now);
+    await Send(remote, stream, ciphers,
+        InstanceProtocol.ActionStarted(PlayerId, px, py, at.X, at.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
+        $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife})");
+    if (m.Life == 0) return;
+    await Task.Delay(400);   // roughly when the swing lands
+    uint life;
+    lock (conn.Monsters)
+    {
+        if (m.Life == 0) return;
+        m.Life = (uint)Math.Max(0, (long)m.Life - Math.Max(1, (m.MaxLife + 2) / 3));
+        life = m.Life;
+        if (life == 0) { m.Aggro = false; m.Dead = true; }
+    }
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
+        $"0x01b1 monster 0x{use.TargetId:x} life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+    if (life > 0) return;
+    _ = Task.Delay(10_000).ContinueWith(async _ =>
+    {
+        bool removed;
+        lock (conn.Monsters) removed = conn.Monsters.Remove(use.TargetId);
+        if (removed && !conn.Closed)
+            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(use.TargetId), $"0x02bb remove dead monster 0x{use.TargetId:x}");
+    });
 }
 
 // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
@@ -292,8 +336,11 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(stat, value)]),
             $"0x01b3 stats: row {stat} = {value}");
     })
-    .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [normal|magic|rare|unique] [name]", async args =>
+    .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
     {
+        // "friendly": on the player's team (Positioned team 0); monsters are hostile (team 1) otherwise.
+        bool friendly = args.Any(a => a.Equals("friendly", StringComparison.OrdinalIgnoreCase));
+        args = [.. args.Where(a => !a.Equals("friendly", StringComparison.OrdinalIgnoreCase))];
         if (args.Length == 0) throw new ArgumentException("which monster");
         if (Monsters.Error is { } error) { await conn.Commands!.Reply(error); return; }
         // Words up to a rarity keyword name the monster; words after it are a custom name.
@@ -323,7 +370,8 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         // The type supplies the animated object; Game_MONSTER_AO=1 also sends the variety's first AOFiles path (Animated
         // bit0), which is not needed.
         string? ao = Environment.GetEnvironmentVariable("Game_MONSTER_AO") == "1" ? variety.AnimatedObject : null;
-        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates);
+        ushort team = friendly ? (ushort)0 : (ushort)1;
+        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team);
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
@@ -331,11 +379,11 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
         // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
-            $"0x02b9 create {rarity} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
+            $"0x02b9 create {rarity}{(friendly ? " friendly" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
         lock (conn.Monsters)
             conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
-                variety.AggroRange, Math.Max(2, variety.ObjectSize + 1));
+                variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life);
     })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
@@ -411,6 +459,7 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
             {
                 foreach (var (id, m) in conn.Monsters)
                 {
+                    if (m.Dead) continue;
                     var (mx, my) = m.Walk.Position(now);
                     double d = Math.Sqrt((double)(mx - px) * (mx - px) + (double)(my - py) * (my - py));
                     if (!m.Aggro && d <= m.AggroRange) { m.Aggro = true; m.LastTarget = null; }
@@ -664,13 +713,15 @@ static class AreaLayouts
 sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
-sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange)
+sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange, uint maxLife)
 {
     public string Label => label;
     public WalkEstimator Walk { get; set; } = walk;
     public int AggroRange => aggroRange;
     public int StopRange => stopRange;
-    public bool Aggro;
+    public uint MaxLife { get; } = maxLife;
+    public uint Life = maxLife;
+    public bool Aggro, Dead;
     public (int X, int Y)? LastTarget;
 }
 
