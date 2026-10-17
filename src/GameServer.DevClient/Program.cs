@@ -13,8 +13,9 @@ using var reader = new StreamReader(stream, Encoding.UTF8);
 using var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
 Console.WriteLine($"connected to {host}:{port}. Ctrl+Z/empty line to quit.");
 
-while (Console.ReadLine() is { Length: > 0 } input)
+while (Console.ReadLine() is { } raw && raw.Trim('﻿', ' ', '	') is { Length: > 0 } input)
 {
+    // Piped input (e.g. from PowerShell) can start with a byte-order mark; it is ignored like surrounding blanks.
     string json = input.TrimStart().StartsWith('{') ? input : ToJson(input);
     await writer.WriteLineAsync(json);
     Console.WriteLine(await reader.ReadLineAsync());
