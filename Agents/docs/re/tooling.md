@@ -76,6 +76,8 @@ Workflow per run:
 | `trace-pong.js` | the 0x1c read, the send-time queue pop and logger calls after the first 0x1c (used to find the HNC violation) |
 | `trace-missing-files.js` | paths the file lookup `0x1421cc280` fails on (C++ exceptions thrown via `0x1421cc54e`) |
 | `check-components.js` | any created object (0x2b9): per component the live vtable, its deserializer and the bytes it consumed, the leftover, and the component that was reading on a Buffer Underflow (section 7) |
+| `trace-skills.js` | every skill added to an ActiveSkillManager (`SkillInstanceAdded` `0x141eea6a0`): id, action id, effect name, backtrace |
+| `trace-skill-stats.js` | stat getter calls (key, value, caller) while a skill action is created or started |
 | `trace-enter-area.js` | milestones (SetLocalPlayerId, EnterArea, WorldActivate, CreateObject, UI `0x140785160`), inventory registrations, passive slot creation and **inventory lookups that return null** (with the row and caller) |
 
 Notes:

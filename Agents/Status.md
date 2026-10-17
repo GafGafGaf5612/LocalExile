@@ -21,20 +21,21 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Walk maps captured from the client on first visit; the Gateway uses them for position estimates and spawns | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8 |
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed` (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
 | Monsters: `/spawn_mob <row, Id or name>[@level] [friendly] [rarity] [name]`, `/mobs`, `/despawn`, `/mob_walk`, `/ai`: any of 10 345 of the 10 691 MonsterVarieties at a level and rarity, with full life for its level, hostile (red) or friendly, that chases the player when near (Move action 0x1ab, client pathing) | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
+| Skills: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor skill list, with the class's unarmed attack time and damage; it goes on the skill bar, swings at 833 ms, and the server lowers the monster's life 2–5 per hit until it dies | `GrantedSkill`, `SkillCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 
 ## Partly working
 
 - **Positions are estimated, not simulated.** The Gateway estimates where the player is from clicks, walk speed and the
   walk map; there is no server-side pathing or collision.
-- **Stats.** `/set_stat` and `/set_speed` work with the client's own stat keys (for example `0xf5` =
-  `movement_velocity_+%`). The extracted `Stats.json` row order did not match those keys with the old schema; whether
-  the vendored schema fixes this is not checked.
+- **Stats.** The client's stat key is the Stats.dat row + 1 with the vendored schema ([11](docs/protocol/11-skills.md)
+  §5); `/set_stat` still takes keys, not names. The player sends only its unarmed attack stats; life, mana and
+  attributes come from the client's defaults.
 - **Spawn points.** The Coast uses the walkable cell farthest from any edge, not the arrival point next to the exit.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
-- **Monsters.** They chase but cannot fight: neither the player nor monsters have skills yet (clicking a monster only
-  walks to it). The hit and death messages are implemented but untested (S→C 0x1b1). No mods; "emerge" monsters stay
-  hidden; 346 varieties with NPC / ControlZone / … components are refused.
+- **Combat.** The player's default attack kills monsters (server-side damage: the unarmed range, no damage model,
+  no armour or resistances). Monsters chase but do not attack: they have no granted skills yet. No mods; "emerge"
+  monsters stay hidden; 346 varieties with NPC / ControlZone / … components are refused.
 
 ## Not working yet
 
@@ -45,12 +46,12 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - Esc → "Exit to character selection": the client sends 0x153, gets no answer and hangs. Workaround:
   `.\scripts\dev\live.ps1 -NoClient`.
 - Exits beyond town: The Coast's own exits, and every other area.
-- Items, skills, combat, levelling, saving the character's position or progress.
+- Items, gem skills, monsters attacking, the player taking damage, levelling, saving the character's position or progress.
 - `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (157 tests) and `dotnet test tests/GameServer.Data.Tests` (8 tests) pass.
+`dotnet test tests/GameServer.Core.Tests` (160 tests) and `dotnet test tests/GameServer.Data.Tests` (8 tests) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

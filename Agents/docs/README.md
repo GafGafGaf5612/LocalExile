@@ -17,6 +17,7 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 | [protocol/08-area-transitions.md](protocol/08-area-transitions.md) | area exits: AreaTransition object, blob, positions from DGR/.arm named points (The Coast in Lioneye's Watch) |
 | [protocol/09-area-change.md](protocol/09-area-change.md) | changing area through an exit, instance details (0x27), the instance chooser |
 | [protocol/10-chat-and-commands.md](protocol/10-chat-and-commands.md) | chat input (0x15), server replies, stats update (0x1b3), dev commands |
+| [protocol/11-skills.md](protocol/11-skills.md) | skills: ActiveSkillManager, basic actions from the .ot, the Actor skill list, the default attack, stat keys |
 | [protocol/06-debugging-log.md](protocol/06-debugging-log.md) | every live run, crash and fix, and lessons |
 | [protocol/address-index.md](protocol/address-index.md) | all client addresses by subsystem |
 

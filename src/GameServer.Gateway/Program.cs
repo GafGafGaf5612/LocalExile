@@ -244,12 +244,19 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
 
 // The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). Echo it as the player's
 // action aimed at the monster (0x1ab, flags | 0x80 + target id) so the client plays it, then, when the hit lands, lower
-// the monster's life (0x1b1). A third of the maximum per hit for now (no damage model yet). At 0 the client's Life
+// the monster's life (0x1b1) by the unarmed damage (Characters.dat MinDamage..MaxDamage; no damage model yet). One
+// attack per attack time (WeaponSpeed ms): while one runs, repeats of 0x24 are ignored. At 0 the client's Life
 // component runs its death; the corpse is removed 10 s later.
 static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
 {
+    var weapon = Skills.UnarmedFor(1);
     double now = conn.Clock.Elapsed.TotalSeconds;
+    lock (conn.Monsters)
+    {
+        if (now < conn.NextAttackAt) return;
+        conn.NextAttackAt = now + weapon.AttackMs / 1000.0;
+    }
     var (px, py) = conn.Walk.Position(now);
     (int X, int Y) at;
     lock (conn.Monsters) at = m.Walk.Position(now);
@@ -257,17 +264,18 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         InstanceProtocol.ActionStarted(PlayerId, px, py, at.X, at.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
         $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife})");
     if (m.Life == 0) return;
-    await Task.Delay(400);   // roughly when the swing lands
+    await Task.Delay(weapon.AttackMs / 2);   // roughly when the swing lands
     uint life;
+    int damage = Random.Shared.Next(weapon.MinDamage, weapon.MaxDamage + 1);
     lock (conn.Monsters)
     {
         if (m.Life == 0) return;
-        m.Life = (uint)Math.Max(0, (long)m.Life - Math.Max(1, (m.MaxLife + 2) / 3));
+        m.Life = (uint)Math.Max(0, (long)m.Life - damage);
         life = m.Life;
         if (life == 0) { m.Aggro = false; m.Dead = true; }
     }
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
-        $"0x01b1 monster 0x{use.TargetId:x} life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life > 0) return;
     _ = Task.Delay(10_000).ContinueWith(async _ =>
     {
@@ -528,8 +536,10 @@ static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ci
 // The player is always a Witch for now (the only class whose object is mapped); the name is the character's.
 static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout, string? name)
 {
+    var weapon = Skills.UnarmedFor(1);
     var witch = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: 1, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
-        AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? "Metadata/Characters/Int/Int.ao");
+        AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? "Metadata/Characters/Int/Int.ao",
+        Skills: Skills.PlayerDefaults(weapon), Stats: weapon.Stats());
     uint type = InstanceEntities.ObjectTypeHash("Metadata/Characters/Int/Int");
     var messages = new List<(string Name, byte[] Bytes)>
     {
@@ -561,6 +571,8 @@ sealed partial class Program
 
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
+    // The skills granted to players (the default attack); loaded with the first player.
+    internal static readonly SkillCatalog Skills = new();
 
     internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ConnectionCiphers, SemaphoreSlim> SendGates = new();
 
@@ -580,6 +592,13 @@ static class StatKeys
     public const uint MovementVelocityPct = 0xf5;
     /// <summary>movement_velocity_cap (0x141e7c0b0 caps the speed with it when positive).</summary>
     public const uint MovementVelocityCap = 0x44f;
+    // Main-hand attack stats (client key = Stats.dat row + 1, checked against the keys the client reads in an attack).
+    public const uint MainHandMinPhysical = 0x117, MainHandMaxPhysical = 0x118;
+    public const uint MainHandMinTotal = 0x29e, MainHandMaxTotal = 0x29f;
+    public const uint MainHandAttackDurationMs = 0x142;          // main_hand_base_weapon_attack_duration_ms
+    public const uint MainHandTotalAttackDurationMs = 0x221a;    // main_hand_total_base_weapon_attack_duration_ms
+    public const uint HundredTimesAttacksPerSecond = 0x2a6;
+    public const uint MainHandBaseMaxAttackDistance = 0x146, MainHandMaxAttackDistance = 0x4d3;
 }
 
 /// <summary>What the Gateway knows about an area's layout: the terrain grid (for movement estimates), where the player
@@ -758,6 +777,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public InstanceKeyring Keyring = null!;
     // Server objects created after entering (monsters); the player is 0x1000 and exits start at 0x2000.
     public uint NextObjectId = 0x3000;
+    // The player's attacks: the next time one may start (Clock seconds). The client repeats 0x24 while the button is held.
+    public double NextAttackAt;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).

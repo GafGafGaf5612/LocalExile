@@ -59,13 +59,10 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 3. Gameplay
 
-### A correct stat table
-- **Known:** the client's stat keys (for example `0xf5` = `movement_velocity_+%`) did not match the rows of the
-  extracted `Stats.json` with the old schema. `data/schema/` now has a newer dat-schema that decodes every table without
-  a mismatch.
-- **Start:** extract the tables again ([GettingStarted](GettingStarted.md), "Extracting the game's data tables") and
-  compare `Stats.json` with keys read from the client (Frida on the stat getter `0x1424cfa40`).
-- **Done when:** `/set_stat <name> <value>` works by stat name.
+### Stats by name
+- **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §5).
+- **Done when:** `/set_stat <name> <value>` works by stat name, and the player's real stats (life, mana, attributes)
+  are sent in the Stats component.
 
 ### Character progression
 - Use `data/tables/ExperienceLevels.json` and `Characters.json` (class base life, mana, attributes) through an adapter
@@ -82,16 +79,16 @@ Items are in rough priority order within each section. "Known" says what is alre
   [05](docs/protocol/05-inventories-and-ui.md) "Open".
 - **Done when:** a new character has its starting weapon and flasks, then items can be moved and dropped.
 
-### Skills and combat (next)
-- **Known:** nobody has a skill: in game the client only ever uses Move (0x2909) and interact (0x0266), so clicking a
-  monster just walks to it. The server already answers a C→S 0x24 on a monster with a hit (0x1ab aimed at it) and
-  lowers its life with S→C 0x1b1, whose life-to-0 transition runs the client's death
-  ([10](docs/protocol/10-chat-and-commands.md) §5, "Combat").
-- **Start:** how skills are granted. Suspects: the Actor component's flag-gated sections (slot 20 `0x1421932b0`, sent
-  empty for the player and monsters), and the skill-bar / gem messages (0xc3 sockets and gems,
-  [05](docs/protocol/05-inventories-and-ui.md)). Give the player the default attack first, then monsters their
-  MonsterVarieties GrantedEffects.
-- **Done when:** clicking a monster attacks it, three hits kill it, and a monster hits back.
+### Combat: monsters hit back (next)
+- **Known:** skills are granted in the Actor component's skill list (slot 20, f0 0x40); the player's default attack
+  works and kills monsters ([11](docs/protocol/11-skills.md)).
+- **Start:** give monsters their MonsterVarieties GrantedEffects the same way (the monster blob's Actor), make the AI
+  use them (0x1ab with the skill id aimed at the player), then lower the player's life with 0x1b1 on the player.
+- **Done when:** a monster attacks the player, the player's life goes down, and the player can die.
+
+### Gem skills
+- **Start:** items in the player's inventories ([05](docs/protocol/05-inventories-and-ui.md)), the skill record's
+  support list, and f0 0x20 (skill update) to add or change skills after entering.
 
 ### Saving progress
 - Persist the character's area, position, level and items in the account store (`GameServer.Storage`).

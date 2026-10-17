@@ -302,6 +302,12 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 /// define_shared_timer entries (scripts/re/ot_components.py "shared_states" / "shared_timers").</summary>
 public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int SharedTimers);
 
+/// <summary>A skill the server grants an Actor (ActiveSkillManager, Actor +0x598): Id is the instance's u16 (+0x40),
+/// which the client uses in its skill messages; the action id (+0x42) comes from the data (GEPL row → GrantedEffect →
+/// ActiveSkill → ActionTypes HASH16). Rows are GrantedEffectsPerLevel and GrantedEffectStatSetsPerLevel indices.</summary>
+public sealed record GrantedSkill(ushort Id, uint EffectsPerLevelRow, uint StatSetsPerLevelRow,
+    IReadOnlyList<(uint Key, int Value)>? Stats = null);
+
 /// <summary>ObjectMagicProperties rarity (flags bits 0-2 → +0x7c).</summary>
 public enum MonsterRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
 
@@ -317,6 +323,17 @@ public sealed class BlobWriter
     public BlobWriter Zeros(int n) { for (int i = 0; i < n; i++) _b.Add(0); return this; }
     /// <summary>u32 UTF-16 unit count, then the units (0x140e28d60).</summary>
     public BlobWriter WStr32(string s) { U32((uint)s.Length); foreach (byte x in Encoding.Unicode.GetBytes(s)) _b.Add(x); return this; }
+    /// <summary>Unsigned compact int (stat keys and counts, 0x141e61010), InstanceProtocol.CompactUInt.</summary>
+    public BlobWriter CompactU(uint v) { var lw = new LoginWriter(); InstanceProtocol.CompactUInt(lw, v); _b.AddRange(lw.ToArray()); return this; }
+    /// <summary>Signed compact int (stat values, 0x141e490e0), InstanceProtocol.CompactInt.</summary>
+    public BlobWriter CompactI(int v) { var lw = new LoginWriter(); InstanceProtocol.CompactInt(lw, v); _b.AddRange(lw.ToArray()); return this; }
+    /// <summary>Compact count, then (compact key, compact value) pairs: a stats list (0x1424cfaf0 per pair).</summary>
+    public BlobWriter Stats(IReadOnlyList<(uint Key, int Value)>? stats)
+    {
+        CompactU((uint)(stats?.Count ?? 0));
+        foreach (var (k, v) in stats ?? []) CompactU(k).CompactI(v);
+        return this;
+    }
 }
 
 /// <summary>
@@ -327,7 +344,8 @@ public sealed class BlobWriter
 /// 0x142192a80). Pathfinding and 0x1435a0078 read nothing. Comps 10/11 (0x143468920, 0x14346c238) are still unverified.
 /// </summary>
 public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int GridY,
-    uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null)
+    uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null,
+    IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null)
 {
     public byte[] Blob()
     {
@@ -339,8 +357,9 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
         // vtable +0xb0 (visibility). Without "shown" the player entity exists but its model is not drawn.
         w.I32(GridX).I32(GridY).U32(0).U16(0).U8(0).U8(Shown ? (byte)0x02 : (byte)0);
         if (Shown) w.U8(0).U8(1);
-        // comp1 (0x1421c2f40): compact-int count of (compact-int key, value) pairs, then u32 +0x28, u32 +0x2c, u8 +0x30.
-        w.U8(0).U32(0).U32(0).U8(0);
+        // comp1 = Stats (0x1421c2f40): compact-int count of (compact-int key, value) pairs, then u32 +0x28, u32 +0x2c, u8
+        // +0x30. Keys are the client's stat ids (Stats.dat row + 1).
+        w.Stats(Stats).U32(0).U32(0).U8(0);
         // comp3 (0x141e114d0): u16 count of entries (u16, u8, 0x141e06bb0 record).
         w.U16(0);
         // Life (0x141e6c2f0): life, mana and energy shield pools (0x141e6be70), then a flags byte (0x141e6c270).
@@ -363,12 +382,40 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U32(0)             // u32 count + u32 list (vtable +0x158)
          .U8(0);             // microtransaction counters (0x141e83470)
         w.U8(0).U8(0);      // Inventories (0x141e1ee30): inventory count, second count
-        // comp9 (0x142192a80): u32-counted UTF-16 string, u16 +0x21c, u8; two more u8 (+0x230, +0x234) only when a
-        // runtime value is < 1 (false here: traced live, comp9 read 15 bytes); u32 +0x26c, u32 +0x274; then its
-        // vtable+0xa0 reader 0x1421932b0: two flag bytes, every section behind them off.
-        w.WStr32("").U16(0).U8(0).U32(0).U32(0).U8(0).U8(0);
+        // comp9 = Actor (0x142192a80): u32-counted UTF-16 string, u16 +0x21c, u8; two more u8 (+0x230, +0x234) only
+        // when a runtime value is < 1 (false here: traced live, comp9 read 15 bytes); u32 +0x26c, u32 +0x274; then its
+        // vtable+0xa0 reader 0x1421932b0: two flag bytes. f0 0x40 = the skill list (0x142197b10); the rest stay off.
+        w.WStr32("").U16(0).U8(0).U32(0).U32(0);
+        if (Skills is { Count: > 0 })
+        {
+            w.U8(0x40).U8(0);
+            WriteSkillList(w, Skills);
+        }
+        else w.U8(0).U8(0);
         w.U8(0);            // tasks (0x141ee00f0)
         return w.ToArray();
+    }
+
+    /// <summary>Actor slot 20, f0 0x40 (0x142197b10): u8 n × skill (0x142196ce0), u8 m × (u32 row, u32, u32), u32 k ×
+    /// (u16 skill id, u32 c × 4 u32). Each skill: u16 id (+0x40), the GrantedEffectsPerLevel reference (0x1424a0dc0:
+    /// u8 → +0x10, u32 GEPL row, then a GrantedEffectStatSetsPerLevel reference 0x1424a0990: u8 a [u8 if a], u32 GESSPL
+    /// row; then one more stat-set reference per entry of the effect's additional stat sets, none for these skills), u8
+    /// flags (bit0 → u32 parent object id + u16), u8 support count × (GEPL reference, u32), u32, u32, u32, u8, then the
+    /// skill's stats (compact count × compact key, compact value) and one such stat list per additional stat set.</summary>
+    internal static void WriteSkillList(BlobWriter w, IReadOnlyList<GrantedSkill> skills)
+    {
+        w.U8((byte)skills.Count);
+        foreach (var s in skills)
+        {
+            w.U16(s.Id)
+             .U8(0).U32(s.EffectsPerLevelRow)      // GEPL reference
+             .U8(0).U32(s.StatSetsPerLevelRow)     // its stat set
+             .U8(0)                                // flags: no parent object
+             .U8(0)                                // supports
+             .U32(0).U32(0).U32(0).U8(0)
+             .Stats(s.Stats);                      // the skill's own stats
+        }
+        w.U8(0).U32(0);
     }
 
     /// <summary>One Life pool (0x141e6be70): u32 +0x30 current, u32 +0x10 reserved (flat), i16 +0x14 (reserved percent?),

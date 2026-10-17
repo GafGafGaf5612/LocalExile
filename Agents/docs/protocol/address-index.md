@@ -164,3 +164,23 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x141f91f60` / `0x141f92000` | Fn | world object header write / read |
 | `0x1416aa670` | Fn | perf overlay ("network: {} ms") |
 
+
+## Skills ([11](11-skills.md))
+
+| Address | Kind | What |
+|---|---|---|
+| `0x1435db980` | VT | ActiveSkillManager (Actor +0x598; skills at +0x158, sorted by instance +0x40) |
+| `0x141eea6a0` | Fn | ActiveSkillManager::SkillInstanceAdded (manager slot 7) |
+| `0x141ee97f0` | Fn | create the action for a skill id |
+| `0x142192860` | Fn | ClientActor ctor: basic actions from the type's u16 list (`type+0xf8`) |
+| `0x142198d40` | Fn | AddSkill(manager, ActionTypes HASH16): basic action |
+| `0x1421932b0` | Fn | Actor slot 20 reader (f0 0x40 skill list, 0x20 skill update, …) |
+| `0x142197b10` | Fn | Actor f0 0x40: skill list |
+| `0x142198800` | Fn | Actor f0 0x20: skill update |
+| `0x1421981d0` | Fn | read n skill records into the manager |
+| `0x142196ce0` | Fn | skill record reader |
+| `0x1424a0dc0` | Fn | GrantedEffectsPerLevel reference reader |
+| `0x1424a0990` | Fn | GrantedEffectStatSetsPerLevel reference reader |
+| `0x141ee73d0` | Fn | ActiveSkillInstance ctor (action id from GEPL → GrantedEffect → ActiveSkill → ActionType) |
+| `0x1435b9728` | VT | ActiveSkillInstance |
+| `0x1424cfa40` | Fn | stat getter (stats, key) |

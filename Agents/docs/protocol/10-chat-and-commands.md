@@ -49,10 +49,9 @@ compact uint n, n × (compact uint stat key, compact int value)
 - Unsigned compact (`0x14089cad0`): < 0x80 is 1 byte; then 0x80 + 14 bits, 0xc0 + 21 bits, 0xe0 + 28 bits; else 0xf0 +
   u32. Signed compact is `0x141fa3d60` (`InstanceProtocol.CompactInt`).
 - The stat key is the client's own stat id: the int its getter `0x1424cfa40(stats, key)` binary-searches in the sorted
-  (key, value) vector at stats+0xf0, which `0x1424cfaf0` fills. It is **not** the row of our extracted
-  `data/tables/Stats.json`. That order drifts: client key 245 is `movement_velocity_+%`, which is row 244 there, and
-  the keys the Life component reads match unrelated rows. Take keys from client code (Frida on the getter shows which
-  keys a feature reads, with callers). `StatKeys` in the Gateway lists the known ones.
+  (key, value) vector at stats+0xf0, which `0x1424cfaf0` fills. With the vendored schema it is **the Stats.dat row + 1**
+  (key 0xf5 = row 244 `movement_velocity_+%`; checked on every key an attack reads, [11](11-skills.md) §5). `StatKeys`
+  in the Gateway lists the ones in use.
 - Walk speed (`0x141e7c0b0`): base (`+0x548`) × (1 + key **0xf5** / 100, at least −100). With a flag it is also
   multiplied by (1 + key 0xce6 / 100). It is capped by key **0x44f** (`movement_velocity_cap`) when that is positive.
   Measured live: sending 0xf5 = 200 makes the getter return 200 and the walk visibly faster.
@@ -182,23 +181,19 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   the .ot `team` values are only defaults. The player is sent team 0. Monsters sent with 0 had a **green** (friendly)
   hover outline; with 1 the outline is **red** and on The Coast a life bar shows over the head (towns hide hostile life
   bars). The Gateway sends 1, or 0 with `/spawn_mob … friendly` (both verified live: red and green outlines).
-- **Combat: not working yet, skills are missing.** Clicking a monster sends only Move (0x2909) and nothing else: the
-  player has no skills granted, not even the default attack, and neither do monsters (live 2026-10-17: in a whole
-  session the client used only skills 0x2909 Move and 0x0266 interact). The server side is ready for the first hit:
-  C→S 0x24 on a monster is answered with 0x1ab aimed at it (flags | 0x80 + u32 target id after the flags, write
+- **Combat** (live 2026-10-17, [11](11-skills.md)). The player has the default attack (skill 0x0102); a click on a
+  monster sends C→S 0x24 with it, which is answered with 0x1ab aimed at it (flags | 0x80 + u32 target id after the flags, write
   `0x141fdd990`), then **S→C 0x1b1** lowers its life: `header, u32 current, u32 reserved, u8 pool (0 life, 1 mana,
   2 ES), u16 (+0x2a), u8 (+0x2c)`, big-endian (read `0x141fe0790`); the world handler (case 0x1b1) applies it to the
   pool (`0x141e69fb0`) and calls the Life component's death slot (vtable +0xe8) when life goes from ≥ 1 to < 1, revive
-  (+0x100) the other way. A dead monster is removed (0x2bb) 10 s later. Skill granting is probably in the Actor
-  component's flag-gated sections (slot 20 `0x1421932b0`), which are sent empty.
+  (+0x100) the other way. Each hit takes the unarmed damage (2–5 for the Witch), one per attack time (833 ms); a dead
+  monster is removed (0x2bb) 10 s later. Monsters have no granted skills yet, so they do not hit back.
 - **Placement.** The nearest walkable cell 6–20 cells from the server's estimate of the player; ids from 0x3000. The
   world is active, so 0x2b9 is created at once; 0x1a9 puts it in the wake zone.
 
 ## 6. Open
 
 - The chat line message, and the channel join request and its answer.
-- A correct stat id ↔ name table: re-extract Stats.dat from this client's GGPK, or find why our table's row order
-  differs.
-- Monsters: **skills** (the player's default attack and the monsters' GrantedEffects: needed for any combat), mods (the
+- Monsters: **skills** (their GrantedEffects, so they fight back), mods (the
   ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
   varieties with other components (NPC, ControlZone, …), AI and combat.

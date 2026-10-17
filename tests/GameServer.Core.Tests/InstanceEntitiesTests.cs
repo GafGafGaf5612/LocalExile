@@ -49,6 +49,26 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Player_blob_with_stats_and_a_granted_skill()
+    {
+        // Live 2026-10-17: the default attack (PlayerMelee, GEPL 4474, GESSPL 4430) with the Witch's unarmed stats.
+        (uint, int)[] stats = [(0x142, 833), (0x117, 2)];
+        byte[] b = new PlayerObject("Ab", ClassIndex: 1, GridX: 0x73, GridY: 0x45, Life: 50, Mana: 40,
+            Skills: [new GrantedSkill(0x0102, 4474, 4430, stats)], Stats: stats).Blob();
+        string hex = Convert.ToHexString(b);
+        const string statList = "02" + "8142" + "8341" + "8117" + "02";       // compact: count, key 0x142 = 833, key 0x117 = 2
+        Assert.StartsWith("0000" + "73000000" + "45000000" + "00000000" + "0000" + "0002" + "0001" + // flags, base, Positioned
+            statList + "00000000" + "00000000" + "00", hex);                  // comp1 = Stats
+        string actor =
+            "00000000" + "0000" + "00" + "00000000" + "00000000" +           // Actor main body
+            "4000" +                                                          // slot 20: f0 0x40 = skill list
+            "01" + "0201" + "00" + "7A110000" + "00" + "4E110000" +          // 1 skill: id 0x102, GEPL ref (u8, row 4474, stat set u8, row 4430)
+            "00" + "00" + "00000000" + "00000000" + "00000000" + "00" + statList + // flags, supports, 3 × u32, u8, stats
+            "00" + "00000000";                                                // no (row, u32, u32) entries, no u32-counted list
+        Assert.EndsWith(actor + "00", hex);                                   // then tasks
+    }
+
+    [Fact]
     public void Minimal_monster_blob_layout()
     {
         byte[] b = new MonsterObject(0x73, 0x45, Life: 100, MonsterObject.BaseComponents).Blob();
