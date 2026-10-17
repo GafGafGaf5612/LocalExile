@@ -168,6 +168,8 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             // In the background: the player may first walk to the target, and the read loop must keep answering ticks.
             _ = OnUseObject(remote, stream, ciphers, conn, use);
         }
+        else if (id == InstanceProtocol.ResurrectId)
+            _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
         else if (id == InstanceChat.ChatId)
         {
             var chat = InstanceChat.ReadChat(bytes);
@@ -450,7 +452,14 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         // bit0), which is not needed.
         string? ao = Environment.GetEnvironmentVariable("Game_MONSTER_AO") == "1" ? variety.AnimatedObject : null;
         ushort team = friendly ? (ushort)0 : (ushort)1;
-        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team);
+        // Its attack: the variety's first granted effect (Hungry Corpse: Melee) at its level, with the variety's attack time,
+        // reach and the level's damage as the skill's final stats (11-skills.md §7).
+        var damage = Monsters.BaseDamage(variety, level) ?? (1, 1);
+        var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange, damage.Min, damage.Max);
+        var skill = variety.GrantedEffects is [int effect, ..]
+            ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
+        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
+            skill is null ? null : [skill], skill is null ? null : attack.Stats());
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
@@ -462,7 +471,20 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
         lock (conn.Monsters)
             conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
-                variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life);
+                variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life) { Attack = skill is null ? null : attack, Hostile = !friendly };
+    })
+    .Add("heal", "/heal (full life; also revives: 0x1b1 from 0 runs the client's revive)", async _ =>
+    {
+        lock (conn.Monsters) conn.PlayerLife = ClientState.PlayerMaxLife;
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, ClientState.PlayerMaxLife),
+            $"0x01b1 player healed to {ClientState.PlayerMaxLife}");
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 0)]),
+            "0x01b3 player hide_mini_life_bar = 0");
+    })
+    .Add("death_screen", "/death_screen [hex flags] (show the death screen; default: this league's; 2 hides it)", async args =>
+    {
+        byte flags = args.Length > 0 ? Convert.ToByte(args[0].Replace("0x", ""), 16) : DeathScreenFlags;
+        await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(flags), $"0x0055 death screen flags 0x{flags:x2}");
     })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
@@ -532,6 +554,7 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
             await Task.Delay(500);
             if (!conn.AiEnabled) continue;
             var orders = new List<(uint Id, (int X, int Y) From, (int X, int Y) To, string Why)>();
+            var swings = new List<(uint Id, SpawnedMonster M, (int X, int Y) From)>();
             double now = conn.Clock.Elapsed.TotalSeconds;
             var (px, py) = conn.Walk.Position(now);
             lock (conn.Monsters)
@@ -548,7 +571,17 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
                         orders.Add((id, m.Walk.Order(mx, my, now), (mx, my), "gives up"));
                         continue;
                     }
-                    if (!m.Aggro || d <= m.StopRange) continue;
+                    if (!m.Aggro || now < m.BusyUntil) continue;
+                    // In reach: stop and swing at the player (hostile monsters with an attack, while the player lives).
+                    if (m.Hostile && m.Attack is { } a && d <= a.Range && conn.PlayerLife > 0)
+                    {
+                        m.BusyUntil = now + a.Seconds;
+                        m.LastTarget = null;
+                        m.Walk.Order(mx, my, now);
+                        swings.Add((id, m, (mx, my)));
+                        continue;
+                    }
+                    if (d <= m.StopRange) continue;
                     // The cell StopRange - 1 from the player on the line toward the monster (the player's cell if blocked).
                     double f = (m.StopRange - 1) / d;
                     (int X, int Y) to = ((int)Math.Round(px + (mx - px) * f), (int)Math.Round(py + (my - py) * f));
@@ -561,12 +594,81 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
             foreach (var (id, from, to, why) in orders)
                 await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, to.X, to.Y, Move, 0xffff, 0x0408),
                     $"0x01ab monster 0x{id:x} {why}: move from {from} to {to}");
+            foreach (var (id, m, from) in swings)
+                _ = MonsterSwing(remote, stream, ciphers, conn, id, m, from, (px, py));
         }
     }
     catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
     {
         // The connection closed while sending.
     }
+}
+
+// A monster swings at the player: its skill as an action aimed at the player (0x1ab, flags | 0x80 + target id, sequence
+// 0xffff), then at the contact point (half the attack time) the hit lands if the monster still lives and the player is
+// still in reach (walking away dodges it): the player's life goes down by the monster's damage (0x1b1 on the player).
+// At 0 the client runs the player's death.
+static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
+    SpawnedMonster m, (int X, int Y) from, (int X, int Y) player)
+{
+    var a = m.Attack!;
+    await Send(remote, stream, ciphers,
+        InstanceProtocol.ActionStarted(id, from.X, from.Y, player.X, player.Y, a.SkillId, 0xffff, 0x0408, targetObjectId: PlayerId),
+        $"0x01ab monster 0x{id:x} ({m.Label}) attacks the player, attack time {a.Seconds:0.00} s");
+    await Task.Delay(TimeSpan.FromSeconds(a.Seconds / 2));
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    uint life;
+    int damage = Random.Shared.Next(a.MinDamage, a.MaxDamage + 1);
+    lock (conn.Monsters)
+    {
+        if (m.Dead || conn.PlayerLife == 0 || conn.Closed) return;
+        var here = conn.Walk.Position(now);
+        if (Dist(here, m.Walk.Position(now)) > a.Range + 2)
+        {
+            Console.WriteLine($"[gateway] {remote} monster 0x{id:x} missed: the player is {Dist(here, m.Walk.Position(now)):0.0} away");
+            return;
+        }
+        conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - damage);
+        life = conn.PlayerLife;
+    }
+    // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
+    if (life == 0)
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
+            "0x01b3 player hide_mini_life_bar = 1");
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
+        $"0x01b1 player hit by monster 0x{id:x} for {damage}, life {life}/{ClientState.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
+    if (life == 0)
+        await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags), $"0x0055 death screen ({League} league)");
+}
+
+// The death screen's buttons (C→S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
+// checkpoint" revives at the area's arrival point (teleport 0x1b7), "in town" in Lioneye's Watch (an area change; in town
+// it is the same as the checkpoint).
+static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool inTown)
+{
+    lock (conn.Monsters)
+    {
+        if (conn.PlayerLife > 0) return;
+        conn.PlayerLife = ClientState.PlayerMaxLife;
+        foreach (var m in conn.Monsters.Values) m.Aggro = false;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x0054 resurrect {(inTown ? "in town" : "at checkpoint")}");
+    await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(0x02), "0x0055 hide the death screen");
+    if (inTown && conn.Layout.Hash != AreaLayouts.LioneyesWatch)
+    {
+        // The new area's player object is created with full life.
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(AreaLayouts.LioneyesWatch, 0, false), "resurrect in town");
+        return;
+    }
+    // Revive first: a teleport sent while the player is dead left them where they died (live 2026-10-17).
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, ClientState.PlayerMaxLife),
+        $"0x01b1 player revived with {ClientState.PlayerMaxLife} life");
+    // The checkpoint: the area's arrival point (waypoints are not implemented yet).
+    var (x, y) = (conn.Layout.SpawnX, conn.Layout.SpawnY);
+    conn.Walk.Teleport(x, y, conn.Clock.Elapsed.TotalSeconds);
+    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, x, y), $"0x01b7 player to the arrival point ({x}, {y})");
+    await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 0)]),
+        "0x01b3 player hide_mini_life_bar = 0");
 }
 
 // A spawned monster's id from the argument if it is 0x hex, else the last spawned one.
@@ -641,6 +743,11 @@ sealed partial class Program
     internal const uint PlayerId = 0x1000;
     // The server's tick: 30 per second. Nothing the server times (an attack) is shorter than one tick.
     internal const int TickRate = 30;
+    // The league (Game_LEAGUE): standard (softcore) or hardcore. It decides the death screen.
+    internal static readonly string League = Environment.GetEnvironmentVariable("Game_LEAGUE")?.ToLowerInvariant() == "hardcore" ? "hardcore" : "standard";
+    // S→C 0x55 flags (11-skills.md §8): standard = bit2 (Resurrect at Checkpoint) + bit3 (Resurrect in Town); hardcore =
+    // bit0 (a single Exit button, "Exit to the character selection screen", which sends C→S 0x153).
+    internal static byte DeathScreenFlags => League == "hardcore" ? (byte)0x01 : (byte)0x0c;
     internal const double TickSeconds = 1.0 / TickRate;
     // How close (cells, centre to centre) the player must be to use an exit.
     internal const double ExitReach = 6;
@@ -679,6 +786,8 @@ static class StatKeys
     public const uint MainHandBaseMaxAttackDistance = 0x146, MainHandMaxAttackDistance = 0x4d3;
     /// <summary>hide_mini_life_bar: non-zero hides the object's overhead life bar (listener 0x140220c30).</summary>
     public const uint HideMiniLifeBar = 0x2a8b;
+    /// <summary>skill_is_non_pathing: the action starts where the actor stands instead of walking into range first.</summary>
+    public const uint SkillIsNonPathing = 0x4f32;
     // "Increased attack speed" stats that apply to an unarmed melee attack (attack time = base / (1 + sum / 100)).
     public const uint AttackSpeedPct = 0x47, MeleeAttackSpeedPct = 0x49, MainHandAttackSpeedPct = 0x126,
         UnarmedMeleeAttackSpeedPct = 0xb19;
@@ -815,8 +924,37 @@ static class AreaLayouts
 sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
+// A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
+sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, int MinDamage, int MaxDamage)
+{
+    /// <summary>The attack's final stats (the client derives none, 11-skills.md §4): the swing time, reach and damage.
+    /// These also go on the monster's Stats component.</summary>
+    public IReadOnlyList<(uint, int)> Stats()
+    {
+        int ms = (int)Math.Round(Seconds * 1000);
+        return
+        [
+            (StatKeys.MainHandMinPhysical, MinDamage), (StatKeys.MainHandMaxPhysical, MaxDamage),
+            (StatKeys.MainHandMinTotal, MinDamage), (StatKeys.MainHandMaxTotal, MaxDamage),
+            (StatKeys.MainHandAttackDurationMs, ms), (StatKeys.MainHandTotalAttackDurationMs, ms),
+            (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 / Seconds)),
+            (StatKeys.MainHandBaseMaxAttackDistance, (int)Range), (StatKeys.MainHandMaxAttackDistance, (int)Range),
+        ];
+    }
+
+    /// <summary>The skill's stats: <see cref="Stats"/> plus skill_is_non_pathing. The server walks the monster into range
+    /// itself; without it the Melee action's begin (0x141938830) sends the attack through the client's own pathing step,
+    /// which drops a server-driven monster's attack (no swing). Only on the skill: on the monster's Stats component it
+    /// also stops its Move action from pathing (live 2026-10-17: the monsters stood still).</summary>
+    public IReadOnlyList<(uint, int)> SkillStats() => [.. Stats(), (StatKeys.SkillIsNonPathing, 1)];
+}
+
 sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange, uint maxLife)
 {
+    public MonsterAttack? Attack { get; init; }
+    public bool Hostile { get; init; } = true;
+    // While a swing runs (Clock seconds) the monster neither chases nor swings again.
+    public double BusyUntil;
     public string Label => label;
     public WalkEstimator Walk { get; set; } = walk;
     public int AggroRange => aggroRange;
@@ -867,6 +1005,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
+    // The player's life as the server keeps it (the Witch's 50 at level 1, PlayerObject's Life); 0 = dead.
+    public uint PlayerLife = 50;
+    public const uint PlayerMaxLife = 50;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).

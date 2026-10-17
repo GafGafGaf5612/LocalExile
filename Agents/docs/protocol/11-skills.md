@@ -130,7 +130,59 @@ decides visibility) also listens to stats (`0x140220c30`): `hide_mini_life_bar` 
 (0x59d0) hide it. The Gateway sends 0x1b3 `hide_mini_life_bar = 1` on the monster with the killing 0x1b1. Live: the bar
 disappears.
 
-## 6. Stat keys
+## 6. Monsters attack
+
+Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's life; walking away dodges a swing.
+
+- **Skill.** A monster's Actor gets the same skill list as the player (slot 20, f0 0x40) with its MonsterVarieties
+  `GrantedEffectsKeys[0]` (Hungry Corpse: 406 `Melee`). Monster effects have per-level rows only for some levels, so
+  `SkillCatalog.FindByRow` takes the highest GEPL / GESSPL level at or below the monster's (Melee: level 1, GEPL 4394).
+  Id 0x0102, like the player's (no ActionType masks to it).
+- **Stats.** The final attack stats (`MonsterAttack.Stats`): attack time = MonsterVarieties `AttackSpeed` (2400 ms),
+  reach = `MaximumAttackDistance` (8), damage = DefaultMonsterStats `Damage` at the level × `DamageMultiplier` / 100
+  with a ±20% spread (the spread is assumed). They go in the monster's Stats component and in the skill.
+- **`skill_is_non_pathing` (0x4f32) on the skill.** The Melee action's begin (vtable +0x38 `0x141938830`) is just that
+  stat: when 0, the action runner (`0x141e8e060`) sends the action through the client's own walk-into-range step,
+  which drops a server-driven monster's queued attack in the same frame (traced: created, queued, both checks passed,
+  then neither current nor queued). The server walks the monster itself, so the skill is non-pathing. Only on the
+  skill: on the monster's Stats component it also stops its Move action from pathing (the monsters stood still).
+- **AI** (`RunMonsterAi`, 500 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
+  0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
+  the player is still within reach + 2: 0x1b1 on the player.
+- **Player life** (`ClientState.PlayerLife`, 50 for the level-1 Witch). At 0 the client plays the death animation and
+  blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is hidden at 0
+  (`hide_mini_life_bar`, as for monsters) and shown again on revive.
+
+## 7. The death screen
+
+The client's `death_screen` panel (constructor `0x14028fc80`, setup `0x140290820`) does not open by itself when the
+local player dies: **S→C 0x55** opens it (instance group, class `0x1435dce40`, read `0x14219f820`, dispatcher case 0x14 →
+listeners at instance +0xf78 → `0x140d5d6a0` → a task → HUD vtable +0x4d0 `0x140d86180`).
+
+```
+u16 0x0055, u8 flags: bit0, bit1 = hide, bit2, bit3, bit4
+unless bit1: u32 BE (+0x18), u8 (+0x15) when that u32 is non-zero, u16 BE (+0x1c)     (meanings unknown, sent 0)
+```
+
+Title "You have died!" (ClientStrings ids are row + 1). Live 2026-10-17:
+
+| Flags | Buttons |
+|---|---|
+| 0x0c (standard league) | "Resurrect in Town", "Resurrect at Checkpoint" |
+| 0x00 | "Resurrect" |
+| 0x01 (hardcore) | "Exit" ("Exit to the character selection screen": sends C→S 0x153, not implemented yet) |
+| 0x02 | hides the screen |
+
+bit3 turns the left button into "Resurrect in Town", bit2 adds the checkpoint button (not with bit0); a third
+"Spectate" button belongs to PvP. bit4 and the trailing fields are not mapped (Sanctum and other modes probably use them).
+
+The buttons (`0x140290bf0`) send **C→S 0x54**: `u16 0x0054, u8 flags`, bit0 = "Resurrect in Town" (1) or the
+checkpoint / plain "Resurrect" (0). The Gateway (`Resurrect`): hides the screen (0x55 bit1); in town → area change to
+Lioneye's Watch (the new player object has full life); at the checkpoint → 0x1b1 full life first (a teleport sent while
+dead was ignored), then 0x1b7 to the area's arrival point (no waypoints yet). `Game_LEAGUE=hardcore` sends 0x01;
+`/death_screen [flags]` previews any variant.
+
+## 8. Stat keys
 
 **Client stat key = Stats.dat row + 1** with the vendored schema: every key read during an attack matches
 (0xf5 → row 244 `movement_velocity_+%`, 0x7d → 124 `base_maximum_life`, 0x144 → 323
@@ -146,5 +198,7 @@ small calculators in `0x141b..`–`0x141d..`.
 - The animation's real contact point (the server uses half the attack time); the player's other stats (life, mana,
   attributes) are still not sent; "more" multipliers.
 - A 30 Hz server loop: `TickRate` only bounds the attack time; hits use timers and the monster AI runs every 500 ms.
-- Monsters' skills: they would get their MonsterVarieties GrantedEffects the same way, then fight back.
+- Monsters use only their first granted effect; no ranged or spell skills, no monster skill choice.
+- A damage model: armour, evasion, resistances, crits; the player's real life from level and stats.
+- The death screen's bit4 and trailing fields (Sanctum and other modes); exit to character selection (0x153).
 - f0 0x20 (skill update), the second and third lists of f0 0x40, supports, skills from gems in items.

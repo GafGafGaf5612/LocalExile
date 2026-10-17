@@ -211,4 +211,17 @@ public class InstanceEntitiesTests
             "00000000" + "00000000" + "00000000" + "00" + "00" + "00" + "00000000"; // index 9 = Actor, f0 0x40, one skill, no stats
         Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, hex);
     }
+
+    [Fact]
+    public void Monster_blob_with_a_skill_and_stats()
+    {
+        // Live 2026-10-17: Hungry Corpse with Melee (GEPL 4394) in its Actor and its attack stats: 175 bytes, 0 left.
+        (uint, int)[] stats = [(0x142, 2400)];
+        byte[] b = new MonsterObject(0x73, 0x45, Life: 15, MonsterObject.BaseComponents,
+            Skills: [new GrantedSkill(0x0102, 4394, 4320, [.. stats, (0x4f32, 1)])], Stats: stats).Blob();
+        string hex = Convert.ToHexString(b);
+        Assert.Contains("0001" + "01" + "8142" + "8960" + "00000000" + "00000000" + "00", hex);   // Stats after Positioned
+        Assert.EndsWith("4000" + "01" + "0201" + "00" + "2A110000" + "00" + "E0100000" + "00" + "00" +
+            "00000000" + "00000000" + "00000000" + "00" + "02" + "8142" + "8960" + "C04F32" + "01" + "00" + "00000000" + "00", hex);
+    }
 }

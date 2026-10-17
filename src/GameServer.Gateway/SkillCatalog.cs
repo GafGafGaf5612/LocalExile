@@ -26,6 +26,31 @@ sealed class SkillCatalog(string folder = "data")
         return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats);
     }
 
+    /// <summary>
+    /// A GrantedEffects row at a level, for monsters: their effects have per-level rows only for some levels (Hungry
+    /// Corpse's Melee only level 1), so the highest GEPL level at or below <paramref name="level"/> (else the lowest), and
+    /// the effect's StatSet1 at that level the same way. Null without the tables or rows.
+    /// </summary>
+    public GrantedSkill? FindByRow(ushort id, int effectRow, int level, IReadOnlyList<(uint, int)>? stats = null)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count || t.StatSets[effectRow] < 0) return null;
+        int statSet = t.StatSets[effectRow];
+        static int Pick(List<(int Key, int Level)> rows, int key, int level)
+        {
+            int best = -1, bestLevel = int.MinValue, low = -1, lowLevel = int.MaxValue;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (rows[i].Key != key) continue;
+                int l = rows[i].Level;
+                if (l <= level && l > bestLevel) (best, bestLevel) = (i, l);
+                if (l < lowLevel) (low, lowLevel) = (i, l);
+            }
+            return best >= 0 ? best : low;
+        }
+        int gepl = Pick(t.PerLevel, effectRow, level), gesspl = Pick(t.StatSetsPerLevel, statSet, level);
+        return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats);
+    }
+
     /// <summary>The player's default skills: the default attack, with the class's unarmed weapon stats.</summary>
     public IReadOnlyList<GrantedSkill> PlayerDefaults(Unarmed weapon) => PlayerDefaults(weapon.Stats());
 
@@ -96,8 +121,9 @@ sealed class SkillCatalog(string folder = "data")
             r.GetProperty("MaxDamage").GetInt32(), r.GetProperty("MaxAttackDistance").GetInt32());
     }
 
-    private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<(int Effect, int Level)> PerLevel,
-        List<(int StatSet, int Level)> StatSetsPerLevel)
+    // StatSets: each GrantedEffects row's StatSet1 (-1 when none).
+    private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
+        List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel)
     {
         public static Tables? Load(string folder)
         {
@@ -108,16 +134,18 @@ sealed class SkillCatalog(string folder = "data")
             using var p = JsonDocument.Parse(File.ReadAllBytes(gepl));
             using var s = JsonDocument.Parse(File.ReadAllBytes(gesspl));
             var effects = new Dictionary<string, (int, int)>();
+            var statSets = new List<int>();
             int row = 0;
             foreach (var r in g.RootElement.EnumerateArray())
             {
                 string? id = r.GetProperty("Id").GetString();
                 int statSet = r.GetProperty("StatSet1") is { ValueKind: JsonValueKind.Number } v ? v.GetInt32() : -1;
                 if (id is not null) effects.TryAdd(id, (row, statSet));
+                statSets.Add(statSet);
                 row++;
             }
             static int Int(JsonElement r, string name) => r.GetProperty(name) is { ValueKind: JsonValueKind.Number } v ? v.GetInt32() : -1;
-            return new Tables(effects,
+            return new Tables(effects, statSets,
                 [.. p.RootElement.EnumerateArray().Select(r => (Int(r, "GrantedEffect"), Int(r, "Level")))],
                 [.. s.RootElement.EnumerateArray().Select(r => (Int(r, "StatSet"), Int(r, "GemLevel")))]);
         }

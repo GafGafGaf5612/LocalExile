@@ -50,7 +50,7 @@ compact uint n, n × (compact uint stat key, compact int value)
   u32. Signed compact is `0x141fa3d60` (`InstanceProtocol.CompactInt`).
 - The stat key is the client's own stat id: the int its getter `0x1424cfa40(stats, key)` binary-searches in the sorted
   (key, value) vector at stats+0xf0, which `0x1424cfaf0` fills. With the vendored schema it is **the Stats.dat row + 1**
-  (key 0xf5 = row 244 `movement_velocity_+%`; checked on every key an attack reads, [11](11-skills.md) §6). `StatKeys`
+  (key 0xf5 = row 244 `movement_velocity_+%`; checked on every key an attack reads, [11](11-skills.md) §8). `StatKeys`
   in the Gateway lists the ones in use.
 - Walk speed (`0x141e7c0b0`): base (`+0x548`) × (1 + key **0xf5** / 100, at least −100). With a flag it is also
   multiplied by (1 + key 0xce6 / 100). It is capped by key **0x44f** (`movement_velocity_cap`) when that is positive.
@@ -67,6 +67,8 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/set_speed <percent>` | 0x1b3 `movement_velocity_+%` = percent − 100 on the player; the server's walk estimate uses 37 × percent / 100 cells/s |
 | `/set_stat <stat name or client key> <value>` | records the stat for the player, sends the player's stats (0x1b3) with the attack's recomputed final stats, and the skill again (0x2ba, [11](11-skills.md) §4). Names are Stats.dat Ids (key = row + 1) |
 | `/spawn_mob <row, Id or name>[@level] [friendly] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), hostile unless `friendly`, with a rarity and an optional name, a few cells from the player (§5) |
+| `/heal` | full life for the player (0x1b1); from 0 it also revives |
+| `/death_screen [hex flags]` | S→C 0x55 with these flags (default: the league's; 2 hides it), [11](11-skills.md) §7 |
 | `/mobs` | lists the monsters spawned on this connection (message box) |
 | `/despawn [all \| <id>]` | S→C 0x2bb (remove object, header only) for the last spawned monster, all of them, or one id |
 | `/mob_walk [0x<id>] [skill hex]` | 0x1ab: the monster starts its Move action (skill 0x2909) toward the player; it walks, animated, along the client's path |
@@ -188,7 +190,8 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   pool (`0x141e69fb0`) and calls the Life component's death slot (vtable +0xe8) when life goes from ≥ 1 to < 1, revive
   (+0x100) the other way. Each hit takes the unarmed damage (2–5 for the Witch) at the swing's contact point, after the
   player has walked into range; the timing is in [11](11-skills.md) §5. A dead monster's life bar is hidden
-  (`hide_mini_life_bar`) and the monster is removed (0x2bb) 10 s later. Monsters have no granted skills yet, so they do not hit back.
+  (`hide_mini_life_bar`) and the monster is removed (0x2bb) 10 s later. Monsters hit back with
+  their own skill ([11](11-skills.md) §6).
 - **Placement.** The nearest walkable cell 6–20 cells from the server's estimate of the player; ids from 0x3000. The
   world is active, so 0x2b9 is created at once; 0x1a9 puts it in the wake zone.
 

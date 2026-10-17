@@ -92,4 +92,15 @@ public class InstanceProtocolTests
         Assert.NotEqual(0u, info.U32_38);
         Assert.Equal(keyring.Key(info.U32_38), info.Key64);
     }
+
+    [Fact]
+    public void Death_screen_0x55_and_resurrect_0x54()
+    {
+        // Live 2026-10-17: 0x0c showed "Resurrect in Town" and "Resurrect at Checkpoint"; 0x02 hides the screen.
+        Assert.Equal("00550C000000000000", Convert.ToHexString(InstanceProtocol.DeathScreen(0x0c)));
+        Assert.Equal("005502", Convert.ToHexString(InstanceProtocol.DeathScreen(0x02)));
+        Assert.True(InstanceProtocol.ReadResurrectInTown([0x00, 0x54, 0x01]));
+        Assert.False(InstanceProtocol.ReadResurrectInTown([0x00, 0x54, 0x00]));
+        Assert.Equal(3, InstanceProtocol.KnownClientLength(InstanceProtocol.ResurrectId));
+    }
 }

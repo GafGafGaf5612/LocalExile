@@ -22,6 +22,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed` (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
 | Monsters: `/spawn_mob <row, Id or name>[@level] [friendly] [rarity] [name]`, `/mobs`, `/despawn`, `/mob_walk`, `/ai`: any of 10 345 of the 10 691 MonsterVarieties at a level and rarity, with full life for its level, hostile (red) or friendly, that chases the player when near (Move action 0x1ab, client pathing) | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
 | Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's 10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks per Second), and the server lowers the monster's life 2–5 at the contact point; moving cancels; the dead monster's life bar hides | `GrantedSkill`, `SkillCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) |
+| Monsters fight back: their first granted effect as a non-pathing skill with MonsterVarieties attack time, reach and level damage; they swing (animated) when in reach and the player's life goes down; walking away dodges; death plays and blocks moving; the death screen (S→C 0x55) shows "Resurrect in Town" / "Resurrect at Checkpoint" (hardcore: "Exit"), and both buttons work (C→S 0x54); `/heal` | `MonsterAttack`, `Resurrect`, Gateway | [11](docs/protocol/11-skills.md) §6–7 |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 
 ## Partly working
@@ -29,12 +30,13 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Positions are estimated, not simulated.** The Gateway estimates where the player is from clicks, walk speed and the
   walk map; there is no server-side pathing or collision.
 - **Stats.** The client's stat key is the Stats.dat row + 1 with the vendored schema ([11](docs/protocol/11-skills.md)
-  §6); `/set_stat` still takes keys, not names. The player sends only its unarmed attack stats; life, mana and
+  §8); `/set_stat` takes stat names or keys. The player sends only its unarmed attack stats; life, mana and
   attributes come from the client's defaults.
 - **Spawn points.** The Coast uses the walkable cell farthest from any edge, not the arrival point next to the exit.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
 - **Combat.** The player's default attack kills monsters (server-side damage: the unarmed range, no damage model,
-  no armour or resistances; the contact point is half the attack time, not the animation's). The server has no
+  no armour or resistances; the contact point is half the attack time, not the animation's). Monsters use only their
+  first granted effect; the player's life is a fixed 50 (no levels or stats). The server has no
   simulation loop: hits use timers, attacks are bounded by a 30/s tick (`TickRate`), the AI runs every 500 ms. Monsters chase but do not attack: they have no granted skills yet. No mods; "emerge"
   monsters stay hidden; 346 varieties with NPC / ControlZone / … components are refused.
 
@@ -48,12 +50,13 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   `.\scripts\dev\live.ps1 -NoClient`.
 - Exits beyond town: The Coast's own exits, and every other area. The town's Coast exit sits a little off and has no
   model or hover outline (a bare AreaTransition).
-- Items, gem skills, monsters attacking, the player taking damage, levelling, saving the character's position or progress.
+- Items, gem skills, levelling, saving the character's position or progress. Hardcore's "Exit" on the death screen
+  (C→S 0x153, like Esc → Exit).
 - `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (163 tests) and `dotnet test tests/GameServer.Data.Tests` (8 tests) pass.
+`dotnet test tests/GameServer.Core.Tests` (165 tests) and `dotnet test tests/GameServer.Data.Tests` (8 tests) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

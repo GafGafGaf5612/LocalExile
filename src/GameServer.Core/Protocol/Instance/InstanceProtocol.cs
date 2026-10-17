@@ -49,7 +49,7 @@ public static class InstanceProtocol
     public static int? KnownClientLength(ushort id) => id switch
     {
         TickId => 7, AreaGeneratedId => 10, UseSkillAtLocationId => 16, 0x015a => 2, 0x01ef => 2, 0x0099 => 20,
-        InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, 0x0016 => 5, _ => null,
+        InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, 0x0016 => 5, ResurrectId => 3, _ => null,
     };
 
     /// <summary>
@@ -124,6 +124,28 @@ public static class InstanceProtocol
     public static byte[] MoveTo(uint objectId, int x, int y, float speed, uint u28 = 0, byte u30 = 0) =>
         new LoginWriter().U16(MoveToId).U32(objectId).U32(0).U16(0)
             .U32((uint)x).U32((uint)y).U32(u28).U32(BitConverter.SingleToUInt32Bits(speed)).U8(u30).ToArray();
+
+    public const ushort DeathScreenId = 0x55, ResurrectId = 0x54;
+
+    /// <summary>
+    /// S→C 0x55 (instance group, class 0x1435dce40, read 0x14219f820, dispatcher case 0x14 → listeners at +0xf78): the
+    /// death screen. u8 flags: bit0, bit1 = hide, bit2, bit3, bit4; unless hidden: u32 BE (+0x18), a u8 when that u32 is
+    /// non-zero, u16 BE. The HUD (0x140d5d6a0 → HUD slot +0x4d0 = 0x140d86180 → panel 0x140290820(bit0, bit2, bit3))
+    /// shows the "death_screen" panel (title ClientStrings "You have died!"). Its left button: "Exit" with bit0 (hardcore:
+    /// it sends C→S 0x153, exit to character selection), "Resurrect in Town" with bit3, else "Resurrect" (shown when no
+    /// flag is set); its right button "Resurrect at Checkpoint" with bit2 (without bit0); a third "Spectate" (PvP).
+    /// Live 2026-10-17: 0x04 showed only "Resurrect at Checkpoint".
+    /// </summary>
+    public static byte[] DeathScreen(byte flags)
+    {
+        var w = new LoginWriter().U16(DeathScreenId).U8(flags);
+        if ((flags & 2) == 0) w.U32(0).U16(0);
+        return w.ToArray();
+    }
+
+    /// <summary>C→S 0x54 (class 0x1435bffa0, write 0x141f932b0), sent by the death screen's buttons (0x140290bf0):
+    /// u8 flags, bit0 set by the "Resurrect in Town" button, clear for the checkpoint one.</summary>
+    public static bool ReadResurrectInTown(ReadOnlySpan<byte> m) => (m[2] & 1) != 0;
 
     public static byte[] Teleport(uint objectId, int x, int y) =>
         new LoginWriter().U16(TeleportId).U32(objectId).U32(0).U16(0).U32((uint)x).U32((uint)y).U32(0).U32(0).ToArray();

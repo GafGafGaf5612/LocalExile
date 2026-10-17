@@ -188,3 +188,9 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x140220ab0` | Fn | mini life bar entry: flags from the Life pools (0x20 = dead) |
 | `0x140220c30` | Fn | mini life bar entry: stat listener (`hide_mini_life_bar` 0x2a8b, `virtual_is_hidden_monster` 0x59d0) |
 | `0x140221fd0` | Fn | mini life bar: visible? |
+| `0x141e8cf10` | Fn | Actor: start (queue) an action |
+| `0x141e8e060` | Fn | Actor: per-frame runner of the queued action |
+| `0x141938830` | Fn | Melee action begin = skill_is_non_pathing |
+| `0x14219f820` | Fn | S→C 0x55 death screen read |
+| `0x14028fc80` | Fn | `death_screen` panel ctor (setup `0x140290820`, buttons `0x140290bf0` → C→S 0x54 / 0x153) |
+| `0x140d86180` | Fn | HUD vtable +0x4d0: show/hide the death screen |

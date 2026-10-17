@@ -224,7 +224,7 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 /// </summary>
 public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyList<string> Components, string? AnimatedObject = null,
     MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null, StateMachineData? StateMachine = null, byte TransitionState = 1,
-    ushort Team = 1)
+    ushort Team = 1, IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null)
 {
     /// <summary>Deserialized components of `Metadata/Monsters/Monster` in read order (scripts/re/ot_components.py).</summary>
     public static readonly string[] BaseComponents =
@@ -259,7 +259,7 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 // x, y, f32 +0x29c, u16 team (+0x1e0; the player is team 0: 0 = friendly, green outline; 1 = hostile, red),
                 // flags; flags1 0x02 + (hidden 0, shown 1) as for the player.
                 case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(Team).U8(0).U8(0x02).U8(0).U8(1); break;
-                case "Stats": w.U8(0).U32(0).U32(0).U8(0); break;
+                case "Stats": w.Stats(Stats).U32(0).U32(0).U8(0); break;
                 // base magic properties (0x142201d70): u16 flags (bits 0-2 rarity → +0x7c, 0 = normal; bit 3 identified
                 // → +0x78, which gates the bit 7 / bit 8 / bit 5 sections, all off here), u8 +0x7a; then the own flags.
                 // Without bit 3 the client tags the monster "Unidentified". Identified, bit 7 (0x80) adds a name: u32
@@ -278,7 +278,11 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                     break;
                 case "Inventories": w.U8(0).U8(0); break;
                 // path, u16, u8, (life >= 1: no conditional bytes), u32, u32, then slot 20's two flag bytes.
-                case "Actor": w.WStr32("").U16(0).U8(0).U32(0).U32(0).U8(0).U8(0); break;
+                case "Actor":
+                    w.WStr32("").U16(0).U8(0).U32(0).U32(0);
+                    if (Skills is { Count: > 0 }) { w.U8(0x40).U8(0); PlayerObject.WriteSkillList(w, Skills); }   // its skills (11-skills.md §3)
+                    else w.U8(0).U8(0);
+                    break;
                 // 0x1421c24b0: u8 = state (low 7 bits, → +0x120) | bit 7 (+0x122, "transitioning"). States run 1..num_states
                 // (.ot Transitionable num_states, default 1); num_states = fully transitioned (create_transitioned).
                 // State 0 is invalid: the post-create slot 0x1421c26f0 runs event [(state − 1) × 0x18] and crashed in the

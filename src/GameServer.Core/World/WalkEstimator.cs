@@ -63,6 +63,14 @@ public sealed class WalkEstimator
         return here;
     }
 
+    /// <summary>Puts the walker at a cell (a teleport, e.g. S→C 0x1b7): no walk in progress.</summary>
+    public void Teleport(int x, int y, double now)
+    {
+        _path = [(x, y)];
+        _cumulative = [0];
+        _t0 = now;
+    }
+
     /// <summary>When the current walk ends.</summary>
     public double ArrivesAt => _t0 + _cumulative[^1] / _speed;
 

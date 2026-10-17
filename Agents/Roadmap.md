@@ -58,8 +58,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** The Coast's exits (back to town, to The Mud Flats) work, then the rest of Act 1.
 
 ### Monsters: beyond `/spawn_mob`
-- **Known:** spawning, levels, rarity, names, team, life, StateMachine / Transitionable types, walking and chasing all
-  work ([10](docs/protocol/10-chat-and-commands.md) §5). They do not attack yet: "Combat: monsters hit back" (below).
+- **Known:** spawning, levels, rarity, names, team, life, StateMachine / Transitionable types, walking, chasing and
+  melee attacks all work ([10](docs/protocol/10-chat-and-commands.md) §5, [11](docs/protocol/11-skills.md) §6).
 - **Start:** the "emerge" action for emerge monsters, mods, the boss life bar (StateMachine `boss_life_bar`), the 346
   varieties with NPC / ControlZone / BlightTower … components (each needs its deserializer, schema.md), spawning packs
   in areas. Check every new component with `scripts/re/frida/check-components.js`.
@@ -71,7 +71,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 ## 3. Gameplay
 
 ### The player's real stats
-- **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §6); `/set_stat` takes names. The
+- **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §8); `/set_stat` takes names. The
   server must send final values (the client derives none): the attack's are computed in `SkillCatalog.Unarmed.Stats`.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
@@ -91,12 +91,17 @@ Items are in rough priority order within each section. "Known" says what is alre
   [05](docs/protocol/05-inventories-and-ui.md) "Open".
 - **Done when:** a new character has its starting weapon and flasks, then items can be moved and dropped.
 
-### Combat: monsters hit back (next)
-- **Known:** skills are granted in the Actor component's skill list (slot 20, f0 0x40); the player's default attack
-  works and kills monsters ([11](docs/protocol/11-skills.md)).
-- **Start:** give monsters their MonsterVarieties GrantedEffects the same way (the monster blob's Actor), make the AI
-  use them (0x1ab with the skill id aimed at the player), then lower the player's life with 0x1b1 on the player.
-- **Done when:** a monster attacks the player, the player's life goes down, and the player can die.
+### A damage model (next)
+- **Known:** both sides hit with flat damage ranges ([11](docs/protocol/11-skills.md) §5, §6); the player's life is a
+  fixed 50.
+- **Start:** the player's real stats (below), then armour / evasion / resistances / crits from the stats both sides
+  already carry; monster skills beyond the first granted effect (ranged, spells).
+- **Done when:** damage numbers match the character panel and the monsters' levels.
+
+### Death screen variants
+- **Known:** S→C 0x55 flags bit0/2/3 are mapped ([11](docs/protocol/11-skills.md) §7); bit4 and the trailing u32 / u8 /
+  u16 are not.
+- **Done when:** Sanctum and other modes show their own options; hardcore's "Exit" works (with Esc → Exit, C→S 0x153).
 
 ### Gem skills
 - **Start:** items in the player's inventories ([05](docs/protocol/05-inventories-and-ui.md)), the skill record's

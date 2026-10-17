@@ -317,6 +317,7 @@ Environment variables, read when each server starts:
 | `Game_AUTH_CONTROL_PORT` | 20495 | Auth ↔ Gateway control port (localhost only) |
 | `Game_CLIENT_EXE` | `Client/Game.exe` | client executable the Gateway reads protocol constants from |
 | `Game_RANDOM_SEEDS` | unset | `1` = random seeds for new non-town instances (each needs its own walk map) |
+| `Game_LEAGUE` | `standard` | `hardcore` shows the hardcore death screen (a single Exit button) |
 | `Game_PLAYER_ATTACK` | `PlayerMelee` | GrantedEffects `Id` of the player's default attack (level 1) |
 | `Game_MOVE_MODE` | `echo` | `echo`, `move` or `teleport` |
 | `Game_WALK_SPEED` | 37 | walk speed in cells per second, used for position estimates |
