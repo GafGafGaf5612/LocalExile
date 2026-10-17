@@ -3,6 +3,9 @@
 Hey, I hope this doesnt go viral and GGG sues me. GGG can reach out to me if they want this repo gone and I'll act on it. 
 This is for fun only and for local-gameplay with no internet. Lastly, I'm a human and I can make mistakes, warn me instead.
 
+Everything here is made by Claude Opus 5.5. You can pull-request and are encouraged to. I'm running only on two pro subs
+and Im broke and unemployed, so help out folks.
+
 # LocalExile
 
 A local, from-scratch server for the Path of Exile **3.29.3b** client. It is written in C# (.NET 10) from reverse
