@@ -15,7 +15,10 @@ what success looks like and what to do when it fails. It is written to be follow
    current directory.
 4. **Never commit `data/` or `Client/`.** They hold your keys, accounts and the game. Both are git-ignored; keep it
    that way.
-5. **The client must be version 3.29.3b.** The login patch and several protocol constants are specific to that build.
+5. **Run `live.ps1` directly** (`.\scripts\dev\live.ps1` in a PowerShell session). Do not wrap it in a pipe or
+   capture its output (for example `powershell -File live.ps1 | Out-String`). The servers it starts keep the pipe
+   open, so the call never returns. Read `logs\` instead.
+6. **The client must be version 3.29.3b.** The login patch and several protocol constants are specific to that build.
    Any other version fails at step 4 or 5, with a clear error.
 
 ## What you need
@@ -69,7 +72,8 @@ Copy-Item Client\PathOfExile.exe Client\Game.exe
 
 Success: `Client\Game.exe` (about 79 MB) and `Client\Content.ggpk` exist.
 
-- `robocopy` exits with code 1 on success; that is normal.
+- `robocopy` exit codes below 8 mean success (1 = copied, 3 = copied plus extra files). Copying ~70 GB takes a few
+  minutes.
 - Close the client before copying. A running client locks `Content.ggpk`.
 
 ## 4. Generate your own login keys
@@ -141,6 +145,11 @@ characters
 Every reply should contain `"ok":true`; the last one lists your character.
 
 - Account and character names: 3–32 letters, digits, `_` or `-`. Passwords: at least 4 characters.
+- Piping the commands instead of typing them works too:
+  `"register name=a password=b`n...`n" | dotnet run --project src/GameServer.DevClient`. The client ignores the
+  byte-order mark PowerShell adds.
+- The game's login screen may show a previously used account name in the Email field (the client remembers it per
+  Windows user). Replace it with yours.
 - Only the Witch is supported for now. Other classes can be created, but in game you appear as a Witch (with your
   character's name).
 - Then close both: an empty line quits the dev client, and Ctrl+C stops the host. Do not keep `GameServer.Host`
@@ -181,12 +190,23 @@ Captured maps are saved as `data/walkability/<area>_seed<seed>.bin` and `.json` 
 ```
 
 Success, in order:
-1. The script prints `client pid ...`, then `servers up`.
+1. The script prints `client pid ...`, then `servers up`. With `-Walkmaps`, it first prints
+   `walk-map capture on (logs\walkmaps.log)`.
 2. The client window opens and loads for about a minute.
 3. The login screen appears. Type your account name in the **Email** field and your password. Click the password
    field before typing; it needs focus.
 4. Click **Log In**, select your character, and click **Play**.
 5. You arrive in Lioneye's Watch. Click the ground to walk.
+
+To check the result from the logs (useful for agents):
+- `logs\live-gateway.log` has `create PlayerObject { Name = <your character>`.
+- With `-Walkmaps`:
+  - `logs\walkmaps.log` shows `saved 1_1_town_seed1.bin (690x414)`;
+  - after taking The Coast exit, it also shows `saved 1_1_2_seed1.bin (1725x1725)`;
+  - the Gateway log shows `walk map captured` for each area, and the player's `GridX`/`GridY` on The Coast is on land
+    (for seed 1, about (1278, 1304)).
+- A line `ignored a grid with unexpected size ... 'w': 0` in `walkmaps.log` is normal: it comes from the login
+  screen.
 
 In game:
 - **The Coast:** click "The Coast" on the east side of town. Ctrl+click it to open the Instance Manager instead (pick
