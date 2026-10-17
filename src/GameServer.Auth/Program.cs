@@ -55,7 +55,9 @@ static async Task Serve(LoginServerKeys keys)
     var accounts = new AccountService(new JsonAccountStore(Environment.GetEnvironmentVariable("Game_DEV_DB") ?? Path.Combine("data", "accounts.json")));
     Console.OutputEncoding = System.Text.Encoding.UTF8; // decoded wide strings
     int port = int.TryParse(Environment.GetEnvironmentVariable("Game_LOGIN_PORT"), out var p) ? p : 20493;
-    var listener = new TcpListener(IPAddress.Any, port);
+    // Local play only by default; Game_BIND=0.0.0.0 to accept other machines.
+    var bind = IPAddress.Parse(Environment.GetEnvironmentVariable("Game_BIND") ?? "127.0.0.1");
+    var listener = new TcpListener(bind, port);
     listener.Start();
     var keyring = InstanceKeyring.LoadOrCreate(Environment.GetEnvironmentVariable("Game_INSTANCE_SECRET") ?? Path.Combine("data", "instance-secret.bin"));
     // Non-town seeds are pinned to 1 (the Gateway only knows a generated layout from a per-seed client dump);

@@ -26,9 +26,11 @@ if (!File.Exists(clientExe))
 }
 HncSender.LoadMask(File.ReadAllBytes(clientExe));
 
-var listener = new TcpListener(IPAddress.Any, port);
+// Local play only by default; Game_BIND=0.0.0.0 to accept other machines (then also set Game_GATEWAY_HOST).
+var bind = IPAddress.Parse(Environment.GetEnvironmentVariable("Game_BIND") ?? "127.0.0.1");
+var listener = new TcpListener(bind, port);
 listener.Start();
-Console.WriteLine($"[gateway] listening on 0.0.0.0:{port}");
+Console.WriteLine($"[gateway] listening on {bind}:{port}");
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -92,6 +94,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             uint seed = resolved.Ok ? resolved.Seed : 1;
             ulong instanceId = resolved.Ok ? resolved.Instance : 1;
             var layout = AreaLayouts.For(areaHash, seed);
+            AreaLayouts.Announce(layout, seed);
             Console.WriteLine($"[gateway] {remote} ticket 0x{ticket:x8}: {resolved.Character ?? "?"} → instance {instanceId}, {layout.Describe()}");
 
             ConnectionCiphers ciphers = keyring.Ciphers(opening.Ticket);
@@ -102,7 +105,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket) { Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             conn.Commands = Commands(remote, stream, ciphers, conn);
             byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
             if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn);
@@ -182,7 +185,17 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         else if (id == InstanceProtocol.AreaGeneratedId)
         {
             Console.WriteLine($"[gateway] {remote} <= 0x007d area generated: {Convert.ToHexString(bytes)}");
-            if (!conn.PlayerSent) { await SendPlayer(remote, stream, ciphers, conn.Layout); conn.PlayerSent = true; }
+            if (!conn.PlayerSent)
+            {
+                // First visit with scripts/walkmaps running: the map is written while the client generates the area.
+                if (conn.Layout.Walkable is null && await AreaLayouts.WaitFor(conn.Layout, conn.Seed) is { } fresh)
+                {
+                    conn.Use(fresh);
+                    Console.WriteLine($"[gateway] {remote} walk map captured: {fresh.Describe()}");
+                }
+                await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character);
+                conn.PlayerSent = true;
+            }
         }
     }
     if (unknown.Length > 0)
@@ -288,9 +301,10 @@ static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ci
     await stream.WriteAsync(bytes);
 }
 
-static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout)
+// The player is always a Witch for now (the only class whose object is mapped); the name is the character's.
+static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout, string? name)
 {
-    var witch = new PlayerObject("DevWitch", ClassIndex: 1, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
+    var witch = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: 1, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? "Metadata/Characters/Int/Int.ao");
     uint type = InstanceEntities.ObjectTypeHash("Metadata/Characters/Int/Int");
     var messages = new List<(string Name, byte[] Bytes)>
@@ -314,7 +328,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.Exits) messages.Add(($"0x01a9 exit 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
     }
-    foreach (var (name, bytes) in messages) await Send(remote, stream, ciphers, bytes, name);
+    foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
 }
 
 sealed partial class Program
@@ -358,32 +372,90 @@ static class AreaLayouts
     // entrance2 (196, 384) → (384, 217) on the east edge is the exit to The Coast (1_1_2, 0x7ad2); entrance1 is the
     // disabled one-way Twilight Strand side; default (178, 346) → (346, 235).
     // Spawn (197, 261): the walkable cell farthest from any edge.
-    static readonly AreaLayout Town = new(LioneyesWatch, "1_1_town", 690, 414, 197, 261,
-        LoadWalkable("data/walkability/1_1_town.bin", 690, 414),
-        [(0x2000, new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: TheCoast))]);
+    static readonly (uint Id, AreaTransitionObject Exit)[] TownExits =
+        [(0x2000, new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: TheCoast))];
 
     static readonly Dictionary<ushort, string> Ids = new() { [LioneyesWatch] = "1_1_town", [TheCoast] = "1_1_2" };
 
+    const string Folder = "data/walkability";
+
     public static AreaLayout For(ushort hash, uint seed)
     {
-        if (hash == LioneyesWatch) return Town;
         string id = Ids.GetValueOrDefault(hash, $"0x{hash:x4}");
-        // A dumped grid for this (area, seed): data/walkability/<id>_seed<seed>.bin + .json {"w":..,"h":..}.
-        string bin = $"data/walkability/{id}_seed{seed}.bin", meta = Path.ChangeExtension(bin, ".json");
-        if (File.Exists(bin) && File.Exists(meta))
+        byte[]? cells = LoadCells(id, seed, out int w, out int h);
+        if (hash == LioneyesWatch)
         {
-            var m = JsonDocument.Parse(File.ReadAllText(meta)).RootElement;
-            int w = m.GetProperty("w").GetInt32(), h = m.GetProperty("h").GetInt32();
-            byte[] cells = File.ReadAllBytes(bin);
-            if (cells.Length == w * h)
-            {
-                var (sx, sy) = DeepestCell(cells, w, h);
-                return new AreaLayout(hash, id, w, h, sx, sy, (x, y) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x] >= 2, []);
-            }
+            // Older dumps were saved as data/walkability/1_1_town.bin without a .json.
+            if (cells is null && File.Exists($"{Folder}/1_1_town.bin")) { cells = File.ReadAllBytes($"{Folder}/1_1_town.bin"); (w, h) = (690, 414); }
+            bool fits = cells is not null && cells.Length == 690 * 414 && (w, h) == (690, 414);
+            return new AreaLayout(hash, id, 690, 414, 197, 261, fits ? Walkable(cells!, w, h) : null, TownExits);
         }
-        // Unknown layout: a position inside any grid; the client may place the player on unwalkable ground.
+        if (cells is not null)
+        {
+            var (sx, sy) = DeepestCell(cells, w, h);
+            return new AreaLayout(hash, id, w, h, sx, sy, Walkable(cells, w, h), []);
+        }
+        // No walk map yet: a position inside any grid; the client may place the player on unwalkable ground.
         return new AreaLayout(hash, id, 0, 0, 197, 261, null, []);
     }
+
+    /// <summary>Tells scripts/walkmaps which area the next generated grid belongs to (data/walkability/current.json).</summary>
+    public static void Announce(AreaLayout layout, uint seed)
+    {
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            string json = JsonSerializer.Serialize(new
+            {
+                id = layout.Id, seed, hash = layout.Hash, written = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                nonce = Guid.NewGuid().ToString("N"),
+            });
+            File.WriteAllText($"{Folder}/current.json.tmp", json);
+            File.Move($"{Folder}/current.json.tmp", $"{Folder}/current.json", overwrite: true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>When the client reports the area generated (0x7d): the walk map scripts/walkmaps saved meanwhile, if
+    /// any. Waits up to 2 s for the file.</summary>
+    public static async Task<AreaLayout?> WaitFor(AreaLayout layout, uint seed)
+    {
+        string bin = $"{Folder}/{layout.Id}_seed{seed}.bin";
+        for (int i = 0; i < 20; i++)
+        {
+            if (File.Exists(bin) && File.Exists(Path.ChangeExtension(bin, ".json")))
+            {
+                var better = For(layout.Hash, seed);
+                return better.Walkable is null ? null : better;
+            }
+            await Task.Delay(100);
+        }
+        return null;
+    }
+
+    // data/walkability/<id>_seed<seed>.bin (1 byte per cell) + .json {"w":..,"h":..}, written by scripts/walkmaps.
+    static byte[]? LoadCells(string id, uint seed, out int w, out int h)
+    {
+        (w, h) = (0, 0);
+        string bin = $"{Folder}/{id}_seed{seed}.bin", meta = Path.ChangeExtension(bin, ".json");
+        if (!File.Exists(bin) || !File.Exists(meta)) return null;
+        try
+        {
+            var m = JsonDocument.Parse(File.ReadAllText(meta)).RootElement;
+            (w, h) = (m.GetProperty("w").GetInt32(), m.GetProperty("h").GetInt32());
+            byte[] cells = File.ReadAllBytes(bin);
+            return cells.Length == w * h ? cells : null;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    // 1 byte per cell; the client walks on values >= 2.
+    static Func<int, int, bool> Walkable(byte[] cells, int w, int h) =>
+        (x, y) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x] >= 2;
 
     /// <summary>The walkable cell farthest from any blocked cell (multi-source BFS from blocked cells).</summary>
     static (int X, int Y) DeepestCell(byte[] cells, int w, int h)
@@ -407,14 +479,6 @@ static class AreaLayouts
         return (best % w, best / w);
     }
 
-    // 1 byte per cell; the client walks on values >= 2.
-    static Func<int, int, bool>? LoadWalkable(string path, int w, int h)
-    {
-        if (!File.Exists(path)) return null;
-        byte[] cells = File.ReadAllBytes(path);
-        if (cells.Length != w * h) return null;
-        return (x, y) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x] >= 2;
-    }
 }
 
 sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
@@ -422,13 +486,25 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
 // The last instance list shown (0xae); 0xaf picks a row of it.
 sealed record ChooserList(ushort Area, IReadOnlyList<ulong> Ids);
 
-sealed class ClientState(AreaLayout layout, uint ticket)
+sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
 {
-    public AreaLayout Layout => layout;
+    public AreaLayout Layout { get; private set; } = layout;
     public uint Ticket => ticket;
+    public uint Seed => seed;
+    public string? Character { get; init; }
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     // Server-side estimate of the client-predicted walk (reported in each 0x1ab), kept on walkable cells.
-    public readonly WalkEstimator Walk = new(layout.SpawnX, layout.SpawnY, Program.WalkSpeed, layout.Walkable, layout.GridW > 0 ? layout.GridW : 4096, layout.GridH > 0 ? layout.GridH : 4096);
+    public WalkEstimator Walk { get; private set; } = NewWalk(layout);
+
+    /// <summary>Switches to a layout with a walk map (before the player exists).</summary>
+    public void Use(AreaLayout better)
+    {
+        Layout = better;
+        Walk = NewWalk(better);
+    }
+
+    private static WalkEstimator NewWalk(AreaLayout l) =>
+        new(l.SpawnX, l.SpawnY, Program.WalkSpeed, l.Walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096);
     public bool PlayerSent;
     public byte[] Carry = [];
     public long Ticks;

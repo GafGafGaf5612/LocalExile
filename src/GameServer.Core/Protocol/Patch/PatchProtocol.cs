@@ -47,7 +47,7 @@ public static class PatchProtocol
 /// </summary>
 public sealed record PatchServerConfig(string WebRoot, string BackupWebRoot, bool CdnPassthrough, string CdnBase)
 {
-    public const string DefaultListenUrl = "http://0.0.0.0:8080";
+    public const string DefaultListenUrl = "http://127.0.0.1:8080";
     public const string DefaultCdnBase = "https://patch.poecdn.com";
     public const string PassthroughFlag = "--cdn-passthrough";
 

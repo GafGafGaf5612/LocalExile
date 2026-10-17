@@ -48,120 +48,20 @@ beyond town.
 
 ## Getting Started
 
-### 1. Requirements
+**Full guide: [GettingStarted.md](GettingStarted.md).** It covers every step with its expected output, the edge cases
+and a troubleshooting table. It is written for people and for AI agents setting this up.
 
-- Windows 10/11
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- PowerShell 5.1+ (for `scripts/dev/live.ps1`)
-- An installed Path of Exile client at **exactly version 3.29.3b**. The login patch works only on that build.
-
-### 2. Clone and build
+In short (Windows, .NET 10 SDK, a standalone Path of Exile **3.29.3b** client):
 
 ```powershell
-git clone <this repository URL> LocalExile
-cd LocalExile
 dotnet build GameServer.slnx
-dotnet test tests/GameServer.Core.Tests
-```
-
-### 3. Put a copy of the client in `Client/`
-
-Copy the whole client folder into `Client/`. Work on a copy: the next steps modify `Content.ggpk`. Then copy the
-client's main executable to the name the tools use:
-
-```powershell
-Copy-Item Client\PathOfExile.exe Client\Game.exe
-```
-
-`Client/` is git-ignored.
-
-### 4. Generate your own login keys and patch the client
-
-```powershell
+robocopy "<your PoE 3.29.3b folder>" Client /E; Copy-Item Client\PathOfExile.exe Client\Game.exe
 dotnet run --project src/GameServer.Auth -- keygen Client/Game.exe
 dotnet run --project src/GameServer.Auth -- patch Client/Game.exe Client/Game.patched.exe
-```
-
-- `keygen` writes `data/login-keys.json`: a new server signing key over the client's own DSA parameters.
-- `patch` writes `Client/Game.patched.exe`, a copy of the client that trusts that key instead of the official one.
-
-The instance key secret (`data/instance-secret.bin`) is created automatically on first start. Everything under `data/`
-is git-ignored. Never commit it.
-
-### 5. Point the client's gateway list at the local login server
-
-```powershell
 dotnet run --project src/GameServer.Patch -- gateway --login 127.0.0.1:20493
+# create an account + character: GameServer.Host and GameServer.DevClient (GettingStarted.md, step 7)
+.\scripts\dev\live.ps1 -Walkmaps   # -Walkmaps is optional: needs `pip install frida`, captures walk maps
 ```
 
-This rewrites `gateway_list.txt` inside `Client/Content.ggpk` and keeps a backup in `data/gateway_list.original.txt`.
-
-### 6. Create an account and a character
-
-In one terminal:
-
-```powershell
-dotnet run --project src/GameServer.Host
-```
-
-In another:
-
-```powershell
-dotnet run --project src/GameServer.DevClient
-```
-
-Then type:
-
-```
-register name=devtester password=<choose one>
-login name=devtester password=<the same>
-create_character name=DevWitch class=witch
-```
-
-Accounts are stored in `data/accounts.json`. Stop `GameServer.Host` afterwards.
-
-### 7. Run
-
-```powershell
-$env:Game_GATEWAY_ENTER = '1'
-.\scripts\dev\live.ps1
-```
-
-`live.ps1`:
-1. stops anything already on the dev ports;
-2. builds Auth, Patch and Gateway and starts them (logs in `logs/live-*.log`);
-3. waits for the patch server, then starts `Client/Game.patched.exe --patching-server 127.0.0.1:12995`.
-
-Log in with the account from step 6 and press Play. You arrive in Lioneye's Watch.
-
-Useful switches:
-- `-NoClient` restarts only the servers and keeps the running client.
-- `-NoBuild` skips the builds.
-
-## Important
-
-- **Always start the client through `live.ps1`.** Started any other way, the client contacts the official patch
-  servers and may update itself. An update overwrites the patched executable and data.
-- Run only one client at a time.
-- The Gateway reads a few protocol constants from your local `Client/Game.exe` at startup. They are checked by hash
-  and never stored in this repository.
-- Walkability grids are optional. Without `data/walkability/1_1_town.bin` (a 690×414 byte grid dumped from the
-  client), the Gateway assumes every cell is walkable when it estimates the player's position.
-- The `GameServer.Data` readers use the community [`poe-tool-dev/dat-schema`](https://github.com/poe-tool-dev/dat-schema)
-  (`schema.min.json`). Put it in `data/schema/` if you use them; it is not included here.
-
-## Configuration (environment variables)
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `Game_LOGIN_PORT` | 20493 | login server port |
-| `Game_GATEWAY_PORT` | 6112 | instance server port |
-| `Game_GATEWAY_HOST` | 127.0.0.1 | address sent to the client for area changes |
-| `Game_GATEWAY_ENTER` | unset | `1` = enter the area after creating the player |
-| `Game_AUTH_CONTROL_PORT` | 20495 | Auth ↔ Gateway control port (localhost only) |
-| `Game_RANDOM_SEEDS` | unset | `1` = random seeds for new non-town instances (needs matching walkability dumps) |
-| `Game_MOVE_MODE` | echo | `echo`, `move` or `teleport` |
-| `Game_WALK_SPEED` | 37 | walk speed in grid cells per second, used for position estimates |
-| `Game_CLIENT_EXE` | Client/Game.exe | client executable the Gateway reads protocol constants from |
-| `Game_DEV_DB` | data/accounts.json | account store |
-| `Game_INSTANCE_SECRET` | data/instance-secret.bin | instance key secret |
+**Always start the client through `live.ps1`.** Started any other way, the client contacts the official patch servers
+and may update itself.
