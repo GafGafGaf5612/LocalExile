@@ -14,6 +14,11 @@ engineering of the client's network protocol. You play on your own machine again
 This project is not affiliated with or endorsed by Grinding Gear Games. It contains **no game files, keys or game data**.
 You need your own installed copy of the client, and everything the servers need is generated locally from it.
 
+## Showcase
+
+[▶ Watch the showcase video](media/showcase.mp4) (50 s, 25 MB): character select, Lioneye's Watch, taking The Coast exit,
+and `/set_speed` in The Coast, all against the local servers.
+
 ## What works
 
 - **Login:** the client's custom TCP login (Diffie-Hellman key exchange, DSA-signed server key, Salsa20), accounts and
