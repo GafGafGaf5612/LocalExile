@@ -21,6 +21,8 @@ https://github.com/user-attachments/assets/ebb49e70-93aa-464f-a6cd-c6c130dd8c5a
 Character select, Lioneye's Watch, taking The Coast exit,
 and `/set_speed` in The Coast, all against the local servers.
 
+https://github.com/user-attachments/assets/7b732013-2d04-4e81-a2fa-5437099f4b6d
+
 ## What works
 
 - **Login:** the client's custom TCP login (Diffie-Hellman key exchange, DSA-signed server key, Salsa20), accounts and
