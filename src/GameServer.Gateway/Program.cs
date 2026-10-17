@@ -148,6 +148,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         {
             // Echo the action so the client runs it (Move on a ground click). The server does no validation yet.
             var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);
+            Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
             var (px, py) = conn.Walk.Order(use.X, use.Y, conn.Clock.Elapsed.TotalSeconds);
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
@@ -164,7 +165,8 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         else if (id == InstanceTransfer.UseSkillOnObjectId)
         {
             var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
-            await OnUseObject(remote, stream, ciphers, conn, use);
+            // In the background: the player may first walk to the target, and the read loop must keep answering ticks.
+            _ = OnUseObject(remote, stream, ciphers, conn, use);
         }
         else if (id == InstanceChat.ChatId)
         {
@@ -217,8 +219,7 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     lock (conn.Monsters) target = conn.Monsters.GetValueOrDefault(use.TargetId);
     if (target is not null)
     {
-        // In the background: the hit lands later, and the read loop must keep answering ticks meanwhile.
-        _ = Attack(remote, stream, ciphers, conn, use, target);
+        await Attack(remote, stream, ciphers, conn, use, target);
         return;
     }
     var exit = conn.Layout.Exits.FirstOrDefault(e => e.Id == use.TargetId);
@@ -228,6 +229,18 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         return;
     }
     ushort dest = exit.Exit.DestinationHash16;
+    // The client walks to the exit first; follow it and act once the player is there (a move meanwhile cancels).
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(exit.Exit.GridX, exit.Exit.GridY, ExitReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 exit 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    if (Dist(stop, (exit.Exit.GridX, exit.Exit.GridY)) > ExitReach + 2)
+    {
+        Console.WriteLine($"[gateway] {remote} exit 0x{use.TargetId:x} out of reach from ({stop.X}, {stop.Y})");
+        return;
+    }
     if (use.Ctrl)
     {
         var list = await InstanceControl.CallAsync(new ControlRequest { Op = "list", Ticket = conn.Ticket, Area = dest });
@@ -242,38 +255,71 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(dest, 0, false), use.ToString());
 }
 
-// The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). Echo it as the player's
-// action aimed at the monster (0x1ab, flags | 0x80 + target id) so the client plays it, then, when the hit lands, lower
-// the monster's life (0x1b1) by the unarmed damage (Characters.dat MinDamage..MaxDamage; no damage model yet). One
-// attack per attack time (WeaponSpeed ms): while one runs, repeats of 0x24 are ignored. At 0 the client's Life
-// component runs its death; the corpse is removed 10 s later.
+// The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). The client walks into range
+// first, so the server walks its estimate too (WalkEstimator.Approach, reach = the weapon's MaxAttackDistance in cells,
+// centre to centre) and only then starts the swing: it echoes the action aimed at the monster (0x1ab, flags | 0x80 +
+// target id) and, at the contact point (half the attack time), lowers the monster's life (0x1b1) by the unarmed damage
+// (Characters.dat MinDamage..MaxDamage; no damage model yet). Any later action (a move, another click) cancels both.
+// One attack per attack time (WeaponSpeed ms scaled by the player's attack speed stats, a quarter early allowed for
+// jitter); earlier repeats of 0x24 are ignored. At 0 the client's Life component runs its death; the corpse is
+// removed 10 s later.
 static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
 {
     var weapon = Skills.UnarmedFor(1);
-    double now = conn.Clock.Elapsed.TotalSeconds;
+    double now = conn.Clock.Elapsed.TotalSeconds, duration;
+    lock (conn.Monsters) duration = weapon.AttackSeconds(conn.PlayerStats);
+    // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
+    // full attack time, so accept it up to a quarter of an attack early.
+    lock (conn.Monsters)
+        if (now < conn.NextAttackAt - duration / 4)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} ignored: {conn.NextAttackAt - now:0.000} s before the next attack");
+            return;
+        }
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    (int X, int Y) target;
+    lock (conn.Monsters) target = m.Walk.Position(now);
+    var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
+        $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) { Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled before the swing"); return; }
+    now = conn.Clock.Elapsed.TotalSeconds;
     lock (conn.Monsters)
     {
-        if (now < conn.NextAttackAt) return;
-        conn.NextAttackAt = now + weapon.AttackMs / 1000.0;
+        target = m.Walk.Position(now);
+        conn.NextAttackAt = Math.Max(now, conn.NextAttackAt) + duration;
     }
-    var (px, py) = conn.Walk.Position(now);
-    (int X, int Y) at;
-    lock (conn.Monsters) at = m.Walk.Position(now);
+    if (Dist(stop, target) > weapon.Range + 2)
+    {
+        Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} out of reach: {Dist(stop, target):0.0} > {weapon.Range}");
+        return;
+    }
     await Send(remote, stream, ciphers,
-        InstanceProtocol.ActionStarted(PlayerId, px, py, at.X, at.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
-        $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife})");
+        InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
+        $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife}), attack time {duration:0.000} s");
     if (m.Life == 0) return;
-    await Task.Delay(weapon.AttackMs / 2);   // roughly when the swing lands
+    await Task.Delay(TimeSpan.FromSeconds(duration / 2));   // the contact point, roughly
     uint life;
     int damage = Random.Shared.Next(weapon.MinDamage, weapon.MaxDamage + 1);
     lock (conn.Monsters)
     {
         if (m.Life == 0) return;
+        if (conn.ActionCount != action)
+        {
+            Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled by a later action");
+            return;
+        }
         m.Life = (uint)Math.Max(0, (long)m.Life - damage);
         life = m.Life;
         if (life == 0) { m.Aggro = false; m.Dead = true; }
     }
+    // At 0 the client's Life tick (0x141e6a190) stops notifying its listeners, so the mini life bar would keep the last
+    // value: hide it with the stat its listener watches (hide_mini_life_bar).
+    if (life == 0)
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(use.TargetId, [(StatKeys.HideMiniLifeBar, 1)]),
+            $"0x01b3 monster 0x{use.TargetId:x} hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
         $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life > 0) return;
@@ -285,6 +331,25 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(use.TargetId), $"0x02bb remove dead monster 0x{use.TargetId:x}");
     });
 }
+
+// The player's granted skills: the default attack with the unarmed weapon's stats and every stat the server set on the
+// player since (a skill's stats include the character's; the client reads the skill's).
+static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
+{
+    return Skills.PlayerDefaults([.. FinalPlayerStats(conn)]);
+}
+
+// The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
+// (the client derives nothing itself: 11-skills.md §4).
+static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
+{
+    Dictionary<uint, int> stats;
+    lock (conn.Monsters) stats = new(conn.PlayerStats);
+    foreach (var (k, v) in Skills.UnarmedFor(1).Stats(stats)) stats[k] = v;
+    return stats.Select(kv => (kv.Key, kv.Value));
+}
+
+static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 
 // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
 static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
@@ -334,15 +399,21 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         int percent = int.Parse(args[0]);
         if (percent is < 10 or > 1000) throw new ArgumentException("10 to 1000");
         conn.Walk.SetSpeed(WalkSpeed * percent / 100, conn.Clock.Elapsed.TotalSeconds);
+        lock (conn.Monsters) conn.PlayerStats[StatKeys.MovementVelocityPct] = percent - 100;
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.MovementVelocityPct, percent - 100)]),
             $"0x01b3 stats: movement_velocity_+% (key {StatKeys.MovementVelocityPct}) = {percent - 100}");
     })
-    .Add("set_stat", "/set_stat <client stat key> <value>", async args =>
+    .Add("set_stat", "/set_stat <stat name or client key> <value> (e.g. attack_speed_+% 100)", async args =>
     {
-        uint stat = uint.Parse(args[0]);
+        uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
         int value = int.Parse(args[1]);
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(stat, value)]),
-            $"0x01b3 stats: row {stat} = {value}");
+        lock (conn.Monsters) conn.PlayerStats[stat] = value;
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
+            $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
+        // Skills compute with their own stats (the attack and the character panel read those), so send them again.
+        var skills = PlayerSkills(conn);
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills),
+            $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats");
     })
     .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
     {
@@ -568,11 +639,18 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
 sealed partial class Program
 {
     internal const uint PlayerId = 0x1000;
+    // The server's tick: 30 per second. Nothing the server times (an attack) is shorter than one tick.
+    internal const int TickRate = 30;
+    internal const double TickSeconds = 1.0 / TickRate;
+    // How close (cells, centre to centre) the player must be to use an exit.
+    internal const double ExitReach = 6;
 
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
     // The skills granted to players (the default attack); loaded with the first player.
     internal static readonly SkillCatalog Skills = new();
+    // Stat names ↔ client keys (Stats.dat row + 1).
+    internal static readonly StatCatalog Stats = new();
 
     internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ConnectionCiphers, SemaphoreSlim> SendGates = new();
 
@@ -599,6 +677,11 @@ static class StatKeys
     public const uint MainHandTotalAttackDurationMs = 0x221a;    // main_hand_total_base_weapon_attack_duration_ms
     public const uint HundredTimesAttacksPerSecond = 0x2a6;
     public const uint MainHandBaseMaxAttackDistance = 0x146, MainHandMaxAttackDistance = 0x4d3;
+    /// <summary>hide_mini_life_bar: non-zero hides the object's overhead life bar (listener 0x140220c30).</summary>
+    public const uint HideMiniLifeBar = 0x2a8b;
+    // "Increased attack speed" stats that apply to an unarmed melee attack (attack time = base / (1 + sum / 100)).
+    public const uint AttackSpeedPct = 0x47, MeleeAttackSpeedPct = 0x49, MainHandAttackSpeedPct = 0x126,
+        UnarmedMeleeAttackSpeedPct = 0xb19;
 }
 
 /// <summary>What the Gateway knows about an area's layout: the terrain grid (for movement estimates), where the player
@@ -779,6 +862,11 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint NextObjectId = 0x3000;
     // The player's attacks: the next time one may start (Clock seconds). The client repeats 0x24 while the button is held.
     public double NextAttackAt;
+    // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
+    public int ActionCount;
+    // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
+    // with, so the server can follow it (attack time).
+    public readonly Dictionary<uint, int> PlayerStats = [];
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).

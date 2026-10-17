@@ -52,4 +52,24 @@ public class WalkEstimatorTests
         var end = w.Position(100);
         Assert.Equal((20, 3), end);
     }
+
+    [Fact]
+    public void Approach_stops_at_the_first_cell_within_reach()
+    {
+        var w = new WalkEstimator(0, 0, speed: 10);
+        var (here, stop, at) = w.Approach(100, 0, reach: 8, now: 0);
+        Assert.Equal((0, 0), here);
+        Assert.Equal((92, 0), stop);
+        Assert.Equal(9.2, at, 3);
+        Assert.Equal((92, 0), w.Position(60));
+    }
+
+    [Fact]
+    public void Approach_in_reach_stays()
+    {
+        var w = new WalkEstimator(5, 5, speed: 10);
+        var (_, stop, at) = w.Approach(9, 5, reach: 8, now: 3);
+        Assert.Equal((5, 5), stop);
+        Assert.Equal(3, at, 3);
+    }
 }

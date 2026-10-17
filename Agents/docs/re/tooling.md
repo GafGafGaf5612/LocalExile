@@ -42,6 +42,7 @@ handler), `deser*.c` (component deserializers), `m*.c` (message classes), `gor*.
 | `vt.py` | `<vtable>…` | slots 0–5 of a vtable |
 | `scanvt.py` | `<func>` | every vtable whose slot 1 is `<func>` (with `0x14299e300` it lists the network handler groups) |
 | `finddisp.py` | `<lo> <hi> <substr>` | disassemble a range and show the instructions before each operand match, e.g. `"+ 0x980]"`. Found field writers the decompiler hid |
+| `statkeys.py` | `<key>…` | client code that reads a stat key (`mov edx, key` + call) |
 | `dispatch_ids.py` | `[id…]` | instance dispatcher id → switch case (byte table `0x142154e14`) |
 
 Run with `python -I` (isolated) and add `-X utf8` when the output may contain non-ASCII (`dis.py` string hints).
@@ -78,6 +79,7 @@ Workflow per run:
 | `check-components.js` | any created object (0x2b9): per component the live vtable, its deserializer and the bytes it consumed, the leftover, and the component that was reading on a Buffer Underflow (section 7) |
 | `trace-skills.js` | every skill added to an ActiveSkillManager (`SkillInstanceAdded` `0x141eea6a0`): id, action id, effect name, backtrace |
 | `trace-skill-stats.js` | stat getter calls (key, value, caller) while a skill action is created or started |
+| `dump-stats-object.js` | the stored (key, value) pairs of every stats object asked for one key (set `KEY`) |
 | `trace-enter-area.js` | milestones (SetLocalPlayerId, EnterArea, WorldActivate, CreateObject, UI `0x140785160`), inventory registrations, passive slot creation and **inventory lookups that return null** (with the row and caller) |
 
 Notes:

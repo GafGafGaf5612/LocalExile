@@ -85,6 +85,24 @@ public static class InstanceEntities
     /// an unsigned compact key (Stats.dat row) and a signed compact value. The world handler (0x142187480) sets each on the
     /// object's Stats component (0x1424cfaf0).
     /// </summary>
+    public const ushort ComponentUpdateId = 0x2ba;
+
+    /// <summary>
+    /// S→C 0x2ba (world group, read 0x141fe05b0): world header, then blob16 = u8 component index (in the object's
+    /// component order, 04 §3) + that component's vtable+0xa0 reader data (world handler 0x142187480).
+    /// </summary>
+    public static byte[] ComponentUpdate(uint entityId, byte componentIndex, byte[] data) =>
+        new LoginWriter().U16(ComponentUpdateId).U32(entityId).U32(0).U16(0).Blob([componentIndex, .. data]).ToArray();
+
+    /// <summary>The player's Actor (component 9) skill list again (slot 20 f0 0x40, 11-skills.md §3): replaces skills of the
+    /// same id, e.g. with new stats.</summary>
+    public static byte[] PlayerSkillsUpdate(uint playerId, IReadOnlyList<GrantedSkill> skills)
+    {
+        var w = new BlobWriter().U8(0x40).U8(0);
+        PlayerObject.WriteSkillList(w, skills);
+        return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.ToArray());
+    }
+
     public static byte[] StatsUpdate(uint entityId, IReadOnlyList<(uint Stat, int Value)> stats)
     {
         var w = new LoginWriter().U16(StatsUpdateId).U32(entityId).U32(0).U16(0);
@@ -402,6 +420,9 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     /// row; then one more stat-set reference per entry of the effect's additional stat sets, none for these skills), u8
     /// flags (bit0 → u32 parent object id + u16), u8 support count × (GEPL reference, u32), u32, u32, u32, u8, then the
     /// skill's stats (compact count × compact key, compact value) and one such stat list per additional stat set.</summary>
+    /// <summary>The Actor's index in the player object's component order (04 §3).</summary>
+    public const byte ActorComponentIndex = 9;
+
     internal static void WriteSkillList(BlobWriter w, IReadOnlyList<GrantedSkill> skills)
     {
         w.U8((byte)skills.Count);

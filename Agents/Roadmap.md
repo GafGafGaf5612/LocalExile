@@ -30,6 +30,17 @@ Items are in rough priority order within each section. "Known" says what is alre
   chat panel, and the channel join request and its answer.
 - **Done when:** command replies and server messages appear as chat lines, and the channel join stops timing out.
 
+### The town's Coast exit: position, model, hover outline
+- **Known:** the exit is a bare `Metadata/MiscellaneousObjects/AreaTransition` placed at the layout's named point
+  ([08](docs/protocol/08-area-transitions.md)); it sits a little off and shows no model or outline on mouse-over.
+- **Start:** the town's own exit object in the area's .arm/.tgt (its type, which brings the model and the client-side
+  Render/Targetable components), and its exact position.
+- **Done when:** the exit looks and highlights like in the real game, at the right spot.
+
+### A server tick loop
+- **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
+- **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
+
 ### Arrival points next to exits
 - **Known:** exit positions come from the area's DGR/.arm named points ([08](docs/protocol/08-area-transitions.md) §3).
   The Coast spawns the player on its deepest walkable cell.
@@ -48,7 +59,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ### Monsters: beyond `/spawn_mob`
 - **Known:** spawning, levels, rarity, names, team, life, StateMachine / Transitionable types, walking and chasing all
-  work ([10](docs/protocol/10-chat-and-commands.md) §5). Combat waits for skills (below).
+  work ([10](docs/protocol/10-chat-and-commands.md) §5). They do not attack yet: "Combat: monsters hit back" (below).
 - **Start:** the "emerge" action for emerge monsters, mods, the boss life bar (StateMachine `boss_life_bar`), the 346
   varieties with NPC / ControlZone / BlightTower … components (each needs its deserializer, schema.md), spawning packs
   in areas. Check every new component with `scripts/re/frida/check-components.js`.
@@ -59,10 +70,11 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 3. Gameplay
 
-### Stats by name
-- **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §5).
-- **Done when:** `/set_stat <name> <value>` works by stat name, and the player's real stats (life, mana, attributes)
-  are sent in the Stats component.
+### The player's real stats
+- **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §6); `/set_stat` takes names. The
+  server must send final values (the client derives none): the attack's are computed in `SkillCatalog.Unarmed.Stats`.
+- **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
+  (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 
 ### Character progression
 - Use `data/tables/ExperienceLevels.json` and `Characters.json` (class base life, mana, attributes) through an adapter

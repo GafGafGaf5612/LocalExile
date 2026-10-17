@@ -201,4 +201,14 @@ public class InstanceEntitiesTests
         Assert.Equal(InstanceEntities.ObjectTypeHash("Metadata/MiscellaneousObjects/AreaTransition"),
             InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath));
     }
+
+    [Fact]
+    public void Player_skills_update_is_a_0x2ba_on_the_actor()
+    {
+        byte[] m = InstanceEntities.PlayerSkillsUpdate(0x1000, [new GrantedSkill(0x0102, 4474, 4430)]);
+        string hex = Convert.ToHexString(m);
+        string body = "09" + "4000" + "01" + "0201" + "00" + "7A110000" + "00" + "4E110000" + "00" + "00" +
+            "00000000" + "00000000" + "00000000" + "00" + "00" + "00" + "00000000"; // index 9 = Actor, f0 0x40, one skill, no stats
+        Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, hex);
+    }
 }

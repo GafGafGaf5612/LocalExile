@@ -27,10 +27,13 @@ sealed class SkillCatalog(string folder = "data")
     }
 
     /// <summary>The player's default skills: the default attack, with the class's unarmed weapon stats.</summary>
-    public IReadOnlyList<GrantedSkill> PlayerDefaults(Unarmed weapon)
+    public IReadOnlyList<GrantedSkill> PlayerDefaults(Unarmed weapon) => PlayerDefaults(weapon.Stats());
+
+    /// <summary>The player's default skills with these stats.</summary>
+    public IReadOnlyList<GrantedSkill> PlayerDefaults(IReadOnlyList<(uint, int)> stats)
     {
         string effect = Environment.GetEnvironmentVariable("Game_PLAYER_ATTACK") ?? "PlayerMelee";
-        return Find(FirstSkillId, effect, 1, weapon.Stats()) is { } s ? [s] : [];
+        return Find(FirstSkillId, effect, 1, stats) is { } s ? [s] : [];
     }
 
     /// <summary>A class's unarmed "weapon" (Characters.dat WeaponSpeed, MinDamage, MaxDamage, MaxAttackDistance).</summary>
@@ -38,13 +41,42 @@ sealed class SkillCatalog(string folder = "data")
     {
         public static readonly Unarmed Witch = new(833, 2, 5, 8);
 
-        /// <summary>The main-hand stats the client reads for an attack (client keys = Stats.dat row + 1).</summary>
-        public IReadOnlyList<(uint, int)> Stats() =>
+        /// <summary>Unarmed attacks alternate hands, i.e. count as dual wielding, and the client adds dual wielding's 10%
+        /// attack speed to the skill's main_hand_attack_speed_+% (live 2026-10-17: the skill read 10 that the server never
+        /// sent, and the swings came every ~757 ms = 833 / 1.1).</summary>
+        public const int DualWieldAttackSpeedPct = 10;
+
+        /// <summary>The attack's total increased attack speed: dual wielding's 10 plus the player's attack speed stats
+        /// (main_hand_attack_speed_+% set by hand counts as one more input).</summary>
+        public int IncreasedAttackSpeed(IReadOnlyDictionary<uint, int>? player)
+        {
+            int increased = DualWieldAttackSpeedPct;
+            foreach (uint k in (uint[])[StatKeys.AttackSpeedPct, StatKeys.MeleeAttackSpeedPct, StatKeys.MainHandAttackSpeedPct,
+                StatKeys.UnarmedMeleeAttackSpeedPct])
+                increased += player?.GetValueOrDefault(k) ?? 0;
+            return increased;
+        }
+
+        /// <summary>The attack time: base / (1 + increased / 100), as the client computes the swing from the skill's
+        /// main_hand_attack_speed_+% (more multipliers are not modelled), at least one server tick
+        /// (<see cref="Program.TickSeconds"/>: at most 30 attacks per second).</summary>
+        public double AttackSeconds(IReadOnlyDictionary<uint, int>? player) =>
+            Math.Max(Program.TickSeconds, AttackMs / 1000.0 / Math.Max(0.01, 1 + IncreasedAttackSpeed(player) / 100.0));
+
+        /// <summary>
+        /// The skill's final main-hand stats (client keys = Stats.dat row + 1). The server computes them, as the real one
+        /// does: the client derives nothing from attack_speed_+% (live 2026-10-17: a skill holding attack_speed_+% 2000
+        /// still swung at ~757 ms and the character panel kept showing 1.2). The swing follows main_hand_attack_speed_+%
+        /// (the client puts only dual wielding's 10 there when it is not sent), the panel's "Attacks per Second" is
+        /// hundred_times_attacks_per_second / 100.
+        /// </summary>
+        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null) =>
         [
             (StatKeys.MainHandMinPhysical, MinDamage), (StatKeys.MainHandMaxPhysical, MaxDamage),
             (StatKeys.MainHandMinTotal, MinDamage), (StatKeys.MainHandMaxTotal, MaxDamage),
             (StatKeys.MainHandAttackDurationMs, AttackMs), (StatKeys.MainHandTotalAttackDurationMs, AttackMs),
-            (StatKeys.HundredTimesAttacksPerSecond, 100_000 / AttackMs),
+            (StatKeys.MainHandAttackSpeedPct, IncreasedAttackSpeed(player)),
+            (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 / AttackSeconds(player))),
             (StatKeys.MainHandBaseMaxAttackDistance, Range), (StatKeys.MainHandMaxAttackDistance, Range),
         ];
     }

@@ -63,6 +63,25 @@ public sealed class WalkEstimator
         return here;
     }
 
+    /// <summary>When the current walk ends.</summary>
+    public double ArrivesAt => _t0 + _cumulative[^1] / _speed;
+
+    /// <summary>
+    /// Walks toward a target only until it is within <paramref name="reach"/> cells (a melee attack or a click on an
+    /// object: the client walks into range first). Returns where the walker is now, where it stops and when; when it
+    /// is already in reach it stays.
+    /// </summary>
+    public ((int X, int Y) Here, (int X, int Y) Stop, double At) Approach(int targetX, int targetY, double reach, double now)
+    {
+        var here = Order(targetX, targetY, now);
+        static double Dist((int X, int Y) a, int x, int y) => Math.Sqrt((a.X - x) * (a.X - x) + (a.Y - y) * (a.Y - y));
+        int stop = _path.FindIndex(p => Dist(p, targetX, targetY) <= reach);
+        if (stop < 0) stop = _path.Count - 1;   // unreachable: stop where the path ends (the caller checks the reach)
+        _path = _path[..(stop + 1)];
+        _cumulative = _cumulative[..(stop + 1)];
+        return (here, _path[^1], ArrivesAt);
+    }
+
     private bool Free(int x, int y) => x >= 0 && y >= 0 && x < _w && y < _h && _walkable(x, y);
 
     // A* from start to goal over paths no longer than 1.2 x the straight distance + 5; if the goal is not reachable that
