@@ -5,7 +5,7 @@ using GameServer.Core.Protocol.Login;
 namespace GameServer.Core.Protocol.Instance;
 
 /// <summary>
-/// Entity messages on the instance connection. Message fields are big-endian like
+/// Entity messages on the instance connection (Agents/docs/re/010, "Entering the area"). Message fields are big-endian like
 /// every other message. The component blob inside 0x2b9 is read with plain memcpy (0x140e28cf0 and friends), so its
 /// multi-byte fields are <b>little-endian</b>.
 /// </summary>

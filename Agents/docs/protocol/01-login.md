@@ -1,0 +1,143 @@
+# 01 — Login connection (tcp/20493)
+
+Implemented in `src/GameServer.Core/Protocol/Login/` and served by `GameServer.Auth serve`. Live-verified with the real
+3.29.3b client on 2026-10-16. Detailed static notes: [Agents/docs/re/008](../re/008-login-handshake.md) (handshake) and
+[Agents/docs/re/009](../re/009-login-messages.md) (full message tables). This document summarizes them and adds what the live
+runs showed.
+
+## 1. Pointing the client at us
+
+- `gateway_list.txt` (served by our patch web root, and also patched into the GGPK by `GameServer.Patch gateway --login
+  127.0.0.1:20493`) gives the login host:port. The client reads `gateway_list.txt`, then `Bundles2/gateway_list.txt` if
+  it exists (`0x140cfc2d0`), and the last one wins.
+- The real client checks a DSA signature on the server's DH key and agrees with a static DH value, both embedded in
+  the exe. `GameServer.Auth keygen` makes our own keys over **GGG's DSA domain** (same p, q, g, only y replaced, with x
+  chosen so the DER stays exactly 0x346 bytes) and our own static DH key. `GameServer.Auth patch` writes
+  `Game.patched.exe`, which differs from `Game.exe` only at file offsets 0x2fbf796–0x2fbfb9f.
+
+| Blob (.rdata) | VA | File offset | Size | Replaced with |
+|---|---|---|---|---|
+| X.509 DSA public key (p 2048, q 224) | `0x142fc0150` | 0x2fbf550 | 0x346 | ours, same domain, new y |
+| client static private exponent | `0x142fc04a0` | 0x2fbf8a0 | 384 | kept: gives us the client static public |
+| server static public | `0x142fc0620` | 0x2fbfa20 | 384 | `3^s mod p` for our s |
+
+## 2. Handshake (plaintext, then Salsa20)
+
+| Step | Detail |
+|---|---|
+| C→S `0x0002` | `u16 2, u16 128, client ephemeral DH public (128 B BE), u16 0` |
+| S→C `0x0002` | `u16 2, u16 128, server ephemeral public, u16 56, DSA-SHA1 signature r‖s (28 + 28 B)` |
+| check | DSA/SHA-1 over the 128-byte server key with the embedded DSA key ("General Rhoa Failure #3" if bad) |
+| agree | Crypto++ `DH2`: `Z = Z_static (384 B, 3072-bit group, g = 3) ‖ Z_ephemeral (128 B, 1024-bit group, g = 2)` |
+| KDF | `km = SHA-512(Z)` (64 B) |
+| ciphers | Salsa20/20, key `km[0:32]`, C→S IV `km[32:40]`, S→C IV `km[48:56]`, one continuous keystream per direction |
+
+Client code: crypto object ctor `0x140e02170` (groups parsed from hex strings, "Rhoa"), login connect `0x14213e610`,
+dispatch `0x14213f190` case 2 → verify `0x140e03630` → agree `0x140e03460` → ciphers `0x140e03a30(km, isClient=1)`
+installed at socket `+0x1b8`. Socket send/flush `0x140dfb8c0` uses cipher slot 1, receive `0x140dfb3d0` slot 2.
+
+Our side: `LoginGroups.cs`, `LoginKeys.cs` (keygen, image patching), `LoginHandshake.cs` (`ServerHandshake.Respond`),
+`LoginCrypto.cs` (`ConnectionCiphers`, `LoginKdf`), `Salsa20.cs`.
+
+**The same cipher construction is reused by the instance connection**, with the 64 key bytes from 0x14 in place of
+`km` (see [02](02-instance-connection.md#4-switching-to-encryption-s→c-0x11)).
+
+## 3. Framing and field encodings
+
+After the handshake each direction is a stream of messages: `u16 id` (BE) then fields, **no length prefix**. The
+reader `0x140dfb630` sets the socket flag `+0x252` when it runs short, and the message is retried once more bytes arrive.
+`LoginCodec.TryDecode` behaves the same way: it returns false when it needs more data and throws on an unknown id.
+
+<a id="field-encodings"></a>
+
+| Name | Wire | Client |
+|---|---|---|
+| u8 / bool | 1 byte | `0x140dfb630` read / `0x140dfb760` write |
+| u16 / u32 | big-endian | |
+| raw32 / raw64 | memcpy, **little-endian** | |
+| bytes[n] | n bytes | |
+| blob | u16 length + bytes | `0x1408402a0` / `0x141fa4610` read, `0x141fa44f0` write |
+| str | blob of UTF-8 | |
+| wstr | u16 **code-point** count, then per code point: `< 0x80` as 1 byte, `0x80` + UTF-16 unit LE, `0xC0` + code point u32 LE | write `0x140e0c9b0`, read `0x140e0cbe0` |
+| vec8 / vec16 / vec32 | count (u8 / u16 / u32 BE) then elements | |
+
+Message classes: vtable `[0]` destructor, `[1]` write (id + fields), `[2]` read (fields only), `[3]` clone. Objects
+keep `u16 id` at `+8`, fields from `+0x10`. These rules hold for the instance connection too.
+
+C#: `LoginWire.cs` (`LoginWriter`, `LoginReader`), `LoginMessages.cs` (records + `LoginCodec`),
+`LoginMessageStream.cs` (chunked decoding; desyncs permanently on an unknown id).
+
+## 4. Message set
+
+27 S→C ids from the receive factory `0x14219c350` and 26 C→S ids from the senders that write to the login socket
+(`login+0xdd0`). Full field tables are in [Agents/docs/re/009](../re/009-login-messages.md). These matter for the live flow:
+
+| Dir | Id | Fields | Meaning |
+|---|---|---|---|
+| C→S | 0x01 | — | keepalive, sent repeatedly while the login socket is open (class `0x14316c930`) |
+| C→S | 0x03 | u32 version (2), str account, bytes[32] machine id A, bytes[32] **password digest**, bytes[32] machine id B, bool, bool, u8 realm\|0x40, u8 | account login. Digest = unsalted SHA-256 of the UTF-16LE password (`0x140d05f70` → `0x140e23290`) |
+| S→C | 0x04 | u16 result, wstr name, bytes[32], u8 flags0, u8 flags1, blob | result 0 → logged-in state 3. A non-empty name pops up a message box. Flags0 bit5 → `+0xea8` "email verified" (without it the character screen shows the "account not verified" panel) |
+| S→C | 0x1b | raw64 server time, vec32⟨CharEntry⟩, u8 flags | push after login. An empty list moves the client to the character screen |
+| C→S | 0x18 | — | character screen opened (`0x140d13060`) |
+| S→C | 0x15 | vec8⟨Entry15⟩, u8, u8, blob | character list shown on the character screen (`0x140d12590`) |
+| C→S | 0x0e | u8 realm, u32 | **Play**. The client shows "Contacting Server..." until 0x14 |
+| S→C | 0x14 | str host, u16 port, u32, u16 area hash, u32 ticket, bytes[64] key, bytes[8], u8 | instance assignment (below) |
+| S→C | 0x17 | u16 reason | disconnect |
+
+**Entry15** (0x50 bytes, wire order): wstr name `+0x00`, wstr text `+0x20` (we send the league, "Standard"), u8
+`+0x49` (red marker), u8 `+0x4d`, u8 `+0x48` **level**, u32 `+0x40`, u8 `+0x4a` **class** (3 = Witch in this enum, Scion = 0
+in ours), u16 `+0x44` and u16 `+0x46` (portrait), u8 `+0x4b`, u8 `+0x4c`. Mapped live by setting one probe field to 3.
+
+**0x14 in detail** (handler: dispatch `0x14213f190` case 0x14):
+
+| Field | Message offset | Copied to the instance-info struct | Used by |
+|---|---|---|---|
+| str host | +0x10 | | connect target |
+| u16 | +0x30 | +0x80 | **port** (live: the client dialled it) |
+| u32 | +0x34 | +0x30 | echoed in instance 0x0E. We send the IPv4 address |
+| u16 area hash | +0x3c | | `WorldAreas.HASH16`. Unknown → "Area reported by instance does not exist" |
+| u32 | +0x38 | +0x34 | **ticket**, echoed in instance 0x0F |
+| bytes[64] | +0x3e | +0x38 | **instance Salsa20 key material** (0x11) |
+| bytes[8] | +0x7e | +0x78 | goes into the 0x0E digest. We send zeros |
+| u8 | +0x86 | | |
+
+The struct also gets the account name (`login+0xdf0`) and is handed to the listeners at `+0x290`, which start the
+instance connection. Lioneye's Watch (`1_1_town`) is HASH16 `0x235c` in 3.29.3b.
+
+## 5. Our login server
+
+`GameServer.Auth serve` (`src/GameServer.Auth/Program.cs`): accept → read C→S 0x0002 → `ServerHandshake.Respond` →
+decrypt with `LoginMessageStream` → `LoginServerSession.Handle` → encrypt replies. It logs every decoded message, with
+password digests, tokens, tickets and machine ids redacted.
+
+`LoginServerSession` (`Protocol/Login/LoginServerSession.cs`):
+
+| Receives | Sends |
+|---|---|
+| 0x03 | `AccountService.LoginWithClientDigest`. Unknown account → 0x04 result 5, wrong password → 6, then the server **closes** the connection (the client ignores Log In while a failed connection stays open). Good → 0x04 result 0, Flags0 0x20, then 0x1b (empty) |
+| 0x18 | 0x15 with the account's characters (level, class, league "Standard") |
+| 0x0e | 0x14: `127.0.0.1:6112`, address, area `0x235c`, `ticket = Keyring.NewTicket()`, `key = Keyring.Key(ticket)` |
+| anything else | nothing |
+
+Accounts come from `data/accounts.json` (`Game_DEV_DB`, shared with `GameServer.Host`). Each account stores a verifier
+for the client digest. `InstanceKeyring` (`Protocol/Instance/InstanceProtocol.cs`) loads or creates
+`data/instance-secret.bin` (`Game_INSTANCE_SECRET`). Tests: `LoginCryptoTests` (patches an in-memory copy of the real
+client and handshakes against it), `LoginMessageTests`, `LoginServerSessionTests` (including the live-verified flow).
+
+## 6. Live observations (2026-10-16)
+
+- 0x04 with a non-empty name popped up a message box with the account name and an OK button, so the name stays empty.
+- Without the 0x1b push the client waits after 0x04.
+- Result codes are BackendErrors rows + 1: result 5 showed "The specified account does not exist." (row 4), so a wrong
+  password is 6 (row 5 InvalidPassword). After a failed result the client keeps the connection and ignores Log In until
+  the server closes it.
+- With "Save Login Details" ticked the client auto-submits the saved account and digest at startup.
+- The character screen requests the list with 0x18 each time it opens.
+- After Play the login socket stays open and sends 0x01 keepalives. When the instance connection drops, the client
+  goes back to the login screen ("An unexpected disconnection occurred").
+
+## Open
+
+- Meanings of most 0x15 / 0x1b fields, and the result-code mapping onto BackendErrors (row 4 AccountDoesNotExist,
+  row 5 InvalidPassword: whether it is direct or code−1 is not verified).
+- The other login paths (0x05 token, 0x06/0x07 ticket/Steam, 0x2c Epic) are decoded but not answered.

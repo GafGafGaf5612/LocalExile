@@ -1,0 +1,121 @@
+# Reverse-engineering tooling
+
+What was used to map the client, how to run each tool and what it is good for. Paths are relative to the repo root.
+The client binary is `Client/Game.exe` (79 MB, image base `0x140000000`). `Client/Game.patched.exe` is the same
+apart from the login key blobs, so addresses are the same in both.
+
+## 1. Ghidra (headless, read-only)
+
+A fully analyzed project already exists: `Tools/ghidra-projects`, project `poe3293`, program `PathOfExile.exe` (the
+same binary as `Client/Game.exe`). Do not rename the project or program, because the scripts use those names. REA's
+own Ghidra import of the 79 MB file exceeds its 1-hour limit, so use this project instead of re-analyzing.
+
+Runner: `bash scripts/re/ghidra/g.sh <Script.java> <args>` (about 12–15 s per call, `-noanalysis -readOnly`). It sets
+`JAVA_HOME` to `Tools/jdk-21`, takes scripts from its own directory (so a worktree's scripts run as they are) and prints
+only ERROR/Exception/SCRIPT lines (`GLINES=<n>` for more). Arguments go through `cmd.exe`, which splits at `,` and `=`. Output paths must be Windows paths
+(`C:\…\Tools\re\out\x.c`). PowerShell variants: `scripts/re/ghidra/decomp.ps1`, `run.ps1`.
+
+| Script | Usage | Use it for |
+|---|---|---|
+| `Decomp.java` | `<out> <addr[:depth]>…` | decompile the function containing each address, with `:N` also its callees to depth N |
+| `Range.java` | range in `Tools/re/out/range.txt` ("lo hi") → `range.c` | decompile every function in an address range (class methods sit together) |
+| `Callers.java` | `<out> <symbol\|0xaddr>…` | every function that references a symbol (import, thunks followed) or an address, data refs included. Used for imports (`connect`, `send`), strings, pools, setters |
+| `FindSenders.java` | `<out> <disp>…` | every function using a displacement, with the ids passed to `htons`. Found login senders (`0xdd0`) and state writers (`0xc3a0`) |
+| `FindHtons.java` | `<out> <id>…` | functions calling `htons(<id>)`. Found nothing for instance messages, whose ids are stored in the message object |
+| `RefsIn.java` | `<out> <start:len>…` | references into a range: who installs a vtable or touches a blob |
+| `Refs.java` | names or addresses in `Tools/re/out/rx.txt` | functions referencing each |
+| `Syms.java` | `<out> <regex>` | symbols matching a regex |
+| `ComponentRegistry.java` | `<out.json>` | the component registry (section 7) |
+| `ReadSchema.java` | `<out.json> <components.json> [factory:a+b] [only:f+g] [withc]` | read-sequence summaries (section 7) |
+
+Earlier decompile output is kept in `Tools/re/out/*.c` (untracked). The files used this session: `inst*.c` (instance
+connection), `inst11.c` (the whole instance dispatcher, 5275 lines), `inst10.c` (instance factory), `obj1.c` (world
+handler), `deser*.c` (component deserializers), `m*.c` (message classes), `gor*.c` (object type register).
+
+## 2. Python helpers (`scripts/re/*.py`, need `pefile` and `capstone`)
+
+| Script | Usage | Notes |
+|---|---|---|
+| `dis.py` | `<va> [before] [after]` | quick disassembly with RIP-relative string hints. Starting `before` bytes back can land mid-instruction and print nothing; use 0 or a function start |
+| `xr.py` | `<string>` | find a string (ASCII/UTF-16) and its code xrefs. Slow on short, common strings; use `strexact.py` + `Callers.java` instead |
+| `strexact.py` | `<name>…` | exact NUL-terminated ASCII (`a:`) and UTF-16 (`u:`) occurrences |
+| `vt.py` | `<vtable>…` | slots 0–5 of a vtable |
+| `scanvt.py` | `<func>` | every vtable whose slot 1 is `<func>` (with `0x14299e300` it lists the network handler groups) |
+| `finddisp.py` | `<lo> <hi> <substr>` | disassemble a range and show the instructions before each operand match, e.g. `"+ 0x980]"`. Found field writers the decompiler hid |
+| `dispatch_ids.py` | `[id…]` | instance dispatcher id → switch case (byte table `0x142154e14`) |
+
+Run with `python -I` (isolated) and add `-X utf8` when the output may contain non-ASCII (`dis.py` string hints).
+
+## 3. GGPK file dump (`scripts/re/ggdump`)
+
+```bash
+dotnet run --project scripts/re/ggdump -- "C:\Users\Frost\Desktop\Projects\Game\Client\Content.ggpk" "<outDir>" Data/Inventories.datc64 Metadata/Characters/Int/Int.ot
+```
+
+It uses `GameServer.Data`'s `GameFileSystem` (bundle index + bundles) and a Node-based Oodle decoder
+(`Tools/ooz/ooz_worker.mjs`; the managed decoder lacks Selkie). The GGPK opens read-only and shared, so this works while
+the client runs. Paths are hashed in the index, so there is no listing: ask for exact paths. `.ot` files are UTF-16
+with a BOM; `.datc64` files are rows followed by `0xbb×8` and the variable data section.
+
+## 4. Frida through REA (live client)
+
+REA's MCP tools: `start_frida_session` (mode `attach`, `pid`), `load_frida_script` (inline source), `frida_session_status`
+(queued `send()` messages), `close_frida_session` (detach; it never kills the target).
+
+Workflow per run:
+1. `scripts/dev/live.ps1` (see [../dev/live-testing.md](../dev/live-testing.md)) → client pid
+2. `start_frida_session {mode: attach, pid}` **before** logging in or Play
+3. `load_frida_script` with `scripts/re/frida/common.js` followed by one of the trace scripts
+4. log in, Play, then read `frida_session_status`
+
+| Script | What it does |
+|---|---|
+| `common.js` | rebases Ghidra VAs (`at(va)`), formats addresses back (`va(p)`), reads the blob reader position (`pos(r)`) and installs `Process.setExceptionHandler` with an image-relative fuzzy backtrace |
+| `trace-player-blob.js` | the 0x2b9 blob bytes, the created object's component vtables in order (`obj+0x10..+0x18`, each slot +0x88) and the reader position around each component deserializer |
+| `dump-walkability.js` | hooks `0x1410ddcfd` and writes the area's terrain walkability (`walk-meta.json`, `walk-a.bin` = walkable mask, 5 = walkable; `walk-b.bin`) to `Tools/re/out/`. Used to pick the spawn ([../protocol/03-area-and-world.md](../protocol/03-area-and-world.md) §7) |
+| `trace-pong.js` | the 0x1c read, the send-time queue pop and logger calls after the first 0x1c (used to find the HNC violation) |
+| `trace-missing-files.js` | paths the file lookup `0x1421cc280` fails on (C++ exceptions thrown via `0x1421cc54e`) |
+| `check-components.js` | any created object (0x2b9): per component the live vtable, its deserializer and the bytes it consumed, the leftover, and the component that was reading on a Buffer Underflow (section 7) |
+| `trace-enter-area.js` | milestones (SetLocalPlayerId, EnterArea, WorldActivate, CreateObject, UI `0x140785160`), inventory registrations, passive slot creation and **inventory lookups that return null** (with the row and caller) |
+
+Notes:
+- An exception message with `rdi = 0x19930520` and a `RaiseException` frame is a C++ throw. `rbx`/the second arg is the
+  throw info (e.g. `0x143a50ab0` = the blob reader's out-of-range exception).
+- `Thread.backtrace(…, FUZZY)` also lists stale return addresses. Read it together with the disassembly.
+- Returning `false` from the exception handler lets the client continue normally (dialog or crash).
+
+## 5. Windows crash data
+
+Without Frida, a crash leaves only the Application event log (event 1000: exception code and fault offset, i.e.
+`VA - 0x140000000`). WER kept no dump. Enabling LocalDumps would need a registry change (HKLM), which is the user's
+call. There is no `cdb`/WinDbg installed.
+
+## 6. Recipes that worked
+
+- **Message layout:** find the case in the dispatcher (`dispatch_ids.py`), read the factory case for the class ctor,
+  `vt.py` the vtable, then decompile slot 1 (write: wire order) and slot 2 (read).
+- **Who sets field X:** `FindSenders.java X` (displacement users), then `finddisp.py` over the candidates for
+  `mov … [reg + X], …`.
+- **Component class from a name:** `strexact.py Name` → `Callers.java` on the ASCII address → the static initializer in
+  `0x14006xxxx` (`lea rdx,name; lea rcx,pool`) → `Callers.java pool` → factory → ctor vtable. Then confirm with
+  Frida, because live objects can use other vtables.
+- **What a crash needs:** Frida backtrace → decompile the faulting function → find the null field → find its writer
+  → find the message that calls that writer.
+
+## 7. Schema generators (objects and messages without live trial and error)
+
+| Step | Command | Output |
+|---|---|---|
+| Component registry | `bash scripts/re/ghidra/g.sh ComponentRegistry.java 'C:\…\docs\re\components.json'` (40 s) | [components.json](components.json): every `0x140e33c20` registration → pool → users (factory) → every vtable they install, subclasses, slot 17/20, a `primary` flag (factory's own vtable and its subclasses) |
+| Registry doc + Frida tables | `python -I scripts/re/gen_components.py` | [components.md](components.md), the `VT`/`DESER` tables in `frida/check-components.js` |
+| Component order per type | `python -I scripts/re/ot_components.py --check --md Agents/docs/re/object-types.md` (any `Metadata/…` paths print their list; `--all --json <file>` does every type in the dat tables) | [object-types.md](object-types.md). `--check` compares with the two traced objects and exits 1 on a mismatch |
+| Read sequences | `bash scripts/re/ghidra/g.sh ReadSchema.java 'C:\…\Tools\re\out\readschema.json' 'C:\…\docs\re\components.json'` (about 10 min), then `python -I scripts/re/schema_md.py` | [../protocol/schema.md](../protocol/schema.md): every primary deserializer and every message class of the instance and world factories, validated against the traced byte counts (exit 1 on a mismatch) |
+| Live check | `common.js` + `frida/check-components.js` (section 4) | bytes per component of every object the server sends |
+
+Rules the generators rely on (all from the code, see the script headers): the object-type constructor `0x141ec1360`
+creates Positioned first; `.ot` sections merge parent-first with the first position kept; `type+0x80` components (the
+non-client ones) are deserialized; live objects often use a subclass vtable (`ClientPlayer`, `ClientActor`,
+`ClientAreaTransition`, `ClientInternalStats`). To build a new object: take its type's list from `ot_components.py`, find
+each component's live vtable (★ in components.md, or `check-components.js` on a client-created object), and write the
+bytes its summary in schema.md asks for; then confirm with `check-components.js` that every component consumed what
+the server meant and `left` is 0.

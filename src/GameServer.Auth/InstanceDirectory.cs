@@ -10,7 +10,7 @@ using GameServer.Core.World;
 /// <summary>
 /// Auth's side of area instances: which instance each ticket belongs to, the live login connection of each in-game
 /// character (its session issues the tickets), and the localhost control server the Gateway calls
-/// (<see cref="InstanceControl"/>).
+/// (<see cref="InstanceControl"/>). Docs: Agents/docs/protocol/09-area-change.md.
 /// </summary>
 sealed class InstanceDirectory(InstanceRegistry registry)
 {

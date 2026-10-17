@@ -2,7 +2,7 @@ namespace GameServer.Core.Protocol.Login;
 
 // Login-connection messages after the key exchange. Every message is `u16 id` followed by its fields, with no length
 // prefix, so the reader must know each id's layout. Layouts come from the client's serializers (vtable slot 1 writes
-// the id and fields, slot 2 reads the fields). Field names are ours.
+// the id and fields, slot 2 reads the fields); see Agents/docs/re/009-login-messages.md for addresses. Field names are ours.
 // Where the client's use of a field is unknown, the name says what it is on the wire.
 
 public interface ILoginMessage

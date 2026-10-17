@@ -1,0 +1,9 @@
+{
+  "name": "poe-ooz-worker",
+  "private": true,
+  "type": "module",
+  "description": "Node bridge to ooz-wasm for Oodle decompression (Kraken/Mermaid/Selkie/Leviathan).",
+  "dependencies": {
+    "ooz-wasm": "^2.0.0"
+  }
+}

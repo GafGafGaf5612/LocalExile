@@ -6,11 +6,11 @@ using GameServer.Core.Protocol.Login;
 using WalkEstimator = GameServer.Core.World.WalkEstimator;
 
 // GameServer.Gateway — the instance (game) server the client connects to after login 0x14, or after 0x27 on an area
-// change.
+// change (Agents/docs/protocol/02, 09).
 // Reads the plaintext opening (0x0F ticket + 0x0E hello), asks GameServer.Auth which area/instance the ticket belongs to
 // (InstanceControl "resolve"), answers 0x11 so both directions switch to Salsa20 keyed by the ticket's instance key,
 // sends the area (0x1d), answers the client's 0x7d with the player and the area's exits, and handles ticks, movement and
-// exit clicks (0x24: change area, or with Ctrl the instance chooser).
+// exit clicks (0x24: change area, or with Ctrl the instance chooser; Agents/docs/protocol/09-area-change.md).
 // Port: Game_GATEWAY_PORT (default 6112). Instance keys: data/instance-secret.bin (Game_INSTANCE_SECRET), shared with
 // GameServer.Auth. Auth control: 127.0.0.1:Game_AUTH_CONTROL_PORT (20495); without it every ticket gets Lioneye's Watch.
 
@@ -370,8 +370,8 @@ static class AreaLayouts
     // Lioneye's Watch is one room, Metadata/Terrain/Act1/Town/Rooms/beach_town_unique_normal.arm (18 x 30 tiles), placed
     // R270 by Graphs/beachtown.dgr ("default" "entrance2" "entrance1disabled"). Room (x, y) → grid (y, 413 - x):
     // entrance2 (196, 384) → (384, 217) on the east edge is the exit to The Coast (1_1_2, 0x7ad2); entrance1 is the
-    // disabled one-way Twilight Strand side; default (178, 346) → (346, 235).
-    // Spawn (197, 261): the walkable cell farthest from any edge.
+    // disabled one-way Twilight Strand side; default (178, 346) → (346, 235). Agents/docs/protocol/08-area-transitions.md.
+    // Spawn (197, 261): the walkable cell farthest from any edge (Agents/docs/protocol/03 §7).
     static readonly (uint Id, AreaTransitionObject Exit)[] TownExits =
         [(0x2000, new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: TheCoast))];
 
@@ -453,7 +453,7 @@ static class AreaLayouts
         }
     }
 
-    // 1 byte per cell; the client walks on values >= 2.
+    // 1 byte per cell; the client walks on values >= 2 (Agents/docs/protocol/07 §5).
     static Func<int, int, bool> Walkable(byte[] cells, int w, int h) =>
         (x, y) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x] >= 2;
 

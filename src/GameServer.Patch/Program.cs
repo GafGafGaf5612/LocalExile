@@ -13,7 +13,7 @@ using GameServer.Data.Ggpk;
 // (or --cdn-passthrough) does it pass other requests through to the real CDN
 // (Game_CDN_MIRROR), forwarding the client's Basic auth, to let stale local data repair itself.
 //
-// It also runs the patching server's TCP protocol: start the client with
+// It also runs the patching server's TCP protocol (Agents/docs/re/010): start the client with
 // `--patching-server 127.0.0.1:12995` and it is told its local data is current, so it
 // skips patching and goes straight to the login screen. The welcome's web roots are always
 // this server (default http://127.0.0.1:8080/, Game_PATCH_WEB_ROOT to override), never the CDN.

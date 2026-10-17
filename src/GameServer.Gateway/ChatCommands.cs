@@ -1,7 +1,7 @@
 using GameServer.Core.Protocol.Instance;
 
 /// <summary>
-/// Slash commands typed in the client's chat box (C→S 0x15). Dev tools for now:
+/// Slash commands typed in the client's chat box (C→S 0x15, Agents/docs/protocol/10-chat-and-commands.md). Dev tools for now:
 /// every command is accepted from every player.
 /// </summary>
 sealed class ChatCommands

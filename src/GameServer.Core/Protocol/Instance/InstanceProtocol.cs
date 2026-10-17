@@ -4,7 +4,7 @@ using GameServer.Core.Protocol.Login;
 namespace GameServer.Core.Protocol.Instance;
 
 /// <summary>
-/// The instance (game server) connection Same framing as login (u16 BE id, fields, no length prefix) and
+/// The instance (game server) connection, Agents/docs/re/010. Same framing as login (u16 BE id, fields, no length prefix) and
 /// the same field encodings (<see cref="LoginWriter"/> / <see cref="LoginReader"/>). The client opens it after login
 /// 0x14 and sends two plaintext messages (0x142148500): 0x0F ticket and 0x0E hello. The server answers 0x11 in
 /// plaintext. From the byte after it, both directions are Salsa20 keyed by the 64 bytes from 0x14 (client case 1 of

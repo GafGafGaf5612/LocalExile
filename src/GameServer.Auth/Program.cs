@@ -5,11 +5,11 @@ using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Storage;
 
-// GameServer.Auth — the login server the official client talks to.
+// GameServer.Auth — the login server the official client talks to (custom TCP, see Agents/docs/re/007 and 008).
 //   keygen <Game.exe> [keys.json]          new signing + static keys over the client's own DSA domain
 //   patch  <Game.exe> <out.exe> [keys.json] write a copy of the client that trusts those keys
 //   [serve] [keys.json]                    accept logins: 0x0002 key exchange, then answer account login 0x03 with 0x04
-//                                          and log every decoded message
+//                                          and log every decoded message (Agents/docs/re/009)
 // Port: Game_LOGIN_PORT (default 20493). Keys default to data/login-keys.json. Accounts: Game_DEV_DB (default
 // data/accounts.json, shared with GameServer.Host; register there). Each process keeps its own copy of that file in
 // memory, so do not change accounts in both at once. Instance keys: data/instance-secret.bin (Game_INSTANCE_SECRET),

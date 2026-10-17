@@ -3,7 +3,7 @@ using GameServer.Core.Protocol.Login;
 namespace GameServer.Core.Protocol.Instance;
 
 /// <summary>
-/// Changing area through an exit, and the instance chooser.
+/// Changing area through an exit, and the instance chooser (Agents/docs/protocol/09-area-change.md).
 /// <para>Flow: C→S 0x24 (use skill on the exit object) → S→C 0x2b2 (change area: the client shows the loading screen and
 /// answers C→S 0x2cb, built by 0x142148690) → S→C 0x27 (the destination instance's address, ticket and key, on the
 /// current instance connection) → the client connects to it. In game nothing listens to login 0x14 (the login

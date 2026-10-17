@@ -14,4 +14,9 @@
     <Project Path="tests/GameServer.Data.Tests/GameServer.Data.Tests.csproj" />
     <Project Path="tests/GameServer.Core.Tests/GameServer.Core.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="Tools/PoEClientRecon/PoEClientRecon.csproj" />
+    <Project Path="Tools/PoEDataExtractor/PoEDataExtractor.csproj" />
+    <Project Path="Tools/PoEMitmProxy/PoEMitmProxy.csproj" />
+  </Folder>
 </Solution>

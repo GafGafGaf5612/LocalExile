@@ -49,7 +49,7 @@ public sealed class LoginServerSession(AccountService accounts)
     /// 0x14 for the account's first character. The area hash is WorldAreas.HASH16 (Lioneye's Watch, 1_1_town = 0x235c
     /// in 3.29.3b); an unknown hash makes the client throw "Area reported by instance does not exist". +0x30 is the port
     /// (live-verified). The client echoes +0x34 (here the IPv4 address) in instance 0x0E and the ticket at +0x38 in
-    /// instance 0x0F. The 64 key bytes become the instance connection's Salsa20 key material. Data8 goes
+    /// instance 0x0F. The 64 key bytes become the instance connection's Salsa20 key material (Agents/docs/re/010). Data8 goes
     /// into the 0x0E digest and stays zero.
     /// </summary>
     private ILoginMessage[] EnterGame(U8U32 play)
@@ -76,7 +76,7 @@ public sealed class LoginServerSession(AccountService accounts)
 
     /// <summary>0x14 sending the client to <paramref name="areaHash16"/> on the instance server with
     /// <paramref name="ticket"/>. Only at character select: in game the client ignores login 0x14 and area changes use
-    /// instance 0x27.</summary>
+    /// instance 0x27 (Agents/docs/protocol/09-area-change.md).</summary>
     public InstanceInfo InstanceAssignment(ushort areaHash16, uint ticket)
     {
         uint ip = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(System.Net.IPAddress.Parse(InstanceHost).GetAddressBytes());

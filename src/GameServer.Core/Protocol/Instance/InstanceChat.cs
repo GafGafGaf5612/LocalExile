@@ -3,7 +3,7 @@ using GameServer.Core.Protocol.Login;
 namespace GameServer.Core.Protocol.Instance;
 
 /// <summary>
-/// Chat on the instance connection.
+/// Chat on the instance connection (Agents/docs/protocol/10-chat-and-commands.md).
 /// </summary>
 public static class InstanceChat
 {
