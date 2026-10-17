@@ -68,6 +68,8 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/set_speed <percent>` | 0x1b3 `movement_velocity_+%` = percent − 100 on the player; the server's walk estimate uses 37 × percent / 100 cells/s |
 | `/set_stat <client key> <value>` | 0x1b3 for any stat, by client key (not the Stats.json row) |
 | `/spawn_mob <row, Id or name>[@level] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), with a rarity and an optional name, a few cells from the player (§5) |
+| `/mobs` | lists the monsters spawned on this connection (message box) |
+| `/despawn [all \| <id>]` | S→C 0x2bb (remove object, header only) for the last spawned monster, all of them, or one id |
 
 Every player can use every command; there are no permissions yet.
 
@@ -157,6 +159,8 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   defaults. Live 2026-10-17: Frost Bishop (1 state, 4 bytes), Arakaali (4 states, 10 bytes) and Haku (8 states, one
   defaulting to 1, and 2 timers: 28 bytes) all consumed exactly. Arakaali showed no hover nameplate: bosses carry
   `boss_life_bar` / `disable_life_bar` / `global_first_aggro` states, probably the top-of-screen boss bar on aggro.
+- **Removal.** S→C **0x2bb** (world group, header only: `u16 id, u32 object id, u32 0, u16 0`) removes the object;
+  live 2026-10-17 `/despawn` and `/despawn all` removed spawned monsters.
 - **Placement.** The nearest walkable cell 6–20 cells from the server's estimate of the player; ids from 0x3000. The
   world is active, so 0x2b9 is created at once; 0x1a9 puts it in the wake zone.
 

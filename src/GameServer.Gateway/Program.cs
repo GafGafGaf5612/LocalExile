@@ -331,6 +331,21 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
             $"0x02b9 create {rarity} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
+        conn.Monsters[id] = $"{variety.Name}@{level}";
+    })
+    .Add("mobs", "/mobs (list spawned monsters)", async _ =>
+        await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
+            string.Join(", ", conn.Monsters.Select(m => $"0x{m.Key:x} {m.Value}"))))
+    .Add("despawn", "/despawn [all | <id>] (default: the last one spawned)", async args =>
+    {
+        IEnumerable<uint> ids = args.Length == 0 ? conn.Monsters.Keys.TakeLast(1)
+            : args[0].Equals("all", StringComparison.OrdinalIgnoreCase) ? [.. conn.Monsters.Keys]
+            : [Convert.ToUInt32(args[0], args[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)];
+        foreach (uint id in ids.ToList())
+        {
+            if (!conn.Monsters.Remove(id)) { await conn.Commands!.Reply($"No monster 0x{id:x}."); continue; }
+            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove monster 0x{id:x}");
+        }
     });
 }
 
@@ -561,6 +576,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint NextObjectId = 0x3000;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
+    // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
+    public readonly SortedDictionary<uint, string> Monsters = [];
 
     /// <summary>A walkable cell a few cells from (x, y), nearest first; (x + 8, y) without a walk map.</summary>
     public (int X, int Y) SpawnNear((int X, int Y) at)

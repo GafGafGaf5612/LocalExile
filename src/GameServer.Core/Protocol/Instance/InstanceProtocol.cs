@@ -93,6 +93,12 @@ public static class InstanceProtocol
     /// </summary>
     public static byte[] EnterWakeZone(uint objectId) => new LoginWriter().U16(EnterWakeZoneId).U32(objectId).U32(0).U16(0).ToArray();
 
+    public const ushort RemoveObjectId = 0x2bb;
+
+    /// <summary>S→C 0x2bb (world group, header only, read 0x141f92000): remove an object (the world handler's "remove
+    /// object" case, Agents/docs/protocol/07 §4).</summary>
+    public static byte[] RemoveObject(uint objectId) => new LoginWriter().U16(RemoveObjectId).U32(objectId).U32(0).U16(0).ToArray();
+
     /// <summary>
     /// S→C 0x1ba (world group, class 0x1435dd7b8, read 0x141fe0ff0; Positioned handler 0x141e30c90): move an object to a
     /// grid cell. Object header, i32 x, i32 y, u32 (+0x28), f32 speed (+0x2c; the client takes distance / speed as the

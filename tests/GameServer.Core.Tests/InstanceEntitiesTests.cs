@@ -69,6 +69,12 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Remove_object_is_a_header_only_message()
+    {
+        Assert.Equal("02BB" + "00003001" + "00000000" + "0000", Convert.ToHexString(InstanceProtocol.RemoveObject(0x3001)));
+    }
+
+    [Fact]
     public void Monster_types_message_and_type_path()
     {
         // u16 count, u16 preload (big-endian), rows as raw little-endian u16, then one level byte each.
