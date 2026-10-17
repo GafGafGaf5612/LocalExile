@@ -1,0 +1,62 @@
+# --- Game client and its content: copyrighted, never commit ---
+/Client/
+*.ggpk
+*.bundle.bin
+*.dat
+*.dat64
+*.datc64
+Game*.exe
+PathOfExile*.exe
+
+# --- Large third-party tools (Ghidra, JDK, ooz, local RE workspace and its outputs) ---
+/Tools/
+
+# --- Data extracted from the client, and local secrets ---
+# data/tables (extracted game tables), data/walkability (Frida dumps), data/login-keys.json (server signing key),
+# data/instance-secret.bin (instance key secret), data/dev-login.txt (dev account), data/accounts*.json.
+# Only the dat schema is source.
+/data/*
+!/data/schema/
+/artifacts/
+/captures/
+
+# --- Secrets ---
+*.pfx
+*.p12
+*.key
+*.pem
+.env
+.env.*
+*secret*
+!**/*Secret*.cs
+
+# --- Machine-local tool config (absolute paths to this PC) ---
+.mcp.json
+.claude/
+.opencode/
+.vs/
+.vscode/
+.idea/
+
+# --- .NET ---
+bin/
+obj/
+*.user
+*.suo
+TestResults/
+
+# --- Node / Python ---
+node_modules/
+__pycache__/
+*.pyc
+
+# --- Logs / temp ---
+/logs/
+*.log
+*.err
+*.tmp
+
+# --- OS ---
+Thumbs.db
+desktop.ini
+.DS_Store

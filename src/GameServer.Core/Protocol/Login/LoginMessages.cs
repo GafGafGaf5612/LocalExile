@@ -1,0 +1,420 @@
+namespace GameServer.Core.Protocol.Login;
+
+// Login-connection messages after the key exchange. Every message is `u16 id` followed by its fields, with no length
+// prefix, so the reader must know each id's layout. Layouts come from the client's serializers (vtable slot 1 writes
+// the id and fields, slot 2 reads the fields). Field names are ours.
+// Where the client's use of a field is unknown, the name says what it is on the wire.
+
+public interface ILoginMessage
+{
+    ushort MessageId { get; }
+
+    /// <summary>Writes the fields after the id.</summary>
+    void WriteFields(LoginWriter w);
+}
+
+public static class LoginMessage
+{
+    public static byte[] Encode(ILoginMessage m)
+    {
+        var w = new LoginWriter().U16(m.MessageId);
+        m.WriteFields(w);
+        return w.ToArray();
+    }
+}
+
+/// <summary>Messages with no fields: S→C 0x01; C→S 0x01, 0x18, 0x19, 0x21, 0x23, 0x39.</summary>
+public sealed record EmptyMessage(ushort MessageId) : ILoginMessage
+{
+    public void WriteFields(LoginWriter w) { }
+}
+
+/// <summary>One u16 (class 0x1435bf7e8, 0x141f92870/0x141f928d0): S→C 0x0b, 0x0d, 0x0f, 0x17 (disconnect reason), 0x1e, 0x44.</summary>
+public sealed record U16Message(ushort MessageId, ushort Value) : ILoginMessage
+{
+    public void WriteFields(LoginWriter w) => w.U16(Value);
+    internal static U16Message Read(ushort id, ref LoginReader r) => new(id, r.U16());
+}
+
+/// <summary>One u32 (class 0x14316c420, 0x140912ff0/0x140913050): S→C 0x1f, 0x20. Also C→S 0x46 (sender 0x140d14690).</summary>
+public sealed record U32Message(ushort MessageId, uint Value) : ILoginMessage
+{
+    public void WriteFields(LoginWriter w) => w.U32(Value);
+    internal static U32Message Read(ushort id, ref LoginReader r) => new(id, r.U32());
+}
+
+/// <summary>One u8: C→S 0x3a (0x140d08c80), 0x42 (0x142140810).</summary>
+public sealed record U8Message(ushort MessageId, byte Value) : ILoginMessage
+{
+    public void WriteFields(LoginWriter w) => w.U8(Value);
+    internal static U8Message Read(ushort id, ref LoginReader r) => new(id, r.U8());
+}
+
+/// <summary>One wide string (class 0x1435bf650, 0x141f91850/0x141f918b0): S→C 0x24, 0x25, 0x26, 0x28, 0x29; C→S 0x3f, 0x40.</summary>
+public sealed record WStringMessage(ushort MessageId, string Text) : ILoginMessage
+{
+    public void WriteFields(LoginWriter w) => w.WStr(Text);
+    internal static WStringMessage Read(ushort id, ref LoginReader r) => new(id, r.WStr());
+}
+
+/// <summary>Wide string + u8 (class 0x1435bfcd8, 0x141f950c0/0x141f95140): C→S 0x0c, 0x2a, 0x2b. The byte is the realm byte | 0x40 for 0x2a/0x2b.</summary>
+public sealed record WStringU8Message(ushort MessageId, string Text, byte Value) : ILoginMessage
+{
+    public void WriteFields(LoginWriter w) => w.WStr(Text).U8(Value);
+    internal static WStringU8Message Read(ushort id, ref LoginReader r) => new(id, r.WStr(), r.U8());
+}
+
+// ---------------------------------------------------------------- server → client
+
+/// <summary>S→C 0x04 (vtable 0x1435dbac8, write 0x14219b140, read 0x14219b230). Result 0 moves the client to state 3 (logged in).</summary>
+public sealed record LoginResult(ushort Result, string AccountName, byte[] Digest, byte Flags0, byte Flags1, byte[] Data) : ILoginMessage
+{
+    public const ushort Id = 0x04;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U16(Result).WStr(AccountName).Fixed(Digest, 32).U8(Flags0).U8(Flags1).Blob(Data);
+    internal static LoginResult Read(ushort id, ref LoginReader r) => new(r.U16(), r.WStr(), r.Fixed(32), r.U8(), r.U8(), r.Blob());
+}
+
+/// <summary>S→C 0x11 (vtable 0x1435dba88, 0x14219b5a0/0x14219b610): u8 + u16-length blob, parsed by the client into 17 records of 0x80 bytes (0x14213d060).</summary>
+public sealed record Blob11(byte Kind, byte[] Data) : ILoginMessage
+{
+    public const ushort Id = 0x11;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U8(Kind).Blob(Data);
+    internal static Blob11 Read(ushort id, ref LoginReader r) => new(r.U8(), r.Blob());
+}
+
+/// <summary>S→C 0x13 (vtable 0x1435dbae8, 0x14219b850/0x14219b8d0). When the flag is set the client posts to /api/tracking-conversions/.</summary>
+public sealed record Tracking13(ushort Value, bool Flag) : ILoginMessage
+{
+    public const ushort Id = 0x13;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U16(Value).Bool(Flag);
+    internal static Tracking13 Read(ushort id, ref LoginReader r) => new(r.U16(), r.Bool());
+}
+
+/// <summary>
+/// S→C 0x14 (vtable 0x1435dba08, 0x14219b9c0/0x14219bb20): instance (game server) assignment. AreaHash is looked up in
+/// the area table ("Area reported by instance does not exist. Hash was: ").
+/// </summary>
+public sealed record InstanceInfo(string Host, ushort U16_30, uint U32_34, ushort AreaHash, uint U32_38, byte[] Key64, byte[] Data8, byte U8_86) : ILoginMessage
+{
+    public const ushort Id = 0x14;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) =>
+        w.Str(Host).U16(U16_30).U32(U32_34).U16(AreaHash).U32(U32_38).Fixed(Key64, 64).Fixed(Data8, 8).U8(U8_86);
+    internal static InstanceInfo Read(ushort id, ref LoginReader r) =>
+        new(r.Str(), r.U16(), r.U32(), r.U16(), r.U32(), r.Fixed(64), r.Fixed(8), r.U8());
+}
+
+/// <summary>Element of S→C 0x15 (0x50-byte struct, 0x142507200/0x142507480). Wire order differs from struct order.</summary>
+public sealed record ListEntry15(string Name, string Text, byte B49, byte B4d, byte B48, uint U40, byte B4a, ushort U44, ushort U46, byte B4b, byte B4c)
+{
+    internal void Write(LoginWriter w) => w.WStr(Name).WStr(Text).U8(B49).U8(B4d).U8(B48).U32(U40).U8(B4a).U16(U44).U16(U46).U8(B4b).U8(B4c);
+    internal static ListEntry15 Read(ref LoginReader r) =>
+        new(r.WStr(), r.WStr(), r.U8(), r.U8(), r.U8(), r.U32(), r.U8(), r.U16(), r.U16(), r.U8(), r.U8());
+}
+
+/// <summary>S→C 0x15 (vtable 0x1435dba48, 0x14219b3f0/0x14219b490): u8 count + entries, two bytes, then a blob parsed like 0x11.</summary>
+public sealed record List15(IReadOnlyList<ListEntry15> Entries, byte B28, byte B29, byte[] Data) : ILoginMessage
+{
+    public const ushort Id = 0x15;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w)
+    {
+        w.U8(checked((byte)Entries.Count));
+        foreach (var e in Entries) e.Write(w);
+        w.U8(B28).U8(B29).Blob(Data);
+    }
+    internal static List15 Read(ushort id, ref LoginReader r)
+    {
+        int n = r.U8();
+        var list = new List<ListEntry15>(n);
+        for (int i = 0; i < n && !r.Short; i++) list.Add(ListEntry15.Read(ref r));
+        return new(list, r.U8(), r.U8(), r.Blob());
+    }
+}
+
+/// <summary>
+/// Element of S→C 0x1a / 0x1b (0xe8-byte struct, 0x1424ed0d0/0x1424ed2c0): five wide strings, three 8-byte fields and a
+/// u32 copied raw (little-endian), three bytes (the last one, struct +0xe2, has bit 0 counted by the client), two u8.
+/// </summary>
+public sealed record CharacterEntry(string S0, string S1, string S2, string S3, string S4, ulong RawD0, ulong RawD8, ulong RawC8,
+    byte E0, byte E1, byte E2, byte C0, byte C1, uint RawC4)
+{
+    internal void Write(LoginWriter w) =>
+        w.WStr(S0).WStr(S1).WStr(S2).WStr(S3).WStr(S4).RawU64(RawD0).RawU64(RawD8).RawU64(RawC8)
+         .U8(E0).U8(E1).U8(E2).U8(C0).U8(C1).RawU32(RawC4);
+    internal static CharacterEntry Read(ref LoginReader r) =>
+        new(r.WStr(), r.WStr(), r.WStr(), r.WStr(), r.WStr(), r.RawU64(), r.RawU64(), r.RawU64(),
+            r.U8(), r.U8(), r.U8(), r.U8(), r.U8(), r.RawU32());
+
+    internal static void WriteList(LoginWriter w, IReadOnlyList<CharacterEntry> list)
+    {
+        w.U32((uint)list.Count);
+        foreach (var e in list) e.Write(w);
+    }
+
+    internal static List<CharacterEntry> ReadList(ref LoginReader r)
+    {
+        uint n = r.U32();
+        var list = new List<CharacterEntry>();
+        for (uint i = 0; i < n && !r.Short; i++) list.Add(Read(ref r));
+        return list;
+    }
+}
+
+/// <summary>S→C 0x1a (vtable 0x1435db9e8, 0x14219b6d0/0x14219b740): u16 + entry list, passed to listeners at +0x810.</summary>
+public sealed record CharacterUpdate(ushort Value, IReadOnlyList<CharacterEntry> Entries) : ILoginMessage
+{
+    public const ushort Id = 0x1a;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) { w.U16(Value); CharacterEntry.WriteList(w, Entries); }
+    internal static CharacterUpdate Read(ushort id, ref LoginReader r) => new(r.U16(), CharacterEntry.ReadList(ref r));
+}
+
+/// <summary>
+/// S→C 0x1b (vtable 0x1435dba28, 0x14219bd20/0x14219bdb0): character list. ServerTime is a raw little-endian i64 (the
+/// client stores it minus _time64). Flags bit 0 → +0x30, bit 1 → +0x31 (append to the existing list instead of replacing).
+/// </summary>
+public sealed record CharacterList(long ServerTime, IReadOnlyList<CharacterEntry> Entries, bool Flag0, bool Append) : ILoginMessage
+{
+    public const ushort Id = 0x1b;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w)
+    {
+        w.RawU64((ulong)ServerTime);
+        CharacterEntry.WriteList(w, Entries);
+        w.U8((byte)((Flag0 ? 1 : 0) | (Append ? 2 : 0)));
+    }
+    internal static CharacterList Read(ushort id, ref LoginReader r)
+    {
+        long t = (long)r.RawU64();
+        var list = CharacterEntry.ReadList(ref r);
+        byte f = r.U8();
+        return new(t, list, (f & 1) != 0, (f & 2) != 0);
+    }
+}
+
+/// <summary>S→C 0x3c (vtable 0x1435bf8a8, 0x141f926a0/0x141f92720): two u32; the second is stored at +0xe60.</summary>
+public sealed record TwoU32(uint A, uint B) : ILoginMessage
+{
+    public const ushort Id = 0x3c;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U32(A).U32(B);
+    internal static TwoU32 Read(ushort id, ref LoginReader r) => new(r.U32(), r.U32());
+}
+
+/// <summary>S→C 0x3e (vtable 0x1435dba68, 0x141f95fa0/0x14219bef0): u16 + bool.</summary>
+public sealed record U16Bool(ushort Value, bool Flag) : ILoginMessage
+{
+    public const ushort Id = 0x3e;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U16(Value).Bool(Flag);
+    internal static U16Bool Read(ushort id, ref LoginReader r) => new(r.U16(), r.Bool());
+}
+
+/// <summary>S→C 0x41 (vtable 0x1435c01b8, 0x141f9f890/0x141f9f920): one narrow string.</summary>
+public sealed record StringMessage(string Text) : ILoginMessage
+{
+    public const ushort Id = 0x41;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.Str(Text);
+    internal static StringMessage Read(ushort id, ref LoginReader r) => new(r.Str());
+}
+
+/// <summary>S→C 0x43 (vtable 0x1435bf630, 0x141f9f430/0x141f9f4b0): u8 + wide string.</summary>
+public sealed record U8WString(byte Value, string Text) : ILoginMessage
+{
+    public const ushort Id = 0x43;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U8(Value).WStr(Text);
+    internal static U8WString Read(ushort id, ref LoginReader r) => new(r.U8(), r.WStr());
+}
+
+/// <summary>S→C 0x47 (vtable 0x1435dbaa8, 0x14219bfe0/0x14219c1c0): u32, u16, then a u8 count of narrow strings.</summary>
+public sealed record StringList47(uint A, ushort B, IReadOnlyList<string> Items) : ILoginMessage
+{
+    public const ushort Id = 0x47;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w)
+    {
+        w.U32(A).U16(B).U8(checked((byte)Items.Count));
+        foreach (var s in Items) w.Str(s);
+    }
+    internal static StringList47 Read(ushort id, ref LoginReader r)
+    {
+        uint a = r.U32(); ushort b = r.U16(); int n = r.U8();
+        var list = new List<string>(n);
+        for (int i = 0; i < n && !r.Short; i++) list.Add(r.Str());
+        return new(a, b, list);
+    }
+}
+
+// ---------------------------------------------------------------- client → server
+
+/// <summary>
+/// C→S 0x03 (vtable 0x1435d8b88, write 0x14213c660, senders 0x14213ea10 and 0x140d05f70): account login.
+/// Version is 2. MachineIdA comes from 0x14213e970 and MachineIdB from 0x14299b130 (32-byte client identifiers),
+/// PasswordDigest is 32 bytes (the client hashes passwords with SHA-256 over UTF-16LE, 0x140e23290). Realm is the
+/// realm byte (0x143a6002c) | 0x40.
+/// </summary>
+public sealed record AccountLogin(uint Version, string Account, byte[] MachineIdA, byte[] PasswordDigest, byte[] MachineIdB,
+    bool Flag94, bool Flag95, byte Realm, byte B97) : ILoginMessage
+{
+    public const ushort Id = 0x03;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) =>
+        w.U32(Version).Str(Account).Fixed(MachineIdA, 32).Fixed(PasswordDigest, 32).Fixed(MachineIdB, 32)
+         .Bool(Flag94).Bool(Flag95).U8(Realm).U8(B97);
+    internal static AccountLogin Read(ushort id, ref LoginReader r) =>
+        new(r.U32(), r.Str(), r.Fixed(32), r.Fixed(32), r.Fixed(32), r.Bool(), r.Bool(), r.U8(), r.U8());
+}
+
+/// <summary>C→S 0x05 (vtable 0x1435d8b30, 0x14213c1c0/0x14213c290, sender 0x14213eda0): login with a binary token.</summary>
+public sealed record TokenLogin(byte Realm, byte[] MachineIdB, byte[] MachineIdA, byte B69, byte[] Token) : ILoginMessage
+{
+    public const ushort Id = 0x05;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U8(Realm).Fixed(MachineIdB, 32).Fixed(MachineIdA, 32).U8(B69).Blob(Token);
+    internal static TokenLogin Read(ushort id, ref LoginReader r) => new(r.U8(), r.Fixed(32), r.Fixed(32), r.U8(), r.Blob());
+}
+
+/// <summary>C→S 0x06 / 0x07 (vtable 0x1435d8ae8, 0x14213bf60/0x14213c050, senders 0x14213eba0 / 0x14213ef90): login with a string ticket.</summary>
+public sealed record TicketLogin(ushort MessageId, string Ticket, byte Realm, byte[] MachineIdB, byte[] MachineIdA, byte B71) : ILoginMessage
+{
+    public void WriteFields(LoginWriter w) => w.Str(Ticket).U8(Realm).Fixed(MachineIdB, 32).Fixed(MachineIdA, 32).U8(B71);
+    internal static TicketLogin Read(ushort id, ref LoginReader r) => new(id, r.Str(), r.U8(), r.Fixed(32), r.Fixed(32), r.U8());
+}
+
+/// <summary>C→S 0x08 (sender 0x140d60410): u32 + 8 raw bytes. Sent through the object at global+0x350, not the login object (+0x358).</summary>
+public sealed record U32Raw64(uint A, ulong RawB) : ILoginMessage
+{
+    public const ushort Id = 0x08;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U32(A).RawU64(RawB);
+    internal static U32Raw64 Read(ushort id, ref LoginReader r) => new(r.U32(), r.RawU64());
+}
+
+/// <summary>C→S 0x0a (vtable 0x1435d8aa0, 0x14213c9f0/0x14213ca50, sender 0x140cf3150): two SHA-256 digests of UTF-16LE strings.</summary>
+public sealed record TwoDigests(byte[] DigestA, byte[] DigestB) : ILoginMessage
+{
+    public const ushort Id = 0x0a;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.Fixed(DigestA, 32).Fixed(DigestB, 32);
+    internal static TwoDigests Read(ushort id, ref LoginReader r) => new(r.Fixed(32), r.Fixed(32));
+}
+
+/// <summary>C→S 0x0e (vtable 0x1435c0898, 0x141f92c90/0x141f92d10, sender 0x1421406f0): realm byte + u32.</summary>
+public sealed record U8U32(byte Realm, uint Value) : ILoginMessage
+{
+    public const ushort Id = 0x0e;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U8(Realm).U32(Value);
+    internal static U8U32 Read(ushort id, ref LoginReader r) => new(r.U8(), r.U32());
+}
+
+/// <summary>C→S 0x12 (vtable 0x1435d8b10, 0x14213cb50/0x14213cc30, sender 0x142140490). Digest is SHA-256 of a UTF-16LE string, or zeros.</summary>
+public sealed record Request12(string S10, string S30, uint U50, uint U54, string S78, byte[] Digest) : ILoginMessage
+{
+    public const ushort Id = 0x12;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.WStr(S10).WStr(S30).U32(U50).U32(U54).WStr(S78).Fixed(Digest, 32);
+    internal static Request12 Read(ushort id, ref LoginReader r) => new(r.WStr(), r.WStr(), r.U32(), r.U32(), r.WStr(), r.Fixed(32));
+}
+
+/// <summary>C→S 0x1c (sender 0x142140a80): two u16; the second defaults to the client's count at +0xe58.</summary>
+public sealed record TwoU16(ushort A, ushort B) : ILoginMessage
+{
+    public const ushort Id = 0x1c;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.U16(A).U16(B);
+    internal static TwoU16 Read(ushort id, ref LoginReader r) => new(r.U16(), r.U16());
+}
+
+/// <summary>C→S 0x22 (vtable 0x1435d8ac8, 0x14213ce00, sender 0x142140b40): 5 raw bytes decoded from a 10-hex-digit string.</summary>
+public sealed record HexCode(byte[] Code) : ILoginMessage
+{
+    public const ushort Id = 0x22;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.Fixed(Code, 5);
+    internal static HexCode Read(ushort id, ref LoginReader r) => new(r.Fixed(5));
+}
+
+/// <summary>C→S 0x2c (vtable 0x1435d8a80, 0x14213c4e0/0x14213c5a0, sender 0x140d01a60): Epic (EOS) login: wide string, realm, token blob.</summary>
+public sealed record EpicLogin(string Name, byte Realm, byte[] Token) : ILoginMessage
+{
+    public const ushort Id = 0x2c;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.WStr(Name).U8(Realm).Blob(Token);
+    internal static EpicLogin Read(ushort id, ref LoginReader r) => new(r.WStr(), r.U8(), r.Blob());
+}
+
+/// <summary>C→S 0x3d (vtable 0x1435d8b68, 0x14213cee0/0x14213cf70, sender 0x142140890): two wide strings + bool.</summary>
+public sealed record TwoWStringsBool(string A, string B, bool Flag) : ILoginMessage
+{
+    public const ushort Id = 0x3d;
+    public ushort MessageId => Id;
+    public void WriteFields(LoginWriter w) => w.WStr(A).WStr(B).Bool(Flag);
+    internal static TwoWStringsBool Read(ushort id, ref LoginReader r) => new(r.WStr(), r.WStr(), r.Bool());
+}
+
+public enum LoginDirection { ServerToClient, ClientToServer }
+
+/// <summary>Id → layout tables for both directions and a framing-free stream decoder.</summary>
+public static class LoginCodec
+{
+    private delegate ILoginMessage Reader(ushort id, ref LoginReader r);
+
+    private static ILoginMessage ReadKeyExchange(ushort id, ref LoginReader r) => new KeyExchange(r.Blob(), r.Blob());
+    private static ILoginMessage ReadEmpty(ushort id, ref LoginReader r) => new EmptyMessage(id);
+
+    // Mirrors the client's factory 0x14219c350.
+    private static readonly Dictionary<ushort, Reader> ServerToClient = new()
+    {
+        [0x01] = ReadEmpty, [0x02] = ReadKeyExchange, [0x04] = LoginResult.Read,
+        [0x0b] = U16Message.Read, [0x0d] = U16Message.Read, [0x0f] = U16Message.Read,
+        [0x11] = Blob11.Read, [0x13] = Tracking13.Read, [0x14] = InstanceInfo.Read, [0x15] = List15.Read,
+        [0x17] = U16Message.Read, [0x1a] = CharacterUpdate.Read, [0x1b] = CharacterList.Read, [0x1e] = U16Message.Read,
+        [0x1f] = U32Message.Read, [0x20] = U32Message.Read,
+        [0x24] = WStringMessage.Read, [0x25] = WStringMessage.Read, [0x26] = WStringMessage.Read,
+        [0x28] = WStringMessage.Read, [0x29] = WStringMessage.Read,
+        [0x3c] = TwoU32.Read, [0x3e] = U16Bool.Read, [0x41] = StringMessage.Read, [0x43] = U8WString.Read,
+        [0x44] = U16Message.Read, [0x47] = StringList47.Read,
+    };
+
+    // Collected from the client's senders (writes to the login socket at +0xdd0). 0x01 (no fields) was seen live after
+    // 0x18 on the character screen (2026-10-16), probably a keepalive; it shares class 0x14316c930 with S→C 0x01.
+    private static readonly Dictionary<ushort, Reader> ClientToServer = new()
+    {
+        [0x01] = ReadEmpty, [0x02] = ReadKeyExchange, [0x03] = AccountLogin.Read, [0x05] = TokenLogin.Read,
+        [0x06] = TicketLogin.Read, [0x07] = TicketLogin.Read, [0x08] = U32Raw64.Read, [0x0a] = TwoDigests.Read,
+        [0x0c] = WStringU8Message.Read, [0x0e] = U8U32.Read, [0x12] = Request12.Read,
+        [0x18] = ReadEmpty, [0x19] = ReadEmpty, [0x1c] = TwoU16.Read, [0x21] = ReadEmpty, [0x22] = HexCode.Read,
+        [0x23] = ReadEmpty, [0x2a] = WStringU8Message.Read, [0x2b] = WStringU8Message.Read, [0x2c] = EpicLogin.Read,
+        [0x39] = ReadEmpty, [0x3a] = U8Message.Read, [0x3d] = TwoWStringsBool.Read,
+        [0x3f] = WStringMessage.Read, [0x40] = WStringMessage.Read, [0x42] = U8Message.Read, [0x46] = U32Message.Read,
+    };
+
+    public static bool IsKnown(LoginDirection dir, ushort id) => Table(dir).ContainsKey(id);
+
+    /// <summary>
+    /// Decodes one message from the start of <paramref name="buf"/>. Returns false if more bytes are needed. An unknown
+    /// id throws: without a length prefix the rest of the stream cannot be resynchronized.
+    /// </summary>
+    public static bool TryDecode(LoginDirection dir, ReadOnlySpan<byte> buf, out ILoginMessage? message, out int consumed)
+    {
+        message = null; consumed = 0;
+        var r = new LoginReader(buf);
+        ushort id = r.U16();
+        if (r.Short) return false;
+        if (!Table(dir).TryGetValue(id, out var read))
+            throw new InvalidDataException($"unknown {dir} login message 0x{id:x4}");
+        var m = read(id, ref r);
+        if (r.Short) return false;
+        message = m; consumed = r.Position;
+        return true;
+    }
+
+    private static Dictionary<ushort, Reader> Table(LoginDirection dir) => dir == LoginDirection.ServerToClient ? ServerToClient : ClientToServer;
+}

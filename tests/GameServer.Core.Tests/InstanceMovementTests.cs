@@ -1,0 +1,63 @@
+using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Protocol.Login;
+
+namespace GameServer.Core.Tests;
+
+public class InstanceMovementTests
+{
+    private static string Compact(int v) { var w = new LoginWriter(); InstanceProtocol.CompactInt(w, v); return Convert.ToHexString(w.ToArray()); }
+
+    [Theory]
+    [InlineData(0, "00")]
+    [InlineData(63, "3F")]
+    [InlineData(-1, "7F")]
+    [InlineData(-64, "40")]
+    [InlineData(64, "8040")]
+    [InlineData(222, "80DE")]
+    [InlineData(0x1fff, "9FFF")]
+    [InlineData(-65, "BFBF")]
+    [InlineData(0x2000, "C02000")]
+    [InlineData(0x100000, "E0100000")]
+    [InlineData(0x4000000, "F004000000")]
+    public void Compact_int_matches_the_client_writer(int value, string hex) => Assert.Equal(hex, Compact(value));
+
+    [Fact]
+    public void Action_started_matches_the_bytes_the_live_client_accepted()
+    {
+        // 2026-10-16 bytes (first pair 222, 236; second 197, 261); the encoding is unchanged, only the meaning of the pairs.
+        byte[] b = InstanceProtocol.ActionStarted(0x1000, 222, 236, 197, 261, 0x2909, 0x1001, 0x0408);
+        Assert.Equal("01AB00001000000000000000040880DE80EC80C5810529091001", Convert.ToHexString(b));
+    }
+
+    [Fact]
+    public void Use_skill_at_location_parses_a_live_capture()
+    {
+        var m = InstanceProtocol.ReadUseSkillAtLocation(Convert.FromHexString("0025000000D7000000F5290910010408"));
+        Assert.Equal(new InstanceProtocol.UseSkillAtLocation(0xD7, 0xF5, 0x2909, 0x1001, 0x0408), m);
+    }
+
+    [Fact]
+    public void Wake_zone_pong_move_and_teleport_layouts()
+    {
+        Assert.Equal("01A900001000000000000000", Convert.ToHexString(InstanceProtocol.EnterWakeZone(0x1000)));
+        Assert.Equal("001C0000000012345678", Convert.ToHexString(InstanceProtocol.Pong(0, 0, 0x12345678)));
+        Assert.Equal("01BA00001000000000000000000000E8000000E5000000004214000000",
+            Convert.ToHexString(InstanceProtocol.MoveTo(0x1000, 232, 229, 37f)));
+        Assert.Equal("01B700001000000000000000000000E8000000E50000000000000000",
+            Convert.ToHexString(InstanceProtocol.Teleport(0x1000, 232, 229)));
+    }
+
+    [Fact]
+    public void Splitter_frames_known_messages_and_keeps_partials()
+    {
+        // 0x0099 then a tick, as one live chunk; then a tick cut in two.
+        byte[] chunk = Convert.FromHexString("0099000001340334000100013400010101000129" + "001B0005768AF5" + "001B00");
+        var msgs = InstanceProtocol.SplitClientMessages(chunk, out byte[] partial, out byte[] unknown);
+        Assert.Equal(new ushort[] { 0x0099, 0x001b }, msgs.Select(m => m.Id));
+        Assert.Equal("001B00", Convert.ToHexString(partial));
+        Assert.Empty(unknown);
+
+        InstanceProtocol.SplitClientMessages(Convert.FromHexString("ABCD01"), out _, out unknown);
+        Assert.Equal("ABCD01", Convert.ToHexString(unknown));
+    }
+}

@@ -1,0 +1,441 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Text.Json;
+using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Protocol.Login;
+using WalkEstimator = GameServer.Core.World.WalkEstimator;
+
+// GameServer.Gateway — the instance (game) server the client connects to after login 0x14, or after 0x27 on an area
+// change.
+// Reads the plaintext opening (0x0F ticket + 0x0E hello), asks GameServer.Auth which area/instance the ticket belongs to
+// (InstanceControl "resolve"), answers 0x11 so both directions switch to Salsa20 keyed by the ticket's instance key,
+// sends the area (0x1d), answers the client's 0x7d with the player and the area's exits, and handles ticks, movement and
+// exit clicks (0x24: change area, or with Ctrl the instance chooser).
+// Port: Game_GATEWAY_PORT (default 6112). Instance keys: data/instance-secret.bin (Game_INSTANCE_SECRET), shared with
+// GameServer.Auth. Auth control: 127.0.0.1:Game_AUTH_CONTROL_PORT (20495); without it every ticket gets Lioneye's Watch.
+
+int port = int.TryParse(Environment.GetEnvironmentVariable("Game_GATEWAY_PORT"), out var p) ? p : 6112;
+var keyring = InstanceKeyring.LoadOrCreate(Environment.GetEnvironmentVariable("Game_INSTANCE_SECRET") ?? Path.Combine("data", "instance-secret.bin"));
+
+// The HNC side channel needs a 64-byte table from the client; read it from the local client instead of shipping it.
+string clientExe = Environment.GetEnvironmentVariable("Game_CLIENT_EXE") ?? FindUp(Path.Combine("Client", "Game.exe")) ?? "Client/Game.exe";
+if (!File.Exists(clientExe))
+{
+    Console.Error.WriteLine($"[gateway] client executable not found ({clientExe}); set Game_CLIENT_EXE");
+    return 1;
+}
+HncSender.LoadMask(File.ReadAllBytes(clientExe));
+
+var listener = new TcpListener(IPAddress.Any, port);
+listener.Start();
+Console.WriteLine($"[gateway] listening on 0.0.0.0:{port}");
+
+using var cts = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+while (!cts.IsCancellationRequested)
+{
+    TcpClient client;
+    try
+    {
+        client = await listener.AcceptTcpClientAsync(cts.Token);
+    }
+    catch (OperationCanceledException)
+    {
+        break;
+    }
+
+    _ = HandleAsync(client, keyring);
+}
+
+listener.Stop();
+Console.WriteLine("[gateway] stopped");
+return 0;
+
+static string? FindUp(string relative)
+{
+    for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir is not null; dir = dir.Parent)
+        if (File.Exists(Path.Combine(dir.FullName, relative))) return Path.Combine(dir.FullName, relative);
+    return null;
+}
+
+static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
+{
+    string remote = client.Client.RemoteEndPoint?.ToString() ?? "?";
+    Console.WriteLine($"[gateway] CONNECT {remote} at {DateTime.Now:HH:mm:ss.fff}");
+    long total = 0;
+    uint ticket = 0;
+    try
+    {
+        using (client)
+        using (var stream = client.GetStream())
+        {
+            var buffer = new byte[8192];
+            var pending = new List<byte>();
+            InstanceOpening? opening = null;
+            while (opening is null)
+            {
+                int n = await stream.ReadAsync(buffer);
+                if (n == 0) return;
+                total += n;
+                pending.AddRange(buffer.AsSpan(0, n));
+                opening = InstanceProtocol.TryReadOpening([.. pending]);
+            }
+            ticket = opening.Ticket;
+            Console.WriteLine($"[gateway] {remote} opening: ticket=0x{opening.Ticket:x8} digest={Convert.ToHexString(opening.Digest)} " +
+                              $"address=0x{opening.Address:x8} u32={opening.U32_128} realm=0x{opening.Realm:x2} flag={opening.Flag}");
+
+            // Which area and instance this ticket was issued for (Auth's instance registry).
+            var resolved = await InstanceControl.CallAsync(new ControlRequest { Op = "resolve", Ticket = ticket });
+            if (!resolved.Ok) Console.WriteLine($"[gateway] {remote} resolve failed ({resolved.Error}); using Lioneye's Watch");
+            ushort areaHash = resolved.Ok ? resolved.Area : AreaLayouts.LioneyesWatch;
+            uint seed = resolved.Ok ? resolved.Seed : 1;
+            ulong instanceId = resolved.Ok ? resolved.Instance : 1;
+            var layout = AreaLayouts.For(areaHash, seed);
+            Console.WriteLine($"[gateway] {remote} ticket 0x{ticket:x8}: {resolved.Character ?? "?"} → instance {instanceId}, {layout.Describe()}");
+
+            ConnectionCiphers ciphers = keyring.Ciphers(opening.Ticket);
+            await stream.WriteAsync(InstanceProtocol.StartEncryption());
+            Console.WriteLine($"[gateway] {remote} => 0x0011 (start encryption)");
+
+            var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0);
+            await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
+
+            // Anything after the opening was already encrypted by the client.
+            var conn = new ClientState(layout, ticket) { Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            conn.Commands = Commands(remote, stream, ciphers, conn);
+            byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
+            if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn);
+            while (true)
+            {
+                int n = await stream.ReadAsync(buffer);
+                if (n == 0) break;
+                total += n;
+                await OnClientData(remote, stream, ciphers, buffer.AsSpan(0, n).ToArray(), conn);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
+    }
+    if (ticket != 0) await InstanceControl.CallAsync(new ControlRequest { Op = "leave", Ticket = ticket });
+    Console.WriteLine($"[gateway] DISCONNECT {remote} total={total}");
+}
+
+// Decrypts client bytes and handles the messages we can frame (InstanceProtocol.SplitClientMessages):
+// 0x7d (area generated) → the local player id (0x22), the player object (0x2b9), inventories, passive slots, the exits,
+// and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x1b (tick) → 0x1c (ack); 0x25 (move) → 0x1ab echo;
+// 0x24 on an exit → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
+// Anything else is logged in hex: those are the next messages to map.
+static async Task OnClientData(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] data, ClientState conn)
+{
+    ciphers.Receive.Process(data);
+    byte[] all = [.. conn.Carry, .. data];
+    var messages = InstanceProtocol.SplitClientMessages(all, out conn.Carry, out byte[] unknown);
+    foreach (var (id, bytes) in messages)
+    {
+        if (id == InstanceProtocol.TickId)
+        {
+            if (conn.Ticks++ % 50 == 0) Console.WriteLine($"[gateway] {remote} <= 0x001b tick #{conn.Ticks}: {Convert.ToHexString(bytes)} (answered with 0x001c)");
+            await Send(remote, stream, ciphers, InstanceProtocol.Pong(sideChannel: conn.Hnc!.NextIdleU32()), null);
+        }
+        else if (id == InstanceProtocol.UseSkillAtLocationId)
+        {
+            // Echo the action so the client runs it (Move on a ground click). The server does no validation yet.
+            var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);
+            var (px, py) = conn.Walk.Order(use.X, use.Y, conn.Clock.Elapsed.TotalSeconds);
+            await Send(remote, stream, ciphers,
+                InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
+                $"0x01ab action started {use} at ({px}, {py})");
+            string mode = Environment.GetEnvironmentVariable("Game_MOVE_MODE") ?? "echo";
+            if (mode == "teleport")
+                await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, use.X, use.Y), $"0x01b7 teleport to ({use.X}, {use.Y})");
+            else if (mode == "move")
+            {
+                float speed = float.TryParse(Environment.GetEnvironmentVariable("Game_MOVE_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var sp) ? sp : 37f;
+                await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(PlayerId, use.X, use.Y, speed), $"0x01ba move to ({use.X}, {use.Y}) speed {speed}");
+            }
+        }
+        else if (id == InstanceTransfer.UseSkillOnObjectId)
+        {
+            var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
+            await OnUseObject(remote, stream, ciphers, conn, use);
+        }
+        else if (id == InstanceChat.ChatId)
+        {
+            var chat = InstanceChat.ReadChat(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x0015 chat \"{chat.Text}\" (u8 {chat.U8})");
+            if (chat.IsCommand) await conn.Commands!.RunAsync(chat.Text);
+        }
+        else if (id == InstanceTransfer.ChooseInstanceId)
+        {
+            byte row = bytes[2];
+            if (conn.Chooser is not { } chooser) { Console.WriteLine($"[gateway] {remote} <= 0x00af row {row} without a list"); continue; }
+            conn.Chooser = null;
+            bool isNew = row == InstanceTransfer.NewInstanceRow;
+            if (!isNew && row >= chooser.Ids.Count) { Console.WriteLine($"[gateway] {remote} <= 0x00af row {row} out of range"); continue; }
+            ulong instance = isNew ? 0 : chooser.Ids[row];
+            Console.WriteLine($"[gateway] {remote} <= 0x00af chose {(isNew ? "a new instance" : $"instance {instance}")} of 0x{chooser.Area:x4}");
+            await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(chooser.Area, instance, isNew), $"chooser row {row}");
+        }
+        else if (id == InstanceProtocol.AreaGeneratedId)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x007d area generated: {Convert.ToHexString(bytes)}");
+            if (!conn.PlayerSent) { await SendPlayer(remote, stream, ciphers, conn.Layout); conn.PlayerSent = true; }
+        }
+    }
+    if (unknown.Length > 0)
+    {
+        ushort uid = unknown.Length > 1 ? (ushort)(unknown[0] << 8 | unknown[1]) : unknown[0];
+        Console.WriteLine($"[gateway] {remote} <= unframed 0x{uid:x4} ({unknown.Length} bytes): {Convert.ToHexString(unknown.AsSpan(0, Math.Min(unknown.Length, 256)))}");
+        // The client's answer to 0x2b2 (0x142148690): it is ready to leave, so move it now.
+        if (uid == InstanceTransfer.LeaveAreaAckId && conn.PendingTransfer is { } t) await Transfer(remote, stream, ciphers, conn, t);
+    }
+}
+
+// An exit click. Plain: change area (0x2b2 now, the move itself once the client acknowledges with 0x2cb).
+// With Ctrl: list the destination's instances (0xae) for the client's instance chooser.
+static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
+{
+    var exit = conn.Layout.Exits.FirstOrDefault(e => e.Id == use.TargetId);
+    if (exit.Exit is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0024 use object {use} (not an exit)");
+        return;
+    }
+    ushort dest = exit.Exit.DestinationHash16;
+    if (use.Ctrl)
+    {
+        var list = await InstanceControl.CallAsync(new ControlRequest { Op = "list", Ticket = conn.Ticket, Area = dest });
+        var instances = list.Instances ?? [];
+        var entries = instances
+            .Select(i => new InstanceTransfer.InstanceListEntry((ulong)i.CreatedUnix, (uint)i.SecondsLeft, 0, i.Players)).ToList();
+        conn.Chooser = new ChooserList(dest, [.. instances.Select(i => i.Id)]);
+        await Send(remote, stream, ciphers, InstanceTransfer.InstanceList(dest, entries),
+            $"0x00ae instance list for 0x{dest:x4}: {entries.Count} instance(s) [{string.Join(", ", instances.Select(i => $"{i.Id} ({i.SecondsLeft} s left): {string.Join("/", i.Players)}"))}]");
+        return;
+    }
+    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(dest, 0, false), use.ToString());
+}
+
+// 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
+static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
+{
+    if (conn.PendingTransfer is not null) return; // the client repeats 0x24 until something happens
+    conn.PendingTransfer = t;
+    await Send(remote, stream, ciphers, InstanceTransfer.ChangeArea(t.Area), $"0x02b2 change area to 0x{t.Area:x4} ({why})");
+    // If the client never acknowledges, move it anyway after a moment.
+    _ = Task.Delay(2000).ContinueWith(async _ => { if (conn.PendingTransfer is { } p) await Transfer(remote, stream, ciphers, conn, p); });
+}
+
+// Auth moves the player and issues the destination ticket; 0x27 sends the client there (it reconnects to this Gateway).
+static async Task Transfer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t)
+{
+    conn.PendingTransfer = null;
+    var r = await InstanceControl.CallAsync(new ControlRequest
+    {
+        Op = "transfer", Ticket = conn.Ticket, Area = t.Area, Instance = t.Instance, New = t.New,
+    });
+    if (!r.Ok)
+    {
+        Console.WriteLine($"[gateway] {remote} transfer failed: {r.Error}");
+        return;
+    }
+    string host = Environment.GetEnvironmentVariable("Game_GATEWAY_HOST") ?? "127.0.0.1";
+    ushort port = ushort.TryParse(Environment.GetEnvironmentVariable("Game_GATEWAY_PORT"), out var gp) ? gp : (ushort)6112;
+    await Send(remote, stream, ciphers, InstanceTransfer.ConnectInstance(host, port, r.Ticket, r.Area, conn.Keyring.Key(r.Ticket)),
+        $"0x0027 connect to instance {r.Instance} of area 0x{r.Area:x4} (seed {r.Seed}) at {host}:{port}, ticket 0x{r.Ticket:x8}");
+}
+
+// The chat commands of one connection (ChatCommands.cs).
+static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    return new ChatCommands
+    {
+        Send = (bytes, log) => Send(remote, stream, ciphers, bytes, log),
+        // S→C 0x0d shows the text in a message box with OK (no chat line message is mapped yet).
+        Reply = text => Send(remote, stream, ciphers, InstanceChat.MessageBox(text), $"0x000d message box \"{text}\""),
+    }
+    .Add("raw", "/raw <hex> (send one S→C message)", async args =>
+    {
+        byte[] m = ChatCommands.ParseHex(args);
+        await Send(remote, stream, ciphers, m, $"0x{m[0] << 8 | m[1]:x4} raw ({m.Length} bytes)");
+    })
+    .Add("set_speed", "/set_speed <percent> (100 = normal)", async args =>
+    {
+        int percent = int.Parse(args[0]);
+        if (percent is < 10 or > 1000) throw new ArgumentException("10 to 1000");
+        conn.Walk.SetSpeed(WalkSpeed * percent / 100, conn.Clock.Elapsed.TotalSeconds);
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.MovementVelocityPct, percent - 100)]),
+            $"0x01b3 stats: movement_velocity_+% (key {StatKeys.MovementVelocityPct}) = {percent - 100}");
+    })
+    .Add("set_stat", "/set_stat <client stat key> <value>", async args =>
+    {
+        uint stat = uint.Parse(args[0]);
+        int value = int.Parse(args[1]);
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(stat, value)]),
+            $"0x01b3 stats: row {stat} = {value}");
+    })
+    .Add("spawn_mob", "/spawn_mob <id> (not implemented yet)", async _ =>
+        await Send(remote, stream, ciphers, InstanceChat.MessageBox("Spawning monsters is not implemented yet: the monster object components are not mapped."), "0x000d spawn_mob not implemented"));
+}
+
+static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log)
+{
+    if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
+    ciphers.Send.Process(bytes);
+    await stream.WriteAsync(bytes);
+}
+
+static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout)
+{
+    var witch = new PlayerObject("DevWitch", ClassIndex: 1, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
+        AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? "Metadata/Characters/Int/Int.ao");
+    uint type = InstanceEntities.ObjectTypeHash("Metadata/Characters/Int/Int");
+    var messages = new List<(string Name, byte[] Bytes)>
+    {
+        ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
+        ($"0x02b9 create {witch} type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, witch.Blob())),
+    };
+    // The player's empty inventories (ids 1..n), needed by UI built on entering (flask bar → row 11).
+    uint inventoryId = 1;
+    foreach (var slot in InstanceInventories.PlayerDefaults)
+        messages.Add(($"0x00c0 inventory {inventoryId} row {slot.Row}", InstanceInventories.AddInventory(inventoryId++, slot)));
+    messages.Add(("0x003d passive slots 0-2", InstanceEntities.PassiveSlots()));
+    // Area exits. Like the player they are queued by the world and created when 0x21 activates it.
+    uint transitionType = InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath);
+    foreach (var (id, exit) in layout.Exits)
+        messages.Add(($"0x02b9 create exit {exit} type=0x{transitionType:x8}", InstanceEntities.CreateObject(id, transitionType, exit.Blob())));
+    if (Environment.GetEnvironmentVariable("Game_GATEWAY_ENTER") == "1")
+    {
+        messages.Add(("0x0021 enter area", InstanceProtocol.EnterArea()));
+        // Put the player in the wake zone so it is drawn and its actions/movement run.
+        messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
+        foreach (var (id, _) in layout.Exits) messages.Add(($"0x01a9 exit 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
+    }
+    foreach (var (name, bytes) in messages) await Send(remote, stream, ciphers, bytes, name);
+}
+
+sealed partial class Program
+{
+    internal const uint PlayerId = 0x1000;
+
+    // The client's walking speed in grid cells per second at 100% (measured live: ~37 = Character.ot Pathfinding
+    // base_speed). Game_WALK_SPEED overrides it.
+    internal static readonly double WalkSpeed =
+        double.TryParse(Environment.GetEnvironmentVariable("Game_WALK_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var s) ? s : 37;
+}
+
+/// <summary>
+/// Client stat keys (the int passed to the Stats getter 0x1424cfa40), read from client code. They are NOT the rows of
+/// our extracted data/tables/Stats.json: the order drifts (key 245 is row 244 there, other keys are further off).
+/// </summary>
+static class StatKeys
+{
+    /// <summary>movement_velocity_+%: walk speed = base × (1 + value / 100), at least −100 (0x141e7c0b0).</summary>
+    public const uint MovementVelocityPct = 0xf5;
+    /// <summary>movement_velocity_cap (0x141e7c0b0 caps the speed with it when positive).</summary>
+    public const uint MovementVelocityCap = 0x44f;
+}
+
+/// <summary>What the Gateway knows about an area's layout: the terrain grid (for movement estimates), where the player
+/// appears and the exits. Towns are fixed; other areas are generated from the seed, so their walkability only exists as
+/// a dump of the client's walkability grid per (area, seed).</summary>
+sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int SpawnX, int SpawnY,
+    Func<int, int, bool>? Walkable, (uint Id, AreaTransitionObject Exit)[] Exits)
+{
+    public string Describe() =>
+        $"area {Id} (0x{Hash:x4}) grid {GridW}x{GridH} spawn ({SpawnX}, {SpawnY}), {(Walkable is null ? "no walkability" : "walkability")}, {Exits.Length} exit(s)";
+}
+
+static class AreaLayouts
+{
+    public const ushort LioneyesWatch = 0x235c, TheCoast = 0x7ad2;
+
+    // Lioneye's Watch is one room, Metadata/Terrain/Act1/Town/Rooms/beach_town_unique_normal.arm (18 x 30 tiles), placed
+    // R270 by Graphs/beachtown.dgr ("default" "entrance2" "entrance1disabled"). Room (x, y) → grid (y, 413 - x):
+    // entrance2 (196, 384) → (384, 217) on the east edge is the exit to The Coast (1_1_2, 0x7ad2); entrance1 is the
+    // disabled one-way Twilight Strand side; default (178, 346) → (346, 235).
+    // Spawn (197, 261): the walkable cell farthest from any edge.
+    static readonly AreaLayout Town = new(LioneyesWatch, "1_1_town", 690, 414, 197, 261,
+        LoadWalkable("data/walkability/1_1_town.bin", 690, 414),
+        [(0x2000, new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: TheCoast))]);
+
+    static readonly Dictionary<ushort, string> Ids = new() { [LioneyesWatch] = "1_1_town", [TheCoast] = "1_1_2" };
+
+    public static AreaLayout For(ushort hash, uint seed)
+    {
+        if (hash == LioneyesWatch) return Town;
+        string id = Ids.GetValueOrDefault(hash, $"0x{hash:x4}");
+        // A dumped grid for this (area, seed): data/walkability/<id>_seed<seed>.bin + .json {"w":..,"h":..}.
+        string bin = $"data/walkability/{id}_seed{seed}.bin", meta = Path.ChangeExtension(bin, ".json");
+        if (File.Exists(bin) && File.Exists(meta))
+        {
+            var m = JsonDocument.Parse(File.ReadAllText(meta)).RootElement;
+            int w = m.GetProperty("w").GetInt32(), h = m.GetProperty("h").GetInt32();
+            byte[] cells = File.ReadAllBytes(bin);
+            if (cells.Length == w * h)
+            {
+                var (sx, sy) = DeepestCell(cells, w, h);
+                return new AreaLayout(hash, id, w, h, sx, sy, (x, y) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x] >= 2, []);
+            }
+        }
+        // Unknown layout: a position inside any grid; the client may place the player on unwalkable ground.
+        return new AreaLayout(hash, id, 0, 0, 197, 261, null, []);
+    }
+
+    /// <summary>The walkable cell farthest from any blocked cell (multi-source BFS from blocked cells).</summary>
+    static (int X, int Y) DeepestCell(byte[] cells, int w, int h)
+    {
+        var dist = new int[w * h];
+        var q = new Queue<int>();
+        for (int i = 0; i < cells.Length; i++)
+            if (cells[i] < 2) { dist[i] = 0; q.Enqueue(i); } else dist[i] = int.MaxValue;
+        while (q.Count > 0)
+        {
+            int i = q.Dequeue(), x = i % w, y = i / w;
+            foreach (var (dx, dy) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+            {
+                int nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                int j = ny * w + nx;
+                if (dist[j] > dist[i] + 1) { dist[j] = dist[i] + 1; q.Enqueue(j); }
+            }
+        }
+        int best = Array.IndexOf(dist, dist.Where(d => d != int.MaxValue).Max());
+        return (best % w, best / w);
+    }
+
+    // 1 byte per cell; the client walks on values >= 2.
+    static Func<int, int, bool>? LoadWalkable(string path, int w, int h)
+    {
+        if (!File.Exists(path)) return null;
+        byte[] cells = File.ReadAllBytes(path);
+        if (cells.Length != w * h) return null;
+        return (x, y) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x] >= 2;
+    }
+}
+
+sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
+
+// The last instance list shown (0xae); 0xaf picks a row of it.
+sealed record ChooserList(ushort Area, IReadOnlyList<ulong> Ids);
+
+sealed class ClientState(AreaLayout layout, uint ticket)
+{
+    public AreaLayout Layout => layout;
+    public uint Ticket => ticket;
+    public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+    // Server-side estimate of the client-predicted walk (reported in each 0x1ab), kept on walkable cells.
+    public readonly WalkEstimator Walk = new(layout.SpawnX, layout.SpawnY, Program.WalkSpeed, layout.Walkable, layout.GridW > 0 ? layout.GridW : 4096, layout.GridH > 0 ? layout.GridH : 4096);
+    public bool PlayerSent;
+    public byte[] Carry = [];
+    public long Ticks;
+    public volatile PendingTransfer? PendingTransfer;
+    public ChooserList? Chooser;
+    public ChatCommands? Commands;
+    // 0x1c's u32 is an HNC carrier and must decrypt to idle zero bytes, or the client throws "HNC Protocol Violated".
+    public HncSender? Hnc;
+    public InstanceKeyring Keyring = null!;
+}

@@ -1,0 +1,80 @@
+using System.Buffers.Binary;
+
+namespace GameServer.Data.Ggpk;
+
+/// <summary>
+/// Reader for the Game bundle container (<c>*.bundle.bin</c>), including the
+/// special <c>_.index.bin</c>. Format per Game-tool-dev/ggpk.discussion wiki.
+///
+/// Header:
+///   i32 @ 0   decompressed data size
+///   i32 @ 36  chunk count
+///   i32 @ 40  compression granularity (uncompressed bytes per chunk)
+///   i32 @ 60  chunk compressed sizes[chunkCount]
+///   data      starts at 60 + chunkCount*4
+/// Each chunk is Oodle compressed (Kraken/Mermaid/Selkie/...); the last chunk holds the remainder.
+/// </summary>
+public static class BundleFile
+{
+    private const int DecompressedSizeOffset = 0;
+    private const int ChunkCountOffset = 36;
+    private const int GranularityOffset = 40;
+    private const int ChunkSizesOffset = 60;
+
+    public static int DecompressedSize(ReadOnlySpan<byte> bundle)
+        => BinaryPrimitives.ReadInt32LittleEndian(bundle[DecompressedSizeOffset..]);
+
+    public static byte[] DecompressWhole(ReadOnlySpan<byte> bundle, IOodleDecoder decoder)
+    {
+        int size = DecompressedSize(bundle);
+        return DecompressSlice(bundle, 0, size, decoder);
+    }
+
+    public static byte[] DecompressSlice(ReadOnlySpan<byte> bundle, int sliceOffset, int sliceSize, IOodleDecoder decoder)
+    {
+        ArgumentNullException.ThrowIfNull(decoder);
+        if (sliceSize < 0)
+            throw new GgpkFormatException($"negative slice size {sliceSize}");
+
+        int decompressedSize = BinaryPrimitives.ReadInt32LittleEndian(bundle[DecompressedSizeOffset..]);
+        int chunkCount = BinaryPrimitives.ReadInt32LittleEndian(bundle[ChunkCountOffset..]);
+        int granularity = BinaryPrimitives.ReadInt32LittleEndian(bundle[GranularityOffset..]);
+
+        var result = new byte[sliceSize];
+        int chunkBegin = ChunkSizesOffset + (chunkCount * 4);
+        int decompOffset = 0;
+        int destOffset = 0;
+
+        for (int idx = 0; idx < chunkCount; idx++)
+        {
+            int chunkSize = BinaryPrimitives.ReadInt32LittleEndian(bundle.Slice(ChunkSizesOffset + (idx * 4), 4));
+            var chunk = bundle.Slice(chunkBegin, chunkSize).ToArray();
+
+            int decompChunkSize = (idx == chunkCount - 1)
+                ? decompressedSize - decompOffset
+                : granularity;
+
+            if (decompChunkSize > 0
+                && Math.Max(decompOffset, sliceOffset) < Math.Min(decompOffset + decompChunkSize, sliceOffset + sliceSize))
+            {
+                int begin = Math.Max(sliceOffset - decompOffset, 0);
+                int end = Math.Min(sliceOffset + sliceSize - decompOffset, decompChunkSize);
+
+                byte[] raw = decoder.Decompress(chunk, decompChunkSize);
+                if (raw.Length < end)
+                    throw new GgpkFormatException($"chunk produced {raw.Length} bytes, need {end}");
+
+                raw.AsSpan(begin, end - begin).CopyTo(result.AsSpan(destOffset));
+                destOffset += end - begin;
+            }
+
+            decompOffset += decompChunkSize;
+            chunkBegin += chunkSize;
+        }
+
+        if (destOffset != sliceSize)
+            throw new GgpkFormatException($"bundle slice incomplete: wrote {destOffset} of {sliceSize} bytes");
+
+        return result;
+    }
+}

@@ -1,0 +1,140 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Protocol.Login;
+using GameServer.Core.World;
+
+/// <summary>
+/// Auth's side of area instances: which instance each ticket belongs to, the live login connection of each in-game
+/// character (its session issues the tickets), and the localhost control server the Gateway calls
+/// (<see cref="InstanceControl"/>).
+/// </summary>
+sealed class InstanceDirectory(InstanceRegistry registry)
+{
+    public const ushort StartTown = 0x235c; // Lioneye's Watch
+
+    public InstanceRegistry Registry => registry;
+
+    private readonly ConcurrentDictionary<uint, TicketInfo> _tickets = new();
+    private readonly ConcurrentDictionary<string, LoginLink> _links = new(StringComparer.OrdinalIgnoreCase);
+
+    public sealed record TicketInfo(string Character, ulong Instance, ushort Area);
+
+    /// <summary>A logged-in client's login connection. Writes go through <see cref="SendAsync"/> (the reply loop and the
+    /// control server both write).</summary>
+    public sealed class LoginLink(NetworkStream stream, ConnectionCiphers ciphers, LoginServerSession session, string peer)
+    {
+        private readonly SemaphoreSlim _lock = new(1, 1);
+        public LoginServerSession Session => session;
+        public string Peer => peer;
+
+        public async Task SendAsync(ILoginMessage message)
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                Console.WriteLine($"[auth] {peer} => {LoginMessageFormat.Describe(message)}");
+                byte[] wire = LoginMessage.Encode(message);
+                ciphers.Send.Process(wire);
+                await stream.WriteAsync(wire);
+            }
+            finally { _lock.Release(); }
+        }
+    }
+
+    /// <summary>Play (login 0x0e): the character enters its starting town; records the ticket and the login link.</summary>
+    public (ushort Area, uint Ticket) AssignStart(LoginServerSession session, LoginLink link)
+    {
+        string character = session.CharacterName ?? "?";
+        _links[character] = link;
+        var inst = registry.Enter(StartTown, character);
+        return (inst.AreaHash, NewTicket(session, character, inst));
+    }
+
+    private uint NewTicket(LoginServerSession session, string character, AreaInstanceState inst)
+    {
+        uint ticket = session.Keyring.NewTicket();
+        _tickets[ticket] = new TicketInfo(character, inst.Id, inst.AreaHash);
+        Console.WriteLine($"[auth] ticket 0x{ticket:x8}: {character} → instance {inst.Id} (area 0x{inst.AreaHash:x4}, seed {inst.Seed}, {inst.Players.Count} player(s))");
+        return ticket;
+    }
+
+    public void Forget(LoginLink link)
+    {
+        foreach (var kv in _links.Where(kv => kv.Value == link).ToList()) _links.TryRemove(kv.Key, out _);
+    }
+
+    /// <summary>Serves <see cref="InstanceControl"/> requests on 127.0.0.1.</summary>
+    public async Task ServeControlAsync(int port)
+    {
+        var listener = new TcpListener(IPAddress.Loopback, port);
+        listener.Start();
+        Console.WriteLine($"[auth] instance control on 127.0.0.1:{port}");
+        while (true)
+        {
+            var tcp = await listener.AcceptTcpClientAsync();
+            _ = Task.Run(async () =>
+            {
+                using (tcp)
+                {
+                    var stream = tcp.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+                    string? line = await reader.ReadLineAsync();
+                    if (line is null) return;
+                    ControlResponse reply;
+                    try { reply = Handle(JsonSerializer.Deserialize<ControlRequest>(line, InstanceControl.Json)!); }
+                    catch (Exception ex) { reply = new ControlResponse { Ok = false, Error = ex.Message }; }
+                    await stream.WriteAsync(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(reply, InstanceControl.Json) + "\n"));
+                }
+            });
+        }
+    }
+
+    private ControlResponse Handle(ControlRequest req)
+    {
+        if (!_tickets.TryGetValue(req.Ticket, out var info))
+            return new ControlResponse { Ok = false, Error = $"unknown ticket 0x{req.Ticket:x8}" };
+        switch (req.Op)
+        {
+            case "resolve":
+            {
+                var inst = registry.Get(info.Instance);
+                return new ControlResponse
+                {
+                    Ok = inst is not null, Error = inst is null ? "instance expired" : null, Area = info.Area,
+                    Seed = inst?.Seed ?? 0, Instance = info.Instance, IsTown = inst?.IsTown ?? false, Character = info.Character,
+                };
+            }
+            case "list":
+            {
+                var list = registry.List(req.Area)
+                    .Select(i => new ControlInstance(i.Id, i.Created.ToUnixTimeSeconds(), (int)registry.TimeLeft(i).TotalSeconds, [.. i.Players]))
+                    .ToList();
+                return new ControlResponse { Ok = true, Area = req.Area, IsTown = registry.IsTown(req.Area), Instances = list };
+            }
+            case "transfer":
+            {
+                if (!_links.TryGetValue(info.Character, out var link))
+                    return new ControlResponse { Ok = false, Error = $"{info.Character} has no login connection" };
+                AreaInstanceState? inst = req.Instance != 0 ? registry.EnterExisting(req.Instance, info.Character)
+                    : req.New ? registry.EnterNew(req.Area, info.Character)
+                    : registry.Enter(req.Area, info.Character);
+                if (inst is null) return new ControlResponse { Ok = false, Error = $"instance {req.Instance} expired" };
+                // The Gateway hands the ticket to the client in 0x27: in game the client ignores login 0x14.
+                uint ticket = NewTicket(link.Session, info.Character, inst);
+                return new ControlResponse
+                {
+                    Ok = true, Area = inst.AreaHash, Instance = inst.Id, Seed = inst.Seed, IsTown = inst.IsTown, Ticket = ticket,
+                };
+            }
+            case "leave":
+                registry.Leave(info.Instance, info.Character);
+                return new ControlResponse { Ok = true };
+            default:
+                return new ControlResponse { Ok = false, Error = $"unknown op {req.Op}" };
+        }
+    }
+}

@@ -1,0 +1,229 @@
+using System.Security.Cryptography;
+using GameServer.Core.Protocol.Login;
+
+namespace GameServer.Core.Protocol.Instance;
+
+/// <summary>
+/// The instance (game server) connection Same framing as login (u16 BE id, fields, no length prefix) and
+/// the same field encodings (<see cref="LoginWriter"/> / <see cref="LoginReader"/>). The client opens it after login
+/// 0x14 and sends two plaintext messages (0x142148500): 0x0F ticket and 0x0E hello. The server answers 0x11 in
+/// plaintext. From the byte after it, both directions are Salsa20 keyed by the 64 bytes from 0x14 (client case 1 of
+/// dispatcher 0x14214a190 → 0x140e03a30(key, isClient=1), the same construction as login).
+/// </summary>
+public static class InstanceProtocol
+{
+    public const ushort TicketId = 0x0f, HelloId = 0x0e, StartEncryptionId = 0x11, AreaInstanceId = 0x1d, EnterAreaId = 0x21;
+
+    /// <summary>Length of the client's plaintext opening: 0x0F (2 + 4) followed by 0x0E (2 + 12 + 4 + 4 + 1 + 1).</summary>
+    public const int OpeningLength = 30;
+
+    /// <summary>S→C 0x11 (no fields, class 0x14316c930): switches both directions to Salsa20.</summary>
+    public static byte[] StartEncryption() => new LoginWriter().U16(StartEncryptionId).ToArray();
+
+    /// <summary>
+    /// S→C 0x21 (class 0x1435dcb80, write 0x1421a2da0; dispatcher case 10): enter the area, minimal form. Two vec16 of
+    /// 0x68-byte player records, vec16 of (u32, u32), wstr, 24 flag bits, u8 +0x7e, u8 bits (+0x7b/+0x7c/+0x7d), all
+    /// empty or zero. Its handler (0x142156d80) needs the local player entity (0x22 + 0x2b9) to exist already.
+    /// </summary>
+    public static byte[] EnterArea() =>
+        new LoginWriter().U16(EnterAreaId).U16(0).U16(0).U16(0).WStr("").Bytes([0, 0, 0]).U8(0).U8(0).ToArray();
+
+    public const ushort TickId = 0x1b, PongId = 0x1c, AreaGeneratedId = 0x7d;
+
+    /// <summary>
+    /// S→C 0x1c (class 0x1435dc8c0, read 0x141fa0720; dispatcher case 5 → 0x142155930): acknowledges the client's 0x1b
+    /// ticks. Fields: u16 server delay (ms, subtracted from the measured round trip), u16 index into the client's queue
+    /// of send times (+0xc458; entries up to and including it are dropped), u32 (fed bit by bit into the stream's side
+    /// channel at +0xd0; 0 for us). The client's "network: N ms" is now − oldest unacknowledged send, so without 0x1c it
+    /// grows forever. One 0x1c with index 0 per received 0x1b keeps the queue empty.
+    /// </summary>
+    public static byte[] Pong(ushort serverDelayMs = 0, ushort ackIndex = 0, uint sideChannel = 0) =>
+        new LoginWriter().U16(PongId).U16(serverDelayMs).U16(ackIndex).U32(sideChannel).ToArray();
+
+    /// <summary>Encrypted C→S messages whose length is known: 0x1b tick (u8 counter, 4 bytes; 7 in all, sent every
+    /// 100–500 ms in state 3 by 0x142148880) and 0x7d area generated (two u32 hashes; 10 in all).</summary>
+    public const ushort UseSkillAtLocationId = 0x25, ActionStartedId = 0x1ab;
+
+    /// <summary>Encrypted C→S messages whose length is known (live captures 2026-10-16): 0x1b tick, 0x7d area generated,
+    /// 0x25 use skill at location (16), 0x015a and 0x01ef (id only), 0x0099 (20 bytes both times seen, meaning unknown).</summary>
+    public static int? KnownClientLength(ushort id) => id switch
+    {
+        TickId => 7, AreaGeneratedId => 10, UseSkillAtLocationId => 16, 0x015a => 2, 0x01ef => 2, 0x0099 => 20,
+        InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, 0x0016 => 5, _ => null,
+    };
+
+    /// <summary>
+    /// C→S 0x25 (class 0x1435bfbd8, sender 0x142166300): use a skill at a ground location, e.g. Move on a left click.
+    /// u32 x, u32 y (target grid cell, action +0x130/+0x134), u16 skill id (the granted skill's +0x40; Move = 0x2909 for
+    /// the Witch), u16 action +0x11a (sent only when >= 0), u16 action +0x122. The client does not move until the server
+    /// echoes the action (0x1ab).
+    /// </summary>
+    public sealed record UseSkillAtLocation(int X, int Y, ushort SkillId, ushort Slot, ushort Flags);
+
+    public static UseSkillAtLocation ReadUseSkillAtLocation(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new((int)r.U32(), (int)r.U32(), r.U16(), r.U16(), r.U16());
+    }
+
+    /// <summary>
+    /// S→C 0x1ab (world group, class 0x1435c2340, read 0x141fdda70; Actor handler 0x1421940a0): an object starts an
+    /// action. Object header (u16 id, u32 object id, u32 +0x14, u16 +0x18), u16 flags (+0x38 → action +0x122; bit 0x80 adds
+    /// a u32 target object id), compact ints: the actor's position when the action starts (+0x2c/+0x30 → action +0x158)
+    /// and the target (+0x24/+0x28 → action +0x130, where the client's own 0x25 keeps its target), u16 skill id (+0x34),
+    /// u16 sequence (+0x36 → action +0x11a). For a predicted local actor (sequence ≥ 0) the handler only compares the
+    /// position pair with where the client thinks the actor is and teleports it there when they are ~92+ units apart
+    /// (live 2026-10-16: sending the target in that pair teleported the player on long clicks, onto unwalkable cells).
+    /// Otherwise it looks the skill up in the actor's granted skills and starts the action (0x141ee97f0 → 0x141e8cf10).
+    /// </summary>
+    public static byte[] ActionStarted(uint objectId, int posX, int posY, int targetX, int targetY, ushort skillId, ushort sequence, ushort flags)
+    {
+        var w = new LoginWriter().U16(ActionStartedId).U32(objectId).U32(0).U16(0).U16((ushort)(flags & 0xff7f));
+        CompactInt(w, posX); CompactInt(w, posY); CompactInt(w, targetX); CompactInt(w, targetY);
+        return w.U16(skillId).U16(sequence).ToArray();
+    }
+
+    public const ushort TeleportId = 0x1b7, MoveToId = 0x1ba, EnterWakeZoneId = 0x1a9, LeaveWakeZoneId = 0x1aa;
+
+    /// <summary>
+    /// S→C 0x1a9 (world group, class 0x1435dd838, header only): the object entered the wake zone. The world handler sets
+    /// object +0x8d |= 2 and calls 0x141ec0aa0 ("ObjectInWakeZone"), which adds it to the set of objects that update and
+    /// animate. Without it an object exists (position, components, camera follow, teleports work) but is never drawn and
+    /// its actions and movement never advance. 0x1aa is the reverse.
+    /// </summary>
+    public static byte[] EnterWakeZone(uint objectId) => new LoginWriter().U16(EnterWakeZoneId).U32(objectId).U32(0).U16(0).ToArray();
+
+    /// <summary>
+    /// S→C 0x1ba (world group, class 0x1435dd7b8, read 0x141fe0ff0; Positioned handler 0x141e30c90): move an object to a
+    /// grid cell. Object header, i32 x, i32 y, u32 (+0x28), f32 speed (+0x2c; the client takes distance / speed as the
+    /// duration and calls 0x141e34120), u8 (+0x30). 0x1b7 (teleport) is the same header, x, y, u32 +0x28 (→ +0x290),
+    /// u32 +0x2c (→ +0x2b4).
+    /// </summary>
+    public static byte[] MoveTo(uint objectId, int x, int y, float speed, uint u28 = 0, byte u30 = 0) =>
+        new LoginWriter().U16(MoveToId).U32(objectId).U32(0).U16(0)
+            .U32((uint)x).U32((uint)y).U32(u28).U32(BitConverter.SingleToUInt32Bits(speed)).U8(u30).ToArray();
+
+    public static byte[] Teleport(uint objectId, int x, int y) =>
+        new LoginWriter().U16(TeleportId).U32(objectId).U32(0).U16(0).U32((uint)x).U32((uint)y).U32(0).U32(0).ToArray();
+
+    /// <summary>The network's signed compact int (writer 0x141fa3c50, reader 0x141fa3d60): 1 byte for -0x40..0x3f, then
+    /// 2/3/4 bytes with prefixes 0x80/0xc0/0xe0 (6/5/4 value bits in the first byte), else 0xf0 + 4 bytes, big-endian.</summary>
+    public static void CompactInt(LoginWriter w, int v)
+    {
+        uint u = (uint)v;
+        if (v >= -0x40 && v < 0x40) { w.U8((byte)(u & 0x7f)); return; }
+        if (v >= -0x2000 && v < 0x2000) { w.U8((byte)(((u >> 8) & 0x3f) | 0x80)).U8((byte)u); return; }
+        if (v >= -0x100000 && v < 0x100000) { w.U8((byte)(((u >> 16) & 0x1f) | 0xc0)).U8((byte)(u >> 8)).U8((byte)u); return; }
+        if (v >= -0x4000000 && v < 0x4000000) { w.U8((byte)(((u >> 24) & 0x0f) | 0xe0)).U8((byte)(u >> 16)).U8((byte)(u >> 8)).U8((byte)u); return; }
+        w.U8(0xf0).U32(u);
+    }
+
+    /// <summary>Unsigned compact int (client reader 0x14089cad0, in-memory 0x141e61010): &lt; 0x80 one byte; 0x80 + 14 bits;
+    /// 0xc0 + 21 bits; 0xe0 + 28 bits; else 0xf0 + u32 big-endian.</summary>
+    public static void CompactUInt(LoginWriter w, uint v)
+    {
+        if (v < 0x80) { w.U8((byte)v); return; }
+        if (v < 0x4000) { w.U8((byte)(0x80 | v >> 8)).U8((byte)v); return; }
+        if (v < 0x200000) { w.U8((byte)(0xc0 | v >> 16)).U8((byte)(v >> 8)).U8((byte)v); return; }
+        if (v < 0x10000000) { w.U8((byte)(0xe0 | v >> 24)).U8((byte)(v >> 16)).U8((byte)(v >> 8)).U8((byte)v); return; }
+        w.U8(0xf0).U32(v);
+    }
+
+    /// <summary>
+    /// Splits decrypted C→S bytes into messages of known length (fixed, or parsed for 0x15 chat). Stops at the first unknown id (there is no length
+    /// prefix, so the rest cannot be framed) and returns it as <paramref name="unknown"/>; a known message cut off at the
+    /// end is returned as <paramref name="partial"/> to prepend to the next chunk.
+    /// </summary>
+    public static List<(ushort Id, byte[] Bytes)> SplitClientMessages(ReadOnlySpan<byte> data, out byte[] partial, out byte[] unknown)
+    {
+        var result = new List<(ushort, byte[])>();
+        partial = []; unknown = [];
+        int pos = 0;
+        while (pos < data.Length)
+        {
+            if (data.Length - pos < 2) { partial = data[pos..].ToArray(); break; }
+            ushort id = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data[pos..]);
+            int? known = id == InstanceChat.ChatId ? InstanceChat.Length(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
+            if (known is not int len) { unknown = data[pos..].ToArray(); break; }
+            if (data.Length - pos < len) { partial = data[pos..].ToArray(); break; }
+            result.Add((id, data.Slice(pos, len).ToArray()));
+            pos += len;
+        }
+        return result;
+    }
+
+    /// <summary>Parses the client's plaintext opening, or null if fewer than <see cref="OpeningLength"/> bytes arrived.</summary>
+    public static InstanceOpening? TryReadOpening(ReadOnlySpan<byte> buf)
+    {
+        if (buf.Length < OpeningLength) return null;
+        var r = new LoginReader(buf);
+        if (r.U16() != TicketId) throw new InvalidDataException("instance connection must start with 0x000F");
+        uint ticket = r.U32();
+        if (r.U16() != HelloId) throw new InvalidDataException("expected 0x000E after 0x000F");
+        return new InstanceOpening(ticket, r.Fixed(12), r.U32(), r.U32(), r.U8(), r.U8());
+    }
+}
+
+/// <summary>
+/// S→C 0x1d (class 0x1435da180, write 0x1421415c0; dispatcher case 6): the instance's area. The client logs
+/// "Client-Safe Instance ID = {InstanceId}" and "Generating level {Level} area "{id}" with seed {Seed}", then queues area
+/// generation. AreaHash is WorldAreas.HASH16 (unknown: "Instance sent world area that does not exist"). Level 0 means
+/// the area's own level. Encodes only the form with the optional parts off: flag bits 0x21.3/.6/.7 and 0x22.0/.1/.2 clear,
+/// all vectors empty. Defaults for the unnamed bytes are the constructor's (0x14219d940).
+/// </summary>
+public sealed record AreaInstance(uint InstanceId, ushort AreaHash, uint Seed, byte Level, string Text = "",
+    byte B1e = 3, byte B20 = 0, byte B1f = 2, byte B24 = 0x23, byte B1d = 0, byte B28 = 0x3c)
+{
+    public byte[] Encode() => new LoginWriter()
+        .U16(InstanceProtocol.AreaInstanceId).U32(InstanceId).U16(AreaHash).WStr(Text).U32(Seed)
+        .U8(B1e).U8(B20).U8(B1f).U8(B24).Bytes([0, 0, 0]).U8(Level).U8(B1d).U8(B28)
+        .U16(0)  // vec16<u32> +0x68
+        .U16(0)  // vec16<u8>  +0x80
+        .U8(0)   // vec8<u8>   +0x50
+        .U16(0)  // vec16<u16> +0xe0
+        .ToArray();
+}
+
+/// <summary>
+/// C→S 0x0F + 0x0E. Ticket is login 0x14's u32 at +0x38. Digest: 12 bytes the client computes over a constant 8 bytes,
+/// 0x14's Data8 and the u32 _time64 (0x141fe1570 family, algorithm not identified yet). Address is 0x14's u32 at +0x34.
+/// U32_128 is always 0, Realm is 0x40 (international) and Flag is global 0x14458e79f.
+/// </summary>
+public sealed record InstanceOpening(uint Ticket, byte[] Digest, uint Address, uint U32_128, byte Realm, byte Flag);
+
+/// <summary>
+/// The 64-byte instance key from a ticket. Login and instance servers run as separate processes, so instead of passing
+/// keys between them both derive key = HMAC-SHA512(secret, ticket BE) from a shared secret.
+/// </summary>
+public sealed class InstanceKeyring(byte[] secret)
+{
+    public static InstanceKeyring Random() => new(RandomNumberGenerator.GetBytes(64));
+
+    /// <summary>Loads the secret from <paramref name="path"/>, creating it on first use.</summary>
+    public static InstanceKeyring LoadOrCreate(string path)
+    {
+        if (!File.Exists(path))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            try
+            {
+                using var f = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+                f.Write(RandomNumberGenerator.GetBytes(64));
+            }
+            catch (IOException) when (File.Exists(path)) { } // the other server created it first
+        }
+        return new(File.ReadAllBytes(path));
+    }
+
+    public uint NewTicket() => (uint)RandomNumberGenerator.GetInt32(1, int.MaxValue);
+
+    public byte[] Key(uint ticket)
+    {
+        Span<byte> t = stackalloc byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(t, ticket);
+        return HMACSHA512.HashData(secret, t);
+    }
+
+    /// <summary>The server's Salsa20 pair for a ticket (mirror of the client's isClient=1 setup).</summary>
+    public ConnectionCiphers Ciphers(uint ticket) => new(Key(ticket), isClient: false);
+}
