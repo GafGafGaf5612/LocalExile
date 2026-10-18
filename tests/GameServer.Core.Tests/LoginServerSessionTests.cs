@@ -16,7 +16,7 @@ public class LoginServerSessionTests
         var replies = session.Handle(Assert.Single(up));
         var down = new LoginMessageStream(LoginDirection.ServerToClient).Push([.. replies.SelectMany(LoginMessage.Encode)]);
         Assert.Equal(replies.Count, down.Count);
-        if (down.Count > 1) Assert.IsType<CharacterList>(down[1]);
+        if (down.Count > 1) Assert.IsType<LeagueList>(down[1]);
         return Assert.IsType<LoginResult>(down[0]);
     }
 
@@ -72,9 +72,10 @@ public class LoginServerSessionTests
         var login = session.Handle(Request("carol", "pw1234"));
         var result = Assert.IsType<LoginResult>(login[0]);
         Assert.Equal(LoginServerSession.FlagVerified, result.Flags0);
-        Assert.IsType<CharacterList>(login[1]);
+        Assert.IsType<LeagueList>(login[1]);
 
         var list = Assert.IsType<List15>(Assert.Single(session.Handle(new EmptyMessage(0x18))));
+        Assert.Equal(24, list.B29); // character slots: the Create Character button needs a free one
         var e = Assert.Single(list.Entries);
         Assert.Equal(("CarolWitch", "Standard", (byte)1, (byte)CharacterClass.Witch), (e.Name, e.Text, e.B48, e.B4a));
 
@@ -85,6 +86,54 @@ public class LoginServerSessionTests
         var all = login.Concat([list, info]).ToList();
         var decoded = new LoginMessageStream(LoginDirection.ServerToClient).Push([.. all.SelectMany(LoginMessage.Encode)]);
         Assert.Equal(all.Count, decoded.Count);
+    }
+
+    [Fact]
+    public void Login_sends_the_leagues_with_their_variants_linked()
+    {
+        var accounts = new AccountService(new JsonAccountStore());
+        accounts.Register("dave", "pw1234");
+        var session = new LoginServerSession(accounts);
+        var leagues = Assert.IsType<LeagueList>(session.Handle(Request("dave", "pw1234"))[1]).Leagues;
+        Assert.Equal(16, leagues.Count);
+        Assert.All(leagues, l => Assert.NotEmpty(l.Description)); // an empty one crashes the client's league card
+        var main = leagues.Where(l => (l.Flags0 & LeagueEntry.Main) != 0).Select(l => l.Name);
+        Assert.Equal(["Standard", "Allflame"], main);
+        var hc = Assert.Single(leagues, l => l.Name == "Hardcore");
+        Assert.Equal(("Standard", LeagueEntry.Hardcore, LeagueEntry.Variant), (hc.HardcoreParent, hc.Flags0, hc.Flags1));
+        Assert.Equal("Hardcore", Assert.Single(leagues, l => l.Name == "SSF Hardcore").SsfParent);
+        Assert.Equal("HC SSF Allflame", Assert.Single(leagues, l => l.Name == "HC SSF R Allflame").RuthlessParent);
+        Assert.Equal(LeagueEntry.Variant | LeagueEntry.Ruthless, Assert.Single(leagues, l => l.Name == "Ruthless").Flags1);
+    }
+
+    [Fact]
+    public void Create_character_stores_it_in_the_league_and_lists_it()
+    {
+        var accounts = new AccountService(new JsonAccountStore());
+        var acc = accounts.Register("erin", "pw1234").Value!;
+        var session = new LoginServerSession(accounts);
+        session.Handle(Request("erin", "pw1234"));
+
+        // As the 3.29.3b client sent it (live 2026-10-18): the start state names the class.
+        var replies = session.Handle(new CreateCharacter("ErinRanger", "Hardcore Allflame", 0, 0, "DexDefault", new byte[32]));
+        // The list goes first: the client looks the new character up in it when 0x13 arrives, then sends Play.
+        var e = Assert.Single(Assert.IsType<List15>(replies[0]).Entries);
+        Assert.Equal(LoginServerSession.ResultOk, Assert.IsType<CreateCharacterResult>(replies[1]).Result);
+        Assert.Equal(("ErinRanger", "Hardcore Allflame", (byte)CharacterClass.Ranger), (e.Name, e.Text, e.B4a));
+        Assert.Equal("Hardcore Allflame", Assert.Single(accounts.Characters(acc.Id)).League);
+
+        Result(LoginServerSession.ResultCharacterNameTaken, new CreateCharacter("ErinRanger", "Standard", 0, 0, "Metadata/Characters/Dex/Dex", new byte[32]));
+        Result(LoginServerSession.ResultLeagueDoesNotExist, new CreateCharacter("Other", "Nowhere", 0, 0, "Metadata/Characters/Dex/Dex", new byte[32]));
+        Result(LoginServerSession.ResultCharacterNameTooShort, new CreateCharacter("ab", "Standard", 0, 0, "Metadata/Characters/Dex/Dex", new byte[32]));
+        Result(LoginServerSession.ResultInvalidClass, new CreateCharacter("Other", "Standard", 99, 99, "?", new byte[32]));
+
+        // Play then knows the character's league (the Gateway gets it through Auth's resolve).
+        session.Handle(new U8U32(0, 0));
+        Assert.True(session.CharacterLeague!.Hardcore);
+        Assert.Equal(CharacterClass.Ranger, session.CharacterClass);
+
+        void Result(ushort code, CreateCharacter m) =>
+            Assert.Equal(code, Assert.IsType<CreateCharacterResult>(Assert.Single(session.Handle(m))).Result);
     }
 
     [Fact]

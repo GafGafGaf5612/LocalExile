@@ -6,7 +6,7 @@ public class LoginMessageTests
 {
     private static byte[] B(int n, byte seed) => Enumerable.Range(0, n).Select(i => (byte)(seed + i)).ToArray();
 
-    private static readonly CharacterEntry Character = new("Exile", "Standard", "Wide ünïcode", "", "😀 astral", 0x0102030405060708,
+    private static readonly LeagueEntry Character = new("Exile", "Standard", "Wide ünïcode", "", "😀 astral", 0x0102030405060708,
         0x1122334455667788, 42, 1, 2, 3, 0x14, 0x5a, 0xd1);
 
     public static readonly (LoginDirection Dir, ILoginMessage Msg)[] Samples =
@@ -18,13 +18,13 @@ public class LoginMessageTests
         (LoginDirection.ServerToClient, new U16Message(0x0d, 1)),
         (LoginDirection.ServerToClient, new U16Message(0x0f, 2)),
         (LoginDirection.ServerToClient, new Blob11(3, B(40, 0))),
-        (LoginDirection.ServerToClient, new Tracking13(0xbeef, true)),
+        (LoginDirection.ServerToClient, new CreateCharacterResult(0xbeef, true)),
         (LoginDirection.ServerToClient, new InstanceInfo("127.0.0.1", 6112, 0xdeadbeef, 0x4321, 7, B(64, 0x40), B(8, 0x80), 1)),
         (LoginDirection.ServerToClient, new List15([new("Standard", "desc", 1, 2, 3, 0x01020304, 5, 0x0607, 0x0809, 10, 11),
             new("Hardcore", "", 0, 0, 0, 0, 0, 0, 0, 0, 0)], 4, 5, B(3, 0))),
         (LoginDirection.ServerToClient, new U16Message(0x17, 9)),
-        (LoginDirection.ServerToClient, new CharacterUpdate(3, [Character])),
-        (LoginDirection.ServerToClient, new CharacterList(1_760_000_000, [Character, Character with { S0 = "Two" }], true, false)),
+        (LoginDirection.ServerToClient, new LeaguesWithProgress(3, [Character])),
+        (LoginDirection.ServerToClient, new LeagueList(1_760_000_000, [Character, Character with { Name = "Two" }], true, false)),
         (LoginDirection.ServerToClient, new U16Message(0x1e, 4)),
         (LoginDirection.ServerToClient, new U32Message(0x1f, 0x01020304)),
         (LoginDirection.ServerToClient, new U32Message(0x20, 5)),
@@ -50,7 +50,7 @@ public class LoginMessageTests
         (LoginDirection.ClientToServer, new TwoDigests(B(32, 5), B(32, 6))),
         (LoginDirection.ClientToServer, new WStringU8Message(0x0c, "name", 1)),
         (LoginDirection.ClientToServer, new U8U32(0, 0x10000)),
-        (LoginDirection.ClientToServer, new Request12("a", "b", 1, 2, "c", B(32, 0))),
+        (LoginDirection.ClientToServer, new CreateCharacter("a", "b", 1, 2, "c", B(32, 0))),
         (LoginDirection.ClientToServer, new EmptyMessage(0x18)),
         (LoginDirection.ClientToServer, new EmptyMessage(0x19)),
         (LoginDirection.ClientToServer, new TwoU16(1, 2)),
@@ -154,7 +154,7 @@ public class LoginMessageTests
     [Fact]
     public void Character_list_time_and_raw_fields_are_little_endian()
     {
-        var m = new CharacterList(0x0102030405060708, [], false, true);
+        var m = new LeagueList(0x0102030405060708, [], false, true);
         Assert.Equal("001B" + "0807060504030201" + "00000000" + "02", Convert.ToHexString(LoginMessage.Encode(m)));
     }
 }

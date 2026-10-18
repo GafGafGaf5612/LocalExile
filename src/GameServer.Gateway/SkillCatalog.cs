@@ -211,11 +211,32 @@ sealed class SkillCatalog(string folder = "data")
         ];
     }
 
-    /// <summary>A class from Characters.dat: IntegerId (what the Player component's class byte holds: Marauder 1, Witch 3)
-    /// and the base attributes.</summary>
-    public sealed record ClassInfo(int IntegerId, int Strength, int Dexterity, int Intelligence)
+    /// <summary>A class from Characters.dat: IntegerId (what the Player component's class byte holds: Marauder 1, Witch 3),
+    /// the base attributes, and the player object's type (the row's Id, e.g. Metadata/Characters/StrInt/StrInt for the
+    /// Templar) and model (AOFile).</summary>
+    public sealed record ClassInfo(int IntegerId, int Strength, int Dexterity, int Intelligence,
+        string ObjectType = "Metadata/Characters/Int/Int", string AnimatedObject = "Metadata/Characters/Int/Int.ao")
     {
         public static readonly ClassInfo Witch = new(3, 14, 14, 32);
+    }
+
+    /// <summary>The Witch's Characters.dat row, used when a class is unknown.</summary>
+    public const int WitchRow = 1;
+
+    /// <summary>The Characters.dat row of a class by IntegerId (CharacterClass): Marauder 1 → row 0, Witch 3 → row 1,
+    /// Templar 5 → row 6.</summary>
+    public int RowOfClass(int integerId)
+    {
+        string path = Path.Combine(folder, "tables", "Characters.json");
+        if (!File.Exists(path)) return WitchRow;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        int i = 0;
+        foreach (var r in d.RootElement.EnumerateArray())
+        {
+            if (r.GetProperty("IntegerId").GetInt32() == integerId) return i;
+            i++;
+        }
+        return WitchRow;
     }
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, ClassInfo> _classes = new();
@@ -228,7 +249,8 @@ sealed class SkillCatalog(string folder = "data")
         if (row < 0 || row >= d.RootElement.GetArrayLength()) return ClassInfo.Witch;
         var r = d.RootElement[row];
         return new(r.GetProperty("IntegerId").GetInt32(), r.GetProperty("BaseStrength").GetInt32(),
-            r.GetProperty("BaseDexterity").GetInt32(), r.GetProperty("BaseIntelligence").GetInt32());
+            r.GetProperty("BaseDexterity").GetInt32(), r.GetProperty("BaseIntelligence").GetInt32(),
+            r.GetProperty("Id").GetString()!, r.GetProperty("AOFile").GetString()!);
     });
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, Unarmed> _unarmed = new();

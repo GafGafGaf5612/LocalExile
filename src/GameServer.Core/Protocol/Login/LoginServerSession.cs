@@ -21,7 +21,9 @@ public sealed class LoginServerSession(AccountService accounts)
     /// <summary>0x04 Flags0 bits (0x14213f190 case 4).</summary>
     public const byte FlagVerified = 0x20;
 
-    public const string League = "Standard";
+    /// <summary>The leagues sent in 0x1b after login: the create screen offers them (with none its Create button stays
+    /// disabled).</summary>
+    public LeagueCatalog Leagues { get; init; } = LeagueCatalog.Default;
 
     public Session? Session { get; private set; }
     public Account? Account { get; private set; }
@@ -31,10 +33,14 @@ public sealed class LoginServerSession(AccountService accounts)
         AccountLogin m => Login(m),
         // Sent when the character screen opens (0x140d13060, only in logged-in state 3). Answered with the character
         // list 0x15 (stored at login+0xe68 and shown by the character screen 0x140d12590; live-tested).
-        EmptyMessage { MessageId: 0x18 } => [new List15(CharacterEntries(), 0, 0, [])],
+        EmptyMessage { MessageId: 0x18 } => [CharacterList()],
         // Play on the character screen sends 0x0e (u8 0, u32 0: character index?; captured 2026-10-16). It waits
         // ("Contacting Server...") for the instance assignment 0x14.
         U8U32 m => EnterGame(m),
+        CreateCharacter m => Create(m),
+        // "Leagues with progress" (0x140d166a0): the leagues a character could migrate progress from. None here; the
+        // client then shows "There are no available leagues to migrate progress from."
+        EmptyMessage { MessageId: 0x19 } => Session is null ? [] : [new LeaguesWithProgress(0, [])],
         _ => [],
     };
 
@@ -58,7 +64,10 @@ public sealed class LoginServerSession(AccountService accounts)
         var characters = accounts.Characters(Session.AccountId);
         if (characters.Count == 0) return [];
         // The u32 is probably the character's index on the character screen (0 for the first, the only one tested).
-        CharacterName = characters[(int)Math.Min(play.Value, (uint)characters.Count - 1)].Name;
+        var chosen = characters[(int)Math.Min(play.Value, (uint)characters.Count - 1)];
+        CharacterName = chosen.Name;
+        CharacterLeague = Leagues.Find(chosen.League);
+        CharacterClass = chosen.Class;
         if (Assign is not null)
         {
             var (area, assigned) = Assign(this);
@@ -69,6 +78,12 @@ public sealed class LoginServerSession(AccountService accounts)
 
     /// <summary>The character chosen with Play (0x0e), once in game.</summary>
     public string? CharacterName { get; private set; }
+
+    /// <summary>The chosen character's league (null if the server no longer offers it).</summary>
+    public League? CharacterLeague { get; private set; }
+
+    /// <summary>The chosen character's class.</summary>
+    public CharacterClass CharacterClass { get; private set; } = CharacterClass.Witch;
 
     /// <summary>Picks the area and ticket for Play (GameServer.Auth: the instance registry). Without it: Lioneye's
     /// Watch with a fresh ticket.</summary>
@@ -102,7 +117,73 @@ public sealed class LoginServerSession(AccountService accounts)
         // Flags0 bit 5 → login+0xea8: the account's email is verified. With it clear the character screen builds the
         // "Your account is not verified" panel (0x140d195d0) and chat/trade features are locked.
         return [new LoginResult(ResultOk, "", new byte[32], FlagVerified, 0, []),
-                new CharacterList(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), [], false, false)];
+                new LeagueList(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Leagues.Entries(), false, false)];
+    }
+
+    /// <summary>0x15: the characters, then B28 (→ character screen +0x280, unknown) and B29, the character slots
+    /// (login+0xe81 → character screen +0x281): its Create Character button is enabled only while the account has fewer
+    /// characters than that (0x140d17cc0; 0 kept it greyed out, live 2026-10-18).</summary>
+    private List15 CharacterList() => new(CharacterEntries(), 0, (byte)Math.Clamp(accounts.MaxCharacters, 0, 255), []);
+
+    /// <summary>0x13 result codes: BackendErrors rows + 1, as for 0x04.</summary>
+    public const ushort ResultCharacterNameTaken = 21, ResultCharacterNameInvalid = 22, ResultCharacterNameTooShort = 23,
+        ResultCharacterNameTooLong = 24, ResultInvalidClass = 25, ResultLeagueDoesNotExist = 26, ResultTooManyCharacters = 49;
+
+    /// <summary>
+    /// Create character (0x12) → 0x13 with the result; on success the new character list (0x15) goes first, and the
+    /// client then enters the game with the new character (Play, 0x0e). The class comes from <see cref="ClassOf"/>.
+    /// </summary>
+    private ILoginMessage[] Create(CreateCharacter m)
+    {
+        if (Session is null) return [];
+        var league = Leagues.Find(m.League);
+        if (league is null) return [new CreateCharacterResult(ResultLeagueDoesNotExist, false)];
+        if (ClassOf(m) is not { } cls) return [new CreateCharacterResult(ResultInvalidClass, false)];
+        string name = m.Name.Trim();
+        if (name.Length < 3) return [new CreateCharacterResult(ResultCharacterNameTooShort, false)];
+        if (name.Length > 23) return [new CreateCharacterResult(ResultCharacterNameTooLong, false)];
+        var r = accounts.CreateCharacter(Session.AccountId, name, cls, league.Name);
+        if (!r.Ok)
+            return [new CreateCharacterResult(r.Error switch
+            {
+                AuthError.CharacterNameTaken => ResultCharacterNameTaken,
+                AuthError.LimitReached => ResultTooManyCharacters,
+                AuthError.InvalidClass => ResultInvalidClass,
+                _ => ResultCharacterNameInvalid,
+            }, false)];
+        // The list first: on 0 the create screen (0x140cf8010) looks the new character up by name in the character list
+        // and sends Play (0x0e) with its index; with the list sent after 0x13 it was not there yet and the client waited
+        // on "Contacting Server..." (live 2026-10-18).
+        return [CharacterList(), new CreateCharacterResult(ResultOk, false)];
+    }
+
+    /// <summary>Characters.dat Id → class (CharacterClass is Characters.dat IntegerId).</summary>
+    private static readonly Dictionary<string, CharacterClass> ClassIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Metadata/Characters/StrDexInt/StrDexInt"] = CharacterClass.Scion, ["Metadata/Characters/Str/Str"] = CharacterClass.Marauder,
+        ["Metadata/Characters/Dex/Dex"] = CharacterClass.Ranger, ["Metadata/Characters/Int/Int"] = CharacterClass.Witch,
+        ["Metadata/Characters/StrDex/StrDex"] = CharacterClass.Duelist, ["Metadata/Characters/StrInt/StrInt"] = CharacterClass.Templar,
+        ["Metadata/Characters/DexInt/DexInt"] = CharacterClass.Shadow,
+    };
+
+    /// <summary>CharacterStartStates.dat Ids start with the class's attributes (DexDefault: the Ranger), longest first.</summary>
+    private static readonly (string Prefix, CharacterClass Class)[] StartStatePrefixes =
+    [
+        ("StrDexInt", CharacterClass.Scion), ("StrDex", CharacterClass.Duelist), ("StrInt", CharacterClass.Templar),
+        ("DexInt", CharacterClass.Shadow), ("Str", CharacterClass.Marauder), ("Dex", CharacterClass.Ranger), ("Int", CharacterClass.Witch),
+    ];
+
+    /// <summary>The class of a 0x12 request. S78 is the chosen CharacterStartStates.dat Id ("DexDefault" for a Ranger,
+    /// live 2026-10-18; the u32s were 0); a Characters.dat Id or class name is accepted too, then a class number.</summary>
+    public static CharacterClass? ClassOf(CreateCharacter m)
+    {
+        if (ClassIds.TryGetValue(m.S78, out var c)) return c;
+        if (Enum.TryParse<CharacterClass>(m.S78, true, out c) && Enum.IsDefined(c)) return c;
+        foreach (var (prefix, cls) in StartStatePrefixes)
+            if (m.S78.StartsWith(prefix, StringComparison.Ordinal)) return cls;
+        foreach (uint v in (ReadOnlySpan<uint>)[m.U50, m.U54])
+            if (v <= (uint)CharacterClass.Shadow) return (CharacterClass)v;
+        return null;
     }
 
     /// <summary>

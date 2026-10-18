@@ -91,6 +91,8 @@ static async Task Serve(LoginServerKeys keys)
     var directory = new InstanceDirectory(registry);
     _ = directory.ServeControlAsync(InstanceControl.Port);
     Console.WriteLine($"[auth] login server on tcp/{port}");
+    // Game_LEAGUES: comma-separated base leagues (default Standard, Allflame), each with its Hardcore / SSF / Ruthless variants.
+    Console.WriteLine($"[auth] leagues: {string.Join(", ", LeagueCatalog.FromEnvironment().All.Select(l => l.Name))}");
     while (true)
     {
         var tcp = await listener.AcceptTcpClientAsync();
@@ -126,7 +128,7 @@ static async Task HandleConnection(TcpClient tcp, LoginServerKeys keys, AccountS
             // Anything the client sent after its 0x0002 is already ciphertext.
             var incoming = new LoginMessageStream(LoginDirection.ClientToServer);
             InstanceDirectory.LoginLink? link = null;
-            var session = new LoginServerSession(accounts) { Keyring = keyring, Assign = s => directory.AssignStart(s, link!) };
+            var session = new LoginServerSession(accounts) { Keyring = keyring, Leagues = LeagueCatalog.FromEnvironment(), Assign = s => directory.AssignStart(s, link!) };
             link = new InstanceDirectory.LoginLink(stream, ciphers, session, peer);
             byte[] rest = buf[used..have];
             try
@@ -180,7 +182,7 @@ static ILoginMessage Redact(ILoginMessage m) => m switch
     TicketLogin t => t with { Ticket = "<redacted>", MachineIdA = [], MachineIdB = [] },
     EpicLogin e => e with { Token = [] },
     TwoDigests d => d with { DigestA = [], DigestB = [] },
-    Request12 r => r with { Digest = [] },
+    CreateCharacter r => r with { PasswordDigest = [] },
     _ => m,
 };
 

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using GameServer.Core.Accounts;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Core.World;
@@ -21,7 +22,7 @@ sealed class InstanceDirectory(InstanceRegistry registry)
     private readonly ConcurrentDictionary<uint, TicketInfo> _tickets = new();
     private readonly ConcurrentDictionary<string, LoginLink> _links = new(StringComparer.OrdinalIgnoreCase);
 
-    public sealed record TicketInfo(string Character, ulong Instance, ushort Area);
+    public sealed record TicketInfo(string Character, ulong Instance, ushort Area, League? League, CharacterClass Class);
 
     /// <summary>A logged-in client's login connection. Writes go through <see cref="SendAsync"/> (the reply loop and the
     /// control server both write).</summary>
@@ -57,7 +58,7 @@ sealed class InstanceDirectory(InstanceRegistry registry)
     private uint NewTicket(LoginServerSession session, string character, AreaInstanceState inst)
     {
         uint ticket = session.Keyring.NewTicket();
-        _tickets[ticket] = new TicketInfo(character, inst.Id, inst.AreaHash);
+        _tickets[ticket] = new TicketInfo(character, inst.Id, inst.AreaHash, session.CharacterLeague, session.CharacterClass);
         Console.WriteLine($"[auth] ticket 0x{ticket:x8}: {character} → instance {inst.Id} (area 0x{inst.AreaHash:x4}, seed {inst.Seed}, {inst.Players.Count} player(s))");
         return ticket;
     }
@@ -106,6 +107,7 @@ sealed class InstanceDirectory(InstanceRegistry registry)
                 {
                     Ok = inst is not null, Error = inst is null ? "instance expired" : null, Area = info.Area,
                     Seed = inst?.Seed ?? 0, Instance = info.Instance, IsTown = inst?.IsTown ?? false, Character = info.Character,
+                    League = info.League?.Name, Hardcore = info.League?.Hardcore ?? false, Class = (int)info.Class,
                 };
             }
             case "list":

@@ -101,12 +101,15 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await stream.WriteAsync(InstanceProtocol.StartEncryption());
             Console.WriteLine($"[gateway] {remote} => 0x0011 (start encryption)");
 
-            var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0);
+            // Text is the character's league: the map overlay shows it under the area name ("{0} League", 0x1406b2030).
+            var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0, Text: resolved.League ?? "");
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, ClassRow = Skills.RowOfClass(resolved.Class), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             conn.Commands = Commands(remote, stream, ciphers, conn);
+            PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), league {conn.League ?? "?"}");
             byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
             if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn);
             while (true)
@@ -233,7 +236,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                     conn.Use(withTransitions);
                     Console.WriteLine($"[gateway] {remote} area transitions captured: {withTransitions.Describe()}");
                 }
-                await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character);
+                await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character, conn.ClassRow);
                 conn.PlayerSent = true;
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
@@ -313,7 +316,7 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
 static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
 {
-    var weapon = Skills.UnarmedFor(1);
+    var weapon = Skills.UnarmedFor(conn.ClassRow);
     double now = conn.Clock.Elapsed.TotalSeconds, duration;
     lock (conn.Monsters) duration = weapon.AttackSeconds(conn.PlayerStats);
     // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
@@ -477,8 +480,8 @@ static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     Dictionary<uint, int> stats;
     lock (conn.Monsters) stats = new(conn.PlayerStats);
-    foreach (var (k, v) in ClassAttributes()) stats.TryAdd(k, v);
-    foreach (var (k, v) in Skills.UnarmedFor(1).Stats(stats)) stats[k] = v;
+    foreach (var (k, v) in ClassAttributes(conn.ClassRow)) stats.TryAdd(k, v);
+    foreach (var (k, v) in Skills.UnarmedFor(conn.ClassRow).Stats(stats)) stats[k] = v;
     return stats.Select(kv => (kv.Key, kv.Value));
 }
 
@@ -486,9 +489,9 @@ static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 // dexterity and intelligence for the character panel, and virtual_*_for_requirements, which item requirements are
 // checked against (0x1402ce5f0 via the Player cache 0x141e80340, keys 0x3d1b-0x3d1d; global_no_attribute_requirements
 // skips the check, global_item_attribute_requirements_+% scales it).
-static IEnumerable<(uint, int)> ClassAttributes()
+static IEnumerable<(uint, int)> ClassAttributes(int classRow)
 {
-    var c = Skills.ClassFor(1);
+    var c = Skills.ClassFor(classRow);
     foreach (var (stat, value) in new[] { ("strength", c.Strength), ("dexterity", c.Dexterity), ("intelligence", c.Intelligence),
         ("virtual_strength_for_requirements", c.Strength), ("virtual_dexterity_for_requirements", c.Dexterity),
         ("virtual_intelligence_for_requirements", c.Intelligence) })
@@ -714,7 +717,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("death_screen", "/death_screen [hex flags] (show the death screen; default: this league's; 2 hides it)", async args =>
     {
-        byte flags = args.Length > 0 ? Convert.ToByte(args[0].Replace("0x", ""), 16) : DeathScreenFlags;
+        byte flags = args.Length > 0 ? Convert.ToByte(args[0].Replace("0x", ""), 16) : DeathScreenFlags(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(flags), $"0x0055 death screen flags 0x{flags:x2}");
     })
     .Add("transition", "/transition [pos [here | x y | +dx +dy] | rot <degrees> | z <z | none> | model <path | none> | index <n>] " +
@@ -908,7 +911,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
         $"0x01b1 player hit by monster 0x{id:x} for {damage}, life {life}/{ClientState.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0)
-        await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags), $"0x0055 death screen ({League} league)");
+        await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league)");
 }
 
 // The death screen's buttons (C→S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
@@ -1154,19 +1157,21 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
     if (PlayerInventories.ShowsOnModel(done.Row)) await SendEquipment(remote, stream, ciphers, conn, items);
 }
 
-// The player is always a Witch for now (the only class whose object is mapped); the name is the character's.
-static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout, string? name)
+// The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
+// (AOFile), class byte (IntegerId), attributes and unarmed attack; the name is the character's.
+static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout, string? name, int classRow)
 {
-    var weapon = Skills.UnarmedFor(1);
-    var witch = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)Skills.ClassFor(1).IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
-        AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? "Metadata/Characters/Int/Int.ao",
-        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. ClassAttributes()])], Stats: [.. weapon.Stats(), .. ClassAttributes()],
+    var weapon = Skills.UnarmedFor(classRow);
+    var cls = Skills.ClassFor(classRow);
+    var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
+        AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
+        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. ClassAttributes(classRow)])], Stats: [.. weapon.Stats(), .. ClassAttributes(classRow)],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf));
-    uint type = InstanceEntities.ObjectTypeHash("Metadata/Characters/Int/Int");
+    uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
     {
         ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
-        ($"0x02b9 create {witch} type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, witch.Blob())),
+        ($"0x02b9 create {player} ({cls.ObjectType}) type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, player.Blob())),
     };
     // The player's inventories (id = row + 1), needed by UI built on entering (flask bar → row 11), with the character's items.
     var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items);
@@ -1190,7 +1195,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         foreach (var (id, _) in layout.AreaTransitions) messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
         // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
         // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
-        messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. ClassAttributes()])));
+        messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. ClassAttributes(classRow)])));
     }
     foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
 }
@@ -1200,11 +1205,11 @@ sealed partial class Program
     internal const uint PlayerId = 0x1000;
     // The server's tick: 30 per second. Nothing the server times (an attack) is shorter than one tick.
     internal const int TickRate = 30;
-    // The league (Game_LEAGUE): standard (softcore) or hardcore. It decides the death screen.
-    internal static readonly string League = Environment.GetEnvironmentVariable("Game_LEAGUE")?.ToLowerInvariant() == "hardcore" ? "hardcore" : "standard";
+    // Game_LEAGUE=hardcore treats every character as hardcore; otherwise the character's league decides (Auth's resolve).
+    internal static readonly bool ForceHardcore = Environment.GetEnvironmentVariable("Game_LEAGUE")?.ToLowerInvariant() == "hardcore";
     // S→C 0x55 flags (11-skills.md §8): standard = bit2 (Resurrect at Checkpoint) + bit3 (Resurrect in Town); hardcore =
     // bit0 (a single Exit button, "Exit to the character selection screen", which sends C→S 0x153).
-    internal static byte DeathScreenFlags => League == "hardcore" ? (byte)0x01 : (byte)0x0c;
+    internal static byte DeathScreenFlags(ClientState conn) => ForceHardcore || conn.Hardcore ? (byte)0x01 : (byte)0x0c;
     internal const double TickSeconds = 1.0 / TickRate;
     // How close (cells, centre to centre) the player must be to use an area transition.
     internal const double AreaTransitionReach = 6;
@@ -1466,6 +1471,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint Ticket => ticket;
     public uint Seed => seed;
     public string? Character { get; init; }
+    public string? League { get; init; }
+    public bool Hardcore { get; init; }
+    // The character's class: its Characters.dat row (the Witch: 1).
+    public int ClassRow { get; init; } = SkillCatalog.WitchRow;
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     // Server-side estimate of the client-predicted walk (reported in each 0x1ab), kept on walkable cells.
     public WalkEstimator Walk { get; private set; } = NewWalk(layout);

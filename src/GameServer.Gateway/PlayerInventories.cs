@@ -305,11 +305,17 @@ sealed class PlayerInventories
         lock (_lock) return _revisions[row] = _revisions.GetValueOrDefault(row) + 1;
     }
 
+    private static readonly ConcurrentDictionary<string, int> ClassRows = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The character's class (Characters.dat row), for its start kit: set when it connects, before its items
+    /// are first used.</summary>
+    public static void SetClass(string character, int characterRow) => ClassRows[character] = characterRow;
+
     /// <summary>The character's items, created with the class's start kit on first use.</summary>
     public static PlayerInventories For(string character, ItemCatalog catalog, string folder = "data") =>
         ByCharacter.GetOrAdd(character, name =>
         {
-            var inv = FromSave(name, catalog) ?? StartKit(catalog, folder);
+            var inv = FromSave(name, catalog) ?? StartKit(catalog, folder, ClassRows.GetValueOrDefault(name, 1));
             inv._owner = name;
             inv.Persist();
             return inv;
@@ -332,8 +338,9 @@ sealed class PlayerInventories
     }
 
     /// <summary>
-    /// The Witch's start kit from Characters.dat (row 1): StartWeapons[0] (Driftwood Wand) in Weapon1, the StartSkillGem and
-    /// StartSupportGem (SkillGems rows → their BaseItemTypes: Fireball, Arcane Surge Support) in the main inventory, and a
+    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) in Weapon1, the
+    /// StartSkillGem and StartSupportGem (SkillGems rows → their BaseItemTypes: Fireball, Arcane Surge Support) in the main
+    /// inventory, and a
     /// Small Life Flask and Small Mana Flask in the flask slots. Missing tables or unsupported types are skipped;
     /// Game_START_ITEMS=0 starts empty.
     /// </summary>
@@ -353,10 +360,19 @@ sealed class PlayerInventories
         ItemCatalog.BaseType? Gem(string column) =>
             row.GetProperty(column) is { ValueKind: JsonValueKind.Number } k
                 ? catalog.Row(g.RootElement[k.GetInt32()].GetProperty("BaseItemTypesKey").GetInt32()) : null;
-        // The start weapon with two linked sockets in the class's colour (the Witch: blue), empty, for its gems.
+        // A gem's socket colour: its largest attribute requirement (SkillGems Strength/Dexterity/IntelligenceRequirementPercent).
+        SocketColour Colour(string column)
+        {
+            if (row.GetProperty(column) is not { ValueKind: JsonValueKind.Number } k) return SocketColour.Blue;
+            var gem = g.RootElement[k.GetInt32()];
+            int str = gem.GetProperty("StrengthRequirementPercent").GetInt32(), dex = gem.GetProperty("DexterityRequirementPercent").GetInt32(),
+                @int = gem.GetProperty("IntelligenceRequirementPercent").GetInt32();
+            return str >= dex && str >= @int ? SocketColour.Red : dex >= @int ? SocketColour.Green : SocketColour.Blue;
+        }
+        // The start weapon with two linked sockets in the start gems' colours (the Witch: blue, blue), empty, for its gems.
         if (row.GetProperty("StartWeapons").EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Number } w &&
             catalog.Row(w.GetInt32()) is { Supported: true } weapon)
-            inv.Add(Weapon1, 0, 0, ItemCatalog.Create(weapon, [new(SocketColour.Blue), new(SocketColour.Blue)], [2]));
+            inv.Add(Weapon1, 0, 0, ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]));
         Put(MainInventory, 0, 0, Gem("StartSkillGem"));
         Put(MainInventory, 1, 0, Gem("StartSupportGem"));
         Put(Flask, 0, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));

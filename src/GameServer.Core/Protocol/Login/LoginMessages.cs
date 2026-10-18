@@ -84,13 +84,15 @@ public sealed record Blob11(byte Kind, byte[] Data) : ILoginMessage
     internal static Blob11 Read(ushort id, ref LoginReader r) => new(r.U8(), r.Blob());
 }
 
-/// <summary>S→C 0x13 (vtable 0x1435dbae8, 0x14219b850/0x14219b8d0). When the flag is set the client posts to /api/tracking-conversions/.</summary>
-public sealed record Tracking13(ushort Value, bool Flag) : ILoginMessage
+/// <summary>S→C 0x13 (vtable 0x1435dbae8, 0x14219b850/0x14219b8d0): the answer to C→S 0x12 (create character). The
+/// create screen's listener (0x140cf8010 at +0xa10) treats 0 as done ("character_creation_done") and goes back to the
+/// character list. When the flag is set the client posts to /api/tracking-conversions/.</summary>
+public sealed record CreateCharacterResult(ushort Result, bool Tracking) : ILoginMessage
 {
     public const ushort Id = 0x13;
     public ushort MessageId => Id;
-    public void WriteFields(LoginWriter w) => w.U16(Value).Bool(Flag);
-    internal static Tracking13 Read(ushort id, ref LoginReader r) => new(r.U16(), r.Bool());
+    public void WriteFields(LoginWriter w) => w.U16(Result).Bool(Tracking);
+    internal static CreateCharacterResult Read(ushort id, ref LoginReader r) => new(r.U16(), r.Bool());
 }
 
 /// <summary>
@@ -136,61 +138,82 @@ public sealed record List15(IReadOnlyList<ListEntry15> Entries, byte B28, byte B
 }
 
 /// <summary>
-/// Element of S→C 0x1a / 0x1b (0xe8-byte struct, 0x1424ed0d0/0x1424ed2c0): five wide strings, three 8-byte fields and a
-/// u32 copied raw (little-endian), three bytes (the last one, struct +0xe2, has bit 0 counted by the client), two u8.
+/// A league: element of S→C 0x1a / 0x1b (0xe8-byte struct, read by 0x1424ed2c0, constructed by 0x1408befd0). Static
+/// analysis 2026-10-18 (Agents/docs/protocol/01-login.md §7):
+/// <list type="bullet">
+/// <item>Name (+0x10, view at +0x00): what C→S 0x12 sends back and what 0x15's league text is compared with.</item>
+/// <item>SsfParent (+0x60), HardcoreParent (+0x80), RuthlessParent (+0xa0): a variant names the league it is the SSF /
+/// Hardcore / Ruthless form of. The create screen (0x140ccc4a0) shows one card per main league and its Hardcore, Solo
+/// Self-Found and Ruthless check boxes switch to the variants found through these links (combinations chain: SSF
+/// Hardcore links SsfParent to the Hardcore league).</item>
+/// <item>Flags0 (+0xe0): bit 0 private (password box), bit 1 hardcore (confirmation, hardcore banner), bit 4 shown only
+/// while +0xc8 is in the future, bit 7 main league (gets a card). Flags1 (+0xe1): bit 1 variant (no card of its own),
+/// bit 5 hidden on some platforms, bit 6 ruthless (confirmation). Flags2 (+0xe2): bit 0 counted into login+0xe58.</item>
+/// <item>StartStateSet (+0xc0): CharacterStartStateSet row for new characters. C1 (+0xc1): 1 scrolls to the league's card.</item>
+/// </list>
+/// Description (+0x40, view +0x30): the card text, a ClientStrings-style key when it starts with '#'; empty crashes the
+/// client ("invalid string position", 0x140cc8820). The times (+0xd0, +0xd8, +0xc8, little-endian) are unconfirmed;
+/// RawC4 defaults to 0xd1.
 /// </summary>
-public sealed record CharacterEntry(string S0, string S1, string S2, string S3, string S4, ulong RawD0, ulong RawD8, ulong RawC8,
-    byte E0, byte E1, byte E2, byte C0, byte C1, uint RawC4)
+public sealed record LeagueEntry(string Name, string Description, string SsfParent, string HardcoreParent, string RuthlessParent,
+    ulong RawD0, ulong RawD8, ulong RawC8, byte Flags0, byte Flags1, byte Flags2, byte StartStateSet, byte C1, uint RawC4)
 {
+    public const byte Private = 0x01, Hardcore = 0x02, Timed = 0x10, Main = 0x80;
+    public const byte Variant = 0x02, PlatformHidden = 0x20, Ruthless = 0x40;
+
     internal void Write(LoginWriter w) =>
-        w.WStr(S0).WStr(S1).WStr(S2).WStr(S3).WStr(S4).RawU64(RawD0).RawU64(RawD8).RawU64(RawC8)
-         .U8(E0).U8(E1).U8(E2).U8(C0).U8(C1).RawU32(RawC4);
-    internal static CharacterEntry Read(ref LoginReader r) =>
+        w.WStr(Name).WStr(Description).WStr(SsfParent).WStr(HardcoreParent).WStr(RuthlessParent).RawU64(RawD0).RawU64(RawD8).RawU64(RawC8)
+         .U8(Flags0).U8(Flags1).U8(Flags2).U8(StartStateSet).U8(C1).RawU32(RawC4);
+    internal static LeagueEntry Read(ref LoginReader r) =>
         new(r.WStr(), r.WStr(), r.WStr(), r.WStr(), r.WStr(), r.RawU64(), r.RawU64(), r.RawU64(),
             r.U8(), r.U8(), r.U8(), r.U8(), r.U8(), r.RawU32());
 
-    internal static void WriteList(LoginWriter w, IReadOnlyList<CharacterEntry> list)
+    internal static void WriteList(LoginWriter w, IReadOnlyList<LeagueEntry> list)
     {
         w.U32((uint)list.Count);
         foreach (var e in list) e.Write(w);
     }
 
-    internal static List<CharacterEntry> ReadList(ref LoginReader r)
+    internal static List<LeagueEntry> ReadList(ref LoginReader r)
     {
         uint n = r.U32();
-        var list = new List<CharacterEntry>();
+        var list = new List<LeagueEntry>();
         for (uint i = 0; i < n && !r.Short; i++) list.Add(Read(ref r));
         return list;
     }
 }
 
-/// <summary>S→C 0x1a (vtable 0x1435db9e8, 0x14219b6d0/0x14219b740): u16 + entry list, passed to listeners at +0x810.</summary>
-public sealed record CharacterUpdate(ushort Value, IReadOnlyList<CharacterEntry> Entries) : ILoginMessage
+/// <summary>S→C 0x1a (vtable 0x1435db9e8, 0x14219b6d0/0x14219b740): result + the leagues with progress to migrate from,
+/// the answer to C→S 0x19 (listener 0x140d17170 at +0x810; a non-zero result shows a "League Migrations" error, an
+/// empty list "There are no available leagues to migrate progress from.").</summary>
+public sealed record LeaguesWithProgress(ushort Result, IReadOnlyList<LeagueEntry> Leagues) : ILoginMessage
 {
     public const ushort Id = 0x1a;
     public ushort MessageId => Id;
-    public void WriteFields(LoginWriter w) { w.U16(Value); CharacterEntry.WriteList(w, Entries); }
-    internal static CharacterUpdate Read(ushort id, ref LoginReader r) => new(r.U16(), CharacterEntry.ReadList(ref r));
+    public void WriteFields(LoginWriter w) { w.U16(Result); LeagueEntry.WriteList(w, Leagues); }
+    internal static LeaguesWithProgress Read(ushort id, ref LoginReader r) => new(r.U16(), LeagueEntry.ReadList(ref r));
 }
 
 /// <summary>
-/// S→C 0x1b (vtable 0x1435dba28, 0x14219bd20/0x14219bdb0): character list. ServerTime is a raw little-endian i64 (the
-/// client stores it minus _time64). Flags bit 0 → +0x30, bit 1 → +0x31 (append to the existing list instead of replacing).
+/// S→C 0x1b (vtable 0x1435dba28, 0x14219bd20/0x14219bdb0): the league list (login+0xe88), which the character screen
+/// copies (0x140d12590) and the create-character screen offers; with no leagues its Create button stays disabled
+/// (0x140cf97a0). ServerTime is a raw little-endian i64 (the client stores it minus _time64). Flags bit 0 → +0x30, bit 1
+/// → +0x31 (append to the existing list instead of replacing).
 /// </summary>
-public sealed record CharacterList(long ServerTime, IReadOnlyList<CharacterEntry> Entries, bool Flag0, bool Append) : ILoginMessage
+public sealed record LeagueList(long ServerTime, IReadOnlyList<LeagueEntry> Leagues, bool Flag0, bool Append) : ILoginMessage
 {
     public const ushort Id = 0x1b;
     public ushort MessageId => Id;
     public void WriteFields(LoginWriter w)
     {
         w.RawU64((ulong)ServerTime);
-        CharacterEntry.WriteList(w, Entries);
+        LeagueEntry.WriteList(w, Leagues);
         w.U8((byte)((Flag0 ? 1 : 0) | (Append ? 2 : 0)));
     }
-    internal static CharacterList Read(ushort id, ref LoginReader r)
+    internal static LeagueList Read(ushort id, ref LoginReader r)
     {
         long t = (long)r.RawU64();
-        var list = CharacterEntry.ReadList(ref r);
+        var list = LeagueEntry.ReadList(ref r);
         byte f = r.U8();
         return new(t, list, (f & 1) != 0, (f & 2) != 0);
     }
@@ -314,13 +337,16 @@ public sealed record U8U32(byte Realm, uint Value) : ILoginMessage
     internal static U8U32 Read(ushort id, ref LoginReader r) => new(r.U8(), r.U32());
 }
 
-/// <summary>C→S 0x12 (vtable 0x1435d8b10, 0x14213cb50/0x14213cc30, sender 0x142140490). Digest is SHA-256 of a UTF-16LE string, or zeros.</summary>
-public sealed record Request12(string S10, string S30, uint U50, uint U54, string S78, byte[] Digest) : ILoginMessage
+/// <summary>C→S 0x12 (vtable 0x1435d8b10, 0x14213cb50/0x14213cc30, sender 0x142140490, called by the create screen's
+/// 0x140cf5ef0): create a character. Name is the name box, League the chosen <see cref="LeagueEntry.Name"/>. The two
+/// u32 were 0 and S78 the chosen CharacterStartStates.dat Id ("DexDefault" for a Ranger, live 2026-10-18).
+/// PasswordDigest is SHA-256 of the UTF-16LE league password (private leagues), or zeros.</summary>
+public sealed record CreateCharacter(string Name, string League, uint U50, uint U54, string S78, byte[] PasswordDigest) : ILoginMessage
 {
     public const ushort Id = 0x12;
     public ushort MessageId => Id;
-    public void WriteFields(LoginWriter w) => w.WStr(S10).WStr(S30).U32(U50).U32(U54).WStr(S78).Fixed(Digest, 32);
-    internal static Request12 Read(ushort id, ref LoginReader r) => new(r.WStr(), r.WStr(), r.U32(), r.U32(), r.WStr(), r.Fixed(32));
+    public void WriteFields(LoginWriter w) => w.WStr(Name).WStr(League).U32(U50).U32(U54).WStr(S78).Fixed(PasswordDigest, 32);
+    internal static CreateCharacter Read(ushort id, ref LoginReader r) => new(r.WStr(), r.WStr(), r.U32(), r.U32(), r.WStr(), r.Fixed(32));
 }
 
 /// <summary>C→S 0x1c (sender 0x142140a80): two u16; the second defaults to the client's count at +0xe58.</summary>
@@ -374,8 +400,8 @@ public static class LoginCodec
     {
         [0x01] = ReadEmpty, [0x02] = ReadKeyExchange, [0x04] = LoginResult.Read,
         [0x0b] = U16Message.Read, [0x0d] = U16Message.Read, [0x0f] = U16Message.Read,
-        [0x11] = Blob11.Read, [0x13] = Tracking13.Read, [0x14] = InstanceInfo.Read, [0x15] = List15.Read,
-        [0x17] = U16Message.Read, [0x1a] = CharacterUpdate.Read, [0x1b] = CharacterList.Read, [0x1e] = U16Message.Read,
+        [0x11] = Blob11.Read, [0x13] = CreateCharacterResult.Read, [0x14] = InstanceInfo.Read, [0x15] = List15.Read,
+        [0x17] = U16Message.Read, [0x1a] = LeaguesWithProgress.Read, [0x1b] = LeagueList.Read, [0x1e] = U16Message.Read,
         [0x1f] = U32Message.Read, [0x20] = U32Message.Read,
         [0x24] = WStringMessage.Read, [0x25] = WStringMessage.Read, [0x26] = WStringMessage.Read,
         [0x28] = WStringMessage.Read, [0x29] = WStringMessage.Read,
@@ -389,7 +415,7 @@ public static class LoginCodec
     {
         [0x01] = ReadEmpty, [0x02] = ReadKeyExchange, [0x03] = AccountLogin.Read, [0x05] = TokenLogin.Read,
         [0x06] = TicketLogin.Read, [0x07] = TicketLogin.Read, [0x08] = U32Raw64.Read, [0x0a] = TwoDigests.Read,
-        [0x0c] = WStringU8Message.Read, [0x0e] = U8U32.Read, [0x12] = Request12.Read,
+        [0x0c] = WStringU8Message.Read, [0x0e] = U8U32.Read, [0x12] = CreateCharacter.Read,
         [0x18] = ReadEmpty, [0x19] = ReadEmpty, [0x1c] = TwoU16.Read, [0x21] = ReadEmpty, [0x22] = HexCode.Read,
         [0x23] = ReadEmpty, [0x2a] = WStringU8Message.Read, [0x2b] = WStringU8Message.Read, [0x2c] = EpicLogin.Read,
         [0x39] = ReadEmpty, [0x3a] = U8Message.Read, [0x3d] = TwoWStringsBool.Read,

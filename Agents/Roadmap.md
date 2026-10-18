@@ -85,10 +85,6 @@ Items are in rough priority order within each section. "Known" says what is alre
 - The player blob's stats component ([04](docs/protocol/04-player-entity.md), "Open") needs the pairs the client
   expects for a real character.
 
-### Classes other than the Witch
-- Characters of any class can be created, but every one appears as a Witch. The player object type and blob are built
-  for `Metadata/Characters/Int/Int`.
-
 ### Items: mods, rarity, using flasks and currency
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); every item is sent normal and
   identified with no mods. The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`,

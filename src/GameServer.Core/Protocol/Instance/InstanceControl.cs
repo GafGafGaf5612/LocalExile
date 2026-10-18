@@ -66,6 +66,11 @@ public sealed record ControlResponse
     public uint Ticket { get; init; }
     public bool IsTown { get; init; }
     public string? Character { get; init; }
+    /// <summary>The character's league and whether it is hardcore (the death screen offers only Exit).</summary>
+    public string? League { get; init; }
+    public bool Hardcore { get; init; }
+    /// <summary>The character's class: Characters.dat IntegerId (CharacterClass), the Witch (3) if unknown.</summary>
+    public int Class { get; init; } = 3;
     public List<ControlInstance>? Instances { get; init; }
 }
 
