@@ -27,6 +27,10 @@ static class TerrainHeights
         return v == Unknown ? null : v;
     }
 
+    /// <summary>The grid's size in cells, or null without a capture.</summary>
+    public static (int W, int H)? Size(string areaId, uint seed) =>
+        Loaded.GetOrAdd($"{areaId}_seed{seed}", Load) is { } g ? (g.W, g.H) : null;
+
     static Grid? Load(string stem)
     {
         string bin = Path.Combine(Folder, stem + ".heights.bin"), meta = Path.Combine(Folder, stem + ".heights.json");

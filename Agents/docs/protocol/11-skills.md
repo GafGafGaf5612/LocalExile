@@ -270,7 +270,14 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   height is i32 z / 7.8125 with f32 z, as the area transitions send it. S→C 0x1ba takes +height. Sending +height in the
   fixed height put the fireball under raised ground; with −height it flies above the ground at every level (belly
   height with the default 8 steps).
-- **Still wrong.** Without a height grid the fireball flies on the terrain, and it starts inside the caster. The
+- **Flight (live 2026-10-18).** S→C 0x1ba's float is the move's **duration in seconds**, not a speed: the handler
+  passes distance / it as the speed, and the step walker sets Positioned +0x23c = that speed and +0x240 = the time per
+  cell step (duration / the path's longest axis), advancing +0x244 by the frame time (`0x141e32710`). Sending the
+  speed (95.7) made each step take ~1 s, so the fireball crawled (~10 world units/s, sampled with Frida); sending
+  distance / speed it flies at ~1000 units/s. The fireball now starts `Game_PROJECTILE_AHEAD` cells (4) in front of the
+  caster and, cast at the ground, flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area); cast at a
+  monster it stops there and hits. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
+- **Still wrong.** Without a height grid the fireball flies on the terrain. The
   four floats of Positioned's f1 0x04 block (+0x2d8..+0x2e4, zero by default) are not the direction: (dx, dy, 0, 0) put
   it under the ground (`Game_PROJECTILE_DIRECTION=1` sends them).
 
