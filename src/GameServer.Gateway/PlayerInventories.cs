@@ -308,8 +308,14 @@ sealed class PlayerInventories
     private static readonly ConcurrentDictionary<string, int> ClassRows = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The character's class (Characters.dat row), for its start kit: set when it connects, before its items
-    /// are first used.</summary>
-    public static void SetClass(string character, int characterRow) => ClassRows[character] = characterRow;
+    /// are first used. Items kept in memory without a save file belonged to a deleted character of the same name (Auth
+    /// sets the save aside, and every character's items are saved as soon as they exist), so they are dropped.</summary>
+    public static void SetClass(string character, int characterRow)
+    {
+        ClassRows[character] = characterRow;
+        if (CharacterSaves.Load(character) is null && ByCharacter.TryRemove(character, out _))
+            Console.WriteLine($"[gateway] {character}: no save any more (deleted?), items start over");
+    }
 
     /// <summary>The character's items, created with the class's start kit on first use.</summary>
     public static PlayerInventories For(string character, ItemCatalog catalog, string folder = "data") =>

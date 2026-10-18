@@ -128,7 +128,7 @@ static async Task HandleConnection(TcpClient tcp, LoginServerKeys keys, AccountS
             // Anything the client sent after its 0x0002 is already ciphertext.
             var incoming = new LoginMessageStream(LoginDirection.ClientToServer);
             InstanceDirectory.LoginLink? link = null;
-            var session = new LoginServerSession(accounts) { Keyring = keyring, Leagues = LeagueCatalog.FromEnvironment(), Assign = s => directory.AssignStart(s, link!) };
+            var session = new LoginServerSession(accounts) { Keyring = keyring, Leagues = LeagueCatalog.FromEnvironment(), CharacterDeleted = SetSaveAside, Assign = s => directory.AssignStart(s, link!) };
             link = new InstanceDirectory.LoginLink(stream, ciphers, session, peer);
             byte[] rest = buf[used..have];
             try
@@ -185,6 +185,22 @@ static ILoginMessage Redact(ILoginMessage m) => m switch
     CreateCharacter r => r with { PasswordDigest = [] },
     _ => m,
 };
+
+// A deleted character's save (the Gateway's data/saves/<name>.json, same file-name rule as CharacterSaves) moves to
+// data/saves/deleted/<name>-<UTC time>.json, so a new character with that name starts with its class's kit and the old
+// one can still be recovered by hand.
+static void SetSaveAside(string character)
+{
+    string folder = Path.Combine("data", "saves");
+    string safe = string.Concat(character.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
+    string path = Path.Combine(folder, safe + ".json");
+    if (!File.Exists(path)) return;
+    string deleted = Path.Combine(folder, "deleted");
+    Directory.CreateDirectory(deleted);
+    string to = Path.Combine(deleted, $"{safe}-{DateTime.UtcNow:yyyyMMddHHmmss}.json");
+    File.Move(path, to);
+    Console.WriteLine($"[auth] {character} deleted; save moved to {to}");
+}
 
 static async Task Reply(InstanceDirectory.LoginLink link, List<ILoginMessage> received)
 {

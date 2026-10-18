@@ -137,6 +137,27 @@ public class LoginServerSessionTests
     }
 
     [Fact]
+    public void Delete_character_removes_it_and_lists_the_rest()
+    {
+        var accounts = new AccountService(new JsonAccountStore());
+        var acc = accounts.Register("fay", "pw1234").Value!;
+        accounts.CreateCharacter(acc.Id, "FayOne", CharacterClass.Witch);
+        accounts.CreateCharacter(acc.Id, "FayTwo", CharacterClass.Templar);
+        string? deleted = null;
+        var session = new LoginServerSession(accounts) { CharacterDeleted = n => deleted = n };
+        session.Handle(Request("fay", "pw1234"));
+
+        var replies = session.Handle(new WStringU8Message(LoginServerSession.DeleteCharacterId, "fayone", 0));
+        Assert.Equal("FayTwo", Assert.Single(Assert.IsType<List15>(replies[0]).Entries).Name);
+        Assert.Equal(new U16Message(LoginServerSession.DeleteCharacterResultId, 0), replies[1]);
+        Assert.Equal("FayOne", deleted);
+        Assert.Equal("FayTwo", Assert.Single(accounts.Characters(acc.Id)).Name);
+
+        var missing = Assert.IsType<U16Message>(Assert.Single(session.Handle(new WStringU8Message(LoginServerSession.DeleteCharacterId, "Nobody", 0))));
+        Assert.Equal(LoginServerSession.ResultCharacterDoesNotExist, missing.Value);
+    }
+
+    [Fact]
     public void Nothing_but_login_is_answered_before_logging_in()
     {
         var session = new LoginServerSession(new AccountService(new JsonAccountStore()));

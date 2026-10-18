@@ -80,6 +80,8 @@ C#: `LoginWire.cs` (`LoginWriter`, `LoginReader`), `LoginMessages.cs` (records +
 | S→C | 0x1b | raw64 server time, vec32⟨LeagueEntry⟩, u8 flags | push after login: **the league list** (§7). The client then moves to the character screen |
 | C→S | 0x12 | wstr name, wstr league, u32, u32, wstr start state, bytes[32] | **create character** (§7) |
 | S→C | 0x13 | u16 result, bool | create-character result (§7) |
+| C→S | 0x0c | wstr name, u8 (0 live) | **delete character**, sent after the delete screen's confirmation (`0x140cfafa0`) |
+| S→C | 0x0d | u16 result | delete result: 0 closes the delete screen back to the list (`0x140cfb5f0`, listener +0xa90); non-zero shows the BackendErrors text |
 | C→S | 0x19 | — | "leagues with progress" (migration), answered with S→C 0x1a |
 | C→S | 0x18 | — | character screen opened (`0x140d13060`) |
 | S→C | 0x15 | vec8⟨Entry15⟩, u8, u8, blob | character list shown on the character screen (`0x140d12590`) |
@@ -183,10 +185,17 @@ short, 24 too long, 25 invalid class, 26 no such league, 49 no slots). On 0 the 
 new character up by name in the character list and sends **Play (0x0e) with its index**, so the server sends the new
 0x15 **before** 0x13. Sent after it, the client stayed on "Contacting Server...".
 
+**Delete (C→S 0x0c)**: the server removes the character (name matched case-insensitively) and answers with the new
+0x15 list, then 0x0d result 0; an unknown name gets 0x0d 16 (BackendErrors row 15 + 1, CharacterDoesNotExist). Auth
+moves the character's save (`data/saves/<name>.json`) to `data/saves/deleted/<name>-<UTC time>.json`, so a new character
+with the same name starts with its class's kit, and the Gateway drops items it still holds in memory for a name that
+has no save any more.
+
 **S→C 0x1a** (u16 result, vec32⟨LeagueEntry⟩) answers C→S 0x19, the "leagues with progress" (migration) list
 (listener 0x140d17170).
 
-**In game.** Auth gives the Gateway the character's league, hardcore flag and class (`ControlResponse`). The league is
+**In game.** Auth gives the Gateway the character's league, hardcore flag, class and level (`ControlResponse`); `/set_level`
+changes the level through the control op `set_level` ([10](10-chat-and-commands.md)). The league is
 the wide string of instance 0x1d (instance +0xc3b8), which the map overlay (0x1406b2030) shows under the area name as
 "{0} League" (ClientStrings 0xb6). Hardcore leagues get the Exit-only death screen. The class selects the player's
 Characters.dat row: object type (the row's Id), model (AOFile), class byte (IntegerId), attributes, unarmed attack and

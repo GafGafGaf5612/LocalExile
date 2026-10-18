@@ -38,6 +38,8 @@ public sealed class LoginServerSession(AccountService accounts)
         // ("Contacting Server...") for the instance assignment 0x14.
         U8U32 m => EnterGame(m),
         CreateCharacter m => Create(m),
+        // Delete on the character screen, after its confirmation (0x140cfafa0): the character's name and a byte (0 live).
+        WStringU8Message { MessageId: DeleteCharacterId } m => Delete(m.Text),
         // "Leagues with progress" (0x140d166a0): the leagues a character could migrate progress from. None here; the
         // client then shows "There are no available leagues to migrate progress from."
         EmptyMessage { MessageId: 0x19 } => Session is null ? [] : [new LeaguesWithProgress(0, [])],
@@ -124,6 +126,29 @@ public sealed class LoginServerSession(AccountService accounts)
     /// (login+0xe81 → character screen +0x281): its Create Character button is enabled only while the account has fewer
     /// characters than that (0x140d17cc0; 0 kept it greyed out, live 2026-10-18).</summary>
     private List15 CharacterList() => new(CharacterEntries(), 0, (byte)Math.Clamp(accounts.MaxCharacters, 0, 255), []);
+
+    /// <summary>C→S 0x0c: delete a character; answered with S→C 0x0d (u16 result).</summary>
+    public const ushort DeleteCharacterId = 0x0c, DeleteCharacterResultId = 0x0d;
+
+    /// <summary>BackendErrors row 15 + 1 ("CharacterDoesNotExist"); the delete screen shows any non-zero code's text.</summary>
+    public const ushort ResultCharacterDoesNotExist = 16;
+
+    /// <summary>Called with the deleted character's name (GameServer.Auth: sets its save aside).</summary>
+    public Action<string>? CharacterDeleted { get; init; }
+
+    /// <summary>
+    /// Delete character (0x0c) → the new character list (0x15), then 0x0d result 0, on which the delete screen
+    /// (0x140cfb5f0, listener at +0xa90) closes back to the list; non-zero shows the BackendErrors text.
+    /// </summary>
+    private ILoginMessage[] Delete(string name)
+    {
+        if (Session is null) return [];
+        var c = accounts.Characters(Session.AccountId).FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (c is null || !accounts.DeleteCharacter(Session.AccountId, c.Id).Ok)
+            return [new U16Message(DeleteCharacterResultId, ResultCharacterDoesNotExist)];
+        CharacterDeleted?.Invoke(c.Name);
+        return [CharacterList(), new U16Message(DeleteCharacterResultId, ResultOk)];
+    }
 
     /// <summary>0x13 result codes: BackendErrors rows + 1, as for 0x04.</summary>
     public const ushort ResultCharacterNameTaken = 21, ResultCharacterNameInvalid = 22, ResultCharacterNameTooShort = 23,

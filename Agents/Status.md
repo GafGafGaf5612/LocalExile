@@ -28,6 +28,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Saving characters: items, equipment, sockets and the skill bar per character in `data/saves/`; the bar is restored with S→C 0x53 after login and area changes (binds are C→S 0x4e) | `CharacterSaves.cs`, `PlayerInventories.cs`, Gateway | [11](docs/protocol/11-skills.md) §11, [13](docs/protocol/13-items.md) §7 |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 | Leagues and character creation: Standard and Allflame with their Hardcore / SSF / Ruthless variants on the create screen (S→C 0x1b), 24 character slots, any class in any league (C→S 0x12 → 0x15, 0x13), straight into the game; the league under the area name in game (0x1d); the hardcore death screen from the character's league; `Game_LEAGUES` | `LeagueCatalog.cs`, `LoginServerSession.cs`, Auth, Gateway | [01](docs/protocol/01-login.md) §7 |
+| Character deletion on the character screen (C→S 0x0c → new list 0x15 + result 0x0d); the save is set aside in `data/saves/deleted/` | `LoginServerSession`, Auth | [01](docs/protocol/01-login.md) §5 |
 | Every class in game: the Characters.dat row's object type and model, class byte, attributes, unarmed attack and start kit (weapon, gems, sockets in the gems' colours); verified with a Templar | Gateway (`SkillCatalog.cs`, `PlayerInventories.cs`) | [01](docs/protocol/01-login.md) §7, [04](docs/protocol/04-player-entity.md) |
 | Exit to character selection: Esc → "Exit to Character Selection" and the hardcore death screen's Exit (C→S 0x153); the Gateway closes the instance connection and the client returns to the character list on the same login connection; Play enters again | Gateway | [09](docs/protocol/09-area-change.md) §6 |
 
@@ -61,7 +62,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   AreaTransition. Quests are not implemented.
 - Item mods, rarity, flask and currency use; support gems and links; gem levels; ground items are per connection
   ([13](docs/protocol/13-items.md) "Open").
-- Levelling (the character list's level is not used in game), character deletion, saving the character's area, position or progress. Ruthless and SSF change nothing in game; towns are shared across leagues.
+- Levelling from experience (monsters give none; only `/set_level` changes the level), saving the character's area, position or progress. Ruthless and SSF change nothing in game; towns are shared across leagues.
 - `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
