@@ -424,13 +424,19 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     // Live 2026-10-18 it put the fireball under the ground, so it is off by default: the four floats are not a direction.
     var direction = Environment.GetEnvironmentVariable("Game_PROJECTILE_DIRECTION") != "1" ? ((float, float, float, float)?)null
         : ((float)(dx / cells), (float)(dy / cells), 0f, 0f);
-    var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Direction: direction);
+    // Hand height: the terrain's height at both ends (scripts/walkmaps capture) plus Game_PROJECTILE_HEIGHT steps of
+    // 7.8125 world units (default 8, ~60 units). Without a capture the projectile follows the terrain.
+    int up = int.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HEIGHT"), out int u) ? u : 8;
+    int? startHeight = TerrainHeights.At(conn.Layout.Id, conn.Seed, from.X, from.Y) is int t0 ? t0 + up : null;
+    int? endHeight = TerrainHeights.At(conn.Layout.Id, conn.Seed, to.X, to.Y) is int t1 ? t1 + up : startHeight;
+    if (startHeight is null) TerrainHeights.Forget(conn.Layout.Id, conn.Seed);
+    var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Direction: direction, Height: startHeight);
     uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()),
         $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 projectile 0x{id:x} enters wake zone");
-    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, cellsPerSecond, u28: TerrainHeight),
-        $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s");
+    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, cellsPerSecond, u28: endHeight is int e ? (uint)e : TerrainHeight),
+        $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight?.ToString() ?? "terrain"} → {endHeight?.ToString() ?? "terrain"}");
     await Task.Delay(TimeSpan.FromSeconds(cells / cellsPerSecond));
     if (conn.Closed) return;
     SpawnedMonster? m = null;

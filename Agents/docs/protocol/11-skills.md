@@ -232,7 +232,25 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   `trace-move.js`: facing (+15, −18) read 0.668).
 - **Hit.** When the projectile arrives the server lowers the targeted monster's life by the skill's fire damage
   (0x1b1) and removes the object (0x2bb). No collision on the way, no explosion, no damage on ground casts.
-- **Still wrong.** The fireball flies at terrain height and its model points down rather than along the flight. The
+- **Tilt.** `Metadata/Projectiles/Projectile.ot` gives the client's Render `tilt_to_target` and
+  `maintain_tilt_after_movement` (type data +0x76, +0x77; parser `0x1415ef5e0`). Render (`0x1415f53c0`) pitches the
+  model by −`0x141e35c00`(Positioned, maintain): atan(dz / distance) of the current move, or, when not moving and
+  maintained, the angle at Positioned +0x2a0 (f1 0x10 in the blob; the client set it to π/2 on our fireball). Traced live:
+  the tilt is 0 during the flight, and the yaw (1.497 to the east, 4.617 to the west) follows the flight on screen.
+- **Height.** Heights are absolute, in steps of 7.8125 world units. The client's terrain height of a cell is
+  `0x141d84b00`(terrain, int cell[2]): terrain +0x18 / +0x20 = size in tiles of 23 cells, +0x28 = 0x38-byte tile
+  entries (tile data pointer, +0x36 rotation code, +0x30 i16 height offset), result = the tile's height at the
+  tile-local cell (`0x141d7d100`) + terrain +0x104 × the tile's offset; `0x141e35800` interpolates four cells. With a
+  height grid (`TerrainHeights`, data/walkability/<area>_seed<seed>.heights.bin, int16 per cell, −32768 = unknown) the
+  Gateway sends the projectile at terrain + `Game_PROJECTILE_HEIGHT` steps (default 8) in Positioned's f0 0x04 fixed
+  height and in 0x1ba. Only Lioneye's Watch has a grid (−48..72), where skills cannot be used.
+- **Capturing heights from the client failed** (2026-10-18, four client crashes or hangs, so the walk-map recorder does
+  not do it): dumping every cell from Frida's thread at the first lookup worked in town but crashed on The Coast (the
+  terrain was still being built); a native listener on `0x141d84b00` that called the hooked function crashed at login;
+  delayed dumps hit unreadable tiles (access violations; the lookup is called with several terrain pointers) and hung
+  the client. Next: compute the heights offline from the tile files the atlas already reads (the .tdt heights and each
+  placed tile's height offset).
+- **Still wrong.** The fireball flies at terrain height where there is no height grid; a real one flies higher. The
   four floats of Positioned's f1 0x04 block (+0x2d8..+0x2e4, zero by default) are not the direction: (dx, dy, 0, 0) put
   it under the ground (`Game_PROJECTILE_DIRECTION=1` sends them).
 

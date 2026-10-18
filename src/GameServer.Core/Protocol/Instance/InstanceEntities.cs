@@ -381,18 +381,22 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 /// <para><see cref="Direction"/>, when set, goes in Positioned's f1 0x04 block (4 × f32 → +0x2d8..+0x2e4, zero by default:
 /// the writer 0x141e2fdc0 sets the flag only when +0x2d8 or +0x2dc is non-zero). Not the flight direction: (dx, dy, 0, 0)
 /// put the fireball under the ground (live 2026-10-18); without the block its model points down.</para>
+/// <para><see cref="Height"/>, when set, is Positioned's fixed height (f0 0x04: i32 +0x290 in steps of 7.8125, f32 +0x2b4 the
+/// world z = height × 7.8125, as the area transitions send it): the projectile starts there instead of on the terrain.</para>
 /// </summary>
 public sealed record ProjectileObject(string TypePath, int GridX, int GridY, float Rotation = 0, ushort Team = 0,
-    (float X, float Y, float Z, float W)? Direction = null)
+    (float X, float Y, float Z, float W)? Direction = null, int? Height = null)
 {
     public byte[] Blob()
     {
         var w = new BlobWriter();
         w.U8(0).U8(0);                                                              // object flags, base data entry count
-        // Positioned: x, y, rotation, team, f0, f1 (0x02 visibility, 0x04 the four floats), then the f1 0x04 block (it is
-        // read before f0 0x04 / 0x40, f1 0x01 and f1 0x02), then visibility: shown (as monsters).
-        w.I32(GridX).I32(GridY).F32(Rotation).U16(Team).U8(0).U8((byte)(Direction is null ? 0x02 : 0x06));
+        // Positioned: x, y, rotation, team, f0 (0x04 fixed height), f1 (0x02 visibility, 0x04 the four floats), then the
+        // f1 0x04 block, the f0 0x04 height (read in that order, before f0 0x40, f1 0x01 and f1 0x02), then visibility:
+        // shown (as monsters).
+        w.I32(GridX).I32(GridY).F32(Rotation).U16(Team).U8((byte)(Height is null ? 0 : 0x04)).U8((byte)(Direction is null ? 0x02 : 0x06));
         if (Direction is { } d) w.F32(d.X).F32(d.Y).F32(d.Z).F32(d.W);
+        if (Height is int h) w.I32(h).F32(h * 7.8125f);
         w.U8(0).U8(1);
         w.U8(0);                                                                    // Animated: the type's own
         w.U8(0);                                                                    // tasks
