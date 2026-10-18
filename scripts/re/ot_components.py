@@ -1,4 +1,5 @@
 # usage: ot_components.py [--check] [--all] [--md <out.md>] [--json <out.json>] [Metadata/Type ...]
+#        ot_components.py --items --json data/item-types.json   (every BaseItemTypes row from the .it files)
 #
 # Merged component list per object type, as the client builds it from the .ot/.otc files:
 #   1. the object-type constructor 0x141ec1360 creates "Positioned" first, for every type, before it loads the file
@@ -177,9 +178,9 @@ def chain(type_path, files, seen=None):
     return out + [(type_path, f)]
 
 
-def merge(type_path, files, otc):
+def merge(type_path, files, otc, first=("Positioned",)):
     ch = chain(type_path, files)
-    comps = ["Positioned"]
+    comps = list(first)
     for _, f in ch:
         for s in (f or {}).get("sections", []):
             if s not in comps:
@@ -214,18 +215,18 @@ def merge(type_path, files, otc):
                                "no_serialise": str(trans.get("no_serialise", "false")).lower() == "true"}}
 
 
-def load(types):
+def load(types, ext=".ot", companion=".otc"):
     """Parse every type and its extends chain (fetching as needed)."""
     files, otc, frontier = {}, {}, list(types)
     while frontier:
-        fetch([p + ".ot" for p in frontier] + [p + ".otc" for p in frontier])
+        fetch([p + ext for p in frontier] + ([p + companion for p in frontier] if companion else []))
         nxt = []
         for p in frontier:
-            t = read_text(p + ".ot")
+            t = read_text(p + ext)
             if t is None:
                 continue
             files[p] = parse(t)
-            c = read_text(p + ".otc")
+            c = read_text(p + companion) if companion else None
             if c is not None:
                 pc = parse(c)
                 otc[p] = pc["sections"] + pc["client"]
@@ -264,6 +265,38 @@ def all_types():
             if "." not in s.rsplit("/", 1)[-1] and not s.startswith("Metadata/Items/"):
                 paths.add(s)
     return sorted(paths)
+
+
+def item_types():
+    """BaseItemTypes rows -> {Id: InheritsFrom}. Item types are not object types: the client's
+    Metadata/ItemTypeRegister files each BaseItemTypes row under its HASH32 (MurmurHash2 of the Id, the same hash as
+    object types; FUN_1421ec390 looks it up) and builds it from the .it chain. Most leaf rows have no .it file of their
+    own: their chain is InheritsFrom's."""
+    rows = json.load(open(os.path.join(ROOT, "data", "tables", "BaseItemTypes.json"), encoding="utf-8"))
+    return {r["Id"]: r.get("InheritsFrom") or "nothing" for r in rows}
+
+
+def merge_items():
+    """Component lists of every BaseItemTypes row from the .it files. Unlike object types nothing comes first (the item
+    reader FUN_1421ec390 calls slot 5 (+0x28) on the type's first type+0x80 components; no Positioned for items), and
+    the "client" blocks (RenderItem) are never read. Verified live for Wand1, the flasks and the glyphs (05 §6)."""
+    rows = item_types()
+    files, _ = load(sorted(set(rows) | {v for v in rows.values() if v != "nothing"}), ext=".it", companion=None)
+    out = {}
+    for tid, parent in rows.items():
+        if tid in files:
+            r = merge(tid, files, {}, first=())
+        elif parent in files:
+            r = merge(parent, files, {}, first=())
+            r["chain"].append(tid)
+            r["abstract"] = False
+        else:
+            continue
+        r["type"] = tid
+        for k in ("shared_states", "shared_timers", "transitionable"):
+            r.pop(k, None)
+        out[tid] = r
+    return out
 
 
 def registry():
@@ -374,8 +407,18 @@ def main():
             i = a.index(f); v = a[i + 1]; del a[i:i + 2]; return v
         return None
 
-    do_check, do_all = flag("--check"), flag("--all")
+    do_check, do_all, do_items = flag("--check"), flag("--all"), flag("--items")
     md_out, json_out = popopt("--md"), popopt("--json")
+    if do_items:
+        results = merge_items()
+        for t in a:
+            r = results.get(t)
+            print(f"{t}: no .it chain" if not r else f"{t}  chain={' > '.join(r['chain'])}\n  " + ", ".join(r["components"][:r["read"]]))
+        if json_out:
+            json.dump({"generator": "scripts/re/ot_components.py --items", "types": [results[t] for t in sorted(results)]},
+                      open(json_out, "w"), indent=0)
+            print(f"{len(results)} item types -> {json_out}", file=sys.stderr)
+        return
     types = list(a)
     if do_check or md_out:
         types += list(GROUND_TRUTH) + DOC_TYPES

@@ -75,6 +75,16 @@ Success: the summary ends with `schema mismatch: 0`, and `data\tables\` holds ab
 (git-ignored: they are game data), with the full report in `data\extract-report.json`. Code that needs game data (stats, levels, areas) reads these
 files; `ot_components.py --all` reads them too. `--out <dir>` writes elsewhere, and `--schema <file>` uses another schema.
 
+Then the component lists the Gateway needs for monsters and items (a few minutes the first time; both files are game
+data and git-ignored):
+
+```powershell
+python -I scripts/re/ot_components.py --all --json data/object-types.json
+python -I scripts/re/ot_components.py --items --json data/item-types.json
+```
+
+Without `data/item-types.json` characters start with no items and `/item` answers that the file is missing.
+
 For an AI agent, register REA as an MCP server in `.mcp.json` at the repository root (git-ignored, because the paths are
 specific to your PC):
 

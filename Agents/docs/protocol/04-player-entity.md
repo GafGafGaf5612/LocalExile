@@ -177,7 +177,7 @@ u32. With 0 nothing else is read.
 | Field | Offset | Notes |
 |---|---|---|
 | u32 n + n × UTF-16 | +0x168 | **name** (`0x140e28d60`) |
-| u8 | → `+0x158` of the player data | **class**: Characters.dat row (Witch = 1), bit5 and bits 6–7 ascendancy. Changing it fires `0x141e473f0` |
+| u8 | → `+0x158` of the player data | **class**: Characters.dat **IntegerId** (Marauder 1, Witch 3; the row put the panel on Marauder, [13](13-items.md) §6), bit5 and bits 6–7 ascendancy. Changing it fires `0x141e473f0` |
 | u32 | +0x18c | **experience** (`0x141e7f6b0`). The level `+0x1ac` is derived from it (`0x142426710`) |
 | u32 | +0x188 | |
 | u16 | +0x1a8 | |

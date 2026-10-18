@@ -23,6 +23,10 @@ public static class InstanceTransfer
     /// <summary>0x24 flag bit set when Ctrl is held (seen as 0x040c vs 0x0408 on area transition clicks).</summary>
     public const ushort CtrlFlag = 0x0004;
 
+    /// <summary>0x24 flag bit set while the inventory panel is open (0x040a vs 0x0408 on ground item clicks, live
+    /// 2026-10-18): the picked-up item goes to the cursor instead of the inventory.</summary>
+    public const ushort InventoryOpenFlag = 0x0002;
+
     /// <summary>
     /// C→S 0x24 (12 bytes, 0x25's sibling aimed at an object): u32 target object id, u16 skill id (0x0266 = interact,
     /// seen on area transitions), u16 sequence, u16 flags (0x0408; | 0x0004 with Ctrl).

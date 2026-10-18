@@ -124,6 +124,7 @@ Workflow per run:
 | `trace-queued-check.js` | why the runner 0x141e8e060 drops a queued action |
 | `dump-stats-object.js` | the stored (key, value) pairs of every stats object asked for one key (set `KEY`) |
 | `find-string-refs.js` | standalone: finds a UTF-16 string (`NEEDLE`) in the client's writable memory, then the pointers to each hit. Asynchronous and slow (minutes over ~6 GB); found the tile objects' virtual `.ao` names. Wait for `done` before closing the session: closing waits for running scans, and a synchronous `scanSync` over all memory hung the session and lost the client |
+| `trace-items.js` | every item the client reads (type hash, bytes), each item component's read and the bytes it consumed, and 0xc0 inventory reads ([../protocol/13-items.md](../protocol/13-items.md)) |
 | `trace-enter-area.js` | milestones (SetLocalPlayerId, EnterArea, WorldActivate, CreateObject, UI `0x140785160`), inventory registrations, passive slot creation and **inventory lookups that return null** (with the row and caller) |
 
 Notes:
@@ -156,7 +157,7 @@ call. There is no `cdb`/WinDbg installed.
 |---|---|---|
 | Component registry | `bash scripts/re/ghidra/g.sh ComponentRegistry.java 'C:\…\Agents\docs\re\components.json'` (40 s) | [components.json](components.json): every `0x140e33c20` registration → pool → users (factory) → every vtable they install, subclasses, slot 17/20, a `primary` flag (factory's own vtable and its subclasses) |
 | Registry doc + Frida tables | `python -I scripts/re/gen_components.py` | [components.md](components.md), the `VT`/`DESER` tables in `frida/check-components.js` |
-| Component order per type | `python -I scripts/re/ot_components.py --check --md Agents/docs/re/object-types.md` (any `Metadata/…` paths print their list; `--all --json <file>` does every type in the dat tables) | [object-types.md](object-types.md). `--check` compares with the two traced objects and exits 1 on a mismatch |
+| Component order per type | `python -I scripts/re/ot_components.py --check --md Agents/docs/re/object-types.md` (any `Metadata/…` paths print their list; `--all --json <file>` does every type in the dat tables; `--items --json data/item-types.json` does every BaseItemTypes row from the `.it` files) | [object-types.md](object-types.md). `--check` compares with the two traced objects and exits 1 on a mismatch |
 | Read sequences | `bash scripts/re/ghidra/g.sh ReadSchema.java 'C:\…\Tools\re\out\readschema.json' 'C:\…\Agents\docs\re\components.json'` (about 10 min), then `python -I scripts/re/schema_md.py` | [../protocol/schema.md](../protocol/schema.md): every primary deserializer and every message class of the instance and world factories, validated against the traced byte counts (exit 1 on a mismatch) |
 | Live check | `common.js` + `frida/check-components.js` (section 4) | bytes per component of every object the server sends |
 

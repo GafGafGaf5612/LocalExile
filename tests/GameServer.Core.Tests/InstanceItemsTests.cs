@@ -1,0 +1,134 @@
+using GameServer.Core.Protocol.Instance;
+
+namespace GameServer.Core.Tests;
+
+public class InstanceItemsTests
+{
+    static readonly string[] Wand = ["Base", "LocalStats", "Mods", "AttributeRequirements", "Weapon", "Quality", "Sockets"];
+    static readonly string[] Flask = ["Base", "Quality", "LocalStats", "Charges", "Mods", "Usable", "Flask"];
+
+    [Fact]
+    public void Item_type_hash_is_the_BaseItemTypes_HASH32()
+    {
+        // BaseItemTypes.HASH32 of Metadata/Items/Weapons/OneHandWeapons/Wands/Wand1 (3.29.3b) is 3652280879.
+        Assert.Equal(3652280879u, InstanceEntities.ObjectTypeHash("Metadata/Items/Weapons/OneHandWeapons/Wands/Wand1"));
+    }
+
+    [Fact]
+    public void Wand_payload_layout()
+    {
+        var wand = new Item(0xd9b1a12f, Wand, 0x40a1);
+        Assert.Equal(
+            "2FA1B1D9" + "0000" +                   // type hash (LE), item flags
+            "A140" + "00" + "00" + "0000" + "00" +  // Base: visual identity HASH16, u8, u8 flags, u16 flags, u8
+            "01" + "00" + "0000" + "0800" + "00" + "00" + "00" + // Mods: item level, u8, flags, magic props (identified, normal), u8, u8
+            "00" +                                   // Quality
+            "00",                                    // Sockets: none
+            Convert.ToHexString(wand.Payload()));
+        Assert.Equal("0018" + Convert.ToHexString(wand.Payload()), Convert.ToHexString(wand.Wire()));
+    }
+
+    [Fact]
+    public void Flask_writes_charges_as_a_signed_compact_int()
+    {
+        var flask = new Item(1, Flask, 2) { Charges = 21 };
+        byte[] p = flask.Payload();
+        // Base (7) then Quality (1), then Charges.
+        Assert.Equal(0x15, p[6 + 7 + 1]);
+        Assert.Equal(6 + 7 + 1 + 1 + 9, p.Length);
+    }
+
+    [Fact]
+    public void Sockets_carry_colours_links_and_gems()
+    {
+        var gem = new Item(7, ["Base", "SkillGem", "Quality"], 3);
+        var wand = new Item(1, ["Sockets"], 0) { Sockets = [new(SocketColour.Blue, gem), new(SocketColour.Red)] };
+        Assert.Equal("01000000" + "0000" + "48" + "07" + Convert.ToHexString(gem.Payload()) + "02" + "01" + "01",
+            Convert.ToHexString(wand.Payload()));
+    }
+
+    [Fact]
+    public void Unsupported_components_are_refused()
+    {
+        Assert.False(Item.CanSerialize(["Base", "Map"]));
+        Assert.Throws<ArgumentException>(() => new Item(1, ["Map"], 0).Payload());
+    }
+
+    [Fact]
+    public void Add_inventory_with_items()
+    {
+        var item = new Item(1, ["Base"], 2);
+        var bytes = InstanceInventories.AddInventory(3, InstanceInventories.PlayerDefaults[2], items: [new InventoryItem(9, 0, 1, item)]);
+        Assert.Equal("00C0" + "00" + "00000003" + "02" + "02" + "02" + "04" + "03" + "01" +
+                     "00000009" + "00" + "01" + Convert.ToHexString(item.Wire()) + "00" + "00", Convert.ToHexString(bytes));
+    }
+
+    [Fact]
+    public void Equipment_and_cursor_are_single_item_inventories()
+    {
+        Assert.True(InstanceInventories.PlayerDefaults[2].SingleItem);    // Weapon1
+        Assert.True(InstanceInventories.PlayerDefaults[12].SingleItem);   // Cursor1
+        Assert.False(InstanceInventories.PlayerDefaults[0].SingleItem);   // MainInventory1
+        Assert.False(InstanceInventories.PlayerDefaults[11].SingleItem);  // Flask1
+    }
+
+    [Fact]
+    public void Inventory_change_layout()
+    {
+        var item = new Item(1, ["Base"], 2);
+        Assert.Equal("00BF" + "00" + "0000000D" + "00000002" + "00000001" + "00000007" + "00000001" + "00000008" + "00" + "00" +
+                     Convert.ToHexString(item.Wire()) + "00",
+            Convert.ToHexString(InstanceItems.InventoryChange(13, 2, [7], [new InventoryItem(8, 0, 0, item)])));
+    }
+
+    [Fact]
+    public void Pick_up_masks_the_side_channel_bits()
+    {
+        // Captured 2026-10-18: a click on item 2 in the main inventory (id 1).
+        var p = InstanceItems.ReadPickUpItem(Convert.FromHexString("00283D0000010000000203B85A"));
+        Assert.Equal((1u, 2u, (byte)3), (p.InventoryId, p.ItemId, p.A));
+        Assert.Equal(13, InstanceProtocol.KnownClientLength(InstanceItems.PickUpItemId));
+    }
+
+    [Fact]
+    public void Place_item_layout()
+    {
+        // Captured 2026-10-18: the held item put into the main inventory (id 1) at (8, 2).
+        var p = InstanceItems.ReadPlaceItem(Convert.FromHexString("002A0000000100000008000000020003001F"));
+        Assert.Equal((1u, 8u, 2u, (byte)3), (p.InventoryId, p.X, p.Y, p.B));
+        Assert.Equal(18, InstanceProtocol.KnownClientLength(InstanceItems.PlaceItemId));
+    }
+
+    [Fact]
+    public void Socket_gem_layout()
+    {
+        // Captured 2026-10-18: the held gem into socket 1 of item 1 in Weapon1 (inventory 3).
+        var s = InstanceItems.ReadSocketGem(Convert.FromHexString("003000000003000000010000000188A7"));
+        Assert.Equal(new InstanceItems.SocketGem(3, 1, 1), s);
+        Assert.Equal(16, InstanceProtocol.KnownClientLength(InstanceItems.SocketGemId));
+    }
+
+    [Fact]
+    public void Command_framing_and_destroy()
+    {
+        // The town popup's Destroy: command 9 (Commands.dat DestroyCursorItem), no argument.
+        byte[] m = Convert.FromHexString("0016090000");
+        Assert.Equal(5, InstanceItems.CommandLength(m));
+        Assert.Equal(new InstanceItems.Command(9, ""), InstanceItems.ReadCommand(m));
+        Assert.Equal(8, InstanceItems.CommandLength(Convert.FromHexString("001601000361")));
+        var split = InstanceProtocol.SplitClientMessages(Convert.FromHexString("00160900000029"), out _, out var unknown);
+        Assert.Equal([(ushort)0x16, (ushort)0x29], split.Select(s => s.Id));
+        Assert.Empty(unknown);
+    }
+
+    [Fact]
+    public void Visible_item_and_world_item_layouts()
+    {
+        var w = new BlobWriter();
+        new VisibleItem(0, 0x40a1, 2).Write(w);
+        Assert.Equal("00" + "01" + "A140" + "00000000" + "00" + "0000" + "00000000" + "00" + "02" + "A140" + "00", Convert.ToHexString(w.ToArray()));
+        var item = new Item(1, ["Base"], 2);
+        Assert.Equal("0000" + "0A000000" + "14000000" + "00000000" + "0000" + "00" + "00" + "00" + "00000000" + "00" + "00000000" +
+                     Convert.ToHexString(item.Payload()) + "00" + "00", Convert.ToHexString(new WorldItemObject(10, 20, item).Blob()));
+    }
+}

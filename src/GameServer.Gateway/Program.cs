@@ -168,6 +168,24 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             // In the background: the player may first walk to the target, and the read loop must keep answering ticks.
             _ = OnUseObject(remote, stream, ciphers, conn, use);
         }
+        else if (id == InstanceItems.DropItemId)
+            await DropItem(remote, stream, ciphers, conn);
+        else if (id == InstanceItems.CommandId)
+        {
+            var command = InstanceItems.ReadCommand(bytes);
+            if (command.Id == InstanceItems.DestroyCursorItemCommand) await DestroyHeldItem(remote, stream, ciphers, conn);
+            else Console.WriteLine($"[gateway] {remote} <= 0x0016 command {command} (not handled)");
+        }
+        else if (id == InstanceItems.UnsocketGemId)
+            await UnsocketGem(remote, stream, ciphers, conn, InstanceItems.ReadUnsocketGem(bytes));
+        else if (id == InstanceItems.SocketGemId)
+            await SocketGem(remote, stream, ciphers, conn, InstanceItems.ReadSocketGem(bytes));
+        else if (id == InstanceItems.PlaceItemId)
+            await PlaceItem(remote, stream, ciphers, conn, InstanceItems.ReadPlaceItem(bytes));
+        else if (id is InstanceItems.InventoryRequestId or InstanceItems.ItemActionId)
+            Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (item message, not handled yet): {Convert.ToHexString(bytes)}");
+        else if (id == InstanceItems.PickUpItemId)
+            await PickUpItem(remote, stream, ciphers, conn, InstanceItems.ReadPickUpItem(bytes));
         else if (id == InstanceProtocol.ResurrectId)
             _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
         else if (id == InstanceChat.ChatId)
@@ -227,6 +245,13 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     if (target is not null)
     {
         await Attack(remote, stream, ciphers, conn, use, target);
+        return;
+    }
+    WorldItemObject? ground;
+    lock (conn.WorldItems) ground = conn.WorldItems.GetValueOrDefault(use.TargetId);
+    if (ground is not null)
+    {
+        await PickUpGroundItem(remote, stream, ciphers, conn, use.TargetId, ground, use);
         return;
     }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
@@ -343,7 +368,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
 // player since (a skill's stats include the character's; the client reads the skill's).
 static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
 {
-    return Skills.PlayerDefaults([.. FinalPlayerStats(conn)]);
+    return [.. Skills.PlayerDefaults([.. FinalPlayerStats(conn)]), .. GemSkills(conn.Character)];
 }
 
 // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
@@ -352,8 +377,35 @@ static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     Dictionary<uint, int> stats;
     lock (conn.Monsters) stats = new(conn.PlayerStats);
+    foreach (var (k, v) in ClassAttributes()) stats.TryAdd(k, v);
     foreach (var (k, v) in Skills.UnarmedFor(1).Stats(stats)) stats[k] = v;
     return stats.Select(kv => (kv.Key, kv.Value));
+}
+
+// The class's attributes (Characters.dat BaseStrength / BaseDexterity / BaseIntelligence) as final stats: strength,
+// dexterity and intelligence for the character panel, and virtual_*_for_requirements, which item requirements are
+// checked against (0x1402ce5f0 via the Player cache 0x141e80340, keys 0x3d1b-0x3d1d; global_no_attribute_requirements
+// skips the check, global_item_attribute_requirements_+% scales it).
+static IEnumerable<(uint, int)> ClassAttributes()
+{
+    var c = Skills.ClassFor(1);
+    foreach (var (stat, value) in new[] { ("strength", c.Strength), ("dexterity", c.Dexterity), ("intelligence", c.Intelligence),
+        ("virtual_strength_for_requirements", c.Strength), ("virtual_dexterity_for_requirements", c.Dexterity),
+        ("virtual_intelligence_for_requirements", c.Intelligence) })
+        if (Stats.Key(stat) is uint key) yield return (key, value);
+}
+
+// The skills of the gems socketed in the equipped items: each gem's GrantedEffects row at level 1, with ids after the
+// default attack's.
+static IEnumerable<GrantedSkill> GemSkills(string? character)
+{
+    ushort id = SkillCatalog.FirstSkillId + 1;
+    foreach (var gem in PlayerInventories.For(string.IsNullOrEmpty(character) ? "Exile" : character, Items).SocketedGems())
+        if (Items.ByHash(gem.TypeHash) is { } t && Items.GemEffect(t) is int effect and >= 0 && Skills.FindByRow(id, effect, 1) is { } skill)
+        {
+            yield return skill;
+            id++;
+        }
 }
 
 static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
@@ -477,6 +529,30 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         lock (conn.Monsters)
             conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
                 variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life) { Attack = skill is null ? null : attack, Hostile = !friendly };
+    })
+    .Add("item", "/item <BaseItemTypes row, Id or name> [count] (into the inventory, e.g. /item Small Life Flask 2, /item 384)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("which item?");
+        int count = 1;
+        if (args.Length > 1 && int.TryParse(args[^1], out int n)) { count = Math.Clamp(n, 1, 60); args = args[..^1]; }
+        if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
+        if (Items.Find(string.Join(' ', args)) is not { } type) { await conn.Commands!.Reply($"No item type \"{string.Join(' ', args)}\""); return; }
+        if (!type.Supported)
+        {
+            await conn.Commands!.Reply($"{type} has components the server cannot write yet: {string.Join(", ", type.Components.Where(c => !Item.Supported.Contains(c)))}");
+            return;
+        }
+        var items = ItemsOf(conn);
+        var (sockets, links) = Items.DefaultSockets(type);
+        var added = new List<InventoryItem>();
+        for (int i = 0; i < count; i++)
+        {
+            if (items.FreeCell(PlayerInventories.MainInventory, type.Width, type.Height, ShapeOf) is not { } cell) break;
+            added.Add(items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ItemCatalog.Create(type, sockets, links))));
+        }
+        if (added.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+            items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
     })
     .Add("heal", "/heal (full life; also revives: 0x1b1 from 0 runs the client's revive)", async _ =>
     {
@@ -750,23 +826,207 @@ static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ci
     finally { gate.Release(); }
 }
 
+// C→S 0x28: a click on an item. It moves to the cursor inventory (row 12): one 0xbf removes it from its inventory, another
+// adds it to the cursor at (0, 0). Refused (logged) when the cursor already holds an item or the item is not there.
+static async Task PickUpItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PickUpItem pick)
+{
+    var items = ItemsOf(conn);
+    if (PlayerInventories.Row(pick.InventoryId) is not byte row || row == PlayerInventories.Cursor || items.Items(PlayerInventories.Cursor).Count > 0 ||
+        items.Remove(row, pick.ItemId) is not { } it)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0028 pick up {pick}: refused");
+        return;
+    }
+    var held = items.Put(PlayerInventories.Cursor, it with { X = 0, Y = 0 });
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(pick.InventoryId, items.NextRevision(row), [it.Id], []),
+        $"0x00bf inventory {pick.InventoryId}: remove item {it.Id} (picked up {pick})");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: add item {held.Id}");
+    // Dual wielding: taking the main hand off moves the off hand's one-handed weapon into the main hand.
+    if (items.PromoteOffhand(row, ShapeOf) is { } promoted)
+    {
+        byte off = (byte)(row + 1);
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(off), items.NextRevision(off), [promoted.Id], []),
+            $"0x00bf inventory {PlayerInventories.InventoryId(off)}: remove item {promoted.Id} (to the main hand)");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [promoted]),
+            $"0x00bf inventory {PlayerInventories.InventoryId(row)}: add item {promoted.Id} (from the off hand)");
+    }
+    if (PlayerInventories.ShowsOnModel(row)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
+
+static PlayerInventories.Shape? ShapeOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new PlayerInventories.Shape(t.Width, t.Height, t.Class) : null;
+
+static VisibleItem? LookOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new VisibleItem(0, t.VisualIdentity, t.Stance) : null;
+
+// What the player wears changed (an item went into or out of a visible equipment row): 0x2ba Inventories for the model,
+// then the Actor skill list again, since the gems socketed in the equipment grant skills.
+static async Task SendEquipment(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PlayerInventories items)
+{
+    var equipped = items.Equipped(LookOf);
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, equipped),
+        $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
+    var skills = PlayerSkills(conn);
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills), $"0x02ba player Actor: {skills.Count} skill(s)");
+}
+
+// Takes the held item off the cursor (0xbf); null when nothing is held.
+static async Task<InventoryItem?> TakeHeld(string remote, NetworkStream stream, ConnectionCiphers ciphers, PlayerInventories items, string why)
+{
+    if (items.Items(PlayerInventories.Cursor) is not [var held, ..] || items.Remove(PlayerInventories.Cursor, held.Id) is null) return null;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [held.Id], []), $"0x00bf cursor: remove item {held.Id} ({why})");
+    return held;
+}
+
+// C→S 0x30: the held gem goes into a socket. The cursor loses it (and holds the gem that was in the socket, if any); the
+// item is replaced in its inventory (0xbf removing and adding the same id). Gems in equipment grant skills.
+static async Task SocketGem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.SocketGem s)
+{
+    var items = ItemsOf(conn);
+    string why = "unknown inventory";
+    var done = PlayerInventories.Row(s.InventoryId) is byte row ? items.Socket(row, s.ItemId, (int)s.Socket, ShapeOf, items.NewItemId, out why) : null;
+    if (done is not var (item, before, now) || PlayerInventories.Row(s.InventoryId) is not byte r)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0030 socket {s}: refused ({why})");
+        return;
+    }
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [before.Id], now is null ? [] : [now]),
+        $"0x00bf cursor: remove gem {before.Id}" + (now is null ? "" : $", hold gem {now.Id} from the socket"));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(s.InventoryId, items.NextRevision(r), [item.Id], [item]),
+        $"0x00bf inventory {s.InventoryId}: item {item.Id} with a gem in socket {s.Socket}");
+    if (PlayerInventories.ShowsOnModel(r)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+// C→S 0x2f: a socketed gem goes onto the cursor; the item is replaced in its inventory.
+static async Task UnsocketGem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.SocketGem s)
+{
+    var items = ItemsOf(conn);
+    string why = "unknown inventory";
+    var done = PlayerInventories.Row(s.InventoryId) is byte row ? items.Unsocket(row, s.ItemId, (int)s.Socket, items.NewItemId, out why) : null;
+    if (done is not var (item, held) || PlayerInventories.Row(s.InventoryId) is not byte r)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x002f unsocket {s}: refused ({why})");
+        return;
+    }
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(s.InventoryId, items.NextRevision(r), [item.Id], [item]),
+        $"0x00bf inventory {s.InventoryId}: item {item.Id} without the gem in socket {s.Socket}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: hold gem {held.Id}");
+    if (PlayerInventories.ShowsOnModel(r)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+// C→S 0x16 /destroy (the town popup's Destroy): the held item is gone.
+static async Task DestroyHeldItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (await TakeHeld(remote, stream, ciphers, ItemsOf(conn), "destroyed") is null)
+        Console.WriteLine($"[gateway] {remote} <= 0x0016 /destroy: nothing held");
+}
+
+// C→S 0x29: drop the held item where the player stands, as a WorldItem object (0x2b9 + wake zone 0x1a9).
+static async Task DropItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (await TakeHeld(remote, stream, ciphers, ItemsOf(conn), "dropped") is not { } held)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0029 drop: nothing held");
+        return;
+    }
+    var (x, y) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+    var ground = new WorldItemObject(x, y, held.Item);
+    uint id = conn.NextObjectId++;
+    lock (conn.WorldItems) conn.WorldItems[id] = ground;
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), ground.Blob()),
+        $"0x02b9 create world item 0x{id:x} at ({x}, {y})");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 world item 0x{id:x} enters wake zone");
+}
+
+// C→S 0x24 on a world item: walk there, then put it in the main inventory (first free cell) and remove the object (0x2bb).
+static async Task PickUpGroundItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, WorldItemObject ground,
+    InstanceTransfer.UseSkillOnObject use)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(ground.GridX, ground.GridY, PickupReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 pick up world item 0x{id:x} at ({ground.GridX}, {ground.GridY}) {use} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    // Echo the interaction at once, from where the player is now (as a move's echo does): the client then walks to its
+    // own pickup range itself. An echo sent on arrival carried the server's estimated stop, and the client snapped to it.
+    await Send(remote, stream, ciphers,
+        InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, ground.GridX, ground.GridY, use.SkillId, use.Sequence, use.Flags, targetObjectId: id),
+        $"0x01ab player picks up world item 0x{id:x}");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    var items = ItemsOf(conn);
+    var shape = ShapeOf(ground.Item) ?? new(1, 1, "");
+    // With the inventory panel open the item goes to the cursor (when it is free), otherwise to the first free cell.
+    bool toCursor = (use.Flags & InstanceTransfer.InventoryOpenFlag) != 0 && items.Items(PlayerInventories.Cursor).Count == 0;
+    byte row = toCursor ? PlayerInventories.Cursor : PlayerInventories.MainInventory;
+    (byte X, byte Y) cell = (0, 0);
+    if (!toCursor)
+    {
+        if (items.FreeCell(PlayerInventories.MainInventory, shape.Width, shape.Height, ShapeOf) is not { } free)
+        {
+            Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: no room in the inventory");
+            return;
+        }
+        cell = free;
+    }
+    lock (conn.WorldItems) if (!conn.WorldItems.Remove(id)) return;
+    var placed = items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
+    await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
+        toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
+}
+
+// C→S 0x2a: put the held item into an inventory cell (PlayerInventories.Place). The target inventory gets one 0xbf (the
+// item it displaced removed, the held item added), the cursor another (the held item removed, the displaced one added).
+static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PlaceItem place)
+{
+    var items = ItemsOf(conn);
+    PlayerInventories.Placement? done = null;
+    string why = "unknown inventory";
+    if (PlayerInventories.Row(place.InventoryId) is byte row)
+        done = items.Place(row, (int)place.X, (int)place.Y,
+            ShapeOf, out why);
+    if (done is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: refused ({why})");
+        return;
+    }
+    var d = done.Displaced;
+    uint target = PlayerInventories.InventoryId(done.Row);   // may differ from the clicked one (off hand → main hand)
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(target, items.NextRevision(done.Row), d is null ? [] : [d.Id], [done.Placed]),
+        $"0x00bf inventory {target}: add item {done.Placed.Id} at ({done.Placed.X}, {done.Placed.Y})" + (d is null ? "" : $", remove item {d.Id}"));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [done.Held.Id], d is null ? [] : [d]),
+        $"0x00bf cursor: remove item {done.Held.Id}" + (d is null ? "" : $", hold item {d.Id}"));
+    if (PlayerInventories.ShowsOnModel(done.Row)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
 // The player is always a Witch for now (the only class whose object is mapped); the name is the character's.
 static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout, string? name)
 {
     var weapon = Skills.UnarmedFor(1);
-    var witch = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: 1, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
+    var witch = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)Skills.ClassFor(1).IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? "Metadata/Characters/Int/Int.ao",
-        Skills: Skills.PlayerDefaults(weapon), Stats: weapon.Stats());
+        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name)], Stats: [.. weapon.Stats(), .. ClassAttributes()],
+        Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf));
     uint type = InstanceEntities.ObjectTypeHash("Metadata/Characters/Int/Int");
     var messages = new List<(string Name, byte[] Bytes)>
     {
         ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
         ($"0x02b9 create {witch} type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, witch.Blob())),
     };
-    // The player's empty inventories (ids 1..n), needed by UI built on entering (flask bar → row 11).
-    uint inventoryId = 1;
+    // The player's inventories (id = row + 1), needed by UI built on entering (flask bar → row 11), with the character's items.
+    var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items);
+    if (Items.Error is not null) Console.WriteLine($"[gateway] items: {Items.Error}");
     foreach (var slot in InstanceInventories.PlayerDefaults)
-        messages.Add(($"0x00c0 inventory {inventoryId} row {slot.Row}", InstanceInventories.AddInventory(inventoryId++, slot)));
+    {
+        var inside = items.Items(slot.Row);
+        messages.Add(($"0x00c0 inventory {PlayerInventories.InventoryId(slot.Row)} row {slot.Row}" + (inside.Count > 0 ? $" items {inside.Count}" : ""),
+            InstanceInventories.AddInventory(PlayerInventories.InventoryId(slot.Row), slot, items: inside)));
+    }
     messages.Add(("0x003d passive slots 0-2", InstanceEntities.PassiveSlots()));
     // Area transitions. Like the player they are queued by the world and created when 0x21 activates it.
     foreach (var (id, transition) in layout.AreaTransitions)
@@ -778,6 +1038,9 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.AreaTransitions) messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
+        // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
+        // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
+        messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. ClassAttributes()])));
     }
     foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
 }
@@ -795,6 +1058,11 @@ sealed partial class Program
     internal const double TickSeconds = 1.0 / TickRate;
     // How close (cells, centre to centre) the player must be to use an area transition.
     internal const double AreaTransitionReach = 6;
+    // How close (cells, centre to centre) the player must be to pick an item up from the ground: WorldItem.ot's
+    // InteractionAction interaction_distance_override = 20 grid cells, plus the radii of the item and the player
+    // (object_size 2 each). Measured live 2026-10-18 (Positioned +0x294/+0x298): the client walked from (1301, 1250)
+    // toward an item at (1278, 1304) and stopped at (1284, 1284), 20.9 cells away, on the first step inside the range.
+    internal const double PickupReach = 20 + 2;
 
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
@@ -802,6 +1070,8 @@ sealed partial class Program
     internal static readonly SkillCatalog Skills = new();
     // Stat names ↔ client keys (Stats.dat row + 1).
     internal static readonly StatCatalog Stats = new();
+    // Item types (BaseItemTypes + data/item-types.json); loaded with the first player.
+    internal static readonly ItemCatalog Items = new();
 
     internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ConnectionCiphers, SemaphoreSlim> SendGates = new();
 
@@ -1085,6 +1355,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
+    // Items on the ground by object id (dropped with C→S 0x29).
+    public readonly Dictionary<uint, WorldItemObject> WorldItems = [];
     public volatile bool AiEnabled = true, Closed;
 
     /// <summary>A walk estimate for a server object on this area's walk map.</summary>

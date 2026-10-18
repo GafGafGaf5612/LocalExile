@@ -49,7 +49,10 @@ public static class InstanceProtocol
     public static int? KnownClientLength(ushort id) => id switch
     {
         TickId => 7, AreaGeneratedId => 10, UseSkillAtLocationId => 16, 0x015a => 2, 0x01ef => 2, 0x0099 => 20,
-        InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, 0x0016 => 5, ResurrectId => 3, _ => null,
+        InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
+        InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
+        InstanceItems.InventoryRequestId => 8, InstanceItems.ItemActionId => 12, InstanceItems.SocketGemId => 16,
+        InstanceItems.UnsocketGemId => 17, _ => null,
     };
 
     /// <summary>
@@ -187,7 +190,8 @@ public static class InstanceProtocol
         {
             if (data.Length - pos < 2) { partial = data[pos..].ToArray(); break; }
             ushort id = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data[pos..]);
-            int? known = id == InstanceChat.ChatId ? InstanceChat.Length(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
+            int? known = id == InstanceChat.ChatId ? InstanceChat.Length(data[pos..]) ?? int.MaxValue
+                : id == InstanceItems.CommandId ? InstanceItems.CommandLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
             if (known is not int len) { unknown = data[pos..].ToArray(); break; }
             if (data.Length - pos < len) { partial = data[pos..].ToArray(); break; }
             result.Add((id, data.Slice(pos, len).ToArray()));

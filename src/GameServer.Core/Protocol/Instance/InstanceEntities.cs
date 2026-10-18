@@ -103,6 +103,14 @@ public static class InstanceEntities
         return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.ToArray());
     }
 
+    /// <summary>The player's Inventories component again (0x2ba): what its model wears after an equipment change.</summary>
+    public static byte[] PlayerEquipmentUpdate(uint playerId, IReadOnlyList<VisibleItem> equipped)
+    {
+        var w = new BlobWriter();
+        PlayerObject.WriteInventories(w, equipped);
+        return ComponentUpdate(playerId, PlayerObject.InventoriesComponentIndex, w.ToArray());
+    }
+
     public static byte[] StatsUpdate(uint entityId, IReadOnlyList<(uint Stat, int Value)> stats)
     {
         var w = new LoginWriter().U16(StatsUpdateId).U32(entityId).U32(0).U16(0);
@@ -120,7 +128,30 @@ public static partial class InstanceInventories
 {
     /// <summary>One Inventories.dat row the player starts with: row index (the manager's type slot), the row's InventoryType
     /// enum (first u32) and its grid size.</summary>
-    public readonly record struct Slot(byte Row, byte Kind, byte Width, byte Height);
+    public readonly record struct Slot(byte Row, byte Kind, byte Width, byte Height)
+    {
+        /// <summary>Holds one item, drawn as a single box (equipment, the cursor): Inventories.dat column 3, sent as flag bit 0
+        /// (+0x148). Without it an equipment slot is drawn as a grid of cells.</summary>
+        public bool SingleItem => Array.IndexOf(SingleItemRows, Row) >= 0;
+
+        /// <summary>The character's own fixed slots (equipment and the flask bar): Inventories.dat column 4, sent as flag
+        /// bit 1 (+0x149). With it the client checks what goes in: the slot's item classes (a wand is red over the body
+        /// armour slot) and the item's attribute requirements against the attributes the Player component caches
+        /// (0x141e802d0; see Program.SendPlayer for why they must arrive as a stats update).</summary>
+        public bool Equipment => Array.IndexOf(EquipmentRows, Row) >= 0;
+
+        public byte Flags => (byte)((SingleItem ? 1 : 0) | (Equipment ? 2 : 0));
+    }
+
+    /// <summary>The Inventories.dat rows whose column 4 is set (3.29.3b).</summary>
+    static readonly byte[] EquipmentRows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 54, 78, 102];
+
+    /// <summary>The Inventories.dat rows whose column 3 is set (3.29.3b).</summary>
+    static readonly byte[] SingleItemRows =
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 31, 33, 35, 37, 41, 42, 43, 44, 54, 55,
+         66, 67, 71, 74, 78, 81, 82, 93, 98, 100, 102, 103, 105, 109, 111];
+
+    public const byte CursorRow = 12;
 
     /// <summary>Every Inventories.dat row of 3.29.3b (117, dumped from Data/Inventories.datc64): kind = the row's first
     /// u32, width = second u32, height = byte 10 after the Id. The client looks inventories up by row from many UI places
@@ -153,12 +184,17 @@ public static partial class InstanceInventories
     /// S→C 0xc0 (dispatcher case 0x35, class 0x1431ab2f0, write 0x140b182a0): add an empty inventory. u8 manager
     /// (0x14216aa30: 0 = the player's, at instance+0xc890), u32 inventory id, inventory object (0x1421f4a40 / reader
     /// 0x1421f4cc0: u8 kind +0x140, u8 Inventories.dat row +0x144, u8 width, u8 height, u8 flags, compact-int item count),
-    /// u8 +0x28, u8 +0x29. 0x141d625f0 files the id under its row; UI such as the flask bar looks it up by row (row 11).
+    /// u8 +0x28, u8 +0x29. Flags bit 0: <see cref="Slot.SingleItem"/>, bit 1: <see cref="Slot.Equipment"/>. 0x141d625f0 files the id under its row; UI such as the flask bar looks it up by row (row 11).
+    /// Each item (0x1421f5680): u32 id, u8 x, u8 y, the item (<see cref="Item.Wire"/>).
     /// </summary>
-    public static byte[] AddInventory(uint inventoryId, Slot slot, byte manager = 0) =>
-        new LoginWriter().U16(InstanceEntities.AddInventoryId).U8(manager).U32(inventoryId)
-            .U8(slot.Kind).U8(slot.Row).U8(slot.Width).U8(slot.Height).U8(0).U8(0)
-            .U8(0).U8(0).ToArray();
+    public static byte[] AddInventory(uint inventoryId, Slot slot, byte manager = 0, IReadOnlyList<InventoryItem>? items = null)
+    {
+        var w = new LoginWriter().U16(InstanceEntities.AddInventoryId).U8(manager).U32(inventoryId)
+            .U8(slot.Kind).U8(slot.Row).U8(slot.Width).U8(slot.Height).U8(slot.Flags);
+        InstanceProtocol.CompactUInt(w, (uint)(items?.Count ?? 0));
+        foreach (var it in items ?? []) w.U32(it.Id).U8(it.X).U8(it.Y).Bytes(it.Item.Wire());
+        return w.U8(0).U8(0).ToArray();
+    }
 }
 
 /// <summary>
@@ -361,6 +397,7 @@ public sealed class BlobWriter
     public BlobWriter I32(int v) => U32((uint)v);
     public BlobWriter F32(float v) => U32(BitConverter.SingleToUInt32Bits(v));
     public BlobWriter Zeros(int n) { for (int i = 0; i < n; i++) _b.Add(0); return this; }
+    public BlobWriter Bytes(ReadOnlySpan<byte> v) { foreach (byte x in v) _b.Add(x); return this; }
     /// <summary>u32 UTF-16 unit count, then the units (0x140e28d60).</summary>
     public BlobWriter WStr32(string s) { U32((uint)s.Length); foreach (byte x in Encoding.Unicode.GetBytes(s)) _b.Add(x); return this; }
     /// <summary>Unsigned compact int (stat keys and counts, 0x141e61010), InstanceProtocol.CompactUInt.</summary>
@@ -385,8 +422,21 @@ public sealed class BlobWriter
 /// </summary>
 public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int GridY,
     uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null,
-    IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null)
+    IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null,
+    IReadOnlyList<VisibleItem>? Equipped = null)
 {
+    /// <summary>The Inventories component's index in the player object's component order (04 §3).</summary>
+    public const byte InventoriesComponentIndex = 8;
+
+    /// <summary>Inventories (0x141e1ee30): u8 n × (u8 slot, visible item 0x1424f44e0), then u8 m × u16 (skill ids the
+    /// client re-binds). The same bytes update it later (0x2ba, slot 17 forwards to slot 20).</summary>
+    internal static void WriteInventories(BlobWriter w, IReadOnlyList<VisibleItem>? equipped)
+    {
+        w.U8((byte)(equipped?.Count ?? 0));
+        foreach (var e in equipped ?? []) e.Write(w);
+        w.U8(0);
+    }
+
     public byte[] Blob()
     {
         var w = new BlobWriter();
@@ -421,7 +471,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U8(0).U8(0).U8(0).U8(0).U8(0)
          .U32(0)             // u32 count + u32 list (vtable +0x158)
          .U8(0);             // microtransaction counters (0x141e83470)
-        w.U8(0).U8(0);      // Inventories (0x141e1ee30): inventory count, second count
+        WriteInventories(w, Equipped);   // Inventories (0x141e1ee30): what the model wears
         // comp9 = Actor (0x142192a80): u32-counted UTF-16 string, u16 +0x21c, u8; two more u8 (+0x230, +0x234) only
         // when a runtime value is < 1 (false here: traced live, comp9 read 15 bytes); u32 +0x26c, u32 +0x274; then its
         // vtable+0xa0 reader 0x1421932b0: two flag bytes. f0 0x40 = the skill list (0x142197b10); the rest stay off.

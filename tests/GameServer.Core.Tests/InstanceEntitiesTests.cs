@@ -171,7 +171,7 @@ public class InstanceEntitiesTests
     {
         var flask = InstanceInventories.PlayerDefaults[11];
         Assert.Equal((11, 0x0a, 5, 2), (flask.Row, flask.Kind, flask.Width, flask.Height));
-        Assert.Equal("00C0" + "00" + "0000000C" + "0A" + "0B" + "05" + "02" + "00" + "00" + "00" + "00",
+        Assert.Equal("00C0" + "00" + "0000000C" + "0A" + "0B" + "05" + "02" + "02" + "00" + "00" + "00",
             Convert.ToHexString(InstanceInventories.AddInventory(12, flask)));
     }
 

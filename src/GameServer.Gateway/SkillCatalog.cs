@@ -106,6 +106,26 @@ sealed class SkillCatalog(string folder = "data")
         ];
     }
 
+    /// <summary>A class from Characters.dat: IntegerId (what the Player component's class byte holds: Marauder 1, Witch 3)
+    /// and the base attributes.</summary>
+    public sealed record ClassInfo(int IntegerId, int Strength, int Dexterity, int Intelligence)
+    {
+        public static readonly ClassInfo Witch = new(3, 14, 14, 32);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, ClassInfo> _classes = new();
+
+    public ClassInfo ClassFor(int characterRow) => _classes.GetOrAdd(characterRow, row =>
+    {
+        string path = Path.Combine(folder, "tables", "Characters.json");
+        if (!File.Exists(path)) return ClassInfo.Witch;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        if (row < 0 || row >= d.RootElement.GetArrayLength()) return ClassInfo.Witch;
+        var r = d.RootElement[row];
+        return new(r.GetProperty("IntegerId").GetInt32(), r.GetProperty("BaseStrength").GetInt32(),
+            r.GetProperty("BaseDexterity").GetInt32(), r.GetProperty("BaseIntelligence").GetInt32());
+    });
+
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, Unarmed> _unarmed = new();
 
     public Unarmed UnarmedFor(int characterRow) => _unarmed.GetOrAdd(characterRow, LoadUnarmed);

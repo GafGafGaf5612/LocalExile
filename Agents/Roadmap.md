@@ -89,11 +89,13 @@ Items are in rough priority order within each section. "Known" says what is alre
 - Characters of any class can be created, but every one appears as a Witch. The player object type and blob are built
   for `Metadata/Characters/Int/Int`.
 
-### Items and inventories
-- **Known:** inventories are sent empty (0xc0); item serialization is at `0x1421ec1d0`.
-  [05](docs/protocol/05-inventories-and-ui.md) "Open". Quests need them too: the Mud Flats glyphs are quest items
-  (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`, [12](docs/protocol/12-quests.md)).
-- **Done when:** a new character has its starting weapon and flasks, then items can be moved and dropped.
+### Items: mods, rarity, using flasks and currency
+- **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); every item is sent normal and
+  identified with no mods. The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`,
+  [12](docs/protocol/12-quests.md)).
+- **Start:** the Mods component's mod lists (`0x142201d70`, sections behind flag bits 0x10/0x40/0x400/0x800, entries
+  `0x142430380`), C→S 0x4a and 0x2d (13 §4, probably item use), flask charges after use.
+- **Done when:** items have their implicit mods and a rarity, and flasks and currency can be used.
 
 ### A damage model (next)
 - **Known:** both sides hit with flat damage ranges ([11](docs/protocol/11-skills.md) §5, §6); the player's life is a
@@ -108,8 +110,11 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** Sanctum and other modes show their own options; hardcore's "Exit" works (with Esc → Exit, C→S 0x153).
 
 ### Gem skills
-- **Start:** items in the player's inventories ([05](docs/protocol/05-inventories-and-ui.md)), the skill record's
-  support list, and f0 0x20 (skill update) to add or change skills after entering.
+- **Known:** active gems socketed in equipment are granted at level 1 in the Actor skill list ([13](docs/protocol/13-items.md)
+  §6); support gems crash the client when granted as skills.
+- **Start:** the skill record's support list (linked supports), the skill's computed stats (damage), gem experience and
+  levels, putting the skill on the skill bar.
+- **Done when:** Fireball with Arcane Surge linked can be cast and does its damage.
 
 ### Saving progress
 - Persist the character's area, position, level and items in the account store (`GameServer.Storage`).

@@ -42,9 +42,9 @@ inventory object        +0x18   write 0x1421f4a40 / read 0x1421f4cc0 → ctor 0x
   u8  row               +0x144  Inventories.dat row = the manager slot
   u8  width             +0x150
   u8  height            +0x154
-  u8  flags             bit0 +0x148, bit1 +0x149, bit2 +0x14a, bit3 → raw u64 +0x158 follows,
+  u8  flags             bit0 +0x148 single-item slot, bit1 +0x149 the character's own slot (13 §3), bit2 +0x14a, bit3 → raw u64 +0x158 follows,
                         bit4 → 4 × u32 BE follow (+0x1f0 block), bit5 +0x160, bit6 +0x161
-  compact int n items   (0x14089e520 / 0x1421f4f80), then n × (u32, u8, u8, item 0x1421ec1d0)
+  compact int n items   (0x14089e520 / 0x1421f4f80), then n × (u32 id, u8 x, u8 y, item 0x1421ec1d0; 13 §2-3)
 u8                      +0x28   (bool)
 u8                      +0x29   (bool)
 ```
@@ -151,6 +151,6 @@ thrown and caught during the UI build; its backtrace went through `0x1421cc54e` 
 
 ## Open
 
-- Real starting items (weapon, flasks): 0xc0 with items, item serialization `0x1421ec1d0`.
+- Items are in [13](13-items.md): the start kit goes into these 0xc0 messages, and S→C 0xbf changes an inventory later.
 - What the 0x3d u16 fields and node list mean.
 - Managers 1 and 2 (`+0xca10`, `+0xcb90`), probably stash or guild.

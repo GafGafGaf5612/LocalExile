@@ -140,6 +140,31 @@ G = global / static data.
 | `0x142155bf0` | Fn | create passive slot 0/1/2 (`instance+0xc2f8`) |
 | `0x140785160` | Fn | UI reading the active passive slot |
 
+## Items ([13](13-items.md))
+| Address | Kind | What |
+|---|---|---|
+| `0x1421ec1d0` / `0x1421ec010` | Fn | item write (u16 length + data) / data |
+| `0x1421ec2c0` / `0x1421ec390` | Fn | item read (length) / data: type hash → ItemTypeRegister, flags, components (slot 5) |
+| `0x141fa5290` | Fn | ItemTypeRegister lookup by HASH32 |
+| `0x1421ebe90` | Fn | the four type hashes with a trailing u16 |
+| `0x1421e69c0`, `0x1421df6e0`, `0x1421e2e20`, `0x1424aec50`, `0x14249d4b0`, `0x1423f4b30`, `0x14246eb00` | Fn | item component reads: Base, Mods, Sockets, Quality, Charges, Stack, SkillGem |
+| `0x1421f5680` | Fn | inventory item entry read (u32 id, u8 x, u8 y, item) |
+| `0x1435dbd28` (ctor `0x1421a37b0`, write `0x1421a37f0`, read `0x1421a3880`) | Cls | S→C 0xbf inventory change (`0x1425079a0` / `0x142507bf0`) |
+| `0x141d62550` → `0x1421f5160` | Fn | 0xbf handler → apply removals, additions, revision |
+| `0x1435c0898`, `0x1435dc660` | Cls | S→C 0xc1 remove inventory, 0xc2 inventory permissions |
+| `0x1435bf5f0` (write `0x141fa0d00`, sender `0x14215f300`) | Cls | C→S 0x28 pick up item |
+| `0x1435bf710` (write `0x141f8feb0`, sender `0x14215f400`) | Cls | C→S 0x2a place held item |
+| `0x1435c0838` (write `0x141f90650`) | Cls | C→S 0x30 socket the held gem |
+| `0x140117b80` | Fn | drop held item: 0x29 outside town, Keep / Destroy popup in town |
+| `0x1435bff00` (write `0x141f91480`, sender `0x14215c3b0`) | Cls | C→S 0x16 Commands.dat command (Destroy = 9) |
+| `0x1435c02b8`, `0x1435bf6d0` | Cls | C→S 0x2d, 0x4a (not mapped) |
+| `0x141ea10a0` | Fn | WorldItem component read |
+| `0x141e1ee30` → `0x1424f44e0` | Fn | player Inventories component: visible equipment entries |
+| `0x1402ce5f0` | Fn | item attribute requirement check (virtual_*_for_requirements) |
+| `0x141e80340`, `0x141e802d0` | Fn | Player caches: requirement attributes; UI attributes |
+| `0x1402f36c0` | Fn | item's AttributeRequirements component getter |
+| `0x141e1dce0` | Fn | InteractionAction type parser (`interaction_distance_override` → +0x1bb) |
+
 ## Strings worth searching
 "Connect time to instance server was", "Client-Safe Instance ID = ", "Generating level ", "Instance sent world area
 that does not exist with hash: ", "Area reported by instance does not exist", "Unable to deserialise packet with pid ",
