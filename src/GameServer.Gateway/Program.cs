@@ -1141,7 +1141,9 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         {
             before = conn.PlayerLife;
             dead = before == 0;
-            double change = carry + regen - (rf is null ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds);
+            // /god is immune to Righteous Fire's self-burn: 90% of a god's life per second can outrun its 10 000 regeneration.
+            double burn = rf is null || conn.God ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds;
+            double change = carry + regen - burn;
             int whole = (int)Math.Truncate(change);
             carry = change - whole;
             // The burn is nonlethal: it stops at 1 life.
