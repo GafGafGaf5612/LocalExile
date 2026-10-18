@@ -94,6 +94,14 @@ public static class InstanceEntities
     public static byte[] ComponentUpdate(uint entityId, byte componentIndex, byte[] data) =>
         new LoginWriter().U16(ComponentUpdateId).U32(entityId).U32(0).U16(0).Blob([componentIndex, .. data]).ToArray();
 
+    /// <summary>
+    /// S→C 0x2ba to an object's Animated component (reader <c>0x141e57490</c>): flags bit0 + a u32-counted UTF-16 .ao path
+    /// swaps its animated object, which then plays the new one's default animation (a projectile's impact: Fireball →
+    /// Metadata/Effects/Spells/fireball/explode_new2.ao, "animate": the splode particles and the End sound).
+    /// </summary>
+    public static byte[] AnimatedModel(uint entityId, byte animatedIndex, string ao) =>
+        ComponentUpdate(entityId, animatedIndex, new BlobWriter().U8(1).WStr32(ao).ToArray());
+
     /// <summary>The player's Actor (component 9) skill list again (slot 20 f0 0x40, 11-skills.md §3): replaces skills of the
     /// same id, e.g. with new stats.</summary>
     public static byte[] PlayerSkillsUpdate(uint playerId, IReadOnlyList<GrantedSkill> skills)
@@ -389,6 +397,9 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 public sealed record ProjectileObject(string TypePath, int GridX, int GridY, float Rotation = 0, ushort Team = 0,
     (float X, float Y, float Z, float W)? Direction = null, int? Height = null)
 {
+    /// <summary>Animated in the object's component order (Positioned, BaseEvents, Animated, Projectile, Render).</summary>
+    public const byte AnimatedComponentIndex = 2;
+
     public byte[] Blob()
     {
         var w = new BlobWriter();

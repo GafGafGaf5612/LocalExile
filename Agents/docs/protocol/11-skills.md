@@ -230,8 +230,20 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   calls when the flag byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
 - **Rotation.** Positioned rotation (+0x29c) = **atan2(dx, −dy)** in grid cells (the player's own moves traced with
   `trace-move.js`: facing (+15, −18) read 0.668).
-- **Hit.** When the projectile arrives the server lowers the targeted monster's life by the skill's fire damage
-  (0x1b1) and removes the object (0x2bb). No collision on the way, no explosion, no damage on ground casts.
+- **Hit (live 2026-10-18).** At launch the server walks the path cell by cell and stops it at the first living
+  monster within 4 cells (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2) of where the projectile will
+  be, using where that monster will be by then. Ground and monster casts alike: the projectile flies to the hit (else
+  to its range), the monster loses the skill's fire damage (0x1b1), a kill is removed 10 s later. Walls and doodads
+  do not stop it yet; a monster that walks into the path after launch is not hit.
+- **Explosion (live 2026-10-18).** Projectiles.dat names the impact as an animation of the projectile's own .ao
+  (Fireball: ImpactAnimationIds `fireball_explode` → `point_impact.pet`). No server message found yet plays an
+  animation by name, so on a hit the server swaps the projectile's animated object instead: S→C 0x2ba to component 2
+  (Animated, in the order Positioned, BaseEvents, Animated, Projectile, Render) with flags bit0 and the path
+  `Metadata/Effects/Spells/fireball/explode_new2.ao`, whose default animation `animate` plays the `splode` particles
+  and the End sound (reader `0x141e57490`: bit0 path, bit1 a 0x2c-table index, bit2 `0x141e5adb0` attachments; no
+  bit3 there). The object is removed 1.5 s later. `Game_PROJECTILE_IMPACT_AO` overrides the path (`none` turns it
+  off). `Metadata/Effects/Effect` (Positioned, BaseEvents, Animated, LimitedLifespan) would be the cleaner carrier but
+  is not known to be in the client's type register; an unknown type throws in `0x142187480`.
 - **Tilt.** `Metadata/Projectiles/Projectile.ot` gives the client's Render `tilt_to_target` and
   `maintain_tilt_after_movement` (type data +0x76, +0x77; parser `0x1415ef5e0`). Render (`0x1415f53c0`) pitches the
   model by −`0x141e35c00`(Positioned, maintain): atan(dz / distance) of the current move, or, when not moving and

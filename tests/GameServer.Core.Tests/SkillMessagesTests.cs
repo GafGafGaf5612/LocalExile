@@ -43,4 +43,21 @@ public class SkillMessagesTests
         Assert.Equal("0000" + "01000000" + "02000000" + "00000000" + "0000" + "00" + "06" +
             "0000803F" + "00000000" + "00000000" + "00000000" + "00" + "01" + "00" + "00", Convert.ToHexString(b));
     }
+
+    [Fact]
+    public void Projectile_fixed_height_is_negative_z()
+    {
+        // Height 8 (up) is z = −8 × 7.8125 = −62.5: i32 −8, f32 −62.5.
+        byte[] b = new ProjectileObject("Metadata/Projectiles/Fireball", 1, 2, Height: 8).Blob();
+        Assert.Equal("0000" + "01000000" + "02000000" + "00000000" + "0000" + "04" + "02" +
+            "F8FFFFFF" + "00007AC2" + "00" + "01" + "00" + "00", Convert.ToHexString(b));
+    }
+
+    [Fact]
+    public void Animated_model_update_targets_the_component_with_a_path()
+    {
+        string hex = Convert.ToHexString(InstanceEntities.AnimatedModel(0x3001, ProjectileObject.AnimatedComponentIndex, "ab"));
+        Assert.StartsWith("02BA" + "00003001", hex);
+        Assert.EndsWith("02" + "01" + "02000000" + "61006200", hex);
+    }
 }

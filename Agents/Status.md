@@ -39,8 +39,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   attributes come from the client's defaults.
 - **Spawn points.** The Coast uses the walkable cell farthest from any edge, not the arrival point next to the exit.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
-- **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it flies through everything (no collision), does not stop at walls, and does
-  not explode; ground casts do no damage ([11](docs/protocol/11-skills.md) §10).
+- **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster on its path (checked at launch) and explodes there,
+  but walls and doodads do not stop it ([11](docs/protocol/11-skills.md) §10).
 - **Combat.** The player's default attack kills monsters (server-side damage: the unarmed range, no damage model,
   no armour or resistances; the contact point is half the attack time, not the animation's). Monsters use only their
   first granted effect; the player's life is a fixed 50 for every class (no levels or stats). The server has no

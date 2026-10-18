@@ -504,6 +504,16 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
                     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(hitId), $"0x02bb remove dead monster 0x{hitId:x}");
             });
     }
+    // The impact: on a hit the projectile's model becomes the explosion (Game_PROJECTILE_IMPACT_AO overrides it; "none"
+    // turns it off), which plays its default animation; the object goes 1.5 s later. At the end of its range it just goes.
+    string impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? "Metadata/Effects/Spells/fireball/explode_new2.ao";
+    if (hitId != 0 && impact != "none")
+    {
+        await Send(remote, stream, ciphers, InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
+            $"0x02ba projectile 0x{id:x} explodes ({impact})");
+        await Task.Delay(1500);
+        if (conn.Closed) return;
+    }
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}");
 }
 
