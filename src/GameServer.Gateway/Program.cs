@@ -198,6 +198,11 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                     conn.Use(fresh);
                     Console.WriteLine($"[gateway] {remote} walk map captured: {fresh.Describe()}");
                 }
+                if (conn.Layout.AreaTransitions.Length == 0 && await AreaLayouts.WaitForTransitions(conn.Layout, conn.Seed) is { } withTransitions)
+                {
+                    conn.Use(withTransitions);
+                    Console.WriteLine($"[gateway] {remote} area transitions captured: {withTransitions.Describe()}");
+                }
                 await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character);
                 conn.PlayerSent = true;
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
@@ -512,12 +517,18 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             conn.ReplaceAreaTransition(id, changed);
             at = changed;
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove area transition 0x{id:x}");
-            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath), at.Blob()),
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(at.Type), at.Blob()),
                 $"0x02b9 create area transition {at}");
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 area transition 0x{id:x} enters wake zone");
         }
         await conn.Commands!.Reply($"Area transition 0x{id:x} at ({at.GridX}, {at.GridY}), {at.Rotation * 180 / MathF.PI:0.#} degrees, " +
             $"height {at.Height?.ToString(inv) ?? "terrain"}, model {at.Model ?? "none"}; you at ({px}, {py}).");
+    })
+    .Add("goto", "/goto <area id or name> (dev: change area as if through an area transition, e.g. /goto 1_1_3)", async args =>
+    {
+        string target = string.Join(' ', args);
+        if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
     })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
@@ -758,9 +769,9 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         messages.Add(($"0x00c0 inventory {inventoryId} row {slot.Row}", InstanceInventories.AddInventory(inventoryId++, slot)));
     messages.Add(("0x003d passive slots 0-2", InstanceEntities.PassiveSlots()));
     // Area transitions. Like the player they are queued by the world and created when 0x21 activates it.
-    uint transitionType = InstanceEntities.ObjectTypeHash(AreaTransitionObject.MetadataPath);
     foreach (var (id, transition) in layout.AreaTransitions)
-        messages.Add(($"0x02b9 create area transition {transition} type=0x{transitionType:x8}", InstanceEntities.CreateObject(id, transitionType, transition.Blob())));
+        messages.Add(($"0x02b9 create area transition 0x{id:x} {transition}",
+            InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(transition.Type), transition.Blob())));
     if (Environment.GetEnvironmentVariable("Game_GATEWAY_ENTER") == "1")
     {
         messages.Add(("0x0021 enter area", InstanceProtocol.EnterArea()));
@@ -841,21 +852,16 @@ static class AreaLayouts
     public const ushort LioneyesWatch = 0x235c, TheCoast = 0x7ad2;
 
     // Lioneye's Watch is one room, Metadata/Terrain/Act1/Town/Rooms/beach_town_unique_normal.arm (18 x 30 tiles), placed
-    // R270 by Graphs/beachtown.dgr ("default" "entrance2" "entrance1disabled"). Room (x, y) → grid (y, 413 - x):
-    // entrance2 (196, 384) → (384, 217) on the east edge is the area transition to The Coast (1_1_2, 0x7ad2); entrance1 is the
-    // disabled one-way Twilight Strand side; default (178, 346) → (346, 235). Agents/docs/protocol/08-area-transitions.md.
-    // Spawn (197, 261): the walkable cell farthest from any edge (Agents/docs/protocol/03 §7).
-    // The area transition sits on the gate's transition marker, not on entrance2 (the arrival spot in front of it): the
-    // terrain sub-tiles drawn with Art/Textures/Misc/map_areatransitionc.mat. The room's 15 x 18 tile
-    // beachencampment_v01_01 (room tile (3, 3)) has that material in its sub-tiles (5, 13) and (5, 14) (.tgt
-    // SubTileMaterialIndices, row-major, 15 per row, one column right of the raw index), i.e. room cells x 184..206,
-    // y 368..413, centre (195, 390.5) → grid (391, 218). 08-area-transitions.md §3.
-    // Its model is the tile object's virtual .ao: the client turns each .tmd record into
-    // "<.tdt folder>/<record name>.ao" (here the arch mesh beachencampment_v01_01_area_transition2.fmt), seen live.
-    static readonly (uint Id, AreaTransitionObject Transition)[] TownAreaTransitions =
-        [(0x2000, new AreaTransitionObject(GridX: 388, GridY: 230, DestinationHash16: TheCoast,
+    // R270 by Graphs/beachtown.dgr ("default" "entrance2" "entrance1disabled"). Spawn (197, 261): the walkable cell farthest
+    // from any edge (Agents/docs/protocol/03 §7).
+    // Area transitions come from AreaTransitionCatalog (the atlas, or the client's generated layout captured by
+    // scripts/walkmaps). Without the atlas the town still gets its gate to The Coast: the town tile's .tmd record
+    // beachencampment_v01_01_area_transition2 as the client places it (grid (388, 231), 3π/2, z −351.04) with its
+    // virtual .ao (the arch highlighted on hover). Agents/docs/protocol/08-area-transitions.md §5.
+    static readonly (uint Id, AreaTransitionObject Transition)[] TownFallback =
+        [(AreaTransitionCatalog.FirstId, new AreaTransitionObject(GridX: 388, GridY: 231, DestinationHash16: TheCoast,
             Model: "Metadata/Terrain/Beach/Town_v2/beachencampment_v01_01_area_transition2.ao",
-            Rotation: MathF.PI / 2, Height: -351.04f))];
+            Rotation: 3 * MathF.PI / 2, Height: -351.04f))];
 
     static readonly Dictionary<ushort, string> Ids = new() { [LioneyesWatch] = "1_1_town", [TheCoast] = "1_1_2" };
 
@@ -863,22 +869,26 @@ static class AreaLayouts
 
     public static AreaLayout For(ushort hash, uint seed)
     {
-        string id = Ids.GetValueOrDefault(hash, $"0x{hash:x4}");
+        string id = Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? $"0x{hash:x4}";
         byte[]? cells = LoadCells(id, seed, out int w, out int h);
+        var notes = new List<string>();
+        var transitions = AreaTransitionCatalog.For(hash, id, seed, notes);
+        foreach (var n in notes) Console.WriteLine($"[gateway] area {id} seed {seed}: {n}");
         if (hash == LioneyesWatch)
         {
+            if (transitions.Length == 0) transitions = TownFallback;
             // Older dumps were saved as data/walkability/1_1_town.bin without a .json.
             if (cells is null && File.Exists($"{Folder}/1_1_town.bin")) { cells = File.ReadAllBytes($"{Folder}/1_1_town.bin"); (w, h) = (690, 414); }
             bool fits = cells is not null && cells.Length == 690 * 414 && (w, h) == (690, 414);
-            return new AreaLayout(hash, id, 690, 414, 197, 261, fits ? Walkable(cells!, w, h) : null, TownAreaTransitions);
+            return new AreaLayout(hash, id, 690, 414, 197, 261, fits ? Walkable(cells!, w, h) : null, transitions);
         }
         if (cells is not null)
         {
             var (sx, sy) = DeepestCell(cells, w, h);
-            return new AreaLayout(hash, id, w, h, sx, sy, Walkable(cells, w, h), []);
+            return new AreaLayout(hash, id, w, h, sx, sy, Walkable(cells, w, h), transitions);
         }
         // No walk map yet: a position inside any grid; the client may place the player on unwalkable ground.
-        return new AreaLayout(hash, id, 0, 0, 197, 261, null, []);
+        return new AreaLayout(hash, id, 0, 0, 197, 261, null, transitions);
     }
 
     /// <summary>Tells scripts/walkmaps which area the next generated grid belongs to (data/walkability/current.json).</summary>
@@ -910,6 +920,23 @@ static class AreaLayouts
             {
                 var better = For(layout.Hash, seed);
                 return better.Walkable is null ? null : better;
+            }
+            await Task.Delay(100);
+        }
+        return null;
+    }
+
+    /// <summary>When the client reports the area generated (0x7d) and the layout has no area transitions yet: the ones
+    /// scripts/walkmaps captured meanwhile, if any. Waits up to 1 s for the file.</summary>
+    public static async Task<AreaLayout?> WaitForTransitions(AreaLayout layout, uint seed)
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            if (AreaTransitionCatalog.Captured(layout.Id, seed))
+            {
+                await Task.Delay(200);   // the capture is rewritten per object; let the last ones land
+                var better = For(layout.Hash, seed);
+                return better.AreaTransitions.Length > 0 ? better : null;
             }
             await Task.Delay(100);
         }

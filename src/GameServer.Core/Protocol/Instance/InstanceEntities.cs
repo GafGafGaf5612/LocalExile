@@ -174,7 +174,7 @@ public static partial class InstanceInventories
 /// Stats as the player's comp1 (`0x1421c2f40`).</para>
 /// </summary>
 public sealed record AreaTransitionObject(int GridX, int GridY, ushort DestinationHash16, string? Model = null, int Index = 0,
-    float Rotation = 0, float? Height = null)
+    float Rotation = 0, float? Height = null, string Type = AreaTransitionObject.MetadataPath)
 {
     public const string MetadataPath = "Metadata/MiscellaneousObjects/AreaTransition";
 
@@ -183,6 +183,12 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
     /// ObjectMagicProperties, MinimapIcon, InteractionAction, then two components the loop does not reach).</summary>
     public static readonly string[] ComponentOrder =
         ["Positioned", "Animated", "AreaTransition", "Stats", "ObjectMagicProperties", "MinimapIcon", "InteractionAction"];
+
+    /// <summary>Whether a type with these components (BaseEvents reads nothing) can use this blob: exactly
+    /// <see cref="ComponentOrder"/>. Types that add components (e.g. Transitionable) cannot: see
+    /// AreaTransitionCatalog.Resolve in the Gateway.</summary>
+    public static bool CanSerialize(IEnumerable<string> components) =>
+        components.Where(c => c != "BaseEvents").SequenceEqual(ComponentOrder);
 
     public byte[] Blob()
     {

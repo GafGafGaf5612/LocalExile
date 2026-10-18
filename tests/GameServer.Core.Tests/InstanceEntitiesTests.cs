@@ -221,6 +221,19 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Area_transition_blob_fits_only_types_with_its_exact_components()
+    {
+        // AreaTransition / AreaTransitionMapMarker (ot_components.py); WaterCaveAreaTransition adds Transitionable, which
+        // the client does not read for it (live 2026-10-18), so the Gateway creates it as a plain AreaTransition.
+        string[] plain = ["Positioned", "BaseEvents", "Animated", "AreaTransition", "Stats", "ObjectMagicProperties", "MinimapIcon", "InteractionAction"];
+        Assert.True(AreaTransitionObject.CanSerialize(plain));
+        Assert.False(AreaTransitionObject.CanSerialize([.. plain, "Transitionable"]));
+        Assert.False(AreaTransitionObject.CanSerialize(plain.Take(7)));
+        var marker = new AreaTransitionObject(114, 307, 0xf00a, Type: "Metadata/MiscellaneousObjects/AreaTransitionMapMarker");
+        Assert.Equal(new AreaTransitionObject(114, 307, 0xf00a).Blob(), marker.Blob());
+    }
+
+    [Fact]
     public void Player_skills_update_is_a_0x2ba_on_the_actor()
     {
         byte[] m = InstanceEntities.PlayerSkillsUpdate(0x1000, [new GrantedSkill(0x0102, 4474, 4430)]);

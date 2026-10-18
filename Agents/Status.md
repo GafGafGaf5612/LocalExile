@@ -1,6 +1,6 @@
 # Status
 
-Where the project stands. Last updated 2026-10-17, against client **3.29.3b**. Update this file in the same pull request
+Where the project stands. Last updated 2026-10-18, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
 What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in [docs/README.md](docs/README.md).
@@ -16,9 +16,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Player object (0x2b9) with its component blob; the character's name; Witch model | `InstanceEntities.cs` | [04](docs/protocol/04-player-entity.md) |
 | Inventories and passive slots the UI needs (empty) | Gateway | [05](docs/protocol/05-inventories-and-ui.md) |
 | Latency acks (0x1b/0x1c) and the HNC side channel, visibility (wake zone), click-to-move | Gateway, `Hnc.cs` | [07](docs/protocol/07-latency-visibility-movement.md) |
-| The Coast exit in town, on the gate with its arch highlighted on hover (the tile's `.tmd` object); area change through it; Ctrl+click opens the Instance Manager (list, join, create) | Gateway, Auth's instance registry | [08](docs/protocol/08-area-transitions.md), [09](docs/protocol/09-area-change.md) |
+| Area transitions in every area, with their destinations, models (the arch highlighted on hover), rotation and height: fixed layouts from the atlas, generated layouts from the walk-map recorder's capture; verified town ↔ The Coast ↔ The Tidal Island and The Coast ↔ The Mud Flats; area change through them; Ctrl+click opens the Instance Manager (list, join, create); `/goto <area>` | Gateway (`AreaTransitionCatalog.cs`), `scripts/walkmaps`, `scripts/re/atlas`, Auth's instance registry | [08](docs/protocol/08-area-transitions.md), [09](docs/protocol/09-area-change.md) |
 | Instances: one per town; other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs` | [09](docs/protocol/09-area-change.md) |
-| Walk maps captured from the client on first visit; the Gateway uses them for position estimates and spawns | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8 |
+| Walk maps and area transitions captured from the client on first visit; the Gateway uses them for position estimates, spawns and area transitions | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8, [08](docs/protocol/08-area-transitions.md) §7 |
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed` (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
 | Monsters: `/spawn_mob <row, Id or name>[@level] [friendly] [rarity] [name]`, `/mobs`, `/despawn`, `/mob_walk`, `/ai`: any of 10 345 of the 10 691 MonsterVarieties at a level and rarity, with full life for its level, hostile (red) or friendly, that chases the player when near (Move action 0x1ab, client pathing) | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
 | Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's 10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks per Second), and the server lowers the monster's life 2–5 at the contact point; moving cancels; the dead monster's life bar hides | `GrantedSkill`, `SkillCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) |
@@ -48,14 +48,17 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   (the client logs "Timeout while joining global chat channel").
 - Esc → "Exit to character selection": the client sends 0x153, gets no answer and hangs. Workaround:
   `.\scripts\dev\live.ps1 -NoClient`.
-- Exits beyond town: The Coast's own exits, and every other area.
+- Area transitions of a generated area need a `-Walkmaps` capture for its seed; quest-gated ones are created but the
+  way stays blocked: The Mud Flats' Submerged Passage has a client-side wall until quest flag `a1q4-PlacedGlyphs`
+  ([12](docs/protocol/12-quests.md)). Quest objects with extra components (the cave entrance) are sent as plain
+  AreaTransition. Quests are not implemented.
 - Items, gem skills, levelling, saving the character's position or progress. Hardcore's "Exit" on the death screen
   (C→S 0x153, like Esc → Exit).
 - `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (165 tests) and `dotnet test tests/GameServer.Data.Tests` (8 tests) pass.
+`dotnet test tests/GameServer.Core.Tests` (168 tests) and `dotnet test tests/GameServer.Data.Tests` (15 tests) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

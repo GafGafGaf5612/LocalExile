@@ -39,6 +39,56 @@ if (!exe) {
         send({ type: 'error', message: String(e) });
       }
     });
+    hookTileObjects(exe);
     send({ type: 'ready', module: exe.name });
   }
+}
+
+// Area transitions and waypoints of the generated layout (Agents/docs/protocol/08-area-transitions.md §5).
+// While generating, 0x141d7f700 walks each placed tile's .tmd records and calls 0x1420415e0(ctx, record):
+//   ctx[1] → placed tile: +0x30 i16 height offset (steps of 7.8125), +0x36 u8 rotation/flip code 0..7
+//   ctx[2] → i32 x, i32 y: the tile's grid origin;  ctx[3] → handle, *handle+0x28 → +0x60/+0x61 u8 size in tiles
+//   record: i32 x, i32 y (tile-local cell), f32 z (+0x10), f32 angle (+0x14); +0x30 type, +0x38 .ao (handle+8 → path)
+// The client spawns only its own doodads from them; server types (AreaTransition …) are skipped there, so their
+// placement is computed here the way 0x14202f1c0 does it, with the constants read from the client.
+function hookTileObjects(exe) {
+  const at = va => exe.base.add(ptr(va).sub(IMAGE_BASE));
+  const hook = at('0x1420415e0');
+  const bytes = Array.from(new Uint8Array(hook.readByteArray(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+  if (bytes !== '488bc448895808555657415441554156') {
+    send({ type: 'refused', reason: 'tile object hook: code does not match 3.29.3b' });
+    return;
+  }
+  const codes = Array.from(new Uint8Array(at('0x142fa04b0').readByteArray(24)));
+  const quarter = at('0x1436a3318').readFloat(), turn = at('0x1436a3674').readFloat();
+  const noHeight = at('0x1436a48d4').readFloat();
+  const path = h => { try { return h.isNull() ? null : h.add(8).readPointer().readUtf16String(); } catch (e) { return null; } };
+  Interceptor.attach(hook, {
+    onEnter(a) {
+      try {
+        const ctx = a[0], rec = a[1];
+        const type = path(rec.add(0x30).readPointer());
+        if (!type || !/AreaTransition|Waypoint$/.test(type)) return;
+        const tile = ctx.add(8).readPointer();
+        const code = Math.min(tile.add(0x36).readU8(), 8), heightOffset = tile.add(0x30).readS16();
+        const origin = ctx.add(0x10).readPointer();
+        const info = ctx.add(0x18).readPointer().readPointer().add(0x28).readPointer();
+        const w = info.add(0x60).readU8(), h = info.add(0x61).readU8();
+        const x = rec.readS32(), y = rec.add(4).readS32();
+        const c = code < 8 ? codes.slice(code * 3, code * 3 + 3) : [0, 1, 1];
+        const cells = [w * 23 - x - 1, x, h * 23 - y - 1, y];
+        const gx = cells[c[1] + 2 * c[0]] + origin.readS32(), gy = cells[(c[0] === 0 ? 2 : 0) + c[2]] + origin.add(4).readS32();
+        let rotation = rec.add(0x14).readFloat();
+        if (code >= 4 && code < 8) rotation = turn - rotation;
+        rotation += (code & 3) * quarter;
+        while (rotation < 0) rotation += turn;
+        while (rotation > turn) rotation -= turn;
+        const z = rec.add(0x10).readFloat();
+        send({ type: 'object', objectType: type, model: path(rec.add(0x38).readPointer()), x: gx, y: gy, rotation,
+               z: z === noHeight ? null : z - heightOffset * 7.8125, rawZ: z, heightOffset, code });
+      } catch (e) {
+        send({ type: 'error', message: 'tile object: ' + String(e) });
+      }
+    },
+  });
 }

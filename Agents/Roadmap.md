@@ -43,13 +43,22 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 2. The world
 
-### Exits in every area
-- **Known:** an exit is an AreaTransition object (0x2b9) with a 41-byte component blob; its position and target come
-  from the area's layout files. Only Lioneye's Watch → The Coast is placed. An exit that is a tile object (a `.tmd`
-  record) also needs its model, rotation and height from that record ([08](docs/protocol/08-area-transitions.md) §5).
-- **Start:** [08](docs/protocol/08-area-transitions.md) ("All zones: what it takes"), `AreaLayouts` in the Gateway.
-  `scripts/re/ot_components.py` lists the components of any object type.
-- **Done when:** The Coast's exits (back to town, to The Mud Flats) work, then the rest of Act 1.
+### Area transitions without a walk-map run
+- **Known:** every area gets its area transitions and destinations, but a generated area only has them once
+  `live.ps1 -Walkmaps` captured its layout for that seed ([08](docs/protocol/08-area-transitions.md) §7). 11 atlas
+  connections are unresolved, 41 are point-only, and four object types are sent as plain AreaTransition.
+- **Start:** reproduce the client's level generator (the atlas already parses graphs, rooms and tiles), or ship
+  captures for fixed seeds.
+- **Done when:** a new seed gets its area transitions without Frida.
+
+### Quests: Breaking Some Eggs (a1q4), the Submerged Passage
+- **Known:** the whole chain is in [12](docs/protocol/12-quests.md): three Rhoa Nest chests drop three glyphs, the Glyph
+  Wall takes them, quest flag `a1q4-PlacedGlyphs` removes the client-side `SunkenPassageBlocker` wall (the invisible
+  wall in front of the cave today) and the wall and waterfall play their Transitionable animations.
+- **Needs:** items (Roadmap "Items and inventories"), the Chest component's blob, the S→C quest flag message (unknown;
+  starting points in 12 §4), a Transitionable state change.
+- **Start:** find the quest flag message first: it alone opens the passage (e.g. a dev `/quest_flag a1q4-PlacedGlyphs`).
+- **Done when:** the glyph quest can be played through and the Submerged Passage opens.
 
 ### Monsters: beyond `/spawn_mob`
 - **Known:** spawning, levels, rarity, names, team, life, StateMachine / Transitionable types, walking, chasing and
@@ -82,7 +91,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ### Items and inventories
 - **Known:** inventories are sent empty (0xc0); item serialization is at `0x1421ec1d0`.
-  [05](docs/protocol/05-inventories-and-ui.md) "Open".
+  [05](docs/protocol/05-inventories-and-ui.md) "Open". Quests need them too: the Mud Flats glyphs are quest items
+  (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`, [12](docs/protocol/12-quests.md)).
 - **Done when:** a new character has its starting weapon and flasks, then items can be moved and dropped.
 
 ### A damage model (next)

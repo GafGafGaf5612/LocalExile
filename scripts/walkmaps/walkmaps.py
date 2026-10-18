@@ -4,8 +4,10 @@ Usage (started for you by `scripts/dev/live.ps1 -Walkmaps`):
     python scripts/walkmaps/walkmaps.py [--process Game.patched.exe] [--out data/walkability]
 
 Needs: pip install frida  (Python 3.9+). Attaches to the running client, waits for it if it is not running yet,
-and writes data/walkability/<area>_seed<seed>.bin plus <area>_seed<seed>.json ({"w":..,"h":..}). The area and seed come
-from data/walkability/current.json, which GameServer.Gateway writes on every connection. Existing files are kept.
+and writes data/walkability/<area>_seed<seed>.bin plus <area>_seed<seed>.json ({"w":..,"h":..}), and the layout's area
+transitions and waypoints (grid position, rotation, height, model) to <area>_seed<seed>.transitions.json. The area and
+seed come from data/walkability/current.json, which GameServer.Gateway writes on every connection. Existing walk maps are
+kept.
 Nothing is sent anywhere; the files stay on your machine (data/ is git-ignored).
 """
 
@@ -86,6 +88,8 @@ def on_message(message, data, out):
         log(f"hook error: {payload.get('message')}")
     elif kind == "grid" and data is not None:
         save(out, payload["w"], payload["h"], data)
+    elif kind == "object":
+        save_object(out, payload)
 
 
 USED = set()  # current.json nonces that already got their grid
@@ -112,6 +116,25 @@ def save(out, w, h, cells):
     with open(stem + ".json", "w", encoding="utf-8") as f:
         json.dump({"w": w, "h": h}, f)
     log(f"saved {os.path.basename(stem)}.bin ({w}x{h})")
+
+
+OBJECTS = {}  # current.json nonce -> the tile objects reported for that area load
+
+
+def save_object(out, obj):
+    """Adds one area transition / waypoint of the area being generated to <area>_seed<seed>.transitions.json."""
+    area = current_area(out)
+    if area is None or time.time() - float(area.get("written", 0)) > FRESH_SECONDS:
+        log(f"got a tile object ({obj.get('objectType')}) outside a fresh area load; not saved")
+        return
+    found = OBJECTS.setdefault(area.get("nonce"), [])
+    found.append({k: obj.get(k) for k in ("objectType", "model", "x", "y", "rotation", "z")})
+    stem = os.path.join(out, f"{area['id']}_seed{area['seed']}")
+    with open(stem + ".transitions.json.tmp", "w", encoding="utf-8") as f:
+        json.dump({"area": area["id"], "seed": area["seed"], "objects": found}, f, indent=1)
+    os.replace(stem + ".transitions.json.tmp", stem + ".transitions.json")
+    log(f"{os.path.basename(stem)}: {obj.get('objectType', '').rsplit('/', 1)[-1]} at ({obj.get('x')}, {obj.get('y')}) "
+        f"z {obj.get('z')} (raw {obj.get('rawZ')}, height offset {obj.get('heightOffset')})")
 
 
 def current_area(out):

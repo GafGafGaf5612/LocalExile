@@ -3,11 +3,13 @@
 State of 2026-10-16: Lioneye's Watch has its exit to **The Coast** at the town's east edge. The client creates it,
 shows its icon on the map and puts it in the wake zone. Using it is in [09](09-area-change.md).
 2026-10-17: the exit sits on the gate and highlights the gate's arch on mouse-over like the real game (§5).
+2026-10-18: **every area gets its area transitions** with destinations (§7): verified live town ↔ The Coast ↔ The Tidal
+Island, The Coast → The Mud Flats and The Mud Flats' three.
 
 ![The Coast exit on the town map](../re/evidence/2026-10-16-coast-exit-on-map.jpg)
 
-Code: `AreaTransitionObject` (`src/GameServer.Core/Protocol/Instance/InstanceEntities.cs`), `Program.Exits`
-(`src/GameServer.Gateway/Program.cs`). Tests: `InstanceEntitiesTests.Area_transition_blob_layout_and_type`,
+Code: `AreaTransitionObject` (`src/GameServer.Core/Protocol/Instance/InstanceEntities.cs`), `AreaTransitionCatalog`
+(`src/GameServer.Gateway/AreaTransitionCatalog.cs`), `AreaLayouts` (`src/GameServer.Gateway/Program.cs`). Tests: `InstanceEntitiesTests.Area_transition_blob_layout_and_type`,
 `Area_transition_with_a_tile_object_model_rotation_and_height`.
 
 ## 1. What an exit is
@@ -155,8 +157,9 @@ Other exits: an exit that is a `.tmd` record takes its model, rotation and heigh
 
 ## Open
 
-- The rotation's sign convention (π/2 was picked live from 90°/270°); check it on a tile object whose mesh is not
-  symmetric before placing other tile exits.
+- The rotation's sign convention: settled. The client computes 3π/2 for the town arch (record 0 + code 3's three quarter
+  turns, §7), which looks the same as the π/2 picked live because the arch is a flat plane; the Gateway uses the
+  client's value.
 - Arrival points: when coming back from The Coast, the player should appear at entrance2. A fresh login should
   probably use "default" (346, 235) instead of today's (197, 261).
 
@@ -269,10 +272,54 @@ transition tile seen so far), and 2 referenced files are not in the index.
 
 ### Not derived / next
 
-- Generated areas: only room-local positions, because the generator places rooms by seed. Use the Frida capture
-  (`scripts/re/frida/trace-tile-transitions.js`) per (area, seed), or reproduce the generator.
+- Generated areas: only room-local positions, because the generator places rooms by seed. The walk-map recorder
+  captures the client's placement per (area, seed) (§7), or reproduce the generator.
 - Fixed layouts with an outer buffer (`OuterBufferSize` ≠ 0) are flagged: the grid offset may need the buffer added.
 - Mirrored room rotations (`F…`) and the edge-point rule under quarter turns are inferred, not verified live. The
   Twilight Strand's `zombie_bite` key fits no orientation by points; the edge/corner set is kept and flagged.
 - Point-only entrances (e.g. 2_11_endgame_town → 2_10_town, Menagerie) need the object's model from elsewhere: the
   room's tile .tgt, or a live capture.
+
+## 7. Every area's area transitions in the Gateway (live 2026-10-18)
+
+**Where they are.** Generated layouts exist only in the client, so `scripts/walkmaps` (started by
+`live.ps1 -Walkmaps`) also hooks the per-record callback `0x1420415e0` of the tile-object loop (`0x141d7f700` walks each
+placed tile's `.tmd` records). For records of AreaTransition or Waypoint types it computes the placement the way
+`0x14202f1c0` does and writes `data/walkability/<area>_seed<seed>.transitions.json` next to the walk map:
+
+| From the client | Meaning |
+|---|---|
+| `ctx[1]` → placed tile | `+0x30` i16 height offset (steps of 7.8125), `+0x36` u8 rotation/flip code 0..7 |
+| `ctx[2]` | i32 x, i32 y: the tile's grid origin |
+| `ctx[3]` → handle, `*handle + 0x28` | `+0x60` / `+0x61` u8 tile size (tiles of 23 cells) |
+| record | i32 x, i32 y (tile-local cell), f32 z `+0x10` (+∞ = none), f32 angle `+0x14`, type handle `+0x30`, `.ao` handle `+0x38` (handle `+8` → UTF-16 path) |
+| code table `0x142fa04b0` | 8 × 3 bytes T: a = [w·23 − x − 1, x, h·23 − y − 1, y]; gx = a[T1 + 2·T0] + ox, gy = a[(T0 == 0 ? 2 : 0) + T2] + oy |
+| angle | 2π − angle for codes ≥ 4, then + (code & 3) · π/2 (`0x1436a3318`), wrapped to [0, 2π] |
+| z | record z − height offset · 7.8125 |
+
+The client spawns only its own doodads from these records; server types (AreaTransition, Waypoint …) fail its type
+filter, which is why nothing in the client ever creates them. The Frida trace `scripts/re/frida/trace-tile-records.js`
+is the same hook for one-off use.
+
+**Where they lead.** `AreaTransitionCatalog` loads the atlas (§6) once and, per area:
+- with a capture: picks the graph variant (topology) whose transition models cover the captured models best, then
+  gives each captured AreaTransition the destination of the same model in that topology (resolved and enabled). Per
+  topology only 53 of 6 474 models lead to more than one place; those are logged and skipped. Disabled one-way links
+  (e.g. town → The Twilight Strand, `entrance1disabled`) are not created;
+- without a capture: the atlas's static placement for fixed layouts (26 areas, the town among them);
+- the town keeps a built-in fallback when there is no atlas.
+The objects get ids 0x2000, 0x2001, …, their model, rotation and fixed height, and their own object type. After 0x7d
+an area without area transitions re-reads the capture (the recorder writes it while the client generates).
+
+**Object types.** Every resolved transition type but four writes the AreaTransition blob. Types that add components
+(`Metadata/QuestObjects/WaterCave/WaterCaveAreaTransition` adds Transitionable; `DreamPortal`, two effect objects) are
+created as plain `AreaTransition`, with the same model, place and destination. Live 2026-10-18, The Mud Flats' cave
+entrance: sent as its own type with the AreaTransition blob, the client read only the parent's components (Frida
+`check-components.js`: 8 components, blob consumed exactly), kept Transitionable at state 0 and crashed in its
+post-create event (`0x141ded7b9`); a Transitionable byte appended to the blob was read as the task count (Buffer
+Underflow). `data/object-types.json` now also lists the atlas's tile-object types (`ot_components.py --all`). The quest
+behind that cave is in [12](12-quests.md).
+
+**Dev commands.** `/goto <area id or name>` changes area as if through an area transition (e.g. `/goto 1_1_3`);
+`/transition …` (§5) changes the first one.
+

@@ -224,7 +224,8 @@ map: which cells are walkable. Walk maps are not shipped. You capture them from 
 - **Without walk maps:** you can still play. In town, position estimates assume every cell is walkable. In other
   areas you may spawn somewhere odd, for example in the sea on The Coast.
 - **With walk maps:** `live.ps1 -Walkmaps` attaches a small Frida script to the client, which saves each area's map
-  the first time the client generates it. The Gateway picks the map up during that same load.
+  and its area transitions (`<area>_seed<seed>.transitions.json`) the first time the client generates it. The Gateway
+  picks both up during that same load. Without a capture, a generated area has no area transitions.
 
 ```powershell
 python -m pip install frida

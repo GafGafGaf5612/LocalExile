@@ -15,7 +15,8 @@
 #
 # Files come from the GGPK through scripts/re/ggdump (read-only; works while the client runs) and are cached in
 # Tools/re/out/ot. --all enumerates object types from every Metadata path in data/tables/*.json plus the raw
-# strings of the dat files our extractor could not decode (MonsterVarieties, Chests).
+# strings of the dat files our extractor could not decode (MonsterVarieties, Chests), plus the tile objects' types
+# in data/area-transitions.json (scripts/re/atlas; e.g. Metadata/QuestObjects/WaterCave/WaterCaveAreaTransition).
 import json, os, re, subprocess, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -249,6 +250,12 @@ def all_types():
     for f in sorted(os.listdir(tables)):
         if f.endswith(".json"):
             walk(json.load(open(os.path.join(tables, f), encoding="utf-8")))
+    atlas = os.path.join(ROOT, "data", "area-transitions.json")
+    if os.path.exists(atlas):
+        for area in json.load(open(atlas, encoding="utf-8")).get("areas", []):
+            for topology in area.get("topologies") or []:
+                for t in topology.get("transitions") or []:
+                    if t.get("objectType"): paths.add(t["objectType"])
     fetch(RAW_DATS)
     for d in RAW_DATS:
         b = open(cache_name(d), "rb").read()
