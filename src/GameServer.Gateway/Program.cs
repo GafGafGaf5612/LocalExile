@@ -403,8 +403,8 @@ static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers 
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
 // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
 // aimed point and on to its range with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid
-// cell), stopping at the first monster on its path, which takes the skill's fire damage
-// (spell_minimum/maximum_base_fire_damage; no damage model yet); then the object is removed. Walls do not stop it.
+// cell), stopping at the first wall or monster on its path; a monster takes the skill's fire damage
+// (spell_minimum/maximum_base_fire_damage; no damage model yet). It explodes there; then the object is removed.
 static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
@@ -435,14 +435,22 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
             if (d != 0) length = Math.Min(length, Math.Max(0, (d > 0 ? hi : lo) / (d / aim)));
     // Collision: the first living monster within Game_PROJECTILE_HIT_RADIUS cells (default 4: the row's CollisionRadius
     // 2 plus a monster's body) of the projectile when it passes, using where the monster will be by then. Checked once at
-    // launch, cell by cell along the path; a monster that walks into the path later is not hit.
+    // launch, half a cell at a time along the path; a monster that walks into the path later is not hit. Walls and
+    // doodads: the first cell the area's projectile grid blocks (ProjectileGrid; without one nothing blocks).
     double hitRadius = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HIT_RADIUS"), inv, out var phr) && phr > 0 ? phr : 4;
     double launched = conn.Clock.Elapsed.TotalSeconds;
     uint hitId = 0;
+    bool hitWall = false;
     lock (conn.Monsters)
-        for (double s = 0; s <= length && hitId == 0; s += 1)
+        for (double s = 0; s <= length && hitId == 0 && !hitWall; s += 0.5)
         {
             double px = from.X + dx / aim * s, py = from.Y + dy / aim * s, at = launched + s / cellsPerSecond;
+            if (ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, (int)Math.Round(px), (int)Math.Round(py)) == true)
+            {
+                hitWall = true;
+                length = Math.Max(0, s - 0.5);
+                break;
+            }
             foreach (var (mid, mon) in conn.Monsters)
             {
                 if (mon.Dead || mon.Life == 0) continue;
@@ -472,7 +480,7 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     // 0x1ba's float is the move's duration in seconds, not a speed (InstanceProtocol.MoveTo).
     await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: endHeight is int e ? (uint)e : TerrainHeight),
         $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight?.ToString() ?? "terrain"} → {endHeight?.ToString() ?? "terrain"}" +
-        (hitId != 0 ? $", will hit monster 0x{hitId:x}" : ""));
+        (hitId != 0 ? $", will hit monster 0x{hitId:x}" : hitWall ? ", will hit a wall" : ""));
     await Task.Delay(TimeSpan.FromSeconds(cells / cellsPerSecond));
     if (conn.Closed) return;
     SpawnedMonster? m = null;
@@ -504,10 +512,11 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
                     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(hitId), $"0x02bb remove dead monster 0x{hitId:x}");
             });
     }
-    // The impact: on a hit the projectile's model becomes the explosion (Game_PROJECTILE_IMPACT_AO overrides it; "none"
-    // turns it off), which plays its default animation; the object goes 1.5 s later. At the end of its range it just goes.
+    // The impact: on a monster or a wall the projectile's model becomes the explosion (Game_PROJECTILE_IMPACT_AO overrides
+    // it; "none" turns it off), which plays its default animation; the object goes 1.5 s later. At the end of its range it
+    // just goes.
     string impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? "Metadata/Effects/Spells/fireball/explode_new2.ao";
-    if (hitId != 0 && impact != "none")
+    if ((hitId != 0 || hitWall) && impact != "none")
     {
         await Send(remote, stream, ciphers, InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
             $"0x02ba projectile 0x{id:x} explodes ({impact})");

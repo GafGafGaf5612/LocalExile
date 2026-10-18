@@ -4,7 +4,7 @@ Usage (started for you by `scripts/dev/live.ps1 -Walkmaps`):
     python scripts/walkmaps/walkmaps.py [--process Game.patched.exe] [--out data/walkability]
 
 Needs: pip install frida  (Python 3.9+). Attaches to the running client, waits for it if it is not running yet,
-and writes data/walkability/<area>_seed<seed>.bin plus <area>_seed<seed>.json ({"w":..,"h":..}), and the layout's area
+and writes data/walkability/<area>_seed<seed>.bin plus <area>_seed<seed>.json ({"w":..,"h":..}), and <area>_seed<seed>.projectile.bin (what stops projectiles), and the layout's area
 transitions and waypoints (grid position, rotation, height, model) to <area>_seed<seed>.transitions.json. The area and
 seed come from data/walkability/current.json, which GameServer.Gateway writes on every connection. Existing walk maps are
 kept.
@@ -88,6 +88,8 @@ def on_message(message, data, out):
         log(f"hook error: {payload.get('message')}")
     elif kind == "grid" and data is not None:
         save(out, payload["w"], payload["h"], data)
+    elif kind == "projectile" and data is not None:
+        save_projectile(out, payload["w"], payload["h"], data)
     elif kind == "object":
         save_object(out, payload)
 
@@ -116,6 +118,21 @@ def save(out, w, h, cells):
     with open(stem + ".json", "w", encoding="utf-8") as f:
         json.dump({"w": w, "h": h}, f)
     log(f"saved {os.path.basename(stem)}.bin ({w}x{h})")
+
+
+def save_projectile(out, w, h, cells):
+    """The projectile grid sent right after the walk map of the same load: <area>_seed<seed>.projectile.bin."""
+    area = current_area(out)
+    if area is None or time.time() - float(area.get("written", 0)) > FRESH_SECONDS:
+        log(f"got a {w}x{h} projectile grid outside a fresh area load; not saved")
+        return
+    stem = os.path.join(out, f"{area['id']}_seed{area['seed']}")
+    if os.path.exists(stem + ".projectile.bin"):
+        return
+    with open(stem + ".projectile.bin.tmp", "wb") as f:
+        f.write(cells)
+    os.replace(stem + ".projectile.bin.tmp", stem + ".projectile.bin")
+    log(f"saved {os.path.basename(stem)}.projectile.bin ({w}x{h})")
 
 
 OBJECTS = {}  # current.json nonce -> the tile objects reported for that area load
