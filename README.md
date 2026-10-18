@@ -12,16 +12,23 @@ A local, from-scratch server for the Path of Exile **3.29.3b** client. It is wri
 engineering of the client's network protocol. You play on your own machine against servers running on 127.0.0.1.
 
 This project is not affiliated with or endorsed by Grinding Gear Games. It contains **no game files, keys or game data**.
-You need your own installed copy of the client, and everything the servers need is generated locally from it.
+You need your own installed copy of the client, and everyt
 
-## Showcase
+hing the servers need is generated locally from it.
+
+## Showcase (Most recent to older)
+https://github.com/user-attachments/assets/fead9d6a-b2ce-4908-9e73-ccaaae78a08a
+
+Mobs, Loot, RF, Level/XP, Passive Tree (better quality showcase is on [youtube](https://www.youtube.com/watch?v=rfnCaXQaxBo))
+
+https://github.com/user-attachments/assets/7b732013-2d04-4e81-a2fa-5437099f4b6d
+
+Spawning mobs in A1 Town
 
 https://github.com/user-attachments/assets/ebb49e70-93aa-464f-a6cd-c6c130dd8c5a
 
 Character select, Lioneye's Watch, taking The Coast exit,
 and `/set_speed` in The Coast, all against the local servers.
-
-https://github.com/user-attachments/assets/7b732013-2d04-4e81-a2fa-5437099f4b6d
 
 ## What works
 
