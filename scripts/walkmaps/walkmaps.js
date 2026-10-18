@@ -44,6 +44,7 @@ if (!exe) {
       }
     });
     hookTileObjects(exe);
+    hookDoodads(exe);
     send({ type: 'ready', module: exe.name });
   }
 }
@@ -92,6 +93,37 @@ function hookTileObjects(exe) {
                z: z === noHeight ? null : z - heightOffset * 7.8125, rawZ: z, heightOffset, code });
       } catch (e) {
         send({ type: 'error', message: 'tile object: ' + String(e) });
+      }
+    },
+  });
+}
+
+// Every doodad the client places, rooms' doodads included (Agents/docs/protocol/14-monster-packs.md §3). 0x142042360
+// (record, …) creates one client-side doodad from a placed record laid out like a .tmd record, already in world terms:
+// i32 grid x, i32 grid y, f32 world x, f32 world y, f32 z (+0x10), f32 angle (+0x14), type handle +0x30, .ao handle +0x38.
+// The Gateway matches them against data/room-points.json to find where rooms with monster points ("mapboss") were put.
+// Sent in batches; walkmaps.py writes <area>_seed<seed>.doodads.json.
+function hookDoodads(exe) {
+  const hook = exe.base.add(ptr('0x142042360').sub(IMAGE_BASE));
+  const bytes = Array.from(new Uint8Array(hook.readByteArray(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+  if (bytes !== '4c8bdc49895310535657415441554156') {
+    send({ type: 'refused', reason: 'doodad hook: code does not match 3.29.3b (or another script hooks it)' });
+    return;
+  }
+  const path = h => { try { return h.isNull() ? null : h.add(8).readPointer().readUtf16String(); } catch (e) { return null; } };
+  let batch = [], timer = null;
+  const flush = () => { timer = null; if (batch.length) { send({ type: 'doodads', doodads: batch }); batch = []; } };
+  Interceptor.attach(hook, {
+    onEnter(a) {
+      try {
+        const r = a[1];
+        const model = path(r.add(0x38).readPointer());
+        if (!model) return;
+        batch.push([model, r.readS32(), r.add(4).readS32(), r.add(0x14).readFloat()]);
+        if (batch.length >= 500) flush();
+        else if (timer === null) timer = setTimeout(flush, 200);
+      } catch (e) {
+        send({ type: 'error', message: 'doodad: ' + String(e) });
       }
     },
   });

@@ -56,11 +56,13 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ### Monsters: beyond `/spawn_mob`
 - **Known:** spawning, levels, rarity, names, team, life, StateMachine / Transitionable types, walking, chasing and
-  melee attacks all work ([10](docs/protocol/10-chat-and-commands.md) §5, [11](docs/protocol/11-skills.md) §6).
-- **Start:** the "emerge" action for emerge monsters, mods, the boss life bar (StateMachine `boss_life_bar`), the 346
-  varieties with NPC / ControlZone / BlightTower … components (each needs its deserializer, schema.md), spawning packs
-  in areas. Check every new component with `scripts/re/frida/check-components.js`.
-- **Done when:** areas are populated with monsters that fight back.
+  melee attacks all work ([10](docs/protocol/10-chat-and-commands.md) §5, [11](docs/protocol/11-skills.md) §6); areas
+  are populated with their MonsterPacks and unique boss ([14](docs/protocol/14-monster-packs.md)).
+- **Start:** the "emerge" action for emerge monsters (then add the skipped emerge packs), mods for magic/rare monsters
+  (and their life bonus), the boss life bar (StateMachine `boss_life_bar`), pack `Grounds`, keeping an instance's
+  monsters (dead stay dead), the 346 varieties with NPC / ControlZone / BlightTower … components (each needs its
+  deserializer, schema.md). Check every new component with `scripts/re/frida/check-components.js`.
+- **Done when:** monsters in areas match the official game's (mods, rarity bonuses, emerge, boss bar).
 
 ### NPCs in town
 - Same object mechanism as monsters, with NPC types and their dialogue components. Depends on the monster work.

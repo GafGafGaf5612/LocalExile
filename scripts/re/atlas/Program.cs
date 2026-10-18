@@ -1,4 +1,4 @@
-// usage: dotnet run --project scripts/re/atlas -- [Client/Content.ggpk] [out.json | survey]
+// usage: dotnet run --project scripts/re/atlas -- [Client/Content.ggpk] [out.json | survey | room-points [out.json]]
 // Derives every WorldAreas row's area transitions and their destinations from the game files and writes
 // data/area-transitions.json plus a coverage report. Agents/docs/protocol/08-area-transitions.md §6.
 using Atlas;
@@ -28,6 +28,11 @@ if (output == "survey")
 if (output == "survey2")
 {
     Survey2.Run(files, topologies, args.Length > 2 ? args[2] : "Act1/");
+    return;
+}
+if (output == "room-points")
+{
+    RoomPoints.Run(files, areas, topologies, args.Length > 2 ? args[2] : Path.Combine(root, "data", "room-points.json"));
     return;
 }
 if (output == "debug")

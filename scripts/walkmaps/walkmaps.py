@@ -5,7 +5,8 @@ Usage (started for you by `scripts/dev/live.ps1 -Walkmaps`):
 
 Needs: pip install frida  (Python 3.9+). Attaches to the running client, waits for it if it is not running yet,
 and writes data/walkability/<area>_seed<seed>.bin plus <area>_seed<seed>.json ({"w":..,"h":..}), and <area>_seed<seed>.projectile.bin (what stops projectiles), and the layout's area
-transitions and waypoints (grid position, rotation, height, model) to <area>_seed<seed>.transitions.json. The area and
+transitions and waypoints (grid position, rotation, height, model) to <area>_seed<seed>.transitions.json, and every placed
+doodad (model, grid cell, angle) to <area>_seed<seed>.doodads.json (for the rooms' monster points). The area and
 seed come from data/walkability/current.json, which GameServer.Gateway writes on every connection. Existing walk maps are
 kept.
 Nothing is sent anywhere; the files stay on your machine (data/ is git-ignored).
@@ -92,6 +93,8 @@ def on_message(message, data, out):
         save_projectile(out, payload["w"], payload["h"], data)
     elif kind == "object":
         save_object(out, payload)
+    elif kind == "doodads":
+        save_doodads(out, payload.get("doodads") or [])
 
 
 USED = set()  # current.json nonces that already got their grid
@@ -152,6 +155,27 @@ def save_object(out, obj):
     os.replace(stem + ".transitions.json.tmp", stem + ".transitions.json")
     log(f"{os.path.basename(stem)}: {obj.get('objectType', '').rsplit('/', 1)[-1]} at ({obj.get('x')}, {obj.get('y')}) "
         f"z {obj.get('z')} (raw {obj.get('rawZ')}, height offset {obj.get('heightOffset')})")
+
+
+DOODADS = {}  # current.json nonce -> [model, x, y, angle] of every doodad placed in that area load
+
+
+def save_doodads(out, batch):
+    """Adds placed doodads of the area being generated to <area>_seed<seed>.doodads.json (models listed once)."""
+    area = current_area(out)
+    if area is None or time.time() - float(area.get("written", 0)) > FRESH_SECONDS:
+        return
+    found = DOODADS.setdefault(area.get("nonce"), [])
+    found.extend(batch)
+    models = sorted({d[0] for d in found})
+    index = {m: i for i, m in enumerate(models)}
+    stem = os.path.join(out, f"{area['id']}_seed{area['seed']}")
+    with open(stem + ".doodads.json.tmp", "w", encoding="utf-8") as f:
+        json.dump({"area": area["id"], "seed": area["seed"], "models": models,
+                   "doodads": [[index[d[0]], d[1], d[2], round(d[3], 4)] for d in found]}, f)
+    os.replace(stem + ".doodads.json.tmp", stem + ".doodads.json")
+    if len(found) == len(batch) or len(found) // 1000 != (len(found) - len(batch)) // 1000:
+        log(f"{os.path.basename(stem)}: {len(found)} doodads")
 
 
 def current_area(out):

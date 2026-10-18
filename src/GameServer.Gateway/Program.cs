@@ -250,6 +250,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 conn.PlayerSent = true;
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
+                await PopulateArea(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
             }
         }
@@ -261,6 +262,69 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         // The client's answer to 0x2b2 (0x142148690): it is ready to leave, so move it now.
         if (uid == InstanceTransfer.LeaveAreaAckId && conn.PendingTransfer is { } t) await Transfer(remote, stream, ciphers, conn, t);
     }
+}
+
+// Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
+// the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
+static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
+    byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true)
+{
+    uint id = conn.NextObjectId++;
+    // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
+    uint life = (uint)(Monsters.BaseLife(variety, level) ?? 100);
+    // The type supplies the animated object; Game_MONSTER_AO=1 also sends the variety's first AOFiles path (Animated
+    // bit0), which is not needed.
+    string? ao = Environment.GetEnvironmentVariable("Game_MONSTER_AO") == "1" ? variety.AnimatedObject : null;
+    ushort team = friendly ? (ushort)0 : (ushort)1;
+    // Its attack: the variety's first granted effect (Hungry Corpse: Melee) at its level, with the variety's attack time,
+    // reach and the level's damage as the skill's final stats (11-skills.md §7).
+    var damage = Monsters.BaseDamage(variety, level) ?? (1, 1);
+    var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange, damage.Min, damage.Max);
+    var skill = variety.GrantedEffects is [int effect, ..]
+        ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
+    var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
+        skill is null ? null : [skill], skill is null ? null : attack.Stats());
+    // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
+    if (conn.MonsterTypes.Add((variety.Row, level)))
+        await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
+            $"0x0020 monster type {variety.Id}@{level} (row {variety.Row})");
+    uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
+    // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()), !log ? null :
+        $"0x02b9 create {rarity}{(friendly ? " friendly" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 monster 0x{id:x} enters wake zone");
+    lock (conn.Monsters)
+        conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
+            variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life) { Attack = skill is null ? null : attack, Hostile = !friendly };
+}
+
+// The area's monsters, once the player is in (Agents/docs/protocol/14-monster-packs.md): MonsterPacks scattered over the
+// walk map, the room points' packs and the unique boss at "mapboss" (AreaPopulation). Towns have none; neither does an
+// area without a walk map. Game_MONSTERS=0 turns it off.
+static async Task PopulateArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    var layout = conn.Layout;
+    if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0" || layout.Walkable is not { } walkable) return;
+    if (Packs.For(layout.Id) is not { } area || (area.Scattered.Count == 0 && area.Bosses.Count == 0)) return;
+    if (Monsters.Error is { } error) { Console.WriteLine($"[gateway] {remote} area monsters: {error}"); return; }
+    // Emerge monsters (Gravel Eater …) stay hidden without the Emerge action the server does not send yet.
+    bool Spawnable(int row) => Monsters.Find(row.ToString()) is { Supported: true } v && !v.Id.Contains("Emerge", StringComparison.OrdinalIgnoreCase);
+    var notes = new List<string>();
+    var points = AreaPopulation.LoadPoints(layout.Id, conn.Seed, notes);
+    var spawns = AreaPopulation.Plan(area, layout.GridW, layout.GridH, walkable, (layout.SpawnX, layout.SpawnY),
+        [.. layout.AreaTransitions.Select(t => (t.Transition.GridX, t.Transition.GridY))], points,
+        HashCode.Combine(layout.Hash, conn.Seed), Spawnable, notes);
+    foreach (var n in notes) Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: {n}");
+    byte level = (byte)Math.Clamp(area.AreaLevel, 1, 100);
+    foreach (var s in spawns)
+    {
+        var variety = Monsters.Find(s.Variety.ToString())!;
+        bool notable = s.Rarity is MonsterRarity.Unique or MonsterRarity.Rare;
+        await SpawnMonster(remote, stream, ciphers, conn, variety, level, s.Rarity, s.X, s.Y, log: notable);
+    }
+    Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: created {spawns.Count} at level {level}: " +
+        string.Join(", ", spawns.GroupBy(s => s.Pack).Select(g => $"{g.Key} × {g.Count()}")) +
+        $"; unique: {string.Join(", ", spawns.Where(s => s.Rarity == MonsterRarity.Unique).Select(s => $"{Monsters.Find(s.Variety.ToString())!.Name} at ({s.X}, {s.Y})").DefaultIfEmpty("none"))}");
 }
 
 // An area transition click. Plain: change area (0x2b2 now, the move itself once the client acknowledges with 0x2cb).
@@ -760,33 +824,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             return;
         }
         var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
-        uint id = conn.NextObjectId++;
-        // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
-        uint life = (uint)(Monsters.BaseLife(variety, level) ?? 100);
-        // The type supplies the animated object; Game_MONSTER_AO=1 also sends the variety's first AOFiles path (Animated
-        // bit0), which is not needed.
-        string? ao = Environment.GetEnvironmentVariable("Game_MONSTER_AO") == "1" ? variety.AnimatedObject : null;
-        ushort team = friendly ? (ushort)0 : (ushort)1;
-        // Its attack: the variety's first granted effect (Hungry Corpse: Melee) at its level, with the variety's attack time,
-        // reach and the level's damage as the skill's final stats (11-skills.md §7).
-        var damage = Monsters.BaseDamage(variety, level) ?? (1, 1);
-        var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange, damage.Min, damage.Max);
-        var skill = variety.GrantedEffects is [int effect, ..]
-            ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
-        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
-            skill is null ? null : [skill], skill is null ? null : attack.Stats());
-        // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
-        if (conn.MonsterTypes.Add((variety.Row, level)))
-            await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
-                $"0x0020 monster type {variety.Id}@{level} (row {variety.Row})");
-        uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
-        // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()),
-            $"0x02b9 create {rarity}{(friendly ? " friendly" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 monster 0x{id:x} enters wake zone");
-        lock (conn.Monsters)
-            conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
-                variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life) { Attack = skill is null ? null : attack, Hostile = !friendly };
+        await SpawnMonster(remote, stream, ciphers, conn, variety, level, rarity, x, y, name, friendly);
     })
     .Add("item", "/item <BaseItemTypes row, Id or name> [count] (into the inventory, e.g. /item Small Life Flask 2, /item 384)", async args =>
     {
@@ -1336,6 +1374,8 @@ sealed partial class Program
 
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
+    // MonsterPacks per area (MonsterPacks.cs); loaded with the first area that has monsters.
+    internal static readonly PackCatalog Packs = new();
     // The skills granted to players (the default attack); loaded with the first player.
     internal static readonly SkillCatalog Skills = new();
     // Stat names ↔ client keys (Stats.dat row + 1).

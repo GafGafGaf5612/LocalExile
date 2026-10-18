@@ -85,6 +85,13 @@ python -I scripts/re/ot_components.py --items --json data/item-types.json
 
 Without `data/item-types.json` characters start with no items and `/item` answers that the file is missing.
 
+The rooms with monster points (the unique boss's `mapboss`, named packs), used to place an area's unique boss
+(Agents/docs/protocol/14-monster-packs.md §3; game data, git-ignored):
+
+```powershell
+dotnet run --project scripts/re/atlas -- Client/Content.ggpk room-points
+```
+
 For an AI agent, register REA as an MCP server in `.mcp.json` at the repository root (git-ignored, because the paths are
 specific to your PC):
 
@@ -235,7 +242,9 @@ map: which cells are walkable. Walk maps are not shipped. You capture them from 
   areas you may spawn somewhere odd, for example in the sea on The Coast.
 - **With walk maps:** `live.ps1 -Walkmaps` attaches a small Frida script to the client, which saves each area's map
   and its area transitions (`<area>_seed<seed>.transitions.json`) the first time the client generates it. The Gateway
-  picks both up during that same load. Without a capture, a generated area has no area transitions.
+  picks both up during that same load. Without a capture, a generated area has no area transitions. It also saves the
+  doodads the client places (`<area>_seed<seed>.doodads.json`), from which the Gateway finds the rooms with monster
+  points: without that file an area has its packs but no unique boss.
 
 ```powershell
 python -m pip install frida
