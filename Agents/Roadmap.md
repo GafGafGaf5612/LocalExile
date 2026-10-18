@@ -110,14 +110,17 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** Sanctum and other modes show their own options; hardcore's "Exit" works (with Esc → Exit, C→S 0x153).
 
 ### Gem skills
-- **Known:** active gems socketed in equipment are granted at level 1 in the Actor skill list ([13](docs/protocol/13-items.md)
-  §6); support gems crash the client when granted as skills.
-- **Start:** the skill record's support list (linked supports), the skill's computed stats (damage), gem experience and
-  levels, putting the skill on the skill bar.
-- **Done when:** Fireball with Arcane Surge linked can be cast and does its damage.
+- **Known:** active gems in equipment are granted with their level-1 stats; Fireball casts, flies as a server-made
+  projectile object and hits the targeted monster ([11](docs/protocol/11-skills.md) §9–10). Support gems crash the client
+  when granted as skills.
+- **Start:** the projectile's height and orientation (Positioned's f1 0x04 floats, the f0 0x04 fixed height), collision
+  and the explosion; the skill record's support list (linked supports); gem experience and levels.
+- **Done when:** Fireball with Arcane Surge linked can be cast and does its damage, and looks like the real one.
 
 ### Saving progress
-- Persist the character's area, position, level and items in the account store (`GameServer.Storage`).
+- **Known:** items, equipment and the skill bar are saved per character in `data/saves/` ([13](docs/protocol/13-items.md) §7,
+  [11](docs/protocol/11-skills.md) §11).
+- **Done when:** the character's area, position and level are saved too (`GameServer.Storage` or the same saves).
 
 ## 4. Server design
 

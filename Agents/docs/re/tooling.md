@@ -118,6 +118,7 @@ Workflow per run:
 | `check-components.js` | any created object (0x2b9): per component the live vtable, its deserializer and the bytes it consumed, the leftover, and the component that was reading on a Buffer Underflow (section 7) |
 | `trace-skills.js` | every skill added to an ActiveSkillManager (`SkillInstanceAdded` `0x141eea6a0`): id, action id, effect name, backtrace |
 | `trace-skill-stats.js` | stat getter calls (key, value, caller) while a skill action is created or started |
+| `trace-move.js` | server and client Positioned moves (`0x141e34400`): cell, rotation, height, duration, flag bytes |
 | `trace-actions.js` | S→C 0x1ab on an Actor, the skill-usable check and the action created |
 | `trace-action-start.js` | whether an action starts (0x141e8cf10) and the actor's current / queued actions |
 | `trace-action-life.js` | how long actions stay current, and the attack-time stats' values |

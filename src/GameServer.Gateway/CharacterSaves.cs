@@ -1,0 +1,83 @@
+using System.Text.Json;
+using GameServer.Core.Protocol.Instance;
+
+/// <summary>
+/// A character's saved state: its items per inventory (Inventories.dat row) and its skill bar, one JSON file per character
+/// in data/saves/ (git-ignored, like the account store). Items are stored by BaseItemTypes HASH32 and rebuilt through the
+/// <see cref="ItemCatalog"/>, so the file holds no client-side layout. Writes replace the file atomically.
+/// </summary>
+static class CharacterSaves
+{
+    public sealed record SavedSocket(SocketColour Colour, SavedItem? Gem = null);
+
+    public sealed record SavedItem(uint Type, byte ItemLevel = 1, byte Quality = 0, int Charges = 0, ushort StackSize = 1,
+        List<SavedSocket>? Sockets = null, List<byte>? Links = null, int GemExperience = 0);
+
+    public sealed record SavedPlacement(uint Id, byte X, byte Y, SavedItem Item);
+
+    /// <summary>Skill bar: slot index → a GrantedEffects Id (skill ids change with the socketed gems, effects do not),
+    /// "Action/&lt;ActionTypes Id&gt;" for a basic action ("Action/Move") or "" for a cleared slot.</summary>
+    public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null);
+
+    static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
+    static readonly Lock Gate = new();
+
+    public static string Folder { get; set; } = Path.Combine("data", "saves");
+
+    static string PathOf(string character)
+    {
+        string safe = string.Concat(character.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
+        return Path.Combine(Folder, safe + ".json");
+    }
+
+    public static Save? Load(string character)
+    {
+        string path = PathOf(character);
+        lock (Gate)
+        {
+            if (!File.Exists(path)) return null;
+            try { return JsonSerializer.Deserialize<Save>(File.ReadAllText(path), Opts); }
+            catch (Exception e) { Console.WriteLine($"[gateway] save {path} unreadable: {e.Message}"); return null; }
+        }
+    }
+
+    public static void Write(string character, Save save)
+    {
+        string path = PathOf(character);
+        lock (Gate)
+        {
+            Directory.CreateDirectory(Folder);
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(save, Opts));
+            File.Move(tmp, path, overwrite: true);
+        }
+    }
+
+    /// <summary>Records what a skill bar slot holds (see <see cref="Save.SkillBar"/>), keeping the saved items.</summary>
+    public static void SetSkillBar(string character, byte slot, string entry)
+    {
+        lock (Gate)
+        {
+            var save = Load(character) ?? new Save([]);
+            var bar = save.SkillBar is null ? new Dictionary<int, string>() : new Dictionary<int, string>(save.SkillBar);
+            bar[slot] = entry;
+            Write(character, save with { SkillBar = bar });
+        }
+    }
+
+    public static SavedItem ToSaved(Item i) => new(i.TypeHash, i.ItemLevel, i.Quality, i.Charges, i.StackSize,
+        i.Sockets.Count == 0 ? null : [.. i.Sockets.Select(s => new SavedSocket(s.Colour, s.Gem is null ? null : ToSaved(s.Gem)))],
+        i.Links is null ? null : [.. i.Links], i.GemExperience);
+
+    /// <summary>The item again, or null when its type is no longer known.</summary>
+    public static Item? FromSaved(SavedItem s, ItemCatalog catalog)
+    {
+        if (catalog.ByHash(s.Type) is not { } t) return null;
+        return ItemCatalog.Create(t) with
+        {
+            ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience,
+            Sockets = [.. (s.Sockets ?? []).Select(k => new ItemSocket(k.Colour, k.Gem is null ? null : FromSaved(k.Gem, catalog)))],
+            Links = s.Links,
+        };
+    }
+}

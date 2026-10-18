@@ -193,6 +193,65 @@ vector (stats +0xf0) of whichever stats object answers a key; `scripts/re/statke
 that reads a key (`mov edx, key` + call). Stats like `main_hand_total_base_weapon_attack_duration_ms` are read by many
 small calculators in `0x141b..`–`0x141d..`.
 
+## 9. Gem skills: stats and casting
+
+Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `GemSkills`, `CastOn`, `LaunchProjectile`
+(Gateway).
+
+- **Skill ids.** Gem skills take the ids after the default attack's that no ActionType `HASH16 & 0x3fff` uses
+  (`SkillCatalog.SkillIds`): 0x0106, 0x010a and 0x0114 are basic actions in 3.29.3b, so plain counting from 0x0103 would
+  have replaced one. Fireball is 0x0103.
+- **Stats** (`SkillCatalog.EffectStats`): the effect's GrantedEffectStatSets row (ImplicitStats = 1, ConstantStats with
+  ConstantStatsValues), its GESSPL row at the gem level (FloatStats with BaseResolvedValues, AdditionalStats with
+  AdditionalStatsValues), the cast and the cost. Fireball level 1: `spell_minimum/maximum_base_fire_damage` 9–14,
+  `active_skill_base_area_of_effect_radius` 10, `base_chance_to_ignite_%` 25, `base_is_projectile` 1, mana cost 5. The
+  skill's list also carries the player's stats.
+- **Cast time.** The client reads **`virtual_base_spell_cast_time_ms`** (0x24b9) when it starts the cast; without it
+  the cast was instant (`trace-skill-stats.js`). The Gateway sends GrantedEffects `CastTime` (750 ms) there and in
+  `base_spell_cast_time_ms`, and `hundred_times_casts_per_second`. `mana_cost` (0x2e72) is what the client spends.
+- **Casting.** At the ground: C→S 0x25 with the gem skill's id; the server echoes 0x1ab from where the player stands (no
+  walk). On a monster: C→S 0x24; the server echoes 0x1ab aimed at it (no walk into range, unlike the default attack).
+
+## 10. Projectiles (experimental)
+
+The server creates and moves the projectile. The client's Projectile component (vtable `0x1435a0d10`, 0x20 bytes) does
+nothing by itself: its slot 17 reads nothing and almost every other slot is a bare `ret`.
+
+- **Object.** A 0x2b9 of the Projectiles.dat type named after the effect (`Metadata/Projectiles/Fireball`, hash of the
+  path; the type register knows it from the table). `Metadata/Projectiles/Projectile` deserializes Positioned,
+  BaseEvents, Animated and Projectile, so the blob is Positioned, one Animated byte and the tasks byte
+  (`ProjectileObject`), then 0x1a9 (wake zone). The real link between a skill and its projectile is unknown; the
+  Gateway matches the Id.
+- **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
+  cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
+  (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets
+  z = −height × 7.8125. With 0 the fireball sat under the ground and did not seem to move; with 0x7fffffff it flies
+  (slowed to 10 cells per second with `Game_PROJECTILE_SPEED` to watch it). Positioned's vtable +0xd8, which the move
+  calls when the flag byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
+- **Rotation.** Positioned rotation (+0x29c) = **atan2(dx, −dy)** in grid cells (the player's own moves traced with
+  `trace-move.js`: facing (+15, −18) read 0.668).
+- **Hit.** When the projectile arrives the server lowers the targeted monster's life by the skill's fire damage
+  (0x1b1) and removes the object (0x2bb). No collision on the way, no explosion, no damage on ground casts.
+- **Still wrong.** The fireball flies at terrain height and its model points down rather than along the flight. The
+  four floats of Positioned's f1 0x04 block (+0x2d8..+0x2e4, zero by default) are not the direction: (dx, dy, 0, 0) put
+  it under the ground (`Game_PROJECTILE_DIRECTION=1` sends them).
+
+## 11. The skill bar
+
+- **C→S 0x4e** (5 bytes, class `0x1435bfc58`): `u8 slot, u16 skill id` (big-endian). Slot 2 is the right mouse button.
+  The skill bar UI (`0x140aecab0`) sends it when the player puts a skill in a slot. The client also does it by itself
+  when a skill is **added** to an existing player (0x2ba): it took the first free slot after socketing Fireball. Skills in
+  the creation blob, or added before the HUD exists, stay unbound.
+- **S→C 0x53** (instance group, class `0x1435dc4c0`, read `0x14219f600`): `13 × u16` skill ids by slot (raw bytes, so
+  little-endian; basic actions by their own id, Move = 0x2909), then u16 +0x2a and u16 +0x2c (sent 0). The bar (vtable `0x14319d870`) rebuilds from such an array in
+  vtable +0x390 `0x140ae0fb0`: it looks each id up in the ActiveSkillManager and fills the slot; an unknown id (0)
+  clears it. Without 0x53 the bar is empty after every area change and login.
+- **The Gateway** saves each 0x4e (`CharacterSaves`, data/saves/) as slot → a GrantedEffects Id for gems and the default
+  attack (skill ids change with the socketed gems), `Action/<ActionTypes Id>` for a basic action (Move 0x2909 =
+  "Move only"), or "" for a cleared slot. It sends 0x53 right after the player and area messages, no delay needed,
+  with the default attack on slot 0 only when nothing was saved there. Live 2026-10-18: Fireball on the right mouse
+  button and "Move only" on the left one came back after login and area changes, with the bar there at once.
+
 ## Open
 
 - The animation's real contact point (the server uses half the attack time); the player's other stats (life, mana,
@@ -201,4 +260,7 @@ small calculators in `0x141b..`–`0x141d..`.
 - Monsters use only their first granted effect; no ranged or spell skills, no monster skill choice.
 - A damage model: armour, evasion, resistances, crits; the player's real life from level and stats.
 - The death screen's bit4 and trailing fields (Sanctum and other modes); exit to character selection (0x153).
-- f0 0x20 (skill update), the second and third lists of f0 0x40, supports, skills from gems in items.
+- f0 0x20 (skill update), the second and third lists of f0 0x40, supports (linked support gems), gem levels.
+- Projectiles: their height above the ground and model orientation (§10), collision, the explosion, the real
+  skill → projectile link; damage for ground casts.
+- The meaning of 0x53's two trailing u16.

@@ -4,8 +4,8 @@ using GameServer.Core.Protocol.Instance;
 
 /// <summary>
 /// A character's items, by Inventories.dat row (the Gateway registers inventory id = row + 1 for every row, 05 §2). Kept
-/// in memory per character name for the life of the Gateway, so the items follow the player through area changes; they
-/// are not saved yet.
+/// in memory per character name and saved after every change (<see cref="CharacterSaves"/>, data/saves/), so they follow
+/// the player through area changes and Gateway restarts.
 /// </summary>
 sealed class PlayerInventories
 {
@@ -17,6 +17,19 @@ sealed class PlayerInventories
     private readonly Dictionary<byte, uint> _revisions = [];
     private uint _nextItemId = 1;
     private readonly Lock _lock = new();
+    private string? _owner;   // the character whose save this is; null while the start kit is being built
+
+    /// <summary>Writes the character's save (every inventory, with item ids and cells).</summary>
+    void Persist()
+    {
+        if (_owner is null) return;
+        CharacterSaves.Save save;
+        lock (_lock)
+            save = new(_items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
+                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item))).ToList()),
+                CharacterSaves.Load(_owner)?.SkillBar);
+        CharacterSaves.Write(_owner, save);
+    }
 
     public static uint InventoryId(byte row) => (uint)row + 1;
     public static byte? Row(uint inventoryId) => inventoryId >= 1 && inventoryId <= InstanceInventories.PlayerDefaults.Length ? (byte)(inventoryId - 1) : null;
@@ -28,18 +41,21 @@ sealed class PlayerInventories
 
     public InventoryItem Add(byte row, byte x, byte y, Item item)
     {
+        InventoryItem placed;
         lock (_lock)
         {
-            var placed = new InventoryItem(_nextItemId++, x, y, item);
+            placed = new InventoryItem(_nextItemId++, x, y, item);
             (_items.TryGetValue(row, out var l) ? l : _items[row] = []).Add(placed);
-            return placed;
         }
+        Persist();
+        return placed;
     }
 
     /// <summary>Puts an item (keeping its id) at a cell.</summary>
     public InventoryItem Put(byte row, InventoryItem item)
     {
         lock (_lock) (_items.TryGetValue(row, out var l) ? l : _items[row] = []).Add(item);
+        Persist();
         return item;
     }
 
@@ -56,6 +72,13 @@ sealed class PlayerInventories
     /// one item is in the way it is swapped onto the cursor; two or more refuse the move. Returns null with the reason.
     /// </summary>
     public Placement? Place(byte row, int x, int y, Func<Item, Shape?> shapeOf, out string why)
+    {
+        var result = PlaceCore(row, x, y, shapeOf, out why);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    Placement? PlaceCore(byte row, int x, int y, Func<Item, Shape?> shapeOf, out string why)
     {
         lock (_lock)
         {
@@ -102,6 +125,13 @@ sealed class PlayerInventories
     /// the main hand. Returns it (same id, now in the main hand), or null.</summary>
     public InventoryItem? PromoteOffhand(byte mainRow, Func<Item, Shape?> shapeOf)
     {
+        var result = PromoteOffhandCore(mainRow, shapeOf);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    InventoryItem? PromoteOffhandCore(byte mainRow, Func<Item, Shape?> shapeOf)
+    {
         lock (_lock)
         {
             if (mainRow is not (2 or 14) || ItemsIn(mainRow).Count > 0) return null;
@@ -122,6 +152,14 @@ sealed class PlayerInventories
     /// null with the reason.
     /// </summary>
     public (InventoryItem Item, InventoryItem HeldBefore, InventoryItem? HeldNow)? Socket(byte row, uint itemId, int socket,
+        Func<Item, Shape?> shapeOf, Func<uint> newId, out string why)
+    {
+        var result = SocketCore(row, itemId, socket, shapeOf, newId, out why);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    (InventoryItem Item, InventoryItem HeldBefore, InventoryItem? HeldNow)? SocketCore(byte row, uint itemId, int socket,
         Func<Item, Shape?> shapeOf, Func<uint> newId, out string why)
     {
         lock (_lock)
@@ -149,6 +187,13 @@ sealed class PlayerInventories
     /// <summary>Takes the gem out of socket <paramref name="socket"/> onto the (empty) cursor. Returns the item as it is
     /// now and the gem held, or null with the reason.</summary>
     public (InventoryItem Item, InventoryItem Held)? Unsocket(byte row, uint itemId, int socket, Func<uint> newId, out string why)
+    {
+        var result = UnsocketCore(row, itemId, socket, newId, out why);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    (InventoryItem Item, InventoryItem Held)? UnsocketCore(byte row, uint itemId, int socket, Func<uint> newId, out string why)
     {
         lock (_lock)
         {
@@ -238,6 +283,13 @@ sealed class PlayerInventories
     /// <summary>Takes an item out of an inventory; null when it is not there.</summary>
     public InventoryItem? Remove(byte row, uint itemId)
     {
+        var result = RemoveCore(row, itemId);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    InventoryItem? RemoveCore(byte row, uint itemId)
+    {
         lock (_lock)
         {
             if (!_items.TryGetValue(row, out var l) || l.FindIndex(i => i.Id == itemId) is var at && at < 0) return null;
@@ -255,7 +307,29 @@ sealed class PlayerInventories
 
     /// <summary>The character's items, created with the class's start kit on first use.</summary>
     public static PlayerInventories For(string character, ItemCatalog catalog, string folder = "data") =>
-        ByCharacter.GetOrAdd(character, _ => StartKit(catalog, folder));
+        ByCharacter.GetOrAdd(character, name =>
+        {
+            var inv = FromSave(name, catalog) ?? StartKit(catalog, folder);
+            inv._owner = name;
+            inv.Persist();
+            return inv;
+        });
+
+    /// <summary>The character's saved items (ids and cells kept), or null without a save.</summary>
+    static PlayerInventories? FromSave(string character, ItemCatalog catalog)
+    {
+        if (CharacterSaves.Load(character) is not { } save) return null;
+        var inv = new PlayerInventories();
+        foreach (var (row, items) in save.Inventories)
+            foreach (var p in items)
+                if (CharacterSaves.FromSaved(p.Item, catalog) is { } item)
+                {
+                    inv.ItemsIn(row).Add(new InventoryItem(p.Id, p.X, p.Y, item));
+                    inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
+                }
+                else Console.WriteLine($"[gateway] {character}: saved item type 0x{p.Item.Type:x8} is unknown, dropped");
+        return inv;
+    }
 
     /// <summary>
     /// The Witch's start kit from Characters.dat (row 1): StartWeapons[0] (Driftwood Wand) in Weapon1, the StartSkillGem and

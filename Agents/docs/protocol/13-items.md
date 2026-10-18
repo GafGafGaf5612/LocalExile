@@ -143,22 +143,28 @@ the creation blob and again as 0x1b3 after entering.
 **Gem skills:** each active gem socketed in an equipped item grants its skill (SkillGems → first GemEffects variant →
 GrantedEffect at level 1, `ItemCatalog.GemEffect`), sent in the Actor skill list after the default attack. **Support
 gems must not be granted:** a support's effect in the list crashed the client in the skill reader (`0x141ee795a`, via
-`0x142197b59` → `0x141eea955`). Supports and links do nothing yet, and gem skills carry no computed stats yet.
+`0x142197b59` → `0x141eea955`). Supports and links do nothing yet. Gem skills carry their level-1 stats and can be cast
+([11](11-skills.md) §9–10).
 
-## 7. Start kit and dev command
+## 7. Start kit, saves and dev command
 
-A new character (in memory per character name, for the life of the Gateway; not saved) gets Characters.dat
+A new character gets Characters.dat
 StartWeapons[0] in Weapon1 with two linked sockets in its colour, StartSkillGem and StartSupportGem in the main
 inventory, and a Small Life Flask and Small Mana Flask in the flask bar. `Game_START_ITEMS=0` starts empty.
+
+**Saves.** Every inventory change writes the character's items to `data/saves/<name>.json` (`CharacterSaves`, git-ignored):
+per Inventories.dat row the item ids, cells and items by BaseItemTypes HASH32 with level, quality, charges, stack size,
+sockets (with their gems), links and gem experience. A saved character loads from it instead of the start kit, so items
+and equipment survive Gateway restarts and logins (live 2026-10-18). The file also holds the skill bar
+([11](11-skills.md) §11).
 
 `/item <BaseItemTypes row, Id or name> [count]` adds items to the main inventory; types with a Sockets component get two
 linked sockets in the colour of their highest attribute requirement (ComponentAttributeRequirements).
 
 ## Open
 
-- Gem levels and experience, support gems and links, gem skill stats (damage), skills on the skill bar.
+- Gem levels and experience, support gems and links.
 - Mods (implicit, explicit), rarity, names, quality effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
 - C→S 0x2d, 0x4a and 0x12 (5 bytes, seen once).
 - Flask use, currency use, stacks and splitting.
-- Saving items with the character (Roadmap "Saving progress").
 - Ground items are per connection, not per instance; other players do not see them.

@@ -219,3 +219,11 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x14219f820` | Fn | S→C 0x55 death screen read |
 | `0x14028fc80` | Fn | `death_screen` panel ctor (setup `0x140290820`, buttons `0x140290bf0` → C→S 0x54 / 0x153) |
 | `0x140d86180` | Fn | HUD vtable +0x4d0: show/hide the death screen |
+| `0x1435dc4c0` (read `0x14219f600`) | Cls | S→C 0x53 skill bar: 13 × u16 skill ids (LE), u16, u16 |
+| `0x1435bfc58` | Cls | C→S 0x4e bind a skill to a skill bar slot (u8 slot, u16 skill id) |
+| `0x140aecab0` | Fn | skill bar UI: put a skill in a slot (`0x140ae16b0`) or clear it (`0x140ae1fd0`), then send C→S 0x4e |
+| `0x14319d870` | VT | skill bar UI (13 slots; `0x140ae04b0` subscribes it to instance +0xaf78 and +0xad78) |
+| `0x140ae0fb0` | Fn | skill bar vtable +0x390: rebuild from 13 skill ids (lookup in ActiveSkillManager +0x158, slot set +0x398, clear +0x3a0) |
+| `0x1435a0d10` | VT | Projectile component (0x20 bytes; slot 17 reads nothing, almost every slot a `ret`) |
+| `0x141e30c90` | Fn | Positioned message handler: 0x1b7 teleport, 0x1b8, 0x1b9, 0x1ba move (height u32 +0x28, speed f32 +0x2c), 0x1bc |
+| `0x141e34400` | Fn | Positioned: start a move (interpolation `0x141e4d180`; height 0x7fffffff = terrain, else z = −height × 7.8125) |

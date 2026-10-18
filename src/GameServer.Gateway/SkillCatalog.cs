@@ -15,6 +15,123 @@ sealed class SkillCatalog(string folder = "data")
     public const ushort FirstSkillId = 0x0102;
 
     private readonly Lazy<Tables?> _tables = new(() => Tables.Load(folder));
+    private readonly StatCatalog _stats = new(folder);
+
+    /// <summary>Skill ids for the server's skills from <see cref="FirstSkillId"/> on, skipping every id an ActionType's
+    /// HASH16 masks to (0x3fff): 0x0106, 0x010a and 0x0114 are basic actions in 3.29.3b, and a gem skill numbered after
+    /// the default attack would replace one.</summary>
+    public IEnumerable<ushort> SkillIds()
+    {
+        var taken = _actionIds.Value;
+        for (int id = FirstSkillId; id <= 0x3fff; id++)
+            if (!taken.Contains((ushort)id)) yield return (ushort)id;
+    }
+
+    /// <summary>Whether an id is one of the gem skills' (<see cref="SkillIds"/> after the default attack, the first 64), not a
+    /// basic action such as Move.</summary>
+    public bool IsGemSkill(ushort id) => id > FirstSkillId && id < FirstSkillId + 64 && !_actionIds.Value.Contains(id);
+
+    private readonly Lazy<HashSet<ushort>> _actionIds = new(() =>
+    {
+        string path = Path.Combine(folder, "tables", "ActionTypes.json");
+        if (!File.Exists(path)) return [0x0101, 0x0106, 0x010a, 0x0114];
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        return [.. d.RootElement.EnumerateArray().Select(r => (ushort)(r.GetProperty("HASH16").GetInt32() & 0x3fff))];
+    });
+
+    /// <summary>
+    /// A gem skill's own stats at a level (client keys = Stats.dat row + 1): the effect's stat set (GrantedEffectStatSets
+    /// ImplicitStats = 1, ConstantStats with their values) and its per-level row (GESSPL FloatStats with
+    /// BaseResolvedValues, e.g. Fireball's spell_minimum/maximum_base_fire_damage 9–14 at level 1, and AdditionalStats),
+    /// then the cast: base_spell_cast_time_ms (GrantedEffects CastTime), hundred_times_casts_per_second, and the mana cost
+    /// (GEPL CostAmounts of CostTypes 0 = mana). No modifiers yet: the base values are the final ones.
+    /// </summary>
+    public IReadOnlyList<(uint, int)> EffectStats(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.Effects.Count) return [];
+        var e = t.Effects[effectRow];
+        var stats = new Dictionary<uint, int>();
+        if (e.StatSet >= 0 && e.StatSet < t.StatSetBase.Count)
+        {
+            var (implicits, constants) = t.StatSetBase[e.StatSet];
+            foreach (int s in implicits) stats[(uint)s + 1] = 1;
+            foreach (var (s, v) in constants) stats[(uint)s + 1] = v;
+        }
+        int gesspl = PickLevel(t.StatSetsPerLevel, e.StatSet, level);
+        if (gesspl >= 0) foreach (var (s, v) in t.StatSetLevelStats[gesspl]) stats[(uint)s + 1] = v;
+        int gepl = PickLevel(t.PerLevel, effectRow, level);
+        if (e.CastTime > 0)
+        {
+            Put("base_spell_cast_time_ms", e.CastTime);
+            // what the client reads when it starts the cast (traced live 2026-10-18; 0 = an instant cast)
+            Put("virtual_base_spell_cast_time_ms", e.CastTime);
+            Put("hundred_times_casts_per_second", (int)Math.Round(100_000.0 / e.CastTime));
+        }
+        if (gepl >= 0 && t.ManaCost[gepl] > 0) { Put("base_mana_cost", t.ManaCost[gepl]); Put("mana_cost", t.ManaCost[gepl]); }
+        return [.. stats.Select(kv => (kv.Key, kv.Value))];
+
+        void Put(string name, int value) { if (_stats.Key(name) is uint k) stats[k] = value; }
+    }
+
+    /// <summary>The ActionTypes Id of a basic action's skill id (HASH16 &amp; 0x3fff: Move 0x2909), or null.</summary>
+    public string? ActionName(ushort skillId) => _actions.Value.FirstOrDefault(a => a.Id == skillId).Name;
+
+    /// <summary>A basic action's skill id by ActionTypes Id ("Move" → 0x2909), or null.</summary>
+    public ushort? ActionSkillId(string name) => _actions.Value.FirstOrDefault(a => a.Name == name) is { Name: not null } a ? a.Id : null;
+
+    private readonly Lazy<List<(ushort Id, string Name)>> _actions = new(() =>
+    {
+        string path = Path.Combine(folder, "tables", "ActionTypes.json");
+        if (!File.Exists(path)) return [(0x2909, "Move")];
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        return [.. d.RootElement.EnumerateArray().Select(r => ((ushort)(r.GetProperty("HASH16").GetInt32() & 0x3fff), r.GetProperty("Id").GetString() ?? ""))];
+    });
+
+    /// <summary>A GrantedEffects row's Id, or null.</summary>
+    public string? EffectId(int effectRow) =>
+        _tables.Value?.EffectRows.FirstOrDefault(kv => kv.Value.Row == effectRow).Key;
+
+    /// <summary>A GrantedEffects row's CastTime in ms (0 when unknown).</summary>
+    public int CastMs(int effectRow) =>
+        _tables.Value is { } t && effectRow >= 0 && effectRow < t.Effects.Count ? t.Effects[effectRow].CastTime : 0;
+
+    /// <summary>A projectile type for an effect: the Projectiles.dat row whose Id is Metadata/Projectiles/(GrantedEffects
+    /// Id), e.g. Fireball → Metadata/Projectiles/Fireball at speed 1040, or null. The real link between a skill and its
+    /// projectile is not known yet.</summary>
+    public (string Id, int Speed)? ProjectileFor(int effectRow)
+    {
+        if (_tables.Value is not { } t) return null;
+        string? effect = t.EffectRows.FirstOrDefault(kv => kv.Value.Row == effectRow).Key;
+        if (effect is null) return null;
+        string id = "Metadata/Projectiles/" + effect;
+        return _projectiles.Value.TryGetValue(id, out int speed) ? (id, speed) : null;
+    }
+
+    private readonly Lazy<Dictionary<string, int>> _projectiles = new(() =>
+    {
+        string path = Path.Combine(folder, "tables", "Projectiles.json");
+        var result = new Dictionary<string, int>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+            if (r.GetProperty("Id").GetString() is { } id)
+                result.TryAdd(id, r.GetProperty("ProjectileSpeed") is { ValueKind: JsonValueKind.Number } v ? v.GetInt32() : 0);
+        return result;
+    });
+
+    // The highest level at or below `level` among rows with this key, else the lowest; -1 when none.
+    private static int PickLevel(List<(int Key, int Level)> rows, int key, int level)
+    {
+        int best = -1, bestLevel = int.MinValue, low = -1, lowLevel = int.MaxValue;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (rows[i].Key != key) continue;
+            int l = rows[i].Level;
+            if (l <= level && l > bestLevel) (best, bestLevel) = (i, l);
+            if (l < lowLevel) (low, lowLevel) = (i, l);
+        }
+        return best >= 0 ? best : low;
+    }
 
     public GrantedSkill? Find(ushort id, string effect, int level, IReadOnlyList<(uint, int)>? stats = null)
     {
@@ -35,19 +152,7 @@ sealed class SkillCatalog(string folder = "data")
     {
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count || t.StatSets[effectRow] < 0) return null;
         int statSet = t.StatSets[effectRow];
-        static int Pick(List<(int Key, int Level)> rows, int key, int level)
-        {
-            int best = -1, bestLevel = int.MinValue, low = -1, lowLevel = int.MaxValue;
-            for (int i = 0; i < rows.Count; i++)
-            {
-                if (rows[i].Key != key) continue;
-                int l = rows[i].Level;
-                if (l <= level && l > bestLevel) (best, bestLevel) = (i, l);
-                if (l < lowLevel) (low, lowLevel) = (i, l);
-            }
-            return best >= 0 ? best : low;
-        }
-        int gepl = Pick(t.PerLevel, effectRow, level), gesspl = Pick(t.StatSetsPerLevel, statSet, level);
+        int gepl = PickLevel(t.PerLevel, effectRow, level), gesspl = PickLevel(t.StatSetsPerLevel, statSet, level);
         return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats);
     }
 
@@ -141,33 +246,66 @@ sealed class SkillCatalog(string folder = "data")
             r.GetProperty("MaxDamage").GetInt32(), r.GetProperty("MaxAttackDistance").GetInt32());
     }
 
-    // StatSets: each GrantedEffects row's StatSet1 (-1 when none).
+    // StatSets: each GrantedEffects row's StatSet1 (-1 when none). Effects: per GrantedEffects row its StatSet1 and CastTime.
+    // StatSetBase: per GrantedEffectStatSets row its ImplicitStats and (ConstantStats, ConstantStatsValues).
+    // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
+    // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
-        List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel)
+        List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
+        List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
+        List<(int, int)[]> StatSetLevelStats, List<int> ManaCost)
     {
         public static Tables? Load(string folder)
         {
             string Table(string name) => Path.Combine(folder, "tables", name + ".json");
-            string ge = Table("GrantedEffects"), gepl = Table("GrantedEffectsPerLevel"), gesspl = Table("GrantedEffectStatSetsPerLevel");
+            string ge = Table("GrantedEffects"), gepl = Table("GrantedEffectsPerLevel"), gesspl = Table("GrantedEffectStatSetsPerLevel"),
+                gess = Table("GrantedEffectStatSets");
             if (!File.Exists(ge) || !File.Exists(gepl) || !File.Exists(gesspl)) return null;
             using var g = JsonDocument.Parse(File.ReadAllBytes(ge));
             using var p = JsonDocument.Parse(File.ReadAllBytes(gepl));
             using var s = JsonDocument.Parse(File.ReadAllBytes(gesspl));
+            static int Int(JsonElement r, string name) => r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : -1;
+            static int[] Ints(JsonElement r, string name) => r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Array
+                ? [.. v.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.Number ? (int)Math.Round(x.GetDouble()) : -1)] : [];
+            static (int, int)[] Pairs(int[] keys, int[] values) => [.. keys.Zip(values).Where(kv => kv.First >= 0)];
             var effects = new Dictionary<string, (int, int)>();
             var statSets = new List<int>();
+            var effectInfo = new List<(int, int)>();
             int row = 0;
             foreach (var r in g.RootElement.EnumerateArray())
             {
                 string? id = r.GetProperty("Id").GetString();
-                int statSet = r.GetProperty("StatSet1") is { ValueKind: JsonValueKind.Number } v ? v.GetInt32() : -1;
+                int statSet = Int(r, "StatSet1");
                 if (id is not null) effects.TryAdd(id, (row, statSet));
                 statSets.Add(statSet);
+                effectInfo.Add((statSet, Math.Max(0, Int(r, "CastTime"))));
                 row++;
             }
-            static int Int(JsonElement r, string name) => r.GetProperty(name) is { ValueKind: JsonValueKind.Number } v ? v.GetInt32() : -1;
-            return new Tables(effects, statSets,
-                [.. p.RootElement.EnumerateArray().Select(r => (Int(r, "GrantedEffect"), Int(r, "Level")))],
-                [.. s.RootElement.EnumerateArray().Select(r => (Int(r, "StatSet"), Int(r, "GemLevel")))]);
+            var baseStats = new List<(int[], (int, int)[])>();
+            if (File.Exists(gess))
+            {
+                using var b = JsonDocument.Parse(File.ReadAllBytes(gess));
+                foreach (var r in b.RootElement.EnumerateArray())
+                    baseStats.Add((Ints(r, "ImplicitStats"), Pairs(Ints(r, "ConstantStats"), Ints(r, "ConstantStatsValues"))));
+            }
+            var perLevel = new List<(int, int)>();
+            var mana = new List<int>();
+            foreach (var r in p.RootElement.EnumerateArray())
+            {
+                perLevel.Add((Int(r, "GrantedEffect"), Int(r, "Level")));
+                int[] types = Ints(r, "CostTypes"), amounts = Ints(r, "CostAmounts");
+                int i = Array.IndexOf(types, 0);
+                mana.Add(i >= 0 && i < amounts.Length ? amounts[i] : 0);
+            }
+            var setLevels = new List<(int, int)>();
+            var levelStats = new List<(int, int)[]>();
+            foreach (var r in s.RootElement.EnumerateArray())
+            {
+                setLevels.Add((Int(r, "StatSet"), Int(r, "GemLevel")));
+                levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
+                    .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
+            }
+            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana);
         }
     }
 }

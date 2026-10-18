@@ -24,6 +24,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's 10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks per Second), and the server lowers the monster's life 2–5 at the contact point; moving cancels; the dead monster's life bar hides | `GrantedSkill`, `SkillCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) |
 | Monsters fight back: their first granted effect as a non-pathing skill with MonsterVarieties attack time, reach and level damage; they swing (animated) when in reach and the player's life goes down; walking away dodges; death plays and blocks moving; the death screen (S→C 0x55) shows "Resurrect in Town" / "Resurrect at Checkpoint" (hardcore: "Exit"), and both buttons work (C→S 0x54); `/heal` | `MonsterAttack`, `Resurrect`, Gateway | [11](docs/protocol/11-skills.md) §6–7 |
 | Items: the start kit (Characters.dat weapon with two linked sockets, its skill and support gems, life and mana flasks) in the inventories; pick up (0x28), put down, swap and equip (0x2a, slot classes and attribute requirements checked by the client), one-hander off hand → main hand, socket and unsocket gems (0x30, 0x2f), drop to the ground outside town (0x29 → WorldItem) and pick up again (to the cursor with the inventory open, at the client's 22-cell range), Destroy in town (0x16 /destroy); the equipped weapon on the model; active gems in equipment grant their skill; class attributes and the Witch class on the character panel; `/item <row, Id or name> [count]` | `InstanceItems.cs`, Gateway (`ItemCatalog.cs`, `PlayerInventories.cs`) | [13](docs/protocol/13-items.md) |
+| Gem skills: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; the server creates the `Metadata/Projectiles/Fireball` object, flies it to the target (0x1ba with the terrain height) and hits the monster on arrival | `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`), `ProjectileObject` | [11](docs/protocol/11-skills.md) §9–10 |
+| Saving characters: items, equipment, sockets and the skill bar per character in `data/saves/`; the bar is restored with S→C 0x53 after login and area changes (binds are C→S 0x4e) | `CharacterSaves.cs`, `PlayerInventories.cs`, Gateway | [11](docs/protocol/11-skills.md) §11, [13](docs/protocol/13-items.md) §7 |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 
 ## Partly working
@@ -35,6 +37,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   attributes come from the client's defaults.
 - **Spawn points.** The Coast uses the walkable cell farthest from any edge, not the arrival point next to the exit.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
+- **Projectiles.** The fireball flies at terrain height with its model pointing down, collides with nothing and does
+  not explode; ground casts do no damage ([11](docs/protocol/11-skills.md) §10).
 - **Combat.** The player's default attack kills monsters (server-side damage: the unarmed range, no damage model,
   no armour or resistances; the contact point is half the attack time, not the animation's). Monsters use only their
   first granted effect; the player's life is a fixed 50 (no levels or stats). The server has no
@@ -53,15 +57,15 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   way stays blocked: The Mud Flats' Submerged Passage has a client-side wall until quest flag `a1q4-PlacedGlyphs`
   ([12](docs/protocol/12-quests.md)). Quest objects with extra components (the cave entrance) are sent as plain
   AreaTransition. Quests are not implemented.
-- Item mods, rarity, flask and currency use; support gems and links; gem skill stats and levels; items are not saved
-  and ground items are per connection ([13](docs/protocol/13-items.md) "Open").
-- Levelling, saving the character's position or progress. Hardcore's "Exit" on the death screen
+- Item mods, rarity, flask and currency use; support gems and links; gem levels; ground items are per connection
+  ([13](docs/protocol/13-items.md) "Open").
+- Levelling, saving the character's area, position or progress. Hardcore's "Exit" on the death screen
   (C→S 0x153, like Esc → Exit).
 - `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (181 tests) and `dotnet test tests/GameServer.Data.Tests` (15 tests) pass.
+`dotnet test tests/GameServer.Core.Tests` (185 tests) and `dotnet test tests/GameServer.Data.Tests` (15 tests) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

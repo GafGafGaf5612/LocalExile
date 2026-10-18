@@ -52,8 +52,37 @@ public static class InstanceProtocol
         InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
         InstanceItems.InventoryRequestId => 8, InstanceItems.ItemActionId => 12, InstanceItems.SocketGemId => 16,
-        InstanceItems.UnsocketGemId => 17, _ => null,
+        InstanceItems.UnsocketGemId => 17, BindSkillId => 5, _ => null,
     };
+
+    public const ushort SkillBarId = 0x53, SkillBarSlots = 13;
+
+    /// <summary>
+    /// S→C 0x53 (instance group, class 0x1435dc4c0, read 0x14219f600, dispatcher case 0x13): the skill bar, being tested.
+    /// 26 raw bytes = 13 × u16 skill ids by slot (+0x10, copied with memcpy, so little-endian like the blobs), then u16
+    /// +0x2a, u16 +0x2c (unknown, 0). The skill bar's rebuild 0x140ae0fb0 (bar vtable +0x390, subscribed to instance
+    /// +0xaf78) takes exactly such an array: each id is looked up in the ActiveSkillManager (+0x158, by +0x40) and put in
+    /// its slot (vtable +0x398), an unknown id clears the slot (+0x3a0). Slot 2 is the right mouse button (C→S 0x4e).
+    /// </summary>
+    public static byte[] SkillBar(IReadOnlyList<ushort> skillIds, ushort u2a = 0, ushort u2c = 0)
+    {
+        var w = new LoginWriter().U16(SkillBarId);
+        for (int i = 0; i < SkillBarSlots; i++)
+        {
+            ushort id = i < skillIds.Count ? skillIds[i] : (ushort)0;
+            w.U8((byte)id).U8((byte)(id >> 8));
+        }
+        return w.U16(u2a).U16(u2c).ToArray();
+    }
+
+    public const ushort BindSkillId = 0x4e;
+
+    /// <summary>
+    /// C→S 0x4e (5 bytes): the player put a skill on the skill bar. u8 slot (2 = right mouse button, live 2026-10-18),
+    /// u16 skill id (the granted skill's +0x40; 0x0103 = Fireball). How the server gives the bar back on login is not known yet.
+    /// </summary>
+    public static (byte Slot, ushort SkillId) ReadBindSkill(ReadOnlySpan<byte> m) =>
+        (m[2], System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(m[3..]));
 
     /// <summary>
     /// C→S 0x25 (class 0x1435bfbd8, sender 0x142166300): use a skill at a ground location, e.g. Move on a left click.
@@ -120,8 +149,9 @@ public static class InstanceProtocol
 
     /// <summary>
     /// S→C 0x1ba (world group, class 0x1435dd7b8, read 0x141fe0ff0; Positioned handler 0x141e30c90): move an object to a
-    /// grid cell. Object header, i32 x, i32 y, u32 (+0x28), f32 speed (+0x2c; the client takes distance / speed as the
-    /// duration and calls 0x141e34120), u8 (+0x30). 0x1b7 (teleport) is the same header, x, y, u32 +0x28 (→ +0x290),
+    /// grid cell. Object header, i32 x, i32 y, u32 height (+0x28: 0x7fffffff = follow the terrain, else z = −height ×
+    /// 7.8125; 0 put a projectile under the ground), f32 speed (+0x2c, cells per second; the client takes distance / speed
+    /// as the duration and calls 0x141e34120), u8 (+0x30). 0x1b7 (teleport) is the same header, x, y, u32 +0x28 (→ +0x290),
     /// u32 +0x2c (→ +0x2b4).
     /// </summary>
     public static byte[] MoveTo(uint objectId, int x, int y, float speed, uint u28 = 0, byte u30 = 0) =>

@@ -149,10 +149,15 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             // Echo the action so the client runs it (Move on a ground click). The server does no validation yet.
             var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);
             Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
-            var (px, py) = conn.Walk.Order(use.X, use.Y, conn.Clock.Elapsed.TotalSeconds);
+            double at = conn.Clock.Elapsed.TotalSeconds;
+            // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
+            bool cast = Skills.IsGemSkill(use.SkillId);
+            var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
+            if (cast) conn.Walk.Order(px, py, at);
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                $"0x01ab action started {use} at ({px}, {py})");
+                $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : "")}");
+            if (cast) _ = LaunchProjectile(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y));
             string mode = Environment.GetEnvironmentVariable("Game_MOVE_MODE") ?? "echo";
             if (mode == "teleport")
                 await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, use.X, use.Y), $"0x01b7 teleport to ({use.X}, {use.Y})");
@@ -167,6 +172,13 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
             // In the background: the player may first walk to the target, and the read loop must keep answering ticks.
             _ = OnUseObject(remote, stream, ciphers, conn, use);
+        }
+        else if (id == InstanceProtocol.BindSkillId)
+        {
+            var (slot, skill) = InstanceProtocol.ReadBindSkill(bytes);
+            string? entry = SkillBarEntry(conn, skill);
+            Console.WriteLine($"[gateway] {remote} <= 0x004e bind skill 0x{skill:x4} ({(entry is null ? "unknown, not saved" : entry == "" ? "empty" : entry)}) to slot {slot}: {Convert.ToHexString(bytes)}");
+            if (entry is not null) CharacterSaves.SetSkillBar(CharacterName(conn), slot, entry);
         }
         else if (id == InstanceItems.DropItemId)
             await DropItem(remote, stream, ciphers, conn);
@@ -223,6 +235,8 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 }
                 await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character);
                 conn.PlayerSent = true;
+                // The saved skill bar (S→C 0x53), right after the player and the area.
+                await SendSkillBar(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
             }
         }
@@ -244,7 +258,8 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     lock (conn.Monsters) target = conn.Monsters.GetValueOrDefault(use.TargetId);
     if (target is not null)
     {
-        await Attack(remote, stream, ciphers, conn, use, target);
+        if (use.SkillId != SkillCatalog.FirstSkillId) await CastOn(remote, stream, ciphers, conn, use, target);
+        else await Attack(remote, stream, ciphers, conn, use, target);
         return;
     }
     WorldItemObject? ground;
@@ -364,11 +379,90 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     });
 }
 
+// A gem skill used on a monster (C→S 0x24 with a skill id other than the default attack's): echo the action from where the
+// player stands, aimed at the monster, so the client plays the cast. No damage yet: what the client expects after it
+// (projectiles, hits) is still being found, so this logs what it sends.
+static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
+{
+    Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    (int X, int Y) target;
+    lock (conn.Monsters) target = m.Walk.Position(now);
+    var here = conn.Walk.Position(now);
+    conn.Walk.Order(here.X, here.Y, now);
+    await Send(remote, stream, ciphers,
+        InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
+        $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({here.X}, {here.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4}");
+    _ = LaunchProjectile(remote, stream, ciphers, conn, use.SkillId, here, target, use.TargetId);
+}
+
+// Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
+// named after the effect (Fireball → Metadata/Projectiles/Fireball) at the caster, wakes it and moves it to the target
+// with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid cell). On arrival it hits the
+// targeted monster for the skill's fire damage (spell_minimum/maximum_base_fire_damage; no damage model yet) and the
+// object is removed. No collision with anything on the way.
+static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
+{
+    var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+    if (gem.Name is null || Skills.ProjectileFor(gem.Effect) is not { } projectile)
+    {
+        Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4}: no projectile");
+        return;
+    }
+    int action = conn.ActionCount;
+    await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, Skills.CastMs(gem.Effect))));
+    if (conn.ActionCount != action || conn.Closed) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
+    uint id = conn.NextObjectId++;
+    double dx = to.X - from.X, dy = to.Y - from.Y, cells = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
+    // Game_PROJECTILE_SPEED (cells per second) overrides the speed, e.g. to watch a slow projectile while testing.
+    float cellsPerSecond = float.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var ps) && ps > 0
+        ? ps : projectile.Speed / (250f / 23f);
+    // Positioned rotation = atan2(dx, -dy) (the player's own moves, traced live 2026-10-18: facing (+15, -18) read 0.668)
+    // Game_PROJECTILE_DIRECTION=1 sends the flight direction in Positioned's f1 0x04 block (ProjectileObject.Direction).
+    // Live 2026-10-18 it put the fireball under the ground, so it is off by default: the four floats are not a direction.
+    var direction = Environment.GetEnvironmentVariable("Game_PROJECTILE_DIRECTION") != "1" ? ((float, float, float, float)?)null
+        : ((float)(dx / cells), (float)(dy / cells), 0f, 0f);
+    var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Direction: direction);
+    uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()),
+        $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 projectile 0x{id:x} enters wake zone");
+    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, cellsPerSecond, u28: TerrainHeight),
+        $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s");
+    await Task.Delay(TimeSpan.FromSeconds(cells / cellsPerSecond));
+    if (conn.Closed) return;
+    SpawnedMonster? m = null;
+    if (targetId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(targetId);
+    if (m is not null && m.Life > 0)
+    {
+        var stats = Skills.EffectStats(gem.Effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        int min = Stats.Key("spell_minimum_base_fire_damage") is uint kmin ? stats.GetValueOrDefault(kmin) : 0;
+        int max = Stats.Key("spell_maximum_base_fire_damage") is uint kmax ? stats.GetValueOrDefault(kmax) : 0;
+        int damage = Random.Shared.Next(min, Math.Max(min, max) + 1);
+        uint life;
+        lock (conn.Monsters)
+        {
+            m.Life = (uint)Math.Max(0, (long)m.Life - damage);
+            life = m.Life;
+            if (life == 0) { m.Aggro = false; m.Dead = true; }
+        }
+        if (life == 0)
+            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(targetId, [(StatKeys.HideMiniLifeBar, 1)]),
+                $"0x01b3 monster 0x{targetId:x} hide_mini_life_bar = 1");
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(targetId, life),
+            $"0x01b1 monster 0x{targetId:x} hit by {projectile.Id} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+    }
+    await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}");
+}
+
 // The player's granted skills: the default attack with the unarmed weapon's stats and every stat the server set on the
 // player since (a skill's stats include the character's; the client reads the skill's).
 static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
 {
-    return [.. Skills.PlayerDefaults([.. FinalPlayerStats(conn)]), .. GemSkills(conn.Character)];
+    var player = FinalPlayerStats(conn).ToList();
+    return [.. Skills.PlayerDefaults(player), .. GemSkills(conn.Character, player)];
 }
 
 // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
@@ -395,17 +489,67 @@ static IEnumerable<(uint, int)> ClassAttributes()
         if (Stats.Key(stat) is uint key) yield return (key, value);
 }
 
-// The skills of the gems socketed in the equipped items: each gem's GrantedEffects row at level 1, with ids after the
-// default attack's.
-static IEnumerable<GrantedSkill> GemSkills(string? character)
+// The skills of the gems socketed in the equipped items: each gem's GrantedEffects row at level 1 with its own stats
+// (SkillCatalog.EffectStats: damage, cast time, mana cost) after the player's, with ids after the default attack's that
+// no basic action uses (SkillCatalog.SkillIds).
+static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint, int)>? player = null)
 {
-    ushort id = SkillCatalog.FirstSkillId + 1;
-    foreach (var gem in PlayerInventories.For(string.IsNullOrEmpty(character) ? "Exile" : character, Items).SocketedGems())
-        if (Items.ByHash(gem.TypeHash) is { } t && Items.GemEffect(t) is int effect and >= 0 && Skills.FindByRow(id, effect, 1) is { } skill)
+    var playerStats = player?.ToList() ?? [];
+    foreach (var (id, effect, name) in GemSkillEffects(character))
+    {
+        var stats = new Dictionary<uint, int>();
+        foreach (var (k, v) in playerStats) stats[k] = v;
+        foreach (var (k, v) in Skills.EffectStats(effect, 1)) stats[k] = v;
+        if (Skills.FindByRow(id, effect, 1, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
         {
+            Console.WriteLine($"[gateway] gem skill 0x{skill.Id:x4} {name} (effect {effect}): GEPL {skill.EffectsPerLevelRow}, GESSPL {skill.StatSetsPerLevelRow}, " +
+                string.Join(", ", Skills.EffectStats(effect, 1).Select(kv => $"{Stats.Name(kv.Item1)} {kv.Item2}")));
             yield return skill;
-            id++;
         }
+    }
+}
+
+// What a skill bar slot holds, as saved (CharacterSaves): a gem or the default attack by GrantedEffects Id (skill ids
+// change with the socketed gems), a basic action as "Action/<ActionTypes Id>" ("Action/Move": "Move only" on a mouse
+// button), "" for a cleared slot. Null for an id the server does not know.
+static string? SkillBarEntry(ClientState conn, ushort skillId) =>
+    skillId == 0 ? "" : SkillEffectId(conn, skillId) ?? (Skills.ActionName(skillId) is { } a ? "Action/" + a : null);
+
+// The saved skill bar as the player's current skill ids, sent with S→C 0x53. The default attack goes on slot 0 (left
+// mouse button) only when nothing at all was saved for that slot; nothing is sent without a saved bar, so the client
+// keeps its own default.
+static async Task SendSkillBar(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (CharacterSaves.Load(CharacterName(conn))?.SkillBar is not { Count: > 0 } bar) return;
+    var ids = new ushort[InstanceProtocol.SkillBarSlots];
+    var byEffect = GemSkillEffects(conn.Character).Select(g => (g.Id, Effect: Skills.EffectId(g.Effect)))
+        .Append((Id: SkillCatalog.FirstSkillId, Effect: SkillEffectId(conn, SkillCatalog.FirstSkillId)))
+        .Where(e => e.Effect is not null).GroupBy(e => e.Effect!).ToDictionary(g => g.Key, g => g.First().Id);
+    foreach (var (slot, entry) in bar)
+    {
+        if (slot < 0 || slot >= ids.Length) continue;
+        if (entry.StartsWith("Action/") && Skills.ActionSkillId(entry["Action/".Length..]) is ushort action) ids[slot] = action;
+        else if (byEffect.TryGetValue(entry, out ushort id)) ids[slot] = id;
+    }
+    if (!bar.ContainsKey(0)) ids[0] = SkillCatalog.FirstSkillId;
+    await Send(remote, stream, ciphers, InstanceProtocol.SkillBar(ids),
+        $"0x0053 skill bar: {string.Join(", ", ids.Select((id, i) => id == 0 ? null : $"slot {i} 0x{id:x4}").OfType<string>())}");
+}
+
+// The GrantedEffects Id behind a skill id of the player (the default attack or a gem skill), or null.
+static string? SkillEffectId(ClientState conn, ushort skillId) =>
+    skillId == SkillCatalog.FirstSkillId ? Environment.GetEnvironmentVariable("Game_PLAYER_ATTACK") ?? "PlayerMelee"
+    : GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId) is { Name: not null } g ? Skills.EffectId(g.Effect) : null;
+
+static string CharacterName(ClientState conn) => string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character;
+
+// The active gems socketed in the equipped items in skill-list order: skill id, GrantedEffects row, gem name.
+static IEnumerable<(ushort Id, int Effect, string Name)> GemSkillEffects(string? character)
+{
+    using var ids = Skills.SkillIds().Skip(1).GetEnumerator();
+    foreach (var gem in PlayerInventories.For(string.IsNullOrEmpty(character) ? "Exile" : character, Items).SocketedGems())
+        if (Items.ByHash(gem.TypeHash) is { } t && Items.GemEffect(t) is int effect and >= 0 && ids.MoveNext())
+            yield return (ids.Current, effect, t.Name);
 }
 
 static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
@@ -1010,7 +1154,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var weapon = Skills.UnarmedFor(1);
     var witch = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)Skills.ClassFor(1).IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? "Metadata/Characters/Int/Int.ao",
-        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name)], Stats: [.. weapon.Stats(), .. ClassAttributes()],
+        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. ClassAttributes()])], Stats: [.. weapon.Stats(), .. ClassAttributes()],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf));
     uint type = InstanceEntities.ObjectTypeHash("Metadata/Characters/Int/Int");
     var messages = new List<(string Name, byte[] Bytes)>
@@ -1058,6 +1202,9 @@ sealed partial class Program
     internal const double TickSeconds = 1.0 / TickRate;
     // How close (cells, centre to centre) the player must be to use an area transition.
     internal const double AreaTransitionReach = 6;
+    // The height u32 of S→C 0x1ba (+0x28, passed with the move to Positioned vtable +0xd8) and 0x1b7 (→ +0x290): the
+    // fixed height, 0x7fffffff = none, follow the terrain. 0 pinned a moving projectile under the ground (live 2026-10-18).
+    internal const uint TerrainHeight = 0x7fffffff;
     // How close (cells, centre to centre) the player must be to pick an item up from the ground: WorldItem.ot's
     // InteractionAction interaction_distance_override = 20 grid cells, plus the radii of the item and the player
     // (object_size 2 each). Measured live 2026-10-18 (Positioned +0x294/+0x298): the client walked from (1301, 1250)
