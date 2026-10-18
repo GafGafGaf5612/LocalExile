@@ -36,6 +36,25 @@ public sealed class AccountService(IAccountStore store, TimeProvider? clock = nu
         }
     }
 
+    /// <summary>Sets an account's password (dev tool: no minimum length, so a local test account can use any text). Both
+    /// stored hashes change with a new salt: the one for <see cref="Login"/> and the one for the official client's digest.</summary>
+    public Result<Account> SetPassword(string name, string password)
+    {
+        if (password is null || password.Length == 0) return Result<Account>.Fail(AuthError.WeakPassword);
+        lock (_gate)
+        {
+            if (store.FindAccount(name) is not { } acc) return Result<Account>.Fail(AuthError.NotFound);
+            var salt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+            var changed = acc with
+            {
+                PasswordHash = Hash(password, salt), PasswordSalt = salt,
+                ClientDigestHash = DigestHash(ClientPasswordDigest(password), salt),
+            };
+            store.UpdateAccount(changed);
+            return Result<Account>.Success(changed);
+        }
+    }
+
     public Result<Session> Login(string name, string password)
     {
         var acc = store.FindAccount(name);

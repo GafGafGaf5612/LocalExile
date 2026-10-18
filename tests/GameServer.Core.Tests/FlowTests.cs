@@ -9,6 +9,20 @@ public class FlowTests
     private static AccountService Svc(string? path = null) => new(new JsonAccountStore(path));
 
     [Fact]
+    public void SetPassword_replaces_both_hashes_and_allows_a_single_space()
+    {
+        var s = Svc();
+        s.Register("carol", "first-pass");
+        Assert.True(s.SetPassword("carol", " ").Ok);
+        Assert.True(s.Login("carol", " ").Ok);
+        Assert.False(s.Login("carol", "first-pass").Ok);
+        Assert.True(s.LoginWithClientDigest("carol", AccountService.ClientPasswordDigest(" ")).Ok);
+        Assert.False(s.LoginWithClientDigest("carol", AccountService.ClientPasswordDigest("first-pass")).Ok);
+        Assert.Equal(AuthError.NotFound, s.SetPassword("nobody", " ").Error);
+        Assert.Equal(AuthError.WeakPassword, s.SetPassword("carol", "").Error);
+    }
+
+    [Fact]
     public void Register_Login_CreateCharacter_Flow()
     {
         var s = Svc();

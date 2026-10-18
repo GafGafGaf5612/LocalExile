@@ -56,7 +56,12 @@ change accounts in Host and Auth at the same time: each keeps its own in-memory 
 dotnet run --project src/GameServer.Auth -- keygen Client/Game.exe                  # writes data/login-keys.json (private keys; untracked)
 dotnet run --project src/GameServer.Auth -- patch Client/Game.exe Client/Game.patched.exe
 dotnet run --project src/GameServer.Auth                                            # serve on tcp/20493 (Game_LOGIN_PORT)
+dotnet run --project src/GameServer.Auth -- passwd devtester " "                    # set a dev account's password (any length)
 ```
+
+`passwd` changes both stored hashes (dev login and the client's digest) with a new salt; restart Auth afterwards
+(`live.ps1 -Only Auth`). While Auth runs, its build folder is locked: run a copy built elsewhere (`dotnet build
+src/GameServer.Auth -o <dir>`, then `dotnet <dir>/GameServer.Auth.dll passwd …` from the repository root).
 
 `patch` never overwrites its input. It replaces only the client's DSA verify key `y` and the server static DH value,
 keeping their sizes. To point the client at this server, use the `gateway_list.txt` host:port override (Agents/docs/re/004, 007).

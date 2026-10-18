@@ -8,6 +8,7 @@ using GameServer.Storage;
 // GameServer.Auth — the login server the official client talks to (custom TCP, see Agents/docs/re/007 and 008).
 //   keygen <Game.exe> [keys.json]          new signing + static keys over the client's own DSA domain
 //   patch  <Game.exe> <out.exe> [keys.json] write a copy of the client that trusts those keys
+//   passwd <account> <password>            set a dev account's password (any length; restart Auth afterwards)
 //   [serve] [keys.json]                    accept logins: 0x0002 key exchange, then answer account login 0x03 with 0x04
 //                                          and log every decoded message (Agents/docs/re/009)
 // Port: Game_LOGIN_PORT (default 20493). Keys default to data/login-keys.json. Accounts: Game_DEV_DB (default
@@ -22,6 +23,14 @@ try
 {
 switch (cmd)
 {
+    case "passwd" when args.Length >= 3:
+    {
+        var service = new AccountService(new JsonAccountStore(Environment.GetEnvironmentVariable("Game_DEV_DB") ?? Path.Combine("data", "accounts.json")));
+        var r = service.SetPassword(args[1], args[2]);
+        Console.WriteLine(r.Ok ? $"[auth] password of {args[1]} changed; restart Auth (live.ps1 -Only Auth) to use it"
+            : $"[auth] {args[1]}: {r.Error}");
+        return r.Ok ? 0 : 1;
+    }
     case "keygen" when args.Length >= 2:
     {
         string outPath = args.Length > 2 ? args[2] : DefaultKeys;
