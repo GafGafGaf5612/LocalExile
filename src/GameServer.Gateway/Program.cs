@@ -675,8 +675,12 @@ static IEnumerable<(uint, int)> BaseStats(ClientState conn)
     lock (conn.Monsters) nodes = [.. conn.Passives];
     var extra = Passives.Stats(nodes);
     if (conn.God)
+    {
         foreach (var (stat, value) in GodStats)
             if (Stats.Key(stat) is uint key) extra[key] = extra.GetValueOrDefault(key) + value;
+        // the final value the client shows: 100% of maximum life per second, per minute
+        if (Stats.Key("life_regeneration_rate_per_minute") is uint lr) extra[lr] = (int)Math.Min(int.MaxValue, (long)conn.Pools.Life * GodLifeRegenPctPerSecond / 100 * 60);
+    }
     foreach (var (k, v) in extra) if (seen.Add(k)) yield return (k, v);
 }
 
@@ -996,7 +1000,7 @@ static async Task DropLoot(string remote, NetworkStream stream, ConnectionCipher
 }
 
 // /god: what it adds on top of the character's stats (GodStats) and pools (PoolsFor): 1000% increased attack and cast
-// speed, 10 000 life and mana regenerated per second, +10 000 maximum life and +1000 to each attribute.
+// speed, 100% of maximum life and 10 000 mana regenerated per second, +10 000 maximum life and +1000 to each attribute.
 
 static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool on)
 {
@@ -1019,8 +1023,9 @@ static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers 
 static double LifeRegenPerSecond(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
-    int perMinute = Stats.Key("base_life_regeneration_rate_per_minute") is uint k ? stats.GetValueOrDefault(k) : 0;
-    return perMinute / 60.0;
+    int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+    // flat life per minute plus a percentage of maximum life per minute (/god: 6000 = 100% per second)
+    return (Get("base_life_regeneration_rate_per_minute") + conn.PlayerMaxLife * Get("life_regeneration_rate_per_minute_%") / 100.0) / 60;
 }
 
 // The player's mana per second from regeneration: Character.ot's mana_regeneration_rate_per_minute_% (105: 1.75% of
@@ -1141,8 +1146,7 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         {
             before = conn.PlayerLife;
             dead = before == 0;
-            // /god is immune to Righteous Fire's self-burn: 90% of a god's life per second can outrun its 10 000 regeneration.
-            double burn = rf is null || conn.God ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds;
+            double burn = rf is null ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds;
             double change = carry + regen - burn;
             int whole = (int)Math.Truncate(change);
             carry = change - whole;
@@ -1362,7 +1366,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: false, "/reset_passives");
         await conn.Commands!.Reply($"{nodes.Count} passive(s) refunded.");
     })
-    .Add("god", "/god (toggles: 1000% increased attack and cast speed, 10 000 life and mana regeneration per second, +10 000 life, +1000 attributes)", async _ =>
+    .Add("god", "/god (toggles: 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 attributes)", async _ =>
     {
         bool on = !conn.God;
         await SetGod(remote, stream, ciphers, conn, on);
@@ -1905,6 +1909,8 @@ sealed partial class Program
     internal static readonly PassiveTree Passives = new();
     // How close (cells) the player must be to a dying monster to gain its experience. Game_XP_RANGE overrides it.
     internal const int GodRegenPerSecond = 10_000;
+    // /god regenerates 100% of maximum life per second (more than Righteous Fire's 90% burn).
+    internal const int GodLifeRegenPctPerSecond = 100;
     // Character.ot mana_regeneration_rate_per_minute_%: every character regenerates 1.75% of its mana per second.
     internal const int BaseManaRegenPctPerMinute = 105;
     // S→C 0x1b1's pool byte for mana (0 life, 1 mana, 2 energy shield).
@@ -1920,7 +1926,7 @@ sealed partial class Program
     internal static readonly (string Stat, int Value)[] GodStats =
     [
         ("attack_speed_+%", 1000), ("base_cast_speed_+%", 1000), ("cast_speed_+%", 1000),
-        ("base_life_regeneration_rate_per_minute", GodRegenPerSecond * 60), ("life_regeneration_rate_per_minute", GodRegenPerSecond * 60),
+        ("life_regeneration_rate_per_minute_%", GodLifeRegenPctPerSecond * 60),
         ("base_mana_regeneration_rate_per_minute", GodRegenPerSecond * 60), ("mana_regeneration_rate_per_minute", GodRegenPerSecond * 60),
     ];
 

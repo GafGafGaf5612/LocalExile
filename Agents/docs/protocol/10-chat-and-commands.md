@@ -72,7 +72,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/add_xp <amount>` | experience as from a kill: levels up, saved ([15](15-progression.md) §1) |
 | `/passives` | the passive skill points and the allocated passives (message box) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
-| `/god` | toggles 1000% increased attack and cast speed, 10 000 life and mana regeneration per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12) |
+| `/god` | toggles 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12) |
 | `/death_screen [hex flags]` | S→C 0x55 with these flags (default: the league's; 2 hides it), [11](11-skills.md) §7 |
 | `/goto <area id or name>` | change area as if through an area transition (e.g. `/goto 1_1_3`; ids from the atlas), [08](08-area-transitions.md) §7 |
 | `/transition [pos … \| rot <deg> \| z <z \| none> \| model <path \| none> \| index <n>]` | show or change the first area transition (re-created), [08](08-area-transitions.md) §5 |

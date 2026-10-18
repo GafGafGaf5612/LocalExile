@@ -374,10 +374,10 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   to where each move ends (`FollowRighteousFire`); 0x2bb removes it when the fire ends. Live 2026-10-18: with only the
   buffs the player had just the small ring at its feet; with the effect object the big circle shows at the right size
   and follows the player, and monsters around burn to death.
-- **`/god`** toggles 1000% increased attack and cast speed, 10 000 life and mana regeneration per second, +10 000
-  maximum life and +1000 to each attribute (`GodStats`, `PoolsFor`); `RunPlayerTick` applies the regeneration. A god
-  does not take Righteous Fire's self-burn: at 90% of maximum life per second it outran the 10 000 regeneration once
-  passives raised life above 11 111.
+- **`/god`** toggles 1000% increased attack and cast speed, life and mana regeneration (below), +10 000
+  maximum life and +1000 to each attribute (`GodStats`, `PoolsFor`); `RunPlayerTick` applies the regeneration. Life
+  regenerates 100% of maximum life per second (`life_regeneration_rate_per_minute_%` 6000), not a flat 10 000: Righteous
+  Fire burns 90% per second, which outran a flat 10 000 once passives raised life above 11 111.
 
 ## Open
 
