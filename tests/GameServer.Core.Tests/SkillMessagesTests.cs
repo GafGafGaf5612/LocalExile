@@ -60,4 +60,12 @@ public class SkillMessagesTests
         Assert.StartsWith("02BA" + "00003001", hex);
         Assert.EndsWith("02" + "01" + "02000000" + "61006200", hex);
     }
+
+    [Fact]
+    public void Experience_update_targets_the_player_component_with_flag_bit0_and_a_little_endian_u32()
+    {
+        // Level 37 starts at 12 361 842 experience (ExperienceLevels.dat).
+        string hex = Convert.ToHexString(InstanceEntities.PlayerExperienceUpdate(0x1000, 12_361_842));
+        Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + "0007" + "06" + "0100" + "72A0BC00", hex);
+    }
 }

@@ -3,7 +3,7 @@ using System.Text;
 
 namespace GameServer.Core.Accounts;
 
-public enum AuthError { None, NameTaken, InvalidName, WeakPassword, BadCredentials, CharacterNameTaken, InvalidCharacterName, LimitReached, NotFound, SessionInvalid, InvalidClass }
+public enum AuthError { None, NameTaken, InvalidName, WeakPassword, BadCredentials, CharacterNameTaken, InvalidCharacterName, LimitReached, NotFound, SessionInvalid, InvalidClass, InvalidLevel }
 
 public readonly record struct Result<T>(T? Value, AuthError Error)
 {
@@ -128,6 +128,17 @@ public sealed class AccountService(IAccountStore store, TimeProvider? clock = nu
         if (c is null || c.AccountId != accountId) return Result<bool>.Fail(AuthError.NotFound);
         store.DeleteCharacter(characterId);
         return Result<bool>.Success(true);
+    }
+
+    /// <summary>Sets a character's level (1 to 100), found by name.</summary>
+    public Result<Character> SetLevel(string characterName, int level)
+    {
+        if (level is < 1 or > 100) return Result<Character>.Fail(AuthError.InvalidLevel);
+        var c = store.FindCharacter(characterName);
+        if (c is null) return Result<Character>.Fail(AuthError.NotFound);
+        var u = c with { Level = level };
+        store.UpdateCharacter(u);
+        return Result<Character>.Success(u);
     }
 
     public Result<Character> Touch(Guid accountId, Guid characterId, string areaId)

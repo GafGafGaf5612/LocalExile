@@ -187,6 +187,24 @@ sealed class SkillCatalog(string folder = "data")
             return increased;
         }
 
+        /// <summary>The attack's total increased physical damage: the player's damage, physical, melee and melee physical
+        /// damage stats.</summary>
+        public int IncreasedDamage(IReadOnlyDictionary<uint, int>? player)
+        {
+            int increased = 0;
+            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.PhysicalDamagePct, StatKeys.MeleeDamagePct, StatKeys.MeleePhysicalDamagePct])
+                increased += player?.GetValueOrDefault(k) ?? 0;
+            return increased;
+        }
+
+        /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,
+        /// at least 0.</summary>
+        public (int Min, int Max) Damage(IReadOnlyDictionary<uint, int>? player)
+        {
+            int scale = Math.Max(0, 100 + IncreasedDamage(player));
+            return (MinDamage * scale / 100, MaxDamage * scale / 100);
+        }
+
         /// <summary>The attack time: base / (1 + increased / 100), as the client computes the swing from the skill's
         /// main_hand_attack_speed_+% (more multipliers are not modelled), at least one server tick
         /// (<see cref="Program.TickSeconds"/>: at most 30 attacks per second).</summary>
@@ -200,22 +218,27 @@ sealed class SkillCatalog(string folder = "data")
         /// (the client puts only dual wielding's 10 there when it is not sent), the panel's "Attacks per Second" is
         /// hundred_times_attacks_per_second / 100.
         /// </summary>
-        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null) =>
-        [
-            (StatKeys.MainHandMinPhysical, MinDamage), (StatKeys.MainHandMaxPhysical, MaxDamage),
-            (StatKeys.MainHandMinTotal, MinDamage), (StatKeys.MainHandMaxTotal, MaxDamage),
-            (StatKeys.MainHandAttackDurationMs, AttackMs), (StatKeys.MainHandTotalAttackDurationMs, AttackMs),
-            (StatKeys.MainHandAttackSpeedPct, IncreasedAttackSpeed(player)),
-            (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 / AttackSeconds(player))),
-            (StatKeys.MainHandBaseMaxAttackDistance, Range), (StatKeys.MainHandMaxAttackDistance, Range),
-        ];
+        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null)
+        {
+            var (min, max) = Damage(player);
+            return
+            [
+                (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
+                (StatKeys.MainHandMinTotal, min), (StatKeys.MainHandMaxTotal, max),
+                (StatKeys.MainHandAttackDurationMs, AttackMs), (StatKeys.MainHandTotalAttackDurationMs, AttackMs),
+                (StatKeys.MainHandAttackSpeedPct, IncreasedAttackSpeed(player)),
+                (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 / AttackSeconds(player))),
+                (StatKeys.MainHandBaseMaxAttackDistance, Range), (StatKeys.MainHandMaxAttackDistance, Range),
+            ];
+        }
     }
 
     /// <summary>A class from Characters.dat: IntegerId (what the Player component's class byte holds: Marauder 1, Witch 3),
     /// the base attributes, and the player object's type (the row's Id, e.g. Metadata/Characters/StrInt/StrInt for the
     /// Templar) and model (AOFile).</summary>
     public sealed record ClassInfo(int IntegerId, int Strength, int Dexterity, int Intelligence,
-        string ObjectType = "Metadata/Characters/Int/Int", string AnimatedObject = "Metadata/Characters/Int/Int.ao")
+        string ObjectType = "Metadata/Characters/Int/Int", string AnimatedObject = "Metadata/Characters/Int/Int.ao",
+        int BaseMaxLife = 38, int BaseMaxMana = 34)
     {
         public static readonly ClassInfo Witch = new(3, 14, 14, 32);
     }
@@ -250,7 +273,8 @@ sealed class SkillCatalog(string folder = "data")
         var r = d.RootElement[row];
         return new(r.GetProperty("IntegerId").GetInt32(), r.GetProperty("BaseStrength").GetInt32(),
             r.GetProperty("BaseDexterity").GetInt32(), r.GetProperty("BaseIntelligence").GetInt32(),
-            r.GetProperty("Id").GetString()!, r.GetProperty("AOFile").GetString()!);
+            r.GetProperty("Id").GetString()!, r.GetProperty("AOFile").GetString()!,
+            r.GetProperty("BaseMaxLife").GetInt32(), r.GetProperty("BaseMaxMana").GetInt32());
     });
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<int, Unarmed> _unarmed = new();

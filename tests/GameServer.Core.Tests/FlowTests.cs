@@ -43,6 +43,20 @@ public class FlowTests
     }
 
     [Fact]
+    public void SetLevel_changes_the_level_from_1_to_100_only()
+    {
+        var s = Svc();
+        var acc = s.Register("dave", "pass1234").Value!;
+        s.CreateCharacter(acc.Id, "Leveller", CharacterClass.Marauder);
+        Assert.Equal(37, s.SetLevel("leveller", 37).Value!.Level);
+        Assert.Equal(37, s.Characters(acc.Id)[0].Level);
+        Assert.Equal(AuthError.InvalidLevel, s.SetLevel("Leveller", 0).Error);
+        Assert.Equal(AuthError.InvalidLevel, s.SetLevel("Leveller", 101).Error);
+        Assert.Equal(AuthError.NotFound, s.SetLevel("Nobody", 5).Error);
+        Assert.Equal(37, s.Characters(acc.Id)[0].Level);
+    }
+
+    [Fact]
     public void Store_Persists_To_Disk()
     {
         var p = Path.Combine(Path.GetTempPath(), $"Game-{Guid.NewGuid():N}.json");

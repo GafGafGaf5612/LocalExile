@@ -106,10 +106,11 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, ClassRow = Skills.RowOfClass(resolved.Class), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             conn.Commands = Commands(remote, stream, ciphers, conn);
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
-            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), league {conn.League ?? "?"}");
+            conn.PlayerLife = conn.PlayerMaxLife;
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}), league {conn.League ?? "?"}");
             byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
             if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn);
             // Closed early by C→S 0x153 (exit to character selection): leaving the loop closes the connection.
@@ -245,7 +246,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                     conn.Use(withTransitions);
                     Console.WriteLine($"[gateway] {remote} area transitions captured: {withTransitions.Describe()}");
                 }
-                await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character, conn.ClassRow);
+                await SendPlayer(remote, stream, ciphers, conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
                 conn.PlayerSent = true;
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
@@ -318,7 +319,7 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
 // first, so the server walks its estimate too (WalkEstimator.Approach, reach = the weapon's MaxAttackDistance in cells,
 // centre to centre) and only then starts the swing: it echoes the action aimed at the monster (0x1ab, flags | 0x80 +
 // target id) and, at the contact point (half the attack time), lowers the monster's life (0x1b1) by the unarmed damage
-// (Characters.dat MinDamage..MaxDamage; no damage model yet). Any later action (a move, another click) cancels both.
+// (Characters.dat MinDamage..MaxDamage raised by the increased melee physical damage stats). Any later action (a move, another click) cancels both.
 // One attack per attack time (WeaponSpeed ms scaled by the player's attack speed stats, a quarter early allowed for
 // jitter); earlier repeats of 0x24 are ignored. At 0 the client's Life component runs its death; the corpse is
 // removed 10 s later.
@@ -361,7 +362,8 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     if (m.Life == 0) return;
     await Task.Delay(TimeSpan.FromSeconds(duration / 2));   // the contact point, roughly
     uint life;
-    int damage = Random.Shared.Next(weapon.MinDamage, weapon.MaxDamage + 1);
+    var (minDamage, maxDamage) = weapon.Damage(CharacterPlayerStats(conn));
+    int damage = Random.Shared.Next(minDamage, maxDamage + 1);
     lock (conn.Monsters)
     {
         if (m.Life == 0) return;
@@ -547,19 +549,34 @@ static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
 // (the client derives nothing itself: 11-skills.md §4).
 static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
-    Dictionary<uint, int> stats;
-    lock (conn.Monsters) stats = new(conn.PlayerStats);
-    foreach (var (k, v) in ClassAttributes(conn.ClassRow)) stats.TryAdd(k, v);
+    var stats = CharacterPlayerStats(conn);
     foreach (var (k, v) in Skills.UnarmedFor(conn.ClassRow).Stats(stats)) stats[k] = v;
     return stats.Select(kv => (kv.Key, kv.Value));
+}
+
+// What /set_stat set, then the class's attributes and pools for the stats it did not set.
+static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
+{
+    Dictionary<uint, int> stats;
+    lock (conn.Monsters) stats = new(conn.PlayerStats);
+    foreach (var (k, v) in ClassAttributes(conn.ClassRow, conn.Pools)) stats.TryAdd(k, v);
+    return stats;
 }
 
 // The class's attributes (Characters.dat BaseStrength / BaseDexterity / BaseIntelligence) as final stats: strength,
 // dexterity and intelligence for the character panel, and virtual_*_for_requirements, which item requirements are
 // checked against (0x1402ce5f0 via the Player cache 0x141e80340, keys 0x3d1b-0x3d1d; global_no_attribute_requirements
 // skips the check, global_item_attribute_requirements_+% scales it).
-static IEnumerable<(uint, int)> ClassAttributes(int classRow)
+// With the level-based pools (CharacterStats): level, maximum_life / maximum_mana (and their base_ forms),
+// accuracy_rating and evasion_rating (base_evasion_rating 15), as final values, and the attributes' increases:
+// evasion_rating_+% (dexterity), maximum_energy_shield_+% (intelligence) and melee_physical_damage_+% (strength).
+static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Pools pools)
 {
+    foreach (var (stat, value) in new[] { ("level", pools.Level), ("base_maximum_life", (int)pools.Life), ("maximum_life", (int)pools.Life),
+        ("base_maximum_mana", (int)pools.Mana), ("maximum_mana", (int)pools.Mana), ("accuracy_rating", pools.Accuracy),
+        ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
+        ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct) })
+        if (Stats.Key(stat) is uint key) yield return (key, value);
     var c = Skills.ClassFor(classRow);
     foreach (var (stat, value) in new[] { ("strength", c.Strength), ("dexterity", c.Dexterity), ("intelligence", c.Intelligence),
         ("virtual_strength_for_requirements", c.Strength), ("virtual_dexterity_for_requirements", c.Dexterity),
@@ -631,6 +648,25 @@ static IEnumerable<(ushort Id, int Effect, string Name)> GemSkillEffects(string?
 }
 
 static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+
+// A new level in place: the Player component's experience (0x2ba; the client derives the level from it and runs its
+// level change), the level's stats (0x1b3: level, life, mana, accuracy, ...), the skills with them (0x2ba Actor), and
+// full life, as a level up gives.
+static async Task SetLevel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int level)
+{
+    int before = conn.Pools.Level;
+    conn.Pools = CharacterStats.For(Skills.ClassFor(conn.ClassRow), level);
+    Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana})");
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerExperienceUpdate(PlayerId, conn.Pools.Experience),
+        $"0x02ba player Player: experience {conn.Pools.Experience} (level {level})");
+    await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
+        $"0x01b3 player stats for level {level}");
+    var skills = PlayerSkills(conn);
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills),
+        $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats");
+    lock (conn.Monsters) conn.PlayerLife = conn.PlayerMaxLife;
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife), $"0x01b1 player life {conn.PlayerMaxLife}");
+}
 
 // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
 static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
@@ -776,11 +812,18 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
             items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
     })
+    .Add("set_level", "/set_level <1 to 100> (saved to the account; the level's experience and stats are sent at once)", async args =>
+    {
+        if (args.Length == 0 || !int.TryParse(args[0], out int level) || level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
+        var r = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level });
+        if (!r.Ok) { await conn.Commands!.Reply($"Level not set: {r.Error}"); return; }
+        await SetLevel(remote, stream, ciphers, conn, level);
+    })
     .Add("heal", "/heal (full life; also revives: 0x1b1 from 0 runs the client's revive)", async _ =>
     {
-        lock (conn.Monsters) conn.PlayerLife = ClientState.PlayerMaxLife;
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, ClientState.PlayerMaxLife),
-            $"0x01b1 player healed to {ClientState.PlayerMaxLife}");
+        lock (conn.Monsters) conn.PlayerLife = conn.PlayerMaxLife;
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
+            $"0x01b1 player healed to {conn.PlayerMaxLife}");
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 0)]),
             "0x01b3 player hide_mini_life_bar = 0");
     })
@@ -978,7 +1021,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
             "0x01b3 player hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-        $"0x01b1 player hit by monster 0x{id:x} for {damage}, life {life}/{ClientState.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 player hit by monster 0x{id:x} for {damage}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league)");
 }
@@ -991,7 +1034,7 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     lock (conn.Monsters)
     {
         if (conn.PlayerLife > 0) return;
-        conn.PlayerLife = ClientState.PlayerMaxLife;
+        conn.PlayerLife = conn.PlayerMaxLife;
         foreach (var m in conn.Monsters.Values) m.Aggro = false;
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0054 resurrect {(inTown ? "in town" : "at checkpoint")}");
@@ -1003,8 +1046,8 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
         return;
     }
     // Revive first: a teleport sent while the player is dead left them where they died (live 2026-10-17).
-    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, ClientState.PlayerMaxLife),
-        $"0x01b1 player revived with {ClientState.PlayerMaxLife} life");
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
+        $"0x01b1 player revived with {conn.PlayerMaxLife} life");
     // The checkpoint: the area's arrival point (waypoints are not implemented yet).
     var (x, y) = (conn.Layout.SpawnX, conn.Layout.SpawnY);
     conn.Walk.Teleport(x, y, conn.Clock.Elapsed.TotalSeconds);
@@ -1228,13 +1271,13 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
 
 // The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
 // (AOFile), class byte (IntegerId), attributes and unarmed attack; the name is the character's.
-static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout, string? name, int classRow)
+static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, AreaLayout layout, string? name, int classRow, CharacterStats.Pools pools)
 {
     var weapon = Skills.UnarmedFor(classRow);
     var cls = Skills.ClassFor(classRow);
-    var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: 50, Mana: 40,
+    var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: pools.Life, Mana: pools.Mana, Experience: pools.Experience,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. ClassAttributes(classRow)])], Stats: [.. weapon.Stats(), .. ClassAttributes(classRow)],
+        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. ClassAttributes(classRow, pools)])], Stats: [.. weapon.Stats(), .. ClassAttributes(classRow, pools)],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf));
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
@@ -1264,7 +1307,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         foreach (var (id, _) in layout.AreaTransitions) messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
         // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
         // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
-        messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. ClassAttributes(classRow)])));
+        messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. ClassAttributes(classRow, pools)])));
     }
     foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
 }
@@ -1332,6 +1375,9 @@ static class StatKeys
     // "Increased attack speed" stats that apply to an unarmed melee attack (attack time = base / (1 + sum / 100)).
     public const uint AttackSpeedPct = 0x47, MeleeAttackSpeedPct = 0x49, MainHandAttackSpeedPct = 0x126,
         UnarmedMeleeAttackSpeedPct = 0xb19;
+    // "Increased damage" stats that apply to an unarmed melee attack's physical damage (damage × (1 + sum / 100)):
+    // damage_+%, physical_damage_+%, melee_damage_+%, melee_physical_damage_+% (strength's 1% per 5).
+    public const uint DamagePct = 0x19, PhysicalDamagePct = 0x1b, MeleeDamagePct = 0x558, MeleePhysicalDamagePct = 0x1ed;
 }
 
 /// <summary>What the Gateway knows about an area's layout: the terrain grid (for movement estimates), where the player
@@ -1579,9 +1625,11 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
-    // The player's life as the server keeps it (the Witch's 50 at level 1, PlayerObject's Life); 0 = dead.
-    public uint PlayerLife = 50;
-    public const uint PlayerMaxLife = 50;
+    // The character's level and the pools that follow from it and the class (CharacterStats).
+    public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
+    public uint PlayerMaxLife => Pools.Life;
+    // The player's life as the server keeps it (PlayerObject's Life, full on creation); 0 = dead.
+    public uint PlayerLife;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).

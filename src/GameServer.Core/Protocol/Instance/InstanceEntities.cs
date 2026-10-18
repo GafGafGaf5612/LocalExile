@@ -111,6 +111,14 @@ public static class InstanceEntities
         return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.ToArray());
     }
 
+    /// <summary>
+    /// The player's experience (0x2ba to the Player component, reader <c>0x141e7ee30</c>): u16 flags, bit0 = u32 experience,
+    /// which goes through the same setter as creation (<c>0x141e7f6b0</c>): the level is derived again from it and, when
+    /// it changed, the component's level-change handler (vtable +0x108) runs. The other flags stay off.
+    /// </summary>
+    public static byte[] PlayerExperienceUpdate(uint playerId, uint experience) =>
+        ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, new BlobWriter().U16(1).U32(experience).ToArray());
+
     /// <summary>The player's Inventories component again (0x2ba): what its model wears after an equipment change.</summary>
     public static byte[] PlayerEquipmentUpdate(uint playerId, IReadOnlyList<VisibleItem> equipped)
     {
@@ -469,6 +477,9 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null,
     IReadOnlyList<VisibleItem>? Equipped = null)
 {
+    /// <summary>The Player component's index in the player object's component order (04 §3).</summary>
+    public const byte PlayerComponentIndex = 6;
+
     /// <summary>The Inventories component's index in the player object's component order (04 §3).</summary>
     public const byte InventoriesComponentIndex = 8;
 

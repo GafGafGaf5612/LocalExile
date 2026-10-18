@@ -191,6 +191,13 @@ u32. With 0 nothing else is read.
 | u32 n + n × u32 | → vtable +0x158 | |
 | u8 n + n × (record `0x141e840c0`, u32) | → vtable +0x160 | MicrotransactionCounters.dat |
 
+**Updates (S→C 0x2ba, component index 6):** the vtable +0xa0 reader `0x141e7ee30` (both Player vtables) reads a u16
+flag word, then one part per set bit; every part is conditional. Bit 0 = u32 **experience**, through the same setter
+`0x141e7f6b0`: it derives the level again and, when it changed, sets "levelled up" (+0x2e8 = new > old) and calls the
+component's vtable +0x108. Other bits: 2 and 8 the two vec16 lists, 0x200 the 9 raw bytes, 4 → +0x1a8, 0x40 → +0x1aa,
+0x10 the Hideouts keys, 0x20 the class byte, 0x1000 → +0x1b0, 0x80 → +0x1ae/+0x1ad, 0x100 → +0x1af, 0x800 a u32-counted
+list. `InstanceEntities.PlayerExperienceUpdate` sends `0001` + the u32 (`/set_level`).
+
 ### 4.8 Inventories (`0x141e1ee30`, through slot 17 → slot 20), 2 bytes minimal
 
 u8 n, then n × (u8 slot type, record `0x1424f44e0`: u8 flag, 0 = empty), then u8 n2, then n2 × u16 (looked up in a

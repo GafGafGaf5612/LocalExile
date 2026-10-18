@@ -88,7 +88,7 @@ static async Task Serve(LoginServerKeys keys)
     {
         SeedFor = Environment.GetEnvironmentVariable("Game_RANDOM_SEEDS") == "1" ? null : _ => 1,
     };
-    var directory = new InstanceDirectory(registry);
+    var directory = new InstanceDirectory(registry, accounts);
     _ = directory.ServeControlAsync(InstanceControl.Port);
     Console.WriteLine($"[auth] login server on tcp/{port}");
     // Game_LEAGUES: comma-separated base leagues (default Standard, Allflame), each with its Hardcore / SSF / Ruthless variants.

@@ -13,16 +13,19 @@ using GameServer.Core.World;
 /// character (its session issues the tickets), and the localhost control server the Gateway calls
 /// (<see cref="InstanceControl"/>). Docs: Agents/docs/protocol/09-area-change.md.
 /// </summary>
-sealed class InstanceDirectory(InstanceRegistry registry)
+sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accounts = null)
 {
     public const ushort StartTown = 0x235c; // Lioneye's Watch
 
     public InstanceRegistry Registry => registry;
 
     private readonly ConcurrentDictionary<uint, TicketInfo> _tickets = new();
+    // Each character's latest ticket: a connection closing after its character re-entered the same instance (Instance
+    // Manager) must not take it out of that instance.
+    private readonly ConcurrentDictionary<string, uint> _latest = new();
     private readonly ConcurrentDictionary<string, LoginLink> _links = new(StringComparer.OrdinalIgnoreCase);
 
-    public sealed record TicketInfo(string Character, ulong Instance, ushort Area, League? League, CharacterClass Class);
+    public sealed record TicketInfo(string Character, ulong Instance, ushort Area, League? League, CharacterClass Class, int Level);
 
     /// <summary>A logged-in client's login connection. Writes go through <see cref="SendAsync"/> (the reply loop and the
     /// control server both write).</summary>
@@ -58,7 +61,8 @@ sealed class InstanceDirectory(InstanceRegistry registry)
     private uint NewTicket(LoginServerSession session, string character, AreaInstanceState inst)
     {
         uint ticket = session.Keyring.NewTicket();
-        _tickets[ticket] = new TicketInfo(character, inst.Id, inst.AreaHash, session.CharacterLeague, session.CharacterClass);
+        _tickets[ticket] = new TicketInfo(character, inst.Id, inst.AreaHash, session.CharacterLeague, session.CharacterClass, session.CharacterLevel);
+        _latest[character] = ticket;
         Console.WriteLine($"[auth] ticket 0x{ticket:x8}: {character} → instance {inst.Id} (area 0x{inst.AreaHash:x4}, seed {inst.Seed}, {inst.Players.Count} player(s))");
         return ticket;
     }
@@ -107,7 +111,7 @@ sealed class InstanceDirectory(InstanceRegistry registry)
                 {
                     Ok = inst is not null, Error = inst is null ? "instance expired" : null, Area = info.Area,
                     Seed = inst?.Seed ?? 0, Instance = info.Instance, IsTown = inst?.IsTown ?? false, Character = info.Character,
-                    League = info.League?.Name, Hardcore = info.League?.Hardcore ?? false, Class = (int)info.Class,
+                    League = info.League?.Name, Hardcore = info.League?.Hardcore ?? false, Class = (int)info.Class, Level = info.Level,
                 };
             }
             case "list":
@@ -132,7 +136,21 @@ sealed class InstanceDirectory(InstanceRegistry registry)
                     Ok = true, Area = inst.AreaHash, Instance = inst.Id, Seed = inst.Seed, IsTown = inst.IsTown, Ticket = ticket,
                 };
             }
+            case "set_level":
+            {
+                if (accounts is null) return new ControlResponse { Ok = false, Error = "no account store" };
+                var r = accounts.SetLevel(info.Character, req.Level);
+                if (!r.Ok) return new ControlResponse { Ok = false, Error = r.Error.ToString() };
+                // This ticket and the next ones (area changes) carry the new level.
+                _tickets[req.Ticket] = info with { Level = req.Level };
+                if (_links.TryGetValue(info.Character, out var link)) link.Session.CharacterLevel = req.Level;
+                Console.WriteLine($"[auth] {info.Character} set to level {req.Level}");
+                return new ControlResponse { Ok = true, Character = info.Character, Level = req.Level };
+            }
             case "leave":
+                if (_latest.TryGetValue(info.Character, out uint latest) && latest != req.Ticket
+                    && _tickets.TryGetValue(latest, out var now) && now.Instance == info.Instance)
+                    return new ControlResponse { Ok = true };
                 registry.Leave(info.Instance, info.Character);
                 return new ControlResponse { Ok = true };
             default:

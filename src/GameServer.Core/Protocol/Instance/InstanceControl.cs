@@ -45,7 +45,8 @@ public static class InstanceControl
 /// <summary>
 /// Ops: "resolve" (Ticket) → the ticket's area, seed, instance, character; "list" (Ticket, Area) → live instances of
 /// Area; "transfer" (Ticket, Area, Instance = 0 for the default choice, New = true for a fresh instance) → Auth moves
-/// the ticket's player and returns the destination's new Ticket; "leave" (Ticket) → the player left its instance (expiry starts).
+/// the ticket's player and returns the destination's new Ticket; "leave" (Ticket) → the player left its instance (expiry starts);
+/// "set_level" (Ticket, Level) → the ticket's character gets that level (1 to 100) in the account store.
 /// </summary>
 public sealed record ControlRequest
 {
@@ -54,6 +55,7 @@ public sealed record ControlRequest
     public ushort Area { get; init; }
     public ulong Instance { get; init; }
     public bool New { get; init; }
+    public int Level { get; init; }
 }
 
 public sealed record ControlResponse
@@ -71,6 +73,8 @@ public sealed record ControlResponse
     public bool Hardcore { get; init; }
     /// <summary>The character's class: Characters.dat IntegerId (CharacterClass), the Witch (3) if unknown.</summary>
     public int Class { get; init; } = 3;
+    /// <summary>The character's level (from the account store).</summary>
+    public int Level { get; init; } = 1;
     public List<ControlInstance>? Instances { get; init; }
 }
 

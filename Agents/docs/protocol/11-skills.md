@@ -105,6 +105,25 @@ at least one server tick (`Program.TickRate` = 30/s, so at most 30 attacks per s
 `hundred_times_attacks_per_second` = 100 / attack time. "More" multipliers are not modelled. `/set_stat` (which takes
 stat names now) records the stat for the player and sends the player's stats (0x1b3) and the skill again.
 
+**The character's own stats** (`CharacterStats.For`, sent by `ClassAttributes` as final values, before passives and
+items): the per-level values come from `Metadata/Characters/Character.ot` (`life_per_level` 12, `mana_per_level` 6,
+`accuracy_rating_per_level` 2, `base_evasion_rating` 15; it has no `evasion_rating_per_level`, so evasion does not grow
+with level), the bases and attributes from Characters.dat:
+
+| Stat | Value |
+|---|---|
+| `maximum_life` | BaseMaxLife (38) + 12 × level + strength / 2 |
+| `maximum_mana` | BaseMaxMana (34) + 6 × level + intelligence / 2 |
+| `accuracy_rating` | 2 × level + 2 × dexterity |
+| `evasion_rating` | 15 × (1 + `evasion_rating_+%` / 100) |
+| `evasion_rating_+%` | dexterity / 5 |
+| `maximum_energy_shield_+%` | intelligence / 5 |
+| `melee_physical_damage_+%` | strength / 5 |
+
+The default attack's damage (`Unarmed.Damage`) is MinDamage..MaxDamage × (1 + (`damage_+%` + `physical_damage_+%` +
+`melee_damage_+%` + `melee_physical_damage_+%`) / 100), rounded down; the server rolls its hits from the same range.
+`/set_stat` overrides any of these.
+
 **Changing a skill after entering:** S→C **0x2ba** on the player with component index 9 (Actor) and the slot-20 data
 `f0 0x40, f1 0, skill list` (`InstanceEntities.PlayerSkillsUpdate`): the list replaces the skill of the same id, new
 stats included. Live: the swing sped up at once.
