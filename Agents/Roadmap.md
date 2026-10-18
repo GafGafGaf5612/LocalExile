@@ -17,12 +17,6 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 1. Quality of life
 
-### Exit to character selection (Esc)
-- **Known:** Esc → "Exit to character selection" sends C→S 0x153 (2 bytes). Nothing answers, so the client waits forever.
-- **Start:** find what the client expects after 0x153 (probably a reply on the instance connection, then the login
-  connection's character list again). [09](docs/protocol/09-area-change.md) §5.
-- **Done when:** Esc returns to character select and Play enters the game again.
-
 ### Chat lines and the global channel
 - **Known:** C→S 0x15 (chat text) is parsed; replies use S→C 0x0d (message box). 0x12d shows BackendErrors rows, 0x157 is
   a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".

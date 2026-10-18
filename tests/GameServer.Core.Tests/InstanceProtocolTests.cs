@@ -103,4 +103,14 @@ public class InstanceProtocolTests
         Assert.False(InstanceProtocol.ReadResurrectInTown([0x00, 0x54, 0x00]));
         Assert.Equal(3, InstanceProtocol.KnownClientLength(InstanceProtocol.ResurrectId));
     }
+
+    [Fact]
+    public void Exit_to_character_selection_0x153_is_framed()
+    {
+        // Live: Esc → "Exit to Character Selection" sent 0153 alone; a tick may follow in the same chunk.
+        var messages = InstanceProtocol.SplitClientMessages(Convert.FromHexString("0153" + "001B00000000AA"), out byte[] partial, out byte[] unknown);
+        Assert.Equal([InstanceProtocol.ExitToCharacterSelectId, InstanceProtocol.TickId], messages.Select(m => m.Id));
+        Assert.Empty(partial);
+        Assert.Empty(unknown);
+    }
 }

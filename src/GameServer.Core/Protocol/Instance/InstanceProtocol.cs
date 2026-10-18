@@ -52,7 +52,7 @@ public static class InstanceProtocol
         InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
         InstanceItems.InventoryRequestId => 8, InstanceItems.ItemActionId => 12, InstanceItems.SocketGemId => 16,
-        InstanceItems.UnsocketGemId => 17, BindSkillId => 5, _ => null,
+        InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2, _ => null,
     };
 
     public const ushort SkillBarId = 0x53, SkillBarSlots = 13;
@@ -176,6 +176,14 @@ public static class InstanceProtocol
         if ((flags & 2) == 0) w.U32(0).U16(0);
         return w.ToArray();
     }
+
+    /// <summary>C→S 0x153 (id only): Esc → "Exit to Character Selection" (0x140cf1ab0) and the hardcore death screen's
+    /// Exit (0x140290bf0); the client skips it while its instance connection is already down (state +0xc3a0 = 1). The
+    /// server answers by closing the instance connection. Disconnected in game (instance at app+0x348), the client's
+    /// frame update 0x140d57cd0 empties the state stack and pushes the login state (id 7, 0x140d0c8c0) without deleting
+    /// the login object; that state's enter (0x140d0d190) sees the login connection still logged in (login+0xde8 = 3)
+    /// and pushes character select (id 9, 0x140d12140), which asks for the list again with login 0x18.</summary>
+    public const ushort ExitToCharacterSelectId = 0x153;
 
     /// <summary>C→S 0x54 (class 0x1435bffa0, write 0x141f932b0), sent by the death screen's buttons (0x140290bf0):
     /// u8 flags, bit0 set by the "Resurrect in Town" button, clear for the checkpoint one.</summary>

@@ -34,6 +34,12 @@ G = global / static data.
 | `0x140d05f70` | Fn | account login sender (0x03, password digest) |
 | `0x140d13060` | Fn | character screen → 0x18 |
 | `0x1421406f0` | Fn | Play → 0x0e |
+| `0x14213e5a0` | Fn | login connection dropped: login `+0xde8` (0 none, 2 handshake, 3 logged in) back to 0 |
+| `0x1400f2600` | Fn | state stack singleton; states by id byte (`+0x209`) at `+0x48 + id×0x10` ([09](09-area-change.md) §6) |
+| `0x140104510` | Fn | builds every state (login id 7 `0x140d0c8c0`, character select id 9 `0x140d12140`, in game id 4 `0x140d55be0`) |
+| `0x140d0d190` | Fn | login state enter: character select if login `+0xde8` = 3 |
+| `0x140d574e0` | Fn | in-game frame update → `0x140d57cd0` (instance down: login state, login object kept) or `0x140d57730` |
+| `0x140cf1ab0` | Fn | Esc → "Exit to Character Selection": C→S 0x153 |
 | `0x140cfc2d0` | Fn | gateway_list.txt reader |
 | `0x142fc0150` / `0x142fc04a0` / `0x142fc0620` | G | DSA key / client static private / server static public |
 

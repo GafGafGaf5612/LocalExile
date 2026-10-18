@@ -112,7 +112,8 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), league {conn.League ?? "?"}");
             byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
             if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn);
-            while (true)
+            // Closed early by C→S 0x153 (exit to character selection): leaving the loop closes the connection.
+            while (!conn.Closed)
             {
                 int n = await stream.ReadAsync(buffer);
                 if (n == 0) break;
@@ -201,6 +202,14 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (item message, not handled yet): {Convert.ToHexString(bytes)}");
         else if (id == InstanceItems.PickUpItemId)
             await PickUpItem(remote, stream, ciphers, conn, InstanceItems.ReadPickUpItem(bytes));
+        else if (id == InstanceProtocol.ExitToCharacterSelectId)
+        {
+            // Esc → "Exit to Character Selection" or the hardcore death screen's Exit. Closing the instance connection
+            // is the answer: the client keeps its login connection and goes back to the character list (09 §6).
+            Console.WriteLine($"[gateway] {remote} <= 0x0153 exit to character selection: closing the instance connection");
+            conn.Closed = true;
+            return;
+        }
         else if (id == InstanceProtocol.ResurrectId)
             _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
         else if (id == InstanceChat.ChatId)

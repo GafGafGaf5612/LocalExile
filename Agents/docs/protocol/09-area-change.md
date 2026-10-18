@@ -125,5 +125,49 @@ keeps the ids of the last list it sent (`ChooserList`).
 
 - Arrival point: where the player appears next to the exit they came through. The Coast currently uses the deepest cell.
 - The Coast's own exits (back to town, to The Mud Flats) and the exits of other areas.
-- C→S 0x153 (2 bytes, Esc → "Exit to character selection") gets no answer yet, so the client waits.
 - 0x2cb's layout, 0x27's u32 +0x34 and u8 +0x88, 0xae's u8 fields.
+- After 0x153 the client's log says "Abnormal disconnect: An unexpected disconnection occurred." (nothing on screen).
+  The official server probably sends a disconnect message (S→C 0x26? [10](10-chat-and-commands.md)) with a code that
+  has no text before it closes; not needed for the exit to work.
+
+## 6. Exit to character selection (C→S 0x153)
+
+C→S 0x153 is the id alone (2 bytes). Senders: Esc → "Exit to Character Selection" (`0x140cf1ab0`, then it closes the
+menu with `0x140cf1570`), the hardcore death screen's Exit (`0x140290bf0`), `0x14063f360`, `0x1408ead30`,
+`0x1408eaf00`; `0x1417a2310` picks 0x153 / 0x154 / 0x155 by an index 0..2. None of them send while the instance
+connection is down (instance state `+0xc3a0` = 1).
+
+**The answer is closing the instance connection.** The Gateway logs 0x153 and leaves its read loop, which closes the
+socket; the login connection stays open. What the client does then:
+
+1. The instance disconnect (`0x142149ca0`) stores the code (`+0xc430`) and message (`+0xc438`) and sets state 1.
+2. The frame update `0x140d574e0` calls `0x140d57730` when app `+0x340` is set, else `0x140d57cd0` when the instance
+   (app `+0x348`, `0x1400f34b0`) is. In game it is `0x140d57cd0`: with state 1 it shows "Abnormal disconnect: …" only if
+   the code has a message, empties the state stack and pushes stack slot `+0xb8`. It does not delete the login object
+   (`0x140d57730` does, at app `+0x358`).
+3. The state stack (`0x1400f2600`) keeps the states in an array of shared pointers at `+0x48`, indexed by the state's id
+   byte (`+0x209`, set by its constructor; `0x140104510` builds them all):
+
+   | Id | Slot | Constructor | State |
+   |---|---|---|---|
+   | 2 | `+0x68` | `0x1415277d0` | |
+   | 3 | `+0x78` | `0x140cf0c20` | |
+   | 4 | `+0x88` | `0x140d55be0` | in game |
+   | 5 | `+0x98` | `0x141529f90` | |
+   | 6 | `+0xa8` | `0x140cfc2d0` | |
+   | 7 | `+0xb8` | `0x140d0c8c0` | login |
+   | 8 | `+0xc8` | `0x140cf3ae0` | |
+   | 9 | `+0xd8` | `0x140d12140` | character select |
+   | 10 | `+0xe8` | `0x140cfa310` | |
+
+4. The login state's enter (`0x140d0d190`) creates a login object only if there is none, then pushes character select
+   when the login object's state (`login+0xde8`) is 3, else the screen at `this[0xfb]` (the login form).
+   `0x14213f190` sets `+0xde8`: 2 on the handshake (0x02), 3 on a 0x04 login result of 0; `0x14213e5a0` resets it to 0
+   when the login connection drops.
+5. Character select's enter (`0x140d13060`) sends login 0x18 and Auth answers with the character list (0x15). Play
+   (login 0x0e) gets a new ticket and 0x14 as usual.
+
+So the exit needs the login connection still logged in: if Auth has dropped it, the client lands on the login form.
+Live 2026-10-18: Esc → Exit to Character Selection, then Play, twice on one login connection (0x153, close, login 0x18
+→ 0x15, 0x0e → a new ticket). The closed connection runs the "Abnormal disconnect" path (§5) but the client goes
+straight on to the character list.
