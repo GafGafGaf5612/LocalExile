@@ -381,8 +381,10 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 /// <para><see cref="Direction"/>, when set, goes in Positioned's f1 0x04 block (4 × f32 → +0x2d8..+0x2e4, zero by default:
 /// the writer 0x141e2fdc0 sets the flag only when +0x2d8 or +0x2dc is non-zero). Not the flight direction: (dx, dy, 0, 0)
 /// put the fireball under the ground (live 2026-10-18); without the block its model points down.</para>
-/// <para><see cref="Height"/>, when set, is Positioned's fixed height (f0 0x04: i32 +0x290 in steps of 7.8125, f32 +0x2b4 the
-/// world z = height × 7.8125, as the area transitions send it): the projectile starts there instead of on the terrain.</para>
+/// <para><see cref="Height"/>, when set, is a terrain height (steps of 7.8125, up is positive, as 0x141d84b00 and S→C
+/// 0x1ba use them) sent as Positioned's fixed height (f0 0x04: i32 +0x290 = z / 7.8125, f32 +0x2b4 = world z, as the area
+/// transitions send it). World z points down, so z = −height × 7.8125 (the client's terrain z, 0x141e35800): sending
+/// +height put the fireball under raised ground (live 2026-10-18).</para>
 /// </summary>
 public sealed record ProjectileObject(string TypePath, int GridX, int GridY, float Rotation = 0, ushort Team = 0,
     (float X, float Y, float Z, float W)? Direction = null, int? Height = null)
@@ -396,7 +398,7 @@ public sealed record ProjectileObject(string TypePath, int GridX, int GridY, flo
         // shown (as monsters).
         w.I32(GridX).I32(GridY).F32(Rotation).U16(Team).U8((byte)(Height is null ? 0 : 0x04)).U8((byte)(Direction is null ? 0x02 : 0x06));
         if (Direction is { } d) w.F32(d.X).F32(d.Y).F32(d.Z).F32(d.W);
-        if (Height is int h) w.I32(h).F32(h * 7.8125f);
+        if (Height is int h) w.I32(-h).F32(-h * 7.8125f);                         // z points down: up is negative
         w.U8(0).U8(1);
         w.U8(0);                                                                    // Animated: the type's own
         w.U8(0);                                                                    // tasks

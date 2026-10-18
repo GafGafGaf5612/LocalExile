@@ -250,7 +250,27 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   delayed dumps hit unreadable tiles (access violations; the lookup is called with several terrain pointers) and hung
   the client. Next: compute the heights offline from the tile files the atlas already reads (the .tdt heights and each
   placed tile's height offset).
-- **Still wrong.** The fireball flies at terrain height where there is no height grid; a real one flies higher. The
+- **Heights in the .tdt (decoded offline, 2026-10-18).** The binary parser is `0x1429f31a0`. After the header (§6 of
+  08-area-transitions.md) come a u16 flags word, a hull-plane count byte (0 here), then a u16 subtile count (w × h)
+  and one record per subtile, row by row: u16 flags, u8, [3 bytes if the high flag byte has bit 1, version ≥ 13],
+  then, unless flags bit 2 is set, a **byte map** (`0x1429f59a0`): header byte b, kind = b & 7, n = (b >> 3) & 3 extra
+  bytes, size = (b >> 5) | extra << (3 + 8k). Kind 0 = a constant (size is the value; 0 = all zero); kinds 1..4 = an
+  LZ4 block of `size` bytes that expands to the 69 / 137 / 281 / 529-byte palette form `0x141d8fc40` reads (2 / 4 / 16
+  int8 palette entries + 1 / 2 / 4-bit indices, LSB first, or 529 raw int8). Unless flags bits 0 and 1 are both set,
+  a u16 length and that many bytes follow (a second per-cell map). Check: `beachencampment_v01_01.tdt` (15 × 18
+  subtiles) placed at cell (69, 0) with the transposing code reproduces the Lioneye's Watch capture exactly (142 830
+  cells, 0 differences, height offset 0).
+- **Placed tiles of generated areas (live 2026-10-18).** `0x142041200` loops over the finished terrain grid
+  (arg0 +0x28: the 0x38-byte entries `0x141d84b00` reads; entry +0 = subtile record whose heights vector is at +0/+8,
+  +0x30 i16 height offset, +0x36 code; terrain +0x104 = multiplier, 1 in both areas). The read-only Frida hook
+  `scripts/re/frida/capture-terrain-tiles.js` dumps them on entry (no calls into the client; the client stayed up);
+  `scripts/walkmaps/heights.py` applies the client's lookup (code tables `0x142fa04b0`, `0x142fb7f98`). The town
+  capture reproduces the known grid exactly; The Coast seed 1 is 1725 × 1725, −37..90.
+- **Sign.** World z points down: the client's terrain z is −height × 7.8125 (`0x141e35800`), and Positioned's fixed
+  height is i32 z / 7.8125 with f32 z, as the area transitions send it. S→C 0x1ba takes +height. Sending +height in the
+  fixed height put the fireball under raised ground; with −height it flies above the ground at every level (belly
+  height with the default 8 steps).
+- **Still wrong.** Without a height grid the fireball flies on the terrain, and it starts inside the caster. The
   four floats of Positioned's f1 0x04 block (+0x2d8..+0x2e4, zero by default) are not the direction: (dx, dy, 0, 0) put
   it under the ground (`Game_PROJECTILE_DIRECTION=1` sends them).
 

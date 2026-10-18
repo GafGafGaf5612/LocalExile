@@ -113,7 +113,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** active gems in equipment are granted with their level-1 stats; Fireball casts, flies as a server-made
   projectile object and hits the targeted monster ([11](docs/protocol/11-skills.md) §9–10). Support gems crash the client
   when granted as skills.
-- **Start:** the projectile's height and orientation (Positioned's f1 0x04 floats, the f0 0x04 fixed height), collision
+- **Start:** height grids for more areas (or in the walk-map recorder), the cast point at the hand, collision
   and the explosion; the skill record's support list (linked supports); gem experience and levels.
 - **Done when:** Fireball with Arcane Surge linked can be cast and does its damage, and looks like the real one.
 
