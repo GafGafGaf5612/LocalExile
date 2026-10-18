@@ -42,13 +42,65 @@ public static class InstanceEntities
     }
 
     /// <summary>
-    /// S→C 0x3d (dispatcher case 0x11, class 0x1435dcd00, write 0x14219eb40): u16 +0x28, u16 +0x2a, flags (bit0 +0x2c,
-    /// bit1 +0x2d = no list, bits 2/3/4 → create slot 0/1/2 via 0x142155bf0), then unless bit1 a vec16 of raw u16
-    /// (likely allocated passive nodes). The three slots at instance+0xc2f8 (active index +0xc2f0) are read when the
-    /// area UI is built (0x140785160), so all three are created, with an empty list.
+    /// S→C 0x3d (dispatcher case 0x11, class 0x1435dcd00, write 0x14219eb40): the three **Atlas** passive tree presets.
+    /// u16 +0x28, u16 +0x2a, flags (bit0 +0x2c, bit1 +0x2d = no list, bits 2/3/4 → create or update preset 0/1/2 via
+    /// 0x142155bf0), then unless bit1 a vec16 of raw (little-endian) u16 node ids. Each flagged preset gets the list and
+    /// the two u16 (0x141eec7e0): +0x28 → +0x468, +0x2a → +0x46c, its points (0x141eed000: "atlas passive skills
+    /// allocated but only allowed"). The presets at instance+0xc2f8 (active index +0xc2f0) are read when the area UI is
+    /// built (0x140785160), so all three are created, empty.
     /// </summary>
     public static byte[] PassiveSlots(ushort u28 = 0, ushort u2a = 0) =>
         new LoginWriter().U16(PassiveSlotsId).U16(u28).U16(u2a).U8(0x1c).U16(0).ToArray();
+
+    public const ushort AddBuffId = 0x1c1, RemoveBuffId = 0x1c2;
+
+    /// <summary>
+    /// S→C 0x1c1 (world group, class 0x1435ddb78, read 0x141fdf870; world handler case 0x1c1 → the object's Buffs
+    /// component, 0x141e11720): object header, u16 buff instance (+0x20, what 0x1c2 removes), u16 BuffDefinitions row,
+    /// u32 +0x64 (the source object), u16 +0x60 (the source skill), u8 flags (bit0 u8 u32 u8 u16, bit1 u32 +0x68, bit2
+    /// u16 stacks +0x70 (default 1), bit3 u16 u16, bit4 u16 BuffVisuals override (default the row's), bit5 u8 +0x80
+    /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32
+    /// per GrantedStats value when its IsRecovery (+0x7c) is set, and a u32-counted list of u32. The buff's visual
+    /// (BuffVisuals) plays while it lasts.
+    /// </summary>
+    public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
+        IReadOnlyList<uint>? values = null) =>
+        new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(0)
+            .Bytes([.. (values ?? []).SelectMany(v => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v })]).U32(0).ToArray();
+
+    /// <summary>S→C 0x1c2 (class 0x1435dd918, read 0x141fdfdd0): object header, u16 buff instance: the buff ends.</summary>
+    public static byte[] RemoveBuff(uint objectId, ushort buffInstance) =>
+        new LoginWriter().U16(RemoveBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).ToArray();
+
+    public const ushort CharacterPassivesId = 0x33, AllocatePassiveId = 0x34, PanelToggleId = 0x123;
+
+    /// <summary>
+    /// C→S 0x34 (7 bytes, live 2026-10-18): the Passive Skill Tree asks for a node. u16 (0 so far), u16 the node's
+    /// PassiveSkillGraphId (big-endian: 0xdfb0 = 57264 Spell Damage and Mana, next to the Witch's start), u8 (0 so far).
+    /// The client waits for the tree back (S→C 0x33); without it the node is not allocated. C→S 0x123 (u8 1 / 0) is sent
+    /// when the panel opens and closes.
+    /// </summary>
+    public static (ushort U2, ushort Node, byte U6) ReadAllocatePassive(ReadOnlySpan<byte> m) =>
+        ((ushort)(m[2] << 8 | m[3]), (ushort)(m[4] << 8 | m[5]), m[6]);
+
+    /// <summary>
+    /// S→C 0x33 (dispatcher case 0xf, class 0x1435dca60, read 0x14219e3f0): the character's passive skill tree, at
+    /// instance+0xc2d8 (handler 0x141ef2710). u16 +0x88 → tree +0x270 (probably refund points), u16 +0x8a → +0x274
+    /// (extra_skill_points: quests), u16 +0x8c → +0x27c (ascendancy points), u8 +0x90 → +0x26c the **level** (the client's
+    /// points_from_level = (level − 1) × points per level, 0x141ef3e60), u8 +0x8f → +0x268 the class byte (Characters.dat
+    /// IntegerId, ascendancy in bits 5–7: the tree's start), u8 +0x8e → +0x269, u8 flags (bit0 +0x91, bit1 +0x92 = no
+    /// lists), then unless bit1: vec16 u16 allocated nodes (PassiveSkills.dat PassiveSkillGraphId, raw little-endian),
+    /// vec16 u16, vec16 u16, vec16 u32 mastery effects (node | effect &lt;&lt; 16), vec16 u32. The client drops nodes not
+    /// connected to its class's start and refuses more nodes than its points allow.
+    /// </summary>
+    public static byte[] CharacterPassives(byte level, byte classByte, IReadOnlyList<ushort>? nodes = null, ushort questPoints = 0,
+        ushort refundPoints = 0, ushort ascendancyPoints = 0)
+    {
+        var w = new LoginWriter().U16(CharacterPassivesId).U16(refundPoints).U16(questPoints).U16(ascendancyPoints)
+            .U8(level).U8(classByte).U8(0).U8(0).U16(checked((ushort)(nodes?.Count ?? 0)));
+        foreach (ushort n in nodes ?? []) w.U8((byte)n).U8((byte)(n >> 8));
+        return w.U16(0).U16(0).U16(0).U16(0).ToArray();
+    }
 
     /// <summary>S→C 0x22 (u32, dispatcher case 0xb): the local player's entity id (world+0x980, setter 0x142186fa0).</summary>
     public static byte[] SetLocalPlayer(uint entityId) => new LoginWriter().U16(LocalPlayerId).U32(entityId).ToArray();
@@ -421,6 +473,28 @@ public sealed record ProjectileObject(string TypePath, int GridX, int GridY, flo
         w.U8(0).U8(1);
         w.U8(0);                                                                    // Animated: the type's own
         w.U8(0);                                                                    // tasks
+        return w.ToArray();
+    }
+}
+
+/// <summary>
+/// A visual effect as its own object: <c>Metadata/Effects/PermanentServerEffect</c> (Positioned, BaseEvents, Animated;
+/// Render is client-only) with the given animated object, which plays its default animation where the object stands
+/// until it is removed (0x2bb). The client's effect script (0x142087910) makes the same objects for MiscAnimated rows,
+/// e.g. RighteousFireRing = Metadata/Effects/Spells/ri_fire/rifire.ao.
+/// </summary>
+public sealed record EffectObject(int GridX, int GridY, string AnimatedObject)
+{
+    public const string TypePath = "Metadata/Effects/PermanentServerEffect";
+
+    public byte[] Blob()
+    {
+        var w = new BlobWriter();
+        w.U8(0).U8(0);                                              // object flags, base data entry count
+        w.I32(GridX).I32(GridY).F32(0).U16(0).U8(0).U8(0x02);       // Positioned: on the terrain, shown
+        w.U8(0).U8(1);
+        w.U8(1).WStr32(AnimatedObject);                             // Animated: bit0 + the .ao path
+        w.U8(0);                                                    // tasks
         return w.ToArray();
     }
 }

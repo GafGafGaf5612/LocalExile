@@ -16,8 +16,11 @@ static class CharacterSaves
     public sealed record SavedPlacement(uint Id, byte X, byte Y, SavedItem Item);
 
     /// <summary>Skill bar: slot index → a GrantedEffects Id (skill ids change with the socketed gems, effects do not),
-    /// "Action/&lt;ActionTypes Id&gt;" for a basic action ("Action/Move") or "" for a cleared slot.</summary>
-    public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null);
+    /// "Action/&lt;ActionTypes Id&gt;" for a basic action ("Action/Move") or "" for a cleared slot. Experience: the
+    /// character's total (its level is the account's; a save from another level is ignored). Passives: the allocated
+    /// nodes' PassiveSkillGraphId.</summary>
+    public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
+        uint? Experience = null, List<ushort>? Passives = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -63,6 +66,21 @@ static class CharacterSaves
             bar[slot] = entry;
             Write(character, save with { SkillBar = bar });
         }
+    }
+
+    /// <summary>Records the character's inventories, keeping the rest of the save.</summary>
+    public static void SetInventories(string character, Dictionary<byte, List<SavedPlacement>> inventories) =>
+        Update(character, s => s with { Inventories = inventories });
+
+    /// <summary>Records the character's experience, keeping the rest of the save.</summary>
+    public static void SetExperience(string character, uint experience) => Update(character, s => s with { Experience = experience });
+
+    /// <summary>Records the character's allocated passives, keeping the rest of the save.</summary>
+    public static void SetPassives(string character, IEnumerable<ushort> nodes) => Update(character, s => s with { Passives = [.. nodes] });
+
+    static void Update(string character, Func<Save, Save> change)
+    {
+        lock (Gate) Write(character, change(Load(character) ?? new Save([])));
     }
 
     public static SavedItem ToSaved(Item i) => new(i.TypeHash, i.ItemLevel, i.Quality, i.Charges, i.StackSize,

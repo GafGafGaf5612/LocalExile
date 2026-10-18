@@ -92,6 +92,13 @@ The rooms with monster points (the unique boss's `mapboss`, named packs), used t
 dotnet run --project scripts/re/atlas -- Client/Content.ggpk room-points
 ```
 
+The classes' animation keyframes, used to release spells at the right moment of the cast
+(Agents/docs/protocol/11-skills.md §9; game data, git-ignored; without it every class uses the Witch's timing):
+
+```powershell
+python -I scripts/re/anim_contacts.py
+```
+
 For an AI agent, register REA as an MCP server in `.mcp.json` at the repository root (git-ignored, because the paths are
 specific to your PC):
 

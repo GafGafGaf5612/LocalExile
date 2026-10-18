@@ -68,7 +68,11 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/set_stat <stat name or client key> <value>` | records the stat for the player, sends the player's stats (0x1b3) with the attack's recomputed final stats, and the skill again (0x2ba, [11](11-skills.md) §4). Names are Stats.dat Ids (key = row + 1) |
 | `/spawn_mob <row, Id or name>[@level] [friendly] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), hostile unless `friendly`, with a rarity and an optional name, a few cells from the player (§5) |
 | `/set_level <1 to 100>` | sets the character's level in the account store (Auth control op `set_level`) and sends it in place: the level's experience to the Player component (0x2ba, [04](04-player-entity.md) §4.6; the client derives the level from it), the level's stats (0x1b3: level, life, mana, accuracy, …, [11](11-skills.md) §4), the skills again (0x2ba Actor) and full life (0x1b1) |
-| `/heal` | full life for the player (0x1b1); from 0 it also revives |
+| `/heal` | full life and mana for the player (0x1b1); from 0 it also revives |
+| `/add_xp <amount>` | experience as from a kill: levels up, saved ([15](15-progression.md) §1) |
+| `/passives` | the passive skill points and the allocated passives (message box) |
+| `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
+| `/god` | toggles 1000% increased attack and cast speed, 10 000 life and mana regeneration per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12) |
 | `/death_screen [hex flags]` | S→C 0x55 with these flags (default: the league's; 2 hides it), [11](11-skills.md) §7 |
 | `/goto <area id or name>` | change area as if through an area transition (e.g. `/goto 1_1_3`; ids from the atlas), [08](08-area-transitions.md) §7 |
 | `/transition [pos … \| rot <deg> \| z <z \| none> \| model <path \| none> \| index <n>]` | show or change the first area transition (re-created), [08](08-area-transitions.md) §5 |

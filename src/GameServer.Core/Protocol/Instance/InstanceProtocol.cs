@@ -52,7 +52,8 @@ public static class InstanceProtocol
         InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
         InstanceItems.InventoryRequestId => 8, InstanceItems.ItemActionId => 12, InstanceItems.SocketGemId => 16,
-        InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2, _ => null,
+        InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
+        InstanceEntities.AllocatePassiveId => 7, InstanceEntities.PanelToggleId => 3, _ => null,
     };
 
     public const ushort SkillBarId = 0x53, SkillBarSlots = 13;

@@ -49,7 +49,7 @@ sequenceDiagram
     G->>C: 0x22 local player id
     G->>C: 0x2b9 create object (the Witch, component blob)
     G->>C: 117 × 0xc0 add inventory (one per Inventories.dat row)
-    G->>C: 0x3d passive slots 0-2
+    G->>C: 0x3d Atlas tree presets, 0x33 Passive Skill Tree
     G->>C: 0x21 enter area
     G->>C: 0x1a9 player enters wake zone (drawn, updates)
     Note over C: world activation, player bound, state 3, HUD
@@ -69,7 +69,7 @@ sequenceDiagram
 | [02-instance-connection.md](02-instance-connection.md) | instance connect path, opening, encryption switch, read loop, handler groups, dispatcher, state machine |
 | [03-area-and-world.md](03-area-and-world.md) | 0x1d area, 0x7d, world message queueing, 0x22, 0x21, enter-area handler, spatial index |
 | [04-player-entity.md](04-player-entity.md) | object type register, MurmurHash2 key, 0x2b9, component blob, each component's serializer |
-| [05-inventories-and-ui.md](05-inventories-and-ui.md) | inventory manager, 0xc0, Inventories.dat, 0x3d passive slots, UI prerequisites |
+| [05-inventories-and-ui.md](05-inventories-and-ui.md) | inventory manager, 0xc0, Inventories.dat, 0x3d Atlas tree presets, UI prerequisites |
 | [07-latency-visibility-movement.md](07-latency-visibility-movement.md) | tick/ack 0x1b/0x1c, the HNC side channel, wake zone 0x1a9 (visibility), movement 0x25/0x1ab, world object messages |
 | [08-area-transitions.md](08-area-transitions.md) | exit objects (AreaTransition) placed in an area |
 | [09-area-change.md](09-area-change.md) | changing area: 0x24 → 0x2b2 → 0x2cb → 0x27, instance chooser 0xae/0xaf, instance registry |

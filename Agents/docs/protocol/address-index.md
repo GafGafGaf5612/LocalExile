@@ -142,7 +142,14 @@ G = global / static data.
 | `0x142173fc0`, `0x142174500` | Fn | 0xc3 sockets/gems, 0xc4 list |
 | `0x14029dfc0` → `0x1402bafb0` → `0x1402d0500` | Fn | flask frame UI (needs row 11) |
 | `0x14098ab0c` | call site | UI lookup of row 0x54 (expanded main inventory) |
-| `0x1435dcd00` (ctor `0x14219eb10`, write `0x14219eb40`) | Cls | 0x3d passive slots |
+| `0x1435dcd00` (ctor `0x14219eb10`, write `0x14219eb40`) | Cls | 0x3d Atlas passive tree presets |
+| `0x1435dca60` (read `0x14219e3f0`, handler `0x141ef2710`, numbers only `0x141ef73e0`) | Cls | S→C 0x33 character Passive Skill Tree (instance `+0xc2d8`) |
+| `0x141ef3e60` | Fn | character passive tree check: points_from_level, skill_points_from_passives, extra_skill_points |
+| `0x141eed000` | Fn | Atlas passive tree check |
+| `0x1435ddb78` (read `0x141fdf870`), `0x1435dd918` (read `0x141fdfdd0`) | Cls | S→C 0x1c1 add buff, 0x1c2 remove buff |
+| `0x141e11720` | Fn | Buffs component: 0x1c1/0x1c2 handler (world handler cases 0x1c1, 0x1c2) |
+| `0x142087910` | Fn | effect script: plays a MiscAnimated as a `Metadata/Effects/*Effect` object |
+| `0x1400bac70` | Fn | registers the derived stat active_skill_area_of_effect_radius (from the base radius and area %) |
 | `0x142155bf0` | Fn | create passive slot 0/1/2 (`instance+0xc2f8`) |
 | `0x140785160` | Fn | UI reading the active passive slot |
 

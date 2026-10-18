@@ -14,7 +14,7 @@ sealed class MonsterCatalog(string folder = "data")
     public sealed record Variety(int Row, string Id, string Name, string BaseType, string? AnimatedObject, IReadOnlyList<string>? Components,
         int LifeMultiplier = 100, int MonsterType = -1, StateMachineData? StateMachine = null, byte TransitionStates = 1,
         int MovementSpeed = 30, int ObjectSize = 3, int AggroRange = 60, IReadOnlyList<int>? GrantedEffects = null,
-        int AttackMs = 1500, int AttackRange = 8, int DamageMultiplier = 100)
+        int AttackMs = 1500, int AttackRange = 8, int DamageMultiplier = 100, int ExperienceMultiplier = 100)
     {
         public IReadOnlyList<string> ComponentsOrBase => Components ?? MonsterObject.BaseComponents;
         public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase, StateMachine is not null);
@@ -52,7 +52,13 @@ sealed class MonsterCatalog(string folder = "data")
         return (Math.Max(1, (int)Math.Round(d * 0.8)), Math.Max(1, (int)Math.Round(d * 1.2)));
     }
 
-    private sealed record LifeTables(List<(int MonsterLife, int MinionLife, int AltLife1, int AltLife2, double Damage)> Levels,
+    /// <summary>The experience a monster of this level gives before its variety's ExperienceMultiplier, rarity and the
+    /// level penalty (Progression.MonsterExperience): DefaultMonsterStats row level − 1 `Experience`. Null when the
+    /// tables are missing.</summary>
+    public int? BaseExperience(Variety v, byte level) =>
+        _life.Value is { } t && level >= 1 && level <= t.Levels.Count ? t.Levels[level - 1].Experience : null;
+
+    private sealed record LifeTables(List<(int MonsterLife, int MinionLife, int AltLife1, int AltLife2, double Damage, int Experience)> Levels,
         List<(bool Minion, bool AltLife1, bool AltLife2)> Types)
     {
         public static LifeTables? Load(string folder)
@@ -63,7 +69,8 @@ sealed class MonsterCatalog(string folder = "data")
             using var t = JsonDocument.Parse(File.ReadAllBytes(types));
             return new LifeTables(
                 [.. s.RootElement.EnumerateArray().Select(r => (r.GetProperty("MonsterLife").GetInt32(), r.GetProperty("MinionLife").GetInt32(),
-                    r.GetProperty("AltLife1").GetInt32(), r.GetProperty("AltLife2").GetInt32(), r.GetProperty("Damage").GetDouble()))],
+                    r.GetProperty("AltLife1").GetInt32(), r.GetProperty("AltLife2").GetInt32(), r.GetProperty("Damage").GetDouble(),
+                    r.GetProperty("Experience").GetInt32()))],
                 [.. t.RootElement.EnumerateArray().Select(r => (r.GetProperty("IsPlayerMinion").GetBoolean(), r.GetProperty("AltLife1").GetBoolean(),
                     r.GetProperty("AltLife2").GetBoolean()))]);
         }
@@ -128,7 +135,7 @@ sealed class MonsterCatalog(string folder = "data")
                     r.GetProperty("MovementSpeed").GetInt32(), r.GetProperty("ObjectSize").GetInt32(), r.GetProperty("MaxAgroRange").GetInt32(),
                     [.. r.GetProperty("GrantedEffectsKeys").EnumerateArray().Select(e => e.GetInt32())],
                     r.GetProperty("AttackSpeed").GetInt32(), r.GetProperty("MaximumAttackDistance").GetInt32(),
-                    r.GetProperty("DamageMultiplier").GetInt32()));
+                    r.GetProperty("DamageMultiplier").GetInt32(), r.GetProperty("ExperienceMultiplier").GetInt32()));
             }
         }
         // With object-types.json, a type missing from it has no .ot: do not guess.

@@ -182,6 +182,42 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Allocate_passive_reads_the_node()
+    {
+        // Captured live 2026-10-18 (Witch, level 2): Spell Damage and Mana.
+        byte[] m = Convert.FromHexString("00340000DFB000");
+        Assert.Equal(7, InstanceProtocol.KnownClientLength(InstanceEntities.AllocatePassiveId));
+        Assert.Equal(((ushort)0, (ushort)57264, (byte)0), InstanceEntities.ReadAllocatePassive(m));
+    }
+
+    [Fact]
+    public void Effect_object_blob()
+    {
+        // flags, base data count, Positioned (x, y, rotation, team, f0, f1 0x02, 0, 1), Animated bit0 + u32-counted UTF-16 path, tasks.
+        byte[] b = new EffectObject(10, 20, "a.ao").Blob();
+        Assert.Equal("0000" + "0A000000" + "14000000" + "00000000" + "0000" + "00" + "02" + "00" + "01" + "01" + "04000000" + "61002E0061006F00" + "00",
+            Convert.ToHexString(b));
+    }
+
+    [Fact]
+    public void Buff_messages_layout()
+    {
+        // header (u32 id, u32, u16), u16 instance, u16 BuffDefinitions row, u32 source, u16 skill, u8 flags, u32 list count.
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "000C" + "00001000" + "0042" + "00" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 12, 0x1000, 0x42)));
+        Assert.Equal("01C2" + "00001000" + "00000000" + "0000" + "0001", Convert.ToHexString(InstanceEntities.RemoveBuff(0x1000, 1)));
+    }
+
+    [Fact]
+    public void Character_passives_layout()
+    {
+        // u16 refund, u16 quest, u16 ascendancy points (big-endian), u8 level, u8 class, u8, u8 flags, vec16 nodes (count
+        // big-endian, ids little-endian), then four empty lists.
+        Assert.Equal("0033" + "0000" + "0000" + "0000" + "05" + "03" + "00" + "00" + "0002" + "6776" + "3412" + "0000" + "0000" + "0000" + "0000",
+            Convert.ToHexString(InstanceEntities.CharacterPassives(5, 3, [0x7667, 0x1234])));
+    }
+
+    [Fact]
     public void Area_transition_blob_layout_and_type()
     {
         // Traced live 2026-10-16: the client consumed all 41 bytes (Positioned 16, Animated 1, AreaTransition 5, Stats 10,

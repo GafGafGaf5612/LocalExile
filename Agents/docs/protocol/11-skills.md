@@ -230,6 +230,19 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `base_spell_cast_time_ms`, and `hundred_times_casts_per_second`. `mana_cost` (0x2e72) is what the client spends.
 - **Casting.** At the ground: C→S 0x25 with the gem skill's id; the server echoes 0x1ab from where the player stands (no
   walk). On a monster: C→S 0x24; the server echoes 0x1ab aimed at it (no walk into range, unlike the default attack).
+  On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server echoes 0x1ab in place.
+- **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
+  time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
+  599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
+  contacts to data/animation-contacts.json (`AnimationContacts`); the Gateway waits cast time × that fraction.
+- **Cast speed.** `base_cast_speed_+%` and `cast_speed_+%` shorten `virtual_base_spell_cast_time_ms` and
+  `hundred_times_casts_per_second` in the skill's stats and the server's release time.
+- **Mana.** The server keeps the player's mana (`PlayerMana`): a cast pays the skill's `mana_cost` first (refused
+  without enough), and `RunPlayerTick` regenerates 1.75% of maximum mana per second (Character.ot
+  `mana_regeneration_rate_per_minute_%` 105) plus `base_mana_regeneration_rate_per_minute`, raised by
+  `mana_regeneration_rate_+%`. Changes go out as 0x1b1 with pool 1.
+- **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
+  18 + 0 at level 1).
 
 ## 10. Projectiles (experimental)
 
@@ -335,10 +348,39 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   with the default attack on slot 0 only when nothing was saved there. Live 2026-10-18: Fireball on the right mouse
   button and "Move only" on the left one came back after login and area changes, with the bar there at once.
 
+## 12. Buffs and Righteous Fire
+
+- **S→C 0x1c1** (world group, class `0x1435ddb78`, read `0x141fdf870`, world handler case 0x1c1 → Buffs component
+  `0x141e11720`): object header (u32 id, u32, u16), u16 buff instance (+0x20), u16 BuffDefinitions row, u32 +0x64 (the
+  source object), u16 +0x60 (the source skill), u8 flags (bit0: u8 u32 u8 u16; bit1: u32 +0x68; bit2: u16 stacks,
+  default 1; bit3: u16 u16; bit4: u16 BuffVisuals override, default the row's; bit5: u8 +0x80, default 2; bit6 → +0x81;
+  bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set, one u32 per GrantedStats entry when the row's
+  `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. The client reads the BuffDefinitions row in memory as the
+  .dat row (BuffVisualsKey at +0x55). **S→C 0x1c2** (class `0x1435dd918`): object header, u16 buff instance: removes it.
+  The Buffs component has no 0x2ba update reader; its creation blob holds the same entries ([04](04-player-entity.md)).
+- **Righteous Fire** (`ActivateRighteousFire`, `RunPlayerTick`, `BurnAround`): cast on the player itself (§9), it puts
+  two buffs on the player: `righteous_fire` (row 12, BuffVisuals 15: `ri_fire/bottom.epk`, the ring at the feet) and
+  `righteous_fire_aura` (row 13, BuffVisuals 19: the ignite flames, and for a player model EPKFiles2
+  `ri_fire/player.epk`, the burning hands). Every 250 ms the player loses 90% of maximum life per second
+  (`base_nonlethal_fire_damage_%_of_maximum_life_taken_per_minute` 5400; nonlethal, it stops at 1) and every hostile
+  monster within 18 cells plus its size loses 70% of the player's maximum life per second
+  (`base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute` 4200) and carries `righteous_fire_aura` while
+  inside. It ends at death; casting it again does nothing.
+- **The big burning circle** is not a buff visual: it is MiscAnimated `RighteousFireRing`
+  (`Metadata/Effects/Spells/ri_fire/rifire.ao`), an effect object of its own. The client's effect script
+  (`0x142087910`) makes MiscAnimated effects as `Metadata/Effects/Effect`, `ServerEffect`, `PermanentServerEffect` …
+  objects; `PermanentServerEffect` is Positioned, BaseEvents, Animated (Render client-only), so the Gateway creates one
+  (`EffectObject`: the projectile's Positioned, Animated bit0 + the .ao path) under the player and glides it with 0x1ba
+  to where each move ends (`FollowRighteousFire`); 0x2bb removes it when the fire ends. Live 2026-10-18: with only the
+  buffs the player had just the small ring at its feet; with the effect object the big circle shows at the right size
+  and follows the player, and monsters around burn to death.
+- **`/god`** toggles 1000% increased attack and cast speed, 10 000 life and mana regeneration per second, +10 000
+  maximum life and +1000 to each attribute (`GodStats`, `PoolsFor`); `RunPlayerTick` applies the regeneration.
+
 ## Open
 
-- The animation's real contact point (the server uses half the attack time); the player's other stats (life, mana,
-  attributes) are still not sent; "more" multipliers.
+- Attacks still land at half the attack time: use the attack animations' contact keyframes (data/animation-contacts.json)
+  as spells do; "more" multipliers; energy shield (Righteous Fire's ES parts are ignored).
 - A 30 Hz server loop: `TickRate` only bounds the attack time; hits use timers and the monster AI runs every 500 ms.
 - Monsters use only their first granted effect; no ranged or spell skills, no monster skill choice.
 - A damage model: armour, evasion, resistances, crits; the player's real life from level and stats.

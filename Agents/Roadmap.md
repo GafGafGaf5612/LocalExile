@@ -75,11 +75,11 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 
-### Character progression
-- Use `data/tables/ExperienceLevels.json` and `Characters.json` (class base life, mana, attributes) through an adapter
-  in Host or Gateway, keeping `GameServer.Core` free of game-data files.
-- The player blob's stats component ([04](docs/protocol/04-player-entity.md), "Open") needs the pairs the client
-  expects for a real character.
+### Character progression: the rest of the Passive Skill Tree
+- **Known:** experience, levels, S→C 0x33 and C→S 0x34 (allocate) work ([15](docs/protocol/15-progression.md)).
+- **Start:** the refund click (with refund points, 0x33's first u16), masteries (0x33's u32 list), ascendancy points,
+  quest points (0x33 +0x8a); the tree's connections (PassiveSkillGraph.psg) so the server checks them too.
+- **Done when:** passives can be refunded from the tree and masteries chosen.
 
 ### Items: mods, rarity, using flasks and currency
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); every item is sent normal and
@@ -110,9 +110,9 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** Fireball with Arcane Surge linked can be cast and does its damage, and looks like the real one.
 
 ### Saving progress
-- **Known:** items, equipment and the skill bar are saved per character in `data/saves/` ([13](docs/protocol/13-items.md) §7,
-  [11](docs/protocol/11-skills.md) §11).
-- **Done when:** the character's area, position and level are saved too (`GameServer.Storage` or the same saves).
+- **Known:** items, equipment, the skill bar, experience and passives are saved per character in `data/saves/`
+  ([13](docs/protocol/13-items.md) §7, [11](docs/protocol/11-skills.md) §11, [15](docs/protocol/15-progression.md)).
+- **Done when:** the character's area and position are saved too (`GameServer.Storage` or the same saves).
 
 ## 4. Server design
 

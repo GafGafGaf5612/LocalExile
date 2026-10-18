@@ -119,6 +119,8 @@ once (0x1ab aimed at the object, from the player's current cell) and picks the i
 (object_size 2). Measured with Frida (Positioned grid position at `+0x294/+0x298`): the client stopped 20.9 cells from
 the item, on the first step inside the range.
 
+Dying monsters drop items as WorldItems around the corpse (`DropLoot`, [15](15-progression.md) §3).
+
 ## 6. Equipment on the character: visuals, attributes, gem skills
 
 **What the model wears** is the player's Inventories component (index 8, reader `0x141e1ee30`, also as a 0x2ba update):

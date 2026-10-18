@@ -23,12 +23,12 @@ sealed class PlayerInventories
     void Persist()
     {
         if (_owner is null) return;
-        CharacterSaves.Save save;
+        Dictionary<byte, List<CharacterSaves.SavedPlacement>> items;
         lock (_lock)
-            save = new(_items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
-                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item))).ToList()),
-                CharacterSaves.Load(_owner)?.SkillBar);
-        CharacterSaves.Write(_owner, save);
+            items = _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
+                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item))).ToList());
+        // The rest of the save (skill bar, experience, passives) stays as it is.
+        CharacterSaves.SetInventories(_owner, items);
     }
 
     public static uint InventoryId(byte row) => (uint)row + 1;

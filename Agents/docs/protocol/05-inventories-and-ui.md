@@ -138,8 +138,9 @@ vec16<u16> (raw)          +0x10   only if bit1 is clear (0x1421b8fe0), likely al
 Handler: bit2/3/4 → `0x142155bf0(…, 0/1/2)`, which **creates slot 0/1/2** at instance `+0xc2f8` (3 × 16 bytes). Then, if
 the computed active index differs from `+0xc2f0`, it switches and notifies (`0x14019a1b0(+0xb1f0, old, new)`). UI code
 `0x140785160` reads `slots[+0xc2f0]` without a null check (crash at `0x140785acf` when they are missing). The three
-slots are probably the character's passive trees (main and alternates). We send `003D 0000 0000 1C 0000`: all three
-created, empty lists.
+slots are the **Atlas** passive tree's three presets (their check `0x141eed000` logs "atlas passive skills allocated
+but only allowed"; the character's tree is S→C 0x33, [15](15-progression.md) §2). We send `003D 0000 0000 1C 0000`: all
+three created, empty lists.
 
 ## 5. What the UI did not need (so far)
 

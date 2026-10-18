@@ -32,6 +32,11 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Character deletion on the character screen (C→S 0x0c → new list 0x15 + result 0x0d); the save is set aside in `data/saves/deleted/` | `LoginServerSession`, Auth | [01](docs/protocol/01-login.md) §5 |
 | Every class in game: the Characters.dat row's object type and model, class byte, attributes, unarmed attack and start kit (weapon, gems, sockets in the gems' colours); verified with a Templar | Gateway (`SkillCatalog.cs`, `PlayerInventories.cs`) | [01](docs/protocol/01-login.md) §7, [04](docs/protocol/04-player-entity.md) |
 | Exit to character selection: Esc → "Exit to Character Selection" and the hardcore death screen's Exit (C→S 0x153); the Gateway closes the instance connection and the client returns to the character list on the same login connection; Play enters again | Gateway | [09](docs/protocol/09-area-change.md) §6 |
+| Experience and levels: kills within 150 cells give DefaultMonsterStats experience × the variety's multiplier × rarity, with the level penalty (S→C 0x2ba Player experience; the client derives the level); a new level sends its stats, full life and mana, the passive points and the account's level; experience is saved per character; `/add_xp` | `Progression.cs`, Gateway (`GainExperience`, `ApplyLevel`) | [15](docs/protocol/15-progression.md) §1 |
+| Passive Skill Tree: S→C 0x33 (level, class, allocated nodes; the client counts level − 1 points), C→S 0x34 allocates a node, checked, applied to the stats (attributes, life, mana and more) and saved; `/passives`, `/reset_passives` | `PassiveTree.cs`, Gateway (`ChangePassives`) | [15](docs/protocol/15-progression.md) §2 |
+| Loot: dying monsters drop currency, flasks and equipment (our own table) around the corpse | `ItemDrops.cs`, Gateway (`DropLoot`) | [15](docs/protocol/15-progression.md) §3 |
+| Buffs (S→C 0x1c1 add, 0x1c2 remove) and Righteous Fire: cast on oneself, its buffs and the big burning circle (an effect object, `Metadata/Effects/PermanentServerEffect` with `rifire.ao`, following the player), 90% of life per second nonlethal burn on the player, 70% of life per second to monsters within 18 cells (they burn to death); server-side mana (cost, regeneration); `/god` | Gateway (`ActivateRighteousFire`, `RunPlayerTick`) | [11](docs/protocol/11-skills.md) §12 |
+| Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms; every class's from its rig .amd), sped up by cast speed | `AnimationContacts.cs`, `scripts/re/anim_contacts.py` | [11](docs/protocol/11-skills.md) §9 |
 
 ## Partly working
 
@@ -65,12 +70,14 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   AreaTransition. Quests are not implemented.
 - Item mods, rarity, flask and currency use; support gems and links; gem levels; ground items are per connection
   ([13](docs/protocol/13-items.md) "Open").
-- Levelling from experience (monsters give none; only `/set_level` changes the level), saving the character's area, position or progress. Ruthless and SSF change nothing in game; towns are shared across leagues.
+- Saving the character's area, position or quest progress. Quest passive points, refunding single passives, masteries and ascendancy ([15](docs/protocol/15-progression.md) "Open").
+- Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent; an
+  effect object follows the player only by 0x1ba glides. Buffs other than Righteous Fire's are not used. Ruthless and SSF change nothing in game; towns are shared across leagues.
 - `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (193 tests) and `dotnet test tests/GameServer.Data.Tests` (15 tests) pass.
+`dotnet test tests/GameServer.Core.Tests` (202 tests) and `dotnet test tests/GameServer.Data.Tests` (15 tests) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

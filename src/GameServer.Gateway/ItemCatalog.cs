@@ -17,7 +17,7 @@ sealed class ItemCatalog
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
-        IReadOnlyList<string> Components, int MaxCharges, string Class = "", byte Stance = 0xff)
+        IReadOnlyList<string> Components, int MaxCharges, string Class = "", byte Stance = 0xff, int DropLevel = 0)
     {
         public bool Supported => Components.Count > 0 && Item.CanSerialize(Components);
         public override string ToString() => $"{Name} ({Id}, row {Row})";
@@ -154,7 +154,8 @@ sealed class ItemCatalog
                     r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } c && c.GetInt32() < classes.Count ? classes[c.GetInt32()] : "",
                     // the row's own ItemStance, else its class's (ItemStances: Wand = 2)
                     r.GetProperty("ItemStance") is { ValueKind: JsonValueKind.Number } st ? (byte)st.GetInt32()
-                        : r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } c2 && c2.GetInt32() < stances.Count ? stances[c2.GetInt32()] : (byte)0xff));
+                        : r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } c2 && c2.GetInt32() < stances.Count ? stances[c2.GetInt32()] : (byte)0xff,
+                    r.GetProperty("DropLevel").GetInt32()));
             }
         }
         return (rows, null);

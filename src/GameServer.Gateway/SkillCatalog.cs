@@ -51,14 +51,16 @@ sealed class SkillCatalog(string folder = "data")
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.Effects.Count) return [];
         var e = t.Effects[effectRow];
         var stats = new Dictionary<uint, int>();
+        var constant = new HashSet<uint>();
         if (e.StatSet >= 0 && e.StatSet < t.StatSetBase.Count)
         {
             var (implicits, constants) = t.StatSetBase[e.StatSet];
             foreach (int s in implicits) stats[(uint)s + 1] = 1;
-            foreach (var (s, v) in constants) stats[(uint)s + 1] = v;
+            foreach (var (s, v) in constants) { stats[(uint)s + 1] = v; constant.Add((uint)s + 1); }
         }
         int gesspl = PickLevel(t.StatSetsPerLevel, e.StatSet, level);
-        if (gesspl >= 0) foreach (var (s, v) in t.StatSetLevelStats[gesspl]) stats[(uint)s + 1] = v;
+        // A per-level stat that is also a constant adds to it (Righteous Fire: radius 18 + 0 at level 1, + 5 at level 20).
+        if (gesspl >= 0) foreach (var (s, v) in t.StatSetLevelStats[gesspl]) stats[(uint)s + 1] = (constant.Contains((uint)s + 1) ? stats[(uint)s + 1] : 0) + v;
         int gepl = PickLevel(t.PerLevel, effectRow, level);
         if (e.CastTime > 0)
         {
