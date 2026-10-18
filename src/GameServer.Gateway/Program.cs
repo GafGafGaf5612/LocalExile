@@ -402,9 +402,9 @@ static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers 
 
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
 // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
-// target (a monster) or on to its range (a ground cast) with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid cell). On arrival it hits the
-// targeted monster for the skill's fire damage (spell_minimum/maximum_base_fire_damage; no damage model yet) and the
-// object is removed. No collision with anything on the way.
+// aimed point and on to its range with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid
+// cell), stopping at the first monster on its path, which takes the skill's fire damage
+// (spell_minimum/maximum_base_fire_damage; no damage model yet); then the object is removed. Walls do not stop it.
 static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
@@ -419,26 +419,40 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     if (conn.ActionCount != action || conn.Closed) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
     uint id = conn.NextObjectId++;
     double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
-    // It leaves a little ahead of the caster (Game_PROJECTILE_AHEAD cells, default 4) and, cast at the ground, flies on
-    // past the clicked point to Game_PROJECTILE_RANGE cells (default 120, ~1.2 s at the real speed), clamped to the
-    // area. Cast at a monster it still stops at the monster and hits it (no collision on the way yet).
-    double ahead = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_AHEAD"), System.Globalization.CultureInfo.InvariantCulture, out var pa) ? pa : 4;
-    double range = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_RANGE"), System.Globalization.CultureInfo.InvariantCulture, out var pr) && pr > 0 ? pr : 120;
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    // Game_PROJECTILE_SPEED (cells per second) overrides the speed, e.g. to watch a slow projectile while testing.
+    float cellsPerSecond = float.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"), inv, out var ps) && ps > 0
+        ? ps : projectile.Speed / (250f / 23f);
+    // It leaves a little ahead of the caster (Game_PROJECTILE_AHEAD cells, default 4) and flies toward the clicked point
+    // or monster and on to Game_PROJECTILE_RANGE cells (default 120, ~1.2 s at the real speed), clamped to the area.
+    double ahead = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_AHEAD"), inv, out var pa) ? pa : 4;
+    double range = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_RANGE"), inv, out var pr) && pr > 0 ? pr : 120;
     ahead = Math.Min(ahead, aim - 1);
     from = ((int)Math.Round(from.X + dx / aim * ahead), (int)Math.Round(from.Y + dy / aim * ahead));
-    if (targetId == 0)
-    {
-        double length = Math.Max(range - ahead, 1);
-        if (TerrainHeights.Size(conn.Layout.Id, conn.Seed) is (int w, int h))
-            foreach (var (d, lo, hi) in new[] { (dx, -from.X, w - 1 - from.X), (dy, -from.Y, h - 1 - from.Y) })
-                if (d != 0) length = Math.Min(length, Math.Max(0, (d > 0 ? hi : lo) / (d / aim)));
-        to = ((int)Math.Round(from.X + dx / aim * length), (int)Math.Round(from.Y + dy / aim * length));
-    }
+    double length = Math.Max(range - ahead, 1);
+    if (TerrainHeights.Size(conn.Layout.Id, conn.Seed) is (int w, int h))
+        foreach (var (d, lo, hi) in new[] { (dx, -from.X, w - 1 - from.X), (dy, -from.Y, h - 1 - from.Y) })
+            if (d != 0) length = Math.Min(length, Math.Max(0, (d > 0 ? hi : lo) / (d / aim)));
+    // Collision: the first living monster within Game_PROJECTILE_HIT_RADIUS cells (default 4: the row's CollisionRadius
+    // 2 plus a monster's body) of the projectile when it passes, using where the monster will be by then. Checked once at
+    // launch, cell by cell along the path; a monster that walks into the path later is not hit.
+    double hitRadius = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HIT_RADIUS"), inv, out var phr) && phr > 0 ? phr : 4;
+    double launched = conn.Clock.Elapsed.TotalSeconds;
+    uint hitId = 0;
+    lock (conn.Monsters)
+        for (double s = 0; s <= length && hitId == 0; s += 1)
+        {
+            double px = from.X + dx / aim * s, py = from.Y + dy / aim * s, at = launched + s / cellsPerSecond;
+            foreach (var (mid, mon) in conn.Monsters)
+            {
+                if (mon.Dead || mon.Life == 0) continue;
+                var (mx, my) = mon.Walk.Position(at);
+                if ((mx - px) * (mx - px) + (my - py) * (my - py) <= hitRadius * hitRadius) { hitId = mid; length = s; break; }
+            }
+        }
+    to = ((int)Math.Round(from.X + dx / aim * length), (int)Math.Round(from.Y + dy / aim * length));
     dx = to.X - from.X; dy = to.Y - from.Y;
     double cells = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
-    // Game_PROJECTILE_SPEED (cells per second) overrides the speed, e.g. to watch a slow projectile while testing.
-    float cellsPerSecond = float.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var ps) && ps > 0
-        ? ps : projectile.Speed / (250f / 23f);
     // Positioned rotation = atan2(dx, -dy) (the player's own moves, traced live 2026-10-18: facing (+15, -18) read 0.668)
     // Game_PROJECTILE_DIRECTION=1 sends the flight direction in Positioned's f1 0x04 block (ProjectileObject.Direction).
     // Live 2026-10-18 it put the fireball under the ground, so it is off by default: the four floats are not a direction.
@@ -457,11 +471,12 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 projectile 0x{id:x} enters wake zone");
     // 0x1ba's float is the move's duration in seconds, not a speed (InstanceProtocol.MoveTo).
     await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: endHeight is int e ? (uint)e : TerrainHeight),
-        $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight?.ToString() ?? "terrain"} → {endHeight?.ToString() ?? "terrain"}");
+        $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight?.ToString() ?? "terrain"} → {endHeight?.ToString() ?? "terrain"}" +
+        (hitId != 0 ? $", will hit monster 0x{hitId:x}" : ""));
     await Task.Delay(TimeSpan.FromSeconds(cells / cellsPerSecond));
     if (conn.Closed) return;
     SpawnedMonster? m = null;
-    if (targetId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(targetId);
+    if (hitId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(hitId);
     if (m is not null && m.Life > 0)
     {
         var stats = Skills.EffectStats(gem.Effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2);
@@ -476,10 +491,18 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
             if (life == 0) { m.Aggro = false; m.Dead = true; }
         }
         if (life == 0)
-            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(targetId, [(StatKeys.HideMiniLifeBar, 1)]),
-                $"0x01b3 monster 0x{targetId:x} hide_mini_life_bar = 1");
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(targetId, life),
-            $"0x01b1 monster 0x{targetId:x} hit by {projectile.Id} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(hitId, [(StatKeys.HideMiniLifeBar, 1)]),
+                $"0x01b3 monster 0x{hitId:x} hide_mini_life_bar = 1");
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(hitId, life),
+            $"0x01b1 monster 0x{hitId:x} hit by {projectile.Id} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+        if (life == 0)
+            _ = Task.Delay(10_000).ContinueWith(async _ =>
+            {
+                bool removed;
+                lock (conn.Monsters) removed = conn.Monsters.Remove(hitId);
+                if (removed && !conn.Closed)
+                    await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(hitId), $"0x02bb remove dead monster 0x{hitId:x}");
+            });
     }
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}");
 }
