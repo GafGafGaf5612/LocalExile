@@ -107,7 +107,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             conn.Commands = Commands(remote, stream, ciphers, conn);
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
             LoadProgress(conn, resolved.Level);
@@ -266,6 +266,12 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 {
                     conn.Use(withTransitions);
                     Console.WriteLine($"[gateway] {remote} area transitions captured: {withTransitions.Describe()}");
+                }
+                // Next to the exit back; Resurrect at Checkpoint and the monster packs' clearance use it too.
+                if (conn.Layout.Arrival(conn.CameFrom) is var (ax, ay) && (ax, ay) != (conn.Layout.SpawnX, conn.Layout.SpawnY))
+                {
+                    conn.Use(conn.Layout with { SpawnX = ax, SpawnY = ay });
+                    Console.WriteLine($"[gateway] {remote} arrival from 0x{conn.CameFrom:x4}: ({ax}, {ay})");
                 }
                 await SendPlayer(remote, stream, ciphers, conn);
                 conn.PlayerSent = true;
@@ -1255,6 +1261,7 @@ static async Task Transfer(string remote, NetworkStream stream, ConnectionCipher
         Console.WriteLine($"[gateway] {remote} transfer failed: {r.Error}");
         return;
     }
+    if (!t.AtSpawn) AreaLayouts.CameFrom[r.Ticket] = conn.Layout.Hash;
     string host = Environment.GetEnvironmentVariable("Game_GATEWAY_HOST") ?? "127.0.0.1";
     ushort port = ushort.TryParse(Environment.GetEnvironmentVariable("Game_GATEWAY_PORT"), out var gp) ? gp : (ushort)6112;
     await Send(remote, stream, ciphers, InstanceTransfer.ConnectInstance(host, port, r.Ticket, r.Area, conn.Keyring.Key(r.Ticket)),
@@ -1606,13 +1613,14 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     if (inTown && conn.Layout.Hash != conn.LastTown)
     {
         // The new area's player object is created with full life.
-        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(conn.LastTown, 0, false), "resurrect in town");
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(conn.LastTown, 0, false, AtSpawn: true), "resurrect in town");
         return;
     }
     // Revive first: a teleport sent while the player is dead left them where they died (live 2026-10-17).
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
         $"0x01b1 player revived with {conn.PlayerMaxLife} life");
-    // The checkpoint: the area's arrival point (waypoints are not implemented yet).
+    // The checkpoint: where the player entered the area, as in the real game before any checkpoint is activated
+    // (checkpoints are not implemented yet).
     var (x, y) = (conn.Layout.SpawnX, conn.Layout.SpawnY);
     conn.Walk.Teleport(x, y, conn.Clock.Elapsed.TotalSeconds);
     await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, x, y), $"0x01b7 player to the arrival point ({x}, {y})");
@@ -1989,11 +1997,47 @@ sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int Spawn
 {
     public string Describe() =>
         $"area {Id} (0x{Hash:x4}) grid {GridW}x{GridH} spawn ({SpawnX}, {SpawnY}), {(Walkable is null ? "no walkability" : "walkability")}, {AreaTransitions.Length} area transition(s)";
+
+    // One-way entries have no exit back to stand next to: the arrival is the layout's named entrance point
+    // (08-area-transitions.md §3). Lioneye's Watch from The Twilight Strand: "entrance1" (disabled in beachtown.dgr).
+    static readonly Dictionary<(ushort Area, ushort From), (int X, int Y)> OneWayArrivals = new()
+    {
+        [(AreaLayouts.LioneyesWatch, 0xf00a /* 1_1_1 The Twilight Strand */)] = (123, 308),
+    };
+
+    /// <summary>Where a player entering this area appears: next to the exit leading back to <paramref name="cameFrom"/>
+    /// (the area they left through an exit), else the spawn (logins, Resurrect in Town, no exit back).</summary>
+    public (int X, int Y) Arrival(ushort? cameFrom)
+    {
+        if (cameFrom is not { } from) return (SpawnX, SpawnY);
+        if (OneWayArrivals.TryGetValue((Hash, from), out var point)) return point;
+        foreach (var (_, t) in AreaTransitions)
+            if (t.DestinationHash16 == from) return Near((t.GridX, t.GridY));
+        return (SpawnX, SpawnY);
+    }
+
+    /// <summary>A walkable cell a few cells from (x, y), nearest first; (x + 8, y) without a walk map.</summary>
+    public (int X, int Y) Near((int X, int Y) at)
+    {
+        if (Walkable is not { } walkable) return (at.X + 8, at.Y);
+        for (int r = 6; r <= 20; r++)
+            for (int dy = -r; dy <= r; dy++)
+                foreach (int dx in new[] { -r, r })
+                {
+                    if (walkable(at.X + dx, at.Y + dy)) return (at.X + dx, at.Y + dy);
+                    if (walkable(at.X + dy, at.Y + dx)) return (at.X + dy, at.Y + dx);
+                }
+        return at;
+    }
 }
 
 static class AreaLayouts
 {
     public const ushort LioneyesWatch = 0x235c, TheCoast = 0x7ad2;
+
+    /// <summary>The area each transfer's destination ticket left through an exit; the new connection arrives next to the
+    /// exit back (<see cref="AreaLayout.Arrival"/>). In memory: a Gateway restart drops the client to the login anyway.</summary>
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, ushort> CameFrom = new();
 
     // Lioneye's Watch is one room, Metadata/Terrain/Act1/Town/Rooms/beach_town_unique_normal.arm (18 x 30 tiles), placed
     // R270 by Graphs/beachtown.dgr ("default" "entrance2" "entrance1disabled"). Spawn (197, 261): the walkable cell farthest
@@ -2134,7 +2178,8 @@ static class AreaLayouts
 
 }
 
-sealed record PendingTransfer(ushort Area, ulong Instance, bool New);
+/// <param name="AtSpawn">Arrive at the destination's spawn (Resurrect in Town) instead of next to the exit back.</param>
+sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpawn = false);
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
@@ -2204,6 +2249,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public bool Hardcore { get; init; }
     /// <summary>The character's last town (HASH16, from Auth's resolve): Resurrect in Town goes there.</summary>
     public ushort LastTown { get; init; }
+    /// <summary>The area the player left through an exit to come here, or null (login, Resurrect in Town).</summary>
+    public ushort? CameFrom { get; init; }
     // The character's class: its Characters.dat row (the Witch: 1).
     public int ClassRow { get; init; } = SkillCatalog.WitchRow;
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
@@ -2270,17 +2317,5 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public WalkEstimator NewWalk(int x, int y, double speed) =>
         new(x, y, Math.Max(1, speed), Layout.Walkable, Layout.GridW > 0 ? Layout.GridW : 4096, Layout.GridH > 0 ? Layout.GridH : 4096);
 
-    /// <summary>A walkable cell a few cells from (x, y), nearest first; (x + 8, y) without a walk map.</summary>
-    public (int X, int Y) SpawnNear((int X, int Y) at)
-    {
-        if (Layout.Walkable is not { } walkable) return (at.X + 8, at.Y);
-        for (int r = 6; r <= 20; r++)
-            for (int dy = -r; dy <= r; dy++)
-                foreach (int dx in new[] { -r, r })
-                {
-                    if (walkable(at.X + dx, at.Y + dy)) return (at.X + dx, at.Y + dy);
-                    if (walkable(at.X + dy, at.Y + dx)) return (at.X + dy, at.Y + dx);
-                }
-        return at;
-    }
+    public (int X, int Y) SpawnNear((int X, int Y) at) => Layout.Near(at);
 }

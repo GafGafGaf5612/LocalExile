@@ -160,8 +160,9 @@ Other exits: an exit that is a `.tmd` record takes its model, rotation and heigh
 - The rotation's sign convention: settled. The client computes 3π/2 for the town arch (record 0 + code 3's three quarter
   turns, §7), which looks the same as the π/2 picked live because the arch is a flat plane; the Gateway uses the
   client's value.
-- Arrival points: when coming back from The Coast, the player should appear at entrance2. A fresh login should
-  probably use "default" (346, 235) instead of today's (197, 261).
+- Arrival points: coming back from The Coast arrives next to the gate (near entrance2), from the exit's position
+  ([09](09-area-change.md) §4); The Twilight Strand arrives at entrance1. A fresh login should probably use "default"
+  (346, 235) instead of today's (197, 261).
 
 ## 6. The area transition atlas (every WorldAreas row, offline)
 

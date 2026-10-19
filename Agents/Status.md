@@ -17,6 +17,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Inventories and passive slots the UI needs (empty) | Gateway | [05](docs/protocol/05-inventories-and-ui.md) |
 | Latency acks (0x1b/0x1c) and the HNC side channel, visibility (wake zone), click-to-move | Gateway, `Hnc.cs` | [07](docs/protocol/07-latency-visibility-movement.md) |
 | Area transitions in every area, with their destinations, models (the arch highlighted on hover), rotation and height: fixed layouts from the atlas, generated layouts from the walk-map recorder's capture; verified town ↔ The Coast ↔ The Tidal Island and The Coast ↔ The Mud Flats; area change through them; Ctrl+click opens the Instance Manager (list, join, create); `/goto <area>` | Gateway (`AreaTransitionCatalog.cs`), `scripts/walkmaps`, `scripts/re/atlas`, Auth's instance registry | [08](docs/protocol/08-area-transitions.md), [09](docs/protocol/09-area-change.md) |
+| Arrival points: entering through an exit (or `/goto`) puts the player next to the exit back; The Twilight Strand → Lioneye's Watch arrives at the town's `entrance1`; Resurrect at Checkpoint revives there | `AreaLayout.Arrival`, Gateway | [09](docs/protocol/09-area-change.md) §4 |
 | Instances: one per town (all 12 act towns from WorldAreas `IsTown`); other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs`, `WorldAreaTowns.cs` | [09](docs/protocol/09-area-change.md) |
 | Walk maps and area transitions captured from the client on first visit; the Gateway uses them for position estimates, spawns and area transitions | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8, [08](docs/protocol/08-area-transitions.md) §7 |
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed`, `/set_level <1 to 100>` (saved to the account, sent in place) (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
@@ -47,7 +48,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   §8); `/set_stat` takes stat names or keys. The player's life, mana, accuracy and evasion come from its class and level, with
   the attributes' bonuses (energy shield, evasion and melee physical damage increases); no passives or items count yet
   ([11](docs/protocol/11-skills.md) §4).
-- **Spawn points.** The Coast uses the walkable cell farthest from any edge, not the arrival point next to the exit.
+- **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch
+  use the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
@@ -80,8 +82,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (211 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (3: inventory moves) pass.
+`dotnet test tests/GameServer.Core.Tests` (218 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (7: inventory moves, arrival points) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

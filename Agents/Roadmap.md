@@ -28,13 +28,6 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
 
-### Arrival points next to exits
-- **Known:** exit positions come from the area's DGR/.arm named points ([08](docs/protocol/08-area-transitions.md) §3).
-  The Coast spawns the player on its deepest walkable cell.
-- **Start:** [08](docs/protocol/08-area-transitions.md) §4, [09](docs/protocol/09-area-change.md) §5.
-- **Done when:** coming back from The Coast puts the player next to The Coast exit in town, and entering The Coast
-  puts them at its entrance.
-
 ## 2. The world
 
 ### Area transitions without a walk-map run
@@ -120,6 +113,13 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** as in the real game, a new character starts on The Twilight Strand (`StartingArea`), reaches Lioneye's
   Watch only after defeating Brutus, and logs in on the Twilight Strand until then; "Resurrect at Checkpoint" goes to
   the last activated checkpoint of the area, with no loading screen (checkpoint objects are not implemented yet).
+  Without an activated checkpoint it revives where the player entered the area, which the Gateway already does. Dying
+  in a boss arena revives just outside the arena's door, even with a checkpoint activated; dying in a map revives in
+  the hideout (no hideouts yet).
+- **One-way entries:** the arrival next to the exit back needs an exit back. Lioneye's Watch from The Twilight Strand
+  uses the town's named point `entrance1` (`AreaLayout.OneWayArrivals`, [08](docs/protocol/08-area-transitions.md) §3):
+  in the real game the player comes out on the town side of the gate. Other one-way links fall back to the area's spawn
+  until their named entrance points are added.
 
 ## 4. Server design
 
