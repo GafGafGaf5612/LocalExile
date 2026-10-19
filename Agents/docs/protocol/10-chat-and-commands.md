@@ -70,8 +70,9 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/set_level <1 to 100>` | sets the character's level in the account store (Auth control op `set_level`) and sends it in place: the level's experience to the Player component (0x2ba, [04](04-player-entity.md) §4.6; the client derives the level from it), the level's stats (0x1b3: level, life, mana, accuracy, …, [11](11-skills.md) §4), the skills again (0x2ba Actor) and full life (0x1b1) |
 | `/heal` | full life and mana for the player (0x1b1); from 0 it also revives |
 | `/add_xp <amount>` | experience as from a kill: levels up, saved ([15](15-progression.md) §1) |
-| `/passives` | the passive skill points and the allocated passives (message box) |
+| `/passives` | the passive and refund skill points and the allocated passives (message box) |
 | `/add_passive_points <n>` | adds n extra passive skill points (the 0x33 `extra_skill_points` field), saved with the character; sends the tree (0x33) |
+| `/add_refund_points <n>` | dev shortcut: adds n refund points (0x33's first u16), saved with the character; sends the tree (0x33). Orbs of Regret also add them (right-click) |
 | `/gold <amount>` | adds gold, or takes it with a negative amount (not below 0); saved with the character and sent as S→C 0x2a9 ([04](04-player-entity.md)); every area entry sends the saved amount too |
 | `/add_passive <PassiveSkillGraphId>` | allocates one passive node through the same checks as C→S 0x34, saved and sent back (0x33) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |

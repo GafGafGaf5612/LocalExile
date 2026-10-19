@@ -91,16 +91,17 @@ Items are in rough priority order within each section. "Known" says what is alre
 ### Character progression: the rest of the Passive Skill Tree
 - **Known:** experience, levels, S→C 0x33 and C→S 0x34 (allocate) work ([15](docs/protocol/15-progression.md)).
 - **Known:** gold respec at Bestel (C→S 0x36 / 0x37) and masteries (0x35) work.
-- **Start:** refunds with refund points (0x36 with flag 0; 0x33's first u16, Orbs of Regret), ascendancy points,
-  quest points (0x33 +0x8a); the tree's connections (PassiveSkillGraph.psg) so the server checks them too.
-- **Done when:** passives can be refunded from the tree with refund points and ascendancies chosen.
+- **Known:** refunds with refund points (0x36 flag 0; 0x33's first u16) work; Orbs of Regret (right-click, 0x58) add them.
+- **Start:** quest refund points, ascendancy points, quest points (0x33 +0x8a); the tree's connections
+  (PassiveSkillGraph.psg) so the server checks them too.
+- **Done when:** passives can be refunded with points from quests, and ascendancies chosen.
 
 ### Items: mods, rarity, using flasks and currency
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); every item is sent normal and
   identified with no mods. The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`,
   [12](docs/protocol/12-quests.md)).
 - **Start:** the Mods component's mod lists (`0x142201d70`, sections behind flag bits 0x10/0x40/0x400/0x800, entries
-  `0x142430380`), C→S 0x4a and 0x2d (13 §4, probably item use), flask charges after use.
+  `0x142430380`), C→S 0x4a for currency on an item (13 §4), flask charges after use.
 - **Done when:** items have their implicit mods and a rarity, and flasks and currency can be used.
 
 ### A damage model (next)

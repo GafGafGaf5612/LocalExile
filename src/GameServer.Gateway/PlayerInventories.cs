@@ -486,6 +486,35 @@ sealed class PlayerInventories
         }
     }
 
+    /// <summary>What <see cref="ConsumeOne"/> did: the stack left in place (same id), or null when the last one was taken.</summary>
+    public sealed record Consumption(InventoryItem? Left, bool Removed);
+
+    /// <summary>Takes one item from the stack with this id (an Orb of Regret's use), in one save.</summary>
+    public Consumption? ConsumeOne(byte row, uint itemId)
+    {
+        Consumption result;
+        lock (_lock)
+        {
+            var list = ItemsIn(row);
+            int at = list.FindIndex(i => i.Id == itemId);
+            if (at < 0) return null;
+            var it = list[at];
+            if (it.Item.StackSize > 1)
+            {
+                var left = it with { Item = it.Item with { StackSize = (ushort)(it.Item.StackSize - 1) } };
+                list[at] = left;
+                result = new(left, false);
+            }
+            else
+            {
+                list.RemoveAt(at);
+                result = new(null, true);
+            }
+        }
+        Persist();
+        return result;
+    }
+
     /// <summary>What <see cref="Pay"/> changed in the row: emptied stacks (ids), and stacks left smaller (same ids).</summary>
     public sealed record Payment(IReadOnlyList<uint> Removed, IReadOnlyList<InventoryItem> Changed);
 

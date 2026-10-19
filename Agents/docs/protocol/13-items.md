@@ -95,7 +95,8 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x2f | 17 | — | take a socketed gem onto the empty cursor: u32 inventory id, u32 item id, u32 socket index, 3 bytes | 0xbf replacing the item, 0xbf cursor |
 | 0x29 | 2 | `0x14316c930` (id only), sender `0x140117b80` | drop the held item into the world | 0xbf cursor, then a WorldItem (§5) |
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
-| 0x2d | 8 | `0x1435c02b8` | u8, u32, u8 flag (senders `0x14215f520` / `0x14215f570`) | not handled |
+| 0x2d | 8 | `0x1435c02b8` / `0x141f90340`, senders `0x14215f520` / `0x14215f570` | inventory request, not mapped: u8, u32, u8 flag (0 / 1 by sender) | not handled |
+| 0x58 | 10 | `0x1435bf8a8` / `0x141f926a0` | use an item that needs no target (right-click): u32 inventory id, u32 item id, both big-endian | an Orb of Regret loses one item and adds one refund point (0xbf the stack, 0x33 the tree) |
 | 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | the held item clicked **on an item** (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 the clicked item's id, u8 flags (bit 2 = Shift; HNC bits 3-7), u8 (3), u16 (low byte first, differs every click, unknown) | a merge (0xbf the stack, 0xbf cursor), else a swap as 0x2a |
 | 0x7c | 17 | `0x1435bfdd8` / `0x141f90870`, sender `0x142165640` | split a stack (§4a): u32 inventory id, u32 item id, u32 amount, u8 (3), u16 (unknown); no HNC bits | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
 
@@ -217,7 +218,7 @@ linked sockets in the colour of their highest attribute requirement (ComponentAt
 - Mods (implicit, explicit), rarity, names, quality effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
 - C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
   `0x14031c0a0`: probably currency use on an item).
-- Flask use and currency use. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
+- Flask use and currency use other than the Orb of Regret. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
   on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
   Gateway shows each client only its own player).
