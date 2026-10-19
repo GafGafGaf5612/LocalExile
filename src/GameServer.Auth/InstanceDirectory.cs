@@ -13,9 +13,10 @@ using GameServer.Core.World;
 /// character (its session issues the tickets), and the localhost control server the Gateway calls
 /// (<see cref="InstanceControl"/>). Docs: Agents/docs/protocol/09-area-change.md.
 /// </summary>
-sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accounts = null)
+sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accounts = null,
+    IReadOnlyList<(string Id, ushort Hash16)>? towns = null)
 {
-    public const ushort StartTown = 0x235c; // Lioneye's Watch
+    private readonly IReadOnlyList<(string Id, ushort Hash16)> _towns = towns ?? WorldAreaTowns.Default;
 
     public InstanceRegistry Registry => registry;
 
@@ -54,7 +55,8 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
     {
         string character = session.CharacterName ?? "?";
         _links[character] = link;
-        var inst = registry.Enter(StartTown, character);
+        // Every login starts at the character's last town, as in the real game (#4).
+        var inst = registry.Enter(WorldAreaTowns.LoginArea(session.CharacterLastTown, _towns), character);
         return (inst.AreaHash, NewTicket(session, character, inst));
     }
 
@@ -107,6 +109,11 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
             case "resolve":
             {
                 var inst = registry.Get(info.Instance);
+                // The Gateway resolves a ticket once the client connects to its instance: a town is entered, so it is
+                // where the character's next login starts.
+                if (inst is { IsTown: true } && _towns.FirstOrDefault(t => t.Hash16 == inst.AreaHash) is { Id: { } town }
+                    && accounts?.SetLastTown(info.Character, town) is { Ok: true })
+                    Console.WriteLine($"[auth] {info.Character}: last town {town}");
                 return new ControlResponse
                 {
                     Ok = inst is not null, Error = inst is null ? "instance expired" : null, Area = info.Area,

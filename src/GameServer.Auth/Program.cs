@@ -92,7 +92,7 @@ static async Task Serve(LoginServerKeys keys)
         Towns = towns.Select(t => t.Hash16).ToHashSet(),
     };
     Console.WriteLine($"[auth] towns: {towns.Count} ({string.Join(", ", towns.Select(t => t.Id))})");
-    var directory = new InstanceDirectory(registry, accounts);
+    var directory = new InstanceDirectory(registry, accounts, towns);
     _ = directory.ServeControlAsync(InstanceControl.Port);
     Console.WriteLine($"[auth] login server on tcp/{port}");
     // Game_LEAGUES: comma-separated base leagues (default Standard, Allflame), each with its Hardcore / SSF / Ruthless variants.

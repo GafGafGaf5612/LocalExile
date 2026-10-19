@@ -134,11 +134,29 @@ public sealed class AccountService(IAccountStore store, TimeProvider? clock = nu
     public Result<Character> SetLevel(string characterName, int level)
     {
         if (level is < 1 or > 100) return Result<Character>.Fail(AuthError.InvalidLevel);
-        var c = store.FindCharacter(characterName);
-        if (c is null) return Result<Character>.Fail(AuthError.NotFound);
-        var u = c with { Level = level };
-        store.UpdateCharacter(u);
-        return Result<Character>.Success(u);
+        // Read and write under one lock: SetLastTown changes the same record and must not undo this change.
+        lock (_gate)
+        {
+            var c = store.FindCharacter(characterName);
+            if (c is null) return Result<Character>.Fail(AuthError.NotFound);
+            var u = c with { Level = level };
+            store.UpdateCharacter(u);
+            return Result<Character>.Success(u);
+        }
+    }
+
+    /// <summary>Records the last town a character entered (a WorldAreas Id), found by name.</summary>
+    public Result<Character> SetLastTown(string characterName, string townId)
+    {
+        lock (_gate)
+        {
+            var c = store.FindCharacter(characterName);
+            if (c is null) return Result<Character>.Fail(AuthError.NotFound);
+            if (c.LastTown == townId) return Result<Character>.Success(c);
+            var u = c with { LastTown = townId };
+            store.UpdateCharacter(u);
+            return Result<Character>.Success(u);
+        }
     }
 
     public Result<Character> Touch(Guid accountId, Guid characterId, string areaId)
