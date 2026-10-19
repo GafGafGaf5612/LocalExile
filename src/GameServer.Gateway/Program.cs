@@ -323,6 +323,14 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             var (kind, order) = InstanceStash.ReadReorderTabs(bytes);
             Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} (not kept)");
         }
+        else if (id == InstanceStash.MoveToTabId)
+            await MoveToStash(remote, stream, ciphers, conn, InstanceStash.ReadMoveToTab(bytes));
+        else if (id == InstanceStash.TakeFromTabId)
+        {
+            var (tab, item, a, b, c, d) = InstanceStash.ReadTakeFromTab(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x00e3 take item {item} from stash tab {tab} ({a:x2} {b:x2} {c:x2} {d:x2})");
+            await TakeFromStash(remote, stream, ciphers, conn, tab, item);
+        }
         else if (id == InstanceStash.MoveTabId)
             Console.WriteLine($"[gateway] {remote} <= 0x00d1 stash tab into a folder (not handled): {Convert.ToHexString(bytes)}");
         else if (id == InstanceNpcs.OptionId)
@@ -3363,8 +3371,19 @@ static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphe
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
     var stash = StashOf(conn);
-    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceStash.OpenStashUi, conn.StashObject, StashSelectAffinity),
-        $"0x007b open the stash on tab {stash.LastTab} \"{stash.NameOf(stash.LastTab)}\" (affinity {StashSelectAffinity})");
+    // The panel keeps its tab while this connection lasts; only its first open here is moved to the account's last tab.
+    // A second 0x7b while it is open would close it (0x140dc4db0 toggles), so the choice is made now.
+    if (!conn.StashOpened)
+    {
+        conn.StashOpened = true;
+        conn.StashForcedTab = stash.LastTab;
+        conn.StashForcedUntil = conn.Clock.Elapsed.TotalSeconds + StashForcedWindow;
+        await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceStash.OpenStashUi, conn.StashObject, StashSelectAffinity),
+            $"0x007b open the stash on tab {stash.LastTab} \"{stash.NameOf(stash.LastTab)}\" (affinity {StashSelectAffinity})");
+    }
+    else
+        await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceStash.OpenStashUi, conn.StashObject, InstanceStash.NoAffinity),
+            "0x007b open the stash on the panel's own tab");
 }
 
 // C→S 0xc7: the panel shows a tab whose contents it does not have (or it just opened on it). The first time per
@@ -3378,8 +3397,14 @@ static async Task SendStashTab(string remote, NetworkStream stream, ConnectionCi
         Console.WriteLine($"[gateway] {remote} <= 0x00c7 stash {kind} tab {tab}: no such tab");
         return;
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x00c7 stash tab {tab} \"{stash.NameOf(tab)}\" ({stash.TypeOf(tab)})");
-    stash.SetLastTab(tab);
+    // The panel asks for the tab it shows: as it opens (its tab before the selection) and when a tab without contents
+    // is picked. The client sends its queue newest first, so during the first open the forced tab's request comes before
+    // the panel's old one; that one is answered but not taken as the player's choice.
+    bool forcedOpen = conn.StashForcedTab >= 0 && conn.Clock.Elapsed.TotalSeconds < conn.StashForcedUntil;
+    bool chosen = !forcedOpen || tab == conn.StashForcedTab;
+    Console.WriteLine($"[gateway] {remote} <= 0x00c7 stash tab {tab} \"{stash.NameOf(tab)}\" ({stash.TypeOf(tab)})" +
+        (chosen ? "" : $" (the panel's tab before it opened on {conn.StashForcedTab}: not kept as the last tab)"));
+    if (chosen) stash.SetLastTab(tab);
     uint inventory = AccountStash.InventoryId(tab);
     if (conn.StashTabsSent.Add(tab))
     {
@@ -3401,6 +3426,7 @@ static async Task PickUpFromStash(string remote, NetworkStream stream, Connectio
         Console.WriteLine($"[gateway] {remote} <= 0x0028 pick up {pick} from stash tab {tab}: refused");
         return;
     }
+    stash.SetLastTab(tab);   // the player works in this tab: it is on screen
     var held = items.Put(PlayerInventories.Cursor, taken with { X = 0, Y = 0 });
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(pick.InventoryId, stash.NextRevision(tab), [held.Id], []),
         $"0x00bf stash tab {tab}: remove item {held.Id}");
@@ -3458,6 +3484,7 @@ static async Task PlaceInStash(string remote, NetworkStream stream, ConnectionCi
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place} in stash tab {tab}: refused ({why})");
         return;
     }
+    stash.SetLastTab(tab);
     items.Remove(PlayerInventories.Cursor, held.Id);
     if (displaced is not null) items.Put(PlayerInventories.Cursor, displaced);
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), displaced is null ? [] : [displaced.Id], [placed]),
@@ -3465,6 +3492,58 @@ static async Task PlaceInStash(string remote, NetworkStream stream, ConnectionCi
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
         items.NextRevision(PlayerInventories.Cursor), [held.Id], displaced is null ? [] : [displaced]),
         $"0x00bf cursor: remove item {held.Id}" + (displaced is null ? "" : $", hold item {displaced.Id}"));
+}
+
+// C→S 0xe0: Ctrl + click on an inventory item while a stash tab is shown. The item goes to the tab's first free cell
+// (with a stash id), out of whichever inventory holds it.
+static async Task MoveToStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToTab move)
+{
+    var stash = StashOf(conn);
+    var items = ItemsOf(conn);
+    int tab = move.Tab;
+    string refused = move.Kind != InstanceStash.Personal || tab >= stash.Count ? "no such tab"
+        : items.RowOf(move.ItemId) is not byte row ? "the item is not in the inventories"
+        : items.Items(row).First(i => i.Id == move.ItemId) is var item && ShapeOf(item.Item) is not { } shape ? "unknown item type"
+        : stash.FreeCell(tab, shape.Width, shape.Height, ShapeOf) is not { } cell ? "the tab is full"
+        : "";
+    Console.WriteLine($"[gateway] {remote} <= 0x00e0 move item {move.ItemId} to stash tab {tab} ({move})" + (refused == "" ? "" : $": refused ({refused})"));
+    if (refused != "") return;
+    byte from = items.RowOf(move.ItemId)!.Value;
+    var it = items.Remove(from, move.ItemId)!;
+    var (fx, fy) = stash.FreeCell(tab, ShapeOf(it.Item)!.Value.Width, ShapeOf(it.Item)!.Value.Height, ShapeOf)!.Value;
+    if (stash.Place(tab, fx, fy, it, ShapeOf, out string why) is not var (placed, _))
+    {
+        items.Put(from, it);
+        Console.WriteLine($"[gateway] {remote} stash tab {tab}: {why}");
+        return;
+    }
+    stash.SetLastTab(tab);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(from), items.NextRevision(from), [it.Id], []),
+        $"0x00bf inventory {PlayerInventories.InventoryId(from)}: remove item {it.Id} (to the stash)");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(tab), stash.NextRevision(tab), [], [placed]),
+        $"0x00bf stash tab {tab}: add item {placed.Id} at ({placed.X}, {placed.Y})");
+    if (PlayerInventories.ShowsOnModel(from)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+// An item out of a stash tab into the main inventory's first free cell (C→S 0xe3), keeping its id.
+static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId)
+{
+    var stash = StashOf(conn);
+    var items = ItemsOf(conn);
+    if (tab >= stash.Count || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } inTab
+        || ShapeOf(inTab.Item) is not { } shape
+        || items.FreeCell(PlayerInventories.MainInventory, shape.Width, shape.Height, ShapeOf) is not { } cell)
+    {
+        Console.WriteLine($"[gateway] {remote} stash tab {tab} item {itemId}: refused (not there, unknown type or no room in the inventory)");
+        return;
+    }
+    if (stash.Take(tab, itemId) is not { } taken) return;
+    stash.SetLastTab(tab);
+    var placed = items.Put(PlayerInventories.MainInventory, taken with { X = cell.X, Y = cell.Y });
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(tab), stash.NextRevision(tab), [itemId], []),
+        $"0x00bf stash tab {tab}: remove item {itemId}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+        items.NextRevision(PlayerInventories.MainInventory), [], [placed]), $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y}) (from the stash)");
 }
 
 // The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
@@ -3549,6 +3628,9 @@ sealed partial class Program
     // The affinity (StashTabAffinityId row 0, "UNUSED0": no item has it) that marks the account's last tab in the tab
     // list, so that S->C 0x7b kind 1 with it opens the stash on that tab.
     internal const uint StashSelectAffinity = 0;
+    // How long (s) after the first open's 0x7b the panel's requests belong to that open (the client sends one 0xc7 per
+    // 200 ms, at most two then).
+    internal const double StashForcedWindow = 1.0;
     // Destination tickets of waypoint travel: that connection's player arrives next to the area's waypoint.
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, byte> WaypointArrivals = new();
     // The height u32 of S→C 0x1ba (+0x28, passed with the move to Positioned vtable +0xd8) and 0x1b7 (→ +0x290): the
@@ -4024,6 +4106,12 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The town's Stash object (0 = none here), and the stash tabs whose inventory this connection has sent (0xc0 + 0xc8).
     public uint StashObject;
     public readonly HashSet<int> StashTabsSent = [];
+    // Whether this connection opened the stash already (only the first open selects the account's last tab), and while
+    // that first open runs (until StashForcedUntil, Clock seconds) the tab it selects: the panel's own request for the
+    // tab it was on is then not the player's choice.
+    public bool StashOpened;
+    public int StashForcedTab = -1;
+    public double StashForcedUntil;
     // The NPC whose dialogue window is open (0x84 sent, 0x85 not yet), 0 = none.
     public volatile uint TalkingTo;
     // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.

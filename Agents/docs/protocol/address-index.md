@@ -235,6 +235,9 @@ G = global / static data.
 | `0x140a85c30` | Fn | stash panel: tab selected (request or build its page) |
 | `0x140a8d1b0` | Fn | stash panel: refresh on opening (requests the current tab) |
 | `0x14025b420` | Fn | tab settings: rename / recolour |
+| `0x142168ab0` / `0x141f97560` | Fn | C→S 0xe0 (Ctrl + click into a tab): build / write |
+| `0x142168e20` / `0x141f97e40` | Fn | C→S 0xe3 (Ctrl + click out of a tab): build / write |
+| `0x140dc4db0` | Fn | show / hide a panel (a second 0x7b kind 1 would close the stash) |
 
 ## Strings worth searching
 "Connect time to instance server was", "Client-Safe Instance ID = ", "Generating level ", "Instance sent world area

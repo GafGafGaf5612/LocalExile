@@ -195,6 +195,15 @@ sealed class PlayerInventories
         }
     }
 
+    /// <summary>The row an item is in (not the cursor), or null.</summary>
+    public byte? RowOf(uint itemId)
+    {
+        lock (_lock)
+            foreach (var (row, items) in _items)
+                if (row != Cursor && items.Any(i => i.Id == itemId)) return row;
+        return null;
+    }
+
     List<InventoryItem> ItemsIn(byte row) => _items.TryGetValue(row, out var l) ? l : _items[row] = [];
 
     /// <summary>
