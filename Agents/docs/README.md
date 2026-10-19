@@ -21,6 +21,7 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 | [protocol/13-items.md](protocol/13-items.md) | items: types and the item data, inventories with items (0xc0, 0xbf), moving, sockets, the ground, equipment on the model, requirements, gem skills |
 | [protocol/14-monster-packs.md](protocol/14-monster-packs.md) | monsters in areas: MonsterPacks, rarity, room points (the camp's "mapboss"), the doodad hook and room fitting |
 | [protocol/15-progression.md](protocol/15-progression.md) | experience and levels from kills, the Passive Skill Tree (0x33, 0x34), loot |
+| [protocol/16-waypoints.md](protocol/16-waypoints.md) | waypoints: the object, activated waypoints (0x4c), the World panel (0x7b), travel (0x4d), quest flags in the Player component, what reveals pins |
 | [protocol/12-quests.md](protocol/12-quests.md) | quests (research): the data tables, a1q4 "Breaking Some Eggs" and the Submerged Passage blocker |
 | [protocol/06-debugging-log.md](protocol/06-debugging-log.md) | every live run, crash and fix, and lessons |
 | [protocol/address-index.md](protocol/address-index.md) | all client addresses by subsystem |

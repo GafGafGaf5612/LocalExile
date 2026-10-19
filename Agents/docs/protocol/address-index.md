@@ -178,6 +178,27 @@ G = global / static data.
 | `0x1402f36c0` | Fn | item's AttributeRequirements component getter |
 | `0x141e1dce0` | Fn | InteractionAction type parser (`interaction_distance_override` → +0x1bb) |
 
+## Waypoints and the World panel ([16](16-waypoints.md))
+| Address | Kind | What |
+|---|---|---|
+| `0x1435dc7e0` (read `0x14219f460`) | Cls | S→C 0x4c activated waypoints (u32, 19-byte bitset → instance +0xcf31), dispatcher case 0x12 |
+| `0x1435dc2a0` (read `0x1421a0450`) | Cls | S→C 0x7b open a UI (u8 kind, 4 × u32), dispatcher case 0x1c |
+| `0x1435c08b8` (write `0x141f92e60`) | Cls | C→S 0x4d waypoint travel (u16 area, u32, u8 Ctrl) |
+| `0x142163420` | Fn | 0x7b's switch over UI kinds; kind 0 → listeners at instance +0xff8 |
+| `0x140dcd570` | Fn | in-game UI: open the World panel in travel mode (`0x140ab1440` → `0x140a97330`, panel +0x522) |
+| `0x140a9b580` | Fn | World panel pin click → C→S 0x4d |
+| `0x141fdcf90` | Fn | is an area's waypoint bit set (bit = index among HasWaypoint rows with +0x1e4 in {1, 2, 5, 11}) |
+| `0x1421449f0` | Fn | waypoint look of the current area (0 idle, 1 inactive, 2 activation), from 0x4c |
+| `0x140ab0330` | Fn | pin widget update: revealed (+0x329) and waypoint (+0x32a) states |
+| `0x140ab6200` | Fn | pin revealed: any MapPins `QuestFlags` set |
+| `0x140ab5fc0` | Fn | pin as a waypoint: bit set and area accessible |
+| `0x140797750` | Fn | area accessible: all WorldAreas +0x54 quest flags set (Player component) |
+| `0x140a9a7d0` / `0x140a9aa90` | Fn | connection lines: only between two shown pins |
+| `0x141e83340` | Fn | flag set reader (u16 n × (u8 block, u64 bits)); Player +0x1b8 quest flags, +0x1d0 |
+| `0x14012aae0` | Fn | flag set test |
+| `0x141e7ee30` | Fn | Player component update reader (0x2ba): u16 flags, 0x02 quest flags, 0x08 second set, 0x200 9 bytes, 0x01 experience |
+| `0x141e1c550` | Fn | HideoutDoodad reader (only with type data +0x14e) |
+
 ## Strings worth searching
 "Connect time to instance server was", "Client-Safe Instance ID = ", "Generating level ", "Instance sent world area
 that does not exist with hash: ", "Area reported by instance does not exist", "Unable to deserialise packet with pid ",
