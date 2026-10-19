@@ -28,11 +28,16 @@ static class CharacterStats
         int BlockChanceBase = 0, int BlockChanceUncapped = 0,
         int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
         bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
-        int AttackSpeedPct = 0);
+        int AttackSpeedPct = 0,
+        int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
+        int CriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
+        int SpellCriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
+        int AttackCriticalStrikeChance = 0,
+        int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad);
 
     /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life and
-    /// mana, increased evasion, energy shield and melee physical damage, the base resistances, and attack speed's
-    /// increased and more multipliers.</summary>
+    /// mana, increased evasion, energy shield and melee physical damage, the base resistances, attack speed's
+    /// increased and more multipliers, and critical strike chance and multiplier.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
         int Mana = 0, int ManaPct = 0, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
@@ -44,7 +49,9 @@ static class CharacterStats
         int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
         int BlockChanceInc = 0, int BlockChanceMore = 0,
         bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
-        int AttackSpeedPct = 0, int AttackSpeedMorePct = 0)
+        int AttackSpeedPct = 0, int AttackSpeedMorePct = 0,
+        int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
+        int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -96,7 +103,13 @@ static class CharacterStats
             BlockChanceMax: maxBlock, SpellBlockChanceMax: maxSpellBlock, BlockChanceUncapped: b.BlockChance,
             SpellBlockPer5AttackBlock: b.SpellBlockPer5AttackBlock, LifeGainedOnBlock: b.LifeGainedOnBlock,
             ManaGainedOnBlock: b.ManaGainedOnBlock, VersatileCombatant: b.VersatileCombatant,
-            AttackBlockLucky: b.AttackBlockLucky, SpellBlockLucky: b.SpellBlockLucky, AttackSpeedPct: attackSpeedPct);
+            AttackBlockLucky: b.AttackBlockLucky, SpellBlockLucky: b.SpellBlockLucky, AttackSpeedPct: attackSpeedPct,
+            CriticalStrikeChancePct: b.CriticalStrikeChancePct,
+            SpellCriticalStrikeChancePct: b.SpellCriticalStrikeChancePct,
+            CriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.CriticalStrikeMultiplier,
+            SpellCriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.SpellCriticalStrikeMultiplier,
+            SpellCriticalStrikeChance: (int)Math.Round(DamageModel.CriticalStrikeChance(
+                DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct) * 100));
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));

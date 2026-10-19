@@ -30,6 +30,25 @@ public static class DamageModel
     /// <summary>Path of Building's <c>SuppressionEffect</c>: a suppressed spell hit takes 40% less damage.</summary>
     public const int SpellSuppressionEffect = 40;
 
+    /// <summary>PoE's base critical strike multiplier: 150%, before <c>base_critical_strike_multiplier_+</c>.</summary>
+    public const int BaseCriticalStrikeMultiplier = 150;
+
+    /// <summary>Fireball's GrantEffectStatSetsPerLevel SpellCritChance (500 = 5.00%).</summary>
+    public const int BaseSpellCriticalStrikeChancePerMyriad = 500;
+
+    /// <summary>A hit's critical strike chance: the base chance (permyriad: 500 = 5%) raised by the increased
+    /// critical strike chance stat, capped at 100%.</summary>
+    public static double CriticalStrikeChance(int basePerMyriad, int increasedPct) =>
+        Math.Clamp(basePerMyriad / 100.0 * (100 + increasedPct) / 100.0, 0, 100);
+
+    /// <summary>A critical hit's damage, rounded to the nearest point; <paramref name="multiplier"/> is the final
+    /// percentage (150 by default).</summary>
+    public static int CriticalDamage(int damage, int multiplier)
+    {
+        if (damage <= 0) return 0;
+        return (int)Math.Max(0, Math.Round(damage * Math.Max(0, multiplier) / 100.0));
+    }
+
     /// <summary>Whether a Spell Suppression roll succeeds; <paramref name="roll"/> is 0..99. Lucky and unlucky roll
     /// twice: lucky keeps the better roll (1 − (1 − p)²), unlucky the worse (p²), as PoB's suppressRolls.</summary>
     public static bool Suppresses(int chance, int roll, bool lucky = false, bool unlucky = false) =>

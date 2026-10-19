@@ -15,6 +15,7 @@ sealed class ItemCatalog
         _gemEffects = new(() => LoadGemEffects(folder));
         _requirements = new(() => LoadRequirements(folder));
         _shieldBlocks = new(() => LoadShieldBlocks(folder));
+        _weaponCrits = new(() => LoadWeaponCrits(folder));
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
@@ -83,6 +84,24 @@ sealed class ItemCatalog
             if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b &&
                 r.GetProperty("Block") is { ValueKind: JsonValueKind.Number } block)
                 result.TryAdd(b.GetInt32(), block.GetInt32());
+        return result;
+    }
+
+    private Lazy<Dictionary<int, int>> _weaponCrits = null!;
+
+    /// <summary>The weapon's base critical strike chance (permyriad: 500 = 5%) from WeaponTypes.dat.</summary>
+    public int WeaponCritical(BaseType t) => _weaponCrits.Value.GetValueOrDefault(t.Row);
+
+    private static Dictionary<int, int> LoadWeaponCrits(string folder)
+    {
+        string path = Path.Combine(folder, "tables", "WeaponTypes.json");
+        var result = new Dictionary<int, int>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+            if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b &&
+                r.GetProperty("Critical") is { ValueKind: JsonValueKind.Number } crit)
+                result.TryAdd(b.GetInt32(), crit.GetInt32());
         return result;
     }
 

@@ -80,6 +80,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model, showing the resistance used and the life left |
 | `/suppression` | Spell Suppression chance and damage reduction |
 | `/spellhit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: a spell hit through resistance and Spell Suppression, rolling the suppression chance |
+| `/crit` | attack and spell critical strike chance and multiplier from the unconditional passives and weapon base |
 | `/block` | attack block and spell block chance, caps and effective lucky chances |
 | `/block_luck <attack\|spell\|both\|off>` | dev: force lucky block for testing |
 | `/blockhit <attack\|spell> <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: a hit through block and resistance |
