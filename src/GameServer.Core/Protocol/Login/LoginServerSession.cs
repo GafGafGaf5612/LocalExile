@@ -71,6 +71,7 @@ public sealed class LoginServerSession(AccountService accounts)
         CharacterLeague = Leagues.Find(chosen.League);
         CharacterClass = chosen.Class;
         CharacterLevel = chosen.Level;
+        CharacterLastTown = chosen.LastTown;
         if (Assign is not null)
         {
             var (area, assigned) = Assign(this);
@@ -90,6 +91,9 @@ public sealed class LoginServerSession(AccountService accounts)
 
     /// <summary>The chosen character's level (the Auth server changes it for /set_level, so later tickets carry it).</summary>
     public int CharacterLevel { get; set; } = 1;
+
+    /// <summary>The chosen character's last town (WorldAreas Id, null = none yet): where Play puts it.</summary>
+    public string? CharacterLastTown { get; private set; }
 
     /// <summary>Picks the area and ticket for Play (GameServer.Auth: the instance registry). Without it: Lioneye's
     /// Watch with a fresh ticket.</summary>

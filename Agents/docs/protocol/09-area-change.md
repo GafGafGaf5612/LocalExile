@@ -122,6 +122,17 @@ keeps the ids of the last list it sent (`ChooserList`).
   - 0x2cb → `transfer` → 0x27 with the key for the new ticket.
   - On the new connection, `resolve` gives the area and seed. Layout: `data/walkability/<id>_seed<seed>.bin` + `.json`.
     The spawn is the deepest walkable cell until arrival points are known.
+- **Where a login starts** (Play, login 0x0e → `InstanceDirectory.AssignStart`): the spawn point of the character's
+  **last town**, as in the real game, which never logs a character into a combat area or at a saved position. This
+  holds after logging out, Exit to Character Selection, a crash, a server restart, or disconnecting while dead. The
+  `resolve` op records the town (`Character.LastTown`, a WorldAreas Id in `data/accounts.json`) when the ticket's
+  instance is a town: the Gateway resolves a ticket only once the client connects to that instance, so the town counts
+  once the character is in it. `WorldAreaTowns.LoginArea` picks the area: the last town, else
+  `AccountService.StartingArea`, else Lioneye's Watch. New characters start in Lioneye's Watch for now; in the real
+  game they start on The Twilight Strand and reach Lioneye's Watch after defeating Brutus, and logins before that
+  return to the Twilight Strand's spawn point. Making `StartingArea` the Twilight Strand gives that, since a character
+  with no last town logs in at the starting area. The death screen's two buttons are separate (`Resurrect`, §7).
+  Issue #4.
 - The dev servers pin non-town seeds to 1 (`Game_RANDOM_SEEDS=1` gives random seeds), because a layout must be dumped
   from the client (`scripts/re/frida/dump-walkability-all.js`, `walk-<n>-a.bin`). The Coast at seed 1 is 1725×1725.
 

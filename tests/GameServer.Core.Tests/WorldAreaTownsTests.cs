@@ -51,6 +51,17 @@ public class WorldAreaTownsTests
         finally { File.Delete(path); }
     }
 
+    [Theory]
+    [InlineData("1_2_town", ForestEncampment)]   // the last town entered
+    [InlineData(null, LioneyesWatch)]            // never entered a town: the starting area
+    [InlineData("1_1_2", LioneyesWatch)]         // not a town (a combat area): never logged into
+    [InlineData("1_9_town", LioneyesWatch)]      // no longer in the table
+    public void Login_area_is_the_last_town_else_the_starting_area(string? lastTown, ushort expected)
+    {
+        IReadOnlyList<(string, ushort)> towns = [("1_1_town", LioneyesWatch), ("1_2_town", ForestEncampment)];
+        Assert.Equal(expected, WorldAreaTowns.LoginArea(lastTown, towns));
+    }
+
     [Fact]
     public void Without_the_table_only_Lioneyes_Watch_is_a_town()
     {
