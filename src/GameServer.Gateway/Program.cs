@@ -121,7 +121,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             LoadProgress(conn, resolved.Level);
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.PlayerMana = conn.Pools.Mana;
-            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}), league {conn.League ?? "?"}");
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}, attack speed +{conn.Pools.AttackSpeedPct}%), league {conn.League ?? "?"}");
             byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
             if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn);
             // Closed early by C→S 0x153 (exit to character selection): leaving the loop closes the connection.
@@ -973,7 +973,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
 {
     var weapon = Skills.UnarmedFor(conn.ClassRow);
     double now = conn.Clock.Elapsed.TotalSeconds, duration;
-    lock (conn.Monsters) duration = weapon.AttackSeconds(conn.PlayerStats);
+    lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn));
     // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
     // full attack time, so accept it up to a quarter of an attack early.
     lock (conn.Monsters)
@@ -1215,6 +1215,13 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     Dictionary<uint, int> stats;
     lock (conn.Monsters) stats = new(conn.PlayerStats);
     foreach (var (k, v) in BaseStats(conn)) stats.TryAdd(k, v);
+    // The passives' conditional attack speed is already one final value in Pools; /set_stat's raw attack-speed stats
+    // stay additive. main_hand_attack_speed_+% is the total the client swings with, so Unarmed reads only it.
+    int devAttackSpeed = 0;
+    lock (conn.Monsters)
+        foreach (uint key in StatKeys.AttackSpeedInputs)
+            devAttackSpeed += conn.PlayerStats.GetValueOrDefault(key);
+    stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
     return stats;
 }
 
@@ -1438,7 +1445,8 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
     var weapons = WeaponProfileFor(conn);
     var bonus = PassiveBonus(Passives.Stats(conn.Passives, conn.MasteryEffects), weapons);
     if (conn.God)
-        bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000, Life = bonus.Life + 10_000 };
+        bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
+            Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };
     var pools = CharacterStats.For(Skills.ClassFor(conn.ClassRow), level, bonus);
     pools = pools with
     {
@@ -1505,6 +1513,27 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
     int staffSpellBlock = weapons.Staff ? Get("spell_block_with_staff_%") : 0;
     int dualSpellBlock = weapons.DualWield ? Get("spell_block_while_dual_wielding_%") : 0;
     int bowSpellBlock = weapons.Bow ? Get("spell_block_with_bow_%") : 0;
+    // Attack speed passives, conditional on the equipped weapon shape as in PoB's ModFlags: generic, melee,
+    // one-/two-handed melee, all one-handed, the weapon families, shields and dual wielding. Minion, totem and
+    // timed/conditional stats are not player attack speed here.
+    int attackSpeed = Get("attack_speed_+%")
+        + (weapons.Melee ? Get("melee_attack_speed_+%") : 0)
+        + (weapons.OneHandMelee ? Get("one_handed_melee_attack_speed_+%") : 0)
+        + (weapons.TwoHandMelee ? Get("two_handed_melee_attack_speed_+%") : 0)
+        + (weapons.OneHand ? Get("one_handed_attack_speed_+%") : 0)
+        + (weapons.Unarmed ? Get("unarmed_melee_attack_speed_+%") : 0)
+        + (weapons.Shield ? Get("attack_speed_+%_while_holding_shield") + Get("shield_attack_speed_+%") : 0)
+        + (weapons.DualWield ? Get("attack_speed_while_dual_wielding_+%") : 0)
+        + (weapons.Axe ? Get("axe_attack_speed_+%") : 0)
+        + (weapons.Sword ? Get("sword_attack_speed_+%") : 0)
+        + (weapons.Mace ? Get("mace_attack_speed_+%") : 0)
+        + (weapons.Claw ? Get("claw_attack_speed_+%") : 0)
+        + (weapons.Dagger ? Get("dagger_attack_speed_+%") : 0)
+        + (weapons.Wand ? Get("wand_attack_speed_+%") : 0)
+        + (weapons.Bow ? Get("bow_attack_speed_+%") : 0)
+        + (weapons.Staff ? Get("staff_attack_speed_+%") : 0);
+    // PoB Misc.lua: 10% more attack speed while dual wielding; unarmed attacks count as dual wielding.
+    int attackSpeedMore = weapons.DualWield || weapons.Unarmed ? 10 : 0;
     int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
     return new CharacterStats.Bonus(
         Strength: Get("base_strength") + Get("additional_strength") + all + Get("additional_strength_and_dexterity") + Get("additional_strength_and_intelligence"),
@@ -1532,7 +1561,8 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         LifeGainedOnBlock: Get("life_gained_on_block"), ManaGainedOnBlock: Get("mana_gained_on_block"),
         VersatileCombatant: Get("keystone_versatile_combatant") != 0,
         AttackBlockLucky: Get("base_block_luck") != 0 || Get("attack_block_luck") != 0 || Get("base_attack_block_luck") != 0,
-        SpellBlockLucky: Get("base_block_luck") != 0 || Get("spell_block_luck") != 0 || Get("base_spell_block_luck") != 0);
+        SpellBlockLucky: Get("base_block_luck") != 0 || Get("spell_block_luck") != 0 || Get("base_spell_block_luck") != 0,
+        AttackSpeedPct: attackSpeed, AttackSpeedMorePct: attackSpeedMore);
 }
 
 // The character's passive skill points (one per level after the first, plus the extra points from
@@ -2733,22 +2763,39 @@ static WeaponProfile WeaponProfileFor(ClientState conn)
 {
     var items = ItemsOf(conn);
     ItemCatalog.BaseType? At(byte row) => items.Items(row).Select(i => Items.ByHash(i.Item.TypeHash)).FirstOrDefault(t => t is not null);
-    static bool OneHand(ItemCatalog.BaseType t) => t.Class is "Claw" or "Dagger" or "Wand" or "One Hand Sword"
-        or "Thrusting One Hand Sword" or "One Hand Axe" or "One Hand Mace" or "Sceptre" or "Rune Dagger";
+    static bool OneHandMelee(ItemCatalog.BaseType t) => t.Class is "Claw" or "Dagger" or "Rune Dagger"
+        or "One Hand Sword" or "Thrusting One Hand Sword" or "One Hand Axe" or "One Hand Mace" or "Sceptre";
+    static bool OneHand(ItemCatalog.BaseType t) => OneHandMelee(t) || t.Class == "Wand";
+    static bool TwoHandMelee(ItemCatalog.BaseType t) => t.Class is "Two Hand Sword" or "Two Hand Axe"
+        or "Two Hand Mace" or "Staff" or "Warstaff";
     static bool Pair(ItemCatalog.BaseType? main, ItemCatalog.BaseType? off) =>
         main is { } m && off is { } o && OneHand(m) && OneHand(o);
     var main1 = At(2);
     var off1 = At(3);
     var main2 = At(14);
     var off2 = At(15);
+    var all = new[] { main1, off1, main2, off2 }.OfType<ItemCatalog.BaseType>().ToList();
     var dual = Pair(main1, off1) || Pair(main2, off2);
     var claws = (main1?.Class == "Claw" && off1?.Class == "Claw") || (main2?.Class == "Claw" && off2?.Class == "Claw");
+    var unarmed = main1 is null && main2 is null;
     return new WeaponProfile(
         Shield: HasShield(conn),
         DualWield: dual,
-        Staff: new[] { main1, main2 }.Any(t => t?.Class is "Staff" or "Warstaff"),
-        Bow: new[] { main1, main2 }.Any(t => t?.Class == "Bow"),
-        DualClaws: claws);
+        Staff: all.Any(t => t.Class is "Staff" or "Warstaff"),
+        Bow: all.Any(t => t.Class == "Bow"),
+        DualClaws: claws,
+        Unarmed: unarmed,
+        OneHand: all.Any(OneHand),
+        TwoHand: all.Any(t => TwoHandMelee(t) || t.Class == "Bow"),
+        Melee: unarmed || all.Any(t => OneHandMelee(t) || TwoHandMelee(t)),
+        OneHandMelee: all.Any(OneHandMelee),
+        TwoHandMelee: all.Any(TwoHandMelee),
+        Axe: all.Any(t => t.Class is "One Hand Axe" or "Two Hand Axe"),
+        Sword: all.Any(t => t.Class is "One Hand Sword" or "Thrusting One Hand Sword" or "Two Hand Sword"),
+        Mace: all.Any(t => t.Class is "One Hand Mace" or "Two Hand Mace"),
+        Claw: all.Any(t => t.Class == "Claw"),
+        Dagger: all.Any(t => t.Class is "Dagger" or "Rune Dagger"),
+        Wand: all.Any(t => t.Class == "Wand"));
 }
 
 // The equipped off hand(s): Weapon1's off hand is row 3, Weapon2's is row 15.
@@ -2776,9 +2823,9 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
     var equipped = items.Equipped(LookOf);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, equipped),
         $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
+    conn.Pools = PoolsFor(conn, conn.Pools.Level);
     var skills = PlayerSkills(conn);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills), $"0x02ba player Actor: {skills.Count} skill(s)");
-    conn.Pools = PoolsFor(conn, conn.Pools.Level);
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
         "0x01b3 player stats (equipment)");
 }
@@ -2958,10 +3005,12 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
     var weapon = Skills.UnarmedFor(classRow);
     var cls = Skills.ClassFor(classRow);
-    var baseStats = BaseStats(conn).ToList();
+    var stats = CharacterPlayerStats(conn);
+    var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
+    var weaponStats = weapon.Stats(stats).ToList();
     var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: pools.Life, Mana: pools.Mana, Experience: conn.Experience,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-        Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. baseStats])], Stats: [.. weapon.Stats(), .. baseStats],
+        Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
         QuestFlags: PlayerQuestFlags(conn));
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
@@ -2998,7 +3047,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         if (layout.Waypoint is not null) messages.Add(($"0x01a9 waypoint 0x{WaypointCatalog.ObjectId:x} enters wake zone", InstanceProtocol.EnterWakeZone(WaypointCatalog.ObjectId)));
         // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
         // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
-        messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. baseStats])));
+        messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. statList])));
     }
     foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
 }
@@ -3113,6 +3162,13 @@ static class StatKeys
     // "Increased attack speed" stats that apply to an unarmed melee attack (attack time = base / (1 + sum / 100)).
     public const uint AttackSpeedPct = 0x47, MeleeAttackSpeedPct = 0x49, MainHandAttackSpeedPct = 0x126,
         UnarmedMeleeAttackSpeedPct = 0xb19;
+    /// <summary>The raw attack-speed inputs /set_stat can add; the passives' conditional ones are summed into
+    /// <see cref="CharacterStats.Pools.AttackSpeedPct"/> by PassiveBonus.</summary>
+    public static readonly uint[] AttackSpeedInputs = [AttackSpeedPct, MeleeAttackSpeedPct, MainHandAttackSpeedPct, UnarmedMeleeAttackSpeedPct];
+    /// <summary>The character panel's Damage per Second and Damage per Use rows (values are hundredths).</summary>
+    public const uint HundredTimesDamagePerSecond = 0x2a7, DisplayHundredTimesDamagePerSkillUse = 0x7fc;
+    /// <summary>The main-hand flag the character panel checks before drawing the MH_* damage rows.</summary>
+    public const uint SkillUsesMainHand = 0x1e70;
     // "Increased damage" stats that apply to an unarmed melee attack's physical damage (damage × (1 + sum / 100)):
     // damage_+%, physical_damage_+%, melee_damage_+%, melee_physical_damage_+% (strength's 1% per 5).
     public const uint DamagePct = 0x19, PhysicalDamagePct = 0x1b, MeleeDamagePct = 0x558, MeleePhysicalDamagePct = 0x1ed;

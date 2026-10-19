@@ -57,8 +57,15 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   walk map; there is no server-side pathing or collision.
 - **Stats.** The client's stat key is the Stats.dat row + 1 with the vendored schema ([11](docs/protocol/11-skills.md)
   §8); `/set_stat` takes stat names or keys. The player's life, mana, accuracy and evasion come from its class and level, with
-  the attributes' bonuses (energy shield, evasion and melee physical damage increases); no passives or items count yet
-  ([11](docs/protocol/11-skills.md) §4).
+  the attributes' bonuses (energy shield, evasion and melee physical damage increases); life, mana, accuracy and
+  evasion still ignore passives and items (attack speed is handled below) ([11](docs/protocol/11-skills.md) §4).
+- **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack speed
+  is summed into the client's `main_hand_attack_speed_+%`; dual wielding adds PoB's 10% more and the server's unarmed
+  attack uses the same final value. The default attack also sends the panel's `hundred_times_damage_per_second` and
+  `display_hundred_times_damage_per_skill_use`. Live verified: the dual-wield character's APS follows the passives
+  (2.93 → 2.98 after a node). Minion, totem and timed/conditional stats are not modelled; the character panel's APS
+  stays cached after a passive allocation (reopening the panel or switching its tab does not refresh it; only a relog
+  does). ([11](docs/protocol/11-skills.md) §4)
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch
   use the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
@@ -98,8 +105,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (237 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (18: inventory moves, arrival points, instance ground items and monsters, quests) pass.
+`dotnet test tests/GameServer.Core.Tests` (245 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (28: inventory moves, arrival points, instance ground items and monsters, quests,
+passives and attack speed) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

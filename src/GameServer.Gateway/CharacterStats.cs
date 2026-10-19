@@ -26,10 +26,12 @@ static class CharacterStats
         int BlockChanceMax = DamageModel.DefaultMaxBlockChance, int SpellBlockChanceMax = DamageModel.DefaultMaxSpellBlockChance,
         int BlockChanceBase = 0, int BlockChanceUncapped = 0,
         int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
-        bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false);
+        bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
+        int AttackSpeedPct = 0);
 
     /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life and
-    /// mana, increased evasion, energy shield and melee physical damage, and the base resistances.</summary>
+    /// mana, increased evasion, energy shield and melee physical damage, the base resistances, and attack speed's
+    /// increased and more multipliers.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
         int Mana = 0, int ManaPct = 0, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
@@ -39,7 +41,8 @@ static class CharacterStats
         int BlockChanceMax = 0, int SpellBlockChanceMax = 0,
         int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
         int BlockChanceInc = 0, int BlockChanceMore = 0,
-        bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false)
+        bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
+        int AttackSpeedPct = 0, int AttackSpeedMorePct = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -69,6 +72,12 @@ static class CharacterStats
             maxBlock = Math.Max(0, maxBlock - 10);
             maxSpellBlock = Math.Max(0, maxSpellBlock - 10);
         }
+        // PoB CalcOffence: rate = base rate * (1 + increased / 100) * more. The client takes one integer
+        // main_hand_attack_speed_+%, so send the equivalent increased value (93 for 75% increased and 10% more).
+        int attackSpeedPct = (int)Math.Round(
+            ((1 + b.AttackSpeedPct / 100.0) * (1 + b.AttackSpeedMorePct / 100.0) - 1) * 100,
+            MidpointRounding.AwayFromZero);
+        attackSpeedPct = Math.Max(-99, attackSpeedPct);
         return new(level, life, mana, 2 * level + 2 * dex, ExperienceFor(level, folder),
             Evasion: BaseEvasion * (100 + evasionPct) / 100, EvasionPct: evasionPct,
             EnergyShieldPct: intel / 5 + b.EnergyShieldPct, MeleePhysicalDamagePct: str / 5 + b.MeleePhysicalDamagePct,
@@ -84,7 +93,7 @@ static class CharacterStats
             BlockChanceMax: maxBlock, SpellBlockChanceMax: maxSpellBlock, BlockChanceUncapped: b.BlockChance,
             SpellBlockPer5AttackBlock: b.SpellBlockPer5AttackBlock, LifeGainedOnBlock: b.LifeGainedOnBlock,
             ManaGainedOnBlock: b.ManaGainedOnBlock, VersatileCombatant: b.VersatileCombatant,
-            AttackBlockLucky: b.AttackBlockLucky, SpellBlockLucky: b.SpellBlockLucky);
+            AttackBlockLucky: b.AttackBlockLucky, SpellBlockLucky: b.SpellBlockLucky, AttackSpeedPct: attackSpeedPct);
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));
