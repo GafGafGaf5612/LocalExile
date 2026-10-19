@@ -392,7 +392,8 @@ sealed class PlayerInventories
                 if (CharacterSaves.FromSaved(p.Item, catalog) is { } item)
                 {
                     inv.ItemsIn(row).Add(new InventoryItem(p.Id, p.X, p.Y, item));
-                    inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
+                    // Stash ids (AccountStash.FirstItemId up) are the account's; the character's own stay below them.
+                    if (p.Id < AccountStash.FirstItemId) inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
                 }
                 else Console.WriteLine($"[gateway] {character}: saved item type 0x{p.Item.Type:x8} is unknown, dropped");
         return inv;

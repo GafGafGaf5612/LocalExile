@@ -217,6 +217,23 @@ G = global / static data.
 | `0x141e7ee30` | Fn | Player component update reader (0x2ba): u16 flags, 0x02 quest flags, 0x08 second set, 0x200 9 bytes, 0x01 experience |
 | `0x141e1c550` | Fn | HideoutDoodad reader (only with type data +0x14e) |
 
+## Stash ([18](18-stash.md))
+| Address | Kind | What |
+|---|---|---|
+| `0x14216cf60` | Fn | stash list by kind: instance +0xc498 personal, +0xc4b0 guild, +0xc4c8 trade (0x68-byte records) |
+| `0x1421ba150` / `0x141d4d1f0` | Fn | tab list read / tab record read |
+| `0x1421a3350` | Fn | S→C 0x136 read (one stash list, case 0x57) |
+| `0x1421a45b0` | Fn | S→C 0xc8 read (tab loaded, case 0x3b) |
+| `0x140dcd5e0` / `0x140dcd780` | Fn | 0x7b kind 1 / 2 listener: open the stash / guild stash, select a tab by affinity |
+| `0x142167010` | Fn | queue C→S 0xc7 (tab contents request); sent by the tick `0x142148880` |
+| `0x141f95fa0` | Fn | C→S 0xc7 write (vtable `0x1435bff20`) |
+| `0x1421670f0` / `0x141f96130` | Fn | C→S 0xcc tab order: build / write |
+| `0x142167370` / `0x141f96c50` | Fn | C→S 0xd1 tab into folder: build / write |
+| `0x140a87830` | Fn | stash panel: build the tab buttons from the list |
+| `0x140a85c30` | Fn | stash panel: tab selected (request or build its page) |
+| `0x140a8d1b0` | Fn | stash panel: refresh on opening (requests the current tab) |
+| `0x14025b420` | Fn | tab settings: rename / recolour |
+
 ## Strings worth searching
 "Connect time to instance server was", "Client-Safe Instance ID = ", "Generating level ", "Instance sent world area
 that does not exist with hash: ", "Area reported by instance does not exist", "Unable to deserialise packet with pid ",
