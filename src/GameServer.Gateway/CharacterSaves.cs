@@ -23,7 +23,7 @@ static class CharacterSaves
     /// (QuestFlags.dat Ids, 12-quests.md §5).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
-        List<string>? QuestFlags = null);
+        List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -83,6 +83,10 @@ static class CharacterSaves
 
     /// <summary>Records the character's allocated passives, keeping the rest of the save.</summary>
     public static void SetPassives(string character, IEnumerable<ushort> nodes) => Update(character, s => s with { Passives = [.. nodes] });
+
+    /// <summary>Records the extra passive skill points from /add_passive_points.</summary>
+    public static void SetExtraPassivePoints(string character, ushort points) =>
+        Update(character, s => s with { ExtraPassivePoints = points });
 
     /// <summary>Records the character's activated waypoints, keeping the rest of the save.</summary>
     public static void SetWaypoints(string character, IEnumerable<string> areaIds) => Update(character, s => s with { Waypoints = [.. areaIds] });
