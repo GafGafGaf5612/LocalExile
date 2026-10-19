@@ -291,4 +291,32 @@ public class PlayerInventoriesTests : IDisposable
 
         Assert.Equal([(Wisdom, 1), (Wisdom, 1), (Fragment, 2)], done.Added.Select(a => (a.Item.TypeHash, (int)a.Item.StackSize)));
     }
+
+    [Fact]
+    public void Consuming_an_item_takes_one_and_removes_the_empty_stack()
+    {
+        var items = NewInventories();
+        var orb = items.Add(PlayerInventories.MainInventory, 0, 0, Wand() with { StackSize = 2 });
+
+        var left = items.ConsumeOne(PlayerInventories.MainInventory, orb.Id);
+        Assert.False(left!.Removed);
+        Assert.Equal((ushort)1, left.Left!.Item.StackSize);
+
+        var gone = items.ConsumeOne(PlayerInventories.MainInventory, orb.Id);
+        Assert.True(gone!.Removed);
+        Assert.Null(gone.Left);
+        Assert.Null(items.ConsumeOne(PlayerInventories.MainInventory, orb.Id));
+    }
+
+    [Fact]
+    public void Refund_points_are_saved_alongside_the_other_passive_points()
+    {
+        CharacterSaves.SetExtraPassivePoints(_character, 2);
+        CharacterSaves.SetRefundPoints(_character, 3);
+
+        var save = CharacterSaves.Load(_character)!;
+
+        Assert.Equal((ushort)3, save.RefundPoints);
+        Assert.Equal((ushort)2, save.ExtraPassivePoints);
+    }
 }

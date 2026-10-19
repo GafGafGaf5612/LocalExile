@@ -251,9 +251,25 @@ public static class InstanceItems
         return new(r.U32(), r.U32(), r.U32(), r.U8(), r.U8(), r.U8(), r.U8());
     }
 
-    // Framed so it does not stop the parser, not handled yet:
-    // C→S 0x2d (class 0x1435c02b8, write 0x141f90340, senders 0x14215f520 / 0x14215f570; 8 bytes): u8, u32, u8 flag (0 / 1
-    // by sender).
+    public const int InventoryRequestLength = 8;
+
+    // C→S 0x2d (class 0x1435c02b8, write 0x141f90340, senders 0x14215f520 / 0x14215f570; 8 bytes): an inventory request,
+    // not mapped yet. The right-click item use is 0x58 below.
+
+    public const ushort UseItemId = 0x58;
+    public const int UseItemLength = 10;
+
+    /// <summary>
+    /// C→S 0x58 (class 0x1435bf8a8, write 0x141f926a0; 10 bytes): use an item that needs no target, such as an Orb of
+    /// Regret. u32 inventory id, u32 item id, both big-endian. The client sends it again while a usable item is held.
+    /// </summary>
+    public sealed record UseItemRequest(uint InventoryId, uint ItemId);
+
+    public static UseItemRequest ReadUseItem(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32());
+    }
 
     public const int ItemActionLength = 14;
 

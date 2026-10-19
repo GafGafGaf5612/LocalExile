@@ -226,12 +226,17 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             var (node, expansion, gold) = InstanceEntities.ReadRefundPassive(bytes);
             Console.WriteLine($"[gateway] {remote} <= 0x0036 refund passive {node} ({(node <= ushort.MaxValue ? Passives.Find((ushort)node)?.Name : null) ?? "unknown"})" +
                 $"{(expansion ? ", expansion node" : "")}, {(gold ? "gold respec" : "refund points")}: {Convert.ToHexString(bytes)}");
-            if (gold && !expansion && node <= ushort.MaxValue)
-                await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Respecialisation", goldRespec: true);
+            if (!expansion && node <= ushort.MaxValue)
+            {
+                if (gold)
+                    await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Respecialisation", goldRespec: true);
+                else
+                    await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Refund points", refundPoints: true);
+            }
             else
             {
-                // Refund points (Orbs of Regret) are not kept yet and cluster jewel nodes do not exist here: put the tree back.
-                Console.WriteLine($"[gateway] {remote} refund refused: {(gold ? "expansion nodes are not supported" : "no refund points")}");
+                // Cluster jewel nodes do not exist here: put the tree back.
+                Console.WriteLine($"[gateway] {remote} refund refused: expansion nodes are not supported");
                 await SendPassives(remote, stream, ciphers, conn);
             }
         }
@@ -262,8 +267,10 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             await HeldOntoItem(remote, stream, ciphers, conn, InstanceItems.ReadItemAction(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceItems.SplitStackId)
             await SplitStack(remote, stream, ciphers, conn, InstanceItems.ReadSplitStack(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.UseItemId)
+            await UseItem(remote, stream, ciphers, conn, InstanceItems.ReadUseItem(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceItems.InventoryRequestId)
-            Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (item message, not handled yet): {Convert.ToHexString(bytes)}");
+            Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (inventory request, not handled yet): {Convert.ToHexString(bytes)}");
         else if (id == InstanceItems.PickUpItemId)
             await PickUpItem(remote, stream, ciphers, conn, InstanceItems.ReadPickUpItem(bytes));
         else if (id == InstanceProtocol.ExitToCharacterSelectId)
@@ -1461,6 +1468,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Visited.UnionWith(save?.Visited ?? []);
         conn.QuestFlags = [.. save?.QuestFlags ?? []];
         conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
+        conn.RefundPoints = save?.RefundPoints ?? 0;
         conn.Gold = save?.Gold ?? 0;
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
@@ -1607,11 +1615,11 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
 // /add_passive_points; the client computes the same from the level in 0x33 and its extra_skill_points field), the
 // allocated nodes and the selected mastery effects. The client allows that many nodes plus the points the allocated
 // nodes grant themselves.
-static (ushort Points, List<ushort> Nodes, Dictionary<ushort, ushort> Masteries) PassiveState(ClientState conn)
+static (ushort Points, ushort RefundPoints, List<ushort> Nodes, Dictionary<ushort, ushort> Masteries) PassiveState(ClientState conn)
 {
     lock (conn.Monsters)
         return ((ushort)Math.Min(ushort.MaxValue, Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints),
-            [.. conn.Passives], new(conn.MasteryEffects));
+            conn.RefundPoints, [.. conn.Passives], new(conn.MasteryEffects));
 }
 
 // Drops the last allocated passives beyond the level's points (call under the Monsters lock).
@@ -1632,18 +1640,21 @@ static async Task SendPassives(string remote, NetworkStream stream, ConnectionCi
 
 static (byte[] Bytes, string Label) PassivesMessage(ClientState conn)
 {
-    var (points, nodes, masteries) = PassiveState(conn);
+    var (points, refundPoints, nodes, masteries) = PassiveState(conn);
     int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
     return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, (byte)Skills.ClassFor(conn.ClassRow).IntegerId, nodes,
-            questPoints: conn.ExtraPassivePoints, masteryEffects: masteries),
-        $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), {nodes.Count} allocated, {unspent} unspent");
+            questPoints: conn.ExtraPassivePoints, refundPoints: refundPoints, masteryEffects: masteries),
+        $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), " +
+        $"{refundPoints} refund point(s), {nodes.Count} allocated, {unspent} unspent");
 }
 
 // Allocates (or, with allocate false, refunds) passive nodes: checked against the tree's nodes and the character's
 // points, then saved, applied to the stats and sent back (0x3d). The client asks only for nodes connected to its tree.
-// A gold respec (goldRespec) refunds only allocated nodes and charges their cost (PassiveTree.GoldRespecCost).
+// A gold respec (goldRespec) refunds only allocated nodes and charges their cost (PassiveTree.GoldRespecCost); a
+// refund-point refund (refundPoints) spends one saved point per node. /reset_passives sets neither.
 static async Task<string?> ChangePassives(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    IReadOnlyList<ushort> nodes, bool allocate, string why, ushort? masteryEffect = null, bool goldRespec = false)
+    IReadOnlyList<ushort> nodes, bool allocate, string why, ushort? masteryEffect = null, bool goldRespec = false,
+    bool refundPoints = false)
 {
     string? error = null;
     List<ushort> now;
@@ -1651,6 +1662,8 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
     string? effectLabel = null;
     long cost = 0;
     uint gold;
+    ushort refundsNow = 0;
+    int refundsSpent = 0;
     lock (conn.Monsters)
     {
         var next = new List<ushort>(conn.Passives);
@@ -1669,14 +1682,21 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
                 effectLabel = $"{effect.Id} ({effect.Hash})";
             }
             else if (allocate) { if (!next.Contains(n)) next.Add(n); }
-            else if (goldRespec && !next.Contains(n)) { error = $"{node.Name} ({n}) is not allocated"; break; }
-            else { next.Remove(n); effects.Remove(n); }
+            else if ((goldRespec || refundPoints) && !next.Contains(n)) { error = $"{node.Name} ({n}) is not allocated"; break; }
+            else
+            {
+                next.Remove(n);
+                effects.Remove(n);
+                if (refundPoints) refundsSpent++;
+            }
         }
         if (error is null && goldRespec)
         {
             cost = Passives.GoldRespecCost(nodes, conn.Pools.Level);
             if (cost > conn.Gold) error = $"not enough gold ({cost} needed, {conn.Gold} held)";
         }
+        if (error is null && refundPoints && refundsSpent > conn.RefundPoints)
+            error = $"not enough refund points ({refundsSpent} needed, {conn.RefundPoints} held)";
         if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints + Passives.PointsGranted(next))
             error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
         if (error is null)
@@ -1684,6 +1704,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
             conn.Passives = next;
             conn.MasteryEffects = effects;
             conn.Gold -= (uint)cost;
+            if (refundPoints) conn.RefundPoints -= (ushort)refundsSpent;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
@@ -1692,14 +1713,18 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         now = [.. conn.Passives];
         effectsNow = new(conn.MasteryEffects);
         gold = conn.Gold;
+        refundsNow = conn.RefundPoints;
     }
     Console.WriteLine($"[gateway] {remote} passives {(allocate ? "allocate" : "refund")} [{string.Join(", ", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}"))}]" +
         (effectLabel is null ? "" : $" mastery {effectLabel}") + $" ({why}): " +
-        (error ?? $"{now.Count} allocated, life {conn.Pools.Life}, mana {conn.Pools.Mana}" + (goldRespec ? $", {cost} gold paid, {gold} left" : "")));
+        (error ?? $"{now.Count} allocated, life {conn.Pools.Life}, mana {conn.Pools.Mana}" +
+            (goldRespec ? $", {cost} gold paid, {gold} left" : "") +
+            (refundPoints ? $", {refundsSpent} refund point(s) spent, {refundsNow} left" : "")));
     if (error is null)
     {
         CharacterSaves.SetPassives(CharacterName(conn), now);
         CharacterSaves.SetMasteryEffects(CharacterName(conn), effectsNow);
+        if (refundPoints) CharacterSaves.SetRefundPoints(CharacterName(conn), refundsNow);
         if (goldRespec)
         {
             CharacterSaves.SetGold(CharacterName(conn), gold);
@@ -2213,9 +2238,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("passives", "/passives (passive skill points and the allocated passives)", async _ =>
     {
-        var (points, nodes, _) = PassiveState(conn);
+        var (points, refundPoints, nodes, _) = PassiveState(conn);
         int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
-        await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent.\n" +
+        await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent, {refundPoints} refund point(s).\n" +
             string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
     })
     .Add("gold", "/gold <amount> (dev: add gold, or take it with a negative amount; saved)", async args =>
@@ -2240,6 +2265,19 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await SendPassives(remote, stream, ciphers, conn);
         await conn.Commands!.Reply($"{add} extra passive point(s) added; {total} extra total.");
     })
+    .Add("add_refund_points", "/add_refund_points <n> (dev: add n refund points, saved)", async args =>
+    {
+        if (args.Length == 0 || !int.TryParse(args[0], out int add) || add <= 0) throw new ArgumentException("a positive number");
+        ushort total;
+        lock (conn.Monsters)
+        {
+            conn.RefundPoints = (ushort)Math.Min(ushort.MaxValue, conn.RefundPoints + add);
+            total = conn.RefundPoints;
+        }
+        CharacterSaves.SetRefundPoints(CharacterName(conn), total);
+        await SendPassives(remote, stream, ciphers, conn);
+        await conn.Commands!.Reply($"{add} refund point(s) added; {total} total.");
+    })
     .Add("add_passive", "/add_passive <PassiveSkillGraphId> (dev: allocate one passive node)", async args =>
     {
         if (args.Length == 0 || !ushort.TryParse(args[0], out ushort node)) throw new ArgumentException("a PassiveSkillGraphId");
@@ -2248,7 +2286,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("reset_passives", "/reset_passives (refunds every passive, saved)", async _ =>
     {
-        var (_, nodes, _) = PassiveState(conn);
+        var (_, _, nodes, _) = PassiveState(conn);
         await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: false, "/reset_passives");
         await conn.Commands!.Reply($"{nodes.Count} passive(s) refunded.");
     })
@@ -3094,6 +3132,63 @@ static async Task SplitStack(string remote, NetworkStream stream, ConnectionCiph
         items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: hold {held.Item.StackSize} as item {held.Id}");
 }
 
+// C→S 0x58: use an item that needs no target (a right-click), such as an Orb of Regret: one item becomes one refund point.
+static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceItems.UseItemRequest use, string hex)
+{
+    const string Regret = "Metadata/Items/Currency/CurrencyPassiveRefund";
+    var items = ItemsOf(conn);
+    byte? row = null;
+    foreach (uint inventory in new[] { use.InventoryId, use.InventoryId + 1 })
+        if (PlayerInventories.Row(inventory) is byte candidate && items.Items(candidate).Any(i => i.Id == use.ItemId))
+        {
+            row = candidate;
+            break;
+        }
+    if (row is not byte r || items.Items(r).FirstOrDefault(i => i.Id == use.ItemId) is not { } item)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: no such item: {hex}");
+        return;
+    }
+    if (Items.ByHash(item.Item.TypeHash) is not { } type)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: unknown type 0x{item.Item.TypeHash:x8}: {hex}");
+        return;
+    }
+    if (type.Id != Regret)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: {type.Name} is not handled: {hex}");
+        return;
+    }
+    ushort refunds;
+    lock (conn.Monsters)
+    {
+        if (conn.RefundPoints == ushort.MaxValue)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: refund points are already at the maximum");
+            return;
+        }
+        refunds = ++conn.RefundPoints;
+    }
+    var taken = items.ConsumeOne(r, use.ItemId);
+    if (taken is null)
+    {
+        lock (conn.Monsters) conn.RefundPoints--;
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: item {use.ItemId} disappeared: {hex}");
+        return;
+    }
+    CharacterSaves.SetRefundPoints(CharacterName(conn), refunds);
+    uint inventoryId = PlayerInventories.InventoryId(r);
+    // Every change removes the id first: the client keeps an item by id, so a stack that only shrinks needs the remove
+    // and the add of the same id with its new Stack component (as SendMerged does).
+    await Send(remote, stream, ciphers,
+        InstanceItems.InventoryChange(inventoryId, items.NextRevision(r), [item.Id],
+            taken.Left is { } left ? [left] : []),
+        $"0x00bf inventory {inventoryId}: {type.Name} used" + (taken.Left is { } now ? $", {now.Item.StackSize} left" : ", stack empty"));
+    await SendPassives(remote, stream, ciphers, conn);
+    Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name} ({use.ItemId}): {refunds} refund point(s)");
+}
+
 // C→S 0x4a: the held item clicked on an item. A stack of the same type with room takes what fits (PlayerInventories.MergeOnto,
 // AccountStash.Merge); anything else (currency on an item …) is not handled yet.
 static async Task HeldOntoItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.ItemAction a, string hex)
@@ -3849,6 +3944,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public Dictionary<ushort, ushort> MasteryEffects = [];
     // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.
     public ushort ExtraPassivePoints;
+    // Refund points (0x33's first u16; Orbs of Regret), saved with the character; /add_refund_points grants them for now.
+    public ushort RefundPoints;
     // The character's gold (S→C 0x2a9), saved with the character; /gold changes it.
     public uint Gold;
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
