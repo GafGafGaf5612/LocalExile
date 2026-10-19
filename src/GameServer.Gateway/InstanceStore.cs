@@ -1,7 +1,7 @@
 using GameServer.Core.Protocol.Instance;
 
 /// <summary>
-/// What the Gateway keeps per live area instance across connections: its ground items (issue #5). An instance is known by
+/// What the Gateway keeps per live area instance across connections: its ground items (issue #5) and monsters (#12). An instance is known by
 /// Auth's id and creation time (Auth's ids restart at 1 when it restarts). Kept in memory, so it survives client crashes,
 /// logouts and disconnects; it is wiped, like Auth's instance, once no connection has been in it for the lifetime
 /// (<c>InstanceRegistry.Lifetime</c>). Agents/docs/protocol/13-items.md §5.
@@ -36,6 +36,9 @@ sealed class InstanceStore(TimeProvider clock, TimeSpan lifetime)
 sealed class InstanceState
 {
     public InstanceGround Ground { get; } = new();
+    /// <summary>The living monsters as the last connection left them (issue #12), or null before the first connection
+    /// placed the area's packs.</summary>
+    public volatile List<SavedMonster>? Monsters;
     internal int Connections;
     internal DateTimeOffset? EmptySince;
 }
@@ -73,4 +76,17 @@ sealed class InstanceGround
     {
         lock (_items) return [.. _items.Select(e => (e.Key, e.Value))];
     }
+}
+
+/// <summary>A living monster of an instance, as it was when the last connection left: re-created there with this life on
+/// the next entry, idle until the player comes in range. Dead monsters are not kept, so they stay dead.</summary>
+// shortcut: a /spawn_mob name is not kept (packs have none), add it when named monsters matter.
+sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life)
+{
+    public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now) =>
+        [.. monsters.Where(m => !m.Dead && m.Variety is not null).Select(m =>
+        {
+            var (x, y) = m.Walk.Position(now);
+            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life);
+        })];
 }

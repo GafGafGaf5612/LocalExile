@@ -18,6 +18,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Latency acks (0x1b/0x1c) and the HNC side channel, visibility (wake zone), click-to-move | Gateway, `Hnc.cs` | [07](docs/protocol/07-latency-visibility-movement.md) |
 | Area transitions in every area, with their destinations, models (the arch highlighted on hover), rotation and height: fixed layouts from the atlas, generated layouts from the walk-map recorder's capture; verified town ↔ The Coast ↔ The Tidal Island and The Coast ↔ The Mud Flats; area change through them; Ctrl+click opens the Instance Manager (list, join, create); `/goto <area>` | Gateway (`AreaTransitionCatalog.cs`), `scripts/walkmaps`, `scripts/re/atlas`, Auth's instance registry | [08](docs/protocol/08-area-transitions.md), [09](docs/protocol/09-area-change.md) |
 | Arrival points: entering through an exit (or `/goto`) puts the player next to the exit back; The Twilight Strand → Lioneye's Watch arrives at the town's `entrance1`; Resurrect at Checkpoint revives there | `AreaLayout.Arrival`, Gateway | [09](docs/protocol/09-area-change.md) §4 |
+| Monsters belong to the area instance: re-entering it finds the living ones where they were, with their damage, and the dead stay dead; a new instance gets fresh packs | `InstanceStore.cs`, `PopulateArea`, Gateway | [14](docs/protocol/14-monster-packs.md) §2 |
 | Ground items belong to the area instance: dropped items and loot stay where they lay across logouts, disconnects and client crashes until the instance expires; ids from 0x100000; one pickup per item | `InstanceStore.cs`, Gateway | [13](docs/protocol/13-items.md) §5 |
 | Instances: one per town (all 12 act towns from WorldAreas `IsTown`); other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs`, `WorldAreaTowns.cs` | [09](docs/protocol/09-area-change.md) |
 | Walk maps and area transitions captured from the client on first visit; the Gateway uses them for position estimates, spawns and area transitions | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8, [08](docs/protocol/08-area-transitions.md) §7 |
@@ -74,7 +75,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   ([12](docs/protocol/12-quests.md)). Quest objects with extra components (the cave entrance) are sent as plain
   AreaTransition. Quests are not implemented.
 - Item mods, rarity, flask and currency use; support gems and links; gem levels
-  ([13](docs/protocol/13-items.md) "Open"). Monsters are per connection: re-entering an instance refills its packs.
+  ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
   Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).
 - Waypoint travel to a generated area without a `-Walkmaps` capture for its seed puts the player at an arbitrary cell
@@ -88,7 +89,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Tests
 
 `dotnet test tests/GameServer.Core.Tests` (230 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (12: inventory moves, arrival points, instance ground items) pass.
+`tests/GameServer.Gateway.Tests` (15: inventory moves, arrival points, instance ground items and monsters) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

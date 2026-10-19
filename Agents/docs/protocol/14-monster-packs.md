@@ -36,8 +36,16 @@ around them; members stand within 9 cells. The roll is seeded by (area hash, see
 
 `SpawnMonster` is `/spawn_mob`'s path ([10](10-chat-and-commands.md) §5): 0x20 type at the area level, 0x2b9 with the
 rarity in ObjectMagicProperties, 0x1a9 wake zone, and the monster joins the AI (chase, first granted effect as its
-attack). Life is the level's base life (no rarity or mod bonuses yet). Monsters are per connection, created after the
-player (0x7d → `SendPlayer` → skill bar → `PopulateArea`); towns and areas without a walk map get none.
+attack). Life is the level's base life (no rarity or mod bonuses yet). Monsters are created after the player (0x7d →
+`SendPlayer` → skill bar → `PopulateArea`); towns and areas without a walk map get none.
+
+**An instance keeps its monsters** (#12), as in the real game. When a connection closes, the instance
+(`InstanceStore`) saves each living monster's variety, level, rarity, team, life and current position (its walk
+estimate, `SavedMonster.Save`); dead ones are not saved. The next connection into that instance re-creates exactly
+those monsters instead of planning the packs: where they were (a dragged group stays a group), idle until the player
+comes within aggro range, and a damaged one gets its life with 0x1b1 right after its 0x2b9. Only a new instance plans
+fresh packs. The saved state goes with the instance's ground items: kept in the Gateway's memory and wiped when the
+instance expires.
 `Game_MONSTERS=0` turns it off. Only unique and rare monsters are logged one by one; a summary line lists the rest.
 
 ## 3. Room points: where the camp is
@@ -79,6 +87,6 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
 - `Grounds` (Drowned on wet beach) is not checked; we have no ground-type grid.
 - Emerge packs (Gravel Eaters) are skipped until the Emerge action is known.
 - Fire Fury has no boss life bar and uses only her first granted effect; monsters give no experience or loot.
-- Monsters are per connection and come back on every entry, also into the same instance.
+- Kept monsters lose their corpses (a corpse is removed 10 s after death anyway) and a `/spawn_mob` name.
 - Each new (area, seed) needs a `-Walkmaps` visit for its room points; without the capture there is no unique boss
   (the log says so).

@@ -68,7 +68,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
     Console.WriteLine($"[gateway] CONNECT {remote} at {DateTime.Now:HH:mm:ss.fff}");
     long total = 0;
     uint ticket = 0;
-    InstanceState? place = null;
+    ClientState? left = null;
     try
     {
         using (client)
@@ -109,7 +109,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
 
             // Anything after the opening was already encrypted by the client.
             var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
-            place = conn.Instance;
+            left = conn;
             conn.Commands = Commands(remote, stream, ciphers, conn);
             conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
@@ -134,7 +134,13 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
     {
         Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
     }
-    if (place is not null) Instances.Leave(place);
+    if (left is not null)
+    {
+        // The instance keeps its monsters as they are now, for the next connection (#12).
+        if (left.MonstersPlaced)
+            lock (left.Monsters) left.Instance.Monsters = SavedMonster.Save(left.Monsters.Values, left.Clock.Elapsed.TotalSeconds);
+        Instances.Leave(left.Instance);
+    }
     if (ticket != 0) await InstanceControl.CallAsync(new ControlRequest { Op = "leave", Ticket = ticket });
     Console.WriteLine($"[gateway] DISCONNECT {remote} total={total}");
 }
@@ -315,7 +321,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
 // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
 // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
 static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
-    byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true)
+    byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null)
 {
     uint id = conn.NextObjectId++;
     // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
@@ -344,7 +350,13 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
     lock (conn.Monsters)
         conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
             variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
-        { Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity };
+        {
+            Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
+            Life = Math.Min(damagedLife ?? life, life),
+        };
+    // A kept monster that was hit: its life as a hit sets it (0x1b1).
+    if (damagedLife < life)
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, damagedLife.Value), !log ? null : $"0x01b1 monster 0x{id:x} life {damagedLife}/{life}");
 }
 
 // The area's monsters, once the player is in (Agents/docs/protocol/14-monster-packs.md): MonsterPacks scattered over the
@@ -353,7 +365,21 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
 static async Task PopulateArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     var layout = conn.Layout;
-    if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0" || layout.Walkable is not { } walkable) return;
+    if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0") return;
+    // An instance entered before keeps its monsters as the last connection left them: where they were, with their
+    // damage; the dead stay dead (#12).
+    if (conn.Instance.Monsters is { } saved)
+    {
+        conn.MonstersPlaced = true;
+        foreach (var s in saved)
+            if (Monsters.Find(s.Variety.ToString()) is { } kept)
+                await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life);
+        Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: {saved.Count} kept from the instance");
+        return;
+    }
+    // The packs need the walk map; until it exists nothing is placed, so nothing is kept either.
+    if (layout.Walkable is not { } walkable) return;
+    conn.MonstersPlaced = true;
     if (Packs.For(layout.Id) is not { } area || (area.Scattered.Count == 0 && area.Bosses.Count == 0)) return;
     if (Monsters.Error is { } error) { Console.WriteLine($"[gateway] {remote} area monsters: {error}"); return; }
     // Emerge monsters (Gravel Eater …) stay hidden without the Emerge action the server does not send yet.
@@ -2506,6 +2532,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Items on the ground by object id (dropped with C→S 0x29).
     /// <summary>The area instance's state shared across connections: its ground items.</summary>
     public InstanceState Instance { get; init; } = null!;
+    /// <summary>This connection placed or restored the instance's monsters, so it saves them when it closes.</summary>
+    public bool MonstersPlaced;
     public volatile bool AiEnabled = true, Closed;
     // Whether the lockstep warning was shown on this connection.
     public bool WarnedLockstep;
