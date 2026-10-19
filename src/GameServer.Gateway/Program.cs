@@ -1172,6 +1172,7 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
         ("base_maximum_mana", (int)pools.Mana), ("maximum_mana", (int)pools.Mana), ("accuracy_rating", pools.Accuracy),
         ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
         ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
+        ("movement_velocity_+%", pools.MovementVelocityPct),
         // Resistance display: the client shows fire_damage_resistance_% as the capped value and
         // uncapped_fire_damage_resistance_% (and the other three) in parentheses as the overcap. The passives' base
         // resistances are already summed into the pools, so zero the all-elements input to avoid counting it twice. The
@@ -1301,6 +1302,7 @@ static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiph
     {
         TrimPassives(conn, level);
         conn.Pools = PoolsFor(conn, level);
+        conn.ApplyMovementSpeed();
     }
     CharacterSaves.SetPassives(CharacterName(conn), PassiveState(conn).Nodes);
     Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}, {Progression.PassivePoints(level)} passive point(s))");
@@ -1337,6 +1339,7 @@ static void LoadProgress(ClientState conn, int level)
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
         conn.Pools = PoolsFor(conn, level);
+        conn.ApplyMovementSpeed();
     }
 }
 
@@ -1373,7 +1376,8 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats)
         LightningMaxResistance: allMax + allElemMax + Get("base_maximum_lightning_damage_resistance_%"),
         ChaosMaxResistance: allMax + Get("base_maximum_chaos_damage_resistance_%"),
         SpellSuppressionChance: Get("base_spell_suppression_chance_%"),
-        SpellSuppressionEffect: Get("base_spell_damage_%_suppressed"));
+        SpellSuppressionEffect: Get("base_spell_damage_%_suppressed"),
+        MovementVelocityPct: Get("base_movement_velocity_+%"));
 }
 
 // The character's passive skill points (one per level after the first, plus the extra points from
@@ -1434,6 +1438,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         {
             conn.Passives = next;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
+            conn.ApplyMovementSpeed();
             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
             conn.PlayerMana = Math.Min(conn.PlayerMana, conn.Pools.Mana);
         }
@@ -1529,6 +1534,7 @@ static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers 
     {
         conn.God = on;
         conn.Pools = PoolsFor(conn, conn.Pools.Level);
+        conn.ApplyMovementSpeed();
         conn.PlayerLife = on ? conn.PlayerMaxLife : Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
         conn.PlayerMana = on ? conn.Pools.Mana : Math.Min(conn.PlayerMana, conn.Pools.Mana);
     }
@@ -1851,10 +1857,11 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     {
         int percent = int.Parse(args[0]);
         if (percent is < 10 or > 1000) throw new ArgumentException("10 to 1000");
-        conn.Walk.SetSpeed(WalkSpeed * percent / 100, conn.Clock.Elapsed.TotalSeconds);
-        lock (conn.Monsters) conn.PlayerStats[StatKeys.MovementVelocityPct] = percent - 100;
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.MovementVelocityPct, percent - 100)]),
-            $"0x01b3 stats: movement_velocity_+% (key {StatKeys.MovementVelocityPct}) = {percent - 100}");
+        int totalPct = conn.Pools.MovementVelocityPct + percent - 100;
+        conn.Walk.SetSpeed(WalkSpeed * (100 + totalPct) / 100, conn.Clock.Elapsed.TotalSeconds);
+        lock (conn.Monsters) conn.PlayerStats[StatKeys.MovementVelocityPct] = totalPct;
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.MovementVelocityPct, totalPct)]),
+            $"0x01b3 stats: movement_velocity_+% (key {StatKeys.MovementVelocityPct}) = {totalPct} ({conn.Pools.MovementVelocityPct} passive + {percent - 100} dev)");
     })
     .Add("set_stat", "/set_stat <stat name or client key> <value> (e.g. attack_speed_+% 100)", async args =>
     {
@@ -3104,7 +3111,12 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     {
         Layout = better;
         Walk = NewWalk(better);
+        ApplyMovementSpeed();
     }
+
+    /// <summary>Applies the passive movement speed to the server's walk estimate; /set_speed is a dev override.</summary>
+    public void ApplyMovementSpeed() =>
+        Walk.SetSpeed(Math.Max(1, Program.WalkSpeed * (100 + Pools.MovementVelocityPct) / 100), Clock.Elapsed.TotalSeconds);
 
     /// <summary>Replaces an area transition of this connection's layout (dev changes; the walk estimate keeps going).</summary>
     public void ReplaceAreaTransition(uint id, AreaTransitionObject transition) =>

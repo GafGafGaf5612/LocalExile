@@ -79,6 +79,13 @@ cell) at **37 cells/s** (measured with Frida: ~7.3 cells per 200 ms, = `base_spe
 recorded client walks, its end points are within ~4.5 cells of the client's; live, the reported positions matched the
 client's within ~4 cells. Grid: `data/walkability/1_1_town.bin` (the Frida dump, untracked).
 
+**Passive movement speed.** The passives' `base_movement_velocity_+%` are summed into `CharacterStats.Pools` and the
+walk estimate uses `37 × (1 + pct / 100)` cells/s; the same total is sent as the client's `movement_velocity_+%`, so the
+client and server walk at the same speed. `ApplyMovementSpeed` runs on login, level, passive changes and area changes;
+`/set_speed` adds its percentage on top of the passive total.
+Only unconditional `increased Movement Speed` passives are modelled: action speed, more multipliers, gear/buff
+`movement_velocity_+%`, conditional nodes and the `movement_velocity_cap` constant are not applied yet.
+
 **Compact int** (writer `0x141fa3c50`): signed, 1 byte for −0x40..0x3f (value & 0x7f), else 2/3/4 bytes with first-byte
 prefixes 0x80/0xc0/0xe0 carrying the top 6/5/4 bits, else 0xf0 + 4 bytes; big-endian (`InstanceProtocol.CompactInt`).
 
