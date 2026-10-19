@@ -82,12 +82,16 @@ static async Task Serve(LoginServerKeys keys)
     var listener = new TcpListener(bind, port);
     listener.Start();
     var keyring = InstanceKeyring.LoadOrCreate(Environment.GetEnvironmentVariable("Game_INSTANCE_SECRET") ?? Path.Combine("data", "instance-secret.bin"));
+    // Every town of the game data (one shared instance each, seed 1); only Lioneye's Watch without data/tables.
+    var towns = GameServer.Core.World.WorldAreaTowns.Load(Path.Combine("data", "tables", "WorldAreas.json"));
     // Non-town seeds are pinned to 1 (the Gateway only knows a generated layout from a per-seed client dump);
     // Game_RANDOM_SEEDS=1 gives every new instance its own random seed.
     var registry = new GameServer.Core.World.InstanceRegistry
     {
         SeedFor = Environment.GetEnvironmentVariable("Game_RANDOM_SEEDS") == "1" ? null : _ => 1,
+        Towns = towns.Select(t => t.Hash16).ToHashSet(),
     };
+    Console.WriteLine($"[auth] towns: {towns.Count} ({string.Join(", ", towns.Select(t => t.Id))})");
     var directory = new InstanceDirectory(registry, accounts);
     _ = directory.ServeControlAsync(InstanceControl.Port);
     Console.WriteLine($"[auth] login server on tcp/{port}");
