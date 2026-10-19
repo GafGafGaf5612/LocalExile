@@ -178,13 +178,15 @@ sealed class SkillCatalog(string folder = "data")
         /// sent, and the swings came every ~757 ms = 833 / 1.1).</summary>
         public const int DualWieldAttackSpeedPct = 10;
 
-        /// <summary>The attack's total increased attack speed: dual wielding's 10 plus the player's attack speed stats
-        /// (main_hand_attack_speed_+% set by hand counts as one more input).</summary>
+        /// <summary>The final main_hand_attack_speed_+% (passives and dual wielding, from CharacterStats), or the raw
+        /// stats' sum when no final value was sent.</summary>
         public int IncreasedAttackSpeed(IReadOnlyDictionary<uint, int>? player)
         {
+            // The server's stats carry the final value (passives, weapon conditions, dual wielding's 10% more).
+            // The fallback is for callers that only have the raw stats.
+            if (player?.TryGetValue(StatKeys.MainHandAttackSpeedPct, out int final) == true) return final;
             int increased = DualWieldAttackSpeedPct;
-            foreach (uint k in (uint[])[StatKeys.AttackSpeedPct, StatKeys.MeleeAttackSpeedPct, StatKeys.MainHandAttackSpeedPct,
-                StatKeys.UnarmedMeleeAttackSpeedPct])
+            foreach (uint k in StatKeys.AttackSpeedInputs)
                 increased += player?.GetValueOrDefault(k) ?? 0;
             return increased;
         }
@@ -208,7 +210,7 @@ sealed class SkillCatalog(string folder = "data")
         }
 
         /// <summary>The attack time: base / (1 + increased / 100), as the client computes the swing from the skill's
-        /// main_hand_attack_speed_+% (more multipliers are not modelled), at least one server tick
+        /// main_hand_attack_speed_+% (the final value already includes more multipliers), at least one server tick
         /// (<see cref="Program.TickSeconds"/>: at most 30 attacks per second).</summary>
         public double AttackSeconds(IReadOnlyDictionary<uint, int>? player) =>
             Math.Max(Program.TickSeconds, AttackMs / 1000.0 / Math.Max(0.01, 1 + IncreasedAttackSpeed(player) / 100.0));
@@ -223,13 +225,19 @@ sealed class SkillCatalog(string folder = "data")
         public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null)
         {
             var (min, max) = Damage(player);
+            double attacksPerSecond = 1 / AttackSeconds(player);
+            double averageHit = (min + max) / 2.0;
             return
             [
                 (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
                 (StatKeys.MainHandMinTotal, min), (StatKeys.MainHandMaxTotal, max),
                 (StatKeys.MainHandAttackDurationMs, AttackMs), (StatKeys.MainHandTotalAttackDurationMs, AttackMs),
                 (StatKeys.MainHandAttackSpeedPct, IncreasedAttackSpeed(player)),
-                (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 / AttackSeconds(player))),
+                (StatKeys.SkillUsesMainHand, 1),
+                (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 * attacksPerSecond)),
+                // The character panel's DPS and Damage per Use rows read these; the client derives neither.
+                (StatKeys.HundredTimesDamagePerSecond, (int)Math.Round(100 * averageHit * attacksPerSecond)),
+                (StatKeys.DisplayHundredTimesDamagePerSkillUse, (int)Math.Round(100 * averageHit)),
                 (StatKeys.MainHandBaseMaxAttackDistance, Range), (StatKeys.MainHandMaxAttackDistance, Range),
             ];
         }

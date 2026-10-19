@@ -85,6 +85,9 @@ held (live, first try). The Gateway sends the class's unarmed weapon (Characters
 | 0x142 | main_hand_base_weapon_attack_duration_ms |
 | 0x221a | main_hand_total_base_weapon_attack_duration_ms |
 | 0x2a6 | hundred_times_attacks_per_second |
+| 0x2a7 | hundred_times_damage_per_second |
+| 0x7fc | display_hundred_times_damage_per_skill_use |
+| 0x1e70 | skill_uses_main_hand (1: the panel's MH_* rows) |
 | 0x126 | main_hand_attack_speed_+% |
 | 0x146, 0x4d3 | main_hand_base_maximum_attack_distance, main_hand_maximum_attack_distance |
 
@@ -96,14 +99,23 @@ uses:
   getter answers **10**: unarmed attacks alternate hands, i.e. count as dual wielding, worth 10% attack speed. So the
   Witch's real unarmed swing is 833 / 1.1 ≈ 757 ms.
 - The panel's **Attacks per Second** is `hundred_times_attacks_per_second / 100`. The panel caches it: it shows a new
-  value only after the skill is selected again in the panel.
+  value only after the skill is selected again in the panel. After a passive allocation it stays stale even when the
+  panel or its tab is reopened; only a relog rebuilds the character sheet (live 2026-10-19). The server's stats and
+  the actual swing are already updated.
 - The client walks into range by itself using `main_hand_maximum_attack_distance` (8 cells for the Witch).
 
-`SkillCatalog.Unarmed.Stats(player)` computes them: increased = 10 + `attack_speed_+%` + `melee_attack_speed_+%` +
-`unarmed_melee_attack_speed_+%` (+ a hand-set `main_hand_attack_speed_+%`), attack time = base / (1 + increased / 100),
-at least one server tick (`Program.TickRate` = 30/s, so at most 30 attacks per second), and
-`hundred_times_attacks_per_second` = 100 / attack time. "More" multipliers are not modelled. `/set_stat` (which takes
-stat names now) records the stat for the player and sends the player's stats (0x1b3) and the skill again.
+`CharacterStats`/`PassiveBonus` compute the final attack speed from the player's passives: generic
+`attack_speed_+%`, `melee_attack_speed_+%`, one-/two-handed melee, all one-handed, `axe_` / `sword_` / `mace_` /
+`claw_` / `dagger_` / `wand_` / `bow_` / `staff_attack_speed_+%`, shield and dual-wield stats. Dual wielding (and
+unarmed, which counts as dual wielding for this bonus) adds PoB's `dual_wield_inherent_attack_speed_+%_final` 10% more.
+The increased and more parts are combined into one integer `main_hand_attack_speed_+%` (75% increased and 10% more
+become 93%), which `SkillCatalog.Unarmed.Stats(player)` sends. Attack time = base / (1 + that / 100), at least one
+server tick (`Program.TickRate` = 30/s, so at most 30 attacks per second), and
+`hundred_times_attacks_per_second` = 100 / attack time. The panel's **Damage per Second** is the average hit × APS
+(`hundred_times_damage_per_second`) and **Damage per Use** is the average hit
+(`display_hundred_times_damage_per_skill_use`), both in hundredths. `/set_stat` records raw attack-speed inputs and adds
+them on top of the passives, then sends the stats (0x1b3) and the skill again. Minion, totem and timed/conditional
+attack-speed stats are not modelled.
 
 **The character's own stats** (`CharacterStats.For`, sent by `ClassAttributes` as final values, before passives and
 items): the per-level values come from `Metadata/Characters/Character.ot` (`life_per_level` 12, `mana_per_level` 6,
