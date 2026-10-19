@@ -48,6 +48,19 @@ public class DamageModelTests
     }
 
     [Fact]
+    public void Lucky_and_unlucky_suppression_roll_twice()
+    {
+        Assert.Equal(75.0, DamageModel.EffectiveSuppressionChance(50, lucky: true), 3);
+        Assert.Equal(25.0, DamageModel.EffectiveSuppressionChance(50, unlucky: true), 3);
+        Assert.Equal(100.0, DamageModel.EffectiveSuppressionChance(100, lucky: true), 3);
+        Assert.Equal(0.0, DamageModel.EffectiveSuppressionChance(0, lucky: true), 3);
+        Assert.True(DamageModel.Suppresses(50, 74, lucky: true));
+        Assert.False(DamageModel.Suppresses(50, 75, lucky: true));
+        Assert.True(DamageModel.Suppresses(50, 24, unlucky: true));
+        Assert.False(DamageModel.Suppresses(50, 25, unlucky: true));
+    }
+
+    [Fact]
     public void Block_is_capped_at_90()
     {
         Assert.True(DamageModel.Blocks(75, 74.9));

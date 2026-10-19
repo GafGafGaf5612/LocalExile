@@ -30,8 +30,19 @@ public static class DamageModel
     /// <summary>Path of Building's <c>SuppressionEffect</c>: a suppressed spell hit takes 40% less damage.</summary>
     public const int SpellSuppressionEffect = 40;
 
-    /// <summary>Whether a Spell Suppression roll succeeds; <paramref name="roll"/> is 0..99.</summary>
-    public static bool Suppresses(int chance, int roll) => roll < Math.Clamp(chance, 0, SpellSuppressionChanceCap);
+    /// <summary>Whether a Spell Suppression roll succeeds; <paramref name="roll"/> is 0..99. Lucky and unlucky roll
+    /// twice: lucky keeps the better roll (1 − (1 − p)²), unlucky the worse (p²), as PoB's suppressRolls.</summary>
+    public static bool Suppresses(int chance, int roll, bool lucky = false, bool unlucky = false) =>
+        roll < EffectiveSuppressionChance(chance, lucky, unlucky);
+
+    /// <summary>The chance after a lucky or unlucky suppression roll, capped by <see cref="SpellSuppressionChanceCap"/>.</summary>
+    public static double EffectiveSuppressionChance(int chance, bool lucky = false, bool unlucky = false)
+    {
+        double p = Math.Clamp(chance, 0, SpellSuppressionChanceCap) / 100.0;
+        if (lucky) p = 1 - (1 - p) * (1 - p);
+        else if (unlucky) p *= p;
+        return p * 100;
+    }
 
     /// <summary>A successful suppression's damage after the suppression effect, rounded to the nearest point. PoB does
     /// not cap the effect itself (passives can raise it above 40); damage cannot go below zero.</summary>

@@ -1485,7 +1485,9 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
     pools = pools with
     {
         AttackBlockLucky = pools.AttackBlockLucky || conn.ForceAttackBlockLucky,
-        SpellBlockLucky = pools.SpellBlockLucky || conn.ForceSpellBlockLucky
+        SpellBlockLucky = pools.SpellBlockLucky || conn.ForceSpellBlockLucky,
+        SpellSuppressionLucky = pools.SpellSuppressionLucky || conn.ForceSpellSuppressionLucky,
+        SpellSuppressionUnlucky = pools.SpellSuppressionUnlucky || conn.ForceSpellSuppressionUnlucky
     };
     int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
     int rawAttack = pools.BlockChanceUncapped + shieldBlock;
@@ -1585,6 +1587,8 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         ChaosMaxResistance: allMax + Get("base_maximum_chaos_damage_resistance_%"),
         SpellSuppressionChance: Get("base_spell_suppression_chance_%"),
         SpellSuppressionEffect: Get("base_spell_damage_%_suppressed"),
+        SpellSuppressionLucky: Get("spell_suppression_chance_is_lucky") != 0,
+        SpellSuppressionUnlucky: Get("spell_suppression_chance_is_unlucky") != 0,
         MovementVelocityPct: Get("base_movement_velocity_+%"),
         BlockChance: Get("additional_block_%") + Get("attack_block_%") + Get("monster_base_block_%")
             + blockWhileDualOrShield + shieldBlock + staffBlock + dualBlock + bowBlock,
@@ -2076,10 +2080,12 @@ static int MaxResistance(ClientState conn, DamageType type) => type switch
     _ => DamageModel.DefaultMaxResistance,
 };
 
-// Spell Suppression: chance in 0..100 and the damage reduction on a successful suppress (40% by default).
-static (int Chance, int Effect) Suppression(ClientState conn) =>
+// Spell Suppression: chance in 0..100, the damage reduction on a successful suppress (40% by default) and its lucky or
+// unlucky roll (PoB's suppressRolls).
+static (int Chance, int Effect, bool Lucky, bool Unlucky) Suppression(ClientState conn) =>
     (Math.Min(DamageModel.SpellSuppressionChanceCap, conn.Pools.SpellSuppressionChance),
-        Math.Max(0, conn.Pools.SpellSuppressionEffect));
+        Math.Max(0, conn.Pools.SpellSuppressionEffect),
+        conn.Pools.SpellSuppressionLucky, conn.Pools.SpellSuppressionUnlucky);
 
 static DamageType? ParseDamageType(string text) => text.ToLowerInvariant() switch
 {
@@ -2293,10 +2299,26 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
         await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; life {life}/{conn.PlayerMaxLife}.");
     })
-    .Add("suppression", "/suppression (Spell Suppression chance and damage reduction)", async _ =>
+    .Add("suppression", "/suppression (Spell Suppression chance, roll and damage reduction)", async _ =>
     {
-        var (chance, effect) = Suppression(conn);
-        await conn.Commands!.Reply($"Spell Suppression: {chance}% chance (cap {DamageModel.SpellSuppressionChanceCap}%), {effect}% less damage on a suppressed spell hit.");
+        var (chance, effect, lucky, unlucky) = Suppression(conn);
+        double effective = DamageModel.EffectiveSuppressionChance(chance, lucky, unlucky);
+        await conn.Commands!.Reply($"Spell Suppression: {chance}% chance (cap {DamageModel.SpellSuppressionChanceCap}%, effective {effective:0.#}%" +
+            $"{(lucky ? ", lucky" : "")}{(unlucky ? ", unlucky" : "")}), {effect}% less damage on a suppressed spell hit.");
+    })
+    .Add("suppression_luck", "/suppression_luck <lucky|unlucky|off> (dev: force a lucky/unlucky suppression roll)", async args =>
+    {
+        string mode = args.Length == 0 ? "" : args[0].ToLowerInvariant();
+        bool lucky = mode == "lucky", unlucky = mode == "unlucky";
+        if (mode is not ("lucky" or "unlucky" or "off" or "")) throw new ArgumentException("lucky, unlucky or off");
+        lock (conn.Monsters)
+        {
+            conn.ForceSpellSuppressionLucky = lucky;
+            conn.ForceSpellSuppressionUnlucky = unlucky;
+            conn.Pools = PoolsFor(conn, conn.Pools.Level);
+        }
+        await SendCharacterStats(remote, stream, ciphers, conn, $"suppression luck {mode}");
+        await conn.Commands!.Reply($"Spell Suppression roll: {(lucky ? "lucky" : unlucky ? "unlucky" : "normal")}.");
     })
     .Add("spellhit", "/spellhit <fire|cold|lightning|chaos|physical> <damage> (dev: spell hit through resistance and Spell Suppression)", async args =>
     {
@@ -2305,8 +2327,8 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
         int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
         int dealt = DamageModel.Mitigate(amount, resistance, maxResistance);
-        var (chance, effect) = Suppression(conn);
-        bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100));
+        var (chance, effect, lucky, unlucky) = Suppression(conn);
+        bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100), lucky, unlucky);
         if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
         uint life;
         bool wasDead;
@@ -2332,8 +2354,10 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             $"0x01b1 player dev spell {type} hit for {dealt} ({amount} before {DamageModel.Capped(resistance, maxResistance)}% resistance, suppression {(suppressed ? "yes" : "no")}), life {life}/{conn.PlayerMaxLife}");
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev spell hit)");
+        double effective = DamageModel.EffectiveSuppressionChance(chance, lucky, unlucky);
         await conn.Commands!.Reply($"{type} spell hit: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; " +
-            $"suppression {(suppressed ? $"rolled ({chance}% chance)" : $"not rolled ({chance}% chance)")}; life {life}/{conn.PlayerMaxLife}.");
+            $"suppression {(suppressed ? "rolled" : "not rolled")} ({chance}% chance, effective {effective:0.#}%" +
+            $"{(lucky ? ", lucky" : "")}{(unlucky ? ", unlucky" : "")}); life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("block", "/block (attack and spell block chance and caps)", async _ =>
     {
@@ -3815,6 +3839,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
     // Dev-only forced lucky block, on top of the stats (Svalinn's "Chance to Block is Lucky").
     public bool ForceAttackBlockLucky, ForceSpellBlockLucky;
+    // Dev-only forced lucky/unlucky Spell Suppression rolls, on top of the passive stat.
+    public bool ForceSpellSuppressionLucky, ForceSpellSuppressionUnlucky;
     // The character's experience (the Player component's; the level follows from it) and its allocated passives
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
