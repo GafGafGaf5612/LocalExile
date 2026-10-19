@@ -1,6 +1,6 @@
 # 07 — Latency (0x1b/0x1c and HNC), visibility (wake zone) and movement
 
-State of 2026-10-16: the client's "network" graph stays flat (~120 ms on localhost), the Witch is drawn in Lioneye's
+State of 2026-10-16: the client's "network" graph stays flat (0–14 ms on localhost since 2026-10-19, §1), the Witch is drawn in Lioneye's
 Watch, and clicking the ground walks her there at normal speed. Evidence:
 [../re/evidence/2026-10-16-witch-visible.jpg](../re/evidence/2026-10-16-witch-visible.jpg).
 
@@ -11,9 +11,32 @@ the send time onto a queue at instance `+0xc458`. Each frame it sets `latency = 
 that is the perf overlay's "network: N ms". Without an answer the queue only grows, so the value climbs forever.
 
 **0x1c** (instance group, dispatcher case 5, class `0x1435dc8c0`, read `0x141fa0720`): `u16 server delay ms`,
-`u16 index`, `u32 HNC carrier`, all big-endian. `0x142155930` drops queue entries 0..index; the measured round trip minus
-the delay feeds `+0xc488`. One 0x1c with index 0 per received 0x1b keeps the queue empty
-(`InstanceProtocol.Pong`).
+`u16 index`, `u32 HNC carrier`, all big-endian. `0x142155930` drops queue entries 0..index and returns entry `index`'s
+send time; an index ≥ the queue's size clears the queue and returns `+0xc470`, the latest tick's send time (live Frida
+2026-10-19). `+0xc488` is not a round trip: every client send stamps it with the time. One 0x1c with index 0 per
+received 0x1b keeps the queue at the one tick in flight (`InstanceProtocol.Pong`).
+
+Ticks that no server answers stay in the queue for good: those sent while the client leaves an area, or lost in
+unframed bytes. Index 0 then always pops a stale entry. Live in The Coast the queue held 3 at every 0x1c (ticks every
+167 ms), and the meter read ~400 ms. The first 0x1c of each connection, and the first after an unframed read, therefore
+sends index 0xFFFF (`ClientInbox.NextAckIndex`). After that the queue held 1 at every 0x1c.
+
+**What the latency graph shows.** The network update `0x142148880` runs once per client frame on the network thread:
+it reads the socket, handles each 0x1c, sets the sample `+0xc480` = now − queue front (0 when empty), and sends a 0x1b
+every 100 ms (500 ms after more than 100 ms without a client send, `+0xc488`). The graph and "latency N ms" show
+`+0xc490` (`0x140d57cd0` feeds it to the perf ring). Two places move it:
+
+- the network update raises it to the sample when the sample exceeds it by a margin (a tick overdue);
+- the 0x1c handler (`0x14214b8dc`, after the pop) computes rtt = now − the popped send time, subtracts the 0x1c's
+  u16 server delay from rtt and from the sample, and clamps the value into [sample − delay, rtt − delay]: it only
+  drops when an rtt comes in below it.
+
+So the value is the lowest round trip measured since the last overdue tick, and it cannot go below one client
+update: the client reads the 0x1c at the start of the update after the one that sent the 0x1b (live: socket read →
+pop → send the next tick, all in one update). Live Frida 2026-10-19 in town: sample 0, value 12, rtt 166–169 ms with
+the client in the background (~6 updates/s), so the value stayed at the 12 measured while it ran at full frame rate.
+The server answers within a millisecond; the 12–14 ms is the client's own frame interval. The u16 server delay could
+hide it, but it is meant for time the server held the tick, so the Gateway sends 0.
 
 ## 2. HNC, the hidden side channel
 
