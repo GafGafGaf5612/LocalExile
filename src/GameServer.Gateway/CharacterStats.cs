@@ -7,7 +7,8 @@ using GameServer.Core.World;
 /// with the per-level values of Metadata/Characters/Character.ot (life_per_level 12, mana_per_level 6,
 /// accuracy_rating_per_level 2, base_evasion_rating 15 and no evasion per level):
 /// life = (Characters.dat BaseMaxLife (38) + 12 per level + 1 per 2 strength + flat life) × (1 + increased life);
-/// mana likewise with BaseMaxMana (34), 6 per level and intelligence; accuracy = 2 per level + 2 per dexterity;
+/// mana likewise with BaseMaxMana (34), 6 per level and intelligence; accuracy = (2 per level + 2 per dexterity + flat)
+/// × (1 + increased accuracy / 100), with the Accuracy Mastery's per-level and per-dexterity replacements;
 /// evasion = 15 raised by 1% per 5 dexterity; 1% increased maximum energy shield per 5 intelligence and 1% increased melee
 /// physical damage per 5 strength. Without these stats the client falls back to the base for level 1 (the Witch's 50
 /// life and 40 mana).
@@ -33,11 +34,13 @@ static class CharacterStats
         int CriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int SpellCriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int AttackCriticalStrikeChance = 0,
-        int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad);
+        int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
+        int AccuracyPct = 0);
 
-    /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life and
-    /// mana, increased evasion, energy shield and melee physical damage, the base resistances, attack speed's
-    /// increased and more multipliers, and critical strike chance and multiplier.</summary>
+    /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life,
+    /// mana and accuracy, increased evasion, energy shield and melee physical damage, the base resistances, attack
+    /// speed's increased and more multipliers, critical strike chance and multiplier, and the Accuracy Mastery's
+    /// conversions.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
         int Mana = 0, int ManaPct = 0, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
@@ -51,7 +54,9 @@ static class CharacterStats
         bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
         int AttackSpeedPct = 0, int AttackSpeedMorePct = 0,
         int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
-        int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0)
+        int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0,
+        int Accuracy = 0, int AccuracyPct = 0, int AccuracyPerLevel = 0,
+        bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false)
     {
         public static readonly Bonus None = new();
     }
@@ -70,6 +75,13 @@ static class CharacterStats
         int str = c.Strength + b.Strength, dex = c.Dexterity + b.Dexterity, intel = c.Intelligence + b.Intelligence;
         uint life = (uint)Math.Max(1, (c.BaseMaxLife + 12 * level + str / 2 + b.Life) * (100 + b.LifePct) / 100);
         uint mana = (uint)Math.Max(0, (c.BaseMaxMana + 6 * level + intel / 2 + b.Mana) * (100 + b.ManaPct) / 100);
+        // PoB CalcOffence: accuracy = floor(base * (1 + increased / 100)) with no more multiplier modelled. The
+        // Accuracy Mastery can replace the 2 per level and 2 per dexterity, and add Accuracy equal to Intelligence.
+        int accuracyPerLevel = 2 + b.AccuracyPerLevel;
+        int accuracyPerDex = b.DexterityAccuracyTriple ? 3 : 2;
+        int accuracyBase = Math.Max(0, accuracyPerLevel * level + accuracyPerDex * dex + b.Accuracy
+            + (b.AccuracyEqualsIntelligence ? intel : 0));
+        int accuracy = Math.Max(0, (int)Math.Floor(accuracyBase * (1 + b.AccuracyPct / 100.0)));
         int evasionPct = dex / 5 + b.EvasionPct;
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
         int maxBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxBlockChance + b.BlockChanceMax);
@@ -87,7 +99,7 @@ static class CharacterStats
             ((1 + b.AttackSpeedPct / 100.0) * (1 + b.AttackSpeedMorePct / 100.0) - 1) * 100,
             MidpointRounding.AwayFromZero);
         attackSpeedPct = Math.Max(-99, attackSpeedPct);
-        return new(level, life, mana, 2 * level + 2 * dex, ExperienceFor(level, folder),
+        return new(level, life, mana, accuracy, ExperienceFor(level, folder),
             Evasion: BaseEvasion * (100 + evasionPct) / 100, EvasionPct: evasionPct,
             EnergyShieldPct: intel / 5 + b.EnergyShieldPct, MeleePhysicalDamagePct: str / 5 + b.MeleePhysicalDamagePct,
             Strength: str, Dexterity: dex, Intelligence: intel,
@@ -109,7 +121,8 @@ static class CharacterStats
             CriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.CriticalStrikeMultiplier,
             SpellCriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.SpellCriticalStrikeMultiplier,
             SpellCriticalStrikeChance: (int)Math.Round(DamageModel.CriticalStrikeChance(
-                DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct) * 100));
+                DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct) * 100),
+            AccuracyPct: b.AccuracyPct);
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));

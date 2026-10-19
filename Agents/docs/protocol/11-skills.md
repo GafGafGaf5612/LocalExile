@@ -117,8 +117,8 @@ server tick (`Program.TickRate` = 30/s, so at most 30 attacks per second), and
 them on top of the passives, then sends the stats (0x1b3) and the skill again. Minion, totem and timed/conditional
 attack-speed stats are not modelled.
 
-**The character's own stats** (`CharacterStats.For`, sent by `ClassAttributes` as final values, before passives and
-items): the per-level values come from `Metadata/Characters/Character.ot` (`life_per_level` 12, `mana_per_level` 6,
+**The character's own stats** (`CharacterStats.For`, sent by `ClassAttributes` as final values): the per-level values
+come from `Metadata/Characters/Character.ot` (`life_per_level` 12, `mana_per_level` 6,
 `accuracy_rating_per_level` 2, `base_evasion_rating` 15; it has no `evasion_rating_per_level`, so evasion does not grow
 with level), the bases and attributes from Characters.dat:
 
@@ -126,11 +126,22 @@ with level), the bases and attributes from Characters.dat:
 |---|---|
 | `maximum_life` | BaseMaxLife (38) + 12 × level + strength / 2 |
 | `maximum_mana` | BaseMaxMana (34) + 6 × level + intelligence / 2 |
-| `accuracy_rating` | 2 × level + 2 × dexterity |
+| `accuracy_rating` | (2 × level + 2 × dexterity + flat) × (1 + increased / 100) |
 | `evasion_rating` | 15 × (1 + `evasion_rating_+%` / 100) |
 | `evasion_rating_+%` | dexterity / 5 |
 | `maximum_energy_shield_+%` | intelligence / 5 |
 | `melee_physical_damage_+%` | strength / 5 |
+
+Accuracy's flat and increased passives are summed from `accuracy_rating` and `accuracy_rating_+%`, the weapon-specific
+stats according to the equipped weapon shape (`sword_accuracy_rating`, `wand_accuracy_rating_+%`, ...), and the Accuracy
+Mastery (`accuracy_rating_per_level`, `dexterity_accuracy_bonus_grants_accuracy_rating_+3_per_dexterity_instead`,
+`gain_accuracy_rating_equal_to_intelligence`). Conditional stats (nearby ally, marked enemy, low life, frenzy charges,
+unique/close enemies) are not modelled. The final values go to the client as `accuracy_rating` and, for the Offence
+panel's Main Hand / Off Hand Accuracy rows, `main_hand_accuracy_rating` / `off_hand_accuracy_rating`. Its Chance to
+Hit rows are sent directly as `main_hand_chance_to_hit_%` / `off_hand_chance_to_hit_%` (and the evasive-monster
+variants), against a reference monster of the character's level; `character_sheet_reference_evasion` and
+`..._high_dex_evasion` carry that monster's evasion. Life and mana still ignore passives and items; evasion takes its
+passive increases (`evasion_rating_+%`) but not items.
 
 The default attack's damage (`Unarmed.Damage`) is MinDamage..MaxDamage × (1 + (`damage_+%` + `physical_damage_+%` +
 `melee_damage_+%` + `melee_physical_damage_+%`) / 100), rounded down; the server rolls its hits from the same range.
@@ -146,7 +157,10 @@ stats included. Live: the swing sped up at once.
    toward the monster and stops at the first cell within `MaxAttackDistance` (`WalkEstimator.Approach`).
 2. On arrival it starts the swing: the 0x1ab echo (from the stop cell, aimed at the monster). Echoing at the click made
    the client swing on the spot, out of range.
-3. Half an attack time later (the contact point, roughly) it lowers the monster's life with 0x1b1.
+3. Half an attack time later (the contact point, roughly) it rolls the accuracy check and, on a hit, lowers the
+   monster's life with 0x1b1. The chance is PoB's `calcs.hitChance`: `accuracy / (accuracy + (evasion / 5)^0.9) × 125`,
+   rounded and clamped to 5..100, with the monster's `DefaultMonsterStats.Evasion` at its level. A miss is logged and
+   sends no life update; spells do not roll accuracy and always hit.
 4. Any later player action (0x25 move, another 0x24) cancels steps 2 and 3 (`ClientState.ActionCount`).
 5. Pacing: one swing per attack time. While the button is held the client sends one 0x24 per swing; a swing may
    arrive up to a quarter of an attack early (jitter) and the schedule stays on the client's cadence. When the server
@@ -412,7 +426,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`base_maximum_all_resistances_% = 75`) and `src/Modules/CalcDefence.lua` (the clamp). The project is cloned locally
   into the git-ignored `Tools/PathOfBuilding` as the source of these formulas. Righteous Fire's self-burn is mitigated
   by fire resistance; `/resistances` prints the modifier, penalty and final values and `/hit <type> <damage>` applies
-  the same rule. Armour, evasion as avoidance, penetration and max-resistance modifiers are still not modelled.
+  the same rule. Armour, player evasion as avoidance against monster attacks, penetration and max-resistance
+  modifiers are still not modelled; monster evasion is used for the player's accuracy check (§5).
 - **Spell Suppression** (`CharacterStats`, `DamageModel`): the passives' `base_spell_suppression_chance_%` is summed into
   `Pools` (capped at 100%, PoB `SuppressionChanceCap`); a successful roll makes a spell hit take 40% less damage
   (`SuppressionEffect` in PoB `src/Modules/Data.lua`). The passives' unconditional
