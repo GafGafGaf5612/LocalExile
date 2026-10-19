@@ -235,6 +235,8 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         }
         else if (id == InstanceProtocol.ResurrectId)
             _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
+        else if (id == InstanceNpcs.DialogueClosedId)
+            Console.WriteLine($"[gateway] {remote} <= 0x0085 npc dialogue closed");
         else if (id == InstanceChat.ChatId)
         {
             var chat = InstanceChat.ReadChat(bytes);
@@ -294,6 +296,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
+                await SpawnTownNpcs(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
             }
@@ -409,6 +412,13 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await UseWaypoint(remote, stream, ciphers, conn, use, waypoint);
         return;
     }
+    SpawnedNpc? npc;
+    lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(use.TargetId);
+    if (npc is not null)
+    {
+        await TalkToNpc(remote, stream, ciphers, conn, use, npc);
+        return;
+    }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
     if (transition is null)
     {
@@ -467,6 +477,48 @@ static async Task UseWaypoint(string remote, NetworkStream stream, ConnectionCip
     await ActivateWaypoint(remote, stream, ciphers, conn, "clicked");
     await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.WorldPanelUi, WaypointCatalog.ObjectId),
         "0x007b open the World panel for waypoint travel");
+}
+
+// Creates one NPC (0x2b9, its NPCs.dat Id is an .ot type) and puts it in the wake zone; kept for clicks and /npcs.
+static async Task SpawnNpc(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcCatalog.Npc npc,
+    int x, int y, float rotation)
+{
+    uint id = conn.NextObjectId++;
+    var obj = new NpcObject(x, y, npc.Components!, rotation, npc.StateMachine, npc.TransitionState);
+    uint type = InstanceEntities.ObjectTypeHash(npc.Id);
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()),
+        $"0x02b9 create npc 0x{id:x} {npc} type=0x{type:x8} at ({x}, {y}) rotation {rotation:0.##}, components {string.Join(", ", npc.Components!)}");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 npc 0x{id:x} enters wake zone");
+    lock (conn.Npcs) conn.Npcs[id] = new SpawnedNpc(npc, x, y);
+}
+
+// The town's NPCs (NpcCatalog.In) at their cells.
+static async Task SpawnTownNpcs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    var placements = NpcCatalog.In(conn.Layout.Hash);
+    if (placements.Count == 0 || Environment.GetEnvironmentVariable("Game_NPCS") == "0") return;
+    if (Npcs.Value.Error is { } error) { Console.WriteLine($"[gateway] {remote} npcs: {error}"); return; }
+    foreach (var p in placements)
+    {
+        if (Npcs.Value.Find(p.Id) is not { Supported: true } npc) { Console.WriteLine($"[gateway] {remote} npc {p.Id}: unknown or unsupported components"); continue; }
+        if (conn.Layout.Walkable is { } w && !w(p.X, p.Y)) Console.WriteLine($"[gateway] {remote} npc {npc.Name}: ({p.X}, {p.Y}) is not walkable");
+        await SpawnNpc(remote, stream, ciphers, conn, npc, p.X, p.Y, p.Rotation);
+    }
+}
+
+// A click on an NPC (C→S 0x24 on its object): the client walks to it first; follow it and answer once the player is there.
+static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, SpawnedNpc npc)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(npc.X, npc.Y, NpcReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 npc {npc.Npc} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    uint id;
+    lock (conn.Npcs) id = conn.Npcs.FirstOrDefault(n => ReferenceEquals(n.Value, npc)).Key;
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 talk to npc 0x{id:x} {npc.Npc.Name}");
 }
 
 // Activates this area's waypoint for the character (saved) and tells the client: a new 0x4c with the area's bit set
@@ -1602,6 +1654,29 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         lock (conn.Waypoints) list = string.Join(", ", entries.Where(e => conn.Waypoints.Contains(e.Id)).Select(e => e.Name));
         await conn.Commands!.Reply(list.Length == 0 ? "No activated waypoints." : $"Activated waypoints: {list}.");
     })
+    .Add("npc", "/npc <NPCs row, Id or name> [rotation°] (spawns an NPC next to you)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("which NPC");
+        if (Npcs.Value.Error is { } error) { await conn.Commands!.Reply(error); return; }
+        float? deg = args.Length > 1 && float.TryParse(args[^1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float d) ? d : null;
+        string query = string.Join(' ', deg is null ? args : args[..^1]);
+        if (Npcs.Value.Find(query) is not { } npc) { await conn.Commands!.Reply($"No NPC {query}."); return; }
+        if (!npc.Supported) { await conn.Commands!.Reply($"{npc} has components the server cannot write: {string.Join(", ", npc.Components ?? [])}."); return; }
+        var (x, y) = NextToPlayer(conn);
+        await SpawnNpc(remote, stream, ciphers, conn, npc, x, y, (deg ?? 0) * MathF.PI / 180);
+    })
+    .Add("npcs", "/npcs (list NPCs here)", async _ =>
+    {
+        string list;
+        lock (conn.Npcs) list = string.Join(", ", conn.Npcs.Select(n => $"0x{n.Key:x} {n.Value.Npc.Name} ({n.Value.X}, {n.Value.Y})"));
+        await conn.Commands!.Reply(list.Length == 0 ? "No NPCs." : list);
+    })
+    .Add("pos", "/pos (your cell)", async _ =>
+    {
+        var (x, y) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
+        await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
+    })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
             string.Join(", ", conn.Monsters.Select(m =>
@@ -2072,6 +2147,8 @@ sealed partial class Program
     // How close the player must be to use a waypoint (Waypoint.ot object_size 6, as an area transition), and how close
     // it activates on its own.
     internal const double WaypointReach = 6, WaypointActivationRange = 25;
+    // How close the player walks to an NPC before talking (not measured yet).
+    internal const double NpcReach = 8;
     // Destination tickets of waypoint travel: that connection's player arrives next to the area's waypoint.
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, byte> WaypointArrivals = new();
     // The height u32 of S→C 0x1ba (+0x28, passed with the move to Positioned vtable +0xd8) and 0x1b7 (→ +0x290): the
@@ -2083,6 +2160,8 @@ sealed partial class Program
     // toward an item at (1278, 1304) and stopped at (1284, 1284), 20.9 cells away, on the first step inside the range.
     internal const double PickupReach = 20 + 2;
 
+    // NPCs.dat with the NPC types' components; loaded with the first town.
+    internal static readonly Lazy<NpcCatalog> Npcs = new(() => NpcCatalog.Load());
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
     // MonsterPacks per area (MonsterPacks.cs); loaded with the first area that has monsters.
@@ -2388,6 +2467,8 @@ sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, int Mi
     public IReadOnlyList<(uint, int)> SkillStats() => [.. Stats(), (StatKeys.SkillIsNonPathing, 1)];
 }
 
+sealed record SpawnedNpc(NpcCatalog.Npc Npc, int X, int Y);
+
 sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange, uint maxLife)
 {
     public MonsterAttack? Attack { get; init; }
@@ -2486,6 +2567,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint PlayerMana;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
+    // NPCs created on this connection by object id (town NPCs, /npc).
+    public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
     // Items on the ground by object id (dropped with C→S 0x29).

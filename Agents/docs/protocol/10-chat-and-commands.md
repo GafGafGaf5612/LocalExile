@@ -81,6 +81,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/mob_walk [0x<id>] [skill hex]` | 0x1ab: the monster starts its Move action (skill 0x2909) toward the player; it walks, animated, along the client's path |
 | `/mob_move [0x<id>] [cells/s]` | 0x1ba: slides the monster in a straight line (probe; no animation or pathing) |
 | `/mob_tp [0x<id>]` | 0x1b7: teleports the monster next to the player |
+| `/npc <row, Id or name> [rotation°]`, `/npcs`, `/pos` | creates an NPC next to the player ([17](17-npcs.md)), lists the NPCs, prints the player's cell |
 | `/ai [on\|off]` | monster AI for this connection (on by default): monsters chase the player (below) |
 
 Every player can use every command; there are no permissions yet.
