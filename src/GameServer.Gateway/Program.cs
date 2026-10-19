@@ -258,7 +258,11 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             await SocketGem(remote, stream, ciphers, conn, InstanceItems.ReadSocketGem(bytes));
         else if (id == InstanceItems.PlaceItemId)
             await PlaceItem(remote, stream, ciphers, conn, InstanceItems.ReadPlaceItem(bytes));
-        else if (id is InstanceItems.InventoryRequestId or InstanceItems.ItemActionId)
+        else if (id == InstanceItems.ItemActionId)
+            await HeldOntoItem(remote, stream, ciphers, conn, InstanceItems.ReadItemAction(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.SplitStackId)
+            await SplitStack(remote, stream, ciphers, conn, InstanceItems.ReadSplitStack(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.InventoryRequestId)
             Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (item message, not handled yet): {Convert.ToHexString(bytes)}");
         else if (id == InstanceItems.PickUpItemId)
             await PickUpItem(remote, stream, ciphers, conn, InstanceItems.ReadPickUpItem(bytes));
@@ -844,8 +848,18 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
         var items = ItemsOf(conn);
         List<InventoryItem> back = accepted ? sale.Reward : [.. sale.Offered.Values];
         var added = new List<InventoryItem>();
+        var grown = new Dictionary<uint, InventoryItem>();
         foreach (var it in back)
         {
+            if (Items.ByHash(it.Item.TypeHash) is { Stackable: true })
+            {
+                // Currency joins the inventory's stacks of its type.
+                var stacked = items.AddStacked(PlayerInventories.MainInventory, it.Item, ShapeOf);
+                foreach (var c in stacked.Changed) grown[c.Id] = c;
+                added.AddRange(stacked.Added);
+                if (stacked.Left > 0) Console.WriteLine($"[gateway] {remote} sale: no room for {stacked.Left} of item {it.Id} in the inventory, lost");
+                continue;
+            }
             if (Items.ByHash(it.Item.TypeHash) is not { } t || items.FreeCell(PlayerInventories.MainInventory, t.Width, t.Height, ShapeOf) is not { } cell)
             {
                 Console.WriteLine($"[gateway] {remote} sale: no room for item {it.Id} in the inventory, it is lost");
@@ -853,9 +867,11 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
             }
             added.Add(items.Put(PlayerInventories.MainInventory, it with { X = cell.X, Y = cell.Y }));
         }
-        if (added.Count > 0)
+        // A stack that grew and then took more is sent once, as it is now; new stacks that grew later are in "added".
+        foreach (var a in added.ToList()) if (grown.Remove(a.Id, out var later)) added[added.IndexOf(a)] = later;
+        if (added.Count + grown.Count > 0)
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
-                items.NextRevision(PlayerInventories.MainInventory), [], added),
+                items.NextRevision(PlayerInventories.MainInventory), [.. grown.Keys], [.. grown.Values, .. added]),
                 $"0x00bf inventory 1: {added.Count} item(s) " + (accepted ? $"of {NpcShops.SellReward} for {sale.Offered.Count} sold item(s)" : "offered and taken back"));
     }
     await Send(remote, stream, ciphers, InstanceNpcs.TradeClose(0, accepted), $"0x00b9 sell window closed ({(accepted ? "accepted" : "cancelled")})");
@@ -2144,8 +2160,8 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     .Add("item", "/item <BaseItemTypes row, Id or name> [count] (into the inventory, e.g. /item Small Life Flask 2, /item 384)", async args =>
     {
         if (args.Length == 0) throw new ArgumentException("which item?");
-        int count = 1;
-        if (args.Length > 1 && int.TryParse(args[^1], out int n)) { count = Math.Clamp(n, 1, 60); args = args[..^1]; }
+        int count = 1, requested = 1;
+        if (args.Length > 1 && int.TryParse(args[^1], out int n)) { requested = n; count = Math.Clamp(n, 1, 60); args = args[..^1]; }
         if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
         if (Items.Find(string.Join(' ', args)) is not { } type) { await conn.Commands!.Reply($"No item type \"{string.Join(' ', args)}\""); return; }
         if (!type.Supported)
@@ -2154,6 +2170,18 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             return;
         }
         var items = ItemsOf(conn);
+        if (type.Stackable)
+        {
+            // A stackable type: [count] is how many, onto the stacks already there first (up to 20 full stacks).
+            int amount = Math.Clamp(requested, 1, type.MaxStack * 20);
+            var stacked = items.AddStacked(PlayerInventories.MainInventory, ItemCatalog.Create(type) with { StackSize = (ushort)Math.Min(amount, ushort.MaxValue) }, ShapeOf);
+            if (!stacked.Any) { await conn.Commands!.Reply("No room in the inventory"); return; }
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), stacked.RemovedIds, stacked.AddedItems),
+                $"0x00bf inventory 1: /item {type} × {amount - stacked.Left} ({stacked.Changed.Count} stack(s) grown, {stacked.Added.Count} new)");
+            if (stacked.Left > 0) await conn.Commands!.Reply($"No room for {stacked.Left} of them");
+            return;
+        }
         var (sockets, links) = Items.DefaultSockets(type);
         var added = new List<InventoryItem>();
         for (int i = 0; i < count; i++)
@@ -2831,7 +2859,10 @@ static IEnumerable<ItemCatalog.BaseType> OffhandTypes(ClientState conn)
             if (Items.ByHash(item.Item.TypeHash) is { } type) yield return type;
 }
 
-static PlayerInventories.Shape? ShapeOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new PlayerInventories.Shape(t.Width, t.Height, t.Class) : null;
+static PlayerInventories.Shape? ShapeOf(Item i) => Items.ByHash(i.TypeHash) is { } t
+    ? new PlayerInventories.Shape(t.Width, t.Height, t.Class, t.MaxStack,
+        t.BecomesWhenFull && Items.Row(t.FullStackRow) is { Supported: true } full ? () => ItemCatalog.Create(full) : null)
+    : null;
 
 static VisibleItem? LookOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new VisibleItem(0, t.VisualIdentity, t.Stance) : null;
 
@@ -2967,6 +2998,22 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
     // With the inventory panel open the item goes to the cursor (when it is free), otherwise to the first free cell.
     bool toCursor = (use.Flags & InstanceTransfer.InventoryOpenFlag) != 0 && items.Items(PlayerInventories.Cursor).Count == 0;
     byte row = toCursor ? PlayerInventories.Cursor : PlayerInventories.MainInventory;
+    if (!toCursor && shape.MaxStack > 1)
+    {
+        // A stack goes onto the inventory's stacks of its type first, then into free cells; all of it or nothing. Nothing
+        // awaits between the check, the take and the add, and only this connection changes the character's items.
+        if (!items.Fits(PlayerInventories.MainInventory, ground.Item, ShapeOf))
+        {
+            Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: no room in the inventory for {ground.Item.StackSize}");
+            return;
+        }
+        if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+        var stacked = items.AddStacked(PlayerInventories.MainInventory, ground.Item, ShapeOf);
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), stacked.RemovedIds, stacked.AddedItems),
+            $"0x00bf inventory 1: {ground.Item.StackSize} picked up ({stacked.Changed.Count} stack(s) grown, {stacked.Added.Count} new)");
+        return;
+    }
     (byte X, byte Y) cell = (0, 0);
     if (!toCursor)
     {
@@ -2985,6 +3032,96 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
         toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
 }
 
+// C→S 0x7c: Shift + click on a stack, then the split window's amount. The stack shrinks in place (0xbf removing and adding
+// its id), the split-off part is held as a new item (0xbf cursor).
+static async Task SplitStack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.SplitStack split, string hex)
+{
+    var items = ItemsOf(conn);
+    int amount = (int)Math.Min(split.Amount, ushort.MaxValue);
+    if (StashOf(conn).TabOf(split.InventoryId) is int tab)
+    {
+        // From a stash tab: the tab's stack shrinks (written first), the split-off part is held with a character id.
+        var stash = StashOf(conn);
+        if (items.Items(PlayerInventories.Cursor).Count > 0 || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == split.ItemId) is not { } source ||
+            stash.Shrink(tab, split.ItemId, amount) is not { } left)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}: refused: {hex}");
+            return;
+        }
+        var part = items.Put(PlayerInventories.Cursor, new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = (ushort)amount }));
+        Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, stash.NextRevision(tab), [left.Id], [left]),
+            $"0x00bf stash tab {tab}: stack {left.Id} now {left.Item.StackSize}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [], [part]), $"0x00bf cursor: hold {part.Item.StackSize} as item {part.Id}");
+        return;
+    }
+    string why = "unknown inventory";
+    var done = PlayerInventories.Row(split.InventoryId) is byte row ? items.Split(row, split.ItemId, amount, out why) : null;
+    if (done is not var (stack, held) || PlayerInventories.Row(split.InventoryId) is not byte r)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x007c split {split}: refused ({why}): {hex}");
+        return;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x007c split {split}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, items.NextRevision(r), [stack.Id], [stack]),
+        $"0x00bf inventory {split.InventoryId}: stack {stack.Id} now {stack.Item.StackSize}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: hold {held.Item.StackSize} as item {held.Id}");
+}
+
+// C→S 0x4a: the held item clicked on an item. A stack of the same type with room takes what fits (PlayerInventories.MergeOnto,
+// AccountStash.Merge); anything else (currency on an item …) is not handled yet.
+static async Task HeldOntoItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.ItemAction a, string hex)
+{
+    var items = ItemsOf(conn);
+    if (StashOf(conn).TabOf(a.InventoryId) is int tab)
+    {
+        // On a stash tab: as 0x2a on the clicked item's cell (merge, one with Shift, or a swap).
+        if (StashOf(conn).Inventory(tab).Items.FirstOrDefault(i => i.Id == a.ItemId) is not { } onto)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a} in stash tab {tab}: no such item: {hex}");
+            return;
+        }
+        Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a} in stash tab {tab}: {hex}");
+        await PlaceInStash(remote, stream, ciphers, conn, tab, new InstanceItems.PlaceItem(a.InventoryId, onto.X, onto.Y, (byte)(OneOf(a) ? 1 : 0), a.B, 0, 0));
+        return;
+    }
+    string why = "unknown inventory";
+    var done = PlayerInventories.Row(a.InventoryId) is byte row ? items.MergeOnto(row, a.ItemId, ShapeOf, out why, OneOf(a)) : null;
+    if (done is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a}: refused ({why}): {hex}");
+        return;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a}: {hex}");
+    if (done.Merged || done.Rest is not null) { await SendMerged(remote, stream, ciphers, items, done); return; }
+    // Not a stack with room: swapped, as 0x2a on that cell.
+    var d = done.Displaced;
+    uint target = PlayerInventories.InventoryId(done.Row);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(target, items.NextRevision(done.Row), d is null ? [] : [d.Id], [done.Placed]),
+        $"0x00bf inventory {target}: add item {done.Placed.Id} at ({done.Placed.X}, {done.Placed.Y})" + (d is null ? "" : $", remove item {d.Id}"));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [done.Held.Id], d is null ? [] : [d]),
+        $"0x00bf cursor: remove item {done.Held.Id}" + (d is null ? "" : $", hold item {d.Id}"));
+    if (PlayerInventories.ShowsOnModel(done.Row)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+// Shift held on a 0x4a: flag bit 2 (the sender's param 7; live 2026-10-19, Flags = 4 with Shift, 0 without).
+static bool OneOf(InstanceItems.ItemAction a) => (a.Flags & 0x04) != 0;
+
+// A held stack went onto a stack of its type: that one grows in place (same id), the held one shrinks (same id) or is gone.
+static async Task SendMerged(string remote, NetworkStream stream, ConnectionCiphers ciphers, PlayerInventories items, PlayerInventories.Placement done)
+{
+    uint target = PlayerInventories.InventoryId(done.Row);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(target, items.NextRevision(done.Row), done.Merged ? [done.Placed.Id] : [], [done.Placed]),
+        $"0x00bf inventory {target}: " + (done.Merged ? $"stack {done.Placed.Id} now {done.Placed.Item.StackSize}" : $"add one as item {done.Placed.Id} at ({done.Placed.X}, {done.Placed.Y})")
+        + (Items.ByHash(done.Placed.Item.TypeHash) is { } now && now.Hash != done.Held.Item.TypeHash ? $", became {now.Name}" : ""));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [done.Held.Id], done.Rest is { } rest ? [rest] : []),
+        $"0x00bf cursor: " + (done.Rest is { } r ? $"stack {r.Id} now {r.Item.StackSize}" : $"remove item {done.Held.Id} (merged)"));
+}
+
 // C→S 0x2a: put the held item into an inventory cell (PlayerInventories.Place). The target inventory gets one 0xbf (the
 // item it displaced removed, the held item added), the cursor another (the held item removed, the displaced one added).
 static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PlaceItem place)
@@ -2998,11 +3135,11 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
     }
     if (StashOf(conn).TabOf(place.InventoryId) is int tab) { await PlaceInStash(remote, stream, ciphers, conn, tab, place); return; }
     var items = ItemsOf(conn);
+    if (place.A != 0) Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: one of the held stack (Shift)");
     PlayerInventories.Placement? done = null;
     string why = "unknown inventory";
     if (PlayerInventories.Row(place.InventoryId) is byte row)
-        done = items.Place(row, (int)place.X, (int)place.Y,
-            ShapeOf, out why);
+        done = items.Place(row, (int)place.X, (int)place.Y, ShapeOf, out why, one: place.A != 0);
     if (done is null)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: refused ({why})");
@@ -3010,6 +3147,7 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
     }
     var d = done.Displaced;
     uint target = PlayerInventories.InventoryId(done.Row);   // may differ from the clicked one (off hand → main hand)
+    if (done.Merged || done.Rest is not null) { await SendMerged(remote, stream, ciphers, items, done); return; }
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(target, items.NextRevision(done.Row), d is null ? [] : [d.Id], [done.Placed]),
         $"0x00bf inventory {target}: add item {done.Placed.Id} at ({done.Placed.X}, {done.Placed.Y})" + (d is null ? "" : $", remove item {d.Id}"));
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
@@ -3100,6 +3238,40 @@ static async Task PlaceInStash(string remote, NetworkStream stream, ConnectionCi
     if (items.Items(PlayerInventories.Cursor) is not [var held, ..])
     {
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place} in stash tab {tab}: nothing held");
+        return;
+    }
+    bool one = place.A != 0 && held.Item.StackSize > 1;
+    if (stash.Merge(tab, (int)place.X, (int)place.Y, held, ShapeOf, one ? 1 : int.MaxValue) is var (stack, moved))
+    {
+        // Onto a stack of its type: the tab's stack grows (written first), the held one shrinks or is gone.
+        var rest = items.SetStackSize(PlayerInventories.Cursor, held.Id, held.Item.StackSize - moved);
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [stack.Id], [stack]),
+            $"0x00bf stash tab {tab}: stack {stack.Id} now {stack.Item.StackSize}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [held.Id], rest is null ? [] : [rest]),
+            "0x00bf cursor: " + (rest is null ? $"remove item {held.Id} (merged)" : $"stack {rest.Id} now {rest.Item.StackSize}"));
+        return;
+    }
+    if (one)
+    {
+        // Shift + click: one of the held stack into an empty cell of the tab (written first), the rest stays held.
+        int px = (int)place.X, py = (int)place.Y;
+        if (stash.Inventory(tab).Items.Any(i => ShapeOf(i.Item) is { } s && i.X <= px && px < i.X + s.Width && i.Y <= py && py < i.Y + s.Height))
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x002a place one {place} in stash tab {tab}: refused (something in the way)");
+            return;
+        }
+        var single = new InventoryItem(items.NewItemId(), 0, 0, held.Item with { StackSize = 1 });
+        if (stash.Place(tab, px, py, single, ShapeOf, out string whyNot) is not var (put, _))
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x002a place one {place} in stash tab {tab}: refused ({whyNot})");
+            return;
+        }
+        var left = items.SetStackSize(PlayerInventories.Cursor, held.Id, held.Item.StackSize - 1);
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [], [put]),
+            $"0x00bf stash tab {tab}: add one as item {put.Id} at ({put.X}, {put.Y})");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [held.Id], left is null ? [] : [left]), $"0x00bf cursor: stack {held.Id} now {left?.Item.StackSize ?? 0}");
         return;
     }
     if (stash.Place(tab, (int)place.X, (int)place.Y, held, ShapeOf, out string why) is not var (placed, displaced))

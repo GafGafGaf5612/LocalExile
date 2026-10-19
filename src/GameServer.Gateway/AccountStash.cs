@@ -216,6 +216,47 @@ sealed class AccountStash
         return result;
     }
 
+    /// <summary>
+    /// The held stack put on a stack of its type with room at (x, y) in a tab: that stack grows by what fits (up to the
+    /// type's max; at most <paramref name="most"/>) and is returned with how many moved; null (nothing changes) when there
+    /// is no such stack. A full stack becomes its full-stack item (<see cref="PlayerInventories.Completed"/>).
+    /// </summary>
+    public (InventoryItem Stack, int Moved)? Merge(int tab, int x, int y, InventoryItem held, Func<Item, PlayerInventories.Shape?> shapeOf,
+        int most = int.MaxValue)
+    {
+        (InventoryItem, int) result;
+        lock (_lock)
+        {
+            if (tab < 0 || tab >= _tabs.Count || shapeOf(held.Item) is not { MaxStack: > 1 } shape) return null;
+            var items = _tabs[tab].Items;
+            var inTheWay = items.Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height).ToList();
+            if (inTheWay is not [var under] || under.Item.TypeHash != held.Item.TypeHash || under.Item.StackSize >= shape.MaxStack) return null;
+            int moved = Math.Min(Math.Min(held.Item.StackSize, most), shape.MaxStack - under.Item.StackSize);
+            var grown = PlayerInventories.Completed(under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } }, shape);
+            items[items.IndexOf(under)] = grown;
+            result = (grown, moved);
+        }
+        Persist();
+        return result;
+    }
+
+    /// <summary>Takes <paramref name="amount"/> off a stack in a tab (a split: less than the whole stack). Returns the
+    /// stack as it is now, or null (nothing changes).</summary>
+    public InventoryItem? Shrink(int tab, uint itemId, int amount)
+    {
+        InventoryItem result;
+        lock (_lock)
+        {
+            if (tab < 0 || tab >= _tabs.Count) return null;
+            var items = _tabs[tab].Items;
+            int at = items.FindIndex(i => i.Id == itemId);
+            if (at < 0 || amount < 1 || amount >= items[at].Item.StackSize) return null;
+            result = items[at] = items[at] with { Item = items[at].Item with { StackSize = (ushort)(items[at].Item.StackSize - amount) } };
+        }
+        Persist();
+        return result;
+    }
+
     /// <summary>The first free cell of a tab for an item of this size (column by column), or null.</summary>
     public (byte X, byte Y)? FreeCell(int tab, byte width, byte height, Func<Item, PlayerInventories.Shape?> shapeOf)
     {
