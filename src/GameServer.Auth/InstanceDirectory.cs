@@ -119,6 +119,7 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
                     Ok = inst is not null, Error = inst is null ? "instance expired" : null, Area = info.Area,
                     Seed = inst?.Seed ?? 0, Instance = info.Instance, IsTown = inst?.IsTown ?? false, Character = info.Character,
                     League = info.League?.Name, Hardcore = info.League?.Hardcore ?? false, Class = (int)info.Class, Level = info.Level,
+                    LastTown = WorldAreaTowns.LoginArea(accounts?.FindCharacter(info.Character)?.LastTown, _towns),
                 };
             }
             case "list":
