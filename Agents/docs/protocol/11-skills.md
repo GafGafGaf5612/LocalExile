@@ -389,6 +389,15 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   into the git-ignored `Tools/PathOfBuilding` as the source of these formulas. Righteous Fire's self-burn is mitigated
   by fire resistance; `/resistances` prints the modifier, penalty and final values and `/hit <type> <damage>` applies
   the same rule. Armour, evasion as avoidance, penetration and max-resistance modifiers are still not modelled.
+- **Spell Suppression** (`CharacterStats`, `DamageModel`): the passives' `base_spell_suppression_chance_%` is summed into
+  `Pools` (capped at 100%, PoB `SuppressionChanceCap`); a successful roll makes a spell hit take 40% less damage
+  (`SuppressionEffect` in PoB `src/Modules/Data.lua`). The passives' unconditional
+  `base_spell_damage_%_suppressed` is added to the 40% effect (e.g. Inveterate +3, Primal Instinct -10); the effect is
+  not hard-capped, matching PoB. Conditional effect stats (`...while_on_full_energy_shield`,
+  `...if_not_suppressed_recently`, per-hit/per-bark) are not modelled yet. Chance above 100 is overcap
+  (`SpellSuppressionChanceOverCap`), but the effective chance is still 100. `/suppression` shows the chance/effect and
+  `/spellhit <type>` rolls it for testing. There are no monster spell hits yet, so this is a dev probe and a preparation for
+  monster spells; `spell_damage_%_suppressed` effect modifiers and suppression-adjacent effects are not modelled.
 
 ## Open
 

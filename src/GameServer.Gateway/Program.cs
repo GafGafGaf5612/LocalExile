@@ -1189,7 +1189,13 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
         ("uncapped_lightning_damage_resistance_%", pools.LightningResistance),
         ("base_chaos_damage_resistance_%", pools.ChaosResistance),
         ("chaos_damage_resistance_%", DamageModel.Capped(pools.ChaosResistance, pools.ChaosMaxResistance)),
-        ("uncapped_chaos_damage_resistance_%", pools.ChaosResistance) })
+        ("uncapped_chaos_damage_resistance_%", pools.ChaosResistance),
+        // The character panel reads the final suppression values, not only the raw passive input.
+        ("spell_suppression_chance_%", pools.SpellSuppressionChance),
+        ("base_spell_suppression_chance_%", pools.SpellSuppressionChance),
+        ("combined_spell_suppression_chance_%", pools.SpellSuppressionChance),
+        ("spell_damage_%_suppressed", pools.SpellSuppressionEffect),
+        ("base_spell_damage_%_suppressed", pools.SpellSuppressionEffect) })
         if (Stats.Key(stat) is uint key) yield return (key, value);
     // The class's attributes with the passives' (CharacterStats.For); a pools record made without a class (0) falls back
     // to the class's own.
@@ -1365,7 +1371,9 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats)
         FireMaxResistance: allMax + allElemMax + Get("base_maximum_fire_damage_resistance_%"),
         ColdMaxResistance: allMax + allElemMax + Get("base_maximum_cold_damage_resistance_%"),
         LightningMaxResistance: allMax + allElemMax + Get("base_maximum_lightning_damage_resistance_%"),
-        ChaosMaxResistance: allMax + Get("base_maximum_chaos_damage_resistance_%"));
+        ChaosMaxResistance: allMax + Get("base_maximum_chaos_damage_resistance_%"),
+        SpellSuppressionChance: Get("base_spell_suppression_chance_%"),
+        SpellSuppressionEffect: Get("base_spell_damage_%_suppressed"));
 }
 
 // The character's passive skill points (one per level after the first, plus the extra points from
@@ -1810,6 +1818,11 @@ static int MaxResistance(ClientState conn, DamageType type) => type switch
     _ => DamageModel.DefaultMaxResistance,
 };
 
+// Spell Suppression: chance in 0..100 and the damage reduction on a successful suppress (40% by default).
+static (int Chance, int Effect) Suppression(ClientState conn) =>
+    (Math.Min(DamageModel.SpellSuppressionChanceCap, conn.Pools.SpellSuppressionChance),
+        Math.Max(0, conn.Pools.SpellSuppressionEffect));
+
 static DamageType? ParseDamageType(string text) => text.ToLowerInvariant() switch
 {
     "fire" => DamageType.Fire,
@@ -1999,6 +2012,48 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
         await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; life {life}/{conn.PlayerMaxLife}.");
+    })
+    .Add("suppression", "/suppression (Spell Suppression chance and damage reduction)", async _ =>
+    {
+        var (chance, effect) = Suppression(conn);
+        await conn.Commands!.Reply($"Spell Suppression: {chance}% chance (cap {DamageModel.SpellSuppressionChanceCap}%), {effect}% less damage on a suppressed spell hit.");
+    })
+    .Add("spellhit", "/spellhit <fire|cold|lightning|chaos|physical> <damage> (dev: spell hit through resistance and Spell Suppression)", async args =>
+    {
+        if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
+        if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
+        if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
+        int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
+        int dealt = DamageModel.Mitigate(amount, resistance, maxResistance);
+        var (chance, effect) = Suppression(conn);
+        bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100));
+        if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
+        uint life;
+        bool wasDead;
+        lock (conn.Monsters)
+        {
+            wasDead = conn.PlayerLife == 0;
+            if (!wasDead)
+            {
+                conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - dealt);
+                life = conn.PlayerLife;
+            }
+            else life = 0;
+        }
+        if (wasDead)
+        {
+            await conn.Commands!.Reply("You are already dead.");
+            return;
+        }
+        if (life == 0)
+            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
+                "0x01b3 player hide_mini_life_bar = 1 (dev spell hit)");
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
+            $"0x01b1 player dev spell {type} hit for {dealt} ({amount} before {DamageModel.Capped(resistance, maxResistance)}% resistance, suppression {(suppressed ? "yes" : "no")}), life {life}/{conn.PlayerMaxLife}");
+        if (life == 0)
+            await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev spell hit)");
+        await conn.Commands!.Reply($"{type} spell hit: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; " +
+            $"suppression {(suppressed ? $"rolled ({chance}% chance)" : $"not rolled ({chance}% chance)")}; life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("god", "/god (toggles: 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 attributes)", async _ =>
     {

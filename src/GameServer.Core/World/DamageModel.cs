@@ -9,6 +9,8 @@ public enum DamageType { Physical, Fire, Cold, Lightning, Chaos }
 /// <c>src/Modules/Data.lua</c>; the default per-type maximum is 75 (<c>src/Data/Misc.lua</c>, Character.ot
 /// <c>base_maximum_all_resistances_%</c>), and the final value is
 /// <c>clamp(base × increased, ResistFloor, max)</c> in <c>src/Modules/CalcDefence.lua</c> (§ resistances).
+/// Spell Suppression's 100% chance cap and 40% effect are from the same PoB data (<c>SuppressionChanceCap</c>,
+/// <c>SuppressionEffect</c>); a suppressed spell hit takes 40% less damage.
 /// The per-type maximum-resistance stats, penetration and increased resistance are not modelled yet.
 /// </summary>
 public static class DamageModel
@@ -21,6 +23,23 @@ public static class DamageModel
 
     /// <summary>Character.ot's <c>base_maximum_all_resistances_%</c>: the default maximum resistance.</summary>
     public const int DefaultMaxResistance = 75;
+
+    /// <summary>Path of Building's <c>SuppressionChanceCap</c>: Spell Suppression chance cannot exceed 100%.</summary>
+    public const int SpellSuppressionChanceCap = 100;
+
+    /// <summary>Path of Building's <c>SuppressionEffect</c>: a suppressed spell hit takes 40% less damage.</summary>
+    public const int SpellSuppressionEffect = 40;
+
+    /// <summary>Whether a Spell Suppression roll succeeds; <paramref name="roll"/> is 0..99.</summary>
+    public static bool Suppresses(int chance, int roll) => roll < Math.Clamp(chance, 0, SpellSuppressionChanceCap);
+
+    /// <summary>A successful suppression's damage after the suppression effect, rounded to the nearest point. PoB does
+    /// not cap the effect itself (passives can raise it above 40); damage cannot go below zero.</summary>
+    public static int Suppress(int damage, int effect = SpellSuppressionEffect)
+    {
+        if (damage <= 0) return 0;
+        return (int)Math.Max(0, Math.Round(damage * (100.0 - Math.Max(0, effect)) / 100.0));
+    }
 
     /// <summary>The resistance used for a hit: capped at the per-type maximum (75 by default, 90 absolute) and floored
     /// at Path of Building's -200.</summary>
