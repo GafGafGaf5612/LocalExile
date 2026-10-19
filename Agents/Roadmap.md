@@ -28,13 +28,12 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
 
-### Stash: the last tab, Ctrl + click and the special tabs
-- **Known:** the stash opens, tabs load and items move ([18](docs/protocol/18-stash.md)). The panel opens on a tab
-  through the 0x7b affinity argument; the client reports a tab only when it loads it (C→S 0xc7).
-- **Start:** find a signal for the selected tab (or ignore the 0xc7 the panel sends as it opens); map C→S 0xe0 (Ctrl +
-  click); place currency, essences and fragments in their slots (the *StashTabLayout tables).
-- **Done when:** the stash always reopens on the tab it was closed on, Ctrl + click moves items both ways, and the
-  special tabs take their items in the right slots.
+### Stash: the special tabs and tab settings
+- **Known:** the stash opens on the last tab, tabs load and items move by click and Ctrl + click
+  ([18](docs/protocol/18-stash.md)). Switching to a loaded tab sends nothing to the server.
+- **Start:** place currency, essences and fragments in their slots (the *StashTabLayout tables, x = FirstSlotIndex);
+  tab rename / colour (0xd2 / 0xd3), order (0xcc) and folders (0xd1).
+- **Done when:** the special tabs take their items in the right slots and tab settings are kept.
 
 ## 2. The world
 

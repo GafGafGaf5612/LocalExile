@@ -128,6 +128,41 @@ public static class InstanceStash
     /// <summary>C→S 0xd1 (7 bytes, vtable 0x1435c0198, write 0x141f96c50; 0x142167370): a tab into a folder. u16 BE tab,
     /// u16 BE folder (0xffff: out of it), u8 kind.</summary>
     public const int MoveTabLength = 7;
+
+    public const ushort MoveToTabId = 0xe0, TakeFromTabId = 0xe3;
+
+    /// <summary>C→S 0xe0: Ctrl + click on an inventory item while a stash tab is shown. Tab: the shown tab's index (the
+    /// stash page's +0x4a4); Kind: the page's stash kind (+0x491); Flags: bit 0, bit 1 (unknown, 0 live); Token: a u16
+    /// that changes per request; U64: the page's optional u64 (0 live).</summary>
+    public sealed record MoveToTab(ushort Tab, uint ItemId, byte Flags, byte Kind, ushort Token, ulong U64);
+
+    /// <summary>
+    /// C→S 0xe0 (20 bytes, vtable 0x1435c0878, write 0x141f97560; built by 0x142168ab0, called from the stash page
+    /// 0x140b1e6d0 / 0x140b617e0 and the inventory grid's Ctrl + click 0x140313ba0): u16 BE tab, u32 BE item id, u8 flags,
+    /// u8 kind, u16 token (two raw bytes), u64 raw. The item's inventory is not sent: the server knows where it is.
+    /// Live 2026-10-19: <c>00E0 0000 000000F8 00 00 694F 0000000000000000</c>.
+    /// </summary>
+    public static MoveToTab ReadMoveToTab(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U16(), r.U32(), r.U8(), r.U8(), (ushort)(r.U8() | r.U8() << 8),
+            System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(m[12..]));
+    }
+
+    public const int MoveToTabLength = 20;
+
+    /// <summary>
+    /// C→S 0xe3 (12 bytes, vtable 0x1435c0500, write 0x141f97e40; built by 0x142168e20): an item out of a stash tab. u16
+    /// BE tab, u32 BE item id, u8, u8, u8, u8 (0x142168e20's 4th, 5th (two bytes) and 6th arguments). The special tabs'
+    /// pages (0x140b3c040, 0x140b57810) and 0x14031b950 send it; whether a normal tab's Ctrl + click does is not checked.
+    /// </summary>
+    public static (ushort Tab, uint ItemId, byte A, byte B, byte C, byte D) ReadTakeFromTab(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return (r.U16(), r.U32(), r.U8(), r.U8(), r.U8(), r.U8());
+    }
+
+    public const int TakeFromTabLength = 12;
 }
 
 /// <summary>

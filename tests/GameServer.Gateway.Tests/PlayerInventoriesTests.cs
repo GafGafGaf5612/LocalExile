@@ -332,4 +332,16 @@ public class PlayerInventoriesTests : IDisposable
         Assert.Equal((ushort)3, save.RefundPoints);
         Assert.Equal((ushort)2, save.ExtraPassivePoints);
     }
+    [Fact]
+    public void An_item_is_found_in_its_row_but_not_on_the_cursor()
+    {
+        var items = NewInventories();
+        var a = items.Add(PlayerInventories.MainInventory, 0, 0, Wand());
+        var b = items.Add(PlayerInventories.Flask, 0, 0, Wand());
+        items.PickUp(PlayerInventories.Flask, b.Id);
+
+        Assert.Equal(PlayerInventories.MainInventory, items.RowOf(a.Id));
+        Assert.Null(items.RowOf(b.Id));
+        Assert.Null(items.RowOf(999));
+    }
 }

@@ -61,4 +61,16 @@ public class InstanceStashTests
         Assert.Equal("0000" + "3F010000" + "10010000" + "00000000" + "0000" + "00020001" + "00" + "00" + "00" + "00",
             Convert.ToHexString(new StashObject(319, 272).Blob()));
     }
+    [Fact]
+    public void Ctrl_click_into_a_tab_reads_the_live_capture()
+    {
+        byte[] live = Convert.FromHexString("00E00000000000F80000694F0000000000000000" + "00E3000200000109" + "00000000");
+        var messages = InstanceProtocol.SplitClientMessages(live, out var partial, out var unknown);
+
+        Assert.Equal([InstanceStash.MoveToTabId, InstanceStash.TakeFromTabId], messages.Select(m => m.Id));
+        Assert.Equal(new InstanceStash.MoveToTab(0, 0xf8, 0, 0, 0x4f69, 0), InstanceStash.ReadMoveToTab(messages[0].Bytes));
+        Assert.Equal(((ushort)2, 0x109u, (byte)0, (byte)0, (byte)0, (byte)0), InstanceStash.ReadTakeFromTab(messages[1].Bytes));
+        Assert.Empty(partial);
+        Assert.Empty(unknown);
+    }
 }
