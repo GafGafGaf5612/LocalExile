@@ -245,7 +245,9 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         else if (id == InstanceProtocol.ResurrectId)
             _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
         else if (id == InstanceNpcs.DialogueClosedId)
-            Console.WriteLine($"[gateway] {remote} <= 0x0085 npc dialogue closed");
+            await CloseNpcDialogue(remote, stream, ciphers, conn);
+        else if (id == InstanceNpcs.OptionId)
+            await ChooseNpcOption(remote, stream, ciphers, conn, InstanceNpcs.ReadOption(bytes));
         else if (id == InstanceChat.ChatId)
         {
             var chat = InstanceChat.ReadChat(bytes);
@@ -546,8 +548,51 @@ static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphe
     if (conn.ActionCount != action) return;
     uint id;
     lock (conn.Npcs) id = conn.Npcs.FirstOrDefault(n => ReferenceEquals(n.Value, npc)).Key;
+    conn.TalkingTo = id;
+    conn.InNpcTalk = false;
     await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 talk to npc 0x{id:x} {npc.Npc.Name}");
 }
+
+// C→S 0x85: the dialogue window was closed or, while a talk plays, Continue was pressed. The client stays in its dialogue
+// state (and the player cannot move) until the server answers: back to the option list (0x84 0xff) after a talk, else
+// 0x84 with object 0, which ends the dialogue.
+static async Task CloseNpcDialogue(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    uint id = conn.TalkingTo;
+    if (id != 0 && conn.InNpcTalk)
+    {
+        conn.InNpcTalk = false;
+        await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 npc 0x{id:x}: back to the options (0x85 after a talk)");
+        return;
+    }
+    conn.TalkingTo = 0;
+    conn.InNpcTalk = false;
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 object 0: npc dialogue closed (0x85)");
+}
+
+// C→S 0x82: an option picked in the NPC dialogue window (an NPCTalk row of the NPC talked to).
+static async Task ChooseNpcOption(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, byte index)
+{
+    uint id = conn.TalkingTo;
+    SpawnedNpc? npc;
+    lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(id);
+    if (npc is null) { Console.WriteLine($"[gateway] {remote} <= 0x0082 npc option {index}: no NPC dialogue open"); return; }
+    var talk = Npcs.Value.TalkOf(npc.Npc, index);
+    Console.WriteLine($"[gateway] {remote} <= 0x0082 npc {npc.Npc.Name} option {index}: " +
+        (talk is null ? "no NPCTalk row" : $"NPCTalk row {talk.Row} \"{talk.Option}\" ({talk.Category}), text audio [{string.Join(", ", talk.TextAudio)}]"));
+    if (talk is null) return;
+    switch (talk.Category)
+    {
+        case "Gossip" or "Quests" or "QuestReward" when talk.TextAudio.Count > 0:
+            // 0x84 with the row's index: the client opens the dialogue window on that NPCTalk row (its text and audio).
+            conn.InNpcTalk = true;
+            await Send(remote, stream, ciphers, InstanceNpcs.Talk(id, (byte)talk.Index),
+                $"0x0084 npc 0x{id:x} {npc.Npc.Name} talks: NPCTalk row {talk.Row} \"{talk.Option}\" (index {talk.Index})");
+            break;
+        default:
+            Console.WriteLine($"[gateway] {remote} npc option category {talk.Category} is not implemented yet");
+            break;
+    }}
 
 // Activates this area's waypoint for the character (saved) and tells the client: a new 0x4c with the area's bit set
 // plays the waypoint's activation. Towns activate on entry, other waypoints when the player comes near or clicks them.
@@ -1692,6 +1737,29 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         var (x, y) = NextToPlayer(conn);
         await SpawnNpc(remote, stream, ciphers, conn, npc, x, y, (deg ?? 0) * MathF.PI / 180);
     })
+    // Turns an NPC: it is created again with the new facing (0x2bb, then 0x2b9).
+    .Add("npc_face", "/npc_face <name> <degrees> (turn an NPC here)", async args =>
+    {
+        if (args.Length < 2) throw new ArgumentException("name and degrees");
+        float deg = float.Parse(args[^1], System.Globalization.CultureInfo.InvariantCulture);
+        string name = string.Join(' ', args[..^1]);
+        KeyValuePair<uint, SpawnedNpc> found;
+        lock (conn.Npcs) found = conn.Npcs.FirstOrDefault(n => n.Value.Npc.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+        if (found.Value is not { } npc) { await conn.Commands!.Reply($"No NPC {name} here."); return; }
+        lock (conn.Npcs) conn.Npcs.Remove(found.Key);
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(found.Key), $"0x02bb remove npc 0x{found.Key:x} {npc.Npc.Name}");
+        float rad = deg * MathF.PI / 180;
+        await SpawnNpc(remote, stream, ciphers, conn, npc.Npc, npc.X, npc.Y, rad);
+        await conn.Commands!.Reply($"{npc.Npc.Name} at ({npc.X}, {npc.Y}) faces {deg}° ({rad:0.###} rad).");
+    })
+    // Probe: S→C 0x7b (open a UI) with any kind and its four u32s (16-waypoints.md §3; kind 0 = World panel).
+    .Add("ui", "/ui <kind hex> [a] [b] [c] [d] (S→C 0x7b open a UI)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("which kind");
+        byte kind = Convert.ToByte(args[0].Replace("0x", "", StringComparison.OrdinalIgnoreCase), 16);
+        uint U(int i) => args.Length > i ? Convert.ToUInt32(args[i], args[i].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10) : 0;
+        await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(kind, U(1), U(2), U(3), U(4)), $"0x007b open UI kind 0x{kind:x2} ({U(1)}, {U(2)}, {U(3)}, {U(4)})");
+    })
     .Add("npcs", "/npcs (list NPCs here)", async _ =>
     {
         string list;
@@ -2608,6 +2676,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint PlayerMana;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
+    // The NPC whose dialogue window is open (0x84 sent, 0x85 not yet), 0 = none.
+    public volatile uint TalkingTo;
+    // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
+    public volatile bool InNpcTalk;
     // NPCs created on this connection by object id (town NPCs, /npc).
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).

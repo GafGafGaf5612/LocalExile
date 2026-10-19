@@ -15,29 +15,37 @@ sealed class NpcCatalog
         public override string ToString() => $"{Name} ({Id}, row {Row})";
     }
 
+    /// <summary>An NPCTalk row: the NPC's dialogue option <paramref name="Index"/> (column 1, what C→S 0x82 carries), its
+    /// NPCTalkCategory Id (Gossip, Quests, BuyItems, SellItems, IdentifyItems, RespecPassivePointsForGold …), script and
+    /// NPCTextAudio rows.</summary>
+    public sealed record Talk(int Row, int Npc, int Index, string Option, string Category, string Script, IReadOnlyList<int> TextAudio);
+
     /// <summary>An NPC standing in a town: its NPCs.dat Id, cell and facing (radians).</summary>
     public sealed record Placement(string Id, int X, int Y, float Rotation);
 
     // Lioneye's Watch (spawn (197, 261), waypoint (256, 169), gate to The Coast (388, 231)): where they stand in the real
-    // game, picked live with /pos on 2026-10-19. Facing is not set yet.
+    // game, measured on its minimap (17-npcs.md §2: the minimap's projection fitted on known cells, under one cell of
+    // error). Facing in radians (Positioned +0x29c), set live with /npc_face.
     static readonly Dictionary<ushort, Placement[]> Towns = new()
     {
         [AreaLayouts.LioneyesWatch] =
         [
-            new("Metadata/NPC/Act1/Tarkleigh", 385, 188, 0),
-            new("Metadata/NPC/Act1/Nessa", 355, 263, 0),
-            new("Metadata/NPC/Act1/Bestel", 362, 249, 0),
+            new("Metadata/NPC/Act1/Tarkleigh", 388, 182, 4.0f),
+            new("Metadata/NPC/Act1/Nessa", 346, 271, 4.0f),
+            new("Metadata/NPC/Act1/Bestel", 361, 246, 4.0f),
         ],
     };
 
     public IReadOnlyList<Npc> Rows { get; }
     public string? Error { get; }
     readonly Dictionary<string, Npc> _byId;
+    readonly Dictionary<(int Npc, int Index), Talk> _talk = [];
 
-    NpcCatalog(List<Npc> rows, string? error)
+    NpcCatalog(List<Npc> rows, string? error, IEnumerable<Talk>? talk = null)
     {
         Rows = rows;
         Error = error;
+        foreach (var t in talk ?? []) _talk.TryAdd((t.Npc, t.Index), t);
         _byId = rows.GroupBy(r => r.Id, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
     }
 
@@ -49,6 +57,9 @@ sealed class NpcCatalog
             return new([], $"NPCs: {ex.Message}");
         }
     }
+
+    /// <summary>The NPCTalk row an NPC's option index (C→S 0x82) stands for.</summary>
+    public Talk? TalkOf(Npc npc, int index) => _talk.GetValueOrDefault((npc.Row, index));
 
     /// <summary>The town's NPCs, or none.</summary>
     public static IReadOnlyList<Placement> In(ushort areaHash) => Towns.GetValueOrDefault(areaHash) ?? [];
@@ -94,6 +105,26 @@ sealed class NpcCatalog
                 rows.Add(new Npc(rows.Count, id, r.GetProperty("Name").GetString() ?? "", list,
                     stateMachines.GetValueOrDefault(id), transitionStates.GetValueOrDefault(id, (byte)1)));
             }
-        return new(rows, null);
+        return new(rows, null, ReadTalk(folder));
+    }
+
+    static List<Talk> ReadTalk(string folder)
+    {
+        string table = Path.Combine(folder, "tables", "NPCTalk.json"), categories = Path.Combine(folder, "tables", "NPCTalkCategory.json");
+        if (!File.Exists(table) || !File.Exists(categories)) return [];
+        List<string> names;
+        using (var doc = JsonDocument.Parse(File.ReadAllBytes(categories)))
+            names = [.. doc.RootElement.EnumerateArray().Select(c => c.GetProperty("Id").GetString() ?? "")];
+        var talk = new List<Talk>();
+        using (var doc = JsonDocument.Parse(File.ReadAllBytes(table)))
+            foreach (var r in doc.RootElement.EnumerateArray())
+            {
+                int Int(string name) => r.GetProperty(name).ValueKind == JsonValueKind.Number ? r.GetProperty(name).GetInt32() : -1;
+                int category = Int("Category");
+                talk.Add(new Talk(talk.Count, Int("NPCKey"), Int("__col1"), r.GetProperty("DialogueOption").GetString() ?? "",
+                    category >= 0 && category < names.Count ? names[category] : "", r.GetProperty("Script").GetString() ?? "",
+                    [.. r.GetProperty("NPCTextAudioKeys").EnumerateArray().Select(e => e.GetInt32())]));
+            }
+        return talk;
     }
 }
