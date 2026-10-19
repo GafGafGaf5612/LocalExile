@@ -3107,8 +3107,8 @@ static async Task HeldOntoItem(string remote, NetworkStream stream, ConnectionCi
     if (PlayerInventories.ShowsOnModel(done.Row)) await SendEquipment(remote, stream, ciphers, conn, items);
 }
 
-// Shift held on a 0x4a: the sender's params 6/7 land in flag bits 1/2 (which is Shift is not confirmed yet).
-static bool OneOf(InstanceItems.ItemAction a) => (a.Flags & 0x06) != 0;
+// Shift held on a 0x4a: flag bit 2 (the sender's param 7; live 2026-10-19, Flags = 4 with Shift, 0 without).
+static bool OneOf(InstanceItems.ItemAction a) => (a.Flags & 0x04) != 0;
 
 // A held stack went onto a stack of its type: that one grows in place (same id), the held one shrinks (same id) or is gone.
 static async Task SendMerged(string remote, NetworkStream stream, ConnectionCiphers ciphers, PlayerInventories items, PlayerInventories.Placement done)

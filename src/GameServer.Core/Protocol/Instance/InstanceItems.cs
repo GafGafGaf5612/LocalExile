@@ -239,8 +239,8 @@ public static class InstanceItems
 
     /// <summary>
     /// C→S 0x2a (class 0x1435bf710, write 0x141f8feb0, sender 0x14215f400; 18 bytes): put the item held on the cursor
-    /// into an inventory. u32 inventory id, u32 x, u32 y (the target cell; 0, 0 for equipment), u8 +0x1d, u8 +0x1c (3 in
-    /// every capture), u8 +0x1e, u8 +0x1f. The client sends it for any click while it holds an item, including on an
+    /// into an inventory. u32 inventory id, u32 x, u32 y (the target cell; 0, 0 for equipment), u8 +0x1d (1 with Shift:
+    /// one of a held stack, the sender's param 7), u8 +0x1c (3 in every capture), u8 +0x1e, u8 +0x1f. The client sends it for any click while it holds an item, including on an
     /// occupied cell (a swap).
     /// </summary>
     public sealed record PlaceItem(uint InventoryId, uint X, uint Y, byte A, byte B, byte C, byte D);
@@ -261,7 +261,7 @@ public static class InstanceItems
     /// C→S 0x4a (class 0x1435bf6d0, write 0x141fa08d0, sender 0x14215f5c0; 14 bytes): a click with the held item on an
     /// item (live 2026-10-19: a held Scroll Fragment clicked on another one sends this, not 0x2a). u32 inventory id with
     /// HNC side-channel bits from bit 20 (mask 0xc00fffff), u32 the clicked item's id, u8 flags (bits 0-2: sender params 6
-    /// and 7 shifted left once; HNC bits 3-7), u8 (3 unless the caller passes its own), u16 (two bytes, low first; differs
+    /// and 7 shifted left once, bit 2 = Shift held; HNC bits 3-7), u8 (3 unless the caller passes its own), u16 (two bytes, low first; differs
     /// on every click, unknown).
     /// </summary>
     public sealed record ItemAction(uint InventoryId, uint ItemId, byte Flags, byte B, ushort Extra);

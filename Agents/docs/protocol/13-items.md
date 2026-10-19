@@ -90,13 +90,14 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | Id | Bytes | Class / write | Meaning | Server answer |
 |---|---|---|---|---|
 | 0x28 | 13 | `0x1435bf5f0` / `0x141fa0d00` | click on an item: pick it up. u32 inventory id **with HNC side-channel bits 21-29** (mask `0xc01fffff`, reader `0x141fa0ea0`), u32 item id, u8 (3), u8, u8 | 0xbf remove from the inventory, 0xbf add to the cursor (row 12) at (0, 0) |
-| 0x2a | 18 | `0x1435bf710` / `0x141f8feb0` | put the held item down: u32 inventory id, u32 x, u32 y (0, 0 for equipment), u8, u8 (3), u8, u8. Sent for any click while holding, also on an occupied cell | 0xbf target (remove the displaced item, add the held one), 0xbf cursor (remove the held one, add the displaced one) |
+| 0x2a | 18 | `0x1435bf710` / `0x141f8feb0` | put the held item down: u32 inventory id, u32 x, u32 y (0, 0 for equipment), u8 Shift (1: one of a held stack, §4a), u8 (3), u8, u8. Sent for a click while holding on a cell; a click on an item sends 0x4a | 0xbf target (remove the displaced item, add the held one), 0xbf cursor (remove the held one, add the displaced one) |
 | 0x30 | 16 | `0x1435c0838` / `0x141f90650` | put the held gem into a socket: u32 inventory id, u32 item id, u32 socket index, u8, u8 | 0xbf cursor, 0xbf replacing the item |
 | 0x2f | 17 | — | take a socketed gem onto the empty cursor: u32 inventory id, u32 item id, u32 socket index, 3 bytes | 0xbf replacing the item, 0xbf cursor |
 | 0x29 | 2 | `0x14316c930` (id only), sender `0x140117b80` | drop the held item into the world | 0xbf cursor, then a WorldItem (§5) |
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` | u8, u32, u8 flag (senders `0x14215f520` / `0x14215f570`) | not handled |
-| 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | split a stack (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 item id, u8 flags (bits 0-2; HNC bits 3-7), u8 (3), u16 amount **low byte first** | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
+| 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | the held item clicked **on an item** (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 the clicked item's id, u8 flags (bit 2 = Shift; HNC bits 3-7), u8 (3), u16 (low byte first, differs every click, unknown) | a merge (0xbf the stack, 0xbf cursor), else a swap as 0x2a |
+| 0x7c | 17 | `0x1435bfdd8` / `0x141f90870`, sender `0x142165640` | split a stack (§4a): u32 inventory id, u32 item id, u32 amount, u8 (3), u16 (unknown); no HNC bits | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
 
 Dropping: `0x140117b80` sends 0x29 at once outside town. In town (and for quest items) it opens the Keep / Destroy popup
 instead and sends nothing unless Destroy is chosen (0x16 command 9).
@@ -113,22 +114,29 @@ Stackable types have a Stack component (its u16 is the stack size) and a Currenc
 currency stash tab's limit). The client draws the size and the tooltip's "Stack Size: n/max" from the item and its own
 tables; it changes nothing itself, the server's 0xbf does.
 
-- **Merge** (C→S 0x2a on a stack): a held stack put on a stack of the same type with room fills it up to the max and
-  the rest stays held. The answer is a 0xbf on the target (remove and add the stack's id, larger) and one on the cursor
-  (remove the held id, add it again smaller, or not at all when all of it went). A full stack, or another type, is
-  swapped as usual (`PlayerInventories.Place`). Stash tabs merge the same way (`AccountStash.Merge`, [18](18-stash.md)).
-- **Split** (Shift + click on a stack, then the split window's amount): C→S 0x4a. The stack shrinks in place and the
+- **Merge** (C→S 0x4a, the held stack clicked on a stack; live 2026-10-19 the client sends 0x4a, not 0x2a, for a
+  click on an item): a stack of the same type with room fills up to the max and the rest stays held. The answer is a
+  0xbf on the target (remove and add the stack's id, larger) and one on the cursor (remove the held id, add it again
+  smaller, or not at all when all of it went). A full stack, or another type, is swapped as 0x2a on that item's cell
+  (`PlayerInventories.MergeOnto` → `Place`). Stash tabs do the same (`AccountStash.Merge`, [18](18-stash.md)).
+- **One of the held stack** (Shift + click while holding): 0x2a with its first flag byte 1 puts one into an empty cell
+  as a new item; 0x4a with flag bit 2 adds one to a stack of its type (refused on anything else). The rest stays held.
+- **Split** (Shift + click on a stack, then the split window's amount): C→S 0x7c. The stack shrinks in place and the
   split-off part is held as a new item (`PlayerInventories.Split`). Refused with something held, an amount of 0 or the
   whole stack. On a stash tab the tab's stack shrinks (`AccountStash.Shrink`, written first) and the held part gets a
   character item id.
+- **Full stacks become their item:** CurrencyItems `FullStack_BaseItemTypesKey` (28 types: 5 Scroll Fragments → a
+  Scroll of Wisdom, 20 shards → their orb, 100 splinters → their Breachstone or Emblem …). A stack that reaches its max
+  by a merge or an add turns into one of that item in the same cell, with the same id (`PlayerInventories.Completed`).
 - **Adding** (`PlayerInventories.AddStacked`): items picked up from the ground into the main inventory, `/item <type>
   <count>` (count = how many, up to 20 full stacks) and the sell window's reward go onto the stacks of their type first
   (fullest first), then as new stacks of at most the max in free cells. A ground stack is picked up only when all of it
   fits (`Fits`).
 
 The 0x4a writer `0x141fa08d0` packs the HNC side-channel bits into the inventory id from bit 20 and into the flags byte
-from bit 3, like 0x28; the amount is two single bytes (+0x1a low, +0x1b high). The framing table had it at 12 bytes,
-which would have split the next message.
+from bit 3, like 0x28. The framing table had 0x4a at 12 bytes (it is 14) and did not know 0x7c; both would have split
+the next message. Verified live on 2026-10-19: merge, split (10 off 35), Shift one into a cell and onto a stack, 5
+Scroll Fragments → a Scroll of Wisdom.
 
 ## 5. Items on the ground
 
@@ -207,8 +215,8 @@ linked sockets in the colour of their highest attribute requirement (ComponentAt
 
 - Gem levels and experience, support gems and links.
 - Mods (implicit, explicit), rarity, names, quality effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
-- C→S 0x2d and 0x12 (5 bytes, seen once); the meaning of 0x4a's flags bits and its other callers (`0x140b34140`,
-  `0x14031c0a0`).
+- C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
+  `0x14031c0a0`: probably currency use on an item).
 - Flask use and currency use. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
   on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
