@@ -40,7 +40,7 @@
 ```powershell
 # 1. build
 dotnet build GameServer.slnx
-# 2. start backends + mitm (see tools/run-servers.ps1 and tools/GameMitmProxy)
+# 2. start backends + mitm (tools/run-servers.ps1, since removed: scripts/dev/live.ps1 starts the servers; and tools/GameMitmProxy)
 # 3. in the SAME shell, launch the client with the proxy:
 $env:HTTPS_PROXY='http://127.0.0.1:8899'; $env:HTTP_PROXY='http://127.0.0.1:8899'; $env:NO_PROXY=''
 $env:SSL_CERT_FILE=(Resolve-Path 'server/Game-dev.pem'); $env:CURL_CA_BUNDLE=$env:SSL_CERT_FILE

@@ -16,7 +16,6 @@ PathOfExile*.exe
 !/Tools/PoEDataExtractor/
 !/Tools/PoEMitmProxy/
 !/Tools/redirect/
-!/Tools/run-servers.ps1
 !/Tools/ooz/
 !/Tools/re/
 /Tools/re/out/
