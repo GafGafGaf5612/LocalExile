@@ -121,6 +121,15 @@ the item, on the first step inside the range.
 
 Dying monsters drop items as WorldItems around the corpse (`DropLoot`, [15](15-progression.md) §3).
 
+**Ground items belong to the instance** (`InstanceStore`, `InstanceGround`), as in the real game. Dropped items and
+loot are kept per area instance, by Auth's instance id and its creation time (`Created` in the `resolve` answer: Auth's
+ids start at 1 again after a restart, so an old instance's items never reach a new one). Re-entering the instance sends
+them where they lay (`SendGroundItems`), after a logout, a disconnect or a client crash. Their object ids come from
+their own range, **0x100000** up, the same for every connection; the client accepts them (live 2026-10-18). A pickup
+takes the item out of the store first, so two connections can never both get it. The store is in the Gateway's memory:
+it is wiped like Auth's instance, once no connection has been in it for `InstanceRegistry.Lifetime` (6 minutes), and
+lost when the Gateway restarts.
+
 ## 6. Equipment on the character: visuals, attributes, gem skills
 
 **What the model wears** is the player's Inventories component (index 8, reader `0x141e1ee30`, also as a 0x2ba update):
@@ -175,4 +184,5 @@ linked sockets in the colour of their highest attribute requirement (ComponentAt
 - Mods (implicit, explicit), rarity, names, quality effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
 - C→S 0x2d, 0x4a and 0x12 (5 bytes, seen once).
 - Flask use, currency use, stacks and splitting.
-- Ground items are per connection, not per instance; other players do not see them.
+- Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
+  Gateway shows each client only its own player).
