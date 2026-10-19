@@ -93,6 +93,27 @@ sealed class SkillCatalog(string folder = "data")
     public string? EffectId(int effectRow) =>
         _tables.Value?.EffectRows.FirstOrDefault(kv => kv.Value.Row == effectRow).Key;
 
+    /// <summary>A GrantedEffects row by its Id, or -1.</summary>
+    public int EffectRow(string effectId) =>
+        _tables.Value is { } t && t.EffectRows.TryGetValue(effectId, out var effect) ? effect.Row : -1;
+
+    /// <summary>
+    /// The mana a skill reserves at a level: GrantedEffectsPerLevel ManaReservationFlat (a flat amount) and
+    /// ManaReservationPercent (permyriad: 5000 = 50%). Null when the skill reserves nothing.
+    /// </summary>
+    public (int Flat, int Percent)? Reservation(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t) return null;
+        int row = t.PerLevel.FindIndex(r => r.Effect == effectRow && r.Level == level);
+        if (row < 0 || row >= t.Reservations.Count) return null;
+        var r = t.Reservations[row];
+        return r.ManaFlat == 0 && r.ManaPercent == 0 ? null : (r.ManaFlat, r.ManaPercent);
+    }
+
+    /// <summary>The mana a GrantedEffects Id reserves at a level, or null.</summary>
+    public (int Flat, int Percent)? Reservation(string effectId, int level) =>
+        EffectRow(effectId) is int row and >= 0 ? Reservation(row, level) : null;
+
     /// <summary>A GrantedEffects row's CastTime in ms (0 when unknown).</summary>
     public int CastMs(int effectRow) =>
         _tables.Value is { } t && effectRow >= 0 && effectRow < t.Effects.Count ? t.Effects[effectRow].CastTime : 0;
@@ -306,10 +327,12 @@ sealed class SkillCatalog(string folder = "data")
     // StatSetBase: per GrantedEffectStatSets row its ImplicitStats and (ConstantStats, ConstantStatsValues).
     // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
     // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
+    // Reservations: per GEPL row the ManaReservationFlat and ManaReservationPercent (permyriad), parallel to PerLevel.
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
         List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
         List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
-        List<(int, int)[]> StatSetLevelStats, List<int> ManaCost)
+        List<(int, int)[]> StatSetLevelStats, List<int> ManaCost,
+        List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations)
     {
         public static Tables? Load(string folder)
         {
@@ -346,12 +369,15 @@ sealed class SkillCatalog(string folder = "data")
             }
             var perLevel = new List<(int, int)>();
             var mana = new List<int>();
+            var reservations = new List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)>();
             foreach (var r in p.RootElement.EnumerateArray())
             {
                 perLevel.Add((Int(r, "GrantedEffect"), Int(r, "Level")));
                 int[] types = Ints(r, "CostTypes"), amounts = Ints(r, "CostAmounts");
                 int i = Array.IndexOf(types, 0);
                 mana.Add(i >= 0 && i < amounts.Length ? amounts[i] : 0);
+                reservations.Add((Math.Max(0, Int(r, "ManaReservationFlat")), Math.Max(0, Int(r, "ManaReservationPercent")),
+                    Math.Max(0, Int(r, "LifeReservationFlat")), Math.Max(0, Int(r, "LifeReservationPercent"))));
             }
             var setLevels = new List<(int, int)>();
             var levelStats = new List<(int, int)[]>();
@@ -361,7 +387,7 @@ sealed class SkillCatalog(string folder = "data")
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
                     .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
             }
-            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana);
+            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana, reservations);
         }
     }
 }

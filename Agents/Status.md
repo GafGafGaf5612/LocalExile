@@ -55,6 +55,15 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Partly working
 
+- **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel
+  (`ManaReservationFlat` / `ManaReservationPercent`), reduced by the passive/mastery reservation efficiency and sent as
+  the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
+  Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their level-1 effects and buff visuals.
+  The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
+  sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
+  curse auras, Determination/Grace/Discipline (no armour/evasion/ES model), Purity ailment immunity, Reservation
+  masteries 1/2/6, supports, gem levels, party/minion auras and life reservation
+  ([11](docs/protocol/11-skills.md) 13).
 - **Positions are estimated, not simulated.** The Gateway estimates where the player is from clicks, walk speed and the
   walk map; there is no server-side pathing or collision.
 - **Stats.** The client's stat key is the Stats.dat row + 1 with the vendored schema ([11](docs/protocol/11-skills.md)
@@ -112,14 +121,15 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - Stash: a switch to an already loaded tab sends nothing, so it is missed if the player logs out without reopening the stash or moving an item; the special tabs' slot rules, tab rename / order / folders, the guild stash, per-league stashes and stashes in other towns ([18](docs/protocol/18-stash.md) "Open").
 - Saving quest progress. Quest passive points, quest refund points and ascendancy ([15](docs/protocol/15-progression.md) "Open").
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent; an
-  effect object follows the player only by 0x1ba glides. Buffs other than Righteous Fire's are not used. Ruthless and SSF change nothing in game; towns are shared across leagues.
+  effect object follows the player only by 0x1ba glides. Combat auras, Heralds and banners are not implemented; only the
+  simple auras above use buffs. Ruthless and SSF change nothing in game; towns are shared across leagues.
 - `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (269 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (69: inventory moves, stacks, arrival points, instance ground items and monsters, quests,
-passives, spell suppression, attack speed, critical strikes, accuracy and the account stash) pass.
+`dotnet test tests/GameServer.Core.Tests` (270 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (75: inventory moves, stacks, arrival points, instance ground items and monsters, quests,
+passives, spell suppression, attack speed, critical strikes, accuracy, auras and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

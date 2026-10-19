@@ -600,7 +600,8 @@ public sealed class BlobWriter
 public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int GridY,
     uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null,
     IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null,
-    IReadOnlyList<VisibleItem>? Equipped = null, IReadOnlyCollection<int>? QuestFlags = null)
+    IReadOnlyList<VisibleItem>? Equipped = null, IReadOnlyCollection<int>? QuestFlags = null,
+    uint ManaReserved = 0)
 {
     /// <summary>The Player component's index in the player object's component order (04 §3).</summary>
     public const byte PlayerComponentIndex = 6;
@@ -647,7 +648,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
         // comp3 (0x141e114d0): u16 count of entries (u16, u8, 0x141e06bb0 record).
         w.U16(0);
         // Life (0x141e6c2f0): life, mana and energy shield pools (0x141e6be70), then a flags byte (0x141e6c270).
-        Pool(w, Life); Pool(w, Mana); Pool(w, EnergyShield);
+        Pool(w, Life); Pool(w, Mana, ManaReserved); Pool(w, EnergyShield);
         w.U8(0);
         // Animated (0x141e56a80): flags. Bit0 + !bit1: u32 char count + UTF-16LE animated-object path; the client loads it
         // when it differs from the current one or none is set (+0x260 null), creating the 0x308-byte AO instance.
@@ -711,5 +712,6 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     /// u32 +0x28, u32 +0x40. The maximum is not in the blob: the client computes it from stats (Witch level 1: life 50,
     /// mana 40). Live 2026-10-16: sending 50 in both u32 showed "Life 50/50 Reserved 50" and "Mana 50/40 Reserved 40", i.e.
     /// +0x30 is current and +0x10 a reserve clamped to the maximum.</summary>
-    private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
+    private static void Pool(BlobWriter w, uint current, uint reserved = 0) =>
+        w.U32(current).U32(reserved).U16(0).U32(0).U32(0);
 }

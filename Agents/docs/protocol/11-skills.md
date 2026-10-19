@@ -464,6 +464,55 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`base_block_luck`, `attack_block_luck`, `spell_block_luck`) uses `1 - (1 - p)²` (PoB CalcDefence); Svalinn's unique
   item modifiers themselves are not supported yet.
 
+## 13. Auras and reservation
+
+- **Reservation is in the data.** `GrantedEffectsPerLevel` has `ManaReservationFlat` and
+  `ManaReservationPercent` (permyriad: `5000` = 50%); `SkillCatalog.Reservation` reads them. Standard
+  auras reserve 50%, Purity of Fire/Ice/Lightning and Discipline 35%, Heralds 25%; Clarity, Vitality and
+  Precision reserve flat amounts at level 1 (34, 28 and 22). No separate table is needed.
+- **The server computes the reserved amount.** The client does not derive it: `PlayerObject` carries it in
+  the Life component's mana pool (`current, reserved`), and every S→C 0x1b1 mana update must send it too,
+  or the client clears it. The amount is PoB's `CalcPerform`: flat and percent reservations are divided by
+  `1 + mana reservation efficiency / 100`, the percent is rounded to two decimals per skill, and the total
+  is `ceil(maximum mana × total percent / 100) + flat`. The maximum mana is unchanged; current mana is
+  capped at `maximum - reserved`.
+- **Activation.** The client sends an aura as a normal self/ground gem cast (C→S 0x24/0x25); the Gateway
+  toggles it instead of paying a mana cost. The buff row comes from `AuraCatalog` (Purity of Elements 144,
+  Purity of Fire/Ice/Lightning 145/146/147, Clarity 155, Vitality 153, Precision 1293) and is sent with
+  S→C 0x1c1 with the player as source and the skill id as the source skill. A second cast removes it with
+  0x1c2. The buff visual is the row's `BuffVisuals` (the `player_auras/...` EPKs); the server also sends
+  the final stats, because the client derives none of them. The skill-bar active border is not reproduced
+  yet: 0x25f is an internal UI event, not an instance/world message (both factories fall through to their
+  default case), so sending it crashed the 3.29.3b client; the Gateway does not send it. The client's
+  setter (`0x140ae4550`, skill id + ActionTypes HASH16) is not called by the buff add/remove events.
+- **Implemented effects.** Purity of Elements/Fire/Ice/Lightning add their resistances; Clarity and Vitality
+  add their flat regeneration; Precision adds flat accuracy and increased critical strike chance; Haste adds
+  attack, cast and movement speed. Generic
+  `non_curse_aura_effect_+%` / `aura_effect_+%` and the Reservation mastery's self-aura effect scale the
+  values; reservation efficiency comes from `base_mana_reservation_efficiency_+%`,
+  `base_reservation_efficiency_+%` and the mana/global efficiency stats. `AuraCatalog.Bonus` and `RawStats`
+  apply these to `Pools` and `CharacterStats`.
+- **Not implemented yet.** Casting one of these logs that its reservation is known but its effect is not implemented and does not
+  reserve mana:
+  - **Combat auras:** Anger, Hatred and Wrath need added elemental damage and Hatred's physical-as-extra-cold; Zealotry needs
+    more spell damage and spell crit; Pride needs an enemy physical-damage-taken debuff. The damage model has no added
+    elemental damage or enemy aura debuffs yet.
+  - **Heralds:** Ash, Ice and Thunder need on-kill/overkill/shatter/storm effects; Agony and Purity need minions.
+  - **Banners:** Defiance, Dread and War need the planted banner, stages and their pulses.
+  - **Curse auras:** Blasphemy-style skills need the curse system.
+  - **Determination, Grace and Discipline:** the reservation is known, but armour, evasion as avoidance and energy shield
+    are not modelled; they are not in `AuraCatalog` yet.
+  - **Partial effects:** Purity of Elements' elemental-ailment immunity is not applied. Purity of Fire/Ice/Lightning
+    max-resistance values are read, but at gem level 1 they are 0.
+  - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;
+    Reservation1 (damage per aura), Reservation2 (max resistances with reserved life and mana) and Reservation6 (aura
+    duration) are not. Skill-specific reservation efficiency/effect stats are not modelled.
+  - **Systems:** supports, gem levels, party/minion auras, life reservation, and the skill-bar active border (0x25f is an
+    internal UI event, not an instance/world message; the client's setter is not reached by the buff events).
+- **Dev check.** `/auras` prints the active auras, flat/percent reservation, reserved and unreserved mana,
+  reservation efficiency and aura effect. Area changes recreate the player object, so `SendPlayer` puts the
+  running auras' buffs back on it.
+
 ## Open
 
 - Attacks still land at half the attack time: use the attack animations' contact keyframes (data/animation-contacts.json)

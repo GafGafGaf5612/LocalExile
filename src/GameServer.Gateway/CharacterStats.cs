@@ -35,7 +35,9 @@ static class CharacterStats
         int SpellCriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int AttackCriticalStrikeChance = 0,
         int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
-        int AccuracyPct = 0);
+        int AccuracyPct = 0,
+        int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
+        int AuraEffectPct = 0, int AuraAreaPct = 0);
 
     /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life,
     /// mana and accuracy, increased evasion, energy shield and melee physical damage, the base resistances, attack
@@ -56,7 +58,9 @@ static class CharacterStats
         int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
         int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0,
         int Accuracy = 0, int AccuracyPct = 0, int AccuracyPerLevel = 0,
-        bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false)
+        bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false,
+        int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
+        int AuraEffectPct = 0, int AuraAreaPct = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -122,7 +126,10 @@ static class CharacterStats
             SpellCriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.SpellCriticalStrikeMultiplier,
             SpellCriticalStrikeChance: (int)Math.Round(DamageModel.CriticalStrikeChance(
                 DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct) * 100),
-            AccuracyPct: b.AccuracyPct);
+            AccuracyPct: b.AccuracyPct,
+            ManaReservationEfficiencyPct: b.ManaReservationEfficiencyPct,
+            LifeReservationEfficiencyPct: b.LifeReservationEfficiencyPct,
+            AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct);
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));
