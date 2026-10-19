@@ -1,8 +1,7 @@
-# 12 — Quests (research notes, nothing implemented)
+# 12 — Quests
 
-State of 2026-10-18: no quest is implemented. These notes collect what the game files say about quests, worked out on
-the first one players hit that changes the world: **a1q4 "Breaking Some Eggs"** in The Mud Flats, which opens the
-Submerged Passage. Seen live: the area transition to The Submerged Passage spawns
+State of 2026-10-19: the quest engine (§5) and the first quest, **a1q1 "Enemy at the Gate"** (§6), are in. The notes
+below §5 were first worked out on **a1q4 "Breaking Some Eggs"** in The Mud Flats, which opens the Submerged Passage. Seen live: the area transition to The Submerged Passage spawns
 ([08](08-area-transitions.md) §7), but an invisible wall in front of the cave stops the player.
 
 ## 1. The data model
@@ -79,9 +78,119 @@ around each nest).
 | The cave entrance's Transitionable | live 2026-10-18: `WaterCaveAreaTransition` inherits AreaTransition and adds Transitionable, but the client reads only the parent's components (a Transitionable byte became the task count: Buffer Underflow) and the component keeps state 0, whose post-create event crashes (`0x141ded7b9`). The Gateway creates it as a plain AreaTransition for now ([08](08-area-transitions.md) §7). How the real server sets that state is open |
 | Quest log, rewards (Tarkleigh), NPC dialogue | not started; NPCs are not spawned yet (Roadmap "NPCs in town") |
 
+## 5. The quest engine
+
+**Quest flags are the truth.** A character's quest progress is the set of its quest flags, `QuestFlags.dat` Ids (e.g.
+`a1q1-KilledHillock`), saved by name in its save file (`data/saves/<character>.json`, `QuestFlags`): names are readable
+and survive game patches, where row numbers do not. The client keeps its own copy as QuestFlags **rows** in the Player
+component ([16](16-waypoints.md) §3): the Gateway sends them with the player object and again (0x2ba, flag 0x02,
+`PlayerQuestFlagsUpdate`) whenever one changes, together with the World panel's visit and access flags
+(`PlayerQuestFlags`). The client acts on them by itself: an area is reachable only when its WorldAreas `EndQuestFlags`
+are set (`0x140797750`), and blockers with `unblock_quest_flag` read them (§2). `/quest_flag [<id> [off]]` lists, sets
+or clears them (dev).
+
+**One script per quest** (`Quests.cs`, `Quests.Script`). The Gateway asks every script:
+
+| Question | What the Gateway does with the answer |
+|---|---|
+| `OnMonsterKilled(area, variety)` → flags | sets and saves them when a monster dies (`MonsterKilled` → `SetQuestFlags`) |
+| `FlagToEnter(from, to)` → flag | refuses that area transition (C→S 0x24) without the flag, even if the client lets the player reach it |
+
+**Room server objects.** Rooms (`.arm`) list server objects next to their doodads: a type other than
+`Metadata/MiscellaneousObjects/Doodad`, e.g. `Metadata/NPC/Act1/Doorman` (the client spawns only plain doodads).
+`scripts/re/atlas room-points` marks them with their type in `data/room-points.json` (the room fit skips them, since the
+walk-map capture has only the client's doodads), and keeps the rooms that have a `default` start point. Quests do not
+create room objects yet: the first ones (§6) do not look or behave right.
+
+**The plan for later quests**, in the same shape:
+- more events: an area entered (WorldAreas `StartQuestFlags`, e.g. `Visited-1_1` for The Twilight Strand), an object
+  used (0x24), an item picked up (QuestItems `TriggeredQuestFlag`), an NPC talked to;
+- more effects: the quest log (`QuestStates`, §1), rewards, server objects of rooms (§6);
+- dev presets from `CharacterStartQuestState` (e.g. `Act1Complete`: its quests and flags) to start a character at any act.
+
+## 6. a1q1 "Enemy at the Gate": The Twilight Strand
+
+New characters wash up on The Twilight Strand (`AccountService.StartingArea` = `1_1_1`) and log in there until they
+first enter a town ([09](09-area-change.md) §4). Hillock stands before Lioneye's Watch; the way in opens once he is dead.
+
+| What | Where it comes from | What the server does |
+|---|---|---|
+| the start point | the `washedup` room (`washed_up3.arm`, graph node `washedup` in `macro_beach4.tgr`), point `default` | the area's spawn (`AreaLayouts.For`: a room's `default` point, else the deepest cell) |
+| Hillock | WorldAreas `Bosses`: `Metadata/Monsters/ZombieBoss/ZombieBossHillockNormal` (MonsterVarieties 1166) | placed at `mapboss` of `town_entrance_exclude.arm` like any unique boss; his death sets `a1q1-KilledHillock` |
+| the force wall | `Metadata/Terrain/Act1/Area1/Objects/Tutorial_Blocker_3` in `town_entrance_exclude.arm` at room (92, 127), angle −0.988 (model `…/twilight_strand/force_wall/force_wall.ao`) | not created yet (below) |
+| the Doorman | `Metadata/NPC/Act1/Doorman` in the same room at (130, 156): Transitionable `num_states 3`, state 3 plays `door_open` | not created yet (below) |
+| the gate into Lioneye's Watch | a tile record of `beachtown_south_entrance_test.tdt`: `Metadata/QuestObjects/SouthBeachTownEntrance` (extends AreaTransition, Transitionable `num_states 3`: states 1–2 not targetable, 3 opens and becomes targetable after 0.8 s) | captured by the walk-map recorder; created as a plain AreaTransition (see below). The client lets the player click it once its own quest flags hold `a1q1-KilledHillock` (Lioneye's Watch's `EndQuestFlags`); the Gateway also refuses it without the flag |
+
+The `washedup` room also has a force wall of its own (`Tutorial_Blocker_1`), the `WoundedExile` NPC and a
+`BiteZombieSpawner`: the opening tutorial, not done yet (no quest manages them, so none of them is created).
+
+**What was tried for the wall and the Doorman** (live 2026-10-19; the code was not kept, the layouts below are enough to
+write it again): both were created
+from the room's place and angle (the room fit is exact), the wall blocked while Hillock lived and removed after; the
+Doorman in state 1, then S→C 0x2ba → 3. The wall showed up beside the gap, not across it, and did not block (with
+`object_size 0`, its blocking probably comes from cells the terrain marks for TriggerableBlockage); the Doorman was
+never drawn, though the client read his blob and the update. Their blobs, as the client read them
+(`scripts/re/frida/check-components.js`):
+- `Tutorial_Blocker_3`: Positioned (16 bytes), BaseEvents, Animated (u8 0: the type's own model), **TriggerableBlockage**
+  (`0x141e44290`: u8 blocked, then **only while blocked** a u8 count and that many u8; a count after an unblocked 0
+  shifted the blob: Buffer Underflow), Transitionable (u8 state 1, `num_states` 1).
+- `Doorman`: Positioned, Animated (u8 0), BaseEvents, Transitionable (u8 state). 21 bytes, all read.
+
+**S→C 0x2ba to a Transitionable** (update reader `0x1421c2310`, vtable `0x1435dd290` slot +0xa0): data = u8 target
+state. The client steps its state (`+0x120`) one at a time toward the target and runs each step's events (the
+type's `on_transition` and `on_transition_to_N` going up, the matching events going down). TriggerableBlockage has no
+update reader (+0xa0 is a `ret`).
+
+**The gate** (live 2026-10-19): without `a1q1-KilledHillock` in the client's quest flags it shows shut with nothing to
+hover; once the Gateway sends the flag (Hillock's death) it can be clicked and leads into Lioneye's Watch. It opens
+without its animation: created as a plain AreaTransition, it has no Transitionable. Created as its own type it crashed
+the client at once (access violation `0x141df4a96`, right after the blob's tasks): the creation blob stops before
+Transitionable (index 8), so its state stays 0, and the post-create step runs before any 0x2ba can arrive. The blob's
+**tasks** (`0x141ee00f0`: u8 count, then per task a u16 task type looked up in a registry, `0x141ee0ba0`, and that
+type's data; an unknown type throws "Unrecognised task serialised by server; missing registration?") are the next place
+to look for how the real server sets such a state.
+
+### The gate's animation: what is known (paused 2026-10-19, low priority)
+
+The gate works without it, so this is cosmetic; the notes are here so the next attempt starts from them.
+
+- **Proven live (Frida):** sent as its own type `SouthBeachTownEntrance` with the 8-component AreaTransition blob, its
+  Transitionable (vtable `0x1435dd290`, the client-side subclass) runs its post-create (`0x1421c26f0`, slot 1) with
+  **state 0** and `num_states` 3; the post-create then runs the event at index state − 1 and the client crashes in the
+  event-script interpreter (`0x141df4a96`, a null `[r12]`). The base Transitionable constructor (`0x141e42410`) sets
+  state 1, but this subclass is left at 0 when the blob does not reach it.
+- **Creation order** (`0x141ebe190`): every component's slot 2 (+0x10; a `ret` for Transitionable), the u8 header
+  (bit0 → object `+0x8c |= 0x80`, bit1 → `+0x8d |= 2`), the **base data** (`0x141dea920`: u8 count, then entries of
+  u32 hash + u8 …; they set and remove the object's **script variables**, "Attempted to remove variable '{}' on
+  read-only variable container"), the type's first N components (N = type `+0x80`: 8 here, Transitionable is index 8),
+  the **tasks** (`0x141ee00f0`), then every component's post-create (`0x141ebe420`, slot 1). Only the base data and
+  the tasks run before the post-create, so one of them must set the state if the real server sends this type.
+- **Tasks:** a hash map at `0x1445cd8b0` (getter `0x141643780`, lookup `0x141ee0ba0`, FNV-1a of the u16 id) filled by
+  139 registrations around `0x141637133`, each `mov edx, <u16 id>` and two function pointers (+0x18, +0x20; the lookup
+  calls +0x20, the stub `0x1400f22f0` marks the side a type does not have). The ids look like 16-bit name hashes; the
+  factories build their objects through helpers, so the classes' RTTI names were not reached yet.
+- **Script commands:** the GEAL function table (registered around `0x141ed56a6`) has `SetTransitionPerPlayerQuestFlag`
+  and `SetTransitionPerPlayerLeagueQuestFlag`, and `GetTransitionState`. A Transitionable that follows the player's
+  quest flags is what this gate is; no cached `.ot` uses them, so they may live in server-side scripts or other files.
+- **Next:** decompile (Ghidra) the tasks' +0x20 factories and the `SetTransitionPerPlayerQuestFlag` implementation;
+  or try base-data script variables on the gate, watching with `check-components.js` plus a Frida hook on `0x1421c26f0`
+  that logs `+0x120` (the state the post-create sees).
+
+**The force wall and the Doorman** (also paused, low priority): the wall needs where TriggerableBlockage gets its
+blocked cells (`object_size 0`), and why it stood beside the gap; the Doorman needs why a created and updated object
+is not drawn (maybe its `.ao` is the gate's door, hidden by the tile).
+
+**What does not work yet:**
+- The gate opens without its animation (above).
+- **No force wall and no Doorman** (above). The Gateway's own check on the gate still keeps the town shut.
+- No quest log or tracker text, no Tarkleigh reward (needs NPCs), no boss life bar
+  ([Roadmap](../../Roadmap.md) monsters).
+
 ## Open
 
-- The S→C message that sets quest flags, and whether the client keeps per-player flags (the blockers read them).
+- How the real server gives an AreaTransition subtype its Transitionable state (blob tasks?), so the Strand's gate and
+  the Mud Flats' cave entrance play their opening.
+- How TriggerableBlockage blocks cells, where the Strand's force wall really stands, and why the Doorman is not drawn.
 - The QuestItems row layout (which row is which glyph; `TriggeredQuestFlag`).
 - Transitionable on inherited types (`WaterCaveAreaTransition`): how its state gets set.
 - How the server chooses which nests hold which glyph (RhoaChest / 2 / 3).

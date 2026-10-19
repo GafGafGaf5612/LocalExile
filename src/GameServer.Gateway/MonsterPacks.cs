@@ -95,6 +95,8 @@ static class AreaPopulation
     /// <summary>A named point of a room the client placed (found by <see cref="LoadPoints"/>).</summary>
     public sealed record RoomPoint(string Name, int X, int Y);
 
+    static bool IsMonsterPoint(string name) => name == "mapboss" || name.StartsWith("%area%-", StringComparison.Ordinal);
+
     // One scattered pack per this many walkable cells (The Coast seed 1: 404 620 cells → 45 packs).
     public const int CellsPerPack = 9000;
     // Percent of scattered packs that are magic (every member), and that have one rare member (the rest stay normal).
@@ -115,7 +117,7 @@ static class AreaPopulation
         var centres = new List<(int X, int Y)>();
 
         // The room points first: the unique boss with its pack at "mapboss", the named packs at theirs.
-        foreach (var p in points)
+        foreach (var p in points.Where(p => IsMonsterPoint(p.Name)))
         {
             string name = p.Name.Replace("%area%-", "", StringComparison.Ordinal);
             if (name == "mapboss")
@@ -280,8 +282,11 @@ static class AreaPopulation
         var points = new List<RoomPoint>();
         foreach (var path in candidates)
         {
-            if (!rooms.Rooms.TryGetValue(path, out var room) || room.Doodads.Count == 0) continue;
-            var seen = room.Doodads.Where(d => byModel.ContainsKey(d.Model)).ToList();
+            if (!rooms.Rooms.TryGetValue(path, out var room)) continue;
+            // Only the client's own doodads are in the capture: a room's server objects (an NPC, a quest blocker) are not.
+            var plain = room.Doodads.Where(d => d.Type is null).ToList();
+            if (plain.Count == 0) continue;
+            var seen = plain.Where(d => byModel.ContainsKey(d.Model)).ToList();
             if (seen.Count == 0) continue;
             var anchor = seen.MinBy(d => byModel[d.Model].Count);
             var origins = new List<(int X, int Y)>();
@@ -291,12 +296,12 @@ static class AreaPopulation
                     // grid = origin + M · local, M = [[a, b], [cc, dd]]
                     int ox = c.X - (int)Math.Round(a * anchor.X + b * anchor.Y), oy = c.Y - (int)Math.Round(cc * anchor.X + dd * anchor.Y);
                     (int X, int Y) At(float lx, float ly) => (ox + (int)Math.Round(a * lx + b * ly), oy + (int)Math.Round(cc * lx + dd * ly));
-                    int hits = room.Doodads.Count(d => At(d.X, d.Y) is var g && Near(d.Model, g.X, g.Y));
-                    if (hits < Math.Max(4, (int)Math.Ceiling(FitShare * room.Doodads.Count))) continue;
+                    int hits = plain.Count(d => At(d.X, d.Y) is var g && Near(d.Model, g.X, g.Y));
+                    if (hits < Math.Max(4, (int)Math.Ceiling(FitShare * plain.Count))) continue;
                     if (origins.Any(o => Math.Abs(o.X - ox) <= 3 && Math.Abs(o.Y - oy) <= 3)) continue;
                     origins.Add((ox, oy));
                     foreach (var p in room.Points) { var g = At(p.X, p.Y); points.Add(new RoomPoint(p.Name, g.X, g.Y)); }
-                    notes.Add($"room {path.Split('/')[^1]} at ({ox}, {oy}) turn [{a} {b}; {cc} {dd}]: {hits}/{room.Doodads.Count} doodads match; " +
+                    notes.Add($"room {path.Split('/')[^1]} at ({ox}, {oy}) turn [{a} {b}; {cc} {dd}]: {hits}/{plain.Count} doodads match; " +
                         string.Join(", ", room.Points.Select(p => $"{p.Name} at {At(p.X, p.Y)}")));
                 }
         }
@@ -310,10 +315,10 @@ static class AreaPopulation
     static readonly (int, int, int, int)[] Turns =
         [(1, 0, 0, 1), (0, -1, 1, 0), (-1, 0, 0, -1), (0, 1, -1, 0), (-1, 0, 0, 1), (0, 1, 1, 0), (1, 0, 0, -1), (0, -1, -1, 0)];
 
-    sealed record RoomData(IReadOnlyList<RoomPoint> Points, IReadOnlyList<(string Model, float X, float Y)> Doodads);
+    sealed record RoomData(IReadOnlyList<RoomPoint> Points, IReadOnlyList<(string Model, float X, float Y, string? Type)> Doodads);
     sealed record RoomIndex(Dictionary<string, List<string>> Areas, Dictionary<string, RoomData> Rooms);
 
-    // data/room-points.json (scripts/re/atlas room-points): the rooms with monster points per area. Game data: stays in data/.
+    // data/room-points.json (scripts/re/atlas room-points): the rooms with monster or start points per area. Game data: stays in data/.
     static readonly Lazy<RoomIndex?> RoomFits = new(() =>
     {
         const string file = "data/room-points.json";
@@ -325,7 +330,8 @@ static class AreaPopulation
             [.. r.Value.GetProperty("points").EnumerateArray().Select(p => new RoomPoint(p.GetProperty("name").GetString() ?? "",
                 (int)Math.Round(p.GetProperty("x").GetDouble()), (int)Math.Round(p.GetProperty("y").GetDouble())))],
             [.. r.Value.GetProperty("doodads").EnumerateArray().Select(d => (d.GetProperty("model").GetString() ?? "",
-                (float)d.GetProperty("x").GetDouble(), (float)d.GetProperty("y").GetDouble()))]), StringComparer.OrdinalIgnoreCase);
+                (float)d.GetProperty("x").GetDouble(), (float)d.GetProperty("y").GetDouble(),
+                d.TryGetProperty("type", out var t) ? t.GetString() : null))]), StringComparer.OrdinalIgnoreCase);
         return new RoomIndex(areas, rooms);
     });
 }

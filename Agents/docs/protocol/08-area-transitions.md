@@ -285,7 +285,8 @@ transition tile seen so far), and 2 referenced files are not in the index.
 
 **Where they are.** Generated layouts exist only in the client, so `scripts/walkmaps` (started by
 `live.ps1 -Walkmaps`) also hooks the per-record callback `0x1420415e0` of the tile-object loop (`0x141d7f700` walks each
-placed tile's `.tmd` records). For records of AreaTransition or Waypoint types it computes the placement the way
+placed tile's `.tmd` records). For records of AreaTransition, Waypoint or quest town entrance types
+(`…TownEntrance`, e.g. The Twilight Strand's `SouthBeachTownEntrance`) it computes the placement the way
 `0x14202f1c0` does and writes `data/walkability/<area>_seed<seed>.transitions.json` next to the walk map:
 
 | From the client | Meaning |

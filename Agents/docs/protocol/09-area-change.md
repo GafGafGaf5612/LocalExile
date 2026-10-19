@@ -133,10 +133,10 @@ keeps the ids of the last list it sent (`ChooserList`).
   `resolve` op records the town (`Character.LastTown`, a WorldAreas Id in `data/accounts.json`) when the ticket's
   instance is a town: the Gateway resolves a ticket only once the client connects to that instance, so the town counts
   once the character is in it. `WorldAreaTowns.LoginArea` picks the area: the last town, else
-  `AccountService.StartingArea`, else Lioneye's Watch. New characters start in Lioneye's Watch for now; in the real
-  game they start on The Twilight Strand and reach Lioneye's Watch after defeating Brutus, and logins before that
-  return to the Twilight Strand's spawn point. Making `StartingArea` the Twilight Strand gives that, since a character
-  with no last town logs in at the starting area. The death screen's two buttons are separate (`Resurrect`, §7).
+  `AccountService.StartingArea`, The Twilight Strand (`1_1_1`): as in the real game, a new character washes up there,
+  logs in at its start point (the `washedup` room's `default`) until it first enters a town, and reaches Lioneye's
+  Watch once Hillock is dead ([12](12-quests.md) §6). `resolve` sends `LastTown` 0 until then, and the death screen
+  offers only Resurrect at Checkpoint (`DeathScreenFlags` 0x04). The death screen's two buttons are separate (`Resurrect`, §7).
   Issue #4.
 - The dev servers pin non-town seeds to 1 (`Game_RANDOM_SEEDS=1` gives random seeds), because a layout must be dumped
   from the client (`scripts/re/frida/dump-walkability-all.js`, `walk-<n>-a.bin`). The Coast at seed 1 is 1725×1725.

@@ -20,6 +20,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Arrival points: entering through an exit (or `/goto`) puts the player next to the exit back; The Twilight Strand → Lioneye's Watch arrives at the town's `entrance1`; Resurrect at Checkpoint revives there | `AreaLayout.Arrival`, Gateway | [09](docs/protocol/09-area-change.md) §4 |
 | Monsters belong to the area instance: re-entering it finds the living ones where they were, with their damage, and the dead stay dead; a new instance gets fresh packs | `InstanceStore.cs`, `PopulateArea`, Gateway | [14](docs/protocol/14-monster-packs.md) §2 |
 | Ground items belong to the area instance: dropped items and loot stay where they lay across logouts, disconnects and client crashes until the instance expires; ids from 0x100000; one pickup per item | `InstanceStore.cs`, Gateway | [13](docs/protocol/13-items.md) §5 |
+| Quests: flags per character in the save, one script per quest (`Quests.cs`), `/quest_flag`. a1q1: new characters start on The Twilight Strand's beach and log in there until they reach a town; the gate into Lioneye's Watch can be clicked once Hillock is dead (the flag reaches the client's quest flags; the Gateway checks it too); no Resurrect in Town before a town | `Quests.cs`, Gateway | [12](docs/protocol/12-quests.md) §5–6 |
 | Instances: one per town (all 12 act towns from WorldAreas `IsTown`); other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs`, `WorldAreaTowns.cs` | [09](docs/protocol/09-area-change.md) |
 | Walk maps and area transitions captured from the client on first visit; the Gateway uses them for position estimates, spawns and area transitions | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 8, [08](docs/protocol/08-area-transitions.md) §7 |
 | Chat commands `/help`, `/raw <hex>`, `/set_stat`, `/set_speed`, `/set_level <1 to 100>` (saved to the account, sent in place) (replies in a message box) | `ChatCommands.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) |
@@ -71,9 +72,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - Chat lines: server text only appears as a message box. The chat-line message and the global channel join are unknown
   (the client logs "Timeout while joining global chat channel").
 - Area transitions of a generated area need a `-Walkmaps` capture for its seed; quest-gated ones are created but the
-  way stays blocked: The Mud Flats' Submerged Passage has a client-side wall until quest flag `a1q4-PlacedGlyphs`
-  ([12](docs/protocol/12-quests.md)). Quest objects with extra components (the cave entrance) are sent as plain
-  AreaTransition. Quests are not implemented.
+  way stays blocked: The Mud Flats' Submerged Passage has a client-side wall until quest flag `a1q4-PlacedGlyphs`.
+  Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate opens without its
+  animation; its force wall and Doorman are not created ([12](docs/protocol/12-quests.md) §6). Only quest a1q1 is
+  scripted; no quest log.
 - Item mods, rarity, flask and currency use; support gems and links; gem levels
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
@@ -89,7 +91,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Tests
 
 `dotnet test tests/GameServer.Core.Tests` (230 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (15: inventory moves, arrival points, instance ground items and monsters) pass.
+`tests/GameServer.Gateway.Tests` (18: inventory moves, arrival points, instance ground items and monsters, quests) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling
