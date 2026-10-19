@@ -73,7 +73,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/passives` | the passive and refund skill points and the allocated passives (message box) |
 | `/add_passive_points <n>` | adds n extra passive skill points (the 0x33 `extra_skill_points` field), saved with the character; sends the tree (0x33) |
 | `/add_refund_points <n>` | dev shortcut: adds n refund points (0x33's first u16), saved with the character; sends the tree (0x33). Orbs of Regret also add them (right-click) |
-| `/gold <amount>` | adds gold, or takes it with a negative amount (not below 0); saved with the character and sent as S→C 0x2a9 ([04](04-player-entity.md)); every area entry sends the saved amount too |
+| `/gold <amount>` | adds gold, or takes it with a negative amount (not below 0); the account's gold (every character of the account shares it), saved and sent as S→C 0x2a9 ([04](04-player-entity.md)); every area entry sends the saved amount too |
 | `/add_passive <PassiveSkillGraphId>` | allocates one passive node through the same checks as C→S 0x34, saved and sent back (0x33) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
 | `/resistances` | the character's uncapped and capped fire/cold/lightning/chaos resistance |

@@ -121,6 +121,31 @@ public class AccountStashTests : IDisposable
         Assert.Null(stash.TabOf(AccountStash.InventoryId(stash.Count)));
     }
 
+    [Fact]
+    public void Gold_is_the_accounts_and_survives_a_restart()
+    {
+        var stash = Open();
+        Assert.Equal(0u, stash.Gold);
+        Assert.Equal(500u, stash.AddGold(500));
+        Assert.Equal(0u, stash.AddGold(-1000));   // never below 0
+        stash.AddGold(1200);
+        AccountStash.Reset();
+
+        Assert.Equal(1200u, Open().Gold);
+    }
+
+    [Fact]
+    public void Spending_gold_takes_nothing_when_there_is_not_enough()
+    {
+        var stash = Open();
+        stash.AddGold(300);
+
+        Assert.Null(stash.TrySpendGold(301));
+        Assert.Equal(300u, stash.Gold);
+        Assert.Equal(100u, stash.TrySpendGold(200));
+        Assert.Equal(100u, stash.Gold);
+    }
+
     static Item Orbs(int n) => new(0x1234abcd, ["Base", "Usable", "Stack"], 0x1111) { StackSize = (ushort)n };
     static PlayerInventories.Shape? Orb(Item _) => new(1, 1, "StackableCurrency", 40);
 

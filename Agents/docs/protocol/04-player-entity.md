@@ -236,11 +236,14 @@ not the inventory manager that UI uses; that one needs 0xc0 ([05](05-inventories
 
 ## 6. Gold
 
-S→C **0x2a9** (class `0x14316c420`, read `0x140913050`): u32 BE, the character's gold. The instance dispatcher
+S→C **0x2a9** (class `0x14316c420`, read `0x140913050`): u32 BE, the gold shown for the character. The instance dispatcher
 (case 0xe2, `0x14214dbe1`) keeps it at session +0xc40c (0 in the session constructor `0x142144b50`), where the gold
 respec cost check (`0x140997b10`) and the village gold label (`0x1404ff5d0`) read it, and plays Gold_Spend.ogg when it
 drops. Found with a hardware watchpoint on the field and the dispatcher's disassembly (its decompile fails). The
-Gateway sends the saved amount on every area entry and on `/gold`. Gold coins on the ground are the item
+Gateway keeps gold per account, as in the real game where every character of an account (and league) shares it:
+`AccountStash.Gold`, saved in `data/stashes/<account>.json` ([18](18-stash.md) §6). It sends that amount on every area
+entry, on `/gold` and after a gold respec. A character save from before this still holding `Gold` gives it to the
+account at the character's next login (`CharacterSaves.TakeGold`). Leagues are not kept apart yet. Gold coins on the ground are the item
 `Metadata/Items/Currency/GoldCoin` (type hash 0xDDA0D6FB, `0x14031e810` plays their pickup sound); picking them up is
 not done yet.
 

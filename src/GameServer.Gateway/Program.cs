@@ -383,7 +383,8 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 await SendPlayer(remote, stream, ciphers, conn);
                 conn.PlayerSent = true;
                 await SendWaypoints(remote, stream, ciphers, conn);
-                await Send(remote, stream, ciphers, InstanceEntities.Gold(conn.Gold), $"0x02a9 gold: {conn.Gold}");
+                uint gold = StashOf(conn).Gold;
+                await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account)");
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
@@ -1461,6 +1462,9 @@ static void LoadProgress(ClientState conn, int level)
 {
     var save = CharacterSaves.Load(CharacterName(conn));
     level = Math.Clamp(level, 1, Progression.MaxLevel);
+    // Gold is the account's (AccountStash.Gold): gold an older save kept with the character moves into the account.
+    if (CharacterSaves.TakeGold(CharacterName(conn)) is > 0 and var oldGold)
+        Console.WriteLine($"[gateway] {CharacterName(conn)}: {oldGold} gold from the character save moved to the account, now {StashOf(conn).AddGold(oldGold)}");
     lock (conn.Monsters)
     {
         conn.Passives = [.. (save?.Passives ?? []).Where(n => Passives.Find(n) is { IsAscendancy: false })];
@@ -1469,7 +1473,6 @@ static void LoadProgress(ClientState conn, int level)
         conn.QuestFlags = [.. save?.QuestFlags ?? []];
         conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
         conn.RefundPoints = save?.RefundPoints ?? 0;
-        conn.Gold = save?.Gold ?? 0;
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
@@ -1661,7 +1664,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
     Dictionary<ushort, ushort> effectsNow;
     string? effectLabel = null;
     long cost = 0;
-    uint gold;
+    uint gold = 0;
     ushort refundsNow = 0;
     int refundsSpent = 0;
     lock (conn.Monsters)
@@ -1690,20 +1693,21 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
                 if (refundPoints) refundsSpent++;
             }
         }
+        if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints + Passives.PointsGranted(next))
+            error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
+        if (error is null && refundPoints && refundsSpent > conn.RefundPoints)
+            error = $"not enough refund points ({refundsSpent} needed, {conn.RefundPoints} held)";
+        // Paid last, from the account's gold: nothing is taken when the change is refused.
         if (error is null && goldRespec)
         {
             cost = Passives.GoldRespecCost(nodes, conn.Pools.Level);
-            if (cost > conn.Gold) error = $"not enough gold ({cost} needed, {conn.Gold} held)";
+            if (StashOf(conn).TrySpendGold(cost) is uint left) gold = left;
+            else error = $"not enough gold ({cost} needed, {StashOf(conn).Gold} held)";
         }
-        if (error is null && refundPoints && refundsSpent > conn.RefundPoints)
-            error = $"not enough refund points ({refundsSpent} needed, {conn.RefundPoints} held)";
-        if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints + Passives.PointsGranted(next))
-            error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
         if (error is null)
         {
             conn.Passives = next;
             conn.MasteryEffects = effects;
-            conn.Gold -= (uint)cost;
             if (refundPoints) conn.RefundPoints -= (ushort)refundsSpent;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
@@ -1712,7 +1716,6 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         }
         now = [.. conn.Passives];
         effectsNow = new(conn.MasteryEffects);
-        gold = conn.Gold;
         refundsNow = conn.RefundPoints;
     }
     Console.WriteLine($"[gateway] {remote} passives {(allocate ? "allocate" : "refund")} [{string.Join(", ", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}"))}]" +
@@ -1727,7 +1730,6 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         if (refundPoints) CharacterSaves.SetRefundPoints(CharacterName(conn), refundsNow);
         if (goldRespec)
         {
-            CharacterSaves.SetGold(CharacterName(conn), gold);
             await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (respec, {cost} paid)");
         }
         await SendCharacterStats(remote, stream, ciphers, conn, "passives");
@@ -2243,12 +2245,10 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent, {refundPoints} refund point(s).\n" +
             string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
     })
-    .Add("gold", "/gold <amount> (dev: add gold, or take it with a negative amount; saved)", async args =>
+    .Add("gold", "/gold <amount> (dev: add gold, or take it with a negative amount; the account's, saved)", async args =>
     {
         if (args.Length == 0 || !long.TryParse(args[0], out long delta)) throw new ArgumentException("an amount of gold (negative takes gold)");
-        uint gold = (uint)Math.Clamp(conn.Gold + delta, 0, uint.MaxValue);
-        conn.Gold = gold;
-        CharacterSaves.SetGold(CharacterName(conn), gold);
+        uint gold = StashOf(conn).AddGold(delta);
         await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (/gold {delta})");
         await conn.Commands!.Reply($"Gold: {gold}");
     })
@@ -3946,8 +3946,6 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public ushort ExtraPassivePoints;
     // Refund points (0x33's first u16; Orbs of Regret), saved with the character; /add_refund_points grants them for now.
     public ushort RefundPoints;
-    // The character's gold (S→C 0x2a9), saved with the character; /gold changes it.
-    public uint Gold;
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
     public RighteousFireState? RighteousFire;
