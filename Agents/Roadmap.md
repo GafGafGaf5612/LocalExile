@@ -65,8 +65,12 @@ Items are in rough priority order within each section. "Known" says what is alre
   deserializer, schema.md). Check every new component with `scripts/re/frida/check-components.js`.
 - **Done when:** monsters in areas match the official game's (mods, rarity bonuses, emerge, boss bar).
 
-### NPCs in town
-- Same object mechanism as monsters, with NPC types and their dialogue components. Depends on the monster work.
+### NPCs: dialogue options, shops and the other towns
+- **Known:** NPC objects, Lioneye's Watch placements and the dialogue window (S→C 0x84, C→S 0x85) work
+  ([17](docs/protocol/17-npcs.md)). The client picks the NPCTalk row itself (`0x141e76d40`).
+- **Start:** pick a dialogue option live and read the C→S message; NPCDialogueWindow's option handler (`0x140723d60`,
+  `0x14071f6d0`). Shops from NPCShop / ShopSets. Placements for the other towns (`NpcCatalog.Towns`, with `/pos`).
+- **Done when:** talk options play their text, Nessa and Tarkleigh trade, and every town has its NPCs.
 
 ## 3. Gameplay
 

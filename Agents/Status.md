@@ -33,6 +33,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Saving characters: items, equipment, sockets and the skill bar per character in `data/saves/`; the bar is restored with S→C 0x53 after login and area changes (binds are C→S 0x4e) | `CharacterSaves.cs`, `PlayerInventories.cs`, Gateway | [11](docs/protocol/11-skills.md) §11, [13](docs/protocol/13-items.md) §7 |
 | Logins start at the character's last town's spawn point, as in the real game (after logging out, Exit to Character Selection, a crash, a restart or a disconnect while dead); Auth records the town when a town ticket resolves (`Character.LastTown` in `data/accounts.json`) | Auth (`InstanceDirectory`), `WorldAreaTowns.cs` | [09](docs/protocol/09-area-change.md) §4 |
 | Waypoints: the Waypoint object where the area's layout is captured (Lioneye's Watch built in), activated on entry (towns), within 25 cells or on click (the client plays the activation), saved per character; clicking opens the World panel in travel mode (S→C 0x7b), its pins and connection lines show from the character's visited areas and activated waypoints (S→C 0x4c, quest flags in the Player component via 0x2ba), and picking a pin (C→S 0x4d, Ctrl → instance chooser) takes the player next to the destination's waypoint; `/waypoints [all \| reset]` | `InstanceWaypoints.cs`, `WaypointCatalog.cs`, `AreaVisitFlags.cs`, Gateway | [16](docs/protocol/16-waypoints.md) |
+| NPCs in Lioneye's Watch: Tarkleigh, Nessa and Bestel at their real-game cells, with name, minimap icon and idle model; clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index); Continue and Goodbye (C→S 0x85) are answered; Purchase Items opens the shop (S→C 0xc0 manager 1 + 0x8c) and buying (C→S 0x88) costs 1 Scroll of Wisdom; Sell Items opens the sell window (S→C 0xb8, untested beyond opening); `/npc`, `/npcs`, `/pos` | `InstanceNpcs.cs`, `NpcCatalog.cs`, Gateway (`SpawnTownNpcs`, `TalkToNpc`) | [17](docs/protocol/17-npcs.md) |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 | Leagues and character creation: Standard and Allflame with their Hardcore / SSF / Ruthless variants on the create screen (S→C 0x1b), 24 character slots, any class in any league (C→S 0x12 → 0x15, 0x13), straight into the game; the league under the area name in game (0x1d); the hardcore death screen from the character's league; `Game_LEAGUES` | `LeagueCatalog.cs`, `LoginServerSession.cs`, Auth, Gateway | [01](docs/protocol/01-login.md) §7 |
 | Character deletion on the character screen (C→S 0x0c → new list 0x15 + result 0x0d); the save is set aside in `data/saves/deleted/` | `LoginServerSession`, Auth | [01](docs/protocol/01-login.md) §5 |
@@ -67,7 +68,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Not working yet
 
 - Area monsters: pack counts and magic/rare chances are our own numbers; rarity adds no mods or life; Drowned ignore their ground types; emerge packs (Gravel Eaters) are skipped; no boss life bar; monsters respawn on every entry; a new (area, seed) needs a `-Walkmaps` visit for its unique boss ([14](docs/protocol/14-monster-packs.md) §4).
-- NPCs, and the 346 monster varieties with NPC, ControlZone, BlightTower … components. "Emerge" monsters (Gravel Eater …)
+- NPC dialogue options, shops, NPCs in other towns and outside towns ([17](docs/protocol/17-npcs.md) "Open"); the 346
+  monster varieties with NPC, ControlZone, BlightTower … components. "Emerge" monsters (Gravel Eater …)
   are created but stay hidden until an Emerge action, which the server does not send.
 - Chat lines: server text only appears as a message box. The chat-line message and the global channel join are unknown
   (the client logs "Timeout while joining global chat channel").
@@ -90,7 +92,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (230 tests), `tests/GameServer.Data.Tests` (15) and
+`dotnet test tests/GameServer.Core.Tests` (237 tests), `tests/GameServer.Data.Tests` (15) and
 `tests/GameServer.Gateway.Tests` (18: inventory moves, arrival points, instance ground items and monsters, quests) pass.
 Tests that need the real client pass quietly without `Client/`.
 

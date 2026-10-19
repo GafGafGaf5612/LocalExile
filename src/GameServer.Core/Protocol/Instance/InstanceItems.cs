@@ -26,6 +26,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     public IReadOnlyList<byte>? Links { get; init; }
     public int GemExperience { get; init; }
 
+    /// <summary>A vendor price: (item type hash, amount) entries, Base flag bit 7 (17-npcs.md §5). Empty for items not
+    /// in a shop.</summary>
+    public IReadOnlyList<(uint TypeHash, uint Amount)> Price { get; init; } = [];
+
     /// <summary>The four item types whose data ends with an extra u16 (0x1421ebe90; the writer sends 1).</summary>
     static readonly uint[] TrailingU16 = [0x192c7aab, 0x365f206a, 0x503da850, 0x9aff2df6];
 
@@ -54,7 +58,22 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 // u8 +0xc7 flags, u16 flags (low: bit0 → u8 +0xc5, bit1 flavour text u16, bit2 wide string, bit3 u32,
                 // bit4 wide string, bit5 u8 n × (u32, i32), bit6 nested item, bit7 u8 n × (u32 item type, compact);
                 // high: bits 0-2 → +0xc4, bit4 → 2 × u32), u8 +0xc6.
-                case "Base": w.U16(VisualIdentity).U8(0).U8(0).U16(0).U8(0); break;
+                // Bit 7 (a vendor price): u8 n, then n × (u32 item type hash, compact uint amount; 0x141fa5290 looks the type
+                // up, 0x141e61010 reads the amount); stored in the Base's +0xb8 item list.
+                case "Base":
+                    w.U16(VisualIdentity).U8(0).U8(0).U16((ushort)(Price.Count > 0 ? 0x80 : 0)).U8(0);
+                    if (Price.Count > 0)
+                    {
+                        w.U8((byte)Price.Count);
+                        foreach (var (type, amount) in Price)
+                        {
+                            w.U32(type);
+                            var cw = new LoginWriter();
+                            InstanceProtocol.CompactUInt(cw, amount);
+                            foreach (byte b in cw.ToArray()) w.U8(b);
+                        }
+                    }
+                    break;
                 // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit 6 incubator, bit 4 → u8, bit 15 a 0x1c8
                 // record), the base magic properties 0x142201d70 (u16 flags: bits 0-2 rarity, bit 3 identified; u8), u8, u8.
                 case "Mods": w.U8(ItemLevel).U8(0).U16(0).U16(0x0008).U8(0).U8(0).U8(0); break;

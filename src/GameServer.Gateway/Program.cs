@@ -247,6 +247,14 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         }
         else if (id == InstanceProtocol.ResurrectId)
             _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
+        else if (id == InstanceNpcs.DialogueClosedId)
+            await CloseNpcDialogue(remote, stream, ciphers, conn);
+        else if (id == InstanceNpcs.TradeAnswerId)
+            await AnswerSale(remote, stream, ciphers, conn, InstanceNpcs.ReadTradeAnswer(bytes));
+        else if (id == InstanceNpcs.BuyId)
+            await BuyFromShop(remote, stream, ciphers, conn, InstanceNpcs.ReadBuy(bytes));
+        else if (id == InstanceNpcs.OptionId)
+            await ChooseNpcOption(remote, stream, ciphers, conn, InstanceNpcs.ReadOption(bytes));
         else if (id == InstanceChat.ChatId)
         {
             var chat = InstanceChat.ReadChat(bytes);
@@ -307,6 +315,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
                 await SendGroundItems(remote, stream, ciphers, conn);
+                await SpawnTownNpcs(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
             }
@@ -440,6 +449,13 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await UseWaypoint(remote, stream, ciphers, conn, use, waypoint);
         return;
     }
+    SpawnedNpc? npc;
+    lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(use.TargetId);
+    if (npc is not null)
+    {
+        await TalkToNpc(remote, stream, ciphers, conn, use, npc);
+        return;
+    }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
     if (transition is null)
     {
@@ -505,6 +521,263 @@ static async Task UseWaypoint(string remote, NetworkStream stream, ConnectionCip
     await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.WorldPanelUi, WaypointCatalog.ObjectId),
         "0x007b open the World panel for waypoint travel");
 }
+
+// Creates one NPC (0x2b9, its NPCs.dat Id is an .ot type) and puts it in the wake zone; kept for clicks and /npcs.
+static async Task SpawnNpc(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcCatalog.Npc npc,
+    int x, int y, float rotation)
+{
+    uint id = conn.NextObjectId++;
+    var obj = new NpcObject(x, y, npc.Components!, rotation, npc.StateMachine, npc.TransitionState);
+    uint type = InstanceEntities.ObjectTypeHash(npc.Id);
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()),
+        $"0x02b9 create npc 0x{id:x} {npc} type=0x{type:x8} at ({x}, {y}) rotation {rotation:0.##}, components {string.Join(", ", npc.Components!)}");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 npc 0x{id:x} enters wake zone");
+    lock (conn.Npcs) conn.Npcs[id] = new SpawnedNpc(npc, x, y);
+}
+
+// The town's NPCs (NpcCatalog.In) at their cells.
+static async Task SpawnTownNpcs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    var placements = NpcCatalog.In(conn.Layout.Hash);
+    if (placements.Count == 0 || Environment.GetEnvironmentVariable("Game_NPCS") == "0") return;
+    if (Npcs.Value.Error is { } error) { Console.WriteLine($"[gateway] {remote} npcs: {error}"); return; }
+    foreach (var p in placements)
+    {
+        if (Npcs.Value.Find(p.Id) is not { Supported: true } npc) { Console.WriteLine($"[gateway] {remote} npc {p.Id}: unknown or unsupported components"); continue; }
+        if (conn.Layout.Walkable is { } w && !w(p.X, p.Y)) Console.WriteLine($"[gateway] {remote} npc {npc.Name}: ({p.X}, {p.Y}) is not walkable");
+        await SpawnNpc(remote, stream, ciphers, conn, npc, p.X, p.Y, p.Rotation);
+    }
+}
+
+// A click on an NPC (C→S 0x24 on its object): the client walks to it first; follow it and answer once the player is there.
+static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, SpawnedNpc npc)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(npc.X, npc.Y, NpcReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 npc {npc.Npc} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    uint id;
+    lock (conn.Npcs) id = conn.Npcs.FirstOrDefault(n => ReferenceEquals(n.Value, npc)).Key;
+    conn.TalkingTo = id;
+    conn.InNpcTalk = false;
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 talk to npc 0x{id:x} {npc.Npc.Name}");
+}
+
+// C→S 0x85: the dialogue window was closed or, while a talk plays, Continue was pressed. The client stays in its dialogue
+// state (and the player cannot move) until the server answers: back to the option list (0x84 0xff) after a talk, else
+// 0x84 with object 0, which ends the dialogue.
+static async Task CloseNpcDialogue(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    uint id = conn.TalkingTo;
+    if (id != 0 && conn.InNpcTalk)
+    {
+        conn.InNpcTalk = false;
+        await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 npc 0x{id:x}: back to the options (0x85 after a talk)");
+        return;
+    }
+    conn.TalkingTo = 0;
+    conn.InNpcTalk = false;
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 object 0: npc dialogue closed (0x85)");
+}
+
+// C→S 0x82: an option picked in the NPC dialogue window (an NPCTalk row of the NPC talked to).
+static async Task ChooseNpcOption(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, byte index)
+{
+    uint id = conn.TalkingTo;
+    SpawnedNpc? npc;
+    lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(id);
+    if (npc is null) { Console.WriteLine($"[gateway] {remote} <= 0x0082 npc option {index}: no NPC dialogue open"); return; }
+    var talk = Npcs.Value.TalkOf(npc.Npc, index);
+    Console.WriteLine($"[gateway] {remote} <= 0x0082 npc {npc.Npc.Name} option {index}: " +
+        (talk is null ? "no NPCTalk row" : $"NPCTalk row {talk.Row} \"{talk.Option}\" ({talk.Category}), text audio [{string.Join(", ", talk.TextAudio)}]"));
+    if (talk is null) return;
+    switch (talk.Category)
+    {
+        case "Gossip" or "Quests" or "QuestReward" when talk.TextAudio.Count > 0:
+            // 0x84 with the row's index: the client opens the dialogue window on that NPCTalk row (its text and audio).
+            conn.InNpcTalk = true;
+            await Send(remote, stream, ciphers, InstanceNpcs.Talk(id, (byte)talk.Index),
+                $"0x0084 npc 0x{id:x} {npc.Npc.Name} talks: NPCTalk row {talk.Row} \"{talk.Option}\" (index {talk.Index})");
+            break;
+        case "BuyItems":
+            await OpenNpcShop(remote, stream, ciphers, conn, id, npc);
+            break;
+        case "SellItems":
+            await OpenNpcSale(remote, stream, ciphers, conn, npc);
+            break;
+        default:
+            Console.WriteLine($"[gateway] {remote} npc option category {talk.Category} is not implemented yet");
+            break;
+    }
+}
+
+// C→S 0x88: an item bought from the open shop tab. The client picked the free cell; the item leaves the tab (0xbf on
+// manager 1) and enters the inventory (0xbf), keeping its id. Free for now: prices are not charged yet.
+static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.Buy buy)
+{
+    OpenShop? shop;
+    InventoryItem? item = null;
+    lock (conn.Npcs)
+    {
+        shop = conn.Shop;
+        if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) item = found;
+    }
+    if (shop is null || item is null || PlayerInventories.Row(buy.InventoryId) is not byte row)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0088 buy {buy}: {(shop is null ? "no shop open" : item is null ? "not in the shop" : "unknown inventory")}");
+        if (shop is not null && item is not null) lock (conn.Npcs) shop.Items[item.Id] = item;
+        return;
+    }
+    var items = ItemsOf(conn);
+    // The price: the item's price list (its first entry), taken from the main inventory's stacks.
+    if (item.Item.Price is [var (currency, amount), ..])
+    {
+        var paid = items.Pay(PlayerInventories.MainInventory, currency, (int)amount);
+        if (paid is null)
+        {
+            lock (conn.Npcs) shop.Items[item.Id] = item;
+            string name = Items.ByHash(currency)?.Name ?? $"0x{currency:x8}";
+            Console.WriteLine($"[gateway] {remote} <= 0x0088 buy item {item.Id}: costs {amount} × {name}, not enough in the inventory");
+            await conn.Commands!.Reply($"Not enough {name}: it costs {amount}.");
+            return;
+        }
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+            items.NextRevision(PlayerInventories.MainInventory), [.. paid.Removed, .. paid.Changed.Select(c => c.Id)], paid.Changed),
+            $"0x00bf inventory 1: paid {amount} (stacks emptied [{string.Join(", ", paid.Removed)}], changed [{string.Join(", ", paid.Changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
+    }
+    var bought = items.Put(row, item with { X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] } });
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(shop.Tab, ++shop.Revision, [item.Id], [], NpcShops.Manager),
+        $"0x00bf shop tab {shop.Tab}: item {item.Id} sold");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(buy.InventoryId, items.NextRevision(row), [], [bought]),
+        $"0x00bf inventory {buy.InventoryId}: bought item {item.Id} from {shop.Npc.Npc.Name} at ({buy.X}, {buy.Y}) ({buy})");
+}
+
+// The held item goes into the sell offer (C→S 0x2a on the offer inventory); the NPC answers with one Scroll Fragment per
+// offered item in its own offer.
+static async Task OfferForSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, InstanceItems.PlaceItem place)
+{
+    var items = ItemsOf(conn);
+    var held = items.Items(PlayerInventories.Cursor).FirstOrDefault();
+    if (held is null || items.Remove(PlayerInventories.Cursor, held.Id) is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x002a sell offer {place}: nothing held");
+        return;
+    }
+    var offered = held with { X = (byte)place.X, Y = (byte)place.Y };
+    lock (conn.Npcs) sale.Offered[offered.Id] = offered;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [], [offered], NpcShops.Manager),
+        $"0x00bf sell offer: item {offered.Id} at ({offered.X}, {offered.Y})");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [held.Id], []), $"0x00bf cursor: remove item {held.Id} (offered)");
+    await SendSaleReward(remote, stream, ciphers, conn, sale);
+}
+
+// An offered item picked back up (C→S 0x28 on the offer inventory) goes to the cursor.
+static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, uint itemId)
+{
+    var items = ItemsOf(conn);
+    InventoryItem? it = null;
+    lock (conn.Npcs)
+        if (items.Items(PlayerInventories.Cursor).Count == 0 && sale.Offered.Remove(itemId, out var found)) it = found;
+    if (it is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0028 sell offer item {itemId}: refused");
+        return;
+    }
+    var held = items.Put(PlayerInventories.Cursor, it with { X = 0, Y = 0 });
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [itemId], [], NpcShops.Manager),
+        $"0x00bf sell offer: remove item {itemId}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: add item {itemId} (from the sell offer)");
+    await SendSaleReward(remote, stream, ciphers, conn, sale);
+}
+
+// The NPC's offer: one Scroll Fragment (each its own stack of 1) per offered item, replacing what it offered before.
+static async Task SendSaleReward(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale)
+{
+    var items = ItemsOf(conn);
+    int count;
+    lock (conn.Npcs) count = sale.Offered.Count;
+    var fragment = Items.Find(NpcShops.SellReward);
+    var reward = new List<InventoryItem>();
+    if (fragment is not null)
+        for (int i = 0; i < Math.Min(count, NpcShops.Offer.Width * NpcShops.Offer.Height); i++)
+            reward.Add(new InventoryItem(items.NewItemId(), (byte)(i % NpcShops.Offer.Width), (byte)(i / NpcShops.Offer.Width), ItemCatalog.Create(fragment)));
+    List<uint> before;
+    lock (conn.Npcs)
+    {
+        before = [.. sale.Reward.Select(r => r.Id)];
+        sale.Reward = reward;
+    }
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Theirs, ++sale.TheirsRevision, before, reward, NpcShops.Manager),
+        $"0x00bf {sale.Npc.Npc.Name}'s offer: {reward.Count} x {NpcShops.SellReward}");
+}
+
+// C→S 0xb1: the sell window's answer. 0 = Cancel: the offered items go back to the inventory. Else Accept: the offered items
+// are gone and the NPC's offer goes into the inventory. Either way S→C 0xb9 closes the window.
+static async Task AnswerSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (uint Other, byte Answer) a)
+{
+    NpcSale? sale;
+    lock (conn.Npcs)
+    {
+        sale = conn.Sale;
+        conn.Sale = null;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x00b1 trade answer {a.Answer} (trade {a.Other}){(sale is null ? ": no sale open" : "")}");
+    bool accepted = sale is not null && a.Answer != 0;
+    if (sale is not null)
+    {
+        var items = ItemsOf(conn);
+        List<InventoryItem> back = accepted ? sale.Reward : [.. sale.Offered.Values];
+        var added = new List<InventoryItem>();
+        foreach (var it in back)
+        {
+            if (Items.ByHash(it.Item.TypeHash) is not { } t || items.FreeCell(PlayerInventories.MainInventory, t.Width, t.Height, ShapeOf) is not { } cell)
+            {
+                Console.WriteLine($"[gateway] {remote} sale: no room for item {it.Id} in the inventory, it is lost");
+                continue;
+            }
+            added.Add(items.Put(PlayerInventories.MainInventory, it with { X = cell.X, Y = cell.Y }));
+        }
+        if (added.Count > 0)
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], added),
+                $"0x00bf inventory 1: {added.Count} item(s) " + (accepted ? $"of {NpcShops.SellReward} for {sale.Offered.Count} sold item(s)" : "offered and taken back"));
+    }
+    await Send(remote, stream, ciphers, InstanceNpcs.TradeClose(0, accepted), $"0x00b9 sell window closed ({(accepted ? "accepted" : "cancelled")})");
+}
+
+// Sell Items: two empty offer inventories (manager 1: the player's offer, the NPC's), then S→C 0xb8 with no other party
+// (an NPC sale) opens the sell window. Being tested.
+static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedNpc npc)
+{
+    uint mine = NpcShops.FirstTabId + 0x10, theirs = mine + 1;
+    lock (conn.Npcs) conn.Sale = new NpcSale(npc, mine, theirs);
+    await Send(remote, stream, ciphers, InstanceInventories.AddInventory(mine, NpcShops.Offer, NpcShops.Manager), $"0x00c0 sell offer {mine} (manager {NpcShops.Manager})");
+    await Send(remote, stream, ciphers, InstanceInventories.AddInventory(theirs, NpcShops.Offer, NpcShops.Manager), $"0x00c0 {npc.Npc.Name}'s offer {theirs} (manager {NpcShops.Manager})");
+    conn.InNpcTalk = false;
+    await Send(remote, stream, ciphers, InstanceNpcs.TradeOpen(0, mine, theirs, 0, npc.Npc.Name, npc.Npc.Row),
+        $"0x00b8 open the sell window with {npc.Npc.Name} (offers {mine}, {theirs})");
+}
+
+// Purchase Items: the NPC's stock as one shop tab (S→C 0xc0, inventory manager 1), then S→C 0x8c opens the buy window on it.
+static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint npcObject, SpawnedNpc npc)
+{
+    if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
+    var notes = new List<string>();
+    var items = ItemsOf(conn);
+    var stock = NpcShops.Fill(npc.Npc.Id, Items, items.NewItemId, notes);
+    foreach (var n in notes) Console.WriteLine($"[gateway] {remote} shop {npc.Npc.Name}: {n}");
+    uint tab = NpcShops.FirstTabId;
+    lock (conn.Npcs) conn.Shop = new OpenShop(npc, tab, stock.ToDictionary(i => i.Id));
+    await Send(remote, stream, ciphers, InstanceInventories.AddInventory(tab, NpcShops.Tab, NpcShops.Manager, stock),
+        $"0x00c0 shop tab {tab} (manager {NpcShops.Manager}) of {npc.Npc.Name}: {stock.Count} items");
+    conn.InNpcTalk = false;
+    await Send(remote, stream, ciphers, InstanceNpcs.Dialogue(npcObject, (ushort)Math.Max(0, npc.Npc.ShopRow), false, [tab], []),
+        $"0x008c open the buy window of {npc.Npc.Name} (NPCShop row {npc.Npc.ShopRow}) on tab {tab}");}
 
 // Activates this area's waypoint for the character (saved) and tells the client: a new 0x4c with the area's bit set
 // plays the waypoint's activation. Towns activate on entry, other waypoints when the player comes near or clicks them.
@@ -1650,6 +1923,52 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         lock (conn.Waypoints) list = string.Join(", ", entries.Where(e => conn.Waypoints.Contains(e.Id)).Select(e => e.Name));
         await conn.Commands!.Reply(list.Length == 0 ? "No activated waypoints." : $"Activated waypoints: {list}.");
     })
+    .Add("npc", "/npc <NPCs row, Id or name> [rotation°] (spawns an NPC next to you)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("which NPC");
+        if (Npcs.Value.Error is { } error) { await conn.Commands!.Reply(error); return; }
+        float? deg = args.Length > 1 && float.TryParse(args[^1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float d) ? d : null;
+        string query = string.Join(' ', deg is null ? args : args[..^1]);
+        if (Npcs.Value.Find(query) is not { } npc) { await conn.Commands!.Reply($"No NPC {query}."); return; }
+        if (!npc.Supported) { await conn.Commands!.Reply($"{npc} has components the server cannot write: {string.Join(", ", npc.Components ?? [])}."); return; }
+        var (x, y) = NextToPlayer(conn);
+        await SpawnNpc(remote, stream, ciphers, conn, npc, x, y, (deg ?? 0) * MathF.PI / 180);
+    })
+    // Turns an NPC: it is created again with the new facing (0x2bb, then 0x2b9).
+    .Add("npc_face", "/npc_face <name> <degrees> (turn an NPC here)", async args =>
+    {
+        if (args.Length < 2) throw new ArgumentException("name and degrees");
+        float deg = float.Parse(args[^1], System.Globalization.CultureInfo.InvariantCulture);
+        string name = string.Join(' ', args[..^1]);
+        KeyValuePair<uint, SpawnedNpc> found;
+        lock (conn.Npcs) found = conn.Npcs.FirstOrDefault(n => n.Value.Npc.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+        if (found.Value is not { } npc) { await conn.Commands!.Reply($"No NPC {name} here."); return; }
+        lock (conn.Npcs) conn.Npcs.Remove(found.Key);
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(found.Key), $"0x02bb remove npc 0x{found.Key:x} {npc.Npc.Name}");
+        float rad = deg * MathF.PI / 180;
+        await SpawnNpc(remote, stream, ciphers, conn, npc.Npc, npc.X, npc.Y, rad);
+        await conn.Commands!.Reply($"{npc.Npc.Name} at ({npc.X}, {npc.Y}) faces {deg}° ({rad:0.###} rad).");
+    })
+    // Probe: S→C 0x7b (open a UI) with any kind and its four u32s (16-waypoints.md §3; kind 0 = World panel).
+    .Add("ui", "/ui <kind hex> [a] [b] [c] [d] (S→C 0x7b open a UI)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("which kind");
+        byte kind = Convert.ToByte(args[0].Replace("0x", "", StringComparison.OrdinalIgnoreCase), 16);
+        uint U(int i) => args.Length > i ? Convert.ToUInt32(args[i], args[i].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10) : 0;
+        await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(kind, U(1), U(2), U(3), U(4)), $"0x007b open UI kind 0x{kind:x2} ({U(1)}, {U(2)}, {U(3)}, {U(4)})");
+    })
+    .Add("npcs", "/npcs (list NPCs here)", async _ =>
+    {
+        string list;
+        lock (conn.Npcs) list = string.Join(", ", conn.Npcs.Select(n => $"0x{n.Key:x} {n.Value.Npc.Name} ({n.Value.X}, {n.Value.Y})"));
+        await conn.Commands!.Reply(list.Length == 0 ? "No NPCs." : list);
+    })
+    .Add("pos", "/pos (your cell)", async _ =>
+    {
+        var (x, y) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
+        await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
+    })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
             string.Join(", ", conn.Monsters.Select(m =>
@@ -1877,6 +2196,7 @@ static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ci
 // item or the item is not there.
 static async Task PickUpItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PickUpItem pick)
 {
+    if (conn.Sale is { } sale && pick.InventoryId == sale.Mine) { await TakeFromSale(remote, stream, ciphers, conn, sale, pick.ItemId); return; }
     var items = ItemsOf(conn);
     if (PlayerInventories.Row(pick.InventoryId) is not byte row || items.PickUp(row, pick.ItemId) is not { } held)
     {
@@ -2056,6 +2376,7 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
 // item it displaced removed, the held item added), the cursor another (the held item removed, the displaced one added).
 static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PlaceItem place)
 {
+    if (conn.Sale is { } sale && place.InventoryId == sale.Mine) { await OfferForSale(remote, stream, ciphers, conn, sale, place); return; }
     var items = ItemsOf(conn);
     PlayerInventories.Placement? done = null;
     string why = "unknown inventory";
@@ -2149,6 +2470,8 @@ sealed partial class Program
     // How close the player must be to use a waypoint (Waypoint.ot object_size 6, as an area transition), and how close
     // it activates on its own.
     internal const double WaypointReach = 6, WaypointActivationRange = 25;
+    // How close the player walks to an NPC before talking (not measured yet).
+    internal const double NpcReach = 8;
     // Destination tickets of waypoint travel: that connection's player arrives next to the area's waypoint.
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, byte> WaypointArrivals = new();
     // The height u32 of S→C 0x1ba (+0x28, passed with the move to Positioned vtable +0xd8) and 0x1b7 (→ +0x290): the
@@ -2160,6 +2483,8 @@ sealed partial class Program
     // toward an item at (1278, 1304) and stopped at (1284, 1284), 20.9 cells away, on the first step inside the range.
     internal const double PickupReach = 20 + 2;
 
+    // NPCs.dat with the NPC types' components; loaded with the first town.
+    internal static readonly Lazy<NpcCatalog> Npcs = new(() => NpcCatalog.Load());
     // Shared by every connection; loaded on the first /spawn_mob.
     internal static readonly MonsterCatalog Monsters = new();
     // MonsterPacks per area (MonsterPacks.cs); loaded with the first area that has monsters.
@@ -2470,6 +2795,28 @@ sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, int Mi
     public IReadOnlyList<(uint, int)> SkillStats() => [.. Stats(), (StatKeys.SkillIsNonPathing, 1)];
 }
 
+sealed record SpawnedNpc(NpcCatalog.Npc Npc, int X, int Y);
+
+// An open sell window: the NPC, the two offer inventories (manager 1), the offered items and the NPC's offer.
+sealed class NpcSale(SpawnedNpc npc, uint mine, uint theirs)
+{
+    public SpawnedNpc Npc { get; } = npc;
+    public uint Mine { get; } = mine;
+    public uint Theirs { get; } = theirs;
+    public Dictionary<uint, InventoryItem> Offered { get; } = [];
+    public List<InventoryItem> Reward = [];
+    public uint MineRevision, TheirsRevision;
+}
+
+// An open shop tab: the NPC, its inventory id (manager 1), the items left by id and the tab's 0xbf revision.
+sealed class OpenShop(SpawnedNpc npc, uint tab, Dictionary<uint, InventoryItem> items)
+{
+    public SpawnedNpc Npc { get; } = npc;
+    public uint Tab { get; } = tab;
+    public Dictionary<uint, InventoryItem> Items { get; } = items;
+    public uint Revision;
+}
+
 sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange, uint maxLife)
 {
     public MonsterAttack? Attack { get; init; }
@@ -2569,6 +2916,16 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint PlayerMana;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
+    // The open sell window (Sell Items): what the player offered and what the NPC offers back.
+    public NpcSale? Sale;
+    // The shop tab opened last (Purchase Items), with what is left in it.
+    public OpenShop? Shop;
+    // The NPC whose dialogue window is open (0x84 sent, 0x85 not yet), 0 = none.
+    public volatile uint TalkingTo;
+    // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
+    public volatile bool InNpcTalk;
+    // NPCs created on this connection by object id (town NPCs, /npc).
+    public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>
     public HashSet<string> QuestFlags = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).

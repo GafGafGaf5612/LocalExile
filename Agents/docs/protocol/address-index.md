@@ -181,6 +181,17 @@ G = global / static data.
 | `0x1402f36c0` | Fn | item's AttributeRequirements component getter |
 | `0x141e1dce0` | Fn | InteractionAction type parser (`interaction_distance_override` → +0x1bb) |
 
+## NPCs ([17](17-npcs.md))
+| Address | Kind | What |
+|---|---|---|
+| `0x141e75050` | Fn | NPC component reader (slot 17): u8 → +0x20, u8 → +0x21 |
+| `0x141e751d0` | Fn | NPC component debug dump ("NPCTalk: (") |
+| `0x141e76d40` | Fn | the NPCTalk row the client picks for the player |
+| `0x1435dd7d8` (read `0x141fddcb0`) | Cls | S→C 0x84 NPC dialogue (object header, u8 → +0x20), world handler `0x142187480` |
+| `0x142149db0` | Fn | 0x84's handler: object 0 closes; u8 0xff fires the listeners at instance +0x13f8 |
+| `0x140dcc720` | Fn | in-game UI: open the NPC dialogue (registered on instance +0x13f8 by `0x140dbcd40`) |
+| `0x140723d60` | Fn | NPCDialogueWindow setup (dialogue style; via `0x14071f6d0`) |
+
 ## Waypoints and the World panel ([16](16-waypoints.md))
 | Address | Kind | What |
 |---|---|---|
