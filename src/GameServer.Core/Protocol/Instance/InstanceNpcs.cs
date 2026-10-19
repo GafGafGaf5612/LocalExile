@@ -82,6 +82,36 @@ public static class InstanceNpcs
     /// "AcceptItem").</summary>
     public static byte[] TradeClose(uint other, bool accepted) => new LoginWriter().U16(TradeCloseId).U32(other).U8((byte)(accepted ? 1 : 0)).ToArray();
 
+    public const ushort TradeOfferId = 0xb2;
+    public const int TradeOfferLength = 16;
+
+    /// <summary>C→S 0xb2: an item put into the player's trade offer.</summary>
+    public sealed record TradeOffer(uint InventoryId, uint ItemId, ushort U16, byte X, byte Y, ushort Token);
+
+    /// <summary>
+    /// C→S 0xb2 (16 bytes; class 0x1435bfc78, write 0x141f95b40, sent by 0x142166560; live 2026-10-19 on a drop into the
+    /// sell window's "Your Offer"): u32 BE source inventory (13 = the cursor), u32 BE item id, u16 BE (0), u8 x, u8 y (the
+    /// offer cell), u16 (the sender's last argument, also passed to the listeners at instance +0xa178; it changed between
+    /// drops). The target is the open trade's own offer.
+    /// </summary>
+    public static TradeOffer ReadTradeOffer(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32() & 0xc01fffff, r.U32(), r.U16(), r.U8(), r.U8(), r.U16());
+    }
+
+    public const ushort TradeTakeBackId = 0xb3;
+    public const int TradeTakeBackLength = 12;
+
+    /// <summary>C→S 0xb3 (12 bytes; live 2026-10-19 on a click on an item in "Your Offer"): u32 BE item id, u32 BE (0),
+    /// u16 (changes per request, like 0xb2's). The item leaves the offer.</summary>
+    public static uint ReadTradeTakeBack(ReadOnlySpan<byte> m) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]);
+
+    /// <summary>0xb8 flags (struct +0x50) bit 4: the trade window's status (0x140c37140) does not ask to mouse over each
+    /// of the other side's items before Accept; without it Accept stays disabled ("Mouse over each item to enable
+    /// accept").</summary>
+    public const byte TradeNoMouseOver = 0x10;
+
     public const ushort TradeAnswerId = 0xb1;
     public const int TradeAnswerLength = 7;
 

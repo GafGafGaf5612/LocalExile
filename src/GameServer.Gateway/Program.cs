@@ -249,6 +249,18 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
         else if (id == InstanceNpcs.DialogueClosedId)
             await CloseNpcDialogue(remote, stream, ciphers, conn);
+        else if (id == InstanceNpcs.TradeOfferId)
+        {
+            var offer = InstanceNpcs.ReadTradeOffer(bytes);
+            if (conn.Sale is { } sale) await OfferForSale(remote, stream, ciphers, conn, sale, offer.InventoryId, offer.ItemId, offer.X, offer.Y);
+            else Console.WriteLine($"[gateway] {remote} <= 0x00b2 trade offer {offer}: no sale open");
+        }
+        else if (id == InstanceNpcs.TradeTakeBackId)
+        {
+            uint item = InstanceNpcs.ReadTradeTakeBack(bytes);
+            if (conn.Sale is { } sale) await TakeFromSale(remote, stream, ciphers, conn, sale, item);
+            else Console.WriteLine($"[gateway] {remote} <= 0x00b3 take back item {item}: no sale open");
+        }
         else if (id == InstanceNpcs.TradeAnswerId)
             await AnswerSale(remote, stream, ciphers, conn, InstanceNpcs.ReadTradeAnswer(bytes));
         else if (id == InstanceNpcs.BuyId)
@@ -655,43 +667,48 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
         $"0x00bf inventory {buy.InventoryId}: bought item {item.Id} from {shop.Npc.Npc.Name} at ({buy.X}, {buy.Y}) ({buy})");
 }
 
-// The held item goes into the sell offer (C→S 0x2a on the offer inventory); the NPC answers with one Scroll Fragment per
-// offered item in its own offer.
-static async Task OfferForSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, InstanceItems.PlaceItem place)
+// An item goes into the sell offer (C→S 0xb2, or 0x2a on the offer inventory) from the inventory it is in (the cursor, or
+// the main inventory on a Ctrl-click); the NPC answers with one Scroll Fragment per offered item in its own offer.
+static async Task OfferForSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale,
+    uint fromInventory, uint itemId, byte x, byte y)
 {
     var items = ItemsOf(conn);
-    var held = items.Items(PlayerInventories.Cursor).FirstOrDefault();
-    if (held is null || items.Remove(PlayerInventories.Cursor, held.Id) is null)
+    if (PlayerInventories.Row(fromInventory) is not byte row || items.Remove(row, itemId) is not { } taken)
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x002a sell offer {place}: nothing held");
+        Console.WriteLine($"[gateway] {remote} sell offer: item {itemId} is not in inventory {fromInventory}");
         return;
     }
-    var offered = held with { X = (byte)place.X, Y = (byte)place.Y };
+    var offered = taken with { X = x, Y = y };
     lock (conn.Npcs) sale.Offered[offered.Id] = offered;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(fromInventory, items.NextRevision(row), [taken.Id], []),
+        $"0x00bf inventory {fromInventory}: remove item {taken.Id} (offered)");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [], [offered], NpcShops.Manager),
         $"0x00bf sell offer: item {offered.Id} at ({offered.X}, {offered.Y})");
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
-        items.NextRevision(PlayerInventories.Cursor), [held.Id], []), $"0x00bf cursor: remove item {held.Id} (offered)");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
-// An offered item picked back up (C→S 0x28 on the offer inventory) goes to the cursor.
+// An offered item taken back (C→S 0xb3, or 0x28 on the offer inventory) goes back to the main inventory (a free cell), or
+// to the cursor when the inventory is full and the cursor empty.
 static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, uint itemId)
 {
     var items = ItemsOf(conn);
-    InventoryItem? it = null;
-    lock (conn.Npcs)
-        if (items.Items(PlayerInventories.Cursor).Count == 0 && sale.Offered.Remove(itemId, out var found)) it = found;
-    if (it is null)
+    InventoryItem? it;
+    lock (conn.Npcs) it = sale.Offered.GetValueOrDefault(itemId);
+    var shape = it is null ? null : ShapeOf(it.Item);
+    byte row = PlayerInventories.MainInventory;
+    (byte X, byte Y)? cell = shape is { } s ? items.FreeCell(row, s.Width, s.Height, ShapeOf) : null;
+    if (cell is null && items.Items(PlayerInventories.Cursor).Count == 0) { row = PlayerInventories.Cursor; cell = (0, 0); }
+    if (it is null || cell is not { } at)
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x0028 sell offer item {itemId}: refused");
+        Console.WriteLine($"[gateway] {remote} sell offer item {itemId}: {(it is null ? "not offered" : "no room to take it back")}");
         return;
     }
-    var held = items.Put(PlayerInventories.Cursor, it with { X = 0, Y = 0 });
+    lock (conn.Npcs) sale.Offered.Remove(itemId);
+    var back = items.Put(row, it with { X = at.X, Y = at.Y });
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [itemId], [], NpcShops.Manager),
         $"0x00bf sell offer: remove item {itemId}");
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
-        items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: add item {itemId} (from the sell offer)");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [back]),
+        $"0x00bf inventory {PlayerInventories.InventoryId(row)}: item {itemId} back at ({at.X}, {at.Y})");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
@@ -759,7 +776,7 @@ static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCip
     await Send(remote, stream, ciphers, InstanceInventories.AddInventory(mine, NpcShops.Offer, NpcShops.Manager), $"0x00c0 sell offer {mine} (manager {NpcShops.Manager})");
     await Send(remote, stream, ciphers, InstanceInventories.AddInventory(theirs, NpcShops.Offer, NpcShops.Manager), $"0x00c0 {npc.Npc.Name}'s offer {theirs} (manager {NpcShops.Manager})");
     conn.InNpcTalk = false;
-    await Send(remote, stream, ciphers, InstanceNpcs.TradeOpen(0, mine, theirs, 0, npc.Npc.Name, npc.Npc.Row),
+    await Send(remote, stream, ciphers, InstanceNpcs.TradeOpen(0, mine, theirs, InstanceNpcs.TradeNoMouseOver, npc.Npc.Name, npc.Npc.Row),
         $"0x00b8 open the sell window with {npc.Npc.Name} (offers {mine}, {theirs})");
 }
 
@@ -2376,7 +2393,13 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
 // item it displaced removed, the held item added), the cursor another (the held item removed, the displaced one added).
 static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PlaceItem place)
 {
-    if (conn.Sale is { } sale && place.InventoryId == sale.Mine) { await OfferForSale(remote, stream, ciphers, conn, sale, place); return; }
+    if (conn.Sale is { } sale && place.InventoryId == sale.Mine)
+    {
+        uint cursor = PlayerInventories.InventoryId(PlayerInventories.Cursor);
+        var held = ItemsOf(conn).Items(PlayerInventories.Cursor).FirstOrDefault();
+        if (held is not null) await OfferForSale(remote, stream, ciphers, conn, sale, cursor, held.Id, (byte)place.X, (byte)place.Y);
+        return;
+    }
     var items = ItemsOf(conn);
     PlayerInventories.Placement? done = null;
     string why = "unknown inventory";
