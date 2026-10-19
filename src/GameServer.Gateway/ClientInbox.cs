@@ -15,11 +15,30 @@ sealed class ClientInbox
     /// <summary>The messages framed from one read, without its ticks, and the read's unframed rest.</summary>
     public sealed record Batch(IReadOnlyList<(ushort Id, byte[] Bytes)> Messages, byte[] Unknown);
 
+    /// <summary>0x1c's index that clears the client's whole send-time queue (≥ its size, 0x142155930).</summary>
+    public const ushort ClearQueue = ushort.MaxValue;
+
     readonly Channel<Batch> _queue = Channel.CreateUnbounded<Batch>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+    bool _resync = true;
+
+    /// <summary>
+    /// The ack index for the next 0x1c. The client keeps the send time of every 0x1b in a queue and index i drops entries
+    /// 0..i. Ticks no server answered (sent while the client left the last area, or lost in unframed bytes) stay there
+    /// for good, and index 0 then always pops a stale entry: the meter trailed by two tick intervals (~330 ms, live
+    /// 2026-10-19). So the first 0x1c of a connection, and the first after an unframed read, clears the queue; the
+    /// client then measures from its latest tick (+0xc470). The rest answer one tick each.
+    /// </summary>
+    public ushort NextAckIndex()
+    {
+        if (!_resync) return 0;
+        _resync = false;
+        return ClearQueue;
+    }
 
     /// <summary>Queues one read's messages for the handler task and returns its ticks, for the read loop to answer.</summary>
     public List<byte[]> Post(IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown)
     {
+        if (unknown.Length > 0) _resync = true;   // a tick may be in the bytes that could not be framed
         var ticks = new List<byte[]>();
         var rest = new List<(ushort, byte[])>();
         foreach (var m in messages)

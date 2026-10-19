@@ -1,6 +1,6 @@
 # 07 — Latency (0x1b/0x1c and HNC), visibility (wake zone) and movement
 
-State of 2026-10-16: the client's "network" graph stays flat (0 ms on localhost since 2026-10-19, §1), the Witch is drawn in Lioneye's
+State of 2026-10-16: the client's "network" graph stays flat (0–14 ms on localhost since 2026-10-19, §1), the Witch is drawn in Lioneye's
 Watch, and clicking the ground walks her there at normal speed. Evidence:
 [../re/evidence/2026-10-16-witch-visible.jpg](../re/evidence/2026-10-16-witch-visible.jpg).
 
@@ -11,9 +11,16 @@ the send time onto a queue at instance `+0xc458`. Each frame it sets `latency = 
 that is the perf overlay's "network: N ms". Without an answer the queue only grows, so the value climbs forever.
 
 **0x1c** (instance group, dispatcher case 5, class `0x1435dc8c0`, read `0x141fa0720`): `u16 server delay ms`,
-`u16 index`, `u32 HNC carrier`, all big-endian. `0x142155930` drops queue entries 0..index; the measured round trip minus
-the delay feeds `+0xc488`. One 0x1c with index 0 per received 0x1b keeps the queue empty
-(`InstanceProtocol.Pong`).
+`u16 index`, `u32 HNC carrier`, all big-endian. `0x142155930` drops queue entries 0..index and returns entry `index`'s
+send time; an index ≥ the queue's size clears the queue and returns `+0xc470`, the latest tick's send time (live Frida
+2026-10-19). `+0xc488` is not a round trip: every client send stamps it with the time. One 0x1c with index 0 per
+received 0x1b keeps the queue at the one tick in flight (`InstanceProtocol.Pong`).
+
+Ticks that no server answers stay in the queue for good: those sent while the client leaves an area, or lost in
+unframed bytes. Index 0 then always pops a stale entry. Live in The Coast the queue held 3 at every 0x1c (ticks every
+167 ms), and the meter read ~400 ms. The first 0x1c of each connection, and the first after an unframed read, therefore
+sends index 0xFFFF (`ClientInbox.NextAckIndex`). After that the queue held 1 at every 0x1c, and the meter read 12–14 ms
+in The Coast and in town: the client sees the answer on its next frame.
 
 So the meter reads 0 while every tick is answered at once, and a spike is exactly how long the server left a tick
 unanswered. The Gateway used to answer ticks in the same per-connection loop as every other handler, so the overlay

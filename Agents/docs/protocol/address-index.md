@@ -249,7 +249,7 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 
 | Address | Kind | What |
 |---|---|---|
-| `0x142155930` | Fn | 0x1c: drop acknowledged entries from the send-time queue (`+0xc458`) |
+| `0x142155930` | Fn | 0x1c: drop acknowledged entries from the send-time queue (`+0xc458`); index ≥ size clears it and returns `+0xc470` (latest tick time) |
 | `0x141fa0720` | Fn | 0x1c read (u16, u16, u32 HNC carrier) |
 | `0x14299de50` | Fn | HNC byte state machine ("HNC Protocol Violated") |
 | `0x14299db60` | Fn | HNC key: km XOR `0x142fe0da0`, byte swaps |

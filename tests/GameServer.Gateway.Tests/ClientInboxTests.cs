@@ -37,6 +37,25 @@ public class ClientInboxTests
     }
 
     [Fact]
+    public void The_first_ack_clears_the_clients_queue_then_one_tick_each()
+    {
+        var inbox = new ClientInbox();
+        Assert.Equal(ClientInbox.ClearQueue, inbox.NextAckIndex());
+        Assert.Equal(0, inbox.NextAckIndex());
+        Assert.Equal(0, inbox.NextAckIndex());
+    }
+
+    [Fact]
+    public void An_unframed_read_clears_the_queue_again()
+    {
+        var inbox = new ClientInbox();
+        inbox.NextAckIndex();
+        inbox.Post([(InstanceProtocol.TickId, Tick1)], [0x00, 0x35, 0]);
+        Assert.Equal(ClientInbox.ClearQueue, inbox.NextAckIndex());
+        Assert.Equal(0, inbox.NextAckIndex());
+    }
+
+    [Fact]
     public async Task Unframed_bytes_are_queued_after_the_framed_messages()
     {
         var inbox = new ClientInbox();
