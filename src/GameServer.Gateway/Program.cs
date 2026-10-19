@@ -68,6 +68,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
     Console.WriteLine($"[gateway] CONNECT {remote} at {DateTime.Now:HH:mm:ss.fff}");
     long total = 0;
     uint ticket = 0;
+    ClientState? left = null;
     try
     {
         using (client)
@@ -107,7 +108,8 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            left = conn;
             conn.Commands = Commands(remote, stream, ciphers, conn);
             conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
@@ -131,6 +133,13 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
     catch (Exception ex)
     {
         Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
+    }
+    if (left is not null)
+    {
+        // The instance keeps its monsters as they are now, for the next connection (#12).
+        if (left.MonstersPlaced)
+            lock (left.Monsters) left.Instance.Monsters = SavedMonster.Save(left.Monsters.Values, left.Clock.Elapsed.TotalSeconds);
+        Instances.Leave(left.Instance);
     }
     if (ticket != 0) await InstanceControl.CallAsync(new ControlRequest { Op = "leave", Ticket = ticket });
     Console.WriteLine($"[gateway] DISCONNECT {remote} total={total}");
@@ -296,6 +305,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
+                await SendGroundItems(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
@@ -314,7 +324,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
 // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
 // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
 static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
-    byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true)
+    byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null)
 {
     uint id = conn.NextObjectId++;
     // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
@@ -343,7 +353,13 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
     lock (conn.Monsters)
         conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
             variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
-        { Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity };
+        {
+            Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
+            Life = Math.Min(damagedLife ?? life, life),
+        };
+    // A kept monster that was hit: its life as a hit sets it (0x1b1).
+    if (damagedLife < life)
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, damagedLife.Value), !log ? null : $"0x01b1 monster 0x{id:x} life {damagedLife}/{life}");
 }
 
 // The area's monsters, once the player is in (Agents/docs/protocol/14-monster-packs.md): MonsterPacks scattered over the
@@ -352,7 +368,21 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
 static async Task PopulateArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     var layout = conn.Layout;
-    if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0" || layout.Walkable is not { } walkable) return;
+    if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0") return;
+    // An instance entered before keeps its monsters as the last connection left them: where they were, with their
+    // damage; the dead stay dead (#12).
+    if (conn.Instance.Monsters is { } saved)
+    {
+        conn.MonstersPlaced = true;
+        foreach (var s in saved)
+            if (Monsters.Find(s.Variety.ToString()) is { } kept)
+                await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life);
+        Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: {saved.Count} kept from the instance");
+        return;
+    }
+    // The packs need the walk map; until it exists nothing is placed, so nothing is kept either.
+    if (layout.Walkable is not { } walkable) return;
+    conn.MonstersPlaced = true;
     if (Packs.For(layout.Id) is not { } area || (area.Scattered.Count == 0 && area.Bosses.Count == 0)) return;
     if (Monsters.Error is { } error) { Console.WriteLine($"[gateway] {remote} area monsters: {error}"); return; }
     // Emerge monsters (Gravel Eater …) stay hidden without the Emerge action the server does not send yet.
@@ -400,9 +430,7 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId);
         return;
     }
-    WorldItemObject? ground;
-    lock (conn.WorldItems) ground = conn.WorldItems.GetValueOrDefault(use.TargetId);
-    if (ground is not null)
+    if (conn.Instance.Ground.Get(use.TargetId) is { } ground)
     {
         await PickUpGroundItem(remote, stream, ciphers, conn, use.TargetId, ground, use);
         return;
@@ -1176,7 +1204,7 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
 }
 
 // The monster's items (ItemDrops.Roll) as WorldItem objects scattered around where it died, on walkable cells when the
-// area's walk map is known. Like dropped items they live on this connection.
+// area's walk map is known. Like dropped items they lie in the instance (InstanceStore).
 static async Task DropLoot(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedMonster m, (int X, int Y) at)
 {
     if (Environment.GetEnvironmentVariable("Game_DROPS") == "0") return;
@@ -1188,8 +1216,7 @@ static async Task DropLoot(string remote, NetworkStream stream, ConnectionCipher
         int x = at.X + (int)Math.Round(Math.Cos(angle) * r), y = at.Y + (int)Math.Round(Math.Sin(angle) * r);
         if (conn.Layout.Walkable is { } walks && !walks(x, y)) (x, y) = at;
         var ground = new WorldItemObject(x, y, drop.Item);
-        uint id = conn.NextObjectId++;
-        lock (conn.WorldItems) conn.WorldItems[id] = ground;
+        uint id = conn.Instance.Ground.Add(ground);
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), ground.Blob()),
             $"0x02b9 create world item 0x{id:x} {drop.Type.Name} (item level {drop.Item.ItemLevel}) dropped by {m.Label} at ({x}, {y})");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
@@ -1997,6 +2024,17 @@ static async Task DestroyHeldItem(string remote, NetworkStream stream, Connectio
         Console.WriteLine($"[gateway] {remote} <= 0x0016 /destroy: nothing held");
 }
 
+// The instance's items on the ground, where they were left (InstanceStore): dropped or looted on an earlier connection.
+static async Task SendGroundItems(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    foreach (var (id, ground) in conn.Instance.Ground.All())
+    {
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), ground.Blob()),
+            $"0x02b9 create world item 0x{id:x} left at ({ground.GridX}, {ground.GridY})");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+    }
+}
+
 // C→S 0x29: drop the held item where the player stands, as a WorldItem object (0x2b9 + wake zone 0x1a9).
 static async Task DropItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
@@ -2007,8 +2045,7 @@ static async Task DropItem(string remote, NetworkStream stream, ConnectionCipher
     }
     var (x, y) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
     var ground = new WorldItemObject(x, y, held.Item);
-    uint id = conn.NextObjectId++;
-    lock (conn.WorldItems) conn.WorldItems[id] = ground;
+    uint id = conn.Instance.Ground.Add(ground);
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), ground.Blob()),
         $"0x02b9 create world item 0x{id:x} at ({x}, {y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 world item 0x{id:x} enters wake zone");
@@ -2044,7 +2081,8 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
         }
         cell = free;
     }
-    lock (conn.WorldItems) if (!conn.WorldItems.Remove(id)) return;
+    if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+
     var placed = items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
@@ -2174,6 +2212,9 @@ sealed partial class Program
     internal static readonly ItemCatalog Items = new();
     // What dying monsters drop (ItemDrops.cs).
     internal static readonly ItemDrops Drops = new(Items);
+    // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
+    // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
+    internal static readonly InstanceStore Instances = new(TimeProvider.System, new GameServer.Core.World.InstanceRegistry().Lifetime);
     // The passive tree's nodes (PassiveSkills.dat by PassiveSkillGraphId).
     internal static readonly PassiveTree Passives = new();
     // How close (cells) the player must be to a dying monster to gain its experience. Game_XP_RANGE overrides it.
@@ -2572,7 +2613,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
     // Items on the ground by object id (dropped with C→S 0x29).
-    public readonly Dictionary<uint, WorldItemObject> WorldItems = [];
+    /// <summary>The area instance's state shared across connections: its ground items.</summary>
+    public InstanceState Instance { get; init; } = null!;
+    /// <summary>This connection placed or restored the instance's monsters, so it saves them when it closes.</summary>
+    public bool MonstersPlaced;
     public volatile bool AiEnabled = true, Closed;
     // Whether the lockstep warning was shown on this connection.
     public bool WarnedLockstep;
