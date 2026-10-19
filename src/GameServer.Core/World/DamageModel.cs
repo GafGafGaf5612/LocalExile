@@ -59,4 +59,22 @@ public static class DamageModel
         if (damage <= 0) return 0;
         return damage * (100.0 - Capped(resistance, maxResistance)) / 100.0;
     }
+
+    /// <summary>Path of Building's <c>BlockChanceCap</c>: block chance cannot exceed 90%.</summary>
+    public const int BlockChanceCap = 90;
+
+    /// <summary>Character.ot's <c>maximum_block_%</c> and <c>base_maximum_spell_block_%</c>.</summary>
+    public const int DefaultMaxBlockChance = 75, DefaultMaxSpellBlockChance = 75;
+
+    /// <summary>Whether a block roll succeeds; <paramref name="roll"/> is 0..100. Lucky block rolls twice and keeps the
+    /// better roll, so its effective chance is <c>1 - (1 - p)^2</c> (PoB CalcDefence's lucky block branch).</summary>
+    public static bool Blocks(int chance, double roll, bool lucky = false) =>
+        roll < EffectiveBlockChance(chance, lucky);
+
+    /// <summary>The chance after lucky/unlucky block (one extra roll each); capped by <see cref="BlockChanceCap"/>.</summary>
+    public static double EffectiveBlockChance(int chance, bool lucky = false)
+    {
+        double p = Math.Clamp(chance, 0, BlockChanceCap) / 100.0;
+        return lucky ? (1 - (1 - p) * (1 - p)) * 100 : p * 100;
+    }
 }

@@ -14,6 +14,7 @@ sealed class ItemCatalog
         _byHash = new(() => _rows.Value.Rows.GroupBy(t => t.Hash).ToDictionary(g => g.Key, g => g.First()));
         _gemEffects = new(() => LoadGemEffects(folder));
         _requirements = new(() => LoadRequirements(folder));
+        _shieldBlocks = new(() => LoadShieldBlocks(folder));
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
@@ -60,6 +61,24 @@ sealed class ItemCatalog
     /// Support gems grant none: they modify the linked active skills (granting one as a skill crashed the client in the
     /// Actor skill reader, 0x141ee795a).</summary>
     public int GemEffect(BaseType t) => _gemEffects.Value.GetValueOrDefault(t.Row, -1);
+
+    private Lazy<Dictionary<int, int>> _shieldBlocks = null!;
+
+    /// <summary>The shield's base block percentage from ShieldTypes.dat (0 for non-shields).</summary>
+    public int ShieldBlock(BaseType t) => _shieldBlocks.Value.GetValueOrDefault(t.Row);
+
+    private static Dictionary<int, int> LoadShieldBlocks(string folder)
+    {
+        string path = Path.Combine(folder, "tables", "ShieldTypes.json");
+        var result = new Dictionary<int, int>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+            if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b &&
+                r.GetProperty("Block") is { ValueKind: JsonValueKind.Number } block)
+                result.TryAdd(b.GetInt32(), block.GetInt32());
+        return result;
+    }
 
     private Lazy<Dictionary<int, int>> _gemEffects = null!;
 

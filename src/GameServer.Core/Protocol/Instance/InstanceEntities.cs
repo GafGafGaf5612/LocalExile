@@ -72,7 +72,7 @@ public static class InstanceEntities
     public static byte[] RemoveBuff(uint objectId, ushort buffInstance) =>
         new LoginWriter().U16(RemoveBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).ToArray();
 
-    public const ushort CharacterPassivesId = 0x33, AllocatePassiveId = 0x34, PanelToggleId = 0x123;
+    public const ushort CharacterPassivesId = 0x33, AllocatePassiveId = 0x34, MasteryEffectId = 0x35, PanelToggleId = 0x123;
 
     /// <summary>
     /// C→S 0x34 (7 bytes, live 2026-10-18): the Passive Skill Tree asks for a node. u16 (0 so far), u16 the node's
@@ -84,6 +84,14 @@ public static class InstanceEntities
         ((ushort)(m[2] << 8 | m[3]), (ushort)(m[4] << 8 | m[5]), m[6]);
 
     /// <summary>
+    /// C→S 0x35 (6 bytes): selecting a mastery effect. u16 node (big-endian, PassiveSkillGraphId), u16 effect
+    /// (big-endian, PassiveSkillMasteryEffects.dat HASH16). Captured: 003598091194 = Block Mastery 38921, effect 4500
+    /// (+1% spell block per 5% attack block).
+    /// </summary>
+    public static (ushort Node, ushort Effect) ReadMasteryEffect(ReadOnlySpan<byte> m) =>
+        ((ushort)(m[2] << 8 | m[3]), (ushort)(m[4] << 8 | m[5]));
+
+    /// <summary>
     /// S→C 0x33 (dispatcher case 0xf, class 0x1435dca60, read 0x14219e3f0): the character's passive skill tree, at
     /// instance+0xc2d8 (handler 0x141ef2710). u16 +0x88 → tree +0x270 (probably refund points), u16 +0x8a → +0x274
     /// (extra_skill_points: quests), u16 +0x8c → +0x27c (ascendancy points), u8 +0x90 → +0x26c the **level** (the client's
@@ -91,15 +99,21 @@ public static class InstanceEntities
     /// IntegerId, ascendancy in bits 5–7: the tree's start), u8 +0x8e → +0x269, u8 flags (bit0 +0x91, bit1 +0x92 = no
     /// lists), then unless bit1: vec16 u16 allocated nodes (PassiveSkills.dat PassiveSkillGraphId, raw little-endian),
     /// vec16 u16, vec16 u16, vec16 u32 mastery effects (node | effect &lt;&lt; 16), vec16 u32. The client drops nodes not
-    /// connected to its class's start and refuses more nodes than its points allow.
+    /// connected to its class's start and refuses more nodes than its points allow. A mastery effect is the
+    /// PassiveSkillMasteryEffects.dat HASH16 (the value in the client's passive tree data), not the data-table row.
     /// </summary>
     public static byte[] CharacterPassives(byte level, byte classByte, IReadOnlyList<ushort>? nodes = null, ushort questPoints = 0,
-        ushort refundPoints = 0, ushort ascendancyPoints = 0)
+        ushort refundPoints = 0, ushort ascendancyPoints = 0, IReadOnlyDictionary<ushort, ushort>? masteryEffects = null)
     {
         var w = new LoginWriter().U16(CharacterPassivesId).U16(refundPoints).U16(questPoints).U16(ascendancyPoints)
             .U8(level).U8(classByte).U8(0).U8(0).U16(checked((ushort)(nodes?.Count ?? 0)));
         foreach (ushort n in nodes ?? []) w.U8((byte)n).U8((byte)(n >> 8));
-        return w.U16(0).U16(0).U16(0).U16(0).ToArray();
+        w.U16(0).U16(0);
+        var effects = masteryEffects is null ? [] : masteryEffects
+            .Where(kv => nodes?.Contains(kv.Key) == true).ToList();
+        w.U16(checked((ushort)effects.Count));
+        foreach (var (node, effect) in effects) w.RawU32(node | ((uint)effect << 16));
+        return w.U16(0).ToArray();
     }
 
     /// <summary>S→C 0x22 (u32, dispatcher case 0xb): the local player's entity id (world+0x980, setter 0x142186fa0).</summary>

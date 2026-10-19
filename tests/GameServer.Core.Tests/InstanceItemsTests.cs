@@ -48,6 +48,16 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Shield_armour_component_is_one_byte()
+    {
+        var shield = new Item(1, ["Base", "Armour", "Sockets"], 2);
+        byte[] p = shield.Payload();
+        Assert.Equal(0x0F, p.Length);   // 6 header + 7 Base + 1 Armour + 1 Sockets
+        Assert.Equal(0, p[13]);         // Armour byte
+        Assert.Equal(0, p[14]);         // no sockets
+    }
+
+    [Fact]
     public void Unsupported_components_are_refused()
     {
         Assert.False(Item.CanSerialize(["Base", "Map"]));

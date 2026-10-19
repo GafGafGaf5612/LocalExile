@@ -34,10 +34,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     static readonly uint[] TrailingU16 = [0x192c7aab, 0x365f206a, 0x503da850, 0x9aff2df6];
 
     /// <summary>Components whose slot 5 reads nothing (their vtables' slot 5 is the bare `ret` 0x1400f0f00).</summary>
-    public static readonly HashSet<string> NoData = ["LocalStats", "AttributeRequirements", "Weapon", "Usable", "Flask", "Quest", "Shield"];
+    public static readonly HashSet<string> NoData = ["LocalStats", "AttributeRequirements", "Weapon", "Usable", "Flask", "Quest", "Shield", "RenderItem"];
 
     /// <summary>Components <see cref="Payload"/> can write.</summary>
-    public static readonly HashSet<string> Supported = [.. NoData, "Base", "Mods", "Quality", "Sockets", "Charges", "Stack", "SkillGem"];
+    public static readonly HashSet<string> Supported = [.. NoData, "Base", "Mods", "Armour", "Quality", "Sockets", "Charges", "Stack", "SkillGem"];
 
     public static bool CanSerialize(IEnumerable<string> components) => components.All(Supported.Contains);
 
@@ -73,6 +73,11 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                             foreach (byte b in cw.ToArray()) w.U8(b);
                         }
                     }
+                    break;
+                // Armour 0x1424affc0 reads u8 (0..0x20); it is stored in +0x28 (0x1424afc90 clamps to 0x1f,
+                // 0x20 sets +0x2a). 0 is the normal value for our items.
+                case "Armour":
+                    w.U8(0);
                     break;
                 // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit 6 incubator, bit 4 → u8, bit 15 a 0x1c8
                 // record), the base magic properties 0x142201d70 (u16 flags: bits 0-2 rarity, bit 3 identified; u8), u8, u8.
