@@ -79,7 +79,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (202 tests) and `dotnet test tests/GameServer.Data.Tests` (15 tests) pass.
+`dotnet test tests/GameServer.Core.Tests` (211 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (3: inventory moves) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

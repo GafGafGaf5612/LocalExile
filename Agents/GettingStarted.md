@@ -131,9 +131,10 @@ cd LocalExile
 dotnet build GameServer.slnx
 dotnet test tests/GameServer.Core.Tests
 dotnet test tests/GameServer.Data.Tests
+dotnet test tests/GameServer.Gateway.Tests
 ```
 
-Success: `Build succeeded` with 0 warnings, and both test runs end with `Passed!`. The tests that need the real client
+Success: `Build succeeded` with 0 warnings, and every test run ends with `Passed!`. The tests that need the real client
 quietly pass when there is no `Client/` yet.
 
 ## 2. Allow the scripts to run
@@ -329,6 +330,7 @@ Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and 
 | "Account does not exist" | the name in the Email field does not match `register name=` | use the registered name |
 | Login hangs, no "Connected to login server" | gateway list not patched (step 6), or the login server is not running | redo step 6; check `logs\live-auth.log` |
 | Character select shows no characters | the character was created after the login server started | run `live.ps1` again |
+| `dotnet build` / `dotnet test` fails with `MSB3027` ... `locked by: ".NET Host"` | the servers `live.ps1` started are running from the same `bin\` folders | let `live.ps1` rebuild them (`-Only Gateway` …), or build and test elsewhere with a short path: `dotnet test tests/GameServer.Gateway.Tests --artifacts-path C:\Temp\lx` |
 | In town, but your character is invisible and clicks do nothing | Network Mode is lockstep ("auto" picks it on localhost); the Gateway log says `lockstep movement` | Options → Game → Network Mode → Predictive, then log out to the character screen and Play again |
 | Stuck after Play (no area) | `Game_GATEWAY_ENTER` was set to something other than `1` | unset it; `live.ps1` sets it to `1` |
 | `HNC mask not found` in `live-gateway.err` | `Client\Game.exe` is not 3.29.3b | use the right client version |

@@ -1655,20 +1655,19 @@ static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ci
     finally { gate.Release(); }
 }
 
-// C→S 0x28: a click on an item. It moves to the cursor inventory (row 12): one 0xbf removes it from its inventory, another
-// adds it to the cursor at (0, 0). Refused (logged) when the cursor already holds an item or the item is not there.
+// C→S 0x28: a click on an item. It moves to the cursor inventory (row 12) in one save (PlayerInventories.PickUp): one 0xbf
+// removes it from its inventory, another adds it to the cursor at (0, 0). Refused (logged) when the cursor already holds an
+// item or the item is not there.
 static async Task PickUpItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PickUpItem pick)
 {
     var items = ItemsOf(conn);
-    if (PlayerInventories.Row(pick.InventoryId) is not byte row || row == PlayerInventories.Cursor || items.Items(PlayerInventories.Cursor).Count > 0 ||
-        items.Remove(row, pick.ItemId) is not { } it)
+    if (PlayerInventories.Row(pick.InventoryId) is not byte row || items.PickUp(row, pick.ItemId) is not { } held)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x0028 pick up {pick}: refused");
         return;
     }
-    var held = items.Put(PlayerInventories.Cursor, it with { X = 0, Y = 0 });
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(pick.InventoryId, items.NextRevision(row), [it.Id], []),
-        $"0x00bf inventory {pick.InventoryId}: remove item {it.Id} (picked up {pick})");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(pick.InventoryId, items.NextRevision(row), [held.Id], []),
+        $"0x00bf inventory {pick.InventoryId}: remove item {held.Id} (picked up {pick})");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
         items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: add item {held.Id}");
     // Dual wielding: taking the main hand off moves the off hand's one-handed weapon into the main hand.

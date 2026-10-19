@@ -20,5 +20,5 @@ All agent and contributor documentation is in [Agents/](Agents/). Read these fir
   credentials of the official services.
 - **Keep the docs current:** when you find or build something, update `Agents/docs/` and move the item from
   `Roadmap.md` to `Status.md` in the same change.
-- **Verify with the real client and the logs** (`logs\`), and keep `dotnet test tests/GameServer.Core.Tests` and
-  `tests/GameServer.Data.Tests` passing.
+- **Verify with the real client and the logs** (`logs\`), and keep `dotnet test tests/GameServer.Core.Tests`,
+  `tests/GameServer.Data.Tests` and `tests/GameServer.Gateway.Tests` passing.
