@@ -72,6 +72,8 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/add_xp <amount>` | experience as from a kill: levels up, saved ([15](15-progression.md) §1) |
 | `/passives` | the passive skill points and the allocated passives (message box) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
+| `/resistances` | the character's uncapped and capped fire/cold/lightning/chaos resistance |
+| `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model, showing the resistance used and the life left |
 | `/god` | toggles 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12) |
 | `/death_screen [hex flags]` | S→C 0x55 with these flags (default: the league's; 2 hides it), [11](11-skills.md) §7 |
 | `/quest_flag [<QuestFlags Id> [off]]` | lists the character's quest flags, or sets or clears one (saved); the quest's room objects follow ([12](12-quests.md) §5) |

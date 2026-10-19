@@ -16,18 +16,28 @@ static class CharacterStats
 {
     public sealed record Pools(int Level, uint Life, uint Mana, int Accuracy, uint Experience,
         int Evasion = BaseEvasion, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
-        int Strength = 0, int Dexterity = 0, int Intelligence = 0);
+        int Strength = 0, int Dexterity = 0, int Intelligence = 0,
+        int FireResistance = BaseResistance, int ColdResistance = BaseResistance,
+        int LightningResistance = BaseResistance, int ChaosResistance = BaseResistance,
+        int FireMaxResistance = DamageModel.DefaultMaxResistance, int ColdMaxResistance = DamageModel.DefaultMaxResistance,
+        int LightningMaxResistance = DamageModel.DefaultMaxResistance, int ChaosMaxResistance = DamageModel.DefaultMaxResistance);
 
     /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life and
-    /// mana, and increased evasion, energy shield and melee physical damage.</summary>
+    /// mana, increased evasion, energy shield and melee physical damage, and the base resistances.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
-        int Mana = 0, int ManaPct = 0, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0)
+        int Mana = 0, int ManaPct = 0, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
+        int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
+        int FireMaxResistance = 0, int ColdMaxResistance = 0, int LightningMaxResistance = 0, int ChaosMaxResistance = 0)
     {
         public static readonly Bonus None = new();
     }
 
     /// <summary>Character.ot base_evasion_rating.</summary>
     public const int BaseEvasion = 15;
+
+    /// <summary>Path of Exile's resistance before the quest penalties: 0% to all four types at character level 1.
+    /// Act 5 and Act 10 Kitava each take another 30% away; see <see cref="ResistancePenalty"/> in the Gateway.</summary>
+    public const int BaseResistance = 0;
 
     public static Pools For(SkillCatalog.ClassInfo c, int level, Bonus? bonus = null, string folder = "data")
     {
@@ -37,10 +47,15 @@ static class CharacterStats
         uint life = (uint)Math.Max(1, (c.BaseMaxLife + 12 * level + str / 2 + b.Life) * (100 + b.LifePct) / 100);
         uint mana = (uint)Math.Max(0, (c.BaseMaxMana + 6 * level + intel / 2 + b.Mana) * (100 + b.ManaPct) / 100);
         int evasionPct = dex / 5 + b.EvasionPct;
+        int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
         return new(level, life, mana, 2 * level + 2 * dex, ExperienceFor(level, folder),
             Evasion: BaseEvasion * (100 + evasionPct) / 100, EvasionPct: evasionPct,
             EnergyShieldPct: intel / 5 + b.EnergyShieldPct, MeleePhysicalDamagePct: str / 5 + b.MeleePhysicalDamagePct,
-            Strength: str, Dexterity: dex, Intelligence: intel);
+            Strength: str, Dexterity: dex, Intelligence: intel,
+            FireResistance: BaseResistance + b.FireResistance, ColdResistance: BaseResistance + b.ColdResistance,
+            LightningResistance: BaseResistance + b.LightningResistance, ChaosResistance: BaseResistance + b.ChaosResistance,
+            FireMaxResistance: Max(b.FireMaxResistance), ColdMaxResistance: Max(b.ColdMaxResistance),
+            LightningMaxResistance: Max(b.LightningMaxResistance), ChaosMaxResistance: Max(b.ChaosMaxResistance));
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));

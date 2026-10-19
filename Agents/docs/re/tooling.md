@@ -169,3 +169,12 @@ non-client ones) are deserialized; live objects often use a subclass vtable (`Cl
 each component's live vtable (★ in components.md, or `check-components.js` on a client-created object), and write the
 bytes its summary in schema.md asks for; then confirm with `check-components.js` that every component consumed what
 the server meant and `left` is 0.
+
+## 8. Path of Building (formula reference)
+
+For damage/defence rules that are not visible in the client tables, Path of Building is the reference (not a runtime
+dependency and never committed): clone `https://github.com/PathOfBuildingCommunity/PathOfBuilding` into the
+git-ignored `Tools/PathOfBuilding` (the clone used for this work is commit `16de4b8`). Resistance floor, caps and the
+final clamp come from `src/Modules/Data.lua` (`ResistFloor = -200`, `MaxResistCap = 90`), `src/Data/Misc.lua`
+(`base_maximum_all_resistances_% = 75`) and `src/Modules/CalcDefence.lua` (`final = max(min(total, max), min)`).
+Our `DamageModel` cites those files; keep the clone local and pin the commit when a formula is copied into the server.

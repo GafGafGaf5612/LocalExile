@@ -5,6 +5,8 @@ using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using WalkEstimator = GameServer.Core.World.WalkEstimator;
 using Progression = GameServer.Core.World.Progression;
+using DamageModel = GameServer.Core.World.DamageModel;
+using DamageType = GameServer.Core.World.DamageType;
 
 // GameServer.Gateway — the instance (game) server the client connects to after login 0x14, or after 0x27 on an area
 // change (Agents/docs/protocol/02, 09).
@@ -1169,7 +1171,25 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
     foreach (var (stat, value) in new[] { ("level", pools.Level), ("base_maximum_life", (int)pools.Life), ("maximum_life", (int)pools.Life),
         ("base_maximum_mana", (int)pools.Mana), ("maximum_mana", (int)pools.Mana), ("accuracy_rating", pools.Accuracy),
         ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
-        ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct) })
+        ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
+        // Resistance display: the client shows fire_damage_resistance_% as the capped value and
+        // uncapped_fire_damage_resistance_% (and the other three) in parentheses as the overcap. The passives' base
+        // resistances are already summed into the pools, so zero the all-elements input to avoid counting it twice. The
+        // maximum-resistance passives stay in BaseStats: the client adds them to its own 75 base. Do not send maximum_*
+        // here; those keys are additive maximum-resistance modifiers, so sending 75 would count the base twice.
+        ("base_resist_all_elements_%", 0),
+        ("base_fire_damage_resistance_%", pools.FireResistance),
+        ("fire_damage_resistance_%", DamageModel.Capped(pools.FireResistance, pools.FireMaxResistance)),
+        ("uncapped_fire_damage_resistance_%", pools.FireResistance),
+        ("base_cold_damage_resistance_%", pools.ColdResistance),
+        ("cold_damage_resistance_%", DamageModel.Capped(pools.ColdResistance, pools.ColdMaxResistance)),
+        ("uncapped_cold_damage_resistance_%", pools.ColdResistance),
+        ("base_lightning_damage_resistance_%", pools.LightningResistance),
+        ("lightning_damage_resistance_%", DamageModel.Capped(pools.LightningResistance, pools.LightningMaxResistance)),
+        ("uncapped_lightning_damage_resistance_%", pools.LightningResistance),
+        ("base_chaos_damage_resistance_%", pools.ChaosResistance),
+        ("chaos_damage_resistance_%", DamageModel.Capped(pools.ChaosResistance, pools.ChaosMaxResistance)),
+        ("uncapped_chaos_damage_resistance_%", pools.ChaosResistance) })
         if (Stats.Key(stat) is uint key) yield return (key, value);
     // The class's attributes with the passives' (CharacterStats.For); a pools record made without a class (0) falls back
     // to the class's own.
@@ -1323,17 +1343,28 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 }
 
 // What the allocated passives add to the pools: attributes (base_* and additional_*, all attributes and the pairs),
-// flat and increased life and mana, and increased evasion, energy shield and melee physical damage.
+// flat and increased life and mana, increased evasion, energy shield and melee physical damage, and the base
+// resistances (base_resist_all_elements_% applies to fire, cold and lightning).
 static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats)
 {
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
     int all = Get("additional_all_attributes") + Get("base_all_attributes");
+    int allRes = Get("base_resist_all_elements_%");
+    int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
     return new CharacterStats.Bonus(
         Strength: Get("base_strength") + Get("additional_strength") + all + Get("additional_strength_and_dexterity") + Get("additional_strength_and_intelligence"),
         Dexterity: Get("base_dexterity") + Get("additional_dexterity") + all + Get("additional_strength_and_dexterity") + Get("additional_dexterity_and_intelligence"),
         Intelligence: Get("base_intelligence") + Get("additional_intelligence") + all + Get("additional_strength_and_intelligence") + Get("additional_dexterity_and_intelligence"),
         Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
-        EvasionPct: Get("evasion_rating_+%"), EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"));
+        EvasionPct: Get("evasion_rating_+%"), EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
+        FireResistance: allRes + Get("base_fire_damage_resistance_%"),
+        ColdResistance: allRes + Get("base_cold_damage_resistance_%"),
+        LightningResistance: allRes + Get("base_lightning_damage_resistance_%"),
+        ChaosResistance: Get("base_chaos_damage_resistance_%"),
+        FireMaxResistance: allMax + allElemMax + Get("base_maximum_fire_damage_resistance_%"),
+        ColdMaxResistance: allMax + allElemMax + Get("base_maximum_cold_damage_resistance_%"),
+        LightningMaxResistance: allMax + allElemMax + Get("base_maximum_lightning_damage_resistance_%"),
+        ChaosMaxResistance: allMax + Get("base_maximum_chaos_damage_resistance_%"));
 }
 
 // The character's passive skill points (one per level after the first; the client computes the same from the level in
@@ -1622,7 +1653,8 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         {
             before = conn.PlayerLife;
             dead = before == 0;
-            double burn = rf is null ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds;
+            double burn = rf is null ? 0 : DamageModel.Mitigate(conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds,
+                Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
             double change = carry + regen - burn;
             int whole = (int)Math.Truncate(change);
             carry = change - whole;
@@ -1732,6 +1764,55 @@ static async Task Transfer(string remote, NetworkStream stream, ConnectionCipher
     await Send(remote, stream, ciphers, InstanceTransfer.ConnectInstance(host, port, r.Ticket, r.Area, conn.Keyring.Key(r.Ticket)),
         $"0x0027 connect to instance {r.Instance} of area 0x{r.Area:x4} (seed {r.Seed}) at {host}:{port}, ticket 0x{r.Ticket:x8}");
 }
+
+// The permanent resistance penalty from Kitava: -30% after the Act 5 encounter and another -30% after the final
+// Act 10 Kitava. It is a quest penalty, not a buff/aura: the client keeps it through its quest flags, and the server
+// mirrors it from the same flags. (In the 3.29.3b tables the flags are a5q6-CompletedBoss and a10q3-SeenBoss /
+// a10q3-UsedRewardBook; a9q5-KilledBoss is the Act 9 boss and does not grant it.)
+static int ResistancePenalty(ClientState conn)
+{
+    bool act5, act10;
+    lock (conn.Monsters)
+    {
+        act5 = conn.QuestFlags.Contains("a5q6-CompletedBoss") || conn.QuestFlags.Contains("SinOnKitavaDefeat");
+        act10 = conn.QuestFlags.Contains("a10q3-SeenBoss") || conn.QuestFlags.Contains("a10q3-UsedRewardBook");
+    }
+    return (act5 ? -30 : 0) + (act10 ? -30 : 0);
+}
+
+// The player's final resistance for one damage type: the passive/gear modifier plus the Kitava quest penalty.
+static int Resistance(ClientState conn, DamageType type)
+{
+    int modifier = type switch
+    {
+        DamageType.Fire => conn.Pools.FireResistance,
+        DamageType.Cold => conn.Pools.ColdResistance,
+        DamageType.Lightning => conn.Pools.LightningResistance,
+        DamageType.Chaos => conn.Pools.ChaosResistance,
+        _ => 0,
+    };
+    return type == DamageType.Physical ? modifier : modifier + ResistancePenalty(conn);
+}
+
+// The per-type maximum from Character.ot's 75 plus the passive/gear maximum-resistance modifiers, hard-capped at 90.
+static int MaxResistance(ClientState conn, DamageType type) => type switch
+{
+    DamageType.Fire => conn.Pools.FireMaxResistance,
+    DamageType.Cold => conn.Pools.ColdMaxResistance,
+    DamageType.Lightning => conn.Pools.LightningMaxResistance,
+    DamageType.Chaos => conn.Pools.ChaosMaxResistance,
+    _ => DamageModel.DefaultMaxResistance,
+};
+
+static DamageType? ParseDamageType(string text) => text.ToLowerInvariant() switch
+{
+    "fire" => DamageType.Fire,
+    "cold" => DamageType.Cold,
+    "lightning" or "light" => DamageType.Lightning,
+    "chaos" => DamageType.Chaos,
+    "physical" or "phys" => DamageType.Physical,
+    _ => null,
+};
 
 // The chat commands of one connection (ChatCommands.cs).
 static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
@@ -1846,6 +1927,53 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         var (_, nodes) = PassiveState(conn);
         await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: false, "/reset_passives");
         await conn.Commands!.Reply($"{nodes.Count} passive(s) refunded.");
+    })
+    .Add("resistances", "/resistances (your uncapped and capped fire/cold/lightning/chaos resistance)", async _ =>
+    {
+        var p = conn.Pools;
+        int penalty = ResistancePenalty(conn);
+        int fire = p.FireResistance + penalty, cold = p.ColdResistance + penalty;
+        int lightning = p.LightningResistance + penalty, chaos = p.ChaosResistance + penalty;
+        await conn.Commands!.Reply(
+            $"Kitava penalty {penalty}%. " +
+            $"Fire {fire}% (passives {p.FireResistance}%, max {p.FireMaxResistance}%, capped {DamageModel.Capped(fire, p.FireMaxResistance)}%), " +
+            $"Cold {cold}% (passives {p.ColdResistance}%, max {p.ColdMaxResistance}%, capped {DamageModel.Capped(cold, p.ColdMaxResistance)}%), " +
+            $"Lightning {lightning}% (passives {p.LightningResistance}%, max {p.LightningMaxResistance}%, capped {DamageModel.Capped(lightning, p.LightningMaxResistance)}%), " +
+            $"Chaos {chaos}% (passives {p.ChaosResistance}%, max {p.ChaosMaxResistance}%, capped {DamageModel.Capped(chaos, p.ChaosMaxResistance)}%).");
+    })
+    .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: damage yourself through your resistances)", async args =>
+    {
+        if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
+        if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
+        if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
+        int resistance = Resistance(conn, type);
+        int maxResistance = MaxResistance(conn, type);
+        int dealt = DamageModel.Mitigate(amount, resistance, maxResistance);
+        uint life;
+        bool wasDead;
+        lock (conn.Monsters)
+        {
+            wasDead = conn.PlayerLife == 0;
+            if (!wasDead)
+            {
+                conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - dealt);
+                life = conn.PlayerLife;
+            }
+            else life = 0;
+        }
+        if (wasDead)
+        {
+            await conn.Commands!.Reply("You are already dead.");
+            return;
+        }
+        if (life == 0)
+            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
+                "0x01b3 player hide_mini_life_bar = 1 (dev hit)");
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
+            $"0x01b1 player dev {type} hit for {dealt} ({amount} before {DamageModel.Capped(resistance, maxResistance)}% resistance), life {life}/{conn.PlayerMaxLife}");
+        if (life == 0)
+            await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
+        await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("god", "/god (toggles: 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 attributes)", async _ =>
     {
