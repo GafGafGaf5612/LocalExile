@@ -105,8 +105,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 ### Quests
 - **Known:** the quest engine and a1q1 "Enemy at the Gate" ([12](docs/protocol/12-quests.md) §5–6): quest flags saved
   per character, one script per quest (events → flags; flags → exits), S→C 0x2ba steps a Transitionable.
-- **Start:** the open items of [12](docs/protocol/12-quests.md) (an AreaTransition subtype's state, TriggerableBlockage
-  cells, the Doorman), then the next quests act by act, each checked against the real game's behavior.
+- **Start:** the next quests act by act, each checked against the real game's behavior. The Strand's visual pieces
+  (the gate's animation, the force wall, the Doorman; [12](docs/protocol/12-quests.md) §6) are low priority.
   a1q4's Glyph Wall (§1–4) is the next world-changing one.
 - **Done when:** the campaign's quests can be played through, with their world changes, logs and rewards.
 
@@ -127,8 +127,9 @@ Items are in rough priority order within each section. "Known" says what is alre
   (quest a1q1) opens the gate into Lioneye's Watch ([12](docs/protocol/12-quests.md) §6). The death
   screen's "Resurrect in Town" goes to the last town, with a loading screen, and is not offered before the character
   has one; "Resurrect at Checkpoint" goes to the area's arrival point ([09](docs/protocol/09-area-change.md) §7).
-- **Done when:** the Strand's gate plays its opening when Hillock dies, the force wall blocks the way while he lives and
-  the Doorman opens the door ([12](docs/protocol/12-quests.md) §6 and "Open");
+- **Done when** (low priority: the start and the gate work, these are visual): the Strand's gate plays its opening when
+  Hillock dies, the force wall blocks the way while he lives and the Doorman opens the door
+  ([12](docs/protocol/12-quests.md) §6, "The gate's animation");
   "Resurrect at Checkpoint" goes to
   the last activated checkpoint of the area, with no loading screen (checkpoint objects are not implemented yet).
   Without an activated checkpoint it revives where the player entered the area, which the Gateway already does. Dying

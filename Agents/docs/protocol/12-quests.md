@@ -124,7 +124,8 @@ first enter a town ([09](09-area-change.md) §4). Hillock stands before Lioneye'
 The `washedup` room also has a force wall of its own (`Tutorial_Blocker_1`), the `WoundedExile` NPC and a
 `BiteZombieSpawner`: the opening tutorial, not done yet (no quest manages them, so none of them is created).
 
-**What was tried for the wall and the Doorman** (live 2026-10-19, kept on a branch for the follow-up): both were created
+**What was tried for the wall and the Doorman** (live 2026-10-19; the code was not kept, the layouts below are enough to
+write it again): both were created
 from the room's place and angle (the room fit is exact), the wall blocked while Hillock lived and removed after; the
 Doorman in state 1, then S→C 0x2ba → 3. The wall showed up beside the gap, not across it, and did not block (with
 `object_size 0`, its blocking probably comes from cells the terrain marks for TriggerableBlockage); the Doorman was
@@ -148,6 +149,36 @@ Transitionable (index 8), so its state stays 0, and the post-create step runs be
 **tasks** (`0x141ee00f0`: u8 count, then per task a u16 task type looked up in a registry, `0x141ee0ba0`, and that
 type's data; an unknown type throws "Unrecognised task serialised by server; missing registration?") are the next place
 to look for how the real server sets such a state.
+
+### The gate's animation: what is known (paused 2026-10-19, low priority)
+
+The gate works without it, so this is cosmetic; the notes are here so the next attempt starts from them.
+
+- **Proven live (Frida):** sent as its own type `SouthBeachTownEntrance` with the 8-component AreaTransition blob, its
+  Transitionable (vtable `0x1435dd290`, the client-side subclass) runs its post-create (`0x1421c26f0`, slot 1) with
+  **state 0** and `num_states` 3; the post-create then runs the event at index state − 1 and the client crashes in the
+  event-script interpreter (`0x141df4a96`, a null `[r12]`). The base Transitionable constructor (`0x141e42410`) sets
+  state 1, but this subclass is left at 0 when the blob does not reach it.
+- **Creation order** (`0x141ebe190`): every component's slot 2 (+0x10; a `ret` for Transitionable), the u8 header
+  (bit0 → object `+0x8c |= 0x80`, bit1 → `+0x8d |= 2`), the **base data** (`0x141dea920`: u8 count, then entries of
+  u32 hash + u8 …; they set and remove the object's **script variables**, "Attempted to remove variable '{}' on
+  read-only variable container"), the type's first N components (N = type `+0x80`: 8 here, Transitionable is index 8),
+  the **tasks** (`0x141ee00f0`), then every component's post-create (`0x141ebe420`, slot 1). Only the base data and
+  the tasks run before the post-create, so one of them must set the state if the real server sends this type.
+- **Tasks:** a hash map at `0x1445cd8b0` (getter `0x141643780`, lookup `0x141ee0ba0`, FNV-1a of the u16 id) filled by
+  139 registrations around `0x141637133`, each `mov edx, <u16 id>` and two function pointers (+0x18, +0x20; the lookup
+  calls +0x20, the stub `0x1400f22f0` marks the side a type does not have). The ids look like 16-bit name hashes; the
+  factories build their objects through helpers, so the classes' RTTI names were not reached yet.
+- **Script commands:** the GEAL function table (registered around `0x141ed56a6`) has `SetTransitionPerPlayerQuestFlag`
+  and `SetTransitionPerPlayerLeagueQuestFlag`, and `GetTransitionState`. A Transitionable that follows the player's
+  quest flags is what this gate is; no cached `.ot` uses them, so they may live in server-side scripts or other files.
+- **Next:** decompile (Ghidra) the tasks' +0x20 factories and the `SetTransitionPerPlayerQuestFlag` implementation;
+  or try base-data script variables on the gate, watching with `check-components.js` plus a Frida hook on `0x1421c26f0`
+  that logs `+0x120` (the state the post-create sees).
+
+**The force wall and the Doorman** (also paused, low priority): the wall needs where TriggerableBlockage gets its
+blocked cells (`object_size 0`), and why it stood beside the gap; the Doorman needs why a created and updated object
+is not drawn (maybe its `.ao` is the gate's door, hidden by the tile).
 
 **What does not work yet:**
 - The gate opens without its animation (above).
