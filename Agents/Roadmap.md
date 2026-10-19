@@ -82,9 +82,10 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ### Character progression: the rest of the Passive Skill Tree
 - **Known:** experience, levels, S→C 0x33 and C→S 0x34 (allocate) work ([15](docs/protocol/15-progression.md)).
-- **Start:** the refund click (with refund points, 0x33's first u16), masteries (0x33's u32 list), ascendancy points,
+- **Known:** gold respec at Bestel (C→S 0x36 / 0x37) and masteries (0x35) work.
+- **Start:** refunds with refund points (0x36 with flag 0; 0x33's first u16, Orbs of Regret), ascendancy points,
   quest points (0x33 +0x8a); the tree's connections (PassiveSkillGraph.psg) so the server checks them too.
-- **Done when:** passives can be refunded from the tree and masteries chosen.
+- **Done when:** passives can be refunded from the tree with refund points and ascendancies chosen.
 
 ### Items: mods, rarity, using flasks and currency
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); every item is sent normal and

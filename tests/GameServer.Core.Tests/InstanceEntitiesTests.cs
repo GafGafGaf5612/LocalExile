@@ -197,6 +197,17 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Refund_passive_reads_the_node_and_the_gold_flag()
+    {
+        // Captured live 2026-10-19: Bestel's Respecialisation, "Apply refunds" with two picked nodes.
+        Assert.Equal(8, InstanceProtocol.KnownClientLength(InstanceEntities.RefundPassiveId));
+        Assert.Equal(((uint)8135, false, true), InstanceEntities.ReadRefundPassive(Convert.FromHexString("003600001FC70001")));
+        Assert.Equal(((uint)11128, false, true), InstanceEntities.ReadRefundPassive(Convert.FromHexString("003600002B780001")));
+        // "Refund All" is the id alone.
+        Assert.Equal(2, InstanceProtocol.KnownClientLength(InstanceEntities.RefundAllPassivesId));
+    }
+
+    [Fact]
     public void Effect_object_blob()
     {
         // flags, base data count, Positioned (x, y, rotation, team, f0, f1 0x02, 0, 1), Animated bit0 + u32-counted UTF-16 path, tasks.

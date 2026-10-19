@@ -221,6 +221,27 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree",
                 u2 == 0 ? null : u2);
         }
+        else if (id == InstanceEntities.RefundPassiveId)
+        {
+            var (node, expansion, gold) = InstanceEntities.ReadRefundPassive(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x0036 refund passive {node} ({(node <= ushort.MaxValue ? Passives.Find((ushort)node)?.Name : null) ?? "unknown"})" +
+                $"{(expansion ? ", expansion node" : "")}, {(gold ? "gold respec" : "refund points")}: {Convert.ToHexString(bytes)}");
+            if (gold && !expansion && node <= ushort.MaxValue)
+                await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Respecialisation", goldRespec: true);
+            else
+            {
+                // Refund points (Orbs of Regret) are not kept yet and cluster jewel nodes do not exist here: put the tree back.
+                Console.WriteLine($"[gateway] {remote} refund refused: {(gold ? "expansion nodes are not supported" : "no refund points")}");
+                await SendPassives(remote, stream, ciphers, conn);
+            }
+        }
+        else if (id == InstanceEntities.RefundAllPassivesId)
+        {
+            // "Refund All" (after the client's Yes): every passive but the ascendancy ones, for their full gold cost.
+            var nodes = PassiveState(conn).Nodes.Where(n => Passives.Find(n) is not { IsAscendancy: true }).ToList();
+            Console.WriteLine($"[gateway] {remote} <= 0x0037 refund all passives ({nodes.Count})");
+            await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: false, "Respecialisation, Refund All", goldRespec: true);
+        }
         else if (id == InstanceEntities.PanelToggleId)
             Console.WriteLine($"[gateway] {remote} <= 0x0123 panel {(bytes[2] != 0 ? "opened" : "closed")}");
         else if (id == InstanceItems.DropItemId)
@@ -645,7 +666,7 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
             await OpenNpcSale(remote, stream, ciphers, conn, npc);
             break;
         // Bestel's Respecialisation (script: SendOpenScreen( CharacterPassiveTreeScreen, 1 )): the character's passive tree,
-        // S→C 0x7b kind 0x5f with 1. Refunding (gold, refund points) is not done yet.
+        // S→C 0x7b kind 0x5f with 1. Its refunds come back as C→S 0x36 (per node) and 0x37 (Refund All), paid in gold.
         case "RespecPassivePointsForGold":
             conn.InNpcTalk = false;
             await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.PassiveTreeUi, 1), "0x007b open the passive tree (respec)");
@@ -1552,13 +1573,16 @@ static (byte[] Bytes, string Label) PassivesMessage(ClientState conn)
 
 // Allocates (or, with allocate false, refunds) passive nodes: checked against the tree's nodes and the character's
 // points, then saved, applied to the stats and sent back (0x3d). The client asks only for nodes connected to its tree.
+// A gold respec (goldRespec) refunds only allocated nodes and charges their cost (PassiveTree.GoldRespecCost).
 static async Task<string?> ChangePassives(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    IReadOnlyList<ushort> nodes, bool allocate, string why, ushort? masteryEffect = null)
+    IReadOnlyList<ushort> nodes, bool allocate, string why, ushort? masteryEffect = null, bool goldRespec = false)
 {
     string? error = null;
     List<ushort> now;
     Dictionary<ushort, ushort> effectsNow;
     string? effectLabel = null;
+    long cost = 0;
+    uint gold;
     lock (conn.Monsters)
     {
         var next = new List<ushort>(conn.Passives);
@@ -1577,7 +1601,13 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
                 effectLabel = $"{effect.Id} ({effect.Hash})";
             }
             else if (allocate) { if (!next.Contains(n)) next.Add(n); }
+            else if (goldRespec && !next.Contains(n)) { error = $"{node.Name} ({n}) is not allocated"; break; }
             else { next.Remove(n); effects.Remove(n); }
+        }
+        if (error is null && goldRespec)
+        {
+            cost = Passives.GoldRespecCost(nodes, conn.Pools.Level);
+            if (cost > conn.Gold) error = $"not enough gold ({cost} needed, {conn.Gold} held)";
         }
         if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints + Passives.PointsGranted(next))
             error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
@@ -1585,6 +1615,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         {
             conn.Passives = next;
             conn.MasteryEffects = effects;
+            conn.Gold -= (uint)cost;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
@@ -1592,14 +1623,20 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         }
         now = [.. conn.Passives];
         effectsNow = new(conn.MasteryEffects);
+        gold = conn.Gold;
     }
     Console.WriteLine($"[gateway] {remote} passives {(allocate ? "allocate" : "refund")} [{string.Join(", ", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}"))}]" +
         (effectLabel is null ? "" : $" mastery {effectLabel}") + $" ({why}): " +
-        (error ?? $"{now.Count} allocated, life {conn.Pools.Life}, mana {conn.Pools.Mana}"));
+        (error ?? $"{now.Count} allocated, life {conn.Pools.Life}, mana {conn.Pools.Mana}" + (goldRespec ? $", {cost} gold paid, {gold} left" : "")));
     if (error is null)
     {
         CharacterSaves.SetPassives(CharacterName(conn), now);
         CharacterSaves.SetMasteryEffects(CharacterName(conn), effectsNow);
+        if (goldRespec)
+        {
+            CharacterSaves.SetGold(CharacterName(conn), gold);
+            await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (respec, {cost} paid)");
+        }
         await SendCharacterStats(remote, stream, ciphers, conn, "passives");
     }
     // Sent either way: on a refusal it puts the client's tree back to the server's.

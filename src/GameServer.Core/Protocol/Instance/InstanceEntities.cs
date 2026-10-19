@@ -91,6 +91,19 @@ public static class InstanceEntities
     public static (ushort Node, ushort Effect) ReadMasteryEffect(ReadOnlySpan<byte> m) =>
         ((ushort)(m[2] << 8 | m[3]), (ushort)(m[4] << 8 | m[5]));
 
+    public const ushort RefundPassiveId = 0x36, RefundAllPassivesId = 0x37;
+    public const int RefundPassiveLength = 8;
+
+    /// <summary>
+    /// C→S 0x36 (8 bytes, class 0x1435bf610, write 0x141f92b00, built in 0x1403cc410 next to 0x34): refund one node.
+    /// u32 the node (big-endian; PassiveSkillGraphId, or a cluster jewel's expansion id), u8 1 for an expansion node,
+    /// u8 1 when the tree was opened as a gold respec (Bestel's Respecialisation: tree state +0x17b8 == 2), 0 when it
+    /// uses refund points. "Apply refunds" sends one per picked node: captured 003600001FC70001 and 003600002B780001
+    /// (8135, 11128). C→S 0x37 (id only, sent from 0x1409d03bb / 0x1409da517) is "Refund All".
+    /// </summary>
+    public static (uint Node, bool Expansion, bool Gold) ReadRefundPassive(ReadOnlySpan<byte> m) =>
+        ((uint)(m[2] << 24 | m[3] << 16 | m[4] << 8 | m[5]), m[6] != 0, m[7] != 0);
+
     /// <summary>
     /// S→C 0x33 (dispatcher case 0xf, class 0x1435dca60, read 0x14219e3f0): the character's passive skill tree, at
     /// instance+0xc2d8 (handler 0x141ef2710). u16 +0x88 → tree +0x270 (probably refund points), u16 +0x8a → +0x274

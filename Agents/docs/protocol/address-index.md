@@ -148,6 +148,10 @@ G = global / static data.
 | `0x1435dcd00` (ctor `0x14219eb10`, write `0x14219eb40`) | Cls | 0x3d Atlas passive tree presets |
 | `0x1435dca60` (read `0x14219e3f0`, handler `0x141ef2710`, numbers only `0x141ef73e0`) | Cls | S→C 0x33 character Passive Skill Tree (instance `+0xc2d8`) |
 | `0x141ef3e60` | Fn | character passive tree check: points_from_level, skill_points_from_passives, extra_skill_points |
+| `0x1403cc410` | Fn | passive tree click → C→S 0x34 allocate / 0x36 refund (Atlas: 0x3e / 0x3f) |
+| `0x1435bf610` (write `0x141f92b00`) | Cls | C→S 0x36 refund a passive (u32 node, u8 expansion, u8 gold respec) |
+| `0x141efb140` | Fn | a passive's gold respec cost: VillageBalancePerLevelShared GoldRespecCost × multiplier |
+| `0x1409d03bb`, `0x1409da517` | Fn | "Refund All" → C→S 0x37 (id only) |
 | `0x141eed000` | Fn | Atlas passive tree check |
 | `0x1435ddb78` (read `0x141fdf870`), `0x1435dd918` (read `0x141fdfdd0`) | Cls | S→C 0x1c1 add buff, 0x1c2 remove buff |
 | `0x141e11720` | Fn | Buffs component: 0x1c1/0x1c2 handler (world handler cases 0x1c1, 0x1c2) |

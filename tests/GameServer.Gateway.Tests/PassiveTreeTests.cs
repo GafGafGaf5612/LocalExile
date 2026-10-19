@@ -32,4 +32,15 @@ public class PassiveTreeTests
         var stats = tree.Stats([5368], new Dictionary<ushort, ushort> { [5368] = (ushort)effect });
         Assert.Equal(value, stats[key]);
     }
+
+    [Theory]
+    [InlineData(1, 4)]
+    [InlineData(100, 29119)]
+    public void Gold_respec_costs_the_level_price_per_node(int level, long perNode)
+    {
+        var tree = new PassiveTree(Data());
+        // 8135 and 11128: the two nodes refunded live; an ascendancy node (Witch Ascendancy, 51782) is not part of it.
+        Assert.Equal(2 * perNode, tree.GoldRespecCost([8135, 11128], level));
+        Assert.Equal(0, tree.GoldRespecCost([51782], level));
+    }
 }
