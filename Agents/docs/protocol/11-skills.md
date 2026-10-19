@@ -398,6 +398,28 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`SpellSuppressionChanceOverCap`), but the effective chance is still 100. `/suppression` shows the chance/effect and
   `/spellhit <type>` rolls it for testing. There are no monster spell hits yet, so this is a dev probe and a preparation for
   monster spells; `spell_damage_%_suppressed` effect modifiers and suppression-adjacent effects are not modelled.
+- **Block / Spell Block** (`CharacterStats`, `DamageModel`): passives' `additional_block_%` (attack) and
+  `base_spell_block_%` (spells) are summed, with `maximum_block_%` / `base_maximum_spell_block_%` raising the default
+  75% maximum up to PoB's `BlockChanceCap = 90` (`src/Modules/Data.lua`; `Misc.lua` has the two 75 bases). The totals
+  follow `CalcDefence.lua`: `round((base + flat) × (1 + block_chance_+%) × more)` for attack and
+  `round(flat spell block × (1 + block_chance_+%) × more)` for spells, then floored at 0 and capped at the
+  per-type maximum. An equipped
+  shield adds `ShieldTypes.Block` (22 for the Twig Spirit Shield) to attack block, and the shield-specific passives
+  (`shield_block_%`, `dual_wield_or_shield_block_%`, `block_chance_%_while_holding_shield` and their spell equivalents)
+  apply only while it is equipped. Staff passives (`staff_block_%`, `additional_staff_block_%`,
+  `spell_block_with_staff_%`, `spell_block_chance_%_while_holding_staff_or_shield`) apply with a staff; dual wielding
+  adds the inherent 20% attack block and the dual-wield block/spell-block passives; bows use their own
+  `with_bow_additional_block_%` / `spell_block_with_bow_%`. A successful block prevents the hit (`BlockEffect` defaults to full prevention).
+  Monster melee uses attack block; `/blockhit` tests attack/spell block and `/block` prints both chances. The character
+  panel's attack row is `attack_block_%` with `uncapped_attack_block_%` in parentheses; a separate spell block row is
+  drawn only when `display_spell_block_chance` is non-zero, so `ClassAttributes` sends both display stats. The Block
+  Mastery effects (`PassiveSkillMasteryEffects.dat`) add +2 maximum attack block, +2 maximum spell block, 20 life and
+  20 mana on a block, or +1% spell block per 5% attack block; the last uses the final capped attack block and is applied
+  after the shield base. **Versatile Combatant** (`keystone_versatile_combatant`) reduces both maxima by 10% and adds
+  2% spell block for each 1% of attack block above the reduced maximum (uncapped attack block minus maximum). Glancing
+  Blows/`BlockEffect` modifiers, projectile block and other on-block triggers are not modelled. Lucky block
+  (`base_block_luck`, `attack_block_luck`, `spell_block_luck`) uses `1 - (1 - p)²` (PoB CalcDefence); Svalinn's unique
+  item modifiers themselves are not supported yet.
 
 ## Open
 

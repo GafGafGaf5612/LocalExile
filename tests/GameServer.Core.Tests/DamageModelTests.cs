@@ -46,4 +46,23 @@ public class DamageModelTests
         Assert.Equal(50, DamageModel.Suppress(100, 50));
         Assert.Equal(0, DamageModel.Suppress(100, 100));
     }
+
+    [Fact]
+    public void Block_is_capped_at_90()
+    {
+        Assert.True(DamageModel.Blocks(75, 74.9));
+        Assert.False(DamageModel.Blocks(75, 75.0));
+        Assert.True(DamageModel.Blocks(100, 89.9));
+        Assert.False(DamageModel.Blocks(100, 90.0));
+        Assert.False(DamageModel.Blocks(0, 0));
+    }
+
+    [Fact]
+    public void Lucky_block_keeps_the_better_of_two_rolls()
+    {
+        Assert.Equal(75.0, DamageModel.EffectiveBlockChance(50, lucky: true), 3);
+        Assert.Equal(99.0, DamageModel.EffectiveBlockChance(90, lucky: true), 3);
+        Assert.True(DamageModel.Blocks(50, 74.9, lucky: true));
+        Assert.False(DamageModel.Blocks(50, 75.0, lucky: true));
+    }
 }

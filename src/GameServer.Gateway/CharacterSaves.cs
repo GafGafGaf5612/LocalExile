@@ -23,7 +23,8 @@ static class CharacterSaves
     /// (QuestFlags.dat Ids, 12-quests.md §5).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
-        List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null);
+        List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
+        Dictionary<ushort, ushort>? MasteryEffects = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -83,6 +84,10 @@ static class CharacterSaves
 
     /// <summary>Records the character's allocated passives, keeping the rest of the save.</summary>
     public static void SetPassives(string character, IEnumerable<ushort> nodes) => Update(character, s => s with { Passives = [.. nodes] });
+
+    /// <summary>Records the selected mastery effects (node -> effect HASH16), keeping the rest of the save.</summary>
+    public static void SetMasteryEffects(string character, IReadOnlyDictionary<ushort, ushort> effects) =>
+        Update(character, s => s with { MasteryEffects = new(effects) });
 
     /// <summary>Records the extra passive skill points from /add_passive_points.</summary>
     public static void SetExtraPassivePoints(string character, ushort points) =>

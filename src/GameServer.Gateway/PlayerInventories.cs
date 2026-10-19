@@ -9,7 +9,7 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class PlayerInventories
 {
-    public const byte MainInventory = 0, Weapon1 = 2, Flask = 11, Cursor = InstanceInventories.CursorRow;
+    public const byte MainInventory = 0, Weapon1 = 2, Offhand1 = 3, Flask = 11, Cursor = InstanceInventories.CursorRow;
 
     private static readonly ConcurrentDictionary<string, PlayerInventories> ByCharacter = new(StringComparer.OrdinalIgnoreCase);
 

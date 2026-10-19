@@ -51,7 +51,8 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 |
 | SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: none), u32 +0x3c, u8 +0x10, u16 +0x40 |
 | Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue (seen), 4 white (assumed) |
-| LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
+| Armour | `0x14363ad40` | `0x1424affc0` | u8 0..0x20 (stored at +0x28; 0x20 also sets +0x2a) |
+| LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
 
 Minimal item the server sends: flags 0, Base with only the visual identity, Mods identified and normal with no mods.
 
