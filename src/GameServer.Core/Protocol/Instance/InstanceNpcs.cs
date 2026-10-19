@@ -66,6 +66,11 @@ public static class InstanceNpcs
         _ => (uint)(b[1] << 24 | b[2] << 16 | b[3] << 8 | b[4]),
     };
 
+    /// <summary>S→C 0x7b kind 0x5f: the character's passive tree (UI +0x650; listener on instance +0x2078 = 0x140dc8750). A
+    /// non-zero first u32 shows it in mode 2 (0x1409de680), the NPC script's SendOpenScreen( CharacterPassiveTreeScreen, 1 ).
+    /// Not 0x11 (Atlas passive tree, UI +0x668, 0x140dcdf80) and not 0x45 (UI +0x678, 0x140dc7e90).</summary>
+    public const byte PassiveTreeUi = 0x5f;
+
     public const ushort TradeOpenId = 0xb8, TradeCloseId = 0xb9;
 
     /// <summary>
@@ -100,17 +105,39 @@ public static class InstanceNpcs
         return new(r.U32() & 0xc01fffff, r.U32(), r.U16(), r.U8(), r.U8(), r.U16());
     }
 
-    public const ushort TradeTakeBackId = 0xb3;
-    public const int TradeTakeBackLength = 12;
+    public const ushort TradeTakeBackId = 0xb3, TradeMoveAllId = 0xb5;
+    public const int TradeTakeBackLength = 12, TradeMoveAllLength = 12;
 
-    /// <summary>C→S 0xb3 (12 bytes; live 2026-10-19 on a click on an item in "Your Offer"): u32 BE item id, u32 BE (0),
-    /// u16 (changes per request, like 0xb2's). The item leaves the offer.</summary>
-    public static uint ReadTradeTakeBack(ReadOnlySpan<byte> m) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]);
+    /// <summary>
+    /// C→S 0xb3 (12 bytes, sent by 0x142166750) and 0xb5 (12 bytes, class 0x1435bf828, write 0x141f95e50, sent by
+    /// 0x142166830): Shift + click and Ctrl + Shift + click on an item in a grid while a trade is open (the grid click
+    /// handler 0x1402ddbc0). 0xb3: u32 BE item id, u32 BE the grid's inventory id, u16. 0xb5: u32 BE item id, u32 BE the
+    /// grid's inventory id, u8, u8. The item moves to the other side (inventory ↔ offer). Live 2026-10-19 a click on an
+    /// item in "Your Offer" sent 0xb3 with inventory 0.
+    /// </summary>
+    public static (uint ItemId, uint InventoryId) ReadTradeMove(ReadOnlySpan<byte> m) =>
+        (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]),
+         System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[6..]) & 0xc01fffff);
+
+    public const ushort TradeAcceptId = 0xb6, TradeUnacceptId = 0xb7;
+    public const int TradeAcceptLength = 6, TradeUnacceptLength = 4;
+
+    /// <summary>C→S 0xb6 (6 bytes, class 0x14316c420 "u32 message", sent by the Accept button 0x140c378d0 when 0xb8's flags
+    /// have 0x10 and not 0x04): u32 BE the revision of the other side's offer inventory (its +0x1e8, the last 0xbf
+    /// revision), so the server can tell the player accepted what it showed. C→S 0xb7 (4 bytes, class 0x1435bf7e8):
+    /// Accept pressed again after accepting (un-accept), u16.</summary>
+    public static uint ReadTradeAccept(ReadOnlySpan<byte> m) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]);
 
     /// <summary>0xb8 flags (struct +0x50) bit 4: the trade window's status (0x140c37140) does not ask to mouse over each
     /// of the other side's items before Accept; without it Accept stays disabled ("Mouse over each item to enable
     /// accept").</summary>
     public const byte TradeNoMouseOver = 0x10;
+
+    /// <summary>0xb8 flags bit 0: the trade is the active one. The UI state's listener (0x140d62ec0) keeps the first u32
+    /// (struct +0x08, the other party; 0 for an NPC sale) at +0x984 with +0x988 = 1, which Ctrl + click on an inventory
+    /// item (0x14030e3e0) needs to send 0xb2 with x = y = 0xff ("into the offer"); without it the click goes through the
+    /// other panels' checks and sends nothing (live 2026-10-19). S→C 0xb9 with the same id clears it (0x140d62e90).</summary>
+    public const byte TradeActive = 0x01;
 
     public const ushort TradeAnswerId = 0xb1;
     public const int TradeAnswerLength = 7;

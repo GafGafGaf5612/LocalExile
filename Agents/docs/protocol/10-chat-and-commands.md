@@ -72,6 +72,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/add_xp <amount>` | experience as from a kill: levels up, saved ([15](15-progression.md) §1) |
 | `/passives` | the passive skill points and the allocated passives (message box) |
 | `/add_passive_points <n>` | adds n extra passive skill points (the 0x33 `extra_skill_points` field), saved with the character; sends the tree (0x33) |
+| `/gold <amount>` | adds gold, or takes it with a negative amount (not below 0); saved with the character and sent as S→C 0x2a9 ([04](04-player-entity.md)); every area entry sends the saved amount too |
 | `/add_passive <PassiveSkillGraphId>` | allocates one passive node through the same checks as C→S 0x34, saved and sent back (0x33) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
 | `/resistances` | the character's uncapped and capped fire/cold/lightning/chaos resistance |
