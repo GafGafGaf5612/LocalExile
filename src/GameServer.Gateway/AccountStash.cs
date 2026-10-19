@@ -4,7 +4,7 @@ using GameServer.Core.Protocol.Instance;
 
 /// <summary>
 /// An account's stash (Agents/docs/protocol/18-stash.md): its tabs and their items, shared by every character of the
-/// account, and the tab the stash was last on. One JSON file per account in data/stashes/ (git-ignored), written after
+/// account, the tab the stash was last on, and the account's gold (S→C 0x2a9, also shared by every character). One JSON file per account in data/stashes/ (git-ignored), written after
 /// every change. A new account gets <see cref="StarterTabs"/>.
 /// <para>Item ids: characters number their items from 1, each on its own, so an item put into the stash gets a stash id
 /// (from <see cref="FirstItemId"/>, never reused: the next id is saved) and keeps it when a character takes it out.
@@ -22,7 +22,7 @@ sealed class AccountStash
 
     public sealed record SavedTab(string Name, byte Type, byte R, byte G, byte B, List<CharacterSaves.SavedPlacement> Items);
 
-    public sealed record Save(List<SavedTab> Tabs, int LastTab = 0, uint NextItemId = FirstItemId);
+    public sealed record Save(List<SavedTab> Tabs, int LastTab = 0, uint NextItemId = FirstItemId, uint Gold = 0);
 
     /// <summary>A StashType row's grid: StorageSlots × column 4 (NormalStash 12 × 12, QuadStash 24 × 24; the special tabs'
     /// slots are cells x = slot index of a StorageSlots-wide grid, as their layouts' FirstSlotIndex).</summary>
@@ -63,6 +63,7 @@ sealed class AccountStash
     readonly Lock _lock = new();
     int _lastTab;
     uint _nextItemId = FirstItemId;
+    uint _gold;
 
     AccountStash(string account) => _account = account;
 
@@ -84,6 +85,7 @@ sealed class AccountStash
             // Never below an id handed out before (an item that left for a character keeps its stash id).
             uint used = stash._tabs.SelectMany(t => t.Items).Select(i => i.Id).Where(i => i >= FirstItemId).DefaultIfEmpty(FirstItemId - 1).Max();
             stash._nextItemId = Math.Max(save?.NextItemId ?? FirstItemId, used + 1);
+            stash._gold = save?.Gold ?? 0;
             if (save is null) stash.Persist();
             return stash;
         });
@@ -110,7 +112,7 @@ sealed class AccountStash
             save = new([.. _tabs.Select(t => t.Saved with
             {
                 Items = [.. t.Items.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item)))],
-            })], _lastTab, _nextItemId);
+            })], _lastTab, _nextItemId, _gold);
         string path = PathOf(_account);
         Directory.CreateDirectory(Folder);
         string tmp = path + ".tmp";
@@ -119,6 +121,32 @@ sealed class AccountStash
     }
 
     public int Count { get { lock (_lock) return _tabs.Count; } }
+
+    /// <summary>The account's gold (S→C 0x2a9).</summary>
+    public uint Gold { get { lock (_lock) return _gold; } }
+
+    /// <summary>Adds gold (or takes it, with a negative amount, down to 0); the account's gold after.</summary>
+    public uint AddGold(long delta)
+    {
+        uint gold;
+        lock (_lock) gold = _gold = (uint)Math.Clamp(_gold + delta, 0, uint.MaxValue);
+        Persist();
+        return gold;
+    }
+
+    /// <summary>Takes <paramref name="cost"/> gold if the account has that much; the account's gold after, or null when
+    /// it has less (nothing is taken).</summary>
+    public uint? TrySpendGold(long cost)
+    {
+        uint gold;
+        lock (_lock)
+        {
+            if (cost < 0 || cost > _gold) return null;
+            gold = _gold -= (uint)cost;
+        }
+        if (cost > 0) Persist();
+        return gold;
+    }
 
     /// <summary>The tab the stash opens on: the last one the client showed (C→S 0xc7).</summary>
     public int LastTab { get { lock (_lock) return _lastTab; } }

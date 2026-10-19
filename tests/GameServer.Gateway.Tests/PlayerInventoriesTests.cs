@@ -63,4 +63,17 @@ public class PlayerInventoriesTests : IDisposable
         Assert.Equal([placed.Id], items.Items(PlayerInventories.MainInventory).Select(i => i.Id));
         Assert.Empty(items.Items(PlayerInventories.Cursor));
     }
+
+    [Fact]
+    public void Gold_an_older_save_kept_is_taken_once_and_the_rest_stays()
+    {
+        CharacterSaves.Write(_character, new CharacterSaves.Save([], Experience: 42, Gold: 750));
+
+        Assert.Equal(750u, CharacterSaves.TakeGold(_character));
+        Assert.Equal(0u, CharacterSaves.TakeGold(_character));
+        var save = CharacterSaves.Load(_character)!;
+        Assert.Null(save.Gold);
+        Assert.Equal(42u, save.Experience);
+        Assert.Equal(0u, CharacterSaves.TakeGold("NoSuchCharacter" + Guid.NewGuid().ToString("N")[..8]));
+    }
 }
