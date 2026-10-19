@@ -113,6 +113,9 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             conn.Commands = Commands(remote, stream, ciphers, conn);
             conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
+            // Load the items now: a new character's start kit is built only while it has no save, and the save is written
+            // at 0x7d by the area visit (RecordVisit), before the player object first needs the items.
+            ItemsOf(conn);
             LoadProgress(conn, resolved.Level);
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.PlayerMana = conn.Pools.Mana;
