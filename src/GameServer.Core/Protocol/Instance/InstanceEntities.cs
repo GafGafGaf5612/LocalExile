@@ -91,6 +91,19 @@ public static class InstanceEntities
     public static (ushort Node, ushort Effect) ReadMasteryEffect(ReadOnlySpan<byte> m) =>
         ((ushort)(m[2] << 8 | m[3]), (ushort)(m[4] << 8 | m[5]));
 
+    public const ushort RefundPassiveId = 0x36, RefundAllPassivesId = 0x37;
+    public const int RefundPassiveLength = 8;
+
+    /// <summary>
+    /// C→S 0x36 (8 bytes, class 0x1435bf610, write 0x141f92b00, built in 0x1403cc410 next to 0x34): refund one node.
+    /// u32 the node (big-endian; PassiveSkillGraphId, or a cluster jewel's expansion id), u8 1 for an expansion node,
+    /// u8 1 when the tree was opened as a gold respec (Bestel's Respecialisation: tree state +0x17b8 == 2), 0 when it
+    /// uses refund points. "Apply refunds" sends one per picked node: captured 003600001FC70001 and 003600002B780001
+    /// (8135, 11128). C→S 0x37 (id only, sent from 0x1409d03bb / 0x1409da517) is "Refund All".
+    /// </summary>
+    public static (uint Node, bool Expansion, bool Gold) ReadRefundPassive(ReadOnlySpan<byte> m) =>
+        ((uint)(m[2] << 24 | m[3] << 16 | m[4] << 8 | m[5]), m[6] != 0, m[7] != 0);
+
     /// <summary>
     /// S→C 0x33 (dispatcher case 0xf, class 0x1435dca60, read 0x14219e3f0): the character's passive skill tree, at
     /// instance+0xc2d8 (handler 0x141ef2710). u16 +0x88 → tree +0x270 (probably refund points), u16 +0x8a → +0x274
@@ -101,16 +114,20 @@ public static class InstanceEntities
     /// vec16 u16, vec16 u16, vec16 u32 mastery effects (node | effect &lt;&lt; 16), vec16 u32. The client drops nodes not
     /// connected to its class's start and refuses more nodes than its points allow. A mastery effect is the
     /// PassiveSkillMasteryEffects.dat HASH16 (the value in the client's passive tree data), not the data-table row.
+    /// Both lists are sent sorted by node: the handler diffs them against its own sorted list (+0x180, set difference
+    /// 0x141f145b0), and an unsorted list makes kept nodes look newly allocated. Each "allocated" node fires the tree's
+    /// allocation event (0x141ef69e0), which takes Bestel's Respecialisation screen back to the normal tree (0x1409dd800
+    /// → 0x1409de680 with 0; traced live 2026-10-19 after Apply refunds).
     /// </summary>
     public static byte[] CharacterPassives(byte level, byte classByte, IReadOnlyList<ushort>? nodes = null, ushort questPoints = 0,
         ushort refundPoints = 0, ushort ascendancyPoints = 0, IReadOnlyDictionary<ushort, ushort>? masteryEffects = null)
     {
         var w = new LoginWriter().U16(CharacterPassivesId).U16(refundPoints).U16(questPoints).U16(ascendancyPoints)
             .U8(level).U8(classByte).U8(0).U8(0).U16(checked((ushort)(nodes?.Count ?? 0)));
-        foreach (ushort n in nodes ?? []) w.U8((byte)n).U8((byte)(n >> 8));
+        foreach (ushort n in (nodes ?? []).Order()) w.U8((byte)n).U8((byte)(n >> 8));
         w.U16(0).U16(0);
         var effects = masteryEffects is null ? [] : masteryEffects
-            .Where(kv => nodes?.Contains(kv.Key) == true).ToList();
+            .Where(kv => nodes?.Contains(kv.Key) == true).OrderBy(kv => kv.Key).ToList();
         w.U16(checked((ushort)effects.Count));
         foreach (var (node, effect) in effects) w.RawU32(node | ((uint)effect << 16));
         return w.U16(0).ToArray();

@@ -84,7 +84,7 @@ u8 = the chosen NPCTalk row's index among the NPC's rows (column 1). The client 
 | Gossip, Quests, QuestReward | S→C 0x84 with the index: the window plays the row's text and audio (verified) |
 | BuyItems | shop tab (S→C 0xc0, manager 1) + S→C 0x8c (verified: the buy window shows the stock) |
 | SellItems | two offer inventories (0xc0, manager 1) + S→C 0xb8 (verified: drops, Ctrl + click, Accept, Cancel; §5) |
-| RespecPassivePointsForGold | S→C 0x7b kind 0x5f with 1: the character's passive tree (UI +0x650, listener 0x140dc8750; a non-zero u32 shows it in mode 2, `0x1409de680`), the script's `SendOpenScreen( CharacterPassiveTreeScreen, 1 )`. Not kind 0x11 (Atlas tree, UI +0x668) or 0x45 (UI +0x678). Refunds are not done |
+| RespecPassivePointsForGold | S→C 0x7b kind 0x5f with 1: the character's passive tree (UI +0x650, listener 0x140dc8750; a non-zero u32 shows it in mode 2, `0x1409de680`), the script's `SendOpenScreen( CharacterPassiveTreeScreen, 1 )`. Not kind 0x11 (Atlas tree, UI +0x668) or 0x45 (UI +0x678). "Apply refunds" (C→S 0x36 per node) and "Refund All" (0x37) are paid in gold ([15](15-progression.md) §2) |
 
 C→S 0x85 during a talk = Continue → 0x84 0xff (back to the options); otherwise the Gateway answers 0x84 with object 0,
 which ends the dialogue (without an answer the client stays in its dialogue state and the player cannot move).
@@ -134,7 +134,7 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
 
 ## Open
 
-- Selling: real sell prices; quest rewards (0x87); Identify Items; Respecialisation's refunds (gold, refund points);
+- Selling: real sell prices; quest rewards (0x87); Identify Items; Respecialisation with refund points;
   real buy prices.
 - The NPC component's two bytes, and 0x84's other mode values.
 - The NPCs' facing (rotation 0 for now), and NPCs in the other towns and outside towns.

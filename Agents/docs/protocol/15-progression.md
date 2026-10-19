@@ -38,7 +38,7 @@ yet confirmed on screen).
   | u8 | +0x268 | the class byte (Characters.dat IntegerId, ascendancy in bits 5–7): the tree's start |
   | u8 | +0x269 | |
   | u8 flags | | bit0 → +0x91, bit1 → no lists (then `0x141ef73e0` sets only the numbers) |
-  | vec16 u16 | +0x180 | **allocated nodes**: PassiveSkills.dat `PassiveSkillGraphId`, raw (little-endian) |
+  | vec16 u16 | +0x180 | **allocated nodes**: PassiveSkills.dat `PassiveSkillGraphId`, raw (little-endian), **sorted** (§2 Gold respec) |
   | vec16 u16, vec16 u16 | | (sent empty) |
   | vec16 u32 | | mastery effects: node \| effect << 16, raw little-endian; effect is the `PassiveSkillMasteryEffects.dat` HASH16 |
   | vec16 u32 | | (sent empty) |
@@ -67,7 +67,27 @@ yet confirmed on screen).
   pairs), flat and increased life and mana, increased evasion, energy shield and melee physical damage go into the
   pools ([11](11-skills.md) §4); the other stats are sent as they are (the character panel shows them; nothing uses
   them yet).
-- `/passives` lists them, `/reset_passives` refunds all. Refunding single nodes from the tree is not mapped.
+- **C→S 0x36** (8 bytes, class `0x1435bf610`, write `0x141f92b00`, built in `0x1403cc410` like 0x34): refund one
+  node. u32 the node (big-endian: PassiveSkillGraphId, or a cluster jewel's expansion id), u8 1 for an expansion node,
+  u8 1 when the tree was opened as a gold respec (the tree state's +0x17b8 == 2: Bestel's Respecialisation), else 0
+  (refund points). "Apply refunds" sends one per picked node; captured `003600001FC70001` and `003600002B780001`
+  (8135, 11128, gold). **C→S 0x37** (id only, `0x1409d03bb` / `0x1409da517`) is "Refund All", sent after its Yes.
+  Apply refunds (lambda `0x140a164f0` → ApplyChanges `0x14098f030`, which sends the 0x36s and clears the picks) and
+  Refund All (`0x1409da470`, drops the picks and sends 0x37) both keep the Respecialisation screen open. The screen
+  leaves its mode (graph view +0x17b8: 2 → 0, `0x14098a360`) when the tree reports a newly allocated node, so 0x33's
+  lists must be **sorted**: the handler diffs them against its own sorted list (set difference `0x141f145b0`), and an
+  unsorted list made kept nodes look newly allocated (`0x141ef69e0` → event → `0x1409dd800` → `0x1409de680` with 0;
+  traced with `scripts/re/frida/trace-tree-mode.js`).
+  0x34 has the same u32 node + u8 expansion layout (its "u16 0" is the node's high half).
+- **Gold respec**: the client's per-node cost `0x141efb140` is `VillageBalancePerLevelShared.dat` GoldRespecCost at
+  the character's level (4 gold at level 1, 29119 at 100) times the node's multiplier: 1, 0 for an `IsMultipleChoice`
+  node, an `IsExpansion` node's own value (unnamed i32 at +0xb2). The full cost (`GetFullGoldRespecCost`, lambda
+  `0x141f1b500`) skips ascendancy nodes. The Gateway (`PassiveTree.GoldRespecCost`, `ChangePassives` with
+  `goldRespec`) refunds only allocated nodes, refuses when the gold is short, removes the nodes' mastery effects,
+  saves the passives and the gold, and answers with the gold (0x2a9), the stats and the tree (0x33). Refund All
+  refunds every non-ascendancy node. A refund with refund points (flag 0) or of an expansion node is refused (the tree
+  is sent back): refund points are not kept yet.
+- `/passives` lists them, `/reset_passives` refunds all (free).
 
 ## 3. Loot
 
@@ -81,7 +101,6 @@ it off.
 ## Open
 
 - The real rarity experience bonuses, the level 95+ penalty, party sharing.
-- Quest passive points, refund points and the refund click (probably 0x34 with another trailing byte, or its own id),
-  ascendancy; the tree's connections (PassiveSkillGraph.psg) are not checked by the server.
+- Quest passive points, refund points (Orbs of Regret; 0x36 with flag 0), ascendancy; the tree's connections (PassiveSkillGraph.psg) are not checked by the server.
 - Real drop pools (MonsterVarieties / area drop tables), item rarity and mods, quantity and rarity bonuses; ground
   items only exist on the connection that saw them drop.

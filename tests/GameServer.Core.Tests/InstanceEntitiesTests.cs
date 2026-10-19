@@ -197,6 +197,17 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Refund_passive_reads_the_node_and_the_gold_flag()
+    {
+        // Captured live 2026-10-19: Bestel's Respecialisation, "Apply refunds" with two picked nodes.
+        Assert.Equal(8, InstanceProtocol.KnownClientLength(InstanceEntities.RefundPassiveId));
+        Assert.Equal(((uint)8135, false, true), InstanceEntities.ReadRefundPassive(Convert.FromHexString("003600001FC70001")));
+        Assert.Equal(((uint)11128, false, true), InstanceEntities.ReadRefundPassive(Convert.FromHexString("003600002B780001")));
+        // "Refund All" is the id alone.
+        Assert.Equal(2, InstanceProtocol.KnownClientLength(InstanceEntities.RefundAllPassivesId));
+    }
+
+    [Fact]
     public void Effect_object_blob()
     {
         // flags, base data count, Positioned (x, y, rotation, team, f0, f1 0x02, 0, 1), Animated bit0 + u32-counted UTF-16 path, tasks.
@@ -218,8 +229,8 @@ public class InstanceEntitiesTests
     public void Character_passives_layout()
     {
         // u16 refund, u16 quest, u16 ascendancy points (big-endian), u8 level, u8 class, u8, u8 flags, vec16 nodes (count
-        // big-endian, ids little-endian), then four empty lists.
-        Assert.Equal("0033" + "0000" + "0000" + "0000" + "05" + "03" + "00" + "00" + "0002" + "6776" + "3412" + "0000" + "0000" + "0000" + "0000",
+        // big-endian, ids little-endian, sorted: the client diffs it against its own sorted list), then four empty lists.
+        Assert.Equal("0033" + "0000" + "0000" + "0000" + "05" + "03" + "00" + "00" + "0002" + "3412" + "6776" + "0000" + "0000" + "0000" + "0000",
             Convert.ToHexString(InstanceEntities.CharacterPassives(5, 3, [0x7667, 0x1234])));
     }
 

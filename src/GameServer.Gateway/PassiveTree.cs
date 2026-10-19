@@ -8,17 +8,20 @@ using System.Text.Json;
 /// Masteries: PassiveSkillMasteryGroups.dat groups a mastery node's options and PassiveSkillMasteryEffects.dat holds the
 /// effects' stats. The client's 0x3d list carries the selected effects as node | effect &lt;&lt; 16; the effect is the
 /// effect row's HASH16 (the value in the client's passive tree data), not its data-table row index.
+/// Gold respec (Bestel's Respecialisation): a node costs VillageBalancePerLevelShared.dat's GoldRespecCost at the
+/// character's level times the node's multiplier, as the client's per-node cost 0x141efb140 computes it.
 /// </summary>
 sealed class PassiveTree(string folder = "data")
 {
     public sealed record Node(ushort GraphId, string Id, string Name, IReadOnlyList<(uint Key, int Value)> Stats, int PointsGranted,
-        bool IsAscendancy, bool IsStart, int MasteryGroup);
+        bool IsAscendancy, bool IsStart, int MasteryGroup, int RespecMultiplier = 1);
 
     public sealed record MasteryEffect(int Row, ushort Hash, string Id, IReadOnlyList<(uint Key, int Value)> Stats);
 
     private readonly Lazy<Dictionary<ushort, Node>> _nodes = new(() => LoadNodes(folder));
     private readonly Lazy<Dictionary<int, MasteryEffect>> _effects = new(() => LoadEffects(folder));
     private readonly Lazy<Dictionary<int, List<MasteryEffect>>> _groups = new(() => LoadGroups(folder, LoadEffects(folder)));
+    private readonly Lazy<Dictionary<int, int>> _respecCosts = new(() => LoadRespecCosts(folder));
 
     public Node? Find(ushort graphId) => _nodes.Value.GetValueOrDefault(graphId);
 
@@ -35,6 +38,18 @@ sealed class PassiveTree(string folder = "data")
 
     /// <summary>The skill points the allocated nodes grant themselves (the client counts them as extra points).</summary>
     public int PointsGranted(IEnumerable<ushort> nodes) => nodes.Sum(n => Find(n)?.PointsGranted ?? 0);
+
+    /// <summary>
+    /// The gold a respec of these nodes costs at the character's level (client 0x141efb140): GoldRespecCost of the
+    /// VillageBalancePerLevelShared.dat row for the level, times each node's multiplier (1; 0 for a multiple-choice
+    /// node; an expansion node's own value). Ascendancy nodes are not part of a gold respec (the client's full cost
+    /// skips them too). Unknown nodes cost nothing.
+    /// </summary>
+    public long GoldRespecCost(IEnumerable<ushort> nodes, int level)
+    {
+        long perNode = _respecCosts.Value.GetValueOrDefault(level);
+        return nodes.Sum(n => Find(n) is { IsAscendancy: false } node ? perNode * node.RespecMultiplier : 0);
+    }
 
     /// <summary>The allocated nodes' stats, with their selected mastery effects, summed by key.</summary>
     public Dictionary<uint, int> Stats(IEnumerable<ushort> nodes, IReadOnlyDictionary<ushort, ushort>? masteries = null)
@@ -70,11 +85,26 @@ sealed class PassiveTree(string folder = "data")
                 stats.Add(((uint)keys[i] + 1, r.GetProperty($"Stat{i + 1}Value").GetInt32()));
             int masteryGroup = r.TryGetProperty("MasteryGroup", out var group) && group.ValueKind == JsonValueKind.Number
                 ? group.GetInt32() : -1;
+            // The client's multiplier: an expansion node's own value (unnamed column at +0xb2), 0 for a multiple-choice node.
+            int respec = r.GetProperty("IsExpansion").GetBoolean() ? r.GetProperty("__col26").GetInt32()
+                : r.GetProperty("IsMultipleChoice").GetBoolean() ? 0 : 1;
             nodes.TryAdd((ushort)graphId, new Node((ushort)graphId, r.GetProperty("Id").GetString() ?? "", r.GetProperty("Name").GetString() ?? "",
                 stats, r.GetProperty("SkillPointsGranted").GetInt32(), r.GetProperty("AscendancyKey").ValueKind == JsonValueKind.Number,
-                r.GetProperty("Characters").GetArrayLength() > 0, masteryGroup));
+                r.GetProperty("Characters").GetArrayLength() > 0, masteryGroup, respec));
         }
         return nodes;
+    }
+
+    private static Dictionary<int, int> LoadRespecCosts(string folder)
+    {
+        string path = Path.Combine(folder, "tables", "VillageBalancePerLevelShared.json");
+        var costs = new Dictionary<int, int>();
+        if (!File.Exists(path)) return costs;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        // The client looks the row up by its first column (the level, 1–100).
+        foreach (var r in d.RootElement.EnumerateArray())
+            costs[r.GetProperty("MaxAccountLevel").GetInt32()] = r.GetProperty("GoldRespecCost").GetInt32();
+        return costs;
     }
 
     private static Dictionary<int, MasteryEffect> LoadEffects(string folder)
