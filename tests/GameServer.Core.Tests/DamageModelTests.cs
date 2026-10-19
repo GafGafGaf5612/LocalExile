@@ -99,4 +99,23 @@ public class DamageModelTests
     {
         Assert.Equal(expected, DamageModel.CriticalDamage(damage, multiplier));
     }
+
+    [Fact]
+    public void Accuracy_hit_chance_matches_PoB()
+    {
+        // PoB CalcDefence: accuracy / (accuracy + (evasion / 5)^0.9) * 125, rounded and clamped to 5..100.
+        Assert.Equal(93, DamageModel.AccuracyHitChance(67, 30));
+        Assert.Equal(100, DamageModel.AccuracyHitChance(0, 30));
+        Assert.Equal(5, DamageModel.AccuracyHitChance(67, 0));
+        Assert.Equal(56, DamageModel.AccuracyHitChance(13445, 1000));
+    }
+
+    [Fact]
+    public void An_attack_hits_when_the_roll_is_below_its_chance()
+    {
+        Assert.True(DamageModel.Hits(93, 92));
+        Assert.False(DamageModel.Hits(93, 93));
+        Assert.True(DamageModel.Hits(5, 4));
+        Assert.False(DamageModel.Hits(5, 5));
+    }
 }

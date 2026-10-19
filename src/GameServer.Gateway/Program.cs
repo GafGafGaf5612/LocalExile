@@ -1057,6 +1057,25 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     if (m.Life == 0) return;
     await Task.Delay(TimeSpan.FromSeconds(duration / 2));   // the contact point, roughly
     uint life;
+    int accuracy, evasion;
+    lock (conn.Monsters)
+    {
+        if (m.Life == 0) return;
+        if (conn.ActionCount != action)
+        {
+            Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled by a later action");
+            return;
+        }
+        accuracy = conn.Pools.Accuracy;
+        evasion = Monsters.BaseEvasion(m.Level) ?? 0;
+    }
+    int hitChance = DamageModel.AccuracyHitChance(evasion, accuracy);
+    if (!DamageModel.Hits(hitChance, Random.Shared.Next(100)))
+    {
+        Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} missed: accuracy {accuracy} vs evasion {evasion}, " +
+            $"{hitChance}% chance");
+        return;
+    }
     var (minDamage, maxDamage) = weapon.Damage(CharacterPlayerStats(conn));
     int damage = Random.Shared.Next(minDamage, maxDamage + 1);
     bool critical = conn.Pools.AttackCriticalStrikeChance > 0
@@ -1308,10 +1327,23 @@ static IEnumerable<(uint, int)> BaseStats(ClientState conn)
 // With the level-based pools (CharacterStats): level, maximum_life / maximum_mana (and their base_ forms),
 // accuracy_rating and evasion_rating (base_evasion_rating 15), as final values, and the attributes' increases:
 // evasion_rating_+% (dexterity), maximum_energy_shield_+% (intelligence) and melee_physical_damage_+% (strength).
+// The Offence panel's accuracy row reads main_hand_accuracy_rating (CharacterPanelStats MH_Accuracy); its Chance to
+// Hit rows read main_hand_chance_to_hit_% and main_hand_chance_to_hit_evasive_monsters_% directly. The reference is a
+// monster of the character's level (the normal and high-dexterity evasion rows of DefaultMonsterStats).
 static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Pools pools)
 {
+    int referenceEvasion = Monsters.BaseEvasion(pools.Level) ?? 0;
+    int referenceEvasiveEvasion = Monsters.BaseEvasiveEvasion(pools.Level) ?? 0;
+    int chanceToHit = DamageModel.AccuracyHitChance(referenceEvasion, pools.Accuracy);
+    int evasiveChanceToHit = DamageModel.AccuracyHitChance(referenceEvasiveEvasion, pools.Accuracy);
     foreach (var (stat, value) in new[] { ("level", pools.Level), ("base_maximum_life", (int)pools.Life), ("maximum_life", (int)pools.Life),
         ("base_maximum_mana", (int)pools.Mana), ("maximum_mana", (int)pools.Mana), ("accuracy_rating", pools.Accuracy),
+        ("main_hand_accuracy_rating", pools.Accuracy), ("off_hand_accuracy_rating", pools.Accuracy),
+        ("main_hand_chance_to_hit_%", chanceToHit), ("off_hand_chance_to_hit_%", chanceToHit),
+        ("main_hand_chance_to_hit_evasive_monsters_%", evasiveChanceToHit),
+        ("off_hand_chance_to_hit_evasive_monsters_%", evasiveChanceToHit),
+        ("character_sheet_reference_evasion", referenceEvasion),
+        ("character_sheet_reference_high_dex_evasion", referenceEvasiveEvasion),
         ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
         ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
         ("movement_velocity_+%", pools.MovementVelocityPct),
@@ -1559,9 +1591,9 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 }
 
 // What the allocated passives add to the pools: attributes (base_* and additional_*, all attributes and the pairs),
-// flat and increased life and mana, increased evasion, energy shield and melee physical damage, the base
-// resistances (base_resist_all_elements_% applies to fire, cold and lightning), and the shield-specific block nodes
-// when a shield is equipped.
+// flat and increased life, mana and accuracy, increased evasion, energy shield and melee physical damage, the base
+// resistances (base_resist_all_elements_% applies to fire, cold and lightning), the shield-specific block nodes when a
+// shield is equipped, and critical strike chance and multiplier.
 static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons)
 {
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
@@ -1638,6 +1670,30 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         + (weapons.Staff ? Get("staff_critical_strike_multiplier_+") + Get("global_critical_strike_multiplier_+_while_holding_staff") : 0);
     int spellCriticalMultiplier = Get("base_critical_strike_multiplier_+")
         + Get("base_spell_critical_strike_multiplier_+") + Get("spell_critical_strike_multiplier_+");
+    // Accuracy passives: generic flat and increased, the weapon-specific flat and increased stats, and the Accuracy
+    // Mastery's conversions. Conditional stats (nearby ally, marked enemy, low life, frenzy charges, unique/close
+    // enemies) are not modelled here. Unarmed attacks count as dual wielding, as they do for attack speed.
+    int accuracyFlat = Get("accuracy_rating")
+        + (weapons.Sword ? Get("sword_accuracy_rating") : 0)
+        + (weapons.Axe ? Get("axe_accuracy_rating") : 0)
+        + (weapons.Mace ? Get("mace_accuracy_rating") : 0)
+        + (weapons.Claw ? Get("claw_accuracy_rating") : 0)
+        + (weapons.Dagger ? Get("dagger_accuracy_rating") : 0)
+        + (weapons.Wand ? Get("wand_accuracy_rating") : 0)
+        + (weapons.Staff ? Get("staff_accuracy_rating") : 0)
+        + (weapons.Bow ? Get("bow_accuracy_rating") : 0);
+    int accuracyPct = Get("accuracy_rating_+%")
+        + ((weapons.DualWield || weapons.Unarmed) ? Get("accuracy_rating_while_dual_wielding_+%") : 0)
+        + (weapons.OneHandMelee ? Get("one_handed_melee_accuracy_rating_+%") : 0)
+        + (weapons.TwoHandMelee ? Get("two_handed_melee_accuracy_rating_+%") : 0)
+        + (weapons.Axe ? Get("axe_accuracy_rating_+%") : 0)
+        + (weapons.Sword ? Get("sword_accuracy_rating_+%") : 0)
+        + (weapons.Mace ? Get("mace_accuracy_rating_+%") : 0)
+        + (weapons.Claw ? Get("claw_accuracy_rating_+%") : 0)
+        + (weapons.Dagger ? Get("dagger_accuracy_rating_+%") : 0)
+        + (weapons.Wand ? Get("wand_accuracy_rating_+%") : 0)
+        + (weapons.Staff ? Get("staff_accuracy_rating_+%") : 0)
+        + (weapons.Bow ? Get("bow_accuracy_rating_+%") : 0);
     int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
     return new CharacterStats.Bonus(
         Strength: Get("base_strength") + Get("additional_strength") + all + Get("additional_strength_and_dexterity") + Get("additional_strength_and_intelligence"),
@@ -1670,7 +1726,11 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         SpellBlockLucky: Get("base_block_luck") != 0 || Get("spell_block_luck") != 0 || Get("base_spell_block_luck") != 0,
         AttackSpeedPct: attackSpeed, AttackSpeedMorePct: attackSpeedMore,
         CriticalStrikeChancePct: criticalChance, SpellCriticalStrikeChancePct: spellCriticalChance,
-        CriticalStrikeMultiplier: criticalMultiplier, SpellCriticalStrikeMultiplier: spellCriticalMultiplier);
+        CriticalStrikeMultiplier: criticalMultiplier, SpellCriticalStrikeMultiplier: spellCriticalMultiplier,
+        Accuracy: accuracyFlat, AccuracyPct: accuracyPct,
+        AccuracyPerLevel: Get("accuracy_rating_per_level"),
+        DexterityAccuracyTriple: Get("dexterity_accuracy_bonus_grants_accuracy_rating_+3_per_dexterity_instead") != 0,
+        AccuracyEqualsIntelligence: Get("gain_accuracy_rating_equal_to_intelligence") != 0);
 }
 
 // The character's passive skill points (one per level after the first, plus the extra points from
@@ -2416,6 +2476,23 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         }
         await SendCharacterStats(remote, stream, ciphers, conn, $"suppression luck {mode}");
         await conn.Commands!.Reply($"Spell Suppression roll: {(lucky ? "lucky" : unlucky ? "unlucky" : "normal")}.");
+    })
+    .Add("accuracy", "/accuracy [monster level] (accuracy rating and attack hit chance; default: your level)", async args =>
+    {
+        int level = conn.Pools.Level;
+        if (args.Length > 0)
+        {
+            if (!int.TryParse(args[0], out int requested) || requested is < 1 or > Progression.MaxLevel)
+                throw new ArgumentException($"monster level 1 to {Progression.MaxLevel}");
+            level = requested;
+        }
+        int evasion = Monsters.BaseEvasion(level) ?? 0;
+        int evasiveEvasion = Monsters.BaseEvasiveEvasion(level) ?? 0;
+        int chance = DamageModel.AccuracyHitChance(evasion, conn.Pools.Accuracy);
+        int evasiveChance = DamageModel.AccuracyHitChance(evasiveEvasion, conn.Pools.Accuracy);
+        await conn.Commands!.Reply($"Accuracy {conn.Pools.Accuracy} ({conn.Pools.AccuracyPct}% increased): " +
+            $"{chance}% chance to hit a level {level} monster (evasion {evasion}), " +
+            $"{evasiveChance}% against evasive monsters (evasion {evasiveEvasion}). Spells always hit.");
     })
     .Add("spellhit", "/spellhit <fire|cold|lightning|chaos|physical> <damage> (dev: spell hit through resistance and Spell Suppression)", async args =>
     {

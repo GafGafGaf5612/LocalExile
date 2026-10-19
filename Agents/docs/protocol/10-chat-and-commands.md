@@ -78,6 +78,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
 | `/resistances` | the character's uncapped and capped fire/cold/lightning/chaos resistance |
 | `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model, showing the resistance used and the life left |
+| `/accuracy [monster level]` | final accuracy rating and attack hit chance against a normal and an evasive monster of that level (default: your level; spells always hit) |
 | `/suppression` | Spell Suppression chance and damage reduction |
 | `/spellhit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: a spell hit through resistance and Spell Suppression, rolling the suppression chance |
 | `/crit` | attack and spell critical strike chance and multiplier from the unconditional passives and weapon base |

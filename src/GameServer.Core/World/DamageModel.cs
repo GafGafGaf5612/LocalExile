@@ -107,4 +107,18 @@ public static class DamageModel
         double p = Math.Clamp(chance, 0, BlockChanceCap) / 100.0;
         return lucky ? (1 - (1 - p) * (1 - p)) * 100 : p * 100;
     }
+
+    /// <summary>
+    /// Path of Building's <c>calcs.hitChance</c> (<c>src/Modules/CalcDefence.lua</c>): an attack's chance to hit an
+    /// enemy with this evasion rating, as a whole percentage. The result is floored at 5% and capped at 100%.
+    /// </summary>
+    public static int AccuracyHitChance(int evasion, int accuracy)
+    {
+        if (accuracy <= 0) return 5;
+        double raw = accuracy / (accuracy + Math.Pow(Math.Max(0, evasion) / 5.0, 0.9)) * 125;
+        return Math.Clamp((int)Math.Floor(raw + 0.5), 5, 100);
+    }
+
+    /// <summary>Whether an attack hits; <paramref name="roll"/> is 0..99, and the chance is at least 5%.</summary>
+    public static bool Hits(int chance, int roll) => roll < Math.Clamp(chance, 5, 100);
 }
