@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -67,6 +68,8 @@ static string? FindUp(string relative)
 static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
 {
     string remote = client.Client.RemoteEndPoint?.ToString() ?? "?";
+    // Nagle off: it would hold a small 0x1c back until the previous write is acknowledged (up to ~200 ms, issue #46).
+    client.NoDelay = true;
     Console.WriteLine($"[gateway] CONNECT {remote} at {DateTime.Now:HH:mm:ss.fff}");
     long total = 0;
     uint ticket = 0;
@@ -122,17 +125,31 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.PlayerMana = conn.Pools.Mana;
             Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}, attack speed +{conn.Pools.AttackSpeedPct}%), league {conn.League ?? "?"}");
-            byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
-            if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn);
-            // Closed early by C→S 0x153 (exit to character selection): leaving the loop closes the connection.
-            while (!conn.Closed)
+            // The read loop answers ticks; everything else runs in order on the handler task (ClientInbox, issue #46).
+            var inbox = new ClientInbox();
+            using var reading = new CancellationTokenSource();
+            var handlers = RunHandlers(remote, stream, ciphers, conn, inbox, reading);
+            try
             {
-                int n = await stream.ReadAsync(buffer);
-                if (n == 0) break;
-                total += n;
-                await OnClientData(remote, stream, ciphers, buffer.AsSpan(0, n).ToArray(), conn);
+                byte[] rest = [.. pending.Skip(InstanceProtocol.OpeningLength)];
+                if (rest.Length > 0) await OnClientData(remote, stream, ciphers, rest, conn, inbox, Stopwatch.GetTimestamp());
+                // Closed early by C→S 0x153 (exit to character selection) or a handler error: the handler task cancels
+                // the read, and leaving the loop closes the connection.
+                while (!conn.Closed)
+                {
+                    int n = await stream.ReadAsync(buffer, reading.Token);
+                    if (n == 0) break;
+                    total += n;
+                    await OnClientData(remote, stream, ciphers, buffer.AsSpan(0, n).ToArray(), conn, inbox, Stopwatch.GetTimestamp());
+                }
             }
-            conn.Closed = true;
+            catch (OperationCanceledException) when (reading.IsCancellationRequested) { }
+            finally
+            {
+                conn.Closed = true;
+                inbox.Complete();
+                await handlers;
+            }
         }
     }
     catch (Exception ex)
@@ -150,24 +167,66 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
     Console.WriteLine($"[gateway] DISCONNECT {remote} total={total}");
 }
 
-// Decrypts client bytes and handles the messages we can frame (InstanceProtocol.SplitClientMessages):
-// 0x7d (area generated) → the local player id (0x22), the player object (0x2b9), inventories, passive slots, the area transitions,
-// and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x1b (tick) → 0x1c (ack); 0x25 (move) → 0x1ab echo;
-// 0x24 on an area transition → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
-// Anything else is logged in hex: those are the next messages to map.
-static async Task OnClientData(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] data, ClientState conn)
+// The read loop's part: decrypts one read, frames it (InstanceProtocol.SplitClientMessages), answers its 0x1b ticks with
+// 0x1c at once and queues the rest for RunHandlers. readAt is when the read completed: a tick answered more than
+// ClientInbox.SlowAfter later is logged.
+static async Task OnClientData(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] data, ClientState conn,
+    ClientInbox inbox, long readAt)
 {
     ciphers.Receive.Process(data);
     byte[] all = [.. conn.Carry, .. data];
     var messages = InstanceProtocol.SplitClientMessages(all, out conn.Carry, out byte[] unknown);
+    foreach (var bytes in inbox.Post(messages, unknown))
+    {
+        if (conn.Ticks++ % 50 == 0) Console.WriteLine($"[gateway] {remote} <= 0x001b tick #{conn.Ticks}: {Convert.ToHexString(bytes)} (answered with 0x001c)");
+        await Send(remote, stream, ciphers, InstanceProtocol.Pong(sideChannel: conn.Hnc!.NextIdleU32()), null);
+        var waited = Stopwatch.GetElapsedTime(readAt);
+        if (waited > ClientInbox.SlowAfter)
+            Console.WriteLine($"[gateway] {remote} slow tick #{conn.Ticks}: 0x001c sent {waited.TotalMilliseconds:0} ms after the 0x001b was read");
+    }
+}
+
+// The connection's handler task: every message but the ticks, one read at a time and in order (ClientInbox). A handler
+// that runs longer than ClientInbox.SlowAfter is logged. An error or 0x153 closes the connection by cancelling the read.
+static async Task RunHandlers(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    ClientInbox inbox, CancellationTokenSource reading)
+{
+    await Task.Yield();   // the read loop starts at once; the handlers run beside it
+    try
+    {
+        await foreach (var batch in inbox.ReadAllAsync())
+        {
+            if (conn.Closed) break;
+            long start = Stopwatch.GetTimestamp();
+            await OnClientMessages(remote, stream, ciphers, batch.Messages, batch.Unknown, conn);
+            var took = Stopwatch.GetElapsedTime(start);
+            if (took > ClientInbox.SlowAfter)
+            {
+                var ids = batch.Messages.Select(m => $"0x{m.Id:x4}").Concat(batch.Unknown.Length > 1 ? [$"unframed 0x{batch.Unknown[0] << 8 | batch.Unknown[1]:x4}"] : []);
+                Console.WriteLine($"[gateway] {remote} slow handler: {string.Join(", ", ids)} took {took.TotalMilliseconds:0} ms (ticks answered meanwhile)");
+            }
+            if (conn.Closed) break;
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
+    }
+    conn.Closed = true;
+    reading.Cancel();
+}
+
+// Handles the framed messages of one read, ticks taken out (OnClientData):
+// 0x7d (area generated) → the local player id (0x22), the player object (0x2b9), inventories, passive slots, the area transitions,
+// and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x25 (move) → 0x1ab echo;
+// 0x24 on an area transition → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
+// Anything else is logged in hex: those are the next messages to map.
+static async Task OnClientMessages(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+    IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown, ClientState conn)
+{
     foreach (var (id, bytes) in messages)
     {
-        if (id == InstanceProtocol.TickId)
-        {
-            if (conn.Ticks++ % 50 == 0) Console.WriteLine($"[gateway] {remote} <= 0x001b tick #{conn.Ticks}: {Convert.ToHexString(bytes)} (answered with 0x001c)");
-            await Send(remote, stream, ciphers, InstanceProtocol.Pong(sideChannel: conn.Hnc!.NextIdleU32()), null);
-        }
-        else if (id == InstanceProtocol.UseSkillAtLocationId)
+        if (id == InstanceProtocol.UseSkillAtLocationId)
         {
             // Echo the action so the client runs it (Move on a ground click). The server does no validation yet.
             var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);

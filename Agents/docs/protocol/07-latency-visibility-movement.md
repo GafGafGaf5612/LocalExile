@@ -1,6 +1,6 @@
 # 07 — Latency (0x1b/0x1c and HNC), visibility (wake zone) and movement
 
-State of 2026-10-16: the client's "network" graph stays flat (~120 ms on localhost), the Witch is drawn in Lioneye's
+State of 2026-10-16: the client's "network" graph stays flat (0 ms on localhost since 2026-10-19, §1), the Witch is drawn in Lioneye's
 Watch, and clicking the ground walks her there at normal speed. Evidence:
 [../re/evidence/2026-10-16-witch-visible.jpg](../re/evidence/2026-10-16-witch-visible.jpg).
 
@@ -14,6 +14,14 @@ that is the perf overlay's "network: N ms". Without an answer the queue only gro
 `u16 index`, `u32 HNC carrier`, all big-endian. `0x142155930` drops queue entries 0..index; the measured round trip minus
 the delay feeds `+0xc488`. One 0x1c with index 0 per received 0x1b keeps the queue empty
 (`InstanceProtocol.Pong`).
+
+So the meter reads 0 while every tick is answered at once, and a spike is exactly how long the server left a tick
+unanswered. The Gateway used to answer ticks in the same per-connection loop as every other handler, so the overlay
+jumped to seconds while 0x7d populated the area or an area change ran (issue #46). Now the read loop answers each 0x1b
+as soon as it is framed, and every other message waits, in order, for the connection's one handler task
+(`ClientInbox`, `RunHandlers`). Nagle is off (`NoDelay`), since it could hold a 0x1c back ~200 ms. The log shows
+`slow tick #N` for a 0x1c sent more than 50 ms after its 0x1b was read, and `slow handler` for a read whose handlers ran
+longer than that. A client-side hitch (loading after a zone change) still counts: replies sit unread while it is frozen.
 
 ## 2. HNC, the hidden side channel
 
