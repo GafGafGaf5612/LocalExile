@@ -1,6 +1,6 @@
 # Status
 
-Where the project stands. Last updated 2026-10-18, against client **3.29.3b**. Update this file in the same pull request
+Where the project stands. Last updated 2026-10-19, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
 What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in [docs/README.md](docs/README.md).
@@ -28,6 +28,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Gem skills: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; the server creates the `Metadata/Projectiles/Fireball` object, flies it to the target at terrain height + `Game_PROJECTILE_HEIGHT` where the area has a height grid (Lioneye's Watch, The Coast seed 1; live 2026-10-18: above the ground at every level, at belly height), else on the terrain and hits the monster on arrival | `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`), `ProjectileObject` | [11](docs/protocol/11-skills.md) §9–10 |
 | Saving characters: items, equipment, sockets and the skill bar per character in `data/saves/`; the bar is restored with S→C 0x53 after login and area changes (binds are C→S 0x4e) | `CharacterSaves.cs`, `PlayerInventories.cs`, Gateway | [11](docs/protocol/11-skills.md) §11, [13](docs/protocol/13-items.md) §7 |
 | Logins start at the character's last town's spawn point, as in the real game (after logging out, Exit to Character Selection, a crash, a restart or a disconnect while dead); Auth records the town when a town ticket resolves (`Character.LastTown` in `data/accounts.json`) | Auth (`InstanceDirectory`), `WorldAreaTowns.cs` | [09](docs/protocol/09-area-change.md) §4 |
+| Waypoints: the Waypoint object where the area's layout is captured (Lioneye's Watch built in), activated on entry (towns), within 25 cells or on click (the client plays the activation), saved per character; clicking opens the World panel in travel mode (S→C 0x7b), its pins and connection lines show from the character's visited areas and activated waypoints (S→C 0x4c, quest flags in the Player component via 0x2ba), and picking a pin (C→S 0x4d, Ctrl → instance chooser) takes the player next to the destination's waypoint; `/waypoints [all \| reset]` | `InstanceWaypoints.cs`, `WaypointCatalog.cs`, `AreaVisitFlags.cs`, Gateway | [16](docs/protocol/16-waypoints.md) |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
 | Leagues and character creation: Standard and Allflame with their Hardcore / SSF / Ruthless variants on the create screen (S→C 0x1b), 24 character slots, any class in any league (C→S 0x12 → 0x15, 0x13), straight into the game; the league under the area name in game (0x1d); the hardcore death screen from the character's league; `Game_LEAGUES` | `LeagueCatalog.cs`, `LoginServerSession.cs`, Auth, Gateway | [01](docs/protocol/01-login.md) §7 |
 | Character deletion on the character screen (C→S 0x0c → new list 0x15 + result 0x0d); the save is set aside in `data/saves/deleted/` | `LoginServerSession`, Auth | [01](docs/protocol/01-login.md) §5 |
@@ -73,6 +74,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
   Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).
+- Waypoint travel to a generated area without a `-Walkmaps` capture for its seed puts the player at an arbitrary cell
+  (The Submerged Passage, seed 1); quest flags are derived from visited areas and waypoints, not from quests
+  ([16](docs/protocol/16-waypoints.md) "Open").
 - Saving quest progress. Quest passive points, refunding single passives, masteries and ascendancy ([15](docs/protocol/15-progression.md) "Open").
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent; an
   effect object follows the player only by 0x1ba glides. Buffs other than Righteous Fire's are not used. Ruthless and SSF change nothing in game; towns are shared across leagues.
@@ -80,7 +84,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (211 tests), `tests/GameServer.Data.Tests` (15) and
+`dotnet test tests/GameServer.Core.Tests` (230 tests), `tests/GameServer.Data.Tests` (15) and
 `tests/GameServer.Gateway.Tests` (3: inventory moves) pass.
 Tests that need the real client pass quietly without `Client/`.
 
