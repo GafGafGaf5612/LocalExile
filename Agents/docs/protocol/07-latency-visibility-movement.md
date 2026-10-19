@@ -19,8 +19,15 @@ received 0x1b keeps the queue at the one tick in flight (`InstanceProtocol.Pong`
 Ticks that no server answers stay in the queue for good: those sent while the client leaves an area, or lost in
 unframed bytes. Index 0 then always pops a stale entry. Live in The Coast the queue held 3 at every 0x1c (ticks every
 167 ms), and the meter read ~400 ms. The first 0x1c of each connection, and the first after an unframed read, therefore
-sends index 0xFFFF (`ClientInbox.NextAckIndex`). After that the queue held 1 at every 0x1c, and the meter read 12–14 ms
-in The Coast and in town: the client sees the answer on its next frame.
+sends index 0xFFFF (`ClientInbox.NextAckIndex`). After that the queue held 1 at every 0x1c.
+
+**What the overlay shows.** The network update `0x142148880` runs once per client frame on the network thread. It
+reads the socket, handles each 0x1c (pop), stores the latency sample `+0xc480` (now − queue front, 0 when empty) and
+sends a 0x1b every 100 ms (500 ms after more than 100 ms without a client send, `+0xc488`). It also keeps a peak
+`+0xc490`: raised when a sample exceeds it (plus a margin from a setting at `+0x11c`), never lowered, and reset only
+when a connection starts (`0x142144b50`). "network: N ms" shows that peak, not the live sample (live Frida 2026-10-19:
+the sample was 0 at every update at both ~6 and ~60 fps, while the overlay and `+0xc490` held 14). So the 12–14 ms is
+one moment early in the connection when an answer arrived one update late, held until the next area change.
 
 So the meter reads 0 while every tick is answered at once, and a spike is exactly how long the server left a tick
 unanswered. The Gateway used to answer ticks in the same per-connection loop as every other handler, so the overlay
