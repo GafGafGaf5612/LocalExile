@@ -12,9 +12,7 @@ A local, from-scratch server for the Path of Exile **3.29.3b** client. It is wri
 engineering of the client's network protocol. You play on your own machine against servers running on 127.0.0.1.
 
 This project is not affiliated with or endorsed by Grinding Gear Games. It contains **no game files, keys or game data**.
-You need your own installed copy of the client, and everyt
-
-hing the servers need is generated locally from it.
+You need your own installed copy of the client, and everything the servers need is generated locally from it.
 
 ## Showcase (Most recent to older)
 https://github.com/user-attachments/assets/fead9d6a-b2ce-4908-9e73-ccaaae78a08a
