@@ -229,8 +229,8 @@ public class InstanceEntitiesTests
     public void Character_passives_layout()
     {
         // u16 refund, u16 quest, u16 ascendancy points (big-endian), u8 level, u8 class, u8, u8 flags, vec16 nodes (count
-        // big-endian, ids little-endian), then four empty lists.
-        Assert.Equal("0033" + "0000" + "0000" + "0000" + "05" + "03" + "00" + "00" + "0002" + "6776" + "3412" + "0000" + "0000" + "0000" + "0000",
+        // big-endian, ids little-endian, sorted: the client diffs it against its own sorted list), then four empty lists.
+        Assert.Equal("0033" + "0000" + "0000" + "0000" + "05" + "03" + "00" + "00" + "0002" + "3412" + "6776" + "0000" + "0000" + "0000" + "0000",
             Convert.ToHexString(InstanceEntities.CharacterPassives(5, 3, [0x7667, 0x1234])));
     }
 
