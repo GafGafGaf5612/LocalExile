@@ -8,11 +8,12 @@
 | `GameServer.Auth` | `https://0.0.0.0:20484` (or `:20484` no-TLS) | `{realm}.login.Game.com` | Running: TLS + request capture; login protocol pending |
 | `GameServer.Gateway` | `tcp 0.0.0.0:6112` | instance servers | Running: accepts + logs raw bytes; game protocol pending |
 
-Start everything:
+Start everything (historical: `tools/run-servers.ps1` started this early HTTPS setup and has been removed; today
+`scripts/dev/live.ps1` builds and starts the servers, see [GettingStarted](../../GettingStarted.md)):
 
 ```powershell
 dotnet build GameServer.slnx
-./tools/run-servers.ps1            # add -NoTls for plain HTTP testing
+./tools/run-servers.ps1            # removed; add -NoTls for plain HTTP testing
 ```
 
 ## Redirecting the client
