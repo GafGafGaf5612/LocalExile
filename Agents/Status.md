@@ -70,6 +70,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   AreaTransition. Quests are not implemented.
 - Item mods, rarity, flask and currency use; support gems and links; gem levels; ground items are per connection
   ([13](docs/protocol/13-items.md) "Open").
+- The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
+  Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).
 - Saving the character's area, position or quest progress. Quest passive points, refunding single passives, masteries and ascendancy ([15](docs/protocol/15-progression.md) "Open").
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent; an
   effect object follows the player only by 0x1ba glides. Buffs other than Righteous Fire's are not used. Ruthless and SSF change nothing in game; towns are shared across leagues.

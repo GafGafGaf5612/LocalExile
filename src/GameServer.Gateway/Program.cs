@@ -176,6 +176,15 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(PlayerId, use.X, use.Y, speed), $"0x01ba move to ({use.X}, {use.Y}) speed {speed}");
             }
         }
+        else if (InstanceProtocol.IsLockstepMovement(id))
+        {
+            // The client moves this way only in lockstep, which the Gateway does not answer: say so once per connection.
+            if (conn.WarnedLockstep) continue;
+            conn.WarnedLockstep = true;
+            Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} lockstep movement: the client's Network Mode is lockstep (\"auto\" picks it on localhost); " +
+                "only Predictive is supported, the player stays hidden and cannot move");
+            await Send(remote, stream, ciphers, InstanceChat.MessageBox(LockstepWarning), "0x000d message box: lockstep warning");
+        }
         else if (id == InstanceTransfer.UseSkillOnObjectId)
         {
             var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
@@ -1882,6 +1891,9 @@ sealed partial class Program
     // bit0 (a single Exit button, "Exit to the character selection screen", which sends C→S 0x153).
     internal static byte DeathScreenFlags(ClientState conn) => ForceHardcore || conn.Hardcore ? (byte)0x01 : (byte)0x0c;
     internal const double TickSeconds = 1.0 / TickRate;
+    // Shown once per connection when the client moves in lockstep (InstanceProtocol.IsLockstepMovement).
+    internal const string LockstepWarning = "Your Network Mode is lockstep, which this server does not support yet: your character stays " +
+        "hidden and cannot move. Set Options > Game > Network Mode to Predictive, then log out to the character screen and Play again.";
     // How close (cells, centre to centre) the player must be to use an area transition.
     internal const double AreaTransitionReach = 6;
     // The height u32 of S→C 0x1ba (+0x28, passed with the move to Positioned vtable +0xd8) and 0x1b7 (→ +0x290): the
@@ -2250,6 +2262,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Items on the ground by object id (dropped with C→S 0x29).
     public readonly Dictionary<uint, WorldItemObject> WorldItems = [];
     public volatile bool AiEnabled = true, Closed;
+    // Whether the lockstep warning was shown on this connection.
+    public bool WarnedLockstep;
 
     /// <summary>A walk estimate for a server object on this area's walk map.</summary>
     public WalkEstimator NewWalk(int x, int y, double speed) =>

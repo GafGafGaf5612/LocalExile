@@ -87,6 +87,22 @@ Positioned handler calls `0x141e34120` with duration = distance / speed. With sp
 and crawled (~1 cell per 1.5 s), so it is not sent for the local player (`Game_MOVE_MODE=move` to test).
 **S→C 0x1b7** teleport: header, `i32 x, i32 y, u32 → +0x290, u32 → +0x2b4`; works (`Game_MOVE_MODE=teleport`).
 
+**Lockstep.** Everything above is the client's **Predictive** network mode (Options → Game → Network Mode;
+`[NETWORKING] networking_type=predictive` in `Documents\My Games\Path of Exile\production_Config.ini`). With
+`networking_type=auto` the client chose lockstep on localhost (live 2026-10-18): the player object was created and
+in the wake zone but never drawn, and clicks sent no 0x25. Each click sent instead:
+
+| Id | Bytes | Notes |
+|---|---|---|
+| 0x018e | 15 | `018E 00000029 FFFFFFEF 2909 0402 00`: i32, i32 (small signed values: offsets from the player?), u16 skill id (0x2909 Move), u16 flags (0x0400 / 0x0402), u8 |
+| 0x0192 | 10 | `0192 00000010 FFFFFFF2`: two i32, as in 0x018e |
+| 0x0195 | 2 | id only, ends the click |
+
+Lengths are from 26 captures of each, every one alone in its chunk; the field layout is inferred, not read from the
+client's serializers. The server sends nothing back that lockstep accepts, so the Gateway frames the three
+(`InstanceProtocol.IsLockstepMovement`), ignores them, and once per connection logs a warning and shows a message box
+asking for Predictive. Supporting lockstep would mean finding the senders and the S→C answer the client waits for.
+
 ## 6. More client messages seen
 
 | Id | Bytes | Notes |
