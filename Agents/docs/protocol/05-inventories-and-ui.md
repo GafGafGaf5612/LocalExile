@@ -154,4 +154,5 @@ thrown and caught during the UI build; its backtrace went through `0x1421cc54e` 
 
 - Items are in [13](13-items.md): the start kit goes into these 0xc0 messages, and S→C 0xbf changes an inventory later.
 - What the 0x3d u16 fields and node list mean.
-- Managers 1 and 2 (`+0xca10`, `+0xcb90`), probably stash or guild.
+- Manager 1 (`+0xca10`) holds NPC shop and trade inventories ([17](17-npcs.md) §5), manager 2 (`+0xcb90`) the guild
+  stash's; the personal stash's tabs are inventories of manager 0 on row 26 ([18](18-stash.md) §4).

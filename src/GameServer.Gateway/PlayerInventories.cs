@@ -324,6 +324,23 @@ sealed class PlayerInventories
         }
     }
 
+    /// <summary>Sets the size of a stack (same id), or removes it at 0, in one save. Returns it as it is now (null when
+    /// removed or not there).</summary>
+    public InventoryItem? SetStackSize(byte row, uint itemId, int size)
+    {
+        InventoryItem? result = null;
+        lock (_lock)
+        {
+            var items = ItemsIn(row);
+            int at = items.FindIndex(i => i.Id == itemId);
+            if (at < 0) return null;
+            if (size <= 0) items.RemoveAt(at);
+            else result = items[at] = items[at] with { Item = items[at].Item with { StackSize = (ushort)size } };
+        }
+        Persist();
+        return result;
+    }
+
     /// <summary>What <see cref="AddStacked"/> did: stacks that grew (same ids), new items, and how many did not fit.</summary>
     public sealed record Stacking(IReadOnlyList<InventoryItem> Changed, IReadOnlyList<InventoryItem> Added, int Left)
     {
@@ -502,7 +519,8 @@ sealed class PlayerInventories
                 if (CharacterSaves.FromSaved(p.Item, catalog) is { } item)
                 {
                     inv.ItemsIn(row).Add(new InventoryItem(p.Id, p.X, p.Y, item));
-                    inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
+                    // Stash ids (AccountStash.FirstItemId up) are the account's; the character's own stay below them.
+                    if (p.Id < AccountStash.FirstItemId) inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
                 }
                 else Console.WriteLine($"[gateway] {character}: saved item type 0x{p.Item.Type:x8} is unknown, dropped");
         return inv;

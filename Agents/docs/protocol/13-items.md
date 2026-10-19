@@ -116,10 +116,11 @@ tables; it changes nothing itself, the server's 0xbf does.
 - **Merge** (C→S 0x2a on a stack): a held stack put on a stack of the same type with room fills it up to the max and
   the rest stays held. The answer is a 0xbf on the target (remove and add the stack's id, larger) and one on the cursor
   (remove the held id, add it again smaller, or not at all when all of it went). A full stack, or another type, is
-  swapped as usual (`PlayerInventories.Place`).
+  swapped as usual (`PlayerInventories.Place`). Stash tabs merge the same way (`AccountStash.Merge`, [18](18-stash.md)).
 - **Split** (Shift + click on a stack, then the split window's amount): C→S 0x4a. The stack shrinks in place and the
   split-off part is held as a new item (`PlayerInventories.Split`). Refused with something held, an amount of 0 or the
-  whole stack.
+  whole stack. On a stash tab the tab's stack shrinks (`AccountStash.Shrink`, written first) and the held part gets a
+  character item id.
 - **Adding** (`PlayerInventories.AddStacked`): items picked up from the ground into the main inventory, `/item <type>
   <count>` (count = how many, up to 20 full stacks) and the sell window's reward go onto the stacks of their type first
   (fullest first), then as new stacks of at most the max in free cells. A ground stack is picked up only when all of it

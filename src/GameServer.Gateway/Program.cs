@@ -110,7 +110,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             left = conn;
             conn.Commands = Commands(remote, stream, ciphers, conn);
             conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
@@ -304,6 +304,18 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             await AnswerSale(remote, stream, ciphers, conn, InstanceNpcs.ReadTradeAnswer(bytes));
         else if (id == InstanceNpcs.BuyId)
             await BuyFromShop(remote, stream, ciphers, conn, InstanceNpcs.ReadBuy(bytes));
+        else if (id == InstanceStash.RequestTabId)
+        {
+            var (tab, kind) = InstanceStash.ReadRequestTab(bytes);
+            await SendStashTab(remote, stream, ciphers, conn, tab, kind);
+        }
+        else if (id == InstanceStash.ReorderTabsId)
+        {
+            var (kind, order) = InstanceStash.ReadReorderTabs(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} (not kept)");
+        }
+        else if (id == InstanceStash.MoveTabId)
+            Console.WriteLine($"[gateway] {remote} <= 0x00d1 stash tab into a folder (not handled): {Convert.ToHexString(bytes)}");
         else if (id == InstanceNpcs.OptionId)
             await ChooseNpcOption(remote, stream, ciphers, conn, InstanceNpcs.ReadOption(bytes));
         else if (id == InstanceChat.ChatId)
@@ -368,6 +380,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 await PopulateArea(remote, stream, ciphers, conn);
                 await SendGroundItems(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
+                await SpawnTownStash(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
             }
@@ -513,6 +526,11 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     if (npc is not null)
     {
         await TalkToNpc(remote, stream, ciphers, conn, use, npc);
+        return;
+    }
+    if (conn.StashObject != 0 && use.TargetId == conn.StashObject)
+    {
+        await OpenStash(remote, stream, ciphers, conn, use);
         return;
     }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
@@ -2760,6 +2778,7 @@ static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ci
 static async Task PickUpItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PickUpItem pick)
 {
     if (conn.Sale is { } sale && pick.InventoryId == sale.Mine) { await TakeFromSale(remote, stream, ciphers, conn, sale, pick.ItemId); return; }
+    if (StashOf(conn).TabOf(pick.InventoryId) is int tab) { await PickUpFromStash(remote, stream, ciphers, conn, tab, pick); return; }
     var items = ItemsOf(conn);
     if (PlayerInventories.Row(pick.InventoryId) is not byte row || items.PickUp(row, pick.ItemId) is not { } held)
     {
@@ -3013,6 +3032,24 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
 static async Task SplitStack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.ItemAction split, string hex)
 {
     var items = ItemsOf(conn);
+    if (StashOf(conn).TabOf(split.InventoryId) is int tab)
+    {
+        // From a stash tab: the tab's stack shrinks (written first), the split-off part is held with a character id.
+        var stash = StashOf(conn);
+        if (items.Items(PlayerInventories.Cursor).Count > 0 || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == split.ItemId) is not { } source ||
+            stash.Shrink(tab, split.ItemId, split.Amount) is not { } left)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x004a split {split} in stash tab {tab}: refused: {hex}");
+            return;
+        }
+        var part = items.Put(PlayerInventories.Cursor, new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = split.Amount }));
+        Console.WriteLine($"[gateway] {remote} <= 0x004a split {split} in stash tab {tab}: {hex}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, stash.NextRevision(tab), [left.Id], [left]),
+            $"0x00bf stash tab {tab}: stack {left.Id} now {left.Item.StackSize}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [], [part]), $"0x00bf cursor: hold {part.Item.StackSize} as item {part.Id}");
+        return;
+    }
     string why = "unknown inventory";
     var done = PlayerInventories.Row(split.InventoryId) is byte row ? items.Split(row, split.ItemId, split.Amount, out why) : null;
     if (done is not var (stack, held) || PlayerInventories.Row(split.InventoryId) is not byte r)
@@ -3038,6 +3075,7 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
         if (held is not null) await OfferForSale(remote, stream, ciphers, conn, sale, cursor, held.Id, (byte)place.X, (byte)place.Y);
         return;
     }
+    if (StashOf(conn).TabOf(place.InventoryId) is int tab) { await PlaceInStash(remote, stream, ciphers, conn, tab, place); return; }
     var items = ItemsOf(conn);
     PlayerInventories.Placement? done = null;
     string why = "unknown inventory";
@@ -3067,6 +3105,115 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
         items.NextRevision(PlayerInventories.Cursor), [done.Held.Id], d is null ? [] : [d]),
         $"0x00bf cursor: remove item {done.Held.Id}" + (d is null ? "" : $", hold item {d.Id}"));
     if (PlayerInventories.ShowsOnModel(done.Row)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+// The account's stash (AccountStash): every character of the account shares it. Without an account (an old Auth) the
+// character's name stands in.
+static AccountStash StashOf(ClientState conn) => AccountStash.For(conn.Account ?? CharacterName(conn), Items);
+
+// The town's Stash object (Agents/docs/protocol/18-stash.md §1) where the town has one (StashCatalog).
+static async Task SpawnTownStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (StashCatalog.In(conn.Layout.Hash) is not { } at || Environment.GetEnvironmentVariable("Game_STASH") == "0") return;
+    uint id = conn.NextObjectId++;
+    var stash = new StashObject(at.X, at.Y, at.Rotation);
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(StashObject.MetadataPath), stash.Blob()),
+        $"0x02b9 create stash 0x{id:x} at ({at.X}, {at.Y})");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 stash 0x{id:x} enters wake zone");
+    conn.StashObject = id;
+}
+
+// A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects
+// the tab carrying that affinity bit in the tab list, which only the account's last tab does (AccountStash.Records).
+static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
+{
+    if (StashCatalog.In(conn.Layout.Hash) is not { } at) return;
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(at.X, at.Y, StashReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 stash ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    var stash = StashOf(conn);
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceStash.OpenStashUi, conn.StashObject, StashSelectAffinity),
+        $"0x007b open the stash on tab {stash.LastTab} \"{stash.NameOf(stash.LastTab)}\" (affinity {StashSelectAffinity})");
+}
+
+// C→S 0xc7: the panel shows a tab whose contents it does not have (or it just opened on it). The first time per
+// connection the tab's inventory goes out (S→C 0xc0, manager 0, row 26), then S→C 0xc8 marks the tab loaded and the panel
+// builds its page. The tab asked for is the one on screen: the stash opens on it next time.
+static async Task SendStashTab(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, ushort tab, byte kind)
+{
+    var stash = StashOf(conn);
+    if (kind != InstanceStash.Personal || tab >= stash.Count)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x00c7 stash {kind} tab {tab}: no such tab");
+        return;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x00c7 stash tab {tab} \"{stash.NameOf(tab)}\" ({stash.TypeOf(tab)})");
+    stash.SetLastTab(tab);
+    uint inventory = AccountStash.InventoryId(tab);
+    if (conn.StashTabsSent.Add(tab))
+    {
+        var (slot, items) = stash.Inventory(tab);
+        await Send(remote, stream, ciphers, InstanceInventories.AddInventory(inventory, slot, items: items),
+            $"0x00c0 stash tab {tab} inventory {inventory} ({slot.Width} x {slot.Height}): {items.Count} item(s)");
+    }
+    await Send(remote, stream, ciphers, InstanceStash.TabLoaded(tab, inventory), $"0x00c8 stash tab {tab} loaded");
+}
+
+// C→S 0x28 on a stash tab: the item leaves the tab for the (empty) cursor, keeping its id. The stash is written before
+// the character, so a crash between the two loses the item rather than copying it.
+static async Task PickUpFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, InstanceItems.PickUpItem pick)
+{
+    var stash = StashOf(conn);
+    var items = ItemsOf(conn);
+    if (items.Items(PlayerInventories.Cursor).Count > 0 || stash.Take(tab, pick.ItemId) is not { } taken)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0028 pick up {pick} from stash tab {tab}: refused");
+        return;
+    }
+    var held = items.Put(PlayerInventories.Cursor, taken with { X = 0, Y = 0 });
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(pick.InventoryId, stash.NextRevision(tab), [held.Id], []),
+        $"0x00bf stash tab {tab}: remove item {held.Id}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: add item {held.Id} (from the stash)");
+}
+
+// C→S 0x2a on a stash tab: the held item goes into the tab (with a stash id, AccountStash.Place); the one item it was
+// dropped on comes onto the cursor.
+static async Task PlaceInStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, InstanceItems.PlaceItem place)
+{
+    var stash = StashOf(conn);
+    var items = ItemsOf(conn);
+    if (items.Items(PlayerInventories.Cursor) is not [var held, ..])
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x002a place {place} in stash tab {tab}: nothing held");
+        return;
+    }
+    if (stash.Merge(tab, (int)place.X, (int)place.Y, held, ShapeOf) is var (stack, moved))
+    {
+        // Onto a stack of its type: the tab's stack grows (written first), the held one shrinks or is gone.
+        var rest = items.SetStackSize(PlayerInventories.Cursor, held.Id, held.Item.StackSize - moved);
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [stack.Id], [stack]),
+            $"0x00bf stash tab {tab}: stack {stack.Id} now {stack.Item.StackSize}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [held.Id], rest is null ? [] : [rest]),
+            "0x00bf cursor: " + (rest is null ? $"remove item {held.Id} (merged)" : $"stack {rest.Id} now {rest.Item.StackSize}"));
+        return;
+    }
+    if (stash.Place(tab, (int)place.X, (int)place.Y, held, ShapeOf, out string why) is not var (placed, displaced))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x002a place {place} in stash tab {tab}: refused ({why})");
+        return;
+    }
+    items.Remove(PlayerInventories.Cursor, held.Id);
+    if (displaced is not null) items.Put(PlayerInventories.Cursor, displaced);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), displaced is null ? [] : [displaced.Id], [placed]),
+        $"0x00bf stash tab {tab}: add item {placed.Id} at ({placed.X}, {placed.Y})" + (displaced is null ? "" : $", remove item {displaced.Id}"));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [held.Id], displaced is null ? [] : [displaced]),
+        $"0x00bf cursor: remove item {held.Id}" + (displaced is null ? "" : $", hold item {displaced.Id}"));
 }
 
 // The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
@@ -3111,7 +3258,8 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
             InstanceEntities.CreateObject(WaypointCatalog.ObjectId, InstanceEntities.ObjectTypeHash(WaypointObject.MetadataPath), waypoint.Blob())));
     if (Environment.GetEnvironmentVariable("Game_GATEWAY_ENTER") == "1")
     {
-        messages.Add(("0x0021 enter area", InstanceProtocol.EnterArea()));
+        var tabs = StashOf(conn).Records((int)StashSelectAffinity);
+        messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {StashOf(conn).LastTab}", InstanceProtocol.EnterArea(tabs)));
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.AreaTransitions) messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
@@ -3145,6 +3293,11 @@ sealed partial class Program
     internal const double WaypointReach = 6, WaypointActivationRange = 25;
     // How close the player walks to an NPC before talking (not measured yet).
     internal const double NpcReach = 8;
+    // How close the player walks to the Stash before it opens (Stash.ot object_size 3; not measured).
+    internal const double StashReach = 6;
+    // The affinity (StashTabAffinityId row 0, "UNUSED0": no item has it) that marks the account's last tab in the tab
+    // list, so that S->C 0x7b kind 1 with it opens the stash on that tab.
+    internal const uint StashSelectAffinity = 0;
     // Destination tickets of waypoint travel: that connection's player arrives next to the area's waypoint.
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, byte> WaypointArrivals = new();
     // The height u32 of S→C 0x1ba (+0x28, passed with the move to Positioned vtable +0xd8) and 0x1b7 (→ +0x290): the
@@ -3535,6 +3688,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint Ticket => ticket;
     public uint Seed => seed;
     public string? Character { get; init; }
+    /// <summary>The account the character belongs to (Auth's resolve): its stash (AccountStash) is shared by all of them.</summary>
+    public string? Account { get; init; }
     public string? League { get; init; }
     public bool Hardcore { get; init; }
     /// <summary>The character's last town (HASH16, from Auth's resolve): Resurrect in Town goes there. 0 before the
@@ -3613,6 +3768,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public NpcSale? Sale;
     // The shop tab opened last (Purchase Items), with what is left in it.
     public OpenShop? Shop;
+    // The town's Stash object (0 = none here), and the stash tabs whose inventory this connection has sent (0xc0 + 0xc8).
+    public uint StashObject;
+    public readonly HashSet<int> StashTabsSent = [];
     // The NPC whose dialogue window is open (0x84 sent, 0x85 not yet), 0 = none.
     public volatile uint TalkingTo;
     // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
