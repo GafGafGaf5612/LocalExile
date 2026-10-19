@@ -99,6 +99,17 @@ Items are in rough priority order within each section. "Known" says what is alre
   (PassiveSkillGraph.psg) so the server checks them too.
 - **Done when:** passives can be refunded with points from quests, and ascendancies chosen.
 
+### Auras: reservation and effects
+- **Known:** `GrantedEffectsPerLevel` carries the reservation; the Life pool's reserved field and S→C 0x1b1 update it;
+  Purity of Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste are implemented with their buff
+  visuals and `/auras`, awaiting live verification ([11](docs/protocol/11-skills.md) 13, [Status](Status.md)).
+- **Start:** the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
+  Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar active border is still open: 0x25f is a
+  client UI event, not a server message. Support gems, gem levels, party and minion auras and life reservation come with
+  their own systems.
+- **Done when:** the standard auras reserve correctly, their effects match PoB, and the character panel and HUD show the
+  same reserved and unreserved values.
+
 ### Items: mods, rarity, using flasks and currency
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); every item is sent normal and
   identified with no mods. The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`,

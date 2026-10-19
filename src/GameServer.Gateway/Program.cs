@@ -1185,6 +1185,11 @@ static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCi
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+    if (gem.Name is not null && Skills.Reservation(gem.Effect, 1) is { } reservation)
+    {
+        await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation);
+        return;
+    }
     if (gem.Name is not null)
     {
         if (!PayMana(conn, gem.Effect, out uint cost))
@@ -1193,13 +1198,66 @@ static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCi
             return;
         }
         if (cost > 0)
-            await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, pool: ManaPool),
+            await SendPlayerMana(remote, stream, ciphers, conn,
                 $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name})");
     }
     if (gem.Name is not null && IsRighteousFire(gem.Effect))
         await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect);
     else
         await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId);
+}
+
+// Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them
+// off. The reserved mana is sent in the Life pool and in every later 0x1b1 mana update; the client does not derive it.
+static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    ushort skillId, int effect, string name, (int Flat, int Percent) reservation)
+{
+    string? effectId = Skills.EffectId(effect);
+    if (effectId is null || !AuraCatalog.Supported(effectId))
+    {
+        Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {name}: reservation is known but this aura's effect is not implemented yet");
+        return;
+    }
+    AuraCatalog.Aura? ended = null;
+    AuraCatalog.Aura? started = null;
+    lock (conn.Monsters)
+    {
+        if (conn.Auras.Remove(skillId, out var old))
+            ended = old;
+        else
+        {
+            var aura = new AuraCatalog.Aura(skillId, effect, effectId, name, conn.NextBuff++,
+                AuraCatalog.BuffRow(effectId), reservation.Flat, reservation.Percent);
+            conn.Auras[skillId] = aura;
+            int reserved = AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
+            if (reserved > conn.Pools.Mana)
+            {
+                conn.Auras.Remove(skillId);
+                Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {name}: needs {reserved} mana reserved, " +
+                    $"maximum is {conn.Pools.Mana}");
+                return;
+            }
+            started = aura;
+            conn.PlayerMana = (uint)Math.Min(conn.PlayerMana, (uint)(conn.Pools.Mana - reserved));
+        }
+        conn.Pools = PoolsFor(conn, conn.Pools.Level);
+        conn.ApplyMovementSpeed();
+    }
+
+    if (ended is not null)
+    {
+        await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, ended.Buff),
+            $"0x01c2 player buff {ended.Buff}: {ended.Name} ends");
+    }
+    if (started is not null)
+    {
+        await Send(remote, stream, ciphers,
+            InstanceEntities.AddBuff(PlayerId, started.Buff, started.BuffRow, PlayerId, started.SkillId),
+            $"0x01c1 player buff {started.Buff}: {started.Name} (BuffDefinitions row {started.BuffRow})");
+    }
+    await SendCharacterStats(remote, stream, ciphers, conn, started is not null ? $"aura {name} on" : $"aura {ended!.Name} off");
+    await SendPlayerMana(remote, stream, ciphers, conn,
+        $"0x01b1 player mana {conn.PlayerMana}/{conn.Pools.Mana}, {ReservedMana(conn)} reserved");
 }
 
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
@@ -1376,6 +1434,10 @@ static IEnumerable<(uint, int)> BaseStats(ClientState conn)
         // the final value the client shows: 100% of maximum life per second, per minute
         if (Stats.Key("life_regeneration_rate_per_minute") is uint lr) extra[lr] = (int)Math.Min(int.MaxValue, (long)conn.Pools.Life * GodLifeRegenPctPerSecond / 100 * 60);
     }
+    List<AuraCatalog.Aura> auras;
+    lock (conn.Monsters) auras = [.. conn.Auras.Values];
+    foreach (var (k, v) in AuraCatalog.RawStats(auras, conn.Pools.AuraEffectPct, Skills, Stats))
+        extra[k] = extra.GetValueOrDefault(k) + v;
     foreach (var (k, v) in extra) if (seen.Add(k)) yield return (k, v);
 }
 
@@ -1551,9 +1613,10 @@ static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiph
     CharacterSaves.SetPassives(CharacterName(conn), PassiveState(conn).Nodes);
     Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}, {Progression.PassivePoints(level)} passive point(s))");
     await SendCharacterStats(remote, stream, ciphers, conn, $"level {level}");
-    lock (conn.Monsters) (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, conn.Pools.Mana);
+    int mana = UnreservedMana(conn);
+    lock (conn.Monsters) (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, (uint)mana);
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife), $"0x01b1 player life {conn.PlayerMaxLife}");
-    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, pool: ManaPool), $"0x01b1 player mana {conn.PlayerMana}");
+    await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
     await SendPassives(remote, stream, ciphers, conn);
 }
 
@@ -1599,6 +1662,25 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 {
     var weapons = WeaponProfileFor(conn);
     var bonus = PassiveBonus(Passives.Stats(conn.Passives, conn.MasteryEffects), weapons);
+    List<AuraCatalog.Aura> auras;
+    lock (conn.Monsters) auras = [.. conn.Auras.Values];
+    var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
+    bonus = bonus with
+    {
+        FireResistance = bonus.FireResistance + aura.FireResistance,
+        ColdResistance = bonus.ColdResistance + aura.ColdResistance,
+        LightningResistance = bonus.LightningResistance + aura.LightningResistance,
+        ChaosResistance = bonus.ChaosResistance + aura.ChaosResistance,
+        FireMaxResistance = bonus.FireMaxResistance + aura.FireMaxResistance,
+        ColdMaxResistance = bonus.ColdMaxResistance + aura.ColdMaxResistance,
+        LightningMaxResistance = bonus.LightningMaxResistance + aura.LightningMaxResistance,
+        ChaosMaxResistance = bonus.ChaosMaxResistance + aura.ChaosMaxResistance,
+        Accuracy = bonus.Accuracy + aura.Accuracy,
+        CriticalStrikeChancePct = bonus.CriticalStrikeChancePct + aura.CriticalStrikeChancePct,
+        SpellCriticalStrikeChancePct = bonus.SpellCriticalStrikeChancePct + aura.SpellCriticalStrikeChancePct,
+        AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
+        MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
+    };
     if (conn.God)
         bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
             Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };
@@ -1652,7 +1734,7 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 // What the allocated passives add to the pools: attributes (base_* and additional_*, all attributes and the pairs),
 // flat and increased life, mana and accuracy, increased evasion, energy shield and melee physical damage, the base
 // resistances (base_resist_all_elements_% applies to fire, cold and lightning), the shield-specific block nodes when a
-// shield is equipped, and critical strike chance and multiplier.
+// shield is equipped, critical strike chance and multiplier, and reservation efficiency and aura effect.
 static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons)
 {
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
@@ -1754,6 +1836,15 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         + (weapons.Staff ? Get("staff_accuracy_rating_+%") : 0)
         + (weapons.Bow ? Get("bow_accuracy_rating_+%") : 0);
     int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
+    // Reservation efficiency: generic efficiency applies to both pools; the mana/life-specific stats only to theirs.
+    // Aura effect is the generic non-curse/aura effect; the Reservation mastery's self-aura effect is included.
+    int manaReservation = Get("base_mana_reservation_efficiency_+%") + Get("base_reservation_efficiency_+%")
+        + Get("mana_reservation_efficiency_+%") + Get("reservation_efficiency_+%");
+    int lifeReservation = Get("base_life_reservation_efficiency_+%") + Get("base_reservation_efficiency_+%")
+        + Get("life_reservation_efficiency_+%") + Get("reservation_efficiency_+%");
+    int auraEffect = Get("non_curse_aura_effect_+%") + Get("aura_effect_+%")
+        + Get("aura_effect_on_self_from_your_skills_+%");
+    int auraArea = Get("base_aura_area_of_effect_+%");
     return new CharacterStats.Bonus(
         Strength: Get("base_strength") + Get("additional_strength") + all + Get("additional_strength_and_dexterity") + Get("additional_strength_and_intelligence"),
         Dexterity: Get("base_dexterity") + Get("additional_dexterity") + all + Get("additional_strength_and_dexterity") + Get("additional_dexterity_and_intelligence"),
@@ -1789,7 +1880,9 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         Accuracy: accuracyFlat, AccuracyPct: accuracyPct,
         AccuracyPerLevel: Get("accuracy_rating_per_level"),
         DexterityAccuracyTriple: Get("dexterity_accuracy_bonus_grants_accuracy_rating_+3_per_dexterity_instead") != 0,
-        AccuracyEqualsIntelligence: Get("gain_accuracy_rating_equal_to_intelligence") != 0);
+        AccuracyEqualsIntelligence: Get("gain_accuracy_rating_equal_to_intelligence") != 0,
+        ManaReservationEfficiencyPct: manaReservation, LifeReservationEfficiencyPct: lifeReservation,
+        AuraEffectPct: auraEffect, AuraAreaPct: auraArea);
 }
 
 // The character's passive skill points (one per level after the first, plus the extra points from
@@ -1890,7 +1983,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
-            conn.PlayerMana = Math.Min(conn.PlayerMana, conn.Pools.Mana);
+            conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
         }
         now = [.. conn.Passives];
         effectsNow = new(conn.MasteryEffects);
@@ -1911,6 +2004,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
             await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (respec, {cost} paid)");
         }
         await SendCharacterStats(remote, stream, ciphers, conn, "passives");
+        await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (passives)");
     }
     // Sent either way: on a refusal it puts the client's tree back to the server's.
     await SendPassives(remote, stream, ciphers, conn);
@@ -1997,12 +2091,12 @@ static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers 
         conn.Pools = PoolsFor(conn, conn.Pools.Level);
         conn.ApplyMovementSpeed();
         conn.PlayerLife = on ? conn.PlayerMaxLife : Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
-        conn.PlayerMana = on ? conn.Pools.Mana : Math.Min(conn.PlayerMana, conn.Pools.Mana);
+        conn.PlayerMana = on ? (uint)UnreservedMana(conn) : Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
     }
-    Console.WriteLine($"[gateway] {remote} god mode {(on ? "on" : "off")}: life {conn.Pools.Life}, mana {conn.Pools.Mana}");
+    Console.WriteLine($"[gateway] {remote} god mode {(on ? "on" : "off")}: life {conn.Pools.Life}, mana {conn.Pools.Mana}, {ReservedMana(conn)} reserved");
     await SendCharacterStats(remote, stream, ciphers, conn, on ? "god mode on" : "god mode off");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife), $"0x01b1 player life {conn.PlayerLife}");
-    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, pool: ManaPool), $"0x01b1 player mana {conn.PlayerMana}");
+    await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
     // UI built on entering caches the attributes (see SendPlayer): send them once more.
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. BaseStats(conn)]), "0x01b3 player attributes");
 }
@@ -2027,6 +2121,20 @@ static double ManaRegenPerSecond(ClientState conn)
         + Get("base_mana_regeneration_rate_per_minute");
     return perMinute * (1 + Get("mana_regeneration_rate_+%") / 100.0) / 60;
 }
+
+// The mana the running auras reserve, and what is left for casting and regeneration.
+static int ReservedMana(ClientState conn)
+{
+    lock (conn.Monsters) return AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
+}
+
+static int UnreservedMana(ClientState conn) => Math.Max(0, (int)conn.Pools.Mana - ReservedMana(conn));
+
+// 0x1b1 for the mana pool: every update carries the reserved amount, or the client would clear it.
+static Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    string? log = null) =>
+    Send(remote, stream, ciphers,
+        InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool), log);
 
 // A gem skill's mana cost (its mana_cost stat), paid when the cast starts. False when the player lacks the mana.
 static bool PayMana(ClientState conn, int effect, out uint cost)
@@ -2159,10 +2267,11 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
             double change = manaCarry + manaRegen;
             int whole = (int)Math.Truncate(change);
             manaCarry = change - whole;
-            conn.PlayerMana = manaAfter = (uint)Math.Clamp((long)manaBefore + whole, 0, conn.Pools.Mana);
-            if (manaAfter == conn.Pools.Mana) manaCarry = 0;
+            uint manaCap = (uint)UnreservedMana(conn);
+            conn.PlayerMana = manaAfter = (uint)Math.Clamp((long)manaBefore + whole, 0, manaCap);
+            if (manaAfter == manaCap) manaCarry = 0;
         }
-        if (manaAfter != manaBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, manaAfter, pool: ManaPool), null);
+        if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
         if (rf is not null) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
         if (conn.Layout.Waypoint is { } waypoint
             && Dist(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds), (waypoint.GridX, waypoint.GridY)) <= WaypointActivationRange)
@@ -2553,6 +2662,26 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             $"{chance}% chance to hit a level {level} monster (evasion {evasion}), " +
             $"{evasiveChance}% against evasive monsters (evasion {evasiveEvasion}). Spells always hit.");
     })
+    .Add("auras", "/auras (active auras, their reservation and the character's efficiency)", async _ =>
+    {
+        List<AuraCatalog.Aura> auras;
+        int reserved;
+        int maxMana;
+        int efficiency;
+        int auraEffect;
+        lock (conn.Monsters)
+        {
+            auras = [.. conn.Auras.Values];
+            reserved = AuraCatalog.ReservedMana(conn.Pools, auras);
+            maxMana = (int)conn.Pools.Mana;
+            efficiency = conn.Pools.ManaReservationEfficiencyPct;
+            auraEffect = conn.Pools.AuraEffectPct;
+        }
+        string list = auras.Count == 0 ? "none" : string.Join(", ", auras.Select(a =>
+            $"{a.Name} ({a.ManaFlat} flat, {a.ManaPercent / 100.0:0.##}%)"));
+        await conn.Commands!.Reply($"Auras: {list}. Mana {conn.PlayerMana}/{maxMana}, {reserved} reserved " +
+            $"({maxMana - reserved} unreserved); reservation efficiency {efficiency}%, aura effect {auraEffect}%.");
+    })
     .Add("spellhit", "/spellhit <fire|cold|lightning|chaos|physical> <damage> (dev: spell hit through resistance and Spell Suppression)", async args =>
     {
         if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
@@ -2645,7 +2774,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
                 int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
                 conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife,
                     Math.Max(0, (long)conn.PlayerLife - dealt + gainedLife));
-                conn.PlayerMana = (uint)Math.Min(conn.Pools.Mana, (long)conn.PlayerMana + gainedMana);
+                conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
                 life = conn.PlayerLife;
                 mana = conn.PlayerMana;
             }
@@ -2662,7 +2791,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
             $"0x01b1 player dev {(spell ? "spell" : "attack")} hit for {dealt} ({(blocked ? "blocked" : $"{DamageModel.Capped(resistance, maxResistance)}% resistance")}), life {life}/{conn.PlayerMaxLife}");
         if (mana != manaBefore)
-            await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, mana, pool: ManaPool),
+            await SendPlayerMana(remote, stream, ciphers, conn,
                 $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev block hit)");
@@ -2676,10 +2805,10 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("heal", "/heal (full life; also revives: 0x1b1 from 0 runs the client's revive)", async _ =>
     {
-        lock (conn.Monsters) (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, conn.Pools.Mana);
+        lock (conn.Monsters) (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, (uint)UnreservedMana(conn));
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
             $"0x01b1 player healed to {conn.PlayerMaxLife}");
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, pool: ManaPool), $"0x01b1 player mana {conn.PlayerMana}");
+        await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 0)]),
             "0x01b3 player hide_mini_life_bar = 0");
     })
@@ -2955,7 +3084,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
         int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
         conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - damage + gainedLife));
-        conn.PlayerMana = (uint)Math.Min(conn.Pools.Mana, (long)conn.PlayerMana + gainedMana);
+        conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
         life = conn.PlayerLife;
         mana = conn.PlayerMana;
     }
@@ -2966,7 +3095,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
         $"0x01b1 player hit by monster 0x{id:x} for {damage}{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
     if (mana != manaBefore)
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, mana, pool: ManaPool),
+        await SendPlayerMana(remote, stream, ciphers, conn,
             $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league)");
@@ -2981,7 +3110,7 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     {
         if (conn.PlayerLife > 0) return;
         conn.PlayerLife = conn.PlayerMaxLife;
-        conn.PlayerMana = conn.Pools.Mana;
+        conn.PlayerMana = (uint)UnreservedMana(conn);
         foreach (var m in conn.Monsters.Values) m.Aggro = false;
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0054 resurrect {(inTown ? "in town" : "at checkpoint")}");
@@ -2995,6 +3124,7 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     // Revive first: a teleport sent while the player is dead left them where they died (live 2026-10-17).
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
         $"0x01b1 player revived with {conn.PlayerMaxLife} life");
+    await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
     // The checkpoint: where the player entered the area, as in the real game before any checkpoint is activated
     // (checkpoints are not implemented yet).
     var (x, y) = (conn.Layout.SpawnX, conn.Layout.SpawnY);
@@ -3140,10 +3270,12 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
     await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, equipped),
         $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
     conn.Pools = PoolsFor(conn, conn.Pools.Level);
+    lock (conn.Monsters) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
     var skills = PlayerSkills(conn);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills), $"0x02ba player Actor: {skills.Count} skill(s)");
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
         "0x01b3 player stats (equipment)");
+    await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
 }
 
 // Takes the held item off the cursor (0xbf); null when nothing is held.
@@ -3692,7 +3824,10 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var stats = CharacterPlayerStats(conn);
     var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
     var weaponStats = weapon.Stats(stats).ToList();
-    var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: pools.Life, Mana: pools.Mana, Experience: conn.Experience,
+    int reservedMana = ReservedMana(conn);
+    var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: pools.Life,
+        Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
+        Experience: conn.Experience,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
@@ -3735,6 +3870,13 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. statList])));
     }
     foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
+    // An area change creates a new player object, so the running auras' buffs must be put on it again.
+    List<AuraCatalog.Aura> auras;
+    lock (conn.Monsters) auras = [.. conn.Auras.Values];
+    foreach (var aura in auras)
+        await Send(remote, stream, ciphers,
+            InstanceEntities.AddBuff(PlayerId, aura.Buff, aura.BuffRow, PlayerId, aura.SkillId),
+            $"0x01c1 player buff {aura.Buff}: {aura.Name} restored after the area change");
 }
 
 sealed partial class Program
@@ -4208,6 +4350,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
+    // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
+    public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
     // The character's level and the pools that follow from it and the class (CharacterStats).
     public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
     // Dev-only forced lucky block, on top of the stats (Svalinn's "Chance to Block is Lucky").
