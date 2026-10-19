@@ -83,7 +83,8 @@ u8 = the chosen NPCTalk row's index among the NPC's rows (column 1). The client 
 |---|---|
 | Gossip, Quests, QuestReward | S→C 0x84 with the index: the window plays the row's text and audio (verified) |
 | BuyItems | shop tab (S→C 0xc0, manager 1) + S→C 0x8c (verified: the buy window shows the stock) |
-| SellItems | two offer inventories (0xc0, manager 1) + S→C 0xb8 (window opens; drops and Accept not verified) |
+| SellItems | two offer inventories (0xc0, manager 1) + S→C 0xb8 (verified: drops, Ctrl + click, Accept, Cancel; §5) |
+| RespecPassivePointsForGold | S→C 0x7b kind 0x5f with 1: the character's passive tree (UI +0x650, listener 0x140dc8750; a non-zero u32 shows it in mode 2, `0x1409de680`), the script's `SendOpenScreen( CharacterPassiveTreeScreen, 1 )`. Not kind 0x11 (Atlas tree, UI +0x668) or 0x45 (UI +0x678). Refunds are not done |
 
 C→S 0x85 during a talk = Continue → 0x84 0xff (back to the options); otherwise the Gateway answers 0x84 with object 0,
 which ends the dialogue (without an answer the client stays in its dialogue state and the player cannot move).
@@ -104,11 +105,26 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   NPCs row, u16, u32 BE TradeWindowVisuals row, u16 (+0x54, shown as an error text when set), u16. The offer grids
   must use an Inventories.dat row that accepts items (row 83 refused every drop; row 0 now). C→S 0xb1 (u32, u8): Cancel
   sent u8 0; Accept assumed u8 1. S→C 0xb9 (u32, u8 accepted) closes the window. The NPC offers 1 Scroll Fragment per item.
-- **C→S 0xb2** (16 bytes, write `0x141f95b40`): an item dropped into "Your Offer": u32 BE source inventory (13 = cursor),
-  u32 BE item id, u16, u8 x, u8 y, u16 (changes per request). **C→S 0xb3** (12 bytes): u32 BE item id, u32, u16: the
-  item taken back out. 0xb8 flags bit 4 (0x10) drops the "Mouse over each item to enable accept" rule
-  (`0x140c37140`). Live 2026-10-19: drops into the offer work; Cancel closes the window but the player cannot move
-  until another panel opens (P); Accept does not work yet.
+- **0xb8 flags** (struct +0x50): bit 0 (0x01) = the active trade: the UI state's listener `0x140d62ec0` keeps the first
+  u32 (struct +0x08, the other party; 0 for an NPC sale) at +0x984 and sets +0x988 = 1. Ctrl + click on an inventory item
+  (`0x14030e3e0`, from the grid click handler `0x1402ddbc0` through the grid's vtable +0x4d0) sends 0xb2 only when that
+  is set (branch at `0x14030e4dd`); without it the click runs through the other panels' checks and sends nothing. S→C
+  0xb9 with the same id clears it (`0x140d62e90`). Bit 4 (0x10) drops the "Mouse over each item to enable accept" rule
+  (`0x140c37140`). The Gateway sends 0x11.
+- **C→S 0xb2** (16 bytes, write `0x141f95b40`): an item into "Your Offer": u32 BE source inventory (13 = cursor),
+  u32 BE item id, u16, u8 x, u8 y, u16 (changes per request). Ctrl + click sends the item's own inventory with
+  x = y = 0xff (`0x142166660`): the Gateway puts it in the offer's first free cell, scanned like a pickup into the
+  inventory (column by column from the top left). **C→S 0xb3** (12 bytes, `0x142166750`): u32 BE item id, u32 BE grid
+  inventory, u16: Shift + click, the item moves to the other side (a click on an offered item sends inventory 0).
+  **C→S 0xb5** (12 bytes, `0x142166830`): the same for Ctrl + Shift + click.
+- **Accept**: C→S 0xb6 (6 bytes, `0x140c378d0`): u32 BE the revision of the other side's offer inventory, so the
+  server knows the player accepted what it showed; C→S 0xb7 (4 bytes) un-accepts. The Gateway accepts when the revision
+  is the last one it sent, else treats it as Cancel. **Cancel**: C→S 0xb1 (u32, u8 0).
+- **Closing**: S→C 0xb9 (u32 other party, u8 accepted) closes the window (`0x140dcd370`). The client is still in its
+  NPC talk afterwards (session +0xd7c0 = 2, +0xd7c4 = the NPC object; live 2026-10-19) and the player cannot move until
+  S→C 0x84 with object 0 ends it. Cancel also sends C→S 0x85 for it, Accept sends nothing, so the Gateway sends 0x84
+  object 0 after every 0xb9. Verified live 2026-10-19: drops, Ctrl + click (19 items into the first free cells),
+  Accept (the NPC's offer lands in the inventory) and Cancel (the items come back), walking afterwards.
 - S→C 0x87 opens the quest reward window (u16 = QuestRewardOffers row, `0x140c2b690`); a wrong row crashes the client.
 
 ## 6. Dev commands
@@ -118,7 +134,7 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
 
 ## Open
 
-- Selling: verify drops into the offer, Accept's message, real sell prices; quest rewards (0x87); Identify Items and
-  Bestel's Respecialisation (no answer yet); real buy prices.
+- Selling: real sell prices; quest rewards (0x87); Identify Items; Respecialisation's refunds (gold, refund points);
+  real buy prices.
 - The NPC component's two bytes, and 0x84's other mode values.
 - The NPCs' facing (rotation 0 for now), and NPCs in the other towns and outside towns.

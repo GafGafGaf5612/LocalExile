@@ -234,6 +234,16 @@ not the inventory manager that UI uses; that one needs 0xc0 ([05](05-inventories
 
 `InstanceEntitiesTests.Minimal_player_blob_layout` pins this byte for byte.
 
+## 6. Gold
+
+S→C **0x2a9** (class `0x14316c420`, read `0x140913050`): u32 BE, the character's gold. The instance dispatcher
+(case 0xe2, `0x14214dbe1`) keeps it at session +0xc40c (0 in the session constructor `0x142144b50`), where the gold
+respec cost check (`0x140997b10`) and the village gold label (`0x1404ff5d0`) read it, and plays Gold_Spend.ogg when it
+drops. Found with a hardware watchpoint on the field and the dispatcher's disassembly (its decompile fails). The
+Gateway sends the saved amount on every area entry and on `/gold`. Gold coins on the ground are the item
+`Metadata/Items/Currency/GoldCoin` (type hash 0xDDA0D6FB, `0x14031e810` plays their pickup sound); picking them up is
+not done yet.
+
 ## Open
 
 - Real meanings of the unnamed Player fields and Life +0x14/+0x28/+0x40.

@@ -256,15 +256,27 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         else if (id == InstanceNpcs.TradeOfferId)
         {
             var offer = InstanceNpcs.ReadTradeOffer(bytes);
-            if (conn.Sale is { } sale) await OfferForSale(remote, stream, ciphers, conn, sale, offer.InventoryId, offer.ItemId, offer.X, offer.Y);
+            // Ctrl + click on an inventory item sends x = y = 0xff (0x14030e3e0 → 0x142166660): any free offer cell.
+            if (conn.Sale is { } sale && offer.X == 0xff && offer.Y == 0xff) await OfferFromInventory(remote, stream, ciphers, conn, sale, offer.InventoryId, offer.ItemId);
+            else if (conn.Sale is { } open) await OfferForSale(remote, stream, ciphers, conn, open, offer.InventoryId, offer.ItemId, offer.X, offer.Y);
             else Console.WriteLine($"[gateway] {remote} <= 0x00b2 trade offer {offer}: no sale open");
         }
-        else if (id == InstanceNpcs.TradeTakeBackId)
+        else if (id is InstanceNpcs.TradeTakeBackId or InstanceNpcs.TradeMoveAllId)
         {
-            uint item = InstanceNpcs.ReadTradeTakeBack(bytes);
-            if (conn.Sale is { } sale) await TakeFromSale(remote, stream, ciphers, conn, sale, item);
-            else Console.WriteLine($"[gateway] {remote} <= 0x00b3 take back item {item}: no sale open");
+            var (item, inventory) = InstanceNpcs.ReadTradeMove(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} trade move item {item} (inventory {inventory})");
+            if (conn.Sale is not { } sale) Console.WriteLine($"[gateway] {remote} trade move: no sale open");
+            else if (sale.Offered.ContainsKey(item)) await TakeFromSale(remote, stream, ciphers, conn, sale, item);
+            else await OfferFromInventory(remote, stream, ciphers, conn, sale, inventory, item);
         }
+        else if (id == InstanceNpcs.TradeAcceptId)
+        {
+            uint revision = InstanceNpcs.ReadTradeAccept(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x00b6 trade accept (their offer revision {revision}, ours {conn.Sale?.TheirsRevision})");
+            await CloseSale(remote, stream, ciphers, conn, accepted: conn.Sale is { } s && s.TheirsRevision == revision);
+        }
+        else if (id == InstanceNpcs.TradeUnacceptId)
+            Console.WriteLine($"[gateway] {remote} <= 0x00b7 trade un-accept: {Convert.ToHexString(bytes)}");
         else if (id == InstanceNpcs.TradeAnswerId)
             await AnswerSale(remote, stream, ciphers, conn, InstanceNpcs.ReadTradeAnswer(bytes));
         else if (id == InstanceNpcs.BuyId)
@@ -327,6 +339,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                 await SendPlayer(remote, stream, ciphers, conn);
                 conn.PlayerSent = true;
                 await SendWaypoints(remote, stream, ciphers, conn);
+                await Send(remote, stream, ciphers, InstanceEntities.Gold(conn.Gold), $"0x02a9 gold: {conn.Gold}");
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
@@ -631,6 +644,12 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
         case "SellItems":
             await OpenNpcSale(remote, stream, ciphers, conn, npc);
             break;
+        // Bestel's Respecialisation (script: SendOpenScreen( CharacterPassiveTreeScreen, 1 )): the character's passive tree,
+        // S→C 0x7b kind 0x5f with 1. Refunding (gold, refund points) is not done yet.
+        case "RespecPassivePointsForGold":
+            conn.InNpcTalk = false;
+            await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.PassiveTreeUi, 1), "0x007b open the passive tree (respec)");
+            break;
         default:
             Console.WriteLine($"[gateway] {remote} npc option category {talk.Category} is not implemented yet");
             break;
@@ -744,9 +763,34 @@ static async Task SendSaleReward(string remote, NetworkStream stream, Connection
         $"0x00bf {sale.Npc.Npc.Name}'s offer: {reward.Count} x {NpcShops.SellReward}");
 }
 
-// C→S 0xb1: the sell window's answer. 0 = Cancel: the offered items go back to the inventory. Else Accept: the offered items
-// are gone and the NPC's offer goes into the inventory. Either way S→C 0xb9 closes the window.
+// C→S 0xb1: Cancel (u8 0). The offered items go back to the inventory and S→C 0xb9 closes the window.
 static async Task AnswerSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (uint Other, byte Answer) a)
+{
+    Console.WriteLine($"[gateway] {remote} <= 0x00b1 trade answer {a.Answer} (trade {a.Other})");
+    await CloseSale(remote, stream, ciphers, conn, accepted: a.Answer != 0);
+}
+
+// An item Shift-clicked in an inventory while the sell window is open goes into a free cell of the offer.
+static async Task OfferFromInventory(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, uint inventory, uint itemId)
+{
+    var items = ItemsOf(conn);
+    byte? row = PlayerInventories.Row(inventory);
+    var it = row is byte r ? items.Items(r).FirstOrDefault(i => i.Id == itemId) : null;
+    if (it is null || ShapeOf(it.Item) is not { } shape) { Console.WriteLine($"[gateway] {remote} sell offer: item {itemId} not in inventory {inventory}"); return; }
+    List<(InventoryItem Item, PlayerInventories.Shape? Shape)> offered;
+    lock (conn.Npcs) offered = [.. sale.Offered.Values.Select(o => (o, ShapeOf(o.Item)))];
+    (byte X, byte Y)? cell = null;
+    for (int x = 0; x + shape.Width <= NpcShops.Offer.Width && cell is null; x++)
+        for (int y = 0; y + shape.Height <= NpcShops.Offer.Height && cell is null; y++)
+            if (!offered.Any(o => o.Shape is { } s && o.Item.X < x + shape.Width && x < o.Item.X + s.Width && o.Item.Y < y + shape.Height && y < o.Item.Y + s.Height))
+                cell = ((byte)x, (byte)y);
+    if (cell is not { } c) { Console.WriteLine($"[gateway] {remote} sell offer: no room for item {itemId}"); return; }
+    await OfferForSale(remote, stream, ciphers, conn, sale, inventory, itemId, c.X, c.Y);
+}
+
+// Ends the sale. Accepted: the offered items are gone and the NPC's offer goes into the inventory. Cancelled: the offered
+// items go back to the inventory. Either way S→C 0xb9 closes the window.
+static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool accepted)
 {
     NpcSale? sale;
     lock (conn.Npcs)
@@ -754,8 +798,8 @@ static async Task AnswerSale(string remote, NetworkStream stream, ConnectionCiph
         sale = conn.Sale;
         conn.Sale = null;
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x00b1 trade answer {a.Answer} (trade {a.Other}){(sale is null ? ": no sale open" : "")}");
-    bool accepted = sale is not null && a.Answer != 0;
+    if (sale is null) Console.WriteLine($"[gateway] {remote} trade: no sale open");
+    accepted &= sale is not null;
     if (sale is not null)
     {
         var items = ItemsOf(conn);
@@ -776,6 +820,11 @@ static async Task AnswerSale(string remote, NetworkStream stream, ConnectionCiph
                 $"0x00bf inventory 1: {added.Count} item(s) " + (accepted ? $"of {NpcShops.SellReward} for {sale.Offered.Count} sold item(s)" : "offered and taken back"));
     }
     await Send(remote, stream, ciphers, InstanceNpcs.TradeClose(0, accepted), $"0x00b9 sell window closed ({(accepted ? "accepted" : "cancelled")})");
+    // The client is still talking to the NPC (session +0xd7c0 = 2, +0xd7c4 = the NPC, live 2026-10-19) and the player cannot
+    // move until 0x84 with object 0 ends the talk. Cancel sends 0x85 for it, Accept sends nothing, so end it here.
+    conn.TalkingTo = 0;
+    conn.InNpcTalk = false;
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 object 0: npc dialogue closed (sale over)");
 }
 
 // Sell Items: two empty offer inventories (manager 1: the player's offer, the NPC's), then S→C 0xb8 with no other party
@@ -787,7 +836,7 @@ static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCip
     await Send(remote, stream, ciphers, InstanceInventories.AddInventory(mine, NpcShops.Offer, NpcShops.Manager), $"0x00c0 sell offer {mine} (manager {NpcShops.Manager})");
     await Send(remote, stream, ciphers, InstanceInventories.AddInventory(theirs, NpcShops.Offer, NpcShops.Manager), $"0x00c0 {npc.Npc.Name}'s offer {theirs} (manager {NpcShops.Manager})");
     conn.InNpcTalk = false;
-    await Send(remote, stream, ciphers, InstanceNpcs.TradeOpen(0, mine, theirs, InstanceNpcs.TradeNoMouseOver, npc.Npc.Name, npc.Npc.Row),
+    await Send(remote, stream, ciphers, InstanceNpcs.TradeOpen(0, mine, theirs, InstanceNpcs.TradeActive | InstanceNpcs.TradeNoMouseOver, npc.Npc.Name, npc.Npc.Row),
         $"0x00b8 open the sell window with {npc.Npc.Name} (offers {mine}, {theirs})");
 }
 
@@ -1350,6 +1399,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Visited.UnionWith(save?.Visited ?? []);
         conn.QuestFlags = [.. save?.QuestFlags ?? []];
         conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
+        conn.Gold = save?.Gold ?? 0;
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
@@ -2048,6 +2098,15 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
         await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent.\n" +
             string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
+    })
+    .Add("gold", "/gold <amount> (dev: add gold, or take it with a negative amount; saved)", async args =>
+    {
+        if (args.Length == 0 || !long.TryParse(args[0], out long delta)) throw new ArgumentException("an amount of gold (negative takes gold)");
+        uint gold = (uint)Math.Clamp(conn.Gold + delta, 0, uint.MaxValue);
+        conn.Gold = gold;
+        CharacterSaves.SetGold(CharacterName(conn), gold);
+        await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (/gold {delta})");
+        await conn.Commands!.Reply($"Gold: {gold}");
     })
     .Add("add_passive_points", "/add_passive_points <n> (dev: add n extra passive skill points, saved)", async args =>
     {
@@ -3373,6 +3432,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public Dictionary<ushort, ushort> MasteryEffects = [];
     // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.
     public ushort ExtraPassivePoints;
+    // The character's gold (S→C 0x2a9), saved with the character; /gold changes it.
+    public uint Gold;
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
     public RighteousFireState? RighteousFire;

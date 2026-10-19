@@ -21,6 +21,12 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Gold_is_a_big_endian_u32_message()
+    {
+        Assert.Equal("02A90001E240", Convert.ToHexString(InstanceEntities.Gold(123456)));
+    }
+
+    [Fact]
     public void Create_object_has_entity_header_type_and_blob16()
     {
         byte[] m = InstanceEntities.CreateObject(0x1000, 0x9c41993e, [0xaa, 0xbb]);

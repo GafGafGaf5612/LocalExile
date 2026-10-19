@@ -24,7 +24,7 @@ static class CharacterSaves
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
-        Dictionary<ushort, ushort>? MasteryEffects = null);
+        Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -92,6 +92,9 @@ static class CharacterSaves
     /// <summary>Records the extra passive skill points from /add_passive_points.</summary>
     public static void SetExtraPassivePoints(string character, ushort points) =>
         Update(character, s => s with { ExtraPassivePoints = points });
+
+    /// <summary>Records the character's gold (S→C 0x2a9).</summary>
+    public static void SetGold(string character, uint gold) => Update(character, s => s with { Gold = gold });
 
     /// <summary>Records the character's activated waypoints, keeping the rest of the save.</summary>
     public static void SetWaypoints(string character, IEnumerable<string> areaIds) => Update(character, s => s with { Waypoints = [.. areaIds] });

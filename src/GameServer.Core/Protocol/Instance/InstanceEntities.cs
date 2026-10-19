@@ -198,6 +198,13 @@ public static class InstanceEntities
         return ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, w.ToArray());
     }
 
+    public const ushort GoldId = 0x2a9;
+
+    /// <summary>S→C 0x2a9 (class 0x14316c420, read 0x140913050): u32 BE, the character's gold. The instance dispatcher (case
+    /// 0xe2, 0x14214dbe1) stores it at session +0xc40c (the inventory's and the gold respec's amount) and plays
+    /// Gold_Spend.ogg when it drops.</summary>
+    public static byte[] Gold(uint amount) => new LoginWriter().U16(GoldId).U32(amount).ToArray();
+
     /// <summary>The player's Inventories component again (0x2ba): what its model wears after an equipment change.</summary>
     public static byte[] PlayerEquipmentUpdate(uint playerId, IReadOnlyList<VisibleItem> equipped)
     {
