@@ -5,7 +5,7 @@ namespace GameServer.Core.Tests;
 public class WorldAreaTownsTests
 {
     // HASH16 values of the 3.29.3b WorldAreas rows.
-    const ushort LioneyesWatch = 0x235c, ForestEncampment = 0x2233;
+    const ushort LioneyesWatch = 0x235c, ForestEncampment = 0x2233, TwilightStrand = 0xf00a;
 
     static string WriteTable(string json)
     {
@@ -53,9 +53,9 @@ public class WorldAreaTownsTests
 
     [Theory]
     [InlineData("1_2_town", ForestEncampment)]   // the last town entered
-    [InlineData(null, LioneyesWatch)]            // never entered a town: the starting area
-    [InlineData("1_1_2", LioneyesWatch)]         // not a town (a combat area): never logged into
-    [InlineData("1_9_town", LioneyesWatch)]      // no longer in the table
+    [InlineData(null, TwilightStrand)]           // never entered a town: the starting area, The Twilight Strand
+    [InlineData("1_1_2", TwilightStrand)]        // not a town (a combat area): never logged into
+    [InlineData("1_9_town", TwilightStrand)]     // no longer in the table
     public void Login_area_is_the_last_town_else_the_starting_area(string? lastTown, ushort expected)
     {
         IReadOnlyList<(string, ushort)> towns = [("1_1_town", LioneyesWatch), ("1_2_town", ForestEncampment)];

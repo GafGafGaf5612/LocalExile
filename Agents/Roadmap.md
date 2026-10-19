@@ -52,8 +52,8 @@ Items are in rough priority order within each section. "Known" says what is alre
   wall in front of the cave today) and the wall and waterfall play their Transitionable animations.
 - **Needs:** items (Roadmap "Items and inventories"), the Chest component's blob, a Transitionable state change. The
   S→C quest flag message is known: 0x2ba to the Player component, update flag 0x02 ([16](docs/protocol/16-waypoints.md) §3).
-- **Start:** a dev `/quest_flag a1q4-PlacedGlyphs` with `InstanceEntities.PlayerQuestFlagsUpdate`: check that it alone
-  opens the passage. Then real quest progress: set and save flags instead of deriving them from visits (16 §4).
+- **Start:** `/quest_flag a1q4-PlacedGlyphs` (it reaches the client's quest flags, [12](docs/protocol/12-quests.md) §5):
+  check that it alone opens the passage. Then a quest script for a1q4.
 - **Done when:** the glyph quest can be played through and the Submerged Passage opens.
 
 ### Monsters: beyond `/spawn_mob`
@@ -102,6 +102,14 @@ Items are in rough priority order within each section. "Known" says what is alre
   u16 are not.
 - **Done when:** Sanctum and other modes show their own options; hardcore's "Exit" works (with Esc → Exit, C→S 0x153).
 
+### Quests
+- **Known:** the quest engine and a1q1 "Enemy at the Gate" ([12](docs/protocol/12-quests.md) §5–6): quest flags saved
+  per character, one script per quest (events → flags; flags → exits), S→C 0x2ba steps a Transitionable.
+- **Start:** the open items of [12](docs/protocol/12-quests.md) (an AreaTransition subtype's state, TriggerableBlockage
+  cells, the Doorman), then the next quests act by act, each checked against the real game's behavior.
+  a1q4's Glyph Wall (§1–4) is the next world-changing one.
+- **Done when:** the campaign's quests can be played through, with their world changes, logs and rewards.
+
 ### Gem skills
 - **Known:** active gems in equipment are granted with their level-1 stats; Fireball casts, flies as a server-made
   projectile object and hits the targeted monster ([11](docs/protocol/11-skills.md) §9–10). Support gems crash the client
@@ -115,11 +123,13 @@ Items are in rough priority order within each section. "Known" says what is alre
   ([13](docs/protocol/13-items.md) §7, [11](docs/protocol/11-skills.md) §11, [15](docs/protocol/15-progression.md)), and
   every login starts at the last town's spawn point ([09](docs/protocol/09-area-change.md) §4). This follows the real
   game on purpose: the area and position a character was in are not saved, because the real client never logs anyone
-  into them. New characters start in Lioneye's Watch (`AccountService.StartingArea`). The death screen's "Resurrect in
-  Town" goes to the last town, with a loading screen; "Resurrect at Checkpoint" goes to the area's arrival point
-  ([09](docs/protocol/09-area-change.md) §7).
-- **Done when:** as in the real game, a new character starts on The Twilight Strand (`StartingArea`), reaches Lioneye's
-  Watch only after defeating Brutus, and logs in on the Twilight Strand until then; "Resurrect at Checkpoint" goes to
+  into them. New characters start on The Twilight Strand and log in there until they enter a town; Hillock's death
+  (quest a1q1) opens the gate into Lioneye's Watch ([12](docs/protocol/12-quests.md) §6). The death
+  screen's "Resurrect in Town" goes to the last town, with a loading screen, and is not offered before the character
+  has one; "Resurrect at Checkpoint" goes to the area's arrival point ([09](docs/protocol/09-area-change.md) §7).
+- **Done when:** the Strand's gate plays its opening when Hillock dies, the force wall blocks the way while he lives and
+  the Doorman opens the door ([12](docs/protocol/12-quests.md) §6 and "Open");
+  "Resurrect at Checkpoint" goes to
   the last activated checkpoint of the area, with no loading screen (checkpoint objects are not implemented yet).
   Without an activated checkpoint it revives where the player entered the area, which the Gateway already does. Dying
   in a boss arena revives just outside the arena's door, even with a checkpoint activated; dying in a map revives in

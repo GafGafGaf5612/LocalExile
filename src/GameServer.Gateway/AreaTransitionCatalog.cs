@@ -138,7 +138,8 @@ static class AreaTransitionCatalog
         {
             if (!Captured(id, seed)) return null;
             var file = JsonSerializer.Deserialize<CaptureFileData>(File.ReadAllText(CaptureFile(id, seed)), Json);
-            return file?.Objects?.Where(o => o.ObjectType?.Contains("AreaTransition") == true).ToList();
+            // Quest exits extend AreaTransition under their own name (The Twilight Strand's SouthBeachTownEntrance).
+            return file?.Objects?.Where(o => o.ObjectType is { } t && (t.Contains("AreaTransition") || t.EndsWith("TownEntrance"))).ToList();
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {

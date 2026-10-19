@@ -35,7 +35,7 @@ public class FlowTests
         Assert.True(s.Resume(sess.Value!.Token).Ok);
         var c = s.CreateCharacter(acc.Value!.Id, "Exile_One", CharacterClass.Witch);
         Assert.True(c.Ok);
-        Assert.Equal("1_1_town", c.Value!.AreaId);
+        Assert.Equal("1_1_1", c.Value!.AreaId);   // new characters wash up on The Twilight Strand
         Assert.Equal(AuthError.CharacterNameTaken, s.CreateCharacter(acc.Value.Id, "exile_one", CharacterClass.Ranger).Error);
         Assert.Single(s.Characters(acc.Value.Id));
         Assert.True(s.DeleteCharacter(acc.Value.Id, c.Value.Id).Ok);

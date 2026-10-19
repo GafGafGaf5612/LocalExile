@@ -73,7 +73,9 @@ function hookTileObjects(exe) {
       try {
         const ctx = a[0], rec = a[1];
         const type = path(rec.add(0x30).readPointer());
-        if (!type || !/AreaTransition|Waypoint$/.test(type)) return;
+        // Quest exits extend AreaTransition under their own name: The Twilight Strand's way into Lioneye's Watch is
+        // Metadata/QuestObjects/SouthBeachTownEntrance (12-quests.md).
+        if (!type || !/AreaTransition|Waypoint$|TownEntrance$/.test(type)) return;
         const tile = ctx.add(8).readPointer();
         const code = Math.min(tile.add(0x36).readU8(), 8), heightOffset = tile.add(0x30).readS16();
         const origin = ctx.add(0x10).readPointer();

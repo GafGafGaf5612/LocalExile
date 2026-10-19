@@ -98,9 +98,9 @@ A pin with neither is hidden. A connection line (`0x140a9a7d0` → `0x140a9aa90`
 of the act, so an unrevealed area in the middle (The Mud Flats) cut the line between The Coast and The Submerged Passage.
 
 A visit flag is the area's MapPins `QuestFlagVisit` (the same as its WorldAreas `StartQuestFlags` where both exist).
-Quests are not implemented, so the Gateway sends as quest flags: the visit flags of every area the character entered
-(saved as `Visited`) or activated, and the access flags of the activated waypoints' areas (`AreaVisitFlags`,
-`WaypointQuestFlags`). Setting those flags has client-side effects beyond the panel (e.g. `a1q4-PlacedGlyphs` removes
+The Gateway sends as quest flags the flags the character's quests set ([12](12-quests.md) §5) and, for the panel: the
+visit flags of every area the character entered (saved as `Visited`) or activated, and the access flags of the
+activated waypoints' areas (`AreaVisitFlags`, `PlayerQuestFlags`). Setting those flags has client-side effects beyond the panel (e.g. `a1q4-PlacedGlyphs` removes
 the Submerged Passage blocker), which matches having been there.
 
 ## 5. Server rules

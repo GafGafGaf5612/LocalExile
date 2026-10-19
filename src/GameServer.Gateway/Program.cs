@@ -444,6 +444,12 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         return;
     }
     ushort dest = transition.DestinationHash16;
+    // A quest can close an exit: The Twilight Strand's way into Lioneye's Watch needs Hillock dead (a1q1).
+    if (AreaTransitionCatalog.IdOf(dest) is { } destId && Quests.FlagToEnter(conn.Layout.Id, destId) is { } needed && !conn.QuestFlags.Contains(needed))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0024 area transition 0x{use.TargetId:x} to {destId}: closed until quest flag {needed}");
+        return;
+    }
     // The client walks to the area transition first; follow it and act once the player is there (a move meanwhile cancels).
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
@@ -533,20 +539,23 @@ static async Task SendWaypointList(string remote, NetworkStream stream, Connecti
     // The pins need their areas' access quest flags first (the player object carried the ones known at creation).
     if (conn.PlayerSent)
     {
-        var flags = WaypointQuestFlags(conn);
+        var flags = PlayerQuestFlags(conn);
         await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, flags), $"0x02ba player quest flags: {flags.Count}");
     }
     await Send(remote, stream, ciphers, InstanceWaypoints.Waypoints(bits), $"0x004c waypoints: {bits.Count} activated ({why})");
 }
 
-// Quests are not implemented, so the player's quest flags are what the World panel needs (16-waypoints.md §4): the
-// visit flags of every area entered or whose waypoint is activated (they reveal the neighbouring pins and so the
-// connection lines), and the access flags of the activated waypoints' areas (their pins become travel targets).
-static List<int> WaypointQuestFlags(ClientState conn)
+// The player's quest flags as the client keeps them (QuestFlags rows, 16-waypoints.md §3): the flags the character's
+// quests set (12-quests.md §5; the client checks them too: Lioneye's Watch is accessible only with a1q1-KilledHillock),
+// and what the World panel needs (16-waypoints.md §4): the visit flags of every area entered or whose waypoint is
+// activated (they reveal the neighbouring pins and so the connection lines), and the access flags of the activated
+// waypoints' areas (their pins become travel targets).
+static List<int> PlayerQuestFlags(ClientState conn)
 {
     lock (conn.Waypoints)
         return [.. WaypointCatalog.Areas.Entries.Where(e => conn.Waypoints.Contains(e.Id)).SelectMany(e => e.AccessFlags ?? [])
             .Concat(conn.Visited.Concat(conn.Waypoints).SelectMany(id => WaypointCatalog.Visits.For(id)))
+            .Concat(Quests.Rows(conn.QuestFlags))
             .Distinct().Order()];
 }
 
@@ -1003,6 +1012,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Passives = [.. (save?.Passives ?? []).Where(n => Passives.Find(n) is { IsAscendancy: false })];
         conn.Waypoints.UnionWith(save?.Waypoints ?? []);
         conn.Visited.UnionWith(save?.Visited ?? []);
+        conn.QuestFlags = [.. save?.QuestFlags ?? []];
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
@@ -1143,6 +1153,7 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove dead monster 0x{id:x}");
     });
     if (m.Variety is not { } variety || !m.Hostile) return;
+    await SetQuestFlags(remote, stream, ciphers, conn, Quests.OnMonsterKilled(conn.Layout.Id, variety.Id));
     if (alive && Dist(at, player) <= ExperienceRange && Monsters.BaseExperience(variety, m.Level) is int baseXp)
     {
         uint xp = Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, m.Rarity, conn.Pools.Level, m.Level);
@@ -1596,6 +1607,13 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await conn.Commands!.Reply($"Area transition 0x{id:x} at ({at.GridX}, {at.GridY}), {at.Rotation * 180 / MathF.PI:0.#} degrees, " +
             $"height {at.Height?.ToString(inv) ?? "terrain"}, model {at.Model ?? "none"}; you at ({px}, {py}).");
     })
+    .Add("quest_flag", "/quest_flag [<QuestFlags Id> [off]] (dev: list, set or clear quest flags, e.g. /quest_flag a1q1-KilledHillock)", async args =>
+    {
+        if (args.Length < 1) { await conn.Commands!.Reply(string.Join(", ", conn.QuestFlags.DefaultIfEmpty("no quest flags"))); return; }
+        bool off = args.Length > 1 && args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
+        await SetQuestFlags(remote, stream, ciphers, conn, [args[0]], on: !off);
+        await conn.Commands!.Reply($"{args[0]} {(off ? "cleared" : "set")}");
+    })
     .Add("goto", "/goto <area id or name> (dev: change area as if through an area transition, e.g. /goto 1_1_3)", async args =>
     {
         string target = string.Join(' ', args);
@@ -1798,7 +1816,7 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0054 resurrect {(inTown ? "in town" : "at checkpoint")}");
     await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(0x02), "0x0055 hide the death screen");
-    if (inTown && conn.Layout.Hash != conn.LastTown)
+    if (inTown && conn.LastTown != 0 && conn.Layout.Hash != conn.LastTown)
     {
         // The new area's player object is created with full life.
         await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(conn.LastTown, 0, false, AtSpawn: true), "resurrect in town");
@@ -1949,6 +1967,23 @@ static async Task DestroyHeldItem(string remote, NetworkStream stream, Connectio
         Console.WriteLine($"[gateway] {remote} <= 0x0016 /destroy: nothing held");
 }
 
+// Sets or clears quest flags for the character (saved at once) and sends the player's flag set again.
+static async Task SetQuestFlags(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on = true)
+{
+    bool changed = false;
+    foreach (string flag in flags)
+        if (on ? conn.QuestFlags.Add(flag) : conn.QuestFlags.Remove(flag))
+        {
+            changed = true;
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: quest flag {flag} {(on ? "set" : "cleared")}");
+        }
+    if (!changed) return;
+    CharacterSaves.SetQuestFlags(CharacterName(conn), conn.QuestFlags);
+    if (!conn.PlayerSent) return;
+    var all = PlayerQuestFlags(conn);
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, all), $"0x02ba player quest flags: {all.Count}");
+}
+
 // The instance's items on the ground, where they were left (InstanceStore): dropped or looted on an earlier connection.
 static async Task SendGroundItems(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
@@ -2051,7 +2086,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. baseStats])], Stats: [.. weapon.Stats(), .. baseStats],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
-        QuestFlags: WaypointQuestFlags(conn));
+        QuestFlags: PlayerQuestFlags(conn));
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
     {
@@ -2099,8 +2134,9 @@ sealed partial class Program
     // Game_LEAGUE=hardcore treats every character as hardcore; otherwise the character's league decides (Auth's resolve).
     internal static readonly bool ForceHardcore = Environment.GetEnvironmentVariable("Game_LEAGUE")?.ToLowerInvariant() == "hardcore";
     // S→C 0x55 flags (11-skills.md §8): standard = bit2 (Resurrect at Checkpoint) + bit3 (Resurrect in Town); hardcore =
-    // bit0 (a single Exit button, "Exit to the character selection screen", which sends C→S 0x153).
-    internal static byte DeathScreenFlags(ClientState conn) => ForceHardcore || conn.Hardcore ? (byte)0x01 : (byte)0x0c;
+    // bit0 (a single Exit button, "Exit to the character selection screen", which sends C→S 0x153). Before the character
+    // has a town (The Twilight Strand) only bit2, as in the real game.
+    internal static byte DeathScreenFlags(ClientState conn) => ForceHardcore || conn.Hardcore ? (byte)0x01 : conn.LastTown == 0 ? (byte)0x04 : (byte)0x0c;
     internal const double TickSeconds = 1.0 / TickRate;
     // Shown once per connection when the client moves in lockstep (InstanceProtocol.IsLockstepMovement).
     internal const string LockstepWarning = "Your Network Mode is lockstep, which this server does not support yet: your character stays " +
@@ -2293,7 +2329,9 @@ static class AreaLayouts
         }
         if (cells is not null)
         {
-            var (sx, sy) = DeepestCell(cells, w, h);
+            // The area's start point (a room's "default", e.g. The Twilight Strand's beach), else the deepest cell.
+            var start = AreaPopulation.LoadPoints(id, seed, []).FirstOrDefault(p => p.Name == "default");
+            var (sx, sy) = start is null ? DeepestCell(cells, w, h) : (start.X, start.Y);
             return new AreaLayout(hash, id, w, h, sx, sy, Walkable(cells, w, h), transitions);
         }
         // No walk map yet: a position inside any grid; the client may place the player on unwalkable ground.
@@ -2469,7 +2507,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public string? Character { get; init; }
     public string? League { get; init; }
     public bool Hardcore { get; init; }
-    /// <summary>The character's last town (HASH16, from Auth's resolve): Resurrect in Town goes there.</summary>
+    /// <summary>The character's last town (HASH16, from Auth's resolve): Resurrect in Town goes there. 0 before the
+    /// character has entered a town (the death screen then has no Resurrect in Town).</summary>
     public ushort LastTown { get; init; }
     /// <summary>The area the player left through an exit to come here, or null (login, Resurrect in Town).</summary>
     public ushort? CameFrom { get; init; }
@@ -2527,6 +2566,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint PlayerMana;
     // (MonsterVarieties row, level) pairs already registered with 0x20 on this connection.
     public readonly HashSet<(int Row, byte Level)> MonsterTypes = [];
+    /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>
+    public HashSet<string> QuestFlags = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
     // Items on the ground by object id (dropped with C→S 0x29).
