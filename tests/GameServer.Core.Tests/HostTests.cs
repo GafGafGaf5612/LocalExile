@@ -51,11 +51,11 @@ public class HostTests
 
         var created = a.Call("""{"op":"create_character","name":"Exile","class":"witch"}""");
         Assert.True((bool)created["ok"]!);
-        Assert.Equal("1_1_town", (string)created["character"]!["area"]!);
+        Assert.Equal("1_1_1", (string)created["character"]!["area"]!);   // The Twilight Strand
         Assert.Single(a.Call("""{"op":"characters"}""")["characters"]!.AsArray());
 
         var w = a.Call("""{"op":"enter_world","name":"Exile"}""");
-        Assert.Equal("1_1_town", (string)w["instance"]!["area"]!);
+        Assert.Equal("1_1_1", (string)w["instance"]!["area"]!);
 
         var z1 = a.Call("""{"op":"enter_area","area":"1_1_2","monster_level":2}""");
         var id1 = (uint)z1["instance"]!["id"]!;
@@ -83,8 +83,10 @@ public class HostTests
             c.Call($$"""{"op":"login","name":"{{n}}","password":"pw1234"}""");
             c.Call($$"""{"op":"create_character","name":"{{n}}c","class":"ranger"}""");
         }
-        var ta = a.Call("""{"op":"enter_world","name":"playerAc"}""")["instance"]!;
-        var tb = b.Call("""{"op":"enter_world","name":"playerBc"}""")["instance"]!;
+        a.Call("""{"op":"enter_world","name":"playerAc"}""");
+        b.Call("""{"op":"enter_world","name":"playerBc"}""");
+        var ta = a.Call("""{"op":"enter_area","area":"1_1_town"}""")["instance"]!;
+        var tb = b.Call("""{"op":"enter_area","area":"1_1_town"}""")["instance"]!;
         Assert.Equal((uint)ta["id"]!, (uint)tb["id"]!);
         Assert.Equal(2, (int)tb["players"]!);
         var za = a.Call("""{"op":"enter_area","area":"1_1_2"}""")["instance"]!;

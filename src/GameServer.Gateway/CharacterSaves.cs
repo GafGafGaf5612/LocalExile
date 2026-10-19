@@ -19,9 +19,11 @@ static class CharacterSaves
     /// "Action/&lt;ActionTypes Id&gt;" for a basic action ("Action/Move") or "" for a cleared slot. Experience: the
     /// character's total (its level is the account's; a save from another level is ignored). Passives: the allocated
     /// nodes' PassiveSkillGraphId. Waypoints: the WorldAreas Ids of the activated waypoints; Visited: of the areas
-    /// entered (their visit quest flags reveal the World panel's pins).</summary>
+    /// entered (their visit quest flags reveal the World panel's pins). QuestFlags: the quest flags quests set
+    /// (QuestFlags.dat Ids, 12-quests.md §5).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
-        uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null);
+        uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
+        List<string>? QuestFlags = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -75,6 +77,9 @@ static class CharacterSaves
 
     /// <summary>Records the character's experience, keeping the rest of the save.</summary>
     public static void SetExperience(string character, uint experience) => Update(character, s => s with { Experience = experience });
+
+    /// <summary>Records the character's quest flags (QuestFlags.dat Ids), keeping the rest of the save.</summary>
+    public static void SetQuestFlags(string character, IEnumerable<string> flags) => Update(character, s => s with { QuestFlags = [.. flags.Order()] });
 
     /// <summary>Records the character's allocated passives, keeping the rest of the save.</summary>
     public static void SetPassives(string character, IEnumerable<ushort> nodes) => Update(character, s => s with { Passives = [.. nodes] });

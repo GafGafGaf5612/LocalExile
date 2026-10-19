@@ -5,14 +5,20 @@ namespace Atlas;
 
 /// <summary>
 /// data/room-points.json: per area, the rooms of its room sets and fill tiles that carry monster points ("mapboss", the area's
-/// unique boss; "%area%-…", a MonsterPacks row named after the area), with those points and the room's doodads in
-/// room cells. The Gateway finds where the client placed such a room by matching its doodads against the doodads the
+/// unique boss; "%area%-…", a MonsterPacks row named after the area) or a "default" start point, with those points and
+/// the room's doodads in room cells (server objects with their type). The Gateway finds where the client placed such a room by matching its doodads against the doodads the
 /// walk-map recorder captured (AreaPopulation.FitRooms). Agents/docs/protocol/14-monster-packs.md §3.
 /// </summary>
 static class RoomPoints
 {
     public static bool IsMonsterPoint(string name) =>
         name.Equals("mapboss", StringComparison.OrdinalIgnoreCase) || name.StartsWith("%area%-", StringComparison.OrdinalIgnoreCase);
+
+    // "default": where a player starts in the area (The Twilight Strand's washed-up beach, 12-quests.md).
+    static bool IsKeptPoint(string name) => IsMonsterPoint(name) || name.Equals("default", StringComparison.OrdinalIgnoreCase);
+
+    // Plain doodads are the client's own; anything else in a room (an NPC, a quest blocker) is an object the server creates.
+    const string PlainDoodad = "Metadata/MiscellaneousObjects/Doodad";
 
     public static void Run(GameFiles files, List<AreaRow> areas, List<TopologyRow> topologies, string output)
     {
@@ -30,13 +36,15 @@ static class RoomPoints
                 var lists = new[] { "RoomSet", "FillTiles" }.Select(k => tsi?.GetValueOrDefault(k)).OfType<string>();
                 foreach (var arm in lists.SelectMany(l => files.List(TerrainText.Resolve(graph.MasterFile, l.Trim()), ".arm")))
                 {
-                    if (files.Room(arm) is not { } room || !room.Points.Any(p => IsMonsterPoint(p.Name))) continue;
+                    if (files.Room(arm) is not { } room || !room.Points.Any(p => IsKeptPoint(p.Name))) continue;
                     found.Add(arm);
                     rooms.TryAdd(arm, new
                     {
                         tag = room.Tag,
-                        points = room.Points.Where(p => IsMonsterPoint(p.Name)).Select(p => new { name = p.Name, x = p.X, y = p.Y }),
-                        doodads = room.Doodads.Select(d => new { model = d.Model, x = d.X, y = d.Y }),
+                        points = room.Points.Where(p => IsKeptPoint(p.Name)).Select(p => new { name = p.Name, x = p.X, y = p.Y }),
+                        doodads = room.Doodads.Select(d => d.Type.Equals(PlainDoodad, StringComparison.OrdinalIgnoreCase)
+                            ? (object)new { model = d.Model, x = d.X, y = d.Y }
+                            : new { model = d.Model, x = d.X, y = d.Y, type = d.Type }),
                     });
                 }
             }
@@ -44,10 +52,10 @@ static class RoomPoints
         }
         File.WriteAllText(output, JsonSerializer.Serialize(new
         {
-            note = "Rooms with monster points (mapboss, %area%-<pack>) per area: points and doodads in room cells. scripts/re/atlas room-points.",
+            note = "Rooms with monster points (mapboss, %area%-<pack>) or a default start point per area: points and doodads in room cells (server objects with their type). scripts/re/atlas room-points.",
             areas = areaRooms,
             rooms,
         }, new JsonSerializerOptions { WriteIndented = false }));
-        Console.WriteLine($"{output}: {areaRooms.Count} areas, {rooms.Count} rooms with monster points");
+        Console.WriteLine($"{output}: {areaRooms.Count} areas, {rooms.Count} rooms with monster or start points");
     }
 }

@@ -19,7 +19,8 @@ public sealed class AccountService(IAccountStore store, TimeProvider? clock = nu
     private readonly Dictionary<string, Session> _sessions = new();
     private readonly object _gate = new();
 
-    public static string StartingArea => "1_1_town";
+    // The Twilight Strand: new characters wash up there and reach Lioneye's Watch once Hillock is dead (a1q1).
+    public static string StartingArea => "1_1_1";
 
     /// <summary>How many characters an account may have.</summary>
     public int MaxCharacters => maxCharacters;
