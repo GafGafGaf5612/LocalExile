@@ -171,6 +171,19 @@ public static class InstanceEntities
     public static byte[] PlayerExperienceUpdate(uint playerId, uint experience) =>
         ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, new BlobWriter().U16(1).U32(experience).ToArray());
 
+    /// <summary>
+    /// The player's quest flags (0x2ba to the Player component, reader 0x141e7ee30): u16 flags, bit1 (0x02) = the whole
+    /// quest-flag set again (<see cref="PlayerObject.WriteFlagSet"/>, QuestFlags.dat rows). The World panel shows an area's
+    /// pin only when the area's access flags (WorldAreas +0x54) are all set (0x140797750). Bit3 (0x08) would replace the
+    /// second set (+0x1d0), bit9 (0x200) the 9 raw bytes (+0x1e8).
+    /// </summary>
+    public static byte[] PlayerQuestFlagsUpdate(uint playerId, IEnumerable<int> questFlags)
+    {
+        var w = new BlobWriter().U16(2);
+        PlayerObject.WriteFlagSet(w, questFlags);
+        return ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, w.ToArray());
+    }
+
     /// <summary>The player's Inventories component again (0x2ba): what its model wears after an equipment change.</summary>
     public static byte[] PlayerEquipmentUpdate(uint playerId, IReadOnlyList<VisibleItem> equipped)
     {
@@ -549,7 +562,7 @@ public sealed class BlobWriter
 public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int GridY,
     uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null,
     IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null,
-    IReadOnlyList<VisibleItem>? Equipped = null)
+    IReadOnlyList<VisibleItem>? Equipped = null, IReadOnlyCollection<int>? QuestFlags = null)
 {
     /// <summary>The Player component's index in the player object's component order (04 §3).</summary>
     public const byte PlayerComponentIndex = 6;
@@ -564,6 +577,20 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
         w.U8((byte)(equipped?.Count ?? 0));
         foreach (var e in equipped ?? []) e.Write(w);
         w.U8(0);
+    }
+
+    /// <summary>
+    /// A set of flags as the Player component keeps its quest flags (+0x1b8; reader 0x141e83340, test 0x14012aae0): u16
+    /// count, then per block of 64 flags in ascending order u8 block (flag &gt;&gt; 6) and u64 LE bits (bit flag &amp; 63).
+    /// Quest flags are QuestFlags.dat rows. Flags above 16383 do not fit and are skipped.
+    /// </summary>
+    public static void WriteFlagSet(BlobWriter w, IEnumerable<int>? flags)
+    {
+        var blocks = new SortedDictionary<int, ulong>();
+        foreach (int f in flags ?? [])
+            if (f >= 0 && f < 256 * 64) blocks[f >> 6] = blocks.GetValueOrDefault(f >> 6) | 1UL << (f & 63);
+        w.U16((ushort)blocks.Count);
+        foreach (var (block, bits) in blocks) w.U8((byte)block).U32((uint)bits).U32((uint)(bits >> 32));
     }
 
     public byte[] Blob()
@@ -593,7 +620,9 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U8(ClassIndex)     // Characters.dat row; bit5 and bits6-7 are the ascendancy (0x142156d80)
          .U32(Experience)    // 0x141e7f6b0 → +0x18c; the level is derived from it (+0x1ac)
          .U32(0).U16(0).U16(0)
-         .U16(0).U16(0)      // two vec16<u8, 8 bytes> (0x141e83340)
+         ;
+        WriteFlagSet(w, QuestFlags);   // the quest flags (+0x1b8, 0x141e83340)
+        w.U16(0)            // a second flag set (+0x1d0; WorldAreas __col60 values − 1)
          .Zeros(9)           // raw +0x1e8
          .U16(0).U16(0)      // Hideouts.dat keys
          .U8(0)              // +0x1b1 (non-zero → "WashedUp" state)

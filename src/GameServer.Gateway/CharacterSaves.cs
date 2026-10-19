@@ -18,9 +18,10 @@ static class CharacterSaves
     /// <summary>Skill bar: slot index → a GrantedEffects Id (skill ids change with the socketed gems, effects do not),
     /// "Action/&lt;ActionTypes Id&gt;" for a basic action ("Action/Move") or "" for a cleared slot. Experience: the
     /// character's total (its level is the account's; a save from another level is ignored). Passives: the allocated
-    /// nodes' PassiveSkillGraphId.</summary>
+    /// nodes' PassiveSkillGraphId. Waypoints: the WorldAreas Ids of the activated waypoints; Visited: of the areas
+    /// entered (their visit quest flags reveal the World panel's pins).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
-        uint? Experience = null, List<ushort>? Passives = null);
+        uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -77,6 +78,12 @@ static class CharacterSaves
 
     /// <summary>Records the character's allocated passives, keeping the rest of the save.</summary>
     public static void SetPassives(string character, IEnumerable<ushort> nodes) => Update(character, s => s with { Passives = [.. nodes] });
+
+    /// <summary>Records the character's activated waypoints, keeping the rest of the save.</summary>
+    public static void SetWaypoints(string character, IEnumerable<string> areaIds) => Update(character, s => s with { Waypoints = [.. areaIds] });
+
+    /// <summary>Records the areas the character has entered, keeping the rest of the save.</summary>
+    public static void SetVisited(string character, IEnumerable<string> areaIds) => Update(character, s => s with { Visited = [.. areaIds] });
 
     static void Update(string character, Func<Save, Save> change)
     {

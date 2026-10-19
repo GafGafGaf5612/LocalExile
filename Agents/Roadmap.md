@@ -30,6 +30,14 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 2. The world
 
+### Every area's layout at seed 1
+- **Known:** generated areas only exist in the client; `live.ps1 -Walkmaps` captures an area's walk map, area
+  transitions and waypoint when the client generates it ([08](docs/protocol/08-area-transitions.md) §7). About 30
+  areas are captured; waypoint travel to an uncaptured one (The Submerged Passage) puts the player outside the map
+  ([16](docs/protocol/16-waypoints.md) "Open").
+- **Start:** a dev command that walks the WorldAreas list with `/goto` and waits for each capture.
+- **Done when:** every act area has its seed-1 capture, and every waypoint area its waypoint in it.
+
 ### Area transitions without a walk-map run
 - **Known:** every area gets its area transitions and destinations, but a generated area only has them once
   `live.ps1 -Walkmaps` captured its layout for that seed ([08](docs/protocol/08-area-transitions.md) §7). 11 atlas
@@ -42,9 +50,10 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** the whole chain is in [12](docs/protocol/12-quests.md): three Rhoa Nest chests drop three glyphs, the Glyph
   Wall takes them, quest flag `a1q4-PlacedGlyphs` removes the client-side `SunkenPassageBlocker` wall (the invisible
   wall in front of the cave today) and the wall and waterfall play their Transitionable animations.
-- **Needs:** items (Roadmap "Items and inventories"), the Chest component's blob, the S→C quest flag message (unknown;
-  starting points in 12 §4), a Transitionable state change.
-- **Start:** find the quest flag message first: it alone opens the passage (e.g. a dev `/quest_flag a1q4-PlacedGlyphs`).
+- **Needs:** items (Roadmap "Items and inventories"), the Chest component's blob, a Transitionable state change. The
+  S→C quest flag message is known: 0x2ba to the Player component, update flag 0x02 ([16](docs/protocol/16-waypoints.md) §3).
+- **Start:** a dev `/quest_flag a1q4-PlacedGlyphs` with `InstanceEntities.PlayerQuestFlagsUpdate`: check that it alone
+  opens the passage. Then real quest progress: set and save flags instead of deriving them from visits (16 §4).
 - **Done when:** the glyph quest can be played through and the Submerged Passage opens.
 
 ### Monsters: beyond `/spawn_mob`
