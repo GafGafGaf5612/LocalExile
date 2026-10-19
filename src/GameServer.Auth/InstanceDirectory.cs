@@ -118,6 +118,7 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
                 {
                     Ok = inst is not null, Error = inst is null ? "instance expired" : null, Area = info.Area,
                     Seed = inst?.Seed ?? 0, Instance = info.Instance, Created = inst?.Created.ToUnixTimeMilliseconds() ?? 0, IsTown = inst?.IsTown ?? false, Character = info.Character,
+                    Account = accounts?.FindCharacter(info.Character) is { } owner ? accounts.GetAccount(owner.AccountId)?.Name : null,
                     League = info.League?.Name, Hardcore = info.League?.Hardcore ?? false, Class = (int)info.Class, Level = info.Level,
                     LastTown = accounts?.FindCharacter(info.Character)?.LastTown is { } last
                         && _towns.FirstOrDefault(t => t.Id == last) is { Id: not null } known ? known.Hash16 : (ushort)0,

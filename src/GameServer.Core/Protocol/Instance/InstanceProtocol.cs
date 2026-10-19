@@ -21,12 +21,17 @@ public static class InstanceProtocol
     public static byte[] StartEncryption() => new LoginWriter().U16(StartEncryptionId).ToArray();
 
     /// <summary>
-    /// S→C 0x21 (class 0x1435dcb80, write 0x1421a2da0; dispatcher case 10): enter the area, minimal form. Two vec16 of
-    /// 0x68-byte player records, vec16 of (u32, u32), wstr, 24 flag bits, u8 +0x7e, u8 bits (+0x7b/+0x7c/+0x7d), all
-    /// empty or zero. Its handler (0x142156d80) needs the local player entity (0x22 + 0x2b9) to exist already.
+    /// S→C 0x21 (class 0x1435dcb80, write 0x1421a2da0; dispatcher case 10): enter the area. Two stash tab lists
+    /// (<see cref="InstanceStash.WriteTabs"/>: the personal stash → instance +0xc498, the trade tabs → +0xc4c8), vec16 of
+    /// (u32, u32), wstr, 24 flag bits, u8 +0x7e, u8 bits (+0x7b/+0x7c/+0x7d), the rest empty or zero. Its handler
+    /// (0x142156d80) needs the local player entity (0x22 + 0x2b9) to exist already.
     /// </summary>
-    public static byte[] EnterArea() =>
-        new LoginWriter().U16(EnterAreaId).U16(0).U16(0).U16(0).WStr("").Bytes([0, 0, 0]).U8(0).U8(0).ToArray();
+    public static byte[] EnterArea(IReadOnlyList<InstanceStash.Tab>? stash = null)
+    {
+        var w = new LoginWriter().U16(EnterAreaId);
+        InstanceStash.WriteTabs(w, stash ?? []);
+        return w.U16(0).U16(0).WStr("").Bytes([0, 0, 0]).U8(0).U8(0).ToArray();
+    }
 
     public const ushort TickId = 0x1b, PongId = 0x1c, AreaGeneratedId = 0x7d;
 
@@ -54,7 +59,7 @@ public static class InstanceProtocol
         InstanceItems.InventoryRequestId => 8, InstanceItems.ItemActionId => 12, InstanceItems.SocketGemId => 16,
         InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
         InstanceEntities.AllocatePassiveId => 7, InstanceEntities.RefundPassiveId => InstanceEntities.RefundPassiveLength,
-        InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength,
+        InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength, InstanceStash.RequestTabId => InstanceStash.RequestTabLength, InstanceStash.MoveTabId => InstanceStash.MoveTabLength,
         LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, _ => null,
     };
 
@@ -245,7 +250,8 @@ public static class InstanceProtocol
             ushort id = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data[pos..]);
             int? known = id == InstanceChat.ChatId ? InstanceChat.Length(data[pos..]) ?? int.MaxValue
                 : id == InstanceItems.CommandId ? InstanceItems.CommandLength(data[pos..]) ?? int.MaxValue
-                : id == InstanceNpcs.BuyId ? InstanceNpcs.BuyLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
+                : id == InstanceNpcs.BuyId ? InstanceNpcs.BuyLength(data[pos..]) ?? int.MaxValue
+                : id == InstanceStash.ReorderTabsId ? InstanceStash.ReorderTabsLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
             if (known is not int len) { unknown = data[pos..].ToArray(); break; }
             if (data.Length - pos < len) { partial = data[pos..].ToArray(); break; }
             result.Add((id, data.Slice(pos, len).ToArray()));

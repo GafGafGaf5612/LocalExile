@@ -71,6 +71,8 @@ public sealed record ControlResponse
     public uint Ticket { get; init; }
     public bool IsTown { get; init; }
     public string? Character { get; init; }
+    /// <summary>"resolve": the name of the account the character belongs to (its stash is the account's).</summary>
+    public string? Account { get; init; }
     /// <summary>The character's league and whether it is hardcore (the death screen offers only Exit).</summary>
     public string? League { get; init; }
     public bool Hardcore { get; init; }
