@@ -67,6 +67,12 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   (2.93 → 2.98 after a node). Minion, totem and timed/conditional stats are not modelled; the character panel's APS
   stays cached after a passive allocation (reopening the panel or switching its tab does not refresh it; only a relog
   does). ([11](docs/protocol/11-skills.md) §4)
+- **Critical strikes.** The server rolls unconditional crit passives: the equipped main hand's `WeaponTypes.dat`
+  critical chance (permyriad) raised by generic/attack/melee/weapon-shape increased crit chance for attacks, Fireball's
+  5% base for spells, and 150% plus `base_critical_strike_multiplier_+`; critical damage is multiplied and logged.
+  Unarmed has 0% base crit. The final main-hand and spell crit chance/multiplier stats go to the client for the
+  Offence panel; timed, charge and enemy-state crit stats are not modelled; `/crit` shows both final values
+  ([11](docs/protocol/11-skills.md) §5).
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch
   use the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
@@ -107,9 +113,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (257 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (58: inventory moves, stacks, arrival points, instance ground items and monsters, quests,
-passives, spell suppression, attack speed and the account stash) pass.
+`dotnet test tests/GameServer.Core.Tests` (266 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (60: inventory moves, stacks, arrival points, instance ground items and monsters, quests,
+passives, spell suppression, attack speed, critical strikes and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

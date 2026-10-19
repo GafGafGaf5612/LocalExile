@@ -1051,6 +1051,9 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     uint life;
     var (minDamage, maxDamage) = weapon.Damage(CharacterPlayerStats(conn));
     int damage = Random.Shared.Next(minDamage, maxDamage + 1);
+    bool critical = conn.Pools.AttackCriticalStrikeChance > 0
+        && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
+    if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
     lock (conn.Monsters)
     {
         if (m.Life == 0) return;
@@ -1069,7 +1072,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(use.TargetId, [(StatKeys.HideMiniLifeBar, 1)]),
             $"0x01b3 monster 0x{use.TargetId:x} hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
-        $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, use.TargetId, m);
 }
 
@@ -1206,6 +1209,9 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         int min = Stats.Key("spell_minimum_base_fire_damage") is uint kmin ? stats.GetValueOrDefault(kmin) : 0;
         int max = Stats.Key("spell_maximum_base_fire_damage") is uint kmax ? stats.GetValueOrDefault(kmax) : 0;
         int damage = Random.Shared.Next(min, Math.Max(min, max) + 1);
+        bool critical = conn.Pools.SpellCriticalStrikeChance > 0
+            && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
+        if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
         uint life;
         lock (conn.Monsters)
         {
@@ -1217,7 +1223,7 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(hitId, [(StatKeys.HideMiniLifeBar, 1)]),
                 $"0x01b3 monster 0x{hitId:x} hide_mini_life_bar = 1");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(hitId, life),
-            $"0x01b1 monster 0x{hitId:x} hit by {projectile.Id} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+            $"0x01b1 monster 0x{hitId:x} hit by {projectile.Id} for {damage}{(critical ? " (critical)" : "")}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
         if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, hitId, m);
     }
     // The impact: on a monster or a wall the projectile's model becomes the explosion (Game_PROJECTILE_IMPACT_AO overrides
@@ -1330,7 +1336,12 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
         ("base_spell_suppression_chance_%", pools.SpellSuppressionChance),
         ("combined_spell_suppression_chance_%", pools.SpellSuppressionChance),
         ("spell_damage_%_suppressed", pools.SpellSuppressionEffect),
-        ("base_spell_damage_%_suppressed", pools.SpellSuppressionEffect) })
+        ("base_spell_damage_%_suppressed", pools.SpellSuppressionEffect),
+        // The Offence panel's crit rows read these final values (permyriad for chance, percent for multiplier).
+        ("main_hand_critical_strike_chance", pools.AttackCriticalStrikeChance),
+        ("main_hand_critical_strike_multiplier", pools.CriticalStrikeMultiplier),
+        ("spell_critical_strike_chance", pools.SpellCriticalStrikeChance),
+        ("spell_critical_strike_multiplier", pools.SpellCriticalStrikeMultiplier) })
         if (Stats.Key(stat) is uint key) yield return (key, value);
     // The class's attributes with the passives' (CharacterStats.For); a pools record made without a class (0) falls back
     // to the class's own.
@@ -1498,7 +1509,13 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
         AttackBlockLucky = pools.AttackBlockLucky || conn.ForceAttackBlockLucky,
         SpellBlockLucky = pools.SpellBlockLucky || conn.ForceSpellBlockLucky,
         SpellSuppressionLucky = pools.SpellSuppressionLucky || conn.ForceSpellSuppressionLucky,
-        SpellSuppressionUnlucky = pools.SpellSuppressionUnlucky || conn.ForceSpellSuppressionUnlucky
+        SpellSuppressionUnlucky = pools.SpellSuppressionUnlucky || conn.ForceSpellSuppressionUnlucky,
+        // WeaponTypes.dat gives the main hand's base critical chance (permyriad, e.g. 830 = 8.30%); unarmed is 0.
+        AttackCriticalStrikeChance = (int)Math.Round(
+            DamageModel.CriticalStrikeChance(weapons.Critical, pools.CriticalStrikeChancePct) * 100),
+        SpellCriticalStrikeChance = (int)Math.Round(
+            DamageModel.CriticalStrikeChance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
+                pools.SpellCriticalStrikeChancePct) * 100)
     };
     int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
     int rawAttack = pools.BlockChanceUncapped + shieldBlock;
@@ -1581,6 +1598,38 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         + (weapons.Staff ? Get("staff_attack_speed_+%") : 0);
     // PoB Misc.lua: 10% more attack speed while dual wielding; unarmed attacks count as dual wielding.
     int attackSpeedMore = weapons.DualWield || weapons.Unarmed ? 10 : 0;
+    // Unconditional critical strike chance and multiplier passives: generic, attack/melee/weapon-shape and spell.
+    // Timed or enemy-state conditions are not modelled.
+    int criticalChance = Get("critical_strike_chance_+%") + Get("attack_critical_strike_chance_+%")
+        + (weapons.Melee ? Get("melee_critical_strike_chance_+%") : 0)
+        + (weapons.OneHandMelee ? Get("one_handed_melee_critical_strike_chance_+%") : 0)
+        + (weapons.TwoHandMelee ? Get("two_handed_melee_critical_strike_chance_+%") : 0)
+        + (weapons.DualWield ? Get("critical_strike_chance_while_dual_wielding_+%") : 0)
+        + (weapons.Shield ? Get("critical_strike_chance_while_wielding_shield_+%") : 0)
+        + (weapons.Axe ? Get("axe_critical_strike_chance_+%") : 0)
+        + (weapons.Sword ? Get("sword_critical_strike_chance_+%") : 0)
+        + (weapons.Mace ? Get("mace_critical_strike_chance_+%") : 0)
+        + (weapons.Claw ? Get("claw_critical_strike_chance_+%") : 0)
+        + (weapons.Dagger ? Get("dagger_critical_strike_chance_+%") : 0)
+        + (weapons.Wand ? Get("wand_critical_strike_chance_+%") : 0)
+        + (weapons.Bow ? Get("bow_critical_strike_chance_+%") + Get("global_critical_strike_chance_+%_while_holding_bow") : 0)
+        + (weapons.Staff ? Get("staff_critical_strike_chance_+%") + Get("global_critical_strike_chance_+%_while_holding_staff") : 0);
+    int spellCriticalChance = Get("critical_strike_chance_+%") + Get("spell_critical_strike_chance_+%");
+    int criticalMultiplier = Get("base_critical_strike_multiplier_+")
+        + (weapons.Melee ? Get("melee_critical_strike_multiplier_+") + Get("melee_weapon_critical_strike_multiplier_+") : 0)
+        + (weapons.OneHandMelee ? Get("one_handed_melee_critical_strike_multiplier_+") : 0)
+        + (weapons.TwoHandMelee ? Get("two_handed_melee_critical_strike_multiplier_+") : 0)
+        + (weapons.DualWield ? Get("critical_strike_multiplier_while_dual_wielding_+") : 0)
+        + (weapons.Axe ? Get("axe_critical_strike_multiplier_+") : 0)
+        + (weapons.Sword ? Get("sword_critical_strike_multiplier_+") : 0)
+        + (weapons.Mace ? Get("mace_critical_strike_multiplier_+") : 0)
+        + (weapons.Claw ? Get("claw_critical_strike_multiplier_+") : 0)
+        + (weapons.Dagger ? Get("dagger_critical_strike_multiplier_+") + Get("critical_strike_multiplier_with_dagger_+") : 0)
+        + (weapons.Wand ? Get("wand_critical_strike_multiplier_+") : 0)
+        + (weapons.Bow ? Get("bow_critical_strike_multiplier_+") + Get("global_critical_strike_multiplier_+_while_holding_bow") : 0)
+        + (weapons.Staff ? Get("staff_critical_strike_multiplier_+") + Get("global_critical_strike_multiplier_+_while_holding_staff") : 0);
+    int spellCriticalMultiplier = Get("base_critical_strike_multiplier_+")
+        + Get("base_spell_critical_strike_multiplier_+") + Get("spell_critical_strike_multiplier_+");
     int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
     return new CharacterStats.Bonus(
         Strength: Get("base_strength") + Get("additional_strength") + all + Get("additional_strength_and_dexterity") + Get("additional_strength_and_intelligence"),
@@ -1611,7 +1660,9 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         VersatileCombatant: Get("keystone_versatile_combatant") != 0,
         AttackBlockLucky: Get("base_block_luck") != 0 || Get("attack_block_luck") != 0 || Get("base_attack_block_luck") != 0,
         SpellBlockLucky: Get("base_block_luck") != 0 || Get("spell_block_luck") != 0 || Get("base_spell_block_luck") != 0,
-        AttackSpeedPct: attackSpeed, AttackSpeedMorePct: attackSpeedMore);
+        AttackSpeedPct: attackSpeed, AttackSpeedMorePct: attackSpeedMore,
+        CriticalStrikeChancePct: criticalChance, SpellCriticalStrikeChancePct: spellCriticalChance,
+        CriticalStrikeMultiplier: criticalMultiplier, SpellCriticalStrikeMultiplier: spellCriticalMultiplier);
 }
 
 // The character's passive skill points (one per level after the first, plus the extra points from
@@ -2397,6 +2448,14 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             $"suppression {(suppressed ? "rolled" : "not rolled")} ({chance}% chance, effective {effective:0.#}%" +
             $"{(lucky ? ", lucky" : "")}{(unlucky ? ", unlucky" : "")}); life {life}/{conn.PlayerMaxLife}.");
     })
+    .Add("crit", "/crit (attack and spell critical strike chance and multiplier)", async _ =>
+    {
+        var p = conn.Pools;
+        await conn.Commands!.Reply(
+            $"Attack crit {p.AttackCriticalStrikeChance / 100.0:0.##}% ({p.CriticalStrikeChancePct}% increased), " +
+            $"multiplier {p.CriticalStrikeMultiplier}%. Spell crit {p.SpellCriticalStrikeChance / 100.0:0.##}% " +
+            $"({p.SpellCriticalStrikeChancePct}% increased), multiplier {p.SpellCriticalStrikeMultiplier}%.");
+    })
     .Add("block", "/block (attack and spell block chance and caps)", async _ =>
     {
         var p = conn.Pools;
@@ -2904,7 +2963,8 @@ static WeaponProfile WeaponProfileFor(ClientState conn)
         Mace: all.Any(t => t.Class is "One Hand Mace" or "Two Hand Mace"),
         Claw: all.Any(t => t.Class == "Claw"),
         Dagger: all.Any(t => t.Class is "Dagger" or "Rune Dagger"),
-        Wand: all.Any(t => t.Class == "Wand"));
+        Wand: all.Any(t => t.Class == "Wand"),
+        Critical: (main1 ?? main2) is { } main ? Items.WeaponCritical(main) : 0);
 }
 
 // The equipped off hand(s): Weapon1's off hand is row 3, Weapon2's is row 15.

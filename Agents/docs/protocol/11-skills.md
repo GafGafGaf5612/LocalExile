@@ -153,6 +153,18 @@ stats included. Live: the swing sped up at once.
    thought the swing took 833 ms instead of 757 ms it fell behind and dropped every third or fourth swing, which then
    animated without damage.
 
+**Critical strikes.** The server rolls a hit's critical chance after the damage roll: `base chance × (1 + increased
+critical strike chance / 100)`, capped at 100%, then multiplies the damage by the final multiplier (150% plus
+`base_critical_strike_multiplier_+`), as PoB's `CalcOffence` does. PoB's `unarmedWeaponData[class].CritChance = 0`
+and `base_critical_strike_multiplier = 150` are the defaults used here. The base is the equipped main hand's `WeaponTypes.dat` `Critical` permyriad
+(830 = 8.30%); unarmed is 0. Fireball uses its `GrantedEffectStatSetsPerLevel` `SpellCritChance` 500 (5.00%). The
+unconditional passive stats are summed into `CharacterStats.Pools`: generic `critical_strike_chance_+%` and
+`base_critical_strike_multiplier_+` for both attacks and spells, the attack/melee/weapon-shape chance and multiplier
+stats for attacks, and `spell_critical_strike_chance_+%` / `base_spell_critical_strike_multiplier_+` for spells. The final
+`main_hand_critical_strike_chance` / `_multiplier` and `spell_critical_strike_chance` / `_multiplier` stats go to the
+client, so the Offence panel shows them. Timed, charge, enemy-state and similar conditional crit stats are not modelled;
+`/crit` prints both final values.
+
 Exits use the same approach (`ExitReach` = 6 cells) before the area change or the instance list.
 
 **Life bar on death:** when life reaches 0 the client's Life tick (`0x141e6a190`) stops notifying its listeners, so the

@@ -78,4 +78,25 @@ public class DamageModelTests
         Assert.True(DamageModel.Blocks(50, 74.9, lucky: true));
         Assert.False(DamageModel.Blocks(50, 75.0, lucky: true));
     }
+
+    [Theory]
+    [InlineData(500, 0, 5)]
+    [InlineData(500, 100, 10)]
+    [InlineData(830, 50, 12.45)]
+    [InlineData(0, 200, 0)]
+    [InlineData(500, 10000, 100)]
+    public void Critical_strike_chance_is_the_base_raised_by_increased(int basePerMyriad, int increased, double expected)
+    {
+        Assert.Equal(expected, DamageModel.CriticalStrikeChance(basePerMyriad, increased), 2);
+    }
+
+    [Theory]
+    [InlineData(10, 150, 15)]
+    [InlineData(10, 200, 20)]
+    [InlineData(7, 175, 12)]
+    [InlineData(0, 200, 0)]
+    public void Critical_damage_uses_the_multiplier(int damage, int multiplier, int expected)
+    {
+        Assert.Equal(expected, DamageModel.CriticalDamage(damage, multiplier));
+    }
 }
