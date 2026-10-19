@@ -179,7 +179,7 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
     foreach (var bytes in inbox.Post(messages, unknown))
     {
         if (conn.Ticks++ % 50 == 0) Console.WriteLine($"[gateway] {remote} <= 0x001b tick #{conn.Ticks}: {Convert.ToHexString(bytes)} (answered with 0x001c)");
-        await Send(remote, stream, ciphers, InstanceProtocol.Pong(ackIndex: inbox.NextAckIndex(), sideChannel: conn.Hnc!.NextIdleU32()), null);
+        await Send(remote, stream, ciphers, InstanceProtocol.Pong(serverDelayMs: ClientInbox.ServerDelayMs, ackIndex: inbox.NextAckIndex(), sideChannel: conn.Hnc!.NextIdleU32()), null);
         var waited = Stopwatch.GetElapsedTime(readAt);
         if (waited > ClientInbox.SlowAfter)
             Console.WriteLine($"[gateway] {remote} slow tick #{conn.Ticks}: 0x001c sent {waited.TotalMilliseconds:0} ms after the 0x001b was read");

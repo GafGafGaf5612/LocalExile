@@ -35,8 +35,12 @@ So the value is the lowest round trip measured since the last overdue tick, and 
 update: the client reads the 0x1c at the start of the update after the one that sent the 0x1b (live: socket read →
 pop → send the next tick, all in one update). Live Frida 2026-10-19 in town: sample 0, value 12, rtt 166–169 ms with
 the client in the background (~6 updates/s), so the value stayed at the 12 measured while it ran at full frame rate.
-The server answers within a millisecond; the 12–14 ms is the client's own frame interval. The u16 server delay could
-hide it, but it is meant for time the server held the tick, so the Gateway sends 0.
+Measured on one QPC clock (Frida on the client and the Gateway, 2026-10-19), the Gateway answers each 0x1b 0.15–0.28 ms
+after the client sends it; the rest is the 0x1c waiting in the client's socket until its next update.
+
+So the Gateway sends server delay 0xFFFF in every 0x1c (`ClientInbox.ServerDelayMs`, issue #49). Both clamp bounds
+become 0, so each 0x1c sets the value to 0 and F1 NETWORK reads 0. An overdue tick still raises it through the network
+update, which ignores the delay, so a real stall still shows until the next 0x1c.
 
 ## 2. HNC, the hidden side channel
 

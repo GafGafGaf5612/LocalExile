@@ -18,6 +18,15 @@ sealed class ClientInbox
     /// <summary>0x1c's index that clears the client's whole send-time queue (≥ its size, 0x142155930).</summary>
     public const ushort ClearQueue = ushort.MaxValue;
 
+    /// <summary>
+    /// 0x1c's server delay. The client's 0x1c handler (0x14214b8dc) clamps its shown latency (+0xc490, F1 NETWORK and the
+    /// latency graph) into [sample − delay, rtt − delay], each floored at 0. Its rtt always includes waiting for its own
+    /// next update to read the socket (one frame), while the Gateway answers in under 0.3 ms. The largest delay makes
+    /// both bounds 0, so every 0x1c shows 0 (issue #49). An overdue tick still raises the value in the network update
+    /// (0x142148880), which ignores the delay, so a real stall still shows until the next 0x1c.
+    /// </summary>
+    public const ushort ServerDelayMs = ushort.MaxValue;
+
     readonly Channel<Batch> _queue = Channel.CreateUnbounded<Batch>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
     bool _resync = true;
 

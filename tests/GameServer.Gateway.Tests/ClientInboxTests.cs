@@ -46,6 +46,13 @@ public class ClientInboxTests
     }
 
     [Fact]
+    public void The_ack_carries_the_largest_server_delay()
+    {
+        byte[] pong = InstanceProtocol.Pong(ClientInbox.ServerDelayMs, 0, 0x12345678);
+        Assert.Equal("001CFFFF000012345678", Convert.ToHexString(pong));
+    }
+
+    [Fact]
     public void An_unframed_read_clears_the_queue_again()
     {
         var inbox = new ClientInbox();
