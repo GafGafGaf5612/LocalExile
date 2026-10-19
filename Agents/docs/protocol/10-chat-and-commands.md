@@ -58,7 +58,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 - The Stats component has no 0x2ba (component update) handler: its vtable slot +0xa0 is a no-op. So 0x1b3 is the way to
   change stats.
 
-## 4. Commands (Gateway, `ChatCommands.cs`)
+## 4. Commands (Gateway, `Program.cs` `Commands`)
 
 | Command | Effect |
 |---|---|
@@ -71,6 +71,8 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/heal` | full life and mana for the player (0x1b1); from 0 it also revives |
 | `/add_xp <amount>` | experience as from a kill: levels up, saved ([15](15-progression.md) §1) |
 | `/passives` | the passive skill points and the allocated passives (message box) |
+| `/add_passive_points <n>` | adds n extra passive skill points (the 0x33 `extra_skill_points` field), saved with the character; sends the tree (0x33) |
+| `/add_passive <PassiveSkillGraphId>` | allocates one passive node through the same checks as C→S 0x34, saved and sent back (0x33) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
 | `/god` | toggles 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12) |
 | `/death_screen [hex flags]` | S→C 0x55 with these flags (default: the league's; 2 hides it), [11](11-skills.md) §7 |

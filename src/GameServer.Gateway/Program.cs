@@ -1306,6 +1306,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Waypoints.UnionWith(save?.Waypoints ?? []);
         conn.Visited.UnionWith(save?.Visited ?? []);
         conn.QuestFlags = [.. save?.QuestFlags ?? []];
+        conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
@@ -1336,17 +1337,21 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats)
         EvasionPct: Get("evasion_rating_+%"), EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"));
 }
 
-// The character's passive skill points (one per level after the first; the client computes the same from the level in
-// 0x33) and the allocated nodes. The client allows that many nodes plus the points the allocated nodes grant themselves.
+// The character's passive skill points (one per level after the first, plus the extra points from
+// /add_passive_points; the client computes the same from the level in 0x33 and its extra_skill_points field) and the
+// allocated nodes. The client allows that many nodes plus the points the allocated nodes grant themselves.
 static (ushort Points, List<ushort> Nodes) PassiveState(ClientState conn)
 {
-    lock (conn.Monsters) return ((ushort)Progression.PassivePoints(conn.Pools.Level), [.. conn.Passives]);
+    lock (conn.Monsters)
+        return ((ushort)Math.Min(ushort.MaxValue, Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints),
+            [.. conn.Passives]);
 }
 
 // Drops the last allocated passives beyond the level's points (call under the Monsters lock).
 static void TrimPassives(ClientState conn, int level)
 {
-    while (conn.Passives.Count > 0 && conn.Passives.Count > Progression.PassivePoints(level) + Passives.PointsGranted(conn.Passives))
+    int points = Progression.PassivePoints(level) + conn.ExtraPassivePoints;
+    while (conn.Passives.Count > 0 && conn.Passives.Count > points + Passives.PointsGranted(conn.Passives))
         conn.Passives.RemoveAt(conn.Passives.Count - 1);
 }
 
@@ -1362,8 +1367,9 @@ static (byte[] Bytes, string Label) PassivesMessage(ClientState conn)
 {
     var (points, nodes) = PassiveState(conn);
     int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
-    return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, (byte)Skills.ClassFor(conn.ClassRow).IntegerId, nodes),
-        $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s), {nodes.Count} allocated, {unspent} unspent");
+    return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, (byte)Skills.ClassFor(conn.ClassRow).IntegerId, nodes,
+            questPoints: conn.ExtraPassivePoints),
+        $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), {nodes.Count} allocated, {unspent} unspent");
 }
 
 // Allocates (or, with allocate false, refunds) passive nodes: checked against the tree's nodes and the character's
@@ -1383,8 +1389,8 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
             if (allocate) { if (!next.Contains(n)) next.Add(n); }
             else next.Remove(n);
         }
-        if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + Passives.PointsGranted(next))
-            error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level)} at level {conn.Pools.Level}, {next.Count} wanted)";
+        if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints + Passives.PointsGranted(next))
+            error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
         if (error is null)
         {
             conn.Passives = next;
@@ -1840,6 +1846,25 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
         await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent.\n" +
             string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
+    })
+    .Add("add_passive_points", "/add_passive_points <n> (dev: add n extra passive skill points, saved)", async args =>
+    {
+        if (args.Length == 0 || !int.TryParse(args[0], out int add) || add <= 0) throw new ArgumentException("a positive number");
+        ushort total;
+        lock (conn.Monsters)
+        {
+            conn.ExtraPassivePoints = (ushort)Math.Min(ushort.MaxValue, conn.ExtraPassivePoints + add);
+            total = conn.ExtraPassivePoints;
+        }
+        CharacterSaves.SetExtraPassivePoints(CharacterName(conn), total);
+        await SendPassives(remote, stream, ciphers, conn);
+        await conn.Commands!.Reply($"{add} extra passive point(s) added; {total} extra total.");
+    })
+    .Add("add_passive", "/add_passive <PassiveSkillGraphId> (dev: allocate one passive node)", async args =>
+    {
+        if (args.Length == 0 || !ushort.TryParse(args[0], out ushort node)) throw new ArgumentException("a PassiveSkillGraphId");
+        string? error = await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "/add_passive");
+        await conn.Commands!.Reply(error ?? $"Passive {node} allocated.");
     })
     .Add("reset_passives", "/reset_passives (refunds every passive, saved)", async _ =>
     {
@@ -2928,6 +2953,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
     public List<ushort> Passives = [];
+    // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.
+    public ushort ExtraPassivePoints;
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
     public RighteousFireState? RighteousFire;
