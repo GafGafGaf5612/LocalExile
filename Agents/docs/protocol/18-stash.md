@@ -104,7 +104,8 @@ Tab i's inventory id is 0x800 + i. A new account gets two normal tabs, two premi
 Essence, Fragment, Map, Flask and Gem tabs. An item put into the stash gets a stash id (from 0x40000000, never reused;
 the next id is saved) and keeps it when a character takes it out: characters count their item ids from 1 each, and
 `PlayerInventories` skips stash ids when it picks its next id. The tab the client last asked for (0xc7) is saved as
-the account's last tab.
+the account's last tab. Stacks merge into a tab's stacks and split out of them like in the inventory
+([13](13-items.md) §4a); the Currency tab's own limit (CurrencyItems `CurrencyTab_StackSize`) is not applied yet.
 
 ## Open
 
