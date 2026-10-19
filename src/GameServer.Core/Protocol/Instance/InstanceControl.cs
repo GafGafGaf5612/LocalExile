@@ -75,6 +75,9 @@ public sealed record ControlResponse
     public int Class { get; init; } = 3;
     /// <summary>The character's level (from the account store).</summary>
     public int Level { get; init; } = 1;
+    /// <summary>"resolve": where the character's next login would start, its last town (WorldAreaTowns.LoginArea, HASH16);
+    /// Resurrect in Town goes there. Lioneye's Watch if unknown.</summary>
+    public ushort LastTown { get; init; } = 0x235c;
     public List<ControlInstance>? Instances { get; init; }
 }
 
