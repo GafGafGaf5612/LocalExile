@@ -8,8 +8,9 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class NpcCatalog
 {
+    /// <summary>An NPCs.dat row. <paramref name="ShopRow"/>: the NPCShop row of its ShopSet (NPCShopSets.Shop), −1 for none.</summary>
     public sealed record Npc(int Row, string Id, string Name, IReadOnlyList<string>? Components, StateMachineData? StateMachine,
-        byte TransitionState)
+        byte TransitionState, int ShopRow = -1)
     {
         public bool Supported => Components is { } c && NpcObject.CanSerialize(c, StateMachine is not null);
         public override string ToString() => $"{Name} ({Id}, row {Row})";
@@ -95,6 +96,11 @@ sealed class NpcCatalog
                     transitionStates[type] = (byte)Math.Clamp(ns.GetInt32(), 1, 127);
             }
         }
+        var shopOfSet = new List<int>();
+        string sets = Path.Combine(folder, "tables", "NPCShopSets.json");
+        if (File.Exists(sets))
+            using (var doc = JsonDocument.Parse(File.ReadAllBytes(sets)))
+                shopOfSet = [.. doc.RootElement.EnumerateArray().Select(s => s.GetProperty("Shop").ValueKind == JsonValueKind.Number ? s.GetProperty("Shop").GetInt32() : -1)];
         var rows = new List<Npc>();
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(table)))
             foreach (var r in doc.RootElement.EnumerateArray())
@@ -102,8 +108,10 @@ sealed class NpcCatalog
                 string id = r.GetProperty("Id").GetString() ?? "";
                 // Without object-types.json, assume the base NPC list.
                 IReadOnlyList<string>? list = components.Count == 0 ? NpcObject.BaseComponents : components.GetValueOrDefault(id);
+                int set = r.GetProperty("ShopSet").ValueKind == JsonValueKind.Number ? r.GetProperty("ShopSet").GetInt32() : -1;
                 rows.Add(new Npc(rows.Count, id, r.GetProperty("Name").GetString() ?? "", list,
-                    stateMachines.GetValueOrDefault(id), transitionStates.GetValueOrDefault(id, (byte)1)));
+                    stateMachines.GetValueOrDefault(id), transitionStates.GetValueOrDefault(id, (byte)1),
+                    set >= 0 && set < shopOfSet.Count ? shopOfSet[set] : -1));
             }
         return new(rows, null, ReadTalk(folder));
     }

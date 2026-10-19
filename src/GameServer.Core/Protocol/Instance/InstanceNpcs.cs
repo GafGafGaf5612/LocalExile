@@ -31,6 +31,69 @@ public static class InstanceNpcs
     public static byte[] TalkText(uint npcObjectId, ushort value, bool flag = false) =>
         new LoginWriter().U16(TalkTextId).U32(npcObjectId).U16((ushort)((value & 0x7fff) | (flag ? 0x8000 : 0))).ToArray();
 
+    public const ushort BuyId = 0x88;
+
+    /// <summary>C→S 0x88: buy an item from an open shop tab.</summary>
+    public sealed record Buy(uint ItemId, uint InventoryId, byte X, byte Y, byte U8, byte Flags, uint Extra);
+
+    /// <summary>
+    /// C→S 0x88 (class 0x1435c0778, write 0x141f95380, sent by 0x140314320; live 2026-10-19 on a click in Nessa's shop):
+    /// u32 BE shop item id (+0x10), u32 BE destination inventory (+0x14, the window's +0x5c0: 1 = main inventory; masked like
+    /// 0x28's), u8 x, u8 y (the free cell the client chose), u8 (+0x1e), u8 flags (bit0 +0x1f, bit1 +0x20), compact uint
+    /// (+0x18).
+    /// </summary>
+    public static Buy ReadBuy(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        uint item = r.U32(), inventory = r.U32() & 0xc01fffff;
+        byte x = r.U8(), y = r.U8(), u8 = r.U8(), flags = r.U8();
+        int pos = 2 + 12;
+        return new Buy(item, inventory, x, y, u8, flags, CompactUInt(m[pos..]));
+    }
+
+    /// <summary>The length of a C→S 0x88 at the start of <paramref name="data"/>, or null until its compact int arrived.</summary>
+    public static int? BuyLength(ReadOnlySpan<byte> data) =>
+        data.Length < 15 ? null : 14 + CompactUIntLength(data[14]) is int n && data.Length >= n ? n : null;
+
+    static int CompactUIntLength(byte first) => first < 0x80 ? 1 : first < 0xc0 ? 2 : first < 0xe0 ? 3 : first < 0xf0 ? 4 : 5;
+
+    static uint CompactUInt(ReadOnlySpan<byte> b) => CompactUIntLength(b[0]) switch
+    {
+        1 => b[0],
+        2 => (uint)((b[0] & 0x3f) << 8 | b[1]),
+        3 => (uint)((b[0] & 0x1f) << 16 | b[1] << 8 | b[2]),
+        4 => (uint)((b[0] & 0x0f) << 24 | b[1] << 16 | b[2] << 8 | b[3]),
+        _ => (uint)(b[1] << 24 | b[2] << 16 | b[3] << 8 | b[4]),
+    };
+
+    public const ushort TradeOpenId = 0xb8, TradeCloseId = 0xb9;
+
+    /// <summary>
+    /// S→C 0xb8 (instance group, class 0x1435dbf00, write 0x1421a2960 → 0x141d6acc0, read → 0x141d6aeb0; dispatcher case
+    /// 0x2f stores the struct at instance +0xce90 and calls the listeners at +0x81f0, the in-game UI's 0x140dccdf0): open a
+    /// trade. Wire: u32 BE <paramref name="other"/> (struct +0x08; 0 = an NPC sale: the UI closes the dialogue, plays
+    /// "SellingItem" and shows VendorSell, UI +0x7c8), u32 BE <paramref name="mine"/> (+0x00), u32 BE <paramref name="theirs"/>
+    /// (+0x04), u8 flags (+0x50), wstr name (+0x10), u32 BE NPCs row (+0x30, 0xffffffff none), u16 (+0x52), u32 BE
+    /// TradeWindowVisuals row (+0x40, 0xffffffff none), u16 (+0x54), u16 (+0x56). Being tested: mine/theirs as the offer
+    /// inventories (manager 1).
+    /// </summary>
+    /// <summary>S→C 0xb9 (class 0x1435bf6f0, read 0x141f905e0; dispatcher case 0x30 → listeners at instance +0x8270, the
+    /// in-game UI's 0x140dcd370): the trade ended. u32 BE trade (0 = the NPC sale: VendorSell closes), u8 accepted (plays
+    /// "AcceptItem").</summary>
+    public static byte[] TradeClose(uint other, bool accepted) => new LoginWriter().U16(TradeCloseId).U32(other).U8((byte)(accepted ? 1 : 0)).ToArray();
+
+    public const ushort TradeAnswerId = 0xb1;
+    public const int TradeAnswerLength = 7;
+
+    /// <summary>C→S 0xb1 (7 bytes): u32 BE trade (0 for the NPC sale), u8. Live 2026-10-19 the sell window's Cancel sent
+    /// it with 0; Accept is taken to be the same message with 1.</summary>
+    public static (uint Other, byte Answer) ReadTradeAnswer(ReadOnlySpan<byte> m) =>
+        (System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]), m[6]);
+
+    public static byte[] TradeOpen(uint other, uint mine, uint theirs, byte flags, string name, int npcRow, int visualsRow = -1) =>
+        new LoginWriter().U16(TradeOpenId).U32(other).U32(mine).U32(theirs).U8(flags).WStr(name).U32((uint)npcRow).U16(0)
+            .U32((uint)visualsRow).U16(0).U16(0).ToArray();
+
     public const ushort DialogueId = 0x8c;
 
     /// <summary>A choice in an S→C 0x8c dialogue: compact int id (+0x24), wstr text, u8 enabled (+0x20).</summary>

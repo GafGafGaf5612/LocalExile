@@ -322,6 +322,38 @@ sealed class PlayerInventories
         }
     }
 
+    /// <summary>What <see cref="Pay"/> changed in the row: emptied stacks (ids), and stacks left smaller (same ids).</summary>
+    public sealed record Payment(IReadOnlyList<uint> Removed, IReadOnlyList<InventoryItem> Changed);
+
+    /// <summary>
+    /// Takes <paramref name="amount"/> of the item type <paramref name="typeHash"/> from the stacks in <paramref name="row"/>
+    /// (smallest stacks first), in one step and one save. Null (nothing changes) when the row holds fewer.
+    /// </summary>
+    public Payment? Pay(byte row, uint typeHash, int amount)
+    {
+        Payment payment;
+        lock (_lock)
+        {
+            var stacks = ItemsIn(row).Where(i => i.Item.TypeHash == typeHash).OrderBy(i => i.Item.StackSize).ToList();
+            if (stacks.Sum(i => (int)i.Item.StackSize) < amount) return null;
+            var removed = new List<uint>();
+            var changed = new List<InventoryItem>();
+            var list = ItemsIn(row);
+            foreach (var s in stacks)
+            {
+                if (amount <= 0) break;
+                int take = Math.Min(amount, s.Item.StackSize);
+                amount -= take;
+                int at = list.FindIndex(i => i.Id == s.Id);
+                if (take == s.Item.StackSize) { list.RemoveAt(at); removed.Add(s.Id); }
+                else { list[at] = s with { Item = s.Item with { StackSize = (ushort)(s.Item.StackSize - take) } }; changed.Add(list[at]); }
+            }
+            payment = new(removed, changed);
+        }
+        Persist();
+        return payment;
+    }
+
     /// <summary>The next revision number of an inventory's contents (sent with each S→C 0xbf).</summary>
     public uint NextRevision(byte row)
     {
