@@ -22,7 +22,11 @@ static class CharacterStats
         int FireMaxResistance = DamageModel.DefaultMaxResistance, int ColdMaxResistance = DamageModel.DefaultMaxResistance,
         int LightningMaxResistance = DamageModel.DefaultMaxResistance, int ChaosMaxResistance = DamageModel.DefaultMaxResistance,
         int SpellSuppressionChance = 0, int SpellSuppressionEffect = DamageModel.SpellSuppressionEffect,
-        int MovementVelocityPct = 0);
+        int MovementVelocityPct = 0, int BlockChance = 0, int SpellBlockChance = 0,
+        int BlockChanceMax = DamageModel.DefaultMaxBlockChance, int SpellBlockChanceMax = DamageModel.DefaultMaxSpellBlockChance,
+        int BlockChanceBase = 0, int BlockChanceUncapped = 0,
+        int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
+        bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false);
 
     /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life and
     /// mana, increased evasion, energy shield and melee physical damage, and the base resistances.</summary>
@@ -31,7 +35,11 @@ static class CharacterStats
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
         int FireMaxResistance = 0, int ColdMaxResistance = 0, int LightningMaxResistance = 0, int ChaosMaxResistance = 0,
         int SpellSuppressionChance = 0, int SpellSuppressionEffect = 0,
-        int MovementVelocityPct = 0)
+        int MovementVelocityPct = 0, int BlockChance = 0, int SpellBlockChance = 0,
+        int BlockChanceMax = 0, int SpellBlockChanceMax = 0,
+        int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
+        int BlockChanceInc = 0, int BlockChanceMore = 0,
+        bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false)
     {
         public static readonly Bonus None = new();
     }
@@ -52,6 +60,15 @@ static class CharacterStats
         uint mana = (uint)Math.Max(0, (c.BaseMaxMana + 6 * level + intel / 2 + b.Mana) * (100 + b.ManaPct) / 100);
         int evasionPct = dex / 5 + b.EvasionPct;
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
+        int maxBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxBlockChance + b.BlockChanceMax);
+        int maxSpellBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxSpellBlockChance + b.SpellBlockChanceMax);
+        // Versatile Combatant: -10% to both maxima. The overcap spell block is applied after the weapon/shield base
+        // in PoolsFor (the keystone reads the final uncapped attack chance).
+        if (b.VersatileCombatant)
+        {
+            maxBlock = Math.Max(0, maxBlock - 10);
+            maxSpellBlock = Math.Max(0, maxSpellBlock - 10);
+        }
         return new(level, life, mana, 2 * level + 2 * dex, ExperienceFor(level, folder),
             Evasion: BaseEvasion * (100 + evasionPct) / 100, EvasionPct: evasionPct,
             EnergyShieldPct: intel / 5 + b.EnergyShieldPct, MeleePhysicalDamagePct: str / 5 + b.MeleePhysicalDamagePct,
@@ -62,7 +79,12 @@ static class CharacterStats
             LightningMaxResistance: Max(b.LightningMaxResistance), ChaosMaxResistance: Max(b.ChaosMaxResistance),
             SpellSuppressionChance: Math.Min(DamageModel.SpellSuppressionChanceCap, b.SpellSuppressionChance),
             SpellSuppressionEffect: Math.Max(0, DamageModel.SpellSuppressionEffect + b.SpellSuppressionEffect),
-            MovementVelocityPct: b.MovementVelocityPct);
+            MovementVelocityPct: b.MovementVelocityPct,
+            BlockChance: b.BlockChance, SpellBlockChance: b.SpellBlockChance,
+            BlockChanceMax: maxBlock, SpellBlockChanceMax: maxSpellBlock, BlockChanceUncapped: b.BlockChance,
+            SpellBlockPer5AttackBlock: b.SpellBlockPer5AttackBlock, LifeGainedOnBlock: b.LifeGainedOnBlock,
+            ManaGainedOnBlock: b.ManaGainedOnBlock, VersatileCombatant: b.VersatileCombatant,
+            AttackBlockLucky: b.AttackBlockLucky, SpellBlockLucky: b.SpellBlockLucky);
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));

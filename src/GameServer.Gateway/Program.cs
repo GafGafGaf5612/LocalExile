@@ -216,8 +216,10 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
         else if (id == InstanceEntities.AllocatePassiveId)
         {
             var (u2, node, u6) = InstanceEntities.ReadAllocatePassive(bytes);
-            Console.WriteLine($"[gateway] {remote} <= 0x0034 allocate passive {node} ({Passives.Find(node)?.Name ?? "unknown"}), u16 {u2}, u8 {u6}");
-            await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree");
+            Console.WriteLine($"[gateway] {remote} <= 0x0034 allocate passive {node} ({Passives.Find(node)?.Name ?? "unknown"}), " +
+                $"mastery effect {u2}, u8 {u6}");
+            await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree",
+                u2 == 0 ? null : u2);
         }
         else if (id == InstanceEntities.PanelToggleId)
             Console.WriteLine($"[gateway] {remote} <= 0x0123 panel {(bytes[2] != 0 ? "opened" : "closed")}");
@@ -352,8 +354,15 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
     {
         ushort uid = unknown.Length > 1 ? (ushort)(unknown[0] << 8 | unknown[1]) : unknown[0];
         Console.WriteLine($"[gateway] {remote} <= unframed 0x{uid:x4} ({unknown.Length} bytes): {Convert.ToHexString(unknown.AsSpan(0, Math.Min(unknown.Length, 256)))}");
+        // C→S 0x35: the mastery effect chosen in the passive tree (node, effect HASH16). It allocates the mastery node
+        // and records the effect; the client waits for the 0x33 tree and the updated stats.
+        if (uid == InstanceEntities.MasteryEffectId && unknown.Length >= 6)
+        {
+            var (node, effect) = InstanceEntities.ReadMasteryEffect(unknown);
+            await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree mastery", effect);
+        }
         // The client's answer to 0x2b2 (0x142148690): it is ready to leave, so move it now.
-        if (uid == InstanceTransfer.LeaveAreaAckId && conn.PendingTransfer is { } t) await Transfer(remote, stream, ciphers, conn, t);
+        else if (uid == InstanceTransfer.LeaveAreaAckId && conn.PendingTransfer is { } t) await Transfer(remote, stream, ciphers, conn, t);
     }
 }
 
@@ -1197,7 +1206,7 @@ static IEnumerable<(uint, int)> BaseStats(ClientState conn)
     foreach (var (k, v) in ClassAttributes(conn.ClassRow, conn.Pools)) if (seen.Add(k)) yield return (k, v);
     List<ushort> nodes;
     lock (conn.Monsters) nodes = [.. conn.Passives];
-    var extra = Passives.Stats(nodes);
+    var extra = Passives.Stats(nodes, conn.MasteryEffects);
     if (conn.God)
     {
         foreach (var (stat, value) in GodStats)
@@ -1222,6 +1231,12 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
         ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
         ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
         ("movement_velocity_+%", pools.MovementVelocityPct),
+        ("combined_base_block_%", pools.BlockChanceBase), ("attack_block_%", pools.BlockChance),
+        // The character panel prints attack block as "capped% (uncapped%)"; the client does not derive the second value.
+        ("uncapped_attack_block_%", pools.BlockChanceUncapped),
+        // A separate spell block row is only drawn when display_spell_block_chance is non-zero.
+        ("spell_block_%", pools.SpellBlockChance), ("display_spell_block_chance", pools.SpellBlockChance),
+        ("base_spell_block_%", 0),
         // Resistance display: the client shows fire_damage_resistance_% as the capped value and
         // uncapped_fire_damage_resistance_% (and the other three) in parentheses as the overcap. The passives' base
         // resistances are already summed into the pools, so zero the all-elements input to avoid counting it twice. The
@@ -1388,6 +1403,9 @@ static void LoadProgress(ClientState conn, int level)
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
+        conn.MasteryEffects = (save?.MasteryEffects ?? []).Where(kv => conn.Passives.Contains(kv.Key)
+            && Passives.FindEffect(kv.Value) is { } effect && Passives.IsEffectFor(kv.Key, effect))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
         conn.Pools = PoolsFor(conn, level);
         conn.ApplyMovementSpeed();
     }
@@ -1396,20 +1414,76 @@ static void LoadProgress(ClientState conn, int level)
 // The pools of the character's class at this level with its passives (call under the Monsters lock).
 static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 {
-    var bonus = PassiveBonus(Passives.Stats(conn.Passives));
+    var weapons = WeaponProfileFor(conn);
+    var bonus = PassiveBonus(Passives.Stats(conn.Passives, conn.MasteryEffects), weapons);
     if (conn.God)
         bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000, Life = bonus.Life + 10_000 };
-    return CharacterStats.For(Skills.ClassFor(conn.ClassRow), level, bonus);
+    var pools = CharacterStats.For(Skills.ClassFor(conn.ClassRow), level, bonus);
+    pools = pools with
+    {
+        AttackBlockLucky = pools.AttackBlockLucky || conn.ForceAttackBlockLucky,
+        SpellBlockLucky = pools.SpellBlockLucky || conn.ForceSpellBlockLucky
+    };
+    int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
+    int rawAttack = pools.BlockChanceUncapped + shieldBlock;
+    double blockFactor = (1 + bonus.BlockChanceInc / 100.0) * (1 + bonus.BlockChanceMore / 100.0);
+    int totalAttack = (int)Math.Round(Math.Max(0, rawAttack) * blockFactor);
+    int totalSpell = (int)Math.Round(Math.Max(0, pools.SpellBlockChance) * blockFactor);
+    pools = pools with
+    {
+        BlockChanceBase = shieldBlock,
+        BlockChanceUncapped = Math.Max(0, totalAttack),
+        BlockChance = Math.Min(Math.Max(0, totalAttack), pools.BlockChanceMax),
+        SpellBlockChance = Math.Min(Math.Max(0, totalSpell), pools.SpellBlockChanceMax)
+    };
+    // "+1% Chance to Block Spell Damage per 5% Chance to Block Attack Damage": the attack value is the final capped
+    // chance, including the shield's base. The effect stacks additively and is capped by the spell block maximum.
+    if (pools.SpellBlockPer5AttackBlock != 0 && pools.BlockChance > 0)
+        pools = pools with
+        {
+            SpellBlockChance = Math.Min(pools.SpellBlockChance + pools.BlockChance / 5 * pools.SpellBlockPer5AttackBlock,
+                pools.SpellBlockChanceMax)
+        };
+    // Versatile Combatant: +2% spell block for each 1% of attack block above its (keystone-reduced) maximum.
+    if (pools.VersatileCombatant)
+    {
+        int overcap = Math.Max(0, pools.BlockChanceUncapped - pools.BlockChanceMax);
+        if (overcap > 0)
+            pools = pools with
+            {
+                SpellBlockChance = Math.Min(pools.SpellBlockChance + 2 * overcap, pools.SpellBlockChanceMax)
+            };
+    }
+    return pools;
 }
 
 // What the allocated passives add to the pools: attributes (base_* and additional_*, all attributes and the pairs),
-// flat and increased life and mana, increased evasion, energy shield and melee physical damage, and the base
-// resistances (base_resist_all_elements_% applies to fire, cold and lightning).
-static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats)
+// flat and increased life and mana, increased evasion, energy shield and melee physical damage, the base
+// resistances (base_resist_all_elements_% applies to fire, cold and lightning), and the shield-specific block nodes
+// when a shield is equipped.
+static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons)
 {
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
     int all = Get("additional_all_attributes") + Get("base_all_attributes");
     int allRes = Get("base_resist_all_elements_%");
+    // The game's block stats are conditional on the equipped weapons:
+    // - dual_wield_or_shield_block_%: dual wielding or a shield;
+    // - block_while_dual_wielding_% / _claws: dual wielding (the latter with two claws);
+    // - staff_block_% / additional_staff_block_%: a staff;
+    // - shield_block_% / block_chance_%_while_holding_shield: a shield.
+    int blockWhileDualOrShield = weapons is { Shield: true } or { DualWield: true } ? Get("dual_wield_or_shield_block_%") : 0;
+    int shieldBlock = weapons.Shield ? Get("shield_block_%") + Get("block_chance_%_while_holding_shield") : 0;
+    int staffBlock = weapons.Staff ? Get("staff_block_%") + Get("additional_staff_block_%") : 0;
+    int dualBlock = weapons.DualWield
+        ? Get("block_while_dual_wielding_%") + (weapons.DualClaws ? Get("block_while_dual_wielding_claws_%") : 0) + 20
+        : 0; // 20 is the inherent dual-wield block chance (PoB Misc.lua)
+    int bowBlock = weapons.Bow ? Get("with_bow_additional_block_%") : 0;
+    // Spell block has the matching weapon-specific stats; the staff-or-shield stat is shared.
+    int staffOrShieldSpell = weapons is { Staff: true } or { Shield: true } ? Get("spell_block_chance_%_while_holding_staff_or_shield") : 0;
+    int shieldSpellBlock = weapons.Shield ? Get("shield_spell_block_%") + Get("block_spells_chance_%_while_holding_shield") : 0;
+    int staffSpellBlock = weapons.Staff ? Get("spell_block_with_staff_%") : 0;
+    int dualSpellBlock = weapons.DualWield ? Get("spell_block_while_dual_wielding_%") : 0;
+    int bowSpellBlock = weapons.Bow ? Get("spell_block_with_bow_%") : 0;
     int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
     return new CharacterStats.Bonus(
         Strength: Get("base_strength") + Get("additional_strength") + all + Get("additional_strength_and_dexterity") + Get("additional_strength_and_intelligence"),
@@ -1427,17 +1501,28 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats)
         ChaosMaxResistance: allMax + Get("base_maximum_chaos_damage_resistance_%"),
         SpellSuppressionChance: Get("base_spell_suppression_chance_%"),
         SpellSuppressionEffect: Get("base_spell_damage_%_suppressed"),
-        MovementVelocityPct: Get("base_movement_velocity_+%"));
+        MovementVelocityPct: Get("base_movement_velocity_+%"),
+        BlockChance: Get("additional_block_%") + Get("attack_block_%") + Get("monster_base_block_%")
+            + blockWhileDualOrShield + shieldBlock + staffBlock + dualBlock + bowBlock,
+        SpellBlockChance: Get("base_spell_block_%") + staffOrShieldSpell + shieldSpellBlock + staffSpellBlock + dualSpellBlock + bowSpellBlock,
+        BlockChanceMax: Get("maximum_block_%"), SpellBlockChanceMax: Get("base_maximum_spell_block_%"),
+        BlockChanceInc: Get("block_chance_+%"), BlockChanceMore: Get("block_chance_+%_final"),
+        SpellBlockPer5AttackBlock: Get("spell_block_%_per_5_attack_block"),
+        LifeGainedOnBlock: Get("life_gained_on_block"), ManaGainedOnBlock: Get("mana_gained_on_block"),
+        VersatileCombatant: Get("keystone_versatile_combatant") != 0,
+        AttackBlockLucky: Get("base_block_luck") != 0 || Get("attack_block_luck") != 0 || Get("base_attack_block_luck") != 0,
+        SpellBlockLucky: Get("base_block_luck") != 0 || Get("spell_block_luck") != 0 || Get("base_spell_block_luck") != 0);
 }
 
 // The character's passive skill points (one per level after the first, plus the extra points from
-// /add_passive_points; the client computes the same from the level in 0x33 and its extra_skill_points field) and the
-// allocated nodes. The client allows that many nodes plus the points the allocated nodes grant themselves.
-static (ushort Points, List<ushort> Nodes) PassiveState(ClientState conn)
+// /add_passive_points; the client computes the same from the level in 0x33 and its extra_skill_points field), the
+// allocated nodes and the selected mastery effects. The client allows that many nodes plus the points the allocated
+// nodes grant themselves.
+static (ushort Points, List<ushort> Nodes, Dictionary<ushort, ushort> Masteries) PassiveState(ClientState conn)
 {
     lock (conn.Monsters)
         return ((ushort)Math.Min(ushort.MaxValue, Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints),
-            [.. conn.Passives]);
+            [.. conn.Passives], new(conn.MasteryEffects));
 }
 
 // Drops the last allocated passives beyond the level's points (call under the Monsters lock).
@@ -1458,47 +1543,63 @@ static async Task SendPassives(string remote, NetworkStream stream, ConnectionCi
 
 static (byte[] Bytes, string Label) PassivesMessage(ClientState conn)
 {
-    var (points, nodes) = PassiveState(conn);
+    var (points, nodes, masteries) = PassiveState(conn);
     int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
     return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, (byte)Skills.ClassFor(conn.ClassRow).IntegerId, nodes,
-            questPoints: conn.ExtraPassivePoints),
+            questPoints: conn.ExtraPassivePoints, masteryEffects: masteries),
         $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), {nodes.Count} allocated, {unspent} unspent");
 }
 
 // Allocates (or, with allocate false, refunds) passive nodes: checked against the tree's nodes and the character's
 // points, then saved, applied to the stats and sent back (0x3d). The client asks only for nodes connected to its tree.
 static async Task<string?> ChangePassives(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    IReadOnlyList<ushort> nodes, bool allocate, string why)
+    IReadOnlyList<ushort> nodes, bool allocate, string why, ushort? masteryEffect = null)
 {
     string? error = null;
     List<ushort> now;
+    Dictionary<ushort, ushort> effectsNow;
+    string? effectLabel = null;
     lock (conn.Monsters)
     {
         var next = new List<ushort>(conn.Passives);
+        var effects = new Dictionary<ushort, ushort>(conn.MasteryEffects);
         foreach (var n in nodes)
         {
             if (Passives.Find(n) is not { } node) { error = $"unknown passive {n}"; break; }
             if (node.IsAscendancy) { error = $"{node.Name} ({n}) is an ascendancy passive"; break; }
-            if (allocate) { if (!next.Contains(n)) next.Add(n); }
-            else next.Remove(n);
+            if (masteryEffect is { } raw)
+            {
+                if (!allocate) { error = "a mastery effect cannot be refunded on its own"; break; }
+                var effect = Passives.EffectsFor(n).FirstOrDefault(e => e.Hash == raw || e.Row == raw);
+                if (effect is null) { error = $"{node.Name} ({n}) has no mastery effect {raw}"; break; }
+                if (!next.Contains(n)) next.Add(n);
+                effects[n] = effect.Hash;
+                effectLabel = $"{effect.Id} ({effect.Hash})";
+            }
+            else if (allocate) { if (!next.Contains(n)) next.Add(n); }
+            else { next.Remove(n); effects.Remove(n); }
         }
         if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints + Passives.PointsGranted(next))
             error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
         if (error is null)
         {
             conn.Passives = next;
+            conn.MasteryEffects = effects;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
             conn.PlayerMana = Math.Min(conn.PlayerMana, conn.Pools.Mana);
         }
         now = [.. conn.Passives];
+        effectsNow = new(conn.MasteryEffects);
     }
-    Console.WriteLine($"[gateway] {remote} passives {(allocate ? "allocate" : "refund")} [{string.Join(", ", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}"))}] ({why}): " +
+    Console.WriteLine($"[gateway] {remote} passives {(allocate ? "allocate" : "refund")} [{string.Join(", ", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}"))}]" +
+        (effectLabel is null ? "" : $" mastery {effectLabel}") + $" ({why}): " +
         (error ?? $"{now.Count} allocated, life {conn.Pools.Life}, mana {conn.Pools.Mana}"));
     if (error is null)
     {
         CharacterSaves.SetPassives(CharacterName(conn), now);
+        CharacterSaves.SetMasteryEffects(CharacterName(conn), effectsNow);
         await SendCharacterStats(remote, stream, ciphers, conn, "passives");
     }
     // Sent either way: on a refusal it puts the client's tree back to the server's.
@@ -1993,7 +2094,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("passives", "/passives (passive skill points and the allocated passives)", async _ =>
     {
-        var (points, nodes) = PassiveState(conn);
+        var (points, nodes, _) = PassiveState(conn);
         int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
         await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent.\n" +
             string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
@@ -2028,7 +2129,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("reset_passives", "/reset_passives (refunds every passive, saved)", async _ =>
     {
-        var (_, nodes) = PassiveState(conn);
+        var (_, nodes, _) = PassiveState(conn);
         await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: false, "/reset_passives");
         await conn.Commands!.Reply($"{nodes.Count} passive(s) refunded.");
     })
@@ -2120,6 +2221,74 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev spell hit)");
         await conn.Commands!.Reply($"{type} spell hit: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; " +
             $"suppression {(suppressed ? $"rolled ({chance}% chance)" : $"not rolled ({chance}% chance)")}; life {life}/{conn.PlayerMaxLife}.");
+    })
+    .Add("block", "/block (attack and spell block chance and caps)", async _ =>
+    {
+        var p = conn.Pools;
+        await conn.Commands!.Reply($"Block {p.BlockChance}% (max {p.BlockChanceMax}%, effective {DamageModel.EffectiveBlockChance(p.BlockChance, p.AttackBlockLucky):0.#}%), " +
+            $"spell block {p.SpellBlockChance}% (max {p.SpellBlockChanceMax}%, effective {DamageModel.EffectiveBlockChance(p.SpellBlockChance, p.SpellBlockLucky):0.#}%)" +
+            $"{(p.AttackBlockLucky ? "; attack lucky" : "")}{(p.SpellBlockLucky ? "; spell lucky" : "")}.");
+    })
+    .Add("block_luck", "/block_luck <attack|spell|both|off> (dev: force lucky block)", async args =>
+    {
+        string mode = args.Length == 0 ? "" : args[0].ToLowerInvariant();
+        bool attack = mode is "attack" or "both", spell = mode is "spell" or "both";
+        if (mode is not ("attack" or "spell" or "both" or "off" or "")) throw new ArgumentException("attack, spell, both or off");
+        lock (conn.Monsters)
+        {
+            conn.ForceAttackBlockLucky = attack;
+            conn.ForceSpellBlockLucky = spell;
+            conn.Pools = PoolsFor(conn, conn.Pools.Level);
+        }
+        await SendCharacterStats(remote, stream, ciphers, conn, $"lucky block {mode}");
+        await conn.Commands!.Reply($"Lucky block: attack {(attack ? "on" : "off")}, spell {(spell ? "on" : "off")}.");
+    })
+    .Add("blockhit", "/blockhit <attack|spell> <fire|cold|lightning|chaos|physical> <damage> (dev: hit through block and resistance)", async args =>
+    {
+        if (args.Length < 3) throw new ArgumentException("attack|spell, a damage type and an amount");
+        bool spell = args[0].Equals("spell", StringComparison.OrdinalIgnoreCase);
+        if (!spell && !args[0].Equals("attack", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("attack or spell");
+        if (ParseDamageType(args[1]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
+        if (!int.TryParse(args[2], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
+        int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
+        int chance = spell ? conn.Pools.SpellBlockChance : conn.Pools.BlockChance;
+        bool lucky = spell ? conn.Pools.SpellBlockLucky : conn.Pools.AttackBlockLucky;
+        bool blocked = DamageModel.Blocks(chance, Random.Shared.NextDouble() * 100, lucky);
+        int dealt = blocked ? 0 : DamageModel.Mitigate(amount, resistance, maxResistance);
+        uint life, mana, manaBefore;
+        bool wasDead;
+        lock (conn.Monsters)
+        {
+            wasDead = conn.PlayerLife == 0;
+            manaBefore = conn.PlayerMana;
+            if (!wasDead)
+            {
+                int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
+                int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
+                conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife,
+                    Math.Max(0, (long)conn.PlayerLife - dealt + gainedLife));
+                conn.PlayerMana = (uint)Math.Min(conn.Pools.Mana, (long)conn.PlayerMana + gainedMana);
+                life = conn.PlayerLife;
+                mana = conn.PlayerMana;
+            }
+            else { life = 0; mana = conn.PlayerMana; }
+        }
+        if (wasDead)
+        {
+            await conn.Commands!.Reply("You are already dead.");
+            return;
+        }
+        if (life == 0)
+            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
+                "0x01b3 player hide_mini_life_bar = 1 (dev block hit)");
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
+            $"0x01b1 player dev {(spell ? "spell" : "attack")} hit for {dealt} ({(blocked ? "blocked" : $"{DamageModel.Capped(resistance, maxResistance)}% resistance")}), life {life}/{conn.PlayerMaxLife}");
+        if (mana != manaBefore)
+            await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, mana, pool: ManaPool),
+                $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
+        if (life == 0)
+            await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev block hit)");
+        await conn.Commands!.Reply($"{(spell ? "Spell" : "Attack")} hit: {amount} → {dealt}; {(blocked ? "blocked" : "not blocked")} ({chance}% chance); life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("god", "/god (toggles: 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 attributes)", async _ =>
     {
@@ -2391,8 +2560,10 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         $"0x01ab monster 0x{id:x} ({m.Label}) attacks the player, attack time {a.Seconds:0.00} s");
     await Task.Delay(TimeSpan.FromSeconds(a.Seconds / 2));
     double now = conn.Clock.Elapsed.TotalSeconds;
-    uint life;
+    uint life, mana, manaBefore;
     int damage = Random.Shared.Next(a.MinDamage, a.MaxDamage + 1);
+    bool blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
+    if (blocked) damage = 0;
     lock (conn.Monsters)
     {
         if (m.Dead || conn.PlayerLife == 0 || conn.Closed) return;
@@ -2402,15 +2573,23 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
             Console.WriteLine($"[gateway] {remote} monster 0x{id:x} missed: the player is {Dist(here, m.Walk.Position(now)):0.0} away");
             return;
         }
-        conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - damage);
+        manaBefore = conn.PlayerMana;
+        int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
+        int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
+        conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - damage + gainedLife));
+        conn.PlayerMana = (uint)Math.Min(conn.Pools.Mana, (long)conn.PlayerMana + gainedMana);
         life = conn.PlayerLife;
+        mana = conn.PlayerMana;
     }
     // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
             "0x01b3 player hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-        $"0x01b1 player hit by monster 0x{id:x} for {damage}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 player hit by monster 0x{id:x} for {damage}{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
+    if (mana != manaBefore)
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, mana, pool: ManaPool),
+            $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league)");
 }
@@ -2512,6 +2691,43 @@ static async Task PickUpItem(string remote, NetworkStream stream, ConnectionCiph
 
 static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
+// The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
+static WeaponProfile WeaponProfileFor(ClientState conn)
+{
+    var items = ItemsOf(conn);
+    ItemCatalog.BaseType? At(byte row) => items.Items(row).Select(i => Items.ByHash(i.Item.TypeHash)).FirstOrDefault(t => t is not null);
+    static bool OneHand(ItemCatalog.BaseType t) => t.Class is "Claw" or "Dagger" or "Wand" or "One Hand Sword"
+        or "Thrusting One Hand Sword" or "One Hand Axe" or "One Hand Mace" or "Sceptre" or "Rune Dagger";
+    static bool Pair(ItemCatalog.BaseType? main, ItemCatalog.BaseType? off) =>
+        main is { } m && off is { } o && OneHand(m) && OneHand(o);
+    var main1 = At(2);
+    var off1 = At(3);
+    var main2 = At(14);
+    var off2 = At(15);
+    var dual = Pair(main1, off1) || Pair(main2, off2);
+    var claws = (main1?.Class == "Claw" && off1?.Class == "Claw") || (main2?.Class == "Claw" && off2?.Class == "Claw");
+    return new WeaponProfile(
+        Shield: HasShield(conn),
+        DualWield: dual,
+        Staff: new[] { main1, main2 }.Any(t => t?.Class is "Staff" or "Warstaff"),
+        Bow: new[] { main1, main2 }.Any(t => t?.Class == "Bow"),
+        DualClaws: claws);
+}
+
+// The equipped off hand(s): Weapon1's off hand is row 3, Weapon2's is row 15.
+static bool HasShield(ClientState conn) => OffhandTypes(conn).Any(t => t.Class == "Shield");
+
+static int ShieldBaseBlock(ClientState conn) => OffhandTypes(conn).Where(t => t.Class == "Shield")
+    .Select(Items.ShieldBlock).DefaultIfEmpty(0).Max();
+
+static IEnumerable<ItemCatalog.BaseType> OffhandTypes(ClientState conn)
+{
+    var items = ItemsOf(conn);
+    foreach (byte row in new byte[] { PlayerInventories.Offhand1, 15 })
+        foreach (var item in items.Items(row))
+            if (Items.ByHash(item.Item.TypeHash) is { } type) yield return type;
+}
+
 static PlayerInventories.Shape? ShapeOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new PlayerInventories.Shape(t.Width, t.Height, t.Class) : null;
 
 static VisibleItem? LookOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new VisibleItem(0, t.VisualIdentity, t.Stance) : null;
@@ -2525,6 +2741,9 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
         $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
     var skills = PlayerSkills(conn);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills), $"0x02ba player Actor: {skills.Count} skill(s)");
+    conn.Pools = PoolsFor(conn, conn.Pools.Level);
+    await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
+        "0x01b3 player stats (equipment)");
 }
 
 // Takes the held item off the cursor (0xbf); null when nothing is held.
@@ -3203,10 +3422,14 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, int> PlayerStats = [];
     // The character's level and the pools that follow from it and the class (CharacterStats).
     public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
+    // Dev-only forced lucky block, on top of the stats (Svalinn's "Chance to Block is Lucky").
+    public bool ForceAttackBlockLucky, ForceSpellBlockLucky;
     // The character's experience (the Player component's; the level follows from it) and its allocated passives
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
     public List<ushort> Passives = [];
+    // Selected mastery effects: mastery node (PassiveSkillGraphId) -> effect HASH16. Saved with the character.
+    public Dictionary<ushort, ushort> MasteryEffects = [];
     // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.
     public ushort ExtraPassivePoints;
     // The character's gold (S→C 0x2a9), saved with the character; /gold changes it.

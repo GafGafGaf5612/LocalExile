@@ -40,19 +40,29 @@ yet confirmed on screen).
   | u8 flags | | bit0 → +0x91, bit1 → no lists (then `0x141ef73e0` sets only the numbers) |
   | vec16 u16 | +0x180 | **allocated nodes**: PassiveSkills.dat `PassiveSkillGraphId`, raw (little-endian) |
   | vec16 u16, vec16 u16 | | (sent empty) |
-  | vec16 u32 | | mastery effects: node \| effect << 16 (sent empty) |
+  | vec16 u32 | | mastery effects: node \| effect << 16, raw little-endian; effect is the `PassiveSkillMasteryEffects.dat` HASH16 |
   | vec16 u32 | | (sent empty) |
 
   The client's check `0x141ef3e60` logs "character passive skills allocated but only allowed {}.
   points_from_level={}, skill_points_from_passives={}, extra_skill_points={}" and drops unconnected nodes itself.
   The Gateway sends it after the player on entry and after every level or passive change.
-- **C→S 0x34** (7 bytes): `u16 0, u16 node (big-endian), u8 0`. Captured: `00340000DFB000` = 57264, Spell Damage and
-  Mana, next to the Witch's start. The client waits for the tree back; without 0x33 the click is undone. The Gateway
+- **C→S 0x34** (7 bytes): `u16 0, u16 node (big-endian), u8 0`. A normal allocation has effect 0. Captured normal: `00340000DFB000` = 57264,
+  Spell Damage and Mana, next to the Witch's start. The client waits for the tree back; without 0x33 the click is
+  undone. The Gateway
   checks the node exists, is not an ascendancy node and fits the points (level − 1 plus the nodes' own
   `SkillPointsGranted`), saves the list (`Passives`) and answers with 0x33; a refused click gets the old tree back.
 - **C→S 0x123** (3 bytes, u8 1 / 0): a panel opened or closed (sent when the tree opens and closes).
+- **C->S 0x35** (6 bytes): u16 node (big-endian, PassiveSkillGraphId), u16 effect (big-endian,
+  PassiveSkillMasteryEffects.dat HASH16). Captured `003598091194` = node 38921 (Block Mastery), effect 4500
+  (+1% spell block per 5% attack block). The Gateway allocates the mastery node and records the effect, then answers
+  with 0x33 and the updated stats.
 - **S→C 0x3d is the Atlas tree**, not the character's: its three presets ([05](05-inventories-and-ui.md) §4; the check
   `0x141eed000` logs "atlas passive skills allocated but only allowed").
+- **Masteries**: `PassiveSkillMasteryGroups.dat` maps a mastery node's `MasteryGroup` to its effects and
+  `PassiveSkillMasteryEffects.dat` holds their stats. The selected effect is stored per node and its stats are summed
+  with the node's (`Passives.Stats`). Block Mastery's four effects are max attack block +2, max spell block +2, 20
+  life and 20 mana gained on block, and +1% spell block per 5% attack block (the last is applied after the shield's
+  base block).
 - **Stats** (`PassiveBonus`, `BaseStats`): the nodes' stats summed; attributes (`base_*`, `additional_*`, all and
   pairs), flat and increased life and mana, increased evasion, energy shield and melee physical damage go into the
   pools ([11](11-skills.md) §4); the other stats are sent as they are (the character panel shows them; nothing uses
@@ -72,6 +82,6 @@ it off.
 
 - The real rarity experience bonuses, the level 95+ penalty, party sharing.
 - Quest passive points, refund points and the refund click (probably 0x34 with another trailing byte, or its own id),
-  masteries, ascendancy; the tree's connections (PassiveSkillGraph.psg) are not checked by the server.
+  ascendancy; the tree's connections (PassiveSkillGraph.psg) are not checked by the server.
 - Real drop pools (MonsterVarieties / area drop tables), item rarity and mods, quantity and rarity bonuses; ground
   items only exist on the connection that saw them drop.
