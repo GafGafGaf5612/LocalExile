@@ -218,9 +218,11 @@ sealed class AccountStash
 
     /// <summary>
     /// The held stack put on a stack of its type with room at (x, y) in a tab: that stack grows by what fits (up to the
-    /// type's max) and is returned with how many moved; null (nothing changes) when there is no such stack.
+    /// type's max; at most <paramref name="most"/>) and is returned with how many moved; null (nothing changes) when there
+    /// is no such stack. A full stack becomes its full-stack item (<see cref="PlayerInventories.Completed"/>).
     /// </summary>
-    public (InventoryItem Stack, int Moved)? Merge(int tab, int x, int y, InventoryItem held, Func<Item, PlayerInventories.Shape?> shapeOf)
+    public (InventoryItem Stack, int Moved)? Merge(int tab, int x, int y, InventoryItem held, Func<Item, PlayerInventories.Shape?> shapeOf,
+        int most = int.MaxValue)
     {
         (InventoryItem, int) result;
         lock (_lock)
@@ -229,8 +231,8 @@ sealed class AccountStash
             var items = _tabs[tab].Items;
             var inTheWay = items.Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height).ToList();
             if (inTheWay is not [var under] || under.Item.TypeHash != held.Item.TypeHash || under.Item.StackSize >= shape.MaxStack) return null;
-            int moved = Math.Min(held.Item.StackSize, shape.MaxStack - under.Item.StackSize);
-            var grown = under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } };
+            int moved = Math.Min(Math.Min(held.Item.StackSize, most), shape.MaxStack - under.Item.StackSize);
+            var grown = PlayerInventories.Completed(under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } }, shape);
             items[items.IndexOf(under)] = grown;
             result = (grown, moved);
         }

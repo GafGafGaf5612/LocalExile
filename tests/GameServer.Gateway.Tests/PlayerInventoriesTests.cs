@@ -67,7 +67,16 @@ public class PlayerInventoriesTests : IDisposable
     // Orbs of Transmutation: 1×1, 40 to a stack.
     const uint Orb = 0x1234abcd;
     static Item Orbs(int n) => new(Orb, ["Base", "Usable", "Stack"], 0x1111) { StackSize = (ushort)n };
-    static PlayerInventories.Shape? Shapes(Item i) => i.TypeHash == Orb ? new(1, 1, "StackableCurrency", 40) : new(1, 3, "Wand");
+    // Scroll Fragments: 5 to a stack, a full stack becomes a Scroll of Wisdom.
+    const uint Fragment = 0x5555aaaa, Wisdom = 0x7777bbbb;
+    static Item Fragments(int n) => new(Fragment, ["Base", "Stack"], 0x2222) { StackSize = (ushort)n };
+    static PlayerInventories.Shape? Shapes(Item i) => i.TypeHash switch
+    {
+        Orb => new(1, 1, "StackableCurrency", 40),
+        Fragment => new(1, 1, "StackableCurrency", 5, () => new Item(Wisdom, ["Base", "Usable", "Stack"], 0x3333)),
+        Wisdom => new(1, 1, "StackableCurrency", 40),
+        _ => new(1, 3, "Wand"),
+    };
 
     InventoryItem Hold(PlayerInventories items, Item item)
     {
@@ -198,5 +207,88 @@ public class PlayerInventoriesTests : IDisposable
         Assert.Equal(5, done.Left);
         Assert.Empty(done.Added);
         Assert.Equal(40, items.Items(PlayerInventories.MainInventory)[0].Item.StackSize);
+    }
+
+    [Fact]
+    public void A_held_stack_clicked_on_a_stack_merges()
+    {
+        var items = NewInventories();
+        var under = items.Add(PlayerInventories.MainInventory, 3, 2, Orbs(38));
+        var held = Hold(items, Orbs(5));
+
+        var done = items.MergeOnto(PlayerInventories.MainInventory, under.Id, Shapes, out _);
+
+        Assert.True(done!.Merged);
+        Assert.Equal((under.Id, (ushort)40), (done.Placed.Id, done.Placed.Item.StackSize));
+        Assert.Equal((held.Id, (ushort)3), (done.Rest!.Id, done.Rest.Item.StackSize));
+        Assert.Equal([3], CharacterSaves.Load(_character)!.Inventories[PlayerInventories.Cursor].Select(p => (int)p.Item.StackSize));
+    }
+
+    [Fact]
+    public void Shift_places_one_of_the_held_stack_into_an_empty_cell()
+    {
+        var items = NewInventories();
+        var held = Hold(items, Orbs(11));
+
+        var done = items.Place(PlayerInventories.MainInventory, 2, 2, Shapes, out _, one: true);
+
+        Assert.False(done!.Merged);
+        Assert.NotEqual(held.Id, done.Placed.Id);
+        Assert.Equal(((byte)2, (byte)2, (ushort)1), (done.Placed.X, done.Placed.Y, done.Placed.Item.StackSize));
+        Assert.Equal((held.Id, (ushort)10), (done.Rest!.Id, done.Rest.Item.StackSize));
+        Assert.Equal([10], items.Items(PlayerInventories.Cursor).Select(i => (int)i.Item.StackSize));
+    }
+
+    [Fact]
+    public void Shift_adds_one_to_a_stack_and_refuses_another_item()
+    {
+        var items = NewInventories();
+        var under = items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(7));
+        var wand = items.Add(PlayerInventories.MainInventory, 3, 0, Wand());
+        Hold(items, Orbs(11));
+
+        Assert.Null(items.Place(PlayerInventories.MainInventory, 3, 0, Shapes, out _, one: true));
+        var done = items.MergeOnto(PlayerInventories.MainInventory, under.Id, Shapes, out _, one: true);
+
+        Assert.True(done!.Merged);
+        Assert.Equal(8, done.Placed.Item.StackSize);
+        Assert.Equal(10, done.Rest!.Item.StackSize);
+        Assert.Contains(items.Items(PlayerInventories.MainInventory), i => i.Id == wand.Id);
+    }
+
+    [Fact]
+    public void Clicking_a_held_item_on_another_type_swaps_them()
+    {
+        var items = NewInventories();
+        var wand = items.Add(PlayerInventories.MainInventory, 3, 0, Wand());
+        var held = Hold(items, Orbs(4));
+
+        var done = items.MergeOnto(PlayerInventories.MainInventory, wand.Id, Shapes, out _);
+
+        Assert.Equal((held.Id, wand.Id), (done!.Placed.Id, done.Displaced!.Id));
+    }
+
+    [Fact]
+    public void A_full_stack_of_fragments_becomes_its_full_item()
+    {
+        var items = NewInventories();
+        var under = items.Add(PlayerInventories.MainInventory, 0, 0, Fragments(3));
+        Hold(items, Fragments(4));
+
+        var done = items.Place(PlayerInventories.MainInventory, 0, 0, Shapes, out _);
+
+        Assert.Equal((under.Id, Wisdom, (ushort)1), (done!.Placed.Id, done.Placed.Item.TypeHash, done.Placed.Item.StackSize));
+        Assert.Equal((Fragment, (ushort)2), (done.Rest!.Item.TypeHash, done.Rest.Item.StackSize));
+        Assert.Equal([Wisdom], CharacterSaves.Load(_character)!.Inventories[PlayerInventories.MainInventory].Select(p => p.Item.Type));
+    }
+
+    [Fact]
+    public void Added_fragments_make_full_items_and_keep_the_rest()
+    {
+        var items = NewInventories();
+
+        var done = items.AddStacked(PlayerInventories.MainInventory, Fragments(12), Shapes);
+
+        Assert.Equal([(Wisdom, 1), (Wisdom, 1), (Fragment, 2)], done.Added.Select(a => (a.Item.TypeHash, (int)a.Item.StackSize)));
     }
 }

@@ -59,8 +59,13 @@ sealed class PlayerInventories
         return item;
     }
 
-    /// <summary>What an item needs for placement: its grid size, ItemClasses Id and how many share a cell (1: no stack).</summary>
-    public readonly record struct Shape(byte Width, byte Height, string Class, ushort MaxStack = 1);
+    /// <summary>What an item needs for placement: its grid size, ItemClasses Id, how many share a cell (1: no stack) and
+    /// what a full stack becomes (null: it stays; 5 Scroll Fragments → a Scroll of Wisdom).</summary>
+    public readonly record struct Shape(byte Width, byte Height, string Class, ushort MaxStack = 1, Func<Item>? FullStack = null);
+
+    /// <summary>A stack that reached its max becomes its full-stack item (one of it, same id and cell).</summary>
+    public static InventoryItem Completed(InventoryItem it, Shape shape) =>
+        shape.FullStack is { } full && shape.MaxStack > 1 && it.Item.StackSize >= shape.MaxStack ? it with { Item = full() } : it;
 
     /// <summary>The held item went to <see cref="Row"/> as <see cref="Placed"/>; <see cref="Displaced"/> (the one it was
     /// dropped on) is now held. <see cref="Merged"/>: the held stack went onto a stack of its type instead, which is
@@ -75,14 +80,16 @@ sealed class PlayerInventories
     /// one item is in the way it is swapped onto the cursor, unless it is a stack of the held stack's type with room: then
     /// the held stack fills it and the rest stays held. Two or more refuse the move. Returns null with the reason.
     /// </summary>
-    public Placement? Place(byte row, int x, int y, Func<Item, Shape?> shapeOf, out string why)
+    /// <remarks>With <paramref name="one"/> (Shift + click, 0x2a's first flag) only one of a held stack goes: into an
+    /// empty cell as a new item, or onto a stack of its type with room; the rest stays held.</remarks>
+    public Placement? Place(byte row, int x, int y, Func<Item, Shape?> shapeOf, out string why, bool one = false)
     {
-        var result = PlaceCore(row, x, y, shapeOf, out why);
+        var result = PlaceCore(row, x, y, shapeOf, out why, one);
         if (result is not null) Persist();
         return result;
     }
 
-    Placement? PlaceCore(byte row, int x, int y, Func<Item, Shape?> shapeOf, out string why)
+    Placement? PlaceCore(byte row, int x, int y, Func<Item, Shape?> shapeOf, out string why, bool one = false)
     {
         lock (_lock)
         {
@@ -111,15 +118,25 @@ sealed class PlayerInventories
             }
             if (inTheWay.Count > 1) { why = $"{inTheWay.Count} items in the way"; return null; }
             var items = ItemsIn(row);
+            int amount = one ? 1 : held.Item.StackSize;
             if (inTheWay is [var under] && under.Item.TypeHash == held.Item.TypeHash && shape.MaxStack > 1 && under.Item.StackSize < shape.MaxStack)
             {
-                int moved = Math.Min(held.Item.StackSize, shape.MaxStack - under.Item.StackSize);
-                var filled = under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } };
+                int moved = Math.Min(amount, shape.MaxStack - under.Item.StackSize);
+                var filled = Completed(under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } }, shape);
                 items[items.IndexOf(under)] = filled;
                 InventoryItem? rest = null;
                 if (moved < held.Item.StackSize) cursor[0] = rest = held with { Item = held.Item with { StackSize = (ushort)(held.Item.StackSize - moved) } };
                 else cursor.RemoveAt(0);
                 return new(row, filled, held, null, Merged: true, rest);
+            }
+            if (amount < held.Item.StackSize)
+            {
+                // One of the stack into an empty cell, as a new item.
+                if (inTheWay.Count > 0) { why = "only one of the stack, and something is in the way"; return null; }
+                var single = new InventoryItem(_nextItemId++, (byte)x, (byte)y, held.Item with { StackSize = (ushort)amount });
+                items.Add(single);
+                var left = cursor[0] = held with { Item = held.Item with { StackSize = (ushort)(held.Item.StackSize - amount) } };
+                return new(row, single, held, null, Rest: left);
             }
             cursor.RemoveAt(0);
             InventoryItem? displaced = null;
@@ -133,6 +150,26 @@ sealed class PlayerInventories
             items.Add(placed);
             return new(row, placed, held, displaced);
         }
+    }
+
+    /// <summary>
+    /// The held item clicked on item <paramref name="itemId"/> in <paramref name="row"/> (C→S 0x4a): <see cref="Place"/> on
+    /// that item's cell. A stack of the same type with room takes what fits (with <paramref name="one"/>, one) and the
+    /// rest stays held; anything else is swapped (refused with <paramref name="one"/>). Null with the reason; nothing changes.
+    /// </summary>
+    public Placement? MergeOnto(byte row, uint itemId, Func<Item, Shape?> shapeOf, out string why, bool one = false)
+    {
+        Placement? result;
+        lock (_lock)
+        {
+            why = "";
+            if (!_items.TryGetValue(Cursor, out var cursor) || cursor.Count == 0) { why = "nothing held"; return null; }
+            var held = cursor[0];
+            if (ItemsIn(row).FirstOrDefault(i => i.Id == itemId) is not { } target) { why = "no such item"; return null; }
+            result = PlaceCore(row, target.X, target.Y, shapeOf, out why, one && held.Item.StackSize > 1);
+        }
+        if (result is not null) Persist();
+        return result;
     }
 
     /// <summary>After the main hand (Weapon1 / Weapon2) was emptied: a one-handed weapon in that side's off hand moves to
@@ -386,7 +423,7 @@ sealed class PlayerInventories
                 if (left == 0) break;
                 int take = Math.Min(left, max - s.Item.StackSize);
                 left -= take;
-                var grown = s with { Item = s.Item with { StackSize = (ushort)(s.Item.StackSize + take) } };
+                var grown = Completed(s with { Item = s.Item with { StackSize = (ushort)(s.Item.StackSize + take) } }, shape);
                 items[items.IndexOf(s)] = grown;
                 changed.Add(grown);
             }
@@ -394,7 +431,7 @@ sealed class PlayerInventories
         {
             int take = Math.Min(left, max);
             left -= take;
-            var placed = new InventoryItem(nextId++, cell.X, cell.Y, item with { StackSize = (ushort)take });
+            var placed = Completed(new InventoryItem(nextId++, cell.X, cell.Y, item with { StackSize = (ushort)take }), shape);
             items.Add(placed);
             added.Add(placed);
         }

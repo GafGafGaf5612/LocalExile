@@ -103,11 +103,19 @@ public class InstanceItemsTests
     [Fact]
     public void Item_action_layout()
     {
-        // The writer 0x141fa08d0: u32 inventory (HNC bits from bit 20), u32 item, u8 flags (HNC bits 3-7), u8, then the
-        // u16 amount low byte first. Inventory 1 with side-channel bits, item 5, flags 2, 3, amount 0x0107.
-        var a = InstanceItems.ReadItemAction(Convert.FromHexString("004A3DA000010000000552030701"));
-        Assert.Equal((1u, 5u, (byte)2, (byte)3, (ushort)0x0107), (a.InventoryId, a.ItemId, a.Flags, a.B, a.Amount));
+        // Captured 2026-10-19: a held Scroll Fragment clicked on item 197 (0xc5) in the main inventory (id 1, HNC bits set).
+        var a = InstanceItems.ReadItemAction(Convert.FromHexString("004A29800001000000C530036774"));
+        Assert.Equal((1u, 197u, (byte)0, (byte)3), (a.InventoryId, a.ItemId, a.Flags, a.B));
         Assert.Equal(14, InstanceProtocol.KnownClientLength(InstanceItems.ItemActionId));
+    }
+
+    [Fact]
+    public void Split_stack_layout()
+    {
+        // Captured 2026-10-19: 10 split off item 273 (0x111) in the main inventory.
+        var s = InstanceItems.ReadSplitStack(Convert.FromHexString("007C00000001000001110000000A037F67"));
+        Assert.Equal((1u, 273u, 10u, (byte)3), (s.InventoryId, s.ItemId, s.Amount, s.B));
+        Assert.Equal(17, InstanceProtocol.KnownClientLength(InstanceItems.SplitStackId));
     }
 
     [Fact]
