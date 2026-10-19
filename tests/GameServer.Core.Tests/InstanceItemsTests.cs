@@ -101,6 +101,16 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Item_action_layout()
+    {
+        // The writer 0x141fa08d0: u32 inventory (HNC bits from bit 20), u32 item, u8 flags (HNC bits 3-7), u8, then the
+        // u16 amount low byte first. Inventory 1 with side-channel bits, item 5, flags 2, 3, amount 0x0107.
+        var a = InstanceItems.ReadItemAction(Convert.FromHexString("004A3DA000010000000552030701"));
+        Assert.Equal((1u, 5u, (byte)2, (byte)3, (ushort)0x0107), (a.InventoryId, a.ItemId, a.Flags, a.B, a.Amount));
+        Assert.Equal(14, InstanceProtocol.KnownClientLength(InstanceItems.ItemActionId));
+    }
+
+    [Fact]
     public void Place_item_layout()
     {
         // Captured 2026-10-18: the held item put into the main inventory (id 1) at (8, 2).

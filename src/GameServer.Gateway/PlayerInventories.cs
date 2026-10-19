@@ -59,17 +59,21 @@ sealed class PlayerInventories
         return item;
     }
 
-    /// <summary>What an item needs for placement: its grid size and ItemClasses Id.</summary>
-    public readonly record struct Shape(byte Width, byte Height, string Class);
+    /// <summary>What an item needs for placement: its grid size, ItemClasses Id and how many share a cell (1: no stack).</summary>
+    public readonly record struct Shape(byte Width, byte Height, string Class, ushort MaxStack = 1);
 
     /// <summary>The held item went to <see cref="Row"/> as <see cref="Placed"/>; <see cref="Displaced"/> (the one it was
-    /// dropped on) is now held.</summary>
-    public sealed record Placement(byte Row, InventoryItem Placed, InventoryItem Held, InventoryItem? Displaced);
+    /// dropped on) is now held. <see cref="Merged"/>: the held stack went onto a stack of its type instead, which is
+    /// <see cref="Placed"/> now (same id, larger); <see cref="Rest"/> is what is still held (same id as <see cref="Held"/>),
+    /// or null.</summary>
+    public sealed record Placement(byte Row, InventoryItem Placed, InventoryItem Held, InventoryItem? Displaced,
+        bool Merged = false, InventoryItem? Rest = null);
 
     /// <summary>
     /// Puts the item held on the cursor into inventory <paramref name="row"/> at (x, y). Equipment and other single-item
     /// inventories take it at (0, 0) when its class fits (<see cref="Accepts"/>); grids need it inside the grid. When exactly
-    /// one item is in the way it is swapped onto the cursor; two or more refuse the move. Returns null with the reason.
+    /// one item is in the way it is swapped onto the cursor, unless it is a stack of the held stack's type with room: then
+    /// the held stack fills it and the rest stays held. Two or more refuse the move. Returns null with the reason.
     /// </summary>
     public Placement? Place(byte row, int x, int y, Func<Item, Shape?> shapeOf, out string why)
     {
@@ -107,6 +111,16 @@ sealed class PlayerInventories
             }
             if (inTheWay.Count > 1) { why = $"{inTheWay.Count} items in the way"; return null; }
             var items = ItemsIn(row);
+            if (inTheWay is [var under] && under.Item.TypeHash == held.Item.TypeHash && shape.MaxStack > 1 && under.Item.StackSize < shape.MaxStack)
+            {
+                int moved = Math.Min(held.Item.StackSize, shape.MaxStack - under.Item.StackSize);
+                var filled = under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } };
+                items[items.IndexOf(under)] = filled;
+                InventoryItem? rest = null;
+                if (moved < held.Item.StackSize) cursor[0] = rest = held with { Item = held.Item with { StackSize = (ushort)(held.Item.StackSize - moved) } };
+                else cursor.RemoveAt(0);
+                return new(row, filled, held, null, Merged: true, rest);
+            }
             cursor.RemoveAt(0);
             InventoryItem? displaced = null;
             if (inTheWay.Count == 1)
@@ -262,16 +276,112 @@ sealed class PlayerInventories
     /// <summary>A free cell for an item of this size in a grid inventory, row by row; null when it is full.</summary>
     public (byte X, byte Y)? FreeCell(byte row, byte width, byte height, Func<Item, Shape?> shapeOf)
     {
+        lock (_lock) return FreeCellCore(row, width, height, shapeOf);
+    }
+
+    (byte X, byte Y)? FreeCellCore(byte row, byte width, byte height, Func<Item, Shape?> shapeOf) =>
+        FreeCellIn(row, _items.TryGetValue(row, out var l) ? l : [], width, height, shapeOf);
+
+    static (byte X, byte Y)? FreeCellIn(byte row, List<InventoryItem> items, byte width, byte height, Func<Item, Shape?> shapeOf)
+    {
+        var slot = InstanceInventories.PlayerDefaults[row];
+        for (int x = 0; x + width <= slot.Width; x++)
+            for (int y = 0; y + height <= slot.Height; y++)
+                if (!items.Any(i => shapeOf(i.Item) is { } s && i.X < x + width && x < i.X + s.Width && i.Y < y + height && y < i.Y + s.Height))
+                    return ((byte)x, (byte)y);
+        return null;
+    }
+
+    /// <summary>
+    /// Splits <paramref name="amount"/> off the stack <paramref name="itemId"/> in <paramref name="row"/> onto the empty
+    /// cursor, as a new item, in one save. Returns the stack as it is now (same id) and the held part, or null with the
+    /// reason (something held, no such stack, an amount of 0 or the whole stack).
+    /// </summary>
+    public (InventoryItem Stack, InventoryItem Held)? Split(byte row, uint itemId, int amount, out string why)
+    {
+        var result = SplitCore(row, itemId, amount, out why);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    (InventoryItem Stack, InventoryItem Held)? SplitCore(byte row, uint itemId, int amount, out string why)
+    {
         lock (_lock)
         {
-            var slot = InstanceInventories.PlayerDefaults[row];
-            var items = _items.TryGetValue(row, out var l) ? l : [];
-            for (int x = 0; x + width <= slot.Width; x++)
-                for (int y = 0; y + height <= slot.Height; y++)
-                    if (!items.Any(i => shapeOf(i.Item) is { } s && i.X < x + width && x < i.X + s.Width && i.Y < y + height && y < i.Y + s.Height))
-                        return ((byte)x, (byte)y);
-            return null;
+            why = "";
+            if (row == Cursor) { why = "the cursor"; return null; }
+            var cursor = ItemsIn(Cursor);
+            if (cursor.Count > 0) { why = "something is held"; return null; }
+            var items = ItemsIn(row);
+            int at = items.FindIndex(i => i.Id == itemId);
+            if (at < 0) { why = "no such item"; return null; }
+            var stack = items[at];
+            if (amount < 1 || amount >= stack.Item.StackSize) { why = $"cannot split {amount} off a stack of {stack.Item.StackSize}"; return null; }
+            items[at] = stack with { Item = stack.Item with { StackSize = (ushort)(stack.Item.StackSize - amount) } };
+            var held = new InventoryItem(_nextItemId++, 0, 0, stack.Item with { StackSize = (ushort)amount });
+            cursor.Add(held);
+            return (items[at], held);
         }
+    }
+
+    /// <summary>What <see cref="AddStacked"/> did: stacks that grew (same ids), new items, and how many did not fit.</summary>
+    public sealed record Stacking(IReadOnlyList<InventoryItem> Changed, IReadOnlyList<InventoryItem> Added, int Left)
+    {
+        /// <summary>For the inventory's 0xbf: the grown stacks are removed and added again, the new items added.</summary>
+        public IReadOnlyList<uint> RemovedIds => [.. Changed.Select(c => c.Id)];
+        public IReadOnlyList<InventoryItem> AddedItems => [.. Changed, .. Added];
+        public bool Any => Changed.Count + Added.Count > 0;
+    }
+
+    /// <summary>
+    /// Puts <paramref name="item"/> (a stack of <see cref="Item.StackSize"/>) into the grid <paramref name="row"/>: first
+    /// onto the stacks of its type that have room (fullest first), then as new stacks of at most its max size in free
+    /// cells, in one save. What does not fit is <see cref="Stacking.Left"/>.
+    /// </summary>
+    public Stacking AddStacked(byte row, Item item, Func<Item, Shape?> shapeOf)
+    {
+        Stacking result;
+        lock (_lock) result = StackInto(row, ItemsIn(row), item, shapeOf, ref _nextItemId);
+        if (result.Any) Persist();
+        return result;
+    }
+
+    /// <summary>Whether all of <paramref name="item"/> would fit into <paramref name="row"/> (<see cref="AddStacked"/>),
+    /// changing nothing.</summary>
+    public bool Fits(byte row, Item item, Func<Item, Shape?> shapeOf)
+    {
+        lock (_lock)
+        {
+            uint id = _nextItemId;
+            return StackInto(row, [.. ItemsIn(row)], item, shapeOf, ref id).Left == 0;
+        }
+    }
+
+    Stacking StackInto(byte row, List<InventoryItem> items, Item item, Func<Item, Shape?> shapeOf, ref uint nextId)
+    {
+        var shape = shapeOf(item) ?? new(1, 1, "");
+        int max = Math.Max((int)shape.MaxStack, 1), left = item.StackSize;
+        var changed = new List<InventoryItem>();
+        var added = new List<InventoryItem>();
+        if (max > 1)
+            foreach (var s in items.Where(i => i.Item.TypeHash == item.TypeHash && i.Item.StackSize < max).OrderByDescending(i => i.Item.StackSize).ToList())
+            {
+                if (left == 0) break;
+                int take = Math.Min(left, max - s.Item.StackSize);
+                left -= take;
+                var grown = s with { Item = s.Item with { StackSize = (ushort)(s.Item.StackSize + take) } };
+                items[items.IndexOf(s)] = grown;
+                changed.Add(grown);
+            }
+        while (left > 0 && FreeCellIn(row, items, shape.Width, shape.Height, shapeOf) is { } cell)
+        {
+            int take = Math.Min(left, max);
+            left -= take;
+            var placed = new InventoryItem(nextId++, cell.X, cell.Y, item with { StackSize = (ushort)take });
+            items.Add(placed);
+            added.Add(placed);
+        }
+        return new(changed, added, left);
     }
 
     /// <summary>A fresh id for an item that enters the inventories (picked up from the ground, out of a socket).</summary>

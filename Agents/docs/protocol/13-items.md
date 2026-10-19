@@ -1,4 +1,4 @@
-# 13 — Items: serialization, inventories, moving, sockets, the ground
+# 13 — Items: serialization, inventories, moving, sockets, stacks, the ground
 
 Code: `src/GameServer.Core/Protocol/Instance/InstanceItems.cs` (`Item`, `VisibleItem`, `WorldItemObject`,
 `InstanceItems`), `InstanceInventories.AddInventory` (`InstanceEntities.cs`); in the Gateway `ItemCatalog.cs`,
@@ -48,7 +48,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Mods | `0x1435df838` | `0x1421df6e0` | u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit6 incubator u16 u16 u8, bit4 → u8, bit15 → 0x1c8 record `0x1424b70c0`), base magic properties `0x142201d70` (as ObjectMagicProperties: u16 flags, rarity bits 0-2, identified bit 3; u8), u8, u8 |
 | Quality | `0x14363acd8` | `0x1424aec50` | u8 |
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
-| Stack | `0x143634b10` | `0x1423f4b30` | u16 |
+| Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
 | SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: none), u32 +0x3c, u8 +0x10, u16 +0x40 |
 | Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue (seen), 4 white (assumed) |
 | Armour | `0x14363ad40` | `0x1424affc0` | u8 0..0x20 (stored at +0x28; 0x20 also sets +0x2a) |
@@ -96,7 +96,7 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x29 | 2 | `0x14316c930` (id only), sender `0x140117b80` | drop the held item into the world | 0xbf cursor, then a WorldItem (§5) |
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` | u8, u32, u8 flag (senders `0x14215f520` / `0x14215f570`) | not handled |
-| 0x4a | 12 | `0x1435bf6d0`, sender `0x14215f5c0` | u32, u32, u8 flags, u8 (3), u16 | not handled |
+| 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | split a stack (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 item id, u8 flags (bits 0-2; HNC bits 3-7), u8 (3), u16 amount **low byte first** | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
 
 Dropping: `0x140117b80` sends 0x29 at once outside town. In town (and for quest items) it opens the Keep / Destroy popup
 instead and sends nothing unless Destroy is chosen (0x16 command 9).
@@ -105,6 +105,29 @@ Rules the Gateway applies (`PlayerInventories.Place`): grids need the item insid
 the way it is swapped onto the cursor; two or more refuse. Single-item slots take the item at (0, 0) when its class fits
 (`Accepts`: the ItemClasses Id per equipment row; flasks only in the flask bar). A one-handed weapon put into an empty
 main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there.
+
+## 4a. Stacks
+
+Stackable types have a Stack component (its u16 is the stack size) and a CurrencyItems.dat **StackSize** above 1
+(`ItemCatalog.BaseType.MaxStack`: Orb of Transmutation 40, Scroll of Wisdom 40 …; `CurrencyTab_StackSize` is the
+currency stash tab's limit). The client draws the size and the tooltip's "Stack Size: n/max" from the item and its own
+tables; it changes nothing itself, the server's 0xbf does.
+
+- **Merge** (C→S 0x2a on a stack): a held stack put on a stack of the same type with room fills it up to the max and
+  the rest stays held. The answer is a 0xbf on the target (remove and add the stack's id, larger) and one on the cursor
+  (remove the held id, add it again smaller, or not at all when all of it went). A full stack, or another type, is
+  swapped as usual (`PlayerInventories.Place`).
+- **Split** (Shift + click on a stack, then the split window's amount): C→S 0x4a. The stack shrinks in place and the
+  split-off part is held as a new item (`PlayerInventories.Split`). Refused with something held, an amount of 0 or the
+  whole stack.
+- **Adding** (`PlayerInventories.AddStacked`): items picked up from the ground into the main inventory, `/item <type>
+  <count>` (count = how many, up to 20 full stacks) and the sell window's reward go onto the stacks of their type first
+  (fullest first), then as new stacks of at most the max in free cells. A ground stack is picked up only when all of it
+  fits (`Fits`).
+
+The 0x4a writer `0x141fa08d0` packs the HNC side-channel bits into the inventory id from bit 20 and into the flags byte
+from bit 3, like 0x28; the amount is two single bytes (+0x1a low, +0x1b high). The framing table had it at 12 bytes,
+which would have split the next message.
 
 ## 5. Items on the ground
 
@@ -183,7 +206,9 @@ linked sockets in the colour of their highest attribute requirement (ComponentAt
 
 - Gem levels and experience, support gems and links.
 - Mods (implicit, explicit), rarity, names, quality effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
-- C→S 0x2d, 0x4a and 0x12 (5 bytes, seen once).
-- Flask use, currency use, stacks and splitting.
+- C→S 0x2d and 0x12 (5 bytes, seen once); the meaning of 0x4a's flags bits and its other callers (`0x140b34140`,
+  `0x14031c0a0`).
+- Flask use and currency use. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
+  on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
   Gateway shows each client only its own player).

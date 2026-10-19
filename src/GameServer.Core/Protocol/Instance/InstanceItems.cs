@@ -251,7 +251,24 @@ public static class InstanceItems
         return new(r.U32(), r.U32(), r.U32(), r.U8(), r.U8(), r.U8(), r.U8());
     }
 
-    // Framed so they do not stop the parser, not handled yet:
-    // C→S 0x2d (class 0x1435c02b8, senders 0x14215f520 / 0x14215f570; 8 bytes): u8, u32, u8 flag (0 / 1 by sender).
-    // C→S 0x4a (class 0x1435bf6d0, sender 0x14215f5c0; 12 bytes): u32, u32, u8 flags, u8 (default 3), u16.
+    // Framed so it does not stop the parser, not handled yet:
+    // C→S 0x2d (class 0x1435c02b8, write 0x141f90340, senders 0x14215f520 / 0x14215f570; 8 bytes): u8, u32, u8 flag (0 / 1
+    // by sender).
+
+    public const int ItemActionLength = 14;
+
+    /// <summary>
+    /// C→S 0x4a (class 0x1435bf6d0, write 0x141fa08d0, sender 0x14215f5c0; 14 bytes): u32 inventory id with HNC side-channel
+    /// bits from bit 20 (mask 0xc00fffff), u32 item id, u8 flags (bits 0-2: sender params 6 and 7 shifted left once; HNC
+    /// bits 3-7), u8 (3 unless the caller passes its own), u16 little-endian (two bytes, low first) amount.
+    /// </summary>
+    public sealed record ItemAction(uint InventoryId, uint ItemId, byte Flags, byte B, ushort Amount);
+
+    public static ItemAction ReadItemAction(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        uint inventory = r.U32() & 0xc00fffff, item = r.U32();
+        byte flags = (byte)(r.U8() & 0x07), b = r.U8(), lo = r.U8(), hi = r.U8();
+        return new(inventory, item, flags, b, (ushort)(lo | hi << 8));
+    }
 }
