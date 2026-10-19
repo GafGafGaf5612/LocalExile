@@ -162,7 +162,7 @@ public sealed record InventoryItem(uint Id, byte X, byte Y, Item Item);
 public static class InstanceItems
 {
     public const ushort InventoryChangeId = 0xbf, PickUpItemId = 0x28, DropItemId = 0x29, PlaceItemId = 0x2a, InventoryRequestId = 0x2d,
-        ItemActionId = 0x4a, CommandId = 0x16, SocketGemId = 0x30, UnsocketGemId = 0x2f;
+        ItemActionId = 0x4a, SplitStackId = 0x7c, CommandId = 0x16, SocketGemId = 0x30, UnsocketGemId = 0x2f;
 
     /// <summary>
     /// C→S 0x2f (17 bytes): take the gem out of a socket onto the cursor (a click on a socketed gem with nothing held).
@@ -239,8 +239,8 @@ public static class InstanceItems
 
     /// <summary>
     /// C→S 0x2a (class 0x1435bf710, write 0x141f8feb0, sender 0x14215f400; 18 bytes): put the item held on the cursor
-    /// into an inventory. u32 inventory id, u32 x, u32 y (the target cell; 0, 0 for equipment), u8 +0x1d, u8 +0x1c (3 in
-    /// every capture), u8 +0x1e, u8 +0x1f. The client sends it for any click while it holds an item, including on an
+    /// into an inventory. u32 inventory id, u32 x, u32 y (the target cell; 0, 0 for equipment), u8 +0x1d (1 with Shift:
+    /// one of a held stack, the sender's param 7), u8 +0x1c (3 in every capture), u8 +0x1e, u8 +0x1f. The client sends it for any click while it holds an item, including on an
     /// occupied cell (a swap).
     /// </summary>
     public sealed record PlaceItem(uint InventoryId, uint X, uint Y, byte A, byte B, byte C, byte D);
@@ -251,7 +251,57 @@ public static class InstanceItems
         return new(r.U32(), r.U32(), r.U32(), r.U8(), r.U8(), r.U8(), r.U8());
     }
 
-    // Framed so they do not stop the parser, not handled yet:
-    // C→S 0x2d (class 0x1435c02b8, senders 0x14215f520 / 0x14215f570; 8 bytes): u8, u32, u8 flag (0 / 1 by sender).
-    // C→S 0x4a (class 0x1435bf6d0, sender 0x14215f5c0; 12 bytes): u32, u32, u8 flags, u8 (default 3), u16.
+    public const int InventoryRequestLength = 8;
+
+    // C→S 0x2d (class 0x1435c02b8, write 0x141f90340, senders 0x14215f520 / 0x14215f570; 8 bytes): an inventory request,
+    // not mapped yet. The right-click item use is 0x58 below.
+
+    public const ushort UseItemId = 0x58;
+    public const int UseItemLength = 10;
+
+    /// <summary>
+    /// C→S 0x58 (class 0x1435bf8a8, write 0x141f926a0; 10 bytes): use an item that needs no target, such as an Orb of
+    /// Regret. u32 inventory id, u32 item id, both big-endian. The client sends it again while a usable item is held.
+    /// </summary>
+    public sealed record UseItemRequest(uint InventoryId, uint ItemId);
+
+    public static UseItemRequest ReadUseItem(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32());
+    }
+
+    public const int ItemActionLength = 14;
+
+    /// <summary>
+    /// C→S 0x4a (class 0x1435bf6d0, write 0x141fa08d0, sender 0x14215f5c0; 14 bytes): a click with the held item on an
+    /// item (live 2026-10-19: a held Scroll Fragment clicked on another one sends this, not 0x2a). u32 inventory id with
+    /// HNC side-channel bits from bit 20 (mask 0xc00fffff), u32 the clicked item's id, u8 flags (bits 0-2: sender params 6
+    /// and 7 shifted left once, bit 2 = Shift held; HNC bits 3-7), u8 (3 unless the caller passes its own), u16 (two bytes, low first; differs
+    /// on every click, unknown).
+    /// </summary>
+    public sealed record ItemAction(uint InventoryId, uint ItemId, byte Flags, byte B, ushort Extra);
+
+    public static ItemAction ReadItemAction(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        uint inventory = r.U32() & 0xc00fffff, item = r.U32();
+        byte flags = (byte)(r.U8() & 0x07), b = r.U8(), lo = r.U8(), hi = r.U8();
+        return new(inventory, item, flags, b, (ushort)(lo | hi << 8));
+    }
+
+    public const int SplitStackLength = 17;
+
+    /// <summary>
+    /// C→S 0x7c (class 0x1435bfdd8, write 0x141f90870, sender 0x142165640; 17 bytes): Shift + click on a stack, then the
+    /// split window's amount. u32 inventory id, u32 item id, u32 amount, u8 (3 unless the caller passes its own), u16 (two
+    /// bytes, low first; differs every time, unknown). No side-channel bits.
+    /// </summary>
+    public sealed record SplitStack(uint InventoryId, uint ItemId, uint Amount, byte B);
+
+    public static SplitStack ReadSplitStack(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32(), r.U32(), r.U8());
+    }
 }

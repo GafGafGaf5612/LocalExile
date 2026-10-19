@@ -4,7 +4,7 @@ using GameServer.Core.Protocol.Instance;
 /// <summary>
 /// Item types: BaseItemTypes rows from the extracted tables (Id, Name, HASH32, size, visual identity → ItemVisualIdentity
 /// HASH16), each type's components from data/item-types.json (`python -I scripts/re/ot_components.py --items --json
-/// data/item-types.json`), and flask charges from ComponentCharges. All game data: it stays in data/ and loads on first use.
+/// data/item-types.json`), flask charges from ComponentCharges and stack sizes from CurrencyItems. All game data: it stays in data/ and loads on first use.
 /// </summary>
 sealed class ItemCatalog
 {
@@ -18,9 +18,15 @@ sealed class ItemCatalog
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
-        IReadOnlyList<string> Components, int MaxCharges, string Class = "", byte Stance = 0xff, int DropLevel = 0)
+        IReadOnlyList<string> Components, int MaxCharges, string Class = "", byte Stance = 0xff, int DropLevel = 0, ushort MaxStack = 1,
+        int FullStackRow = -1)
     {
         public bool Supported => Components.Count > 0 && Item.CanSerialize(Components);
+        /// <summary>Several of the type share one cell (a Stack component and a CurrencyItems StackSize above 1).</summary>
+        public bool Stackable => MaxStack > 1;
+        /// <summary>A full stack becomes one of this BaseItemTypes row (CurrencyItems FullStack_BaseItemTypesKey: 5 Scroll
+        /// Fragments → a Scroll of Wisdom, 20 shards → their orb), or -1.</summary>
+        public bool BecomesWhenFull => FullStackRow >= 0;
         public override string ToString() => $"{Name} ({Id}, row {Row})";
     }
 
@@ -150,6 +156,21 @@ sealed class ItemCatalog
             foreach (var r in doc.RootElement.EnumerateArray())
                 charges[r.GetProperty("BaseItemTypesKey").GetString() ?? ""] = r.GetProperty("MaxCharges").GetInt32();
         }
+        // CurrencyItems StackSize by BaseItemTypes row (Orb of Transmutation 40, Scroll of Wisdom 40, Portal Scroll 40 …);
+        // only types with a Stack component stack.
+        var stackSizes = new Dictionary<int, ushort>();
+        var fullStacks = new Dictionary<int, int>();
+        string currencyPath = Path.Combine(folder, "tables", "CurrencyItems.json");
+        if (File.Exists(currencyPath))
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllBytes(currencyPath));
+            foreach (var r in doc.RootElement.EnumerateArray())
+                if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b && r.GetProperty("StackSize").GetInt32() is > 1 and var size)
+                {
+                    stackSizes.TryAdd(b.GetInt32(), (ushort)Math.Min(size, ushort.MaxValue));
+                    if (r.GetProperty("FullStack_BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } full) fullStacks.TryAdd(b.GetInt32(), full.GetInt32());
+                }
+        }
         var classes = new List<string>();
         var stances = new List<byte>();
         string classesPath = Path.Combine(folder, "tables", "ItemClasses.json");
@@ -165,16 +186,19 @@ sealed class ItemCatalog
             foreach (var r in doc.RootElement.EnumerateArray())
             {
                 string id = r.GetProperty("Id").GetString() ?? "";
+                var itemComponents = components.GetValueOrDefault(id) ?? [];
                 int visual = r.GetProperty("ItemVisualIdentity").GetInt32();
                 rows.Add(new BaseType(rows.Count, id, r.GetProperty("Name").GetString() ?? "", r.GetProperty("HASH32").GetUInt32(),
                     (byte)r.GetProperty("Width").GetInt32(), (byte)r.GetProperty("Height").GetInt32(),
                     visual >= 0 && visual < visualHashes.Count ? visualHashes[visual] : (ushort)0,
-                    components.GetValueOrDefault(id) ?? [], charges.GetValueOrDefault(id),
+                    itemComponents, charges.GetValueOrDefault(id),
                     r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } c && c.GetInt32() < classes.Count ? classes[c.GetInt32()] : "",
                     // the row's own ItemStance, else its class's (ItemStances: Wand = 2)
                     r.GetProperty("ItemStance") is { ValueKind: JsonValueKind.Number } st ? (byte)st.GetInt32()
                         : r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } c2 && c2.GetInt32() < stances.Count ? stances[c2.GetInt32()] : (byte)0xff,
-                    r.GetProperty("DropLevel").GetInt32()));
+                    r.GetProperty("DropLevel").GetInt32(),
+                    itemComponents.Contains("Stack") ? stackSizes.GetValueOrDefault(rows.Count, (ushort)1) : (ushort)1,
+                    fullStacks.GetValueOrDefault(rows.Count, -1)));
             }
         }
         return (rows, null);

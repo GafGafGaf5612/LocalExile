@@ -31,8 +31,8 @@ yet confirmed on screen).
 
   | Field | Goes to | Meaning |
   |---|---|---|
-  | u16 | tree +0x270 | probably refund points |
-  | u16 | +0x274 | `extra_skill_points` (quest points; we send 0) |
+  | u16 | tree +0x270 | refund points (Orbs of Regret) |
+  | u16 | +0x274 | `extra_skill_points` (quest points; dev extra points for now) |
   | u16 | +0x27c | ascendancy points |
   | u8 | +0x26c | **the level**: the client's `points_from_level` = (level − 1) × points per level |
   | u8 | +0x268 | the class byte (Characters.dat IntegerId, ascendancy in bits 5–7): the tree's start |
@@ -85,9 +85,14 @@ yet confirmed on screen).
   `0x141f1b500`) skips ascendancy nodes. The Gateway (`PassiveTree.GoldRespecCost`, `ChangePassives` with
   `goldRespec`) refunds only allocated nodes, refuses when the gold is short, removes the nodes' mastery effects,
   saves the passives, takes the gold from the account (`AccountStash.TrySpendGold`, nothing when refused), and answers with the gold (0x2a9), the stats and the tree (0x33). Refund All
-  refunds every non-ascendancy node. A refund with refund points (flag 0) or of an expansion node is refused (the tree
-  is sent back): refund points are not kept yet.
-- `/passives` lists them, `/reset_passives` refunds all (free).
+  refunds every non-ascendancy node.
+- **Refund points** (0x36 flag 0): the Gateway refunds one allocated, non-ascendancy node per message, spends one
+  point from 0x33's first u16, removes the node's mastery effect, saves the tree and the points, and answers with the
+  stats and the tree. An unallocated node or too few points is refused (the old tree is sent back). Refund points are
+  saved per character. Using an Orb of Regret (right-click, C→S 0x58) takes one item and adds one point; the stack's
+  0xbf and the tree's 0x33 are sent back. `/add_refund_points <n>` remains a dev shortcut. Expansion nodes are still
+  refused.
+- `/passives` lists the passive and refund points, `/reset_passives` refunds all (free).
 
 ## 3. Loot
 
@@ -101,6 +106,6 @@ it off.
 ## Open
 
 - The real rarity experience bonuses, the level 95+ penalty, party sharing.
-- Quest passive points, refund points (Orbs of Regret; 0x36 with flag 0), ascendancy; the tree's connections (PassiveSkillGraph.psg) are not checked by the server.
+- Quest passive points, ascendancy; the tree's connections (PassiveSkillGraph.psg) are not checked by the server.
 - Real drop pools (MonsterVarieties / area drop tables), item rarity and mods, quantity and rarity bonuses; ground
   items only exist on the connection that saw them drop.

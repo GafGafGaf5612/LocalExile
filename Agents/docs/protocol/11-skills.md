@@ -407,9 +407,13 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   `base_spell_damage_%_suppressed` is added to the 40% effect (e.g. Inveterate +3, Primal Instinct -10); the effect is
   not hard-capped, matching PoB. Conditional effect stats (`...while_on_full_energy_shield`,
   `...if_not_suppressed_recently`, per-hit/per-bark) are not modelled yet. Chance above 100 is overcap
-  (`SpellSuppressionChanceOverCap`), but the effective chance is still 100. `/suppression` shows the chance/effect and
-  `/spellhit <type>` rolls it for testing. There are no monster spell hits yet, so this is a dev probe and a preparation for
-  monster spells; `spell_damage_%_suppressed` effect modifiers and suppression-adjacent effects are not modelled.
+  (`SpellSuppressionChanceOverCap`), but the effective chance is still 100. The passive
+  `spell_suppression_chance_is_lucky` rolls twice and keeps the better roll (PoB `suppressRolls`, effective
+  `1 - (1 - p)^2`); an unlucky roll (`p^2`) is modelled for the dev probe but has no passive stat yet.
+  `/suppression` shows the chance, effective chance, effect and roll mode; `/suppression_luck <lucky|unlucky|off>` forces
+  the roll for testing, and `/spellhit <type>` rolls it. There are no monster spell hits yet, so this is a dev probe and a
+  preparation for monster spells; `spell_damage_%_suppressed` effect modifiers and suppression-adjacent effects are not
+  modelled.
 - **Block / Spell Block** (`CharacterStats`, `DamageModel`): passives' `additional_block_%` (attack) and
   `base_spell_block_%` (spells) are summed, with `maximum_block_%` / `base_maximum_spell_block_%` raising the default
   75% maximum up to PoB's `BlockChanceCap = 90` (`src/Modules/Data.lua`; `Misc.lua` has the two 75 bases). The totals

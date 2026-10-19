@@ -235,6 +235,27 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Use_item_reads_the_inventory_and_item_big_endian()
+    {
+        Assert.Equal(10, InstanceProtocol.KnownClientLength(InstanceItems.UseItemId));
+        var first = InstanceItems.ReadUseItem(Convert.FromHexString("00580000000100000041"));
+        Assert.Equal(1u, first.InventoryId);
+        Assert.Equal(0x41u, first.ItemId);
+        var second = InstanceItems.ReadUseItem(Convert.FromHexString("00580000000100000042"));
+        Assert.Equal(1u, second.InventoryId);
+        Assert.Equal(0x42u, second.ItemId);
+    }
+
+    [Fact]
+    public void Character_passives_carry_refund_quest_and_ascendancy_points()
+    {
+        // Refund points come first, then extra_skill_points and ascendancy points.
+        Assert.Equal("0033" + "0002" + "0001" + "0003" + "05" + "03" + "00" + "00" + "0002" + "3412" + "6776" + "0000" + "0000" + "0000" + "0000",
+            Convert.ToHexString(InstanceEntities.CharacterPassives(5, 3, [0x7667, 0x1234],
+                questPoints: 1, refundPoints: 2, ascendancyPoints: 3)));
+    }
+
+    [Fact]
     public void Area_transition_blob_layout_and_type()
     {
         // Traced live 2026-10-16: the client consumed all 41 bytes (Positioned 16, Animated 1, AreaTransition 5, Stats 10,

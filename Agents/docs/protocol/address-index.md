@@ -177,7 +177,9 @@ G = global / static data.
 | `0x1435c0838` (write `0x141f90650`) | Cls | C→S 0x30 socket the held gem |
 | `0x140117b80` | Fn | drop held item: 0x29 outside town, Keep / Destroy popup in town |
 | `0x1435bff00` (write `0x141f91480`, sender `0x14215c3b0`) | Cls | C→S 0x16 Commands.dat command (Destroy = 9) |
-| `0x1435c02b8`, `0x1435bf6d0` | Cls | C→S 0x2d, 0x4a (not mapped) |
+| `0x1435c02b8` (write `0x141f90340`) | Cls | C→S 0x2d (not mapped) |
+| `0x1435bf6d0` (write `0x141fa08d0`, sender `0x14215f5c0`) | Cls | C→S 0x4a held item onto an item ([13](13-items.md) §4a) |
+| `0x1435bfdd8` (write `0x141f90870`, sender `0x142165640`) | Cls | C→S 0x7c split a stack ([13](13-items.md) §4a) |
 | `0x141ea10a0` | Fn | WorldItem component read |
 | `0x141e1ee30` → `0x1424f44e0` | Fn | player Inventories component: visible equipment entries |
 | `0x1402ce5f0` | Fn | item attribute requirement check (virtual_*_for_requirements) |

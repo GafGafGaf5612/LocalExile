@@ -145,4 +145,33 @@ public class AccountStashTests : IDisposable
         Assert.Equal(100u, stash.TrySpendGold(200));
         Assert.Equal(100u, stash.Gold);
     }
+
+    static Item Orbs(int n) => new(0x1234abcd, ["Base", "Usable", "Stack"], 0x1111) { StackSize = (ushort)n };
+    static PlayerInventories.Shape? Orb(Item _) => new(1, 1, "StackableCurrency", 40);
+
+    [Fact]
+    public void A_held_stack_merges_into_a_tab_stack_of_its_type()
+    {
+        var stash = Open();
+        var under = stash.Place(1, 0, 0, new InventoryItem(7, 0, 0, Orbs(32)), Orb, out _)!.Value.Placed;
+
+        var merged = stash.Merge(1, 0, 0, new InventoryItem(8, 0, 0, Orbs(10)), Orb);
+
+        Assert.Equal((under.Id, (ushort)40, 8), (merged!.Value.Stack.Id, merged.Value.Stack.Item.StackSize, merged.Value.Moved));
+        Assert.Null(stash.Merge(1, 0, 0, new InventoryItem(9, 0, 0, Orbs(1)), Orb));   // full now
+        Assert.Null(stash.Merge(1, 5, 5, new InventoryItem(9, 0, 0, Orbs(1)), Orb));   // nothing there
+    }
+
+    [Fact]
+    public void Shrinking_a_tab_stack_keeps_its_id_and_refuses_the_whole_stack()
+    {
+        var stash = Open();
+        var stack = stash.Place(1, 0, 0, new InventoryItem(7, 0, 0, Orbs(12)), Orb, out _)!.Value.Placed;
+
+        Assert.Null(stash.Shrink(1, stack.Id, 12));
+        var left = stash.Shrink(1, stack.Id, 5);
+
+        Assert.Equal((stack.Id, (ushort)7), (left!.Id, left.Item.StackSize));
+        Assert.Equal([7], stash.Inventory(1).Items.Select(i => (int)i.Item.StackSize));
+    }
 }

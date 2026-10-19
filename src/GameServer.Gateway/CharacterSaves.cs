@@ -24,7 +24,7 @@ static class CharacterSaves
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
-        Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null);
+        Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -92,6 +92,11 @@ static class CharacterSaves
     /// <summary>Records the extra passive skill points from /add_passive_points.</summary>
     public static void SetExtraPassivePoints(string character, ushort points) =>
         Update(character, s => s with { ExtraPassivePoints = points });
+
+    /// <summary>Records the refund points (0x33's first u16; /add_refund_points grants them for now).</summary>
+    public static void SetRefundPoints(string character, ushort points) =>
+        Update(character, s => s with { RefundPoints = points });
+
 
     /// <summary>Takes the gold an older save kept with the character (gold is the account's now, AccountStash.Gold): the
     /// amount, 0 when there is none; the save no longer holds it.</summary>

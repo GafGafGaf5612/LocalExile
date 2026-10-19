@@ -76,4 +76,260 @@ public class PlayerInventoriesTests : IDisposable
         Assert.Equal(42u, save.Experience);
         Assert.Equal(0u, CharacterSaves.TakeGold("NoSuchCharacter" + Guid.NewGuid().ToString("N")[..8]));
     }
+
+    // Orbs of Transmutation: 1×1, 40 to a stack.
+    const uint Orb = 0x1234abcd;
+    static Item Orbs(int n) => new(Orb, ["Base", "Usable", "Stack"], 0x1111) { StackSize = (ushort)n };
+    // Scroll Fragments: 5 to a stack, a full stack becomes a Scroll of Wisdom.
+    const uint Fragment = 0x5555aaaa, Wisdom = 0x7777bbbb;
+    static Item Fragments(int n) => new(Fragment, ["Base", "Stack"], 0x2222) { StackSize = (ushort)n };
+    static PlayerInventories.Shape? Shapes(Item i) => i.TypeHash switch
+    {
+        Orb => new(1, 1, "StackableCurrency", 40),
+        Fragment => new(1, 1, "StackableCurrency", 5, () => new Item(Wisdom, ["Base", "Usable", "Stack"], 0x3333)),
+        Wisdom => new(1, 1, "StackableCurrency", 40),
+        _ => new(1, 3, "Wand"),
+    };
+
+    InventoryItem Hold(PlayerInventories items, Item item)
+    {
+        var placed = items.Add(PlayerInventories.MainInventory, 11, 4, item);
+        return items.PickUp(PlayerInventories.MainInventory, placed.Id)!;
+    }
+
+    [Fact]
+    public void A_held_stack_fills_a_stack_of_its_type_and_the_rest_stays_held()
+    {
+        var items = NewInventories();
+        var under = items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(30));
+        var held = Hold(items, Orbs(15));
+
+        var done = items.Place(PlayerInventories.MainInventory, 0, 0, Shapes, out _);
+
+        Assert.NotNull(done);
+        Assert.True(done.Merged);
+        Assert.Null(done.Displaced);
+        Assert.Equal((under.Id, (ushort)40), (done.Placed.Id, done.Placed.Item.StackSize));
+        Assert.Equal((held.Id, (ushort)5), (done.Rest!.Id, done.Rest.Item.StackSize));
+        Assert.Equal([5], items.Items(PlayerInventories.Cursor).Select(i => (int)i.Item.StackSize));
+        Assert.Equal([40], CharacterSaves.Load(_character)!.Inventories[PlayerInventories.MainInventory].Select(p => (int)p.Item.StackSize));
+    }
+
+    [Fact]
+    public void A_held_stack_that_fits_entirely_leaves_the_cursor_empty()
+    {
+        var items = NewInventories();
+        items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(10));
+        Hold(items, Orbs(15));
+
+        var done = items.Place(PlayerInventories.MainInventory, 0, 0, Shapes, out _);
+
+        Assert.True(done!.Merged);
+        Assert.Null(done.Rest);
+        Assert.Empty(items.Items(PlayerInventories.Cursor));
+        Assert.Equal([25], items.Items(PlayerInventories.MainInventory).Select(i => (int)i.Item.StackSize));
+    }
+
+    [Fact]
+    public void A_full_stack_or_another_type_is_swapped()
+    {
+        var items = NewInventories();
+        var full = items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(40));
+        var held = Hold(items, Orbs(3));
+
+        var done = items.Place(PlayerInventories.MainInventory, 0, 0, Shapes, out _);
+
+        Assert.False(done!.Merged);
+        Assert.Equal(full.Id, done.Displaced!.Id);
+        Assert.Equal(held.Id, done.Placed.Id);
+    }
+
+    [Fact]
+    public void Splitting_holds_a_new_stack_and_shrinks_the_old_one()
+    {
+        var items = NewInventories();
+        var stack = items.Add(PlayerInventories.MainInventory, 2, 1, Orbs(20));
+
+        var done = items.Split(PlayerInventories.MainInventory, stack.Id, 7, out _);
+
+        Assert.NotNull(done);
+        var (left, held) = done.Value;
+        Assert.Equal((stack.Id, (ushort)13), (left.Id, left.Item.StackSize));
+        Assert.NotEqual(stack.Id, held.Id);
+        Assert.Equal(7, held.Item.StackSize);
+        Assert.Equal([held.Id], items.Items(PlayerInventories.Cursor).Select(i => i.Id));
+        var saved = CharacterSaves.Load(_character)!.Inventories;
+        Assert.Equal([13], saved[PlayerInventories.MainInventory].Select(p => (int)p.Item.StackSize));
+        Assert.Equal([7], saved[PlayerInventories.Cursor].Select(p => (int)p.Item.StackSize));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(20)]
+    [InlineData(21)]
+    public void Splitting_nothing_or_the_whole_stack_is_refused(int amount)
+    {
+        var items = NewInventories();
+        var stack = items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(20));
+
+        Assert.Null(items.Split(PlayerInventories.MainInventory, stack.Id, amount, out _));
+        Assert.Equal([20], items.Items(PlayerInventories.MainInventory).Select(i => (int)i.Item.StackSize));
+        Assert.Empty(items.Items(PlayerInventories.Cursor));
+    }
+
+    [Fact]
+    public void Splitting_while_holding_an_item_is_refused()
+    {
+        var items = NewInventories();
+        var stack = items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(20));
+        Hold(items, Wand());
+
+        Assert.Null(items.Split(PlayerInventories.MainInventory, stack.Id, 5, out _));
+    }
+
+    [Fact]
+    public void Added_stacks_fill_the_fullest_stack_first_then_free_cells()
+    {
+        var items = NewInventories();
+        var small = items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(5));
+        var big = items.Add(PlayerInventories.MainInventory, 1, 0, Orbs(35));
+
+        var done = items.AddStacked(PlayerInventories.MainInventory, Orbs(90), Shapes);
+
+        Assert.Equal(0, done.Left);
+        Assert.Equal([(big.Id, 40), (small.Id, 40)], done.Changed.Select(c => (c.Id, (int)c.Item.StackSize)));
+        Assert.Equal([40, 10], done.Added.Select(a => (int)a.Item.StackSize));
+        Assert.Equal(90 + 40, items.Items(PlayerInventories.MainInventory).Sum(i => i.Item.StackSize));
+        Assert.Equal([big.Id, small.Id], done.RemovedIds);
+    }
+
+    [Fact]
+    public void What_does_not_fit_is_left_and_fits_says_so_first()
+    {
+        var items = NewInventories();
+        // Fill the 12×5 main inventory with full stacks except one cell holding 30.
+        for (byte x = 0; x < 12; x++)
+            for (byte y = 0; y < 5; y++)
+                items.Add(PlayerInventories.MainInventory, x, y, Orbs(x == 0 && y == 0 ? 30 : 40));
+
+        Assert.True(items.Fits(PlayerInventories.MainInventory, Orbs(10), Shapes));
+        Assert.False(items.Fits(PlayerInventories.MainInventory, Orbs(11), Shapes));
+        Assert.Equal(30, items.Items(PlayerInventories.MainInventory)[0].Item.StackSize);   // Fits changed nothing
+
+        var done = items.AddStacked(PlayerInventories.MainInventory, Orbs(15), Shapes);
+        Assert.Equal(5, done.Left);
+        Assert.Empty(done.Added);
+        Assert.Equal(40, items.Items(PlayerInventories.MainInventory)[0].Item.StackSize);
+    }
+
+    [Fact]
+    public void A_held_stack_clicked_on_a_stack_merges()
+    {
+        var items = NewInventories();
+        var under = items.Add(PlayerInventories.MainInventory, 3, 2, Orbs(38));
+        var held = Hold(items, Orbs(5));
+
+        var done = items.MergeOnto(PlayerInventories.MainInventory, under.Id, Shapes, out _);
+
+        Assert.True(done!.Merged);
+        Assert.Equal((under.Id, (ushort)40), (done.Placed.Id, done.Placed.Item.StackSize));
+        Assert.Equal((held.Id, (ushort)3), (done.Rest!.Id, done.Rest.Item.StackSize));
+        Assert.Equal([3], CharacterSaves.Load(_character)!.Inventories[PlayerInventories.Cursor].Select(p => (int)p.Item.StackSize));
+    }
+
+    [Fact]
+    public void Shift_places_one_of_the_held_stack_into_an_empty_cell()
+    {
+        var items = NewInventories();
+        var held = Hold(items, Orbs(11));
+
+        var done = items.Place(PlayerInventories.MainInventory, 2, 2, Shapes, out _, one: true);
+
+        Assert.False(done!.Merged);
+        Assert.NotEqual(held.Id, done.Placed.Id);
+        Assert.Equal(((byte)2, (byte)2, (ushort)1), (done.Placed.X, done.Placed.Y, done.Placed.Item.StackSize));
+        Assert.Equal((held.Id, (ushort)10), (done.Rest!.Id, done.Rest.Item.StackSize));
+        Assert.Equal([10], items.Items(PlayerInventories.Cursor).Select(i => (int)i.Item.StackSize));
+    }
+
+    [Fact]
+    public void Shift_adds_one_to_a_stack_and_refuses_another_item()
+    {
+        var items = NewInventories();
+        var under = items.Add(PlayerInventories.MainInventory, 0, 0, Orbs(7));
+        var wand = items.Add(PlayerInventories.MainInventory, 3, 0, Wand());
+        Hold(items, Orbs(11));
+
+        Assert.Null(items.Place(PlayerInventories.MainInventory, 3, 0, Shapes, out _, one: true));
+        var done = items.MergeOnto(PlayerInventories.MainInventory, under.Id, Shapes, out _, one: true);
+
+        Assert.True(done!.Merged);
+        Assert.Equal(8, done.Placed.Item.StackSize);
+        Assert.Equal(10, done.Rest!.Item.StackSize);
+        Assert.Contains(items.Items(PlayerInventories.MainInventory), i => i.Id == wand.Id);
+    }
+
+    [Fact]
+    public void Clicking_a_held_item_on_another_type_swaps_them()
+    {
+        var items = NewInventories();
+        var wand = items.Add(PlayerInventories.MainInventory, 3, 0, Wand());
+        var held = Hold(items, Orbs(4));
+
+        var done = items.MergeOnto(PlayerInventories.MainInventory, wand.Id, Shapes, out _);
+
+        Assert.Equal((held.Id, wand.Id), (done!.Placed.Id, done.Displaced!.Id));
+    }
+
+    [Fact]
+    public void A_full_stack_of_fragments_becomes_its_full_item()
+    {
+        var items = NewInventories();
+        var under = items.Add(PlayerInventories.MainInventory, 0, 0, Fragments(3));
+        Hold(items, Fragments(4));
+
+        var done = items.Place(PlayerInventories.MainInventory, 0, 0, Shapes, out _);
+
+        Assert.Equal((under.Id, Wisdom, (ushort)1), (done!.Placed.Id, done.Placed.Item.TypeHash, done.Placed.Item.StackSize));
+        Assert.Equal((Fragment, (ushort)2), (done.Rest!.Item.TypeHash, done.Rest.Item.StackSize));
+        Assert.Equal([Wisdom], CharacterSaves.Load(_character)!.Inventories[PlayerInventories.MainInventory].Select(p => p.Item.Type));
+    }
+
+    [Fact]
+    public void Added_fragments_make_full_items_and_keep_the_rest()
+    {
+        var items = NewInventories();
+
+        var done = items.AddStacked(PlayerInventories.MainInventory, Fragments(12), Shapes);
+
+        Assert.Equal([(Wisdom, 1), (Wisdom, 1), (Fragment, 2)], done.Added.Select(a => (a.Item.TypeHash, (int)a.Item.StackSize)));
+    }
+
+    [Fact]
+    public void Consuming_an_item_takes_one_and_removes_the_empty_stack()
+    {
+        var items = NewInventories();
+        var orb = items.Add(PlayerInventories.MainInventory, 0, 0, Wand() with { StackSize = 2 });
+
+        var left = items.ConsumeOne(PlayerInventories.MainInventory, orb.Id);
+        Assert.False(left!.Removed);
+        Assert.Equal((ushort)1, left.Left!.Item.StackSize);
+
+        var gone = items.ConsumeOne(PlayerInventories.MainInventory, orb.Id);
+        Assert.True(gone!.Removed);
+        Assert.Null(gone.Left);
+        Assert.Null(items.ConsumeOne(PlayerInventories.MainInventory, orb.Id));
+    }
+
+    [Fact]
+    public void Refund_points_are_saved_alongside_the_other_passive_points()
+    {
+        CharacterSaves.SetExtraPassivePoints(_character, 2);
+        CharacterSaves.SetRefundPoints(_character, 3);
+
+        var save = CharacterSaves.Load(_character)!;
+
+        Assert.Equal((ushort)3, save.RefundPoints);
+        Assert.Equal((ushort)2, save.ExtraPassivePoints);
+    }
 }

@@ -226,12 +226,17 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             var (node, expansion, gold) = InstanceEntities.ReadRefundPassive(bytes);
             Console.WriteLine($"[gateway] {remote} <= 0x0036 refund passive {node} ({(node <= ushort.MaxValue ? Passives.Find((ushort)node)?.Name : null) ?? "unknown"})" +
                 $"{(expansion ? ", expansion node" : "")}, {(gold ? "gold respec" : "refund points")}: {Convert.ToHexString(bytes)}");
-            if (gold && !expansion && node <= ushort.MaxValue)
-                await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Respecialisation", goldRespec: true);
+            if (!expansion && node <= ushort.MaxValue)
+            {
+                if (gold)
+                    await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Respecialisation", goldRespec: true);
+                else
+                    await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Refund points", refundPoints: true);
+            }
             else
             {
-                // Refund points (Orbs of Regret) are not kept yet and cluster jewel nodes do not exist here: put the tree back.
-                Console.WriteLine($"[gateway] {remote} refund refused: {(gold ? "expansion nodes are not supported" : "no refund points")}");
+                // Cluster jewel nodes do not exist here: put the tree back.
+                Console.WriteLine($"[gateway] {remote} refund refused: expansion nodes are not supported");
                 await SendPassives(remote, stream, ciphers, conn);
             }
         }
@@ -258,8 +263,14 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             await SocketGem(remote, stream, ciphers, conn, InstanceItems.ReadSocketGem(bytes));
         else if (id == InstanceItems.PlaceItemId)
             await PlaceItem(remote, stream, ciphers, conn, InstanceItems.ReadPlaceItem(bytes));
-        else if (id is InstanceItems.InventoryRequestId or InstanceItems.ItemActionId)
-            Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (item message, not handled yet): {Convert.ToHexString(bytes)}");
+        else if (id == InstanceItems.ItemActionId)
+            await HeldOntoItem(remote, stream, ciphers, conn, InstanceItems.ReadItemAction(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.SplitStackId)
+            await SplitStack(remote, stream, ciphers, conn, InstanceItems.ReadSplitStack(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.UseItemId)
+            await UseItem(remote, stream, ciphers, conn, InstanceItems.ReadUseItem(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.InventoryRequestId)
+            Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (inventory request, not handled yet): {Convert.ToHexString(bytes)}");
         else if (id == InstanceItems.PickUpItemId)
             await PickUpItem(remote, stream, ciphers, conn, InstanceItems.ReadPickUpItem(bytes));
         else if (id == InstanceProtocol.ExitToCharacterSelectId)
@@ -845,8 +856,18 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
         var items = ItemsOf(conn);
         List<InventoryItem> back = accepted ? sale.Reward : [.. sale.Offered.Values];
         var added = new List<InventoryItem>();
+        var grown = new Dictionary<uint, InventoryItem>();
         foreach (var it in back)
         {
+            if (Items.ByHash(it.Item.TypeHash) is { Stackable: true })
+            {
+                // Currency joins the inventory's stacks of its type.
+                var stacked = items.AddStacked(PlayerInventories.MainInventory, it.Item, ShapeOf);
+                foreach (var c in stacked.Changed) grown[c.Id] = c;
+                added.AddRange(stacked.Added);
+                if (stacked.Left > 0) Console.WriteLine($"[gateway] {remote} sale: no room for {stacked.Left} of item {it.Id} in the inventory, lost");
+                continue;
+            }
             if (Items.ByHash(it.Item.TypeHash) is not { } t || items.FreeCell(PlayerInventories.MainInventory, t.Width, t.Height, ShapeOf) is not { } cell)
             {
                 Console.WriteLine($"[gateway] {remote} sale: no room for item {it.Id} in the inventory, it is lost");
@@ -854,9 +875,11 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
             }
             added.Add(items.Put(PlayerInventories.MainInventory, it with { X = cell.X, Y = cell.Y }));
         }
-        if (added.Count > 0)
+        // A stack that grew and then took more is sent once, as it is now; new stacks that grew later are in "added".
+        foreach (var a in added.ToList()) if (grown.Remove(a.Id, out var later)) added[added.IndexOf(a)] = later;
+        if (added.Count + grown.Count > 0)
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
-                items.NextRevision(PlayerInventories.MainInventory), [], added),
+                items.NextRevision(PlayerInventories.MainInventory), [.. grown.Keys], [.. grown.Values, .. added]),
                 $"0x00bf inventory 1: {added.Count} item(s) " + (accepted ? $"of {NpcShops.SellReward} for {sale.Offered.Count} sold item(s)" : "offered and taken back"));
     }
     await Send(remote, stream, ciphers, InstanceNpcs.TradeClose(0, accepted), $"0x00b9 sell window closed ({(accepted ? "accepted" : "cancelled")})");
@@ -1449,6 +1472,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Visited.UnionWith(save?.Visited ?? []);
         conn.QuestFlags = [.. save?.QuestFlags ?? []];
         conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
+        conn.RefundPoints = save?.RefundPoints ?? 0;
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
@@ -1472,7 +1496,9 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
     pools = pools with
     {
         AttackBlockLucky = pools.AttackBlockLucky || conn.ForceAttackBlockLucky,
-        SpellBlockLucky = pools.SpellBlockLucky || conn.ForceSpellBlockLucky
+        SpellBlockLucky = pools.SpellBlockLucky || conn.ForceSpellBlockLucky,
+        SpellSuppressionLucky = pools.SpellSuppressionLucky || conn.ForceSpellSuppressionLucky,
+        SpellSuppressionUnlucky = pools.SpellSuppressionUnlucky || conn.ForceSpellSuppressionUnlucky
     };
     int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
     int rawAttack = pools.BlockChanceUncapped + shieldBlock;
@@ -1572,6 +1598,8 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         ChaosMaxResistance: allMax + Get("base_maximum_chaos_damage_resistance_%"),
         SpellSuppressionChance: Get("base_spell_suppression_chance_%"),
         SpellSuppressionEffect: Get("base_spell_damage_%_suppressed"),
+        SpellSuppressionLucky: Get("spell_suppression_chance_is_lucky") != 0,
+        SpellSuppressionUnlucky: Get("spell_suppression_chance_is_unlucky") != 0,
         MovementVelocityPct: Get("base_movement_velocity_+%"),
         BlockChance: Get("additional_block_%") + Get("attack_block_%") + Get("monster_base_block_%")
             + blockWhileDualOrShield + shieldBlock + staffBlock + dualBlock + bowBlock,
@@ -1590,11 +1618,11 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
 // /add_passive_points; the client computes the same from the level in 0x33 and its extra_skill_points field), the
 // allocated nodes and the selected mastery effects. The client allows that many nodes plus the points the allocated
 // nodes grant themselves.
-static (ushort Points, List<ushort> Nodes, Dictionary<ushort, ushort> Masteries) PassiveState(ClientState conn)
+static (ushort Points, ushort RefundPoints, List<ushort> Nodes, Dictionary<ushort, ushort> Masteries) PassiveState(ClientState conn)
 {
     lock (conn.Monsters)
         return ((ushort)Math.Min(ushort.MaxValue, Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints),
-            [.. conn.Passives], new(conn.MasteryEffects));
+            conn.RefundPoints, [.. conn.Passives], new(conn.MasteryEffects));
 }
 
 // Drops the last allocated passives beyond the level's points (call under the Monsters lock).
@@ -1615,18 +1643,21 @@ static async Task SendPassives(string remote, NetworkStream stream, ConnectionCi
 
 static (byte[] Bytes, string Label) PassivesMessage(ClientState conn)
 {
-    var (points, nodes, masteries) = PassiveState(conn);
+    var (points, refundPoints, nodes, masteries) = PassiveState(conn);
     int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
     return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, (byte)Skills.ClassFor(conn.ClassRow).IntegerId, nodes,
-            questPoints: conn.ExtraPassivePoints, masteryEffects: masteries),
-        $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), {nodes.Count} allocated, {unspent} unspent");
+            questPoints: conn.ExtraPassivePoints, refundPoints: refundPoints, masteryEffects: masteries),
+        $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), " +
+        $"{refundPoints} refund point(s), {nodes.Count} allocated, {unspent} unspent");
 }
 
 // Allocates (or, with allocate false, refunds) passive nodes: checked against the tree's nodes and the character's
 // points, then saved, applied to the stats and sent back (0x3d). The client asks only for nodes connected to its tree.
-// A gold respec (goldRespec) refunds only allocated nodes and charges their cost (PassiveTree.GoldRespecCost).
+// A gold respec (goldRespec) refunds only allocated nodes and charges their cost (PassiveTree.GoldRespecCost); a
+// refund-point refund (refundPoints) spends one saved point per node. /reset_passives sets neither.
 static async Task<string?> ChangePassives(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    IReadOnlyList<ushort> nodes, bool allocate, string why, ushort? masteryEffect = null, bool goldRespec = false)
+    IReadOnlyList<ushort> nodes, bool allocate, string why, ushort? masteryEffect = null, bool goldRespec = false,
+    bool refundPoints = false)
 {
     string? error = null;
     List<ushort> now;
@@ -1634,6 +1665,8 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
     string? effectLabel = null;
     long cost = 0;
     uint gold = 0;
+    ushort refundsNow = 0;
+    int refundsSpent = 0;
     lock (conn.Monsters)
     {
         var next = new List<ushort>(conn.Passives);
@@ -1652,11 +1685,18 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
                 effectLabel = $"{effect.Id} ({effect.Hash})";
             }
             else if (allocate) { if (!next.Contains(n)) next.Add(n); }
-            else if (goldRespec && !next.Contains(n)) { error = $"{node.Name} ({n}) is not allocated"; break; }
-            else { next.Remove(n); effects.Remove(n); }
+            else if ((goldRespec || refundPoints) && !next.Contains(n)) { error = $"{node.Name} ({n}) is not allocated"; break; }
+            else
+            {
+                next.Remove(n);
+                effects.Remove(n);
+                if (refundPoints) refundsSpent++;
+            }
         }
         if (error is null && next.Count > Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints + Passives.PointsGranted(next))
             error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
+        if (error is null && refundPoints && refundsSpent > conn.RefundPoints)
+            error = $"not enough refund points ({refundsSpent} needed, {conn.RefundPoints} held)";
         // Paid last, from the account's gold: nothing is taken when the change is refused.
         if (error is null && goldRespec)
         {
@@ -1668,6 +1708,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         {
             conn.Passives = next;
             conn.MasteryEffects = effects;
+            if (refundPoints) conn.RefundPoints -= (ushort)refundsSpent;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
@@ -1675,14 +1716,18 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
         }
         now = [.. conn.Passives];
         effectsNow = new(conn.MasteryEffects);
+        refundsNow = conn.RefundPoints;
     }
     Console.WriteLine($"[gateway] {remote} passives {(allocate ? "allocate" : "refund")} [{string.Join(", ", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}"))}]" +
         (effectLabel is null ? "" : $" mastery {effectLabel}") + $" ({why}): " +
-        (error ?? $"{now.Count} allocated, life {conn.Pools.Life}, mana {conn.Pools.Mana}" + (goldRespec ? $", {cost} gold paid, {gold} left" : "")));
+        (error ?? $"{now.Count} allocated, life {conn.Pools.Life}, mana {conn.Pools.Mana}" +
+            (goldRespec ? $", {cost} gold paid, {gold} left" : "") +
+            (refundPoints ? $", {refundsSpent} refund point(s) spent, {refundsNow} left" : "")));
     if (error is null)
     {
         CharacterSaves.SetPassives(CharacterName(conn), now);
         CharacterSaves.SetMasteryEffects(CharacterName(conn), effectsNow);
+        if (refundPoints) CharacterSaves.SetRefundPoints(CharacterName(conn), refundsNow);
         if (goldRespec)
         {
             await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (respec, {cost} paid)");
@@ -2062,10 +2107,12 @@ static int MaxResistance(ClientState conn, DamageType type) => type switch
     _ => DamageModel.DefaultMaxResistance,
 };
 
-// Spell Suppression: chance in 0..100 and the damage reduction on a successful suppress (40% by default).
-static (int Chance, int Effect) Suppression(ClientState conn) =>
+// Spell Suppression: chance in 0..100, the damage reduction on a successful suppress (40% by default) and its lucky or
+// unlucky roll (PoB's suppressRolls).
+static (int Chance, int Effect, bool Lucky, bool Unlucky) Suppression(ClientState conn) =>
     (Math.Min(DamageModel.SpellSuppressionChanceCap, conn.Pools.SpellSuppressionChance),
-        Math.Max(0, conn.Pools.SpellSuppressionEffect));
+        Math.Max(0, conn.Pools.SpellSuppressionEffect),
+        conn.Pools.SpellSuppressionLucky, conn.Pools.SpellSuppressionUnlucky);
 
 static DamageType? ParseDamageType(string text) => text.ToLowerInvariant() switch
 {
@@ -2146,8 +2193,8 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     .Add("item", "/item <BaseItemTypes row, Id or name> [count] (into the inventory, e.g. /item Small Life Flask 2, /item 384)", async args =>
     {
         if (args.Length == 0) throw new ArgumentException("which item?");
-        int count = 1;
-        if (args.Length > 1 && int.TryParse(args[^1], out int n)) { count = Math.Clamp(n, 1, 60); args = args[..^1]; }
+        int count = 1, requested = 1;
+        if (args.Length > 1 && int.TryParse(args[^1], out int n)) { requested = n; count = Math.Clamp(n, 1, 60); args = args[..^1]; }
         if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
         if (Items.Find(string.Join(' ', args)) is not { } type) { await conn.Commands!.Reply($"No item type \"{string.Join(' ', args)}\""); return; }
         if (!type.Supported)
@@ -2156,6 +2203,18 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             return;
         }
         var items = ItemsOf(conn);
+        if (type.Stackable)
+        {
+            // A stackable type: [count] is how many, onto the stacks already there first (up to 20 full stacks).
+            int amount = Math.Clamp(requested, 1, type.MaxStack * 20);
+            var stacked = items.AddStacked(PlayerInventories.MainInventory, ItemCatalog.Create(type) with { StackSize = (ushort)Math.Min(amount, ushort.MaxValue) }, ShapeOf);
+            if (!stacked.Any) { await conn.Commands!.Reply("No room in the inventory"); return; }
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), stacked.RemovedIds, stacked.AddedItems),
+                $"0x00bf inventory 1: /item {type} × {amount - stacked.Left} ({stacked.Changed.Count} stack(s) grown, {stacked.Added.Count} new)");
+            if (stacked.Left > 0) await conn.Commands!.Reply($"No room for {stacked.Left} of them");
+            return;
+        }
         var (sockets, links) = Items.DefaultSockets(type);
         var added = new List<InventoryItem>();
         for (int i = 0; i < count; i++)
@@ -2181,9 +2240,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("passives", "/passives (passive skill points and the allocated passives)", async _ =>
     {
-        var (points, nodes, _) = PassiveState(conn);
+        var (points, refundPoints, nodes, _) = PassiveState(conn);
         int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
-        await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent.\n" +
+        await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent, {refundPoints} refund point(s).\n" +
             string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
     })
     .Add("gold", "/gold <amount> (dev: add gold, or take it with a negative amount; the account's, saved)", async args =>
@@ -2206,6 +2265,19 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await SendPassives(remote, stream, ciphers, conn);
         await conn.Commands!.Reply($"{add} extra passive point(s) added; {total} extra total.");
     })
+    .Add("add_refund_points", "/add_refund_points <n> (dev: add n refund points, saved)", async args =>
+    {
+        if (args.Length == 0 || !int.TryParse(args[0], out int add) || add <= 0) throw new ArgumentException("a positive number");
+        ushort total;
+        lock (conn.Monsters)
+        {
+            conn.RefundPoints = (ushort)Math.Min(ushort.MaxValue, conn.RefundPoints + add);
+            total = conn.RefundPoints;
+        }
+        CharacterSaves.SetRefundPoints(CharacterName(conn), total);
+        await SendPassives(remote, stream, ciphers, conn);
+        await conn.Commands!.Reply($"{add} refund point(s) added; {total} total.");
+    })
     .Add("add_passive", "/add_passive <PassiveSkillGraphId> (dev: allocate one passive node)", async args =>
     {
         if (args.Length == 0 || !ushort.TryParse(args[0], out ushort node)) throw new ArgumentException("a PassiveSkillGraphId");
@@ -2214,7 +2286,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("reset_passives", "/reset_passives (refunds every passive, saved)", async _ =>
     {
-        var (_, nodes, _) = PassiveState(conn);
+        var (_, _, nodes, _) = PassiveState(conn);
         await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: false, "/reset_passives");
         await conn.Commands!.Reply($"{nodes.Count} passive(s) refunded.");
     })
@@ -2265,10 +2337,26 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
         await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; life {life}/{conn.PlayerMaxLife}.");
     })
-    .Add("suppression", "/suppression (Spell Suppression chance and damage reduction)", async _ =>
+    .Add("suppression", "/suppression (Spell Suppression chance, roll and damage reduction)", async _ =>
     {
-        var (chance, effect) = Suppression(conn);
-        await conn.Commands!.Reply($"Spell Suppression: {chance}% chance (cap {DamageModel.SpellSuppressionChanceCap}%), {effect}% less damage on a suppressed spell hit.");
+        var (chance, effect, lucky, unlucky) = Suppression(conn);
+        double effective = DamageModel.EffectiveSuppressionChance(chance, lucky, unlucky);
+        await conn.Commands!.Reply($"Spell Suppression: {chance}% chance (cap {DamageModel.SpellSuppressionChanceCap}%, effective {effective:0.#}%" +
+            $"{(lucky ? ", lucky" : "")}{(unlucky ? ", unlucky" : "")}), {effect}% less damage on a suppressed spell hit.");
+    })
+    .Add("suppression_luck", "/suppression_luck <lucky|unlucky|off> (dev: force a lucky/unlucky suppression roll)", async args =>
+    {
+        string mode = args.Length == 0 ? "" : args[0].ToLowerInvariant();
+        bool lucky = mode == "lucky", unlucky = mode == "unlucky";
+        if (mode is not ("lucky" or "unlucky" or "off" or "")) throw new ArgumentException("lucky, unlucky or off");
+        lock (conn.Monsters)
+        {
+            conn.ForceSpellSuppressionLucky = lucky;
+            conn.ForceSpellSuppressionUnlucky = unlucky;
+            conn.Pools = PoolsFor(conn, conn.Pools.Level);
+        }
+        await SendCharacterStats(remote, stream, ciphers, conn, $"suppression luck {mode}");
+        await conn.Commands!.Reply($"Spell Suppression roll: {(lucky ? "lucky" : unlucky ? "unlucky" : "normal")}.");
     })
     .Add("spellhit", "/spellhit <fire|cold|lightning|chaos|physical> <damage> (dev: spell hit through resistance and Spell Suppression)", async args =>
     {
@@ -2277,8 +2365,8 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
         int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
         int dealt = DamageModel.Mitigate(amount, resistance, maxResistance);
-        var (chance, effect) = Suppression(conn);
-        bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100));
+        var (chance, effect, lucky, unlucky) = Suppression(conn);
+        bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100), lucky, unlucky);
         if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
         uint life;
         bool wasDead;
@@ -2304,8 +2392,10 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             $"0x01b1 player dev spell {type} hit for {dealt} ({amount} before {DamageModel.Capped(resistance, maxResistance)}% resistance, suppression {(suppressed ? "yes" : "no")}), life {life}/{conn.PlayerMaxLife}");
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev spell hit)");
+        double effective = DamageModel.EffectiveSuppressionChance(chance, lucky, unlucky);
         await conn.Commands!.Reply($"{type} spell hit: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; " +
-            $"suppression {(suppressed ? $"rolled ({chance}% chance)" : $"not rolled ({chance}% chance)")}; life {life}/{conn.PlayerMaxLife}.");
+            $"suppression {(suppressed ? "rolled" : "not rolled")} ({chance}% chance, effective {effective:0.#}%" +
+            $"{(lucky ? ", lucky" : "")}{(unlucky ? ", unlucky" : "")}); life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("block", "/block (attack and spell block chance and caps)", async _ =>
     {
@@ -2831,7 +2921,10 @@ static IEnumerable<ItemCatalog.BaseType> OffhandTypes(ClientState conn)
             if (Items.ByHash(item.Item.TypeHash) is { } type) yield return type;
 }
 
-static PlayerInventories.Shape? ShapeOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new PlayerInventories.Shape(t.Width, t.Height, t.Class) : null;
+static PlayerInventories.Shape? ShapeOf(Item i) => Items.ByHash(i.TypeHash) is { } t
+    ? new PlayerInventories.Shape(t.Width, t.Height, t.Class, t.MaxStack,
+        t.BecomesWhenFull && Items.Row(t.FullStackRow) is { Supported: true } full ? () => ItemCatalog.Create(full) : null)
+    : null;
 
 static VisibleItem? LookOf(Item i) => Items.ByHash(i.TypeHash) is { } t ? new VisibleItem(0, t.VisualIdentity, t.Stance) : null;
 
@@ -2967,6 +3060,22 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
     // With the inventory panel open the item goes to the cursor (when it is free), otherwise to the first free cell.
     bool toCursor = (use.Flags & InstanceTransfer.InventoryOpenFlag) != 0 && items.Items(PlayerInventories.Cursor).Count == 0;
     byte row = toCursor ? PlayerInventories.Cursor : PlayerInventories.MainInventory;
+    if (!toCursor && shape.MaxStack > 1)
+    {
+        // A stack goes onto the inventory's stacks of its type first, then into free cells; all of it or nothing. Nothing
+        // awaits between the check, the take and the add, and only this connection changes the character's items.
+        if (!items.Fits(PlayerInventories.MainInventory, ground.Item, ShapeOf))
+        {
+            Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: no room in the inventory for {ground.Item.StackSize}");
+            return;
+        }
+        if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+        var stacked = items.AddStacked(PlayerInventories.MainInventory, ground.Item, ShapeOf);
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), stacked.RemovedIds, stacked.AddedItems),
+            $"0x00bf inventory 1: {ground.Item.StackSize} picked up ({stacked.Changed.Count} stack(s) grown, {stacked.Added.Count} new)");
+        return;
+    }
     (byte X, byte Y) cell = (0, 0);
     if (!toCursor)
     {
@@ -2985,6 +3094,153 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
         toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
 }
 
+// C→S 0x7c: Shift + click on a stack, then the split window's amount. The stack shrinks in place (0xbf removing and adding
+// its id), the split-off part is held as a new item (0xbf cursor).
+static async Task SplitStack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.SplitStack split, string hex)
+{
+    var items = ItemsOf(conn);
+    int amount = (int)Math.Min(split.Amount, ushort.MaxValue);
+    if (StashOf(conn).TabOf(split.InventoryId) is int tab)
+    {
+        // From a stash tab: the tab's stack shrinks (written first), the split-off part is held with a character id.
+        var stash = StashOf(conn);
+        if (items.Items(PlayerInventories.Cursor).Count > 0 || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == split.ItemId) is not { } source ||
+            stash.Shrink(tab, split.ItemId, amount) is not { } left)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}: refused: {hex}");
+            return;
+        }
+        var part = items.Put(PlayerInventories.Cursor, new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = (ushort)amount }));
+        Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, stash.NextRevision(tab), [left.Id], [left]),
+            $"0x00bf stash tab {tab}: stack {left.Id} now {left.Item.StackSize}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [], [part]), $"0x00bf cursor: hold {part.Item.StackSize} as item {part.Id}");
+        return;
+    }
+    string why = "unknown inventory";
+    var done = PlayerInventories.Row(split.InventoryId) is byte row ? items.Split(row, split.ItemId, amount, out why) : null;
+    if (done is not var (stack, held) || PlayerInventories.Row(split.InventoryId) is not byte r)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x007c split {split}: refused ({why}): {hex}");
+        return;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x007c split {split}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, items.NextRevision(r), [stack.Id], [stack]),
+        $"0x00bf inventory {split.InventoryId}: stack {stack.Id} now {stack.Item.StackSize}");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: hold {held.Item.StackSize} as item {held.Id}");
+}
+
+// C→S 0x58: use an item that needs no target (a right-click), such as an Orb of Regret: one item becomes one refund point.
+static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceItems.UseItemRequest use, string hex)
+{
+    const string Regret = "Metadata/Items/Currency/CurrencyPassiveRefund";
+    var items = ItemsOf(conn);
+    byte? row = null;
+    foreach (uint inventory in new[] { use.InventoryId, use.InventoryId + 1 })
+        if (PlayerInventories.Row(inventory) is byte candidate && items.Items(candidate).Any(i => i.Id == use.ItemId))
+        {
+            row = candidate;
+            break;
+        }
+    if (row is not byte r || items.Items(r).FirstOrDefault(i => i.Id == use.ItemId) is not { } item)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: no such item: {hex}");
+        return;
+    }
+    if (Items.ByHash(item.Item.TypeHash) is not { } type)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: unknown type 0x{item.Item.TypeHash:x8}: {hex}");
+        return;
+    }
+    if (type.Id != Regret)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: {type.Name} is not handled: {hex}");
+        return;
+    }
+    ushort refunds;
+    lock (conn.Monsters)
+    {
+        if (conn.RefundPoints == ushort.MaxValue)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: refund points are already at the maximum");
+            return;
+        }
+        refunds = ++conn.RefundPoints;
+    }
+    var taken = items.ConsumeOne(r, use.ItemId);
+    if (taken is null)
+    {
+        lock (conn.Monsters) conn.RefundPoints--;
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: item {use.ItemId} disappeared: {hex}");
+        return;
+    }
+    CharacterSaves.SetRefundPoints(CharacterName(conn), refunds);
+    uint inventoryId = PlayerInventories.InventoryId(r);
+    // Every change removes the id first: the client keeps an item by id, so a stack that only shrinks needs the remove
+    // and the add of the same id with its new Stack component (as SendMerged does).
+    await Send(remote, stream, ciphers,
+        InstanceItems.InventoryChange(inventoryId, items.NextRevision(r), [item.Id],
+            taken.Left is { } left ? [left] : []),
+        $"0x00bf inventory {inventoryId}: {type.Name} used" + (taken.Left is { } now ? $", {now.Item.StackSize} left" : ", stack empty"));
+    await SendPassives(remote, stream, ciphers, conn);
+    Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name} ({use.ItemId}): {refunds} refund point(s)");
+}
+
+// C→S 0x4a: the held item clicked on an item. A stack of the same type with room takes what fits (PlayerInventories.MergeOnto,
+// AccountStash.Merge); anything else (currency on an item …) is not handled yet.
+static async Task HeldOntoItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.ItemAction a, string hex)
+{
+    var items = ItemsOf(conn);
+    if (StashOf(conn).TabOf(a.InventoryId) is int tab)
+    {
+        // On a stash tab: as 0x2a on the clicked item's cell (merge, one with Shift, or a swap).
+        if (StashOf(conn).Inventory(tab).Items.FirstOrDefault(i => i.Id == a.ItemId) is not { } onto)
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a} in stash tab {tab}: no such item: {hex}");
+            return;
+        }
+        Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a} in stash tab {tab}: {hex}");
+        await PlaceInStash(remote, stream, ciphers, conn, tab, new InstanceItems.PlaceItem(a.InventoryId, onto.X, onto.Y, (byte)(OneOf(a) ? 1 : 0), a.B, 0, 0));
+        return;
+    }
+    string why = "unknown inventory";
+    var done = PlayerInventories.Row(a.InventoryId) is byte row ? items.MergeOnto(row, a.ItemId, ShapeOf, out why, OneOf(a)) : null;
+    if (done is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a}: refused ({why}): {hex}");
+        return;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a}: {hex}");
+    if (done.Merged || done.Rest is not null) { await SendMerged(remote, stream, ciphers, items, done); return; }
+    // Not a stack with room: swapped, as 0x2a on that cell.
+    var d = done.Displaced;
+    uint target = PlayerInventories.InventoryId(done.Row);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(target, items.NextRevision(done.Row), d is null ? [] : [d.Id], [done.Placed]),
+        $"0x00bf inventory {target}: add item {done.Placed.Id} at ({done.Placed.X}, {done.Placed.Y})" + (d is null ? "" : $", remove item {d.Id}"));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [done.Held.Id], d is null ? [] : [d]),
+        $"0x00bf cursor: remove item {done.Held.Id}" + (d is null ? "" : $", hold item {d.Id}"));
+    if (PlayerInventories.ShowsOnModel(done.Row)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+// Shift held on a 0x4a: flag bit 2 (the sender's param 7; live 2026-10-19, Flags = 4 with Shift, 0 without).
+static bool OneOf(InstanceItems.ItemAction a) => (a.Flags & 0x04) != 0;
+
+// A held stack went onto a stack of its type: that one grows in place (same id), the held one shrinks (same id) or is gone.
+static async Task SendMerged(string remote, NetworkStream stream, ConnectionCiphers ciphers, PlayerInventories items, PlayerInventories.Placement done)
+{
+    uint target = PlayerInventories.InventoryId(done.Row);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(target, items.NextRevision(done.Row), done.Merged ? [done.Placed.Id] : [], [done.Placed]),
+        $"0x00bf inventory {target}: " + (done.Merged ? $"stack {done.Placed.Id} now {done.Placed.Item.StackSize}" : $"add one as item {done.Placed.Id} at ({done.Placed.X}, {done.Placed.Y})")
+        + (Items.ByHash(done.Placed.Item.TypeHash) is { } now && now.Hash != done.Held.Item.TypeHash ? $", became {now.Name}" : ""));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [done.Held.Id], done.Rest is { } rest ? [rest] : []),
+        $"0x00bf cursor: " + (done.Rest is { } r ? $"stack {r.Id} now {r.Item.StackSize}" : $"remove item {done.Held.Id} (merged)"));
+}
+
 // C→S 0x2a: put the held item into an inventory cell (PlayerInventories.Place). The target inventory gets one 0xbf (the
 // item it displaced removed, the held item added), the cursor another (the held item removed, the displaced one added).
 static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.PlaceItem place)
@@ -2998,11 +3254,11 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
     }
     if (StashOf(conn).TabOf(place.InventoryId) is int tab) { await PlaceInStash(remote, stream, ciphers, conn, tab, place); return; }
     var items = ItemsOf(conn);
+    if (place.A != 0) Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: one of the held stack (Shift)");
     PlayerInventories.Placement? done = null;
     string why = "unknown inventory";
     if (PlayerInventories.Row(place.InventoryId) is byte row)
-        done = items.Place(row, (int)place.X, (int)place.Y,
-            ShapeOf, out why);
+        done = items.Place(row, (int)place.X, (int)place.Y, ShapeOf, out why, one: place.A != 0);
     if (done is null)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: refused ({why})");
@@ -3010,6 +3266,7 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
     }
     var d = done.Displaced;
     uint target = PlayerInventories.InventoryId(done.Row);   // may differ from the clicked one (off hand → main hand)
+    if (done.Merged || done.Rest is not null) { await SendMerged(remote, stream, ciphers, items, done); return; }
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(target, items.NextRevision(done.Row), d is null ? [] : [d.Id], [done.Placed]),
         $"0x00bf inventory {target}: add item {done.Placed.Id} at ({done.Placed.X}, {done.Placed.Y})" + (d is null ? "" : $", remove item {d.Id}"));
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
@@ -3100,6 +3357,40 @@ static async Task PlaceInStash(string remote, NetworkStream stream, ConnectionCi
     if (items.Items(PlayerInventories.Cursor) is not [var held, ..])
     {
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place} in stash tab {tab}: nothing held");
+        return;
+    }
+    bool one = place.A != 0 && held.Item.StackSize > 1;
+    if (stash.Merge(tab, (int)place.X, (int)place.Y, held, ShapeOf, one ? 1 : int.MaxValue) is var (stack, moved))
+    {
+        // Onto a stack of its type: the tab's stack grows (written first), the held one shrinks or is gone.
+        var rest = items.SetStackSize(PlayerInventories.Cursor, held.Id, held.Item.StackSize - moved);
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [stack.Id], [stack]),
+            $"0x00bf stash tab {tab}: stack {stack.Id} now {stack.Item.StackSize}");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [held.Id], rest is null ? [] : [rest]),
+            "0x00bf cursor: " + (rest is null ? $"remove item {held.Id} (merged)" : $"stack {rest.Id} now {rest.Item.StackSize}"));
+        return;
+    }
+    if (one)
+    {
+        // Shift + click: one of the held stack into an empty cell of the tab (written first), the rest stays held.
+        int px = (int)place.X, py = (int)place.Y;
+        if (stash.Inventory(tab).Items.Any(i => ShapeOf(i.Item) is { } s && i.X <= px && px < i.X + s.Width && i.Y <= py && py < i.Y + s.Height))
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x002a place one {place} in stash tab {tab}: refused (something in the way)");
+            return;
+        }
+        var single = new InventoryItem(items.NewItemId(), 0, 0, held.Item with { StackSize = 1 });
+        if (stash.Place(tab, px, py, single, ShapeOf, out string whyNot) is not var (put, _))
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x002a place one {place} in stash tab {tab}: refused ({whyNot})");
+            return;
+        }
+        var left = items.SetStackSize(PlayerInventories.Cursor, held.Id, held.Item.StackSize - 1);
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [], [put]),
+            $"0x00bf stash tab {tab}: add one as item {put.Id} at ({put.X}, {put.Y})");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+            items.NextRevision(PlayerInventories.Cursor), [held.Id], left is null ? [] : [left]), $"0x00bf cursor: stack {held.Id} now {left?.Item.StackSize ?? 0}");
         return;
     }
     if (stash.Place(tab, (int)place.X, (int)place.Y, held, ShapeOf, out string why) is not var (placed, displaced))
@@ -3643,6 +3934,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
     // Dev-only forced lucky block, on top of the stats (Svalinn's "Chance to Block is Lucky").
     public bool ForceAttackBlockLucky, ForceSpellBlockLucky;
+    // Dev-only forced lucky/unlucky Spell Suppression rolls, on top of the passive stat.
+    public bool ForceSpellSuppressionLucky, ForceSpellSuppressionUnlucky;
     // The character's experience (the Player component's; the level follows from it) and its allocated passives
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
@@ -3651,6 +3944,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public Dictionary<ushort, ushort> MasteryEffects = [];
     // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.
     public ushort ExtraPassivePoints;
+    // Refund points (0x33's first u16; Orbs of Regret), saved with the character; /add_refund_points grants them for now.
+    public ushort RefundPoints;
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
     public RighteousFireState? RighteousFire;
