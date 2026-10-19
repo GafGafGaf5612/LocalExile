@@ -104,6 +104,11 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   NPCs row, u16, u32 BE TradeWindowVisuals row, u16 (+0x54, shown as an error text when set), u16. The offer grids
   must use an Inventories.dat row that accepts items (row 83 refused every drop; row 0 now). C→S 0xb1 (u32, u8): Cancel
   sent u8 0; Accept assumed u8 1. S→C 0xb9 (u32, u8 accepted) closes the window. The NPC offers 1 Scroll Fragment per item.
+- **C→S 0xb2** (16 bytes, write `0x141f95b40`): an item dropped into "Your Offer": u32 BE source inventory (13 = cursor),
+  u32 BE item id, u16, u8 x, u8 y, u16 (changes per request). **C→S 0xb3** (12 bytes): u32 BE item id, u32, u16: the
+  item taken back out. 0xb8 flags bit 4 (0x10) drops the "Mouse over each item to enable accept" rule
+  (`0x140c37140`). Live 2026-10-19: drops into the offer work; Cancel closes the window but the player cannot move
+  until another panel opens (P); Accept does not work yet.
 - S→C 0x87 opens the quest reward window (u16 = QuestRewardOffers row, `0x140c2b690`); a wrong row crashes the client.
 
 ## 6. Dev commands

@@ -53,7 +53,7 @@ public static class InstanceProtocol
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
         InstanceItems.InventoryRequestId => 8, InstanceItems.ItemActionId => 12, InstanceItems.SocketGemId => 16,
         InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
-        InstanceEntities.AllocatePassiveId => 7, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength,
+        InstanceEntities.AllocatePassiveId => 7, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength,
         LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, _ => null,
     };
 
