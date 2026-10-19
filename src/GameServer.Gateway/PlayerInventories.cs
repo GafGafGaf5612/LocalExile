@@ -280,6 +280,29 @@ sealed class PlayerInventories
         lock (_lock) return _nextItemId++;
     }
 
+    /// <summary>
+    /// Picks an item up from inventory <paramref name="row"/> onto the empty cursor, keeping its id, in one step and one
+    /// save, so a crash at any moment leaves the item in exactly one place. Null (nothing changes) when the cursor
+    /// already holds something or the item is not in that row.
+    /// </summary>
+    public InventoryItem? PickUp(byte row, uint itemId)
+    {
+        var result = PickUpCore(row, itemId);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    InventoryItem? PickUpCore(byte row, uint itemId)
+    {
+        lock (_lock)
+        {
+            if (row == Cursor || ItemsIn(Cursor).Count > 0 || RemoveCore(row, itemId) is not { } it) return null;
+            var held = it with { X = 0, Y = 0 };
+            ItemsIn(Cursor).Add(held);
+            return held;
+        }
+    }
+
     /// <summary>Takes an item out of an inventory; null when it is not there.</summary>
     public InventoryItem? Remove(byte row, uint itemId)
     {

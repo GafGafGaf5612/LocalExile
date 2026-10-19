@@ -160,6 +160,12 @@ sockets (with their gems), links and gem experience. A saved character loads fro
 and equipment survive Gateway restarts and logins (live 2026-10-18). The file also holds the skill bar
 ([11](11-skills.md) §11).
 
+Each move is one change and one save, so a crash at any moment leaves an item in exactly one inventory: picking up
+(`PlayerInventories.PickUp`, C→S 0x28: off its row and onto the cursor), placing or swapping (`Place`, 0x2a), socketing
+and unsocketing (0x30, 0x2f) each change everything under one lock and then write the file once. Items on the ground are
+not in the save ("Open"), so dropping one takes it out of the save, and a disconnect loses it (#5). Tests:
+`tests/GameServer.Gateway.Tests`.
+
 `/item <BaseItemTypes row, Id or name> [count]` adds items to the main inventory; types with a Sockets component get two
 linked sockets in the colour of their highest attribute requirement (ComponentAttributeRequirements).
 
