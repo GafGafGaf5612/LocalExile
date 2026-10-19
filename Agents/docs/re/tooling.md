@@ -178,3 +178,7 @@ git-ignored `Tools/PathOfBuilding` (the clone used for this work is commit `16de
 final clamp come from `src/Modules/Data.lua` (`ResistFloor = -200`, `MaxResistCap = 90`), `src/Data/Misc.lua`
 (`base_maximum_all_resistances_% = 75`) and `src/Modules/CalcDefence.lua` (`final = max(min(total, max), min)`).
 Our `DamageModel` cites those files; keep the clone local and pin the commit when a formula is copied into the server.
+
+**Caps and floors:** always verify a cap/floor in the pinned PoB clone and cite the exact file and commit; never
+assume the value from the client panel or from memory. Examples already in `DamageModel`: `ResistFloor = -200`,
+`MaxResistCap = 90`, default maximum resistance 75, `SuppressionChanceCap = 100`, `SuppressionEffect = 40`.

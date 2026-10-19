@@ -33,4 +33,17 @@ public class DamageModelTests
         Assert.Equal(25.0, DamageModel.Mitigate(100.0, 75), 3);
         Assert.Equal(160.0, DamageModel.Mitigate(100.0, -60), 3);
     }
+
+    [Fact]
+    public void Spell_suppression_caps_at_100_and_reduces_by_40_percent()
+    {
+        Assert.True(DamageModel.Suppresses(100, 99));
+        Assert.True(DamageModel.Suppresses(25, 24));
+        Assert.False(DamageModel.Suppresses(25, 25));
+        Assert.False(DamageModel.Suppresses(0, 0));
+        Assert.Equal(60, DamageModel.Suppress(100));
+        Assert.Equal(30, DamageModel.Suppress(50));
+        Assert.Equal(50, DamageModel.Suppress(100, 50));
+        Assert.Equal(0, DamageModel.Suppress(100, 100));
+    }
 }
