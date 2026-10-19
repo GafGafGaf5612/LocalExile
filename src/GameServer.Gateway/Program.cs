@@ -109,6 +109,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             // Anything after the opening was already encrypted by the client.
             var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             conn.Commands = Commands(remote, stream, ciphers, conn);
+            conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
             LoadProgress(conn, resolved.Level);
             conn.PlayerLife = conn.PlayerMaxLife;
@@ -249,8 +250,10 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
             if (!isNew && row >= chooser.Ids.Count) { Console.WriteLine($"[gateway] {remote} <= 0x00af row {row} out of range"); continue; }
             ulong instance = isNew ? 0 : chooser.Ids[row];
             Console.WriteLine($"[gateway] {remote} <= 0x00af chose {(isNew ? "a new instance" : $"instance {instance}")} of 0x{chooser.Area:x4}");
-            await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(chooser.Area, instance, isNew), $"chooser row {row}");
+            await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(chooser.Area, instance, isNew, AtWaypoint: chooser.AtWaypoint), $"chooser row {row}");
         }
+        else if (id == InstanceWaypoints.TravelId)
+            _ = TravelByWaypoint(remote, stream, ciphers, conn, InstanceWaypoints.ReadTravel(bytes));
         else if (id == InstanceProtocol.AreaGeneratedId)
         {
             Console.WriteLine($"[gateway] {remote} <= 0x007d area generated: {Convert.ToHexString(bytes)}");
@@ -267,14 +270,27 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
                     conn.Use(withTransitions);
                     Console.WriteLine($"[gateway] {remote} area transitions captured: {withTransitions.Describe()}");
                 }
-                // Next to the exit back; Resurrect at Checkpoint and the monster packs' clearance use it too.
-                if (conn.Layout.Arrival(conn.CameFrom) is var (ax, ay) && (ax, ay) != (conn.Layout.SpawnX, conn.Layout.SpawnY))
+                // Waypoint travel: next to the destination's waypoint instead of the area's spawn. A generated area's
+                // waypoint is only known from the walk-map recorder's capture for this seed (live.ps1 -Walkmaps).
+                if (conn.ArriveAtWaypoint && conn.Layout.Waypoint is { } arrival)
                 {
+                    var (ax, ay) = conn.Layout.Near((arrival.GridX, arrival.GridY));
                     conn.Use(conn.Layout with { SpawnX = ax, SpawnY = ay });
-                    Console.WriteLine($"[gateway] {remote} arrival from 0x{conn.CameFrom:x4}: ({ax}, {ay})");
+                    Console.WriteLine($"[gateway] {remote} arrived by waypoint: spawn ({ax}, {ay}) next to the waypoint at ({arrival.GridX}, {arrival.GridY})");
                 }
+                // Otherwise next to the exit back; Resurrect at Checkpoint and the monster packs' clearance use it too.
+                else if (conn.Layout.Arrival(conn.CameFrom) is var (ex, ey) && (ex, ey) != (conn.Layout.SpawnX, conn.Layout.SpawnY))
+                {
+                    conn.Use(conn.Layout with { SpawnX = ex, SpawnY = ey });
+                    Console.WriteLine($"[gateway] {remote} arrival from 0x{conn.CameFrom:x4}: ({ex}, {ey})");
+                }
+                else if (conn.ArriveAtWaypoint)
+                    Console.WriteLine($"[gateway] {remote} arrived by waypoint, but {conn.Layout.Id} seed {conn.Seed} has no captured waypoint " +
+                        $"(run live.ps1 -Walkmaps): spawn ({conn.Layout.SpawnX}, {conn.Layout.SpawnY}){(conn.Layout.Walkable is null ? ", no walk map either: the player may stand outside the map" : "")}");
+                RecordVisit(conn);
                 await SendPlayer(remote, stream, ciphers, conn);
                 conn.PlayerSent = true;
+                await SendWaypoints(remote, stream, ciphers, conn);
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
@@ -388,6 +404,11 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await PickUpGroundItem(remote, stream, ciphers, conn, use.TargetId, ground, use);
         return;
     }
+    if (use.TargetId == WaypointCatalog.ObjectId && conn.Layout.Waypoint is { } waypoint)
+    {
+        await UseWaypoint(remote, stream, ciphers, conn, use, waypoint);
+        return;
+    }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
     if (transition is null)
     {
@@ -409,16 +430,123 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     }
     if (use.Ctrl)
     {
-        var list = await InstanceControl.CallAsync(new ControlRequest { Op = "list", Ticket = conn.Ticket, Area = dest });
-        var instances = list.Instances ?? [];
-        var entries = instances
-            .Select(i => new InstanceTransfer.InstanceListEntry((ulong)i.CreatedUnix, (uint)i.SecondsLeft, 0, i.Players)).ToList();
-        conn.Chooser = new ChooserList(dest, [.. instances.Select(i => i.Id)]);
-        await Send(remote, stream, ciphers, InstanceTransfer.InstanceList(dest, entries),
-            $"0x00ae instance list for 0x{dest:x4}: {entries.Count} instance(s) [{string.Join(", ", instances.Select(i => $"{i.Id} ({i.SecondsLeft} s left): {string.Join("/", i.Players)}"))}]");
+        await ShowInstances(remote, stream, ciphers, conn, dest, atWaypoint: false);
         return;
     }
     await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(dest, 0, false), use.ToString());
+}
+
+// The destination's instances (0xae) for the client's instance chooser; its pick (0xaf) changes area.
+static async Task ShowInstances(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, ushort dest, bool atWaypoint)
+{
+    var list = await InstanceControl.CallAsync(new ControlRequest { Op = "list", Ticket = conn.Ticket, Area = dest });
+    var instances = list.Instances ?? [];
+    var entries = instances
+        .Select(i => new InstanceTransfer.InstanceListEntry((ulong)i.CreatedUnix, (uint)i.SecondsLeft, 0, i.Players)).ToList();
+    conn.Chooser = new ChooserList(dest, [.. instances.Select(i => i.Id)], atWaypoint);
+    await Send(remote, stream, ciphers, InstanceTransfer.InstanceList(dest, entries),
+        $"0x00ae instance list for 0x{dest:x4}: {entries.Count} instance(s) [{string.Join(", ", instances.Select(i => $"{i.Id} ({i.SecondsLeft} s left): {string.Join("/", i.Players)}"))}]");
+}
+
+// A waypoint click (C→S 0x24 on the waypoint, Agents/docs/protocol/16-waypoints.md): walk there, activate it if it is
+// not yet, then open the World panel for travel (S→C 0x7b kind 0). The panel's pick arrives as C→S 0x4d.
+static async Task UseWaypoint(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, WaypointObject waypoint)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(waypoint.GridX, waypoint.GridY, WaypointReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 waypoint ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    if (Dist(stop, (waypoint.GridX, waypoint.GridY)) > WaypointReach + 2)
+    {
+        Console.WriteLine($"[gateway] {remote} waypoint out of reach from ({stop.X}, {stop.Y})");
+        return;
+    }
+    await ActivateWaypoint(remote, stream, ciphers, conn, "clicked");
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.WorldPanelUi, WaypointCatalog.ObjectId),
+        "0x007b open the World panel for waypoint travel");
+}
+
+// Activates this area's waypoint for the character (saved) and tells the client: a new 0x4c with the area's bit set
+// plays the waypoint's activation. Towns activate on entry, other waypoints when the player comes near or clicks them.
+static async Task ActivateWaypoint(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
+{
+    if (WaypointCatalog.Areas.Find(conn.Layout.Hash) is not { } entry) return;
+    string[] all;
+    lock (conn.Waypoints)
+    {
+        if (!conn.Waypoints.Add(entry.Id)) return;
+        all = [.. conn.Waypoints];
+    }
+    CharacterSaves.SetWaypoints(CharacterName(conn), all);
+    await SendWaypointList(remote, stream, ciphers, conn, $"waypoint of {entry.Name} ({entry.Id}) activated: {why}");
+}
+
+// After the player is in: a town's waypoint activates on entry, then the character's waypoints (S→C 0x4c).
+static async Task SendWaypoints(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (WaypointCatalog.Areas.Entries.Count == 0) return;
+    if (WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true } town)
+    {
+        string[]? all = null;
+        lock (conn.Waypoints) if (conn.Waypoints.Add(town.Id)) all = [.. conn.Waypoints];
+        if (all is not null) CharacterSaves.SetWaypoints(CharacterName(conn), all);
+    }
+    await SendWaypointList(remote, stream, ciphers, conn, "the character's waypoints");
+}
+
+static async Task SendWaypointList(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
+{
+    var entries = WaypointCatalog.Areas.Entries;
+    List<int> bits;
+    lock (conn.Waypoints) bits = [.. Enumerable.Range(0, entries.Count).Where(i => conn.Waypoints.Contains(entries[i].Id))];
+    // The pins need their areas' access quest flags first (the player object carried the ones known at creation).
+    if (conn.PlayerSent)
+    {
+        var flags = WaypointQuestFlags(conn);
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, flags), $"0x02ba player quest flags: {flags.Count}");
+    }
+    await Send(remote, stream, ciphers, InstanceWaypoints.Waypoints(bits), $"0x004c waypoints: {bits.Count} activated ({why})");
+}
+
+// Quests are not implemented, so the player's quest flags are what the World panel needs (16-waypoints.md §4): the
+// visit flags of every area entered or whose waypoint is activated (they reveal the neighbouring pins and so the
+// connection lines), and the access flags of the activated waypoints' areas (their pins become travel targets).
+static List<int> WaypointQuestFlags(ClientState conn)
+{
+    lock (conn.Waypoints)
+        return [.. WaypointCatalog.Areas.Entries.Where(e => conn.Waypoints.Contains(e.Id)).SelectMany(e => e.AccessFlags ?? [])
+            .Concat(conn.Visited.Concat(conn.Waypoints).SelectMany(id => WaypointCatalog.Visits.For(id)))
+            .Distinct().Order()];
+}
+
+// Entering an area marks it visited (saved) before the player object carries the quest flags.
+static void RecordVisit(ClientState conn)
+{
+    if (WaypointCatalog.Visits.For(conn.Layout.Id).Count == 0) return;
+    string[] all;
+    lock (conn.Waypoints)
+    {
+        if (!conn.Visited.Add(conn.Layout.Id)) return;
+        all = [.. conn.Visited];
+    }
+    CharacterSaves.SetVisited(CharacterName(conn), all);
+}
+
+// C→S 0x4d: a waypoint picked on the World panel. An activated waypoint changes area (the player arrives next to its
+// waypoint); with Ctrl, the instance chooser first.
+static async Task TravelByWaypoint(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceWaypoints.Travel travel)
+{
+    var entry = WaypointCatalog.Areas.Find(travel.AreaHash16);
+    bool activated;
+    lock (conn.Waypoints) activated = entry is not null && conn.Waypoints.Contains(entry.Id);
+    Console.WriteLine($"[gateway] {remote} <= 0x004d waypoint travel to 0x{travel.AreaHash16:x4} ({entry?.Name ?? "no waypoint"}), " +
+        $"u32 0x{travel.U32:x}{(travel.Ctrl ? ", Ctrl" : "")}{(activated ? "" : ": not activated, ignored")}");
+    if (!activated) return;
+    if (travel.Ctrl) await ShowInstances(remote, stream, ciphers, conn, travel.AreaHash16, atWaypoint: true);
+    else await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(travel.AreaHash16, 0, false, AtWaypoint: true), $"waypoint to {entry!.Name}");
 }
 
 // The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). The client walks into range
@@ -845,6 +973,8 @@ static void LoadProgress(ClientState conn, int level)
     lock (conn.Monsters)
     {
         conn.Passives = [.. (save?.Passives ?? []).Where(n => Passives.Find(n) is { IsAscendancy: false })];
+        conn.Waypoints.UnionWith(save?.Waypoints ?? []);
+        conn.Visited.UnionWith(save?.Visited ?? []);
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
             ? xp : CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
@@ -1190,6 +1320,9 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         }
         if (manaAfter != manaBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, manaAfter, pool: ManaPool), null);
         if (rf is not null) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
+        if (conn.Layout.Waypoint is { } waypoint
+            && Dist(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds), (waypoint.GridX, waypoint.GridY)) <= WaypointActivationRange)
+            await ActivateWaypoint(remote, stream, ciphers, conn, "the player came near");
     }
 }
 
@@ -1261,7 +1394,8 @@ static async Task Transfer(string remote, NetworkStream stream, ConnectionCipher
         Console.WriteLine($"[gateway] {remote} transfer failed: {r.Error}");
         return;
     }
-    if (!t.AtSpawn) AreaLayouts.CameFrom[r.Ticket] = conn.Layout.Hash;
+    if (t.AtWaypoint) WaypointArrivals[r.Ticket] = 0;
+    else if (!t.AtSpawn) AreaLayouts.CameFrom[r.Ticket] = conn.Layout.Hash;
     string host = Environment.GetEnvironmentVariable("Game_GATEWAY_HOST") ?? "127.0.0.1";
     ushort port = ushort.TryParse(Environment.GetEnvironmentVariable("Game_GATEWAY_PORT"), out var gp) ? gp : (ushort)6112;
     await Send(remote, stream, ciphers, InstanceTransfer.ConnectInstance(host, port, r.Ticket, r.Area, conn.Keyring.Key(r.Ticket)),
@@ -1440,6 +1574,33 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         string target = string.Join(' ', args);
         if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
         await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
+    })
+    .Add("waypoints", "/waypoints [all | reset] (list the activated waypoints; dev: activate all and visit every pinned area, or keep only the towns')", async args =>
+    {
+        var entries = WaypointCatalog.Areas.Entries;
+        if (entries.Count == 0) { await conn.Commands!.Reply("No waypoints (needs data/tables/WorldAreas.json)."); return; }
+        string what = args.Length > 0 ? args[0].ToLowerInvariant() : "";
+        if (what is "all" or "reset")
+        {
+            string[] all;
+            string[] visited;
+            lock (conn.Waypoints)
+            {
+                conn.Waypoints.Clear();
+                conn.Waypoints.UnionWith(entries.Where(e => what == "all" || e.IsTown).Select(e => e.Id));
+                all = [.. conn.Waypoints];
+                // "all" also visits every area with a World panel pin, so every pin and line shows.
+                if (what == "all") conn.Visited.UnionWith(WaypointCatalog.Visits.PinnedAreas);
+                else { conn.Visited.Clear(); conn.Visited.Add(conn.Layout.Id); }
+                visited = [.. conn.Visited];
+            }
+            CharacterSaves.SetWaypoints(CharacterName(conn), all);
+            CharacterSaves.SetVisited(CharacterName(conn), visited);
+            await SendWaypointList(remote, stream, ciphers, conn, $"/waypoints {what}");
+        }
+        string list;
+        lock (conn.Waypoints) list = string.Join(", ", entries.Where(e => conn.Waypoints.Contains(e.Id)).Select(e => e.Name));
+        await conn.Commands!.Reply(list.Length == 0 ? "No activated waypoints." : $"Activated waypoints: {list}.");
     })
     .Add("mobs", "/mobs (list spawned monsters)", async _ =>
         await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
@@ -1851,7 +2012,8 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: pools.Life, Mana: pools.Mana, Experience: conn.Experience,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weapon), .. GemSkills(name, [.. weapon.Stats(), .. baseStats])], Stats: [.. weapon.Stats(), .. baseStats],
-        Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf));
+        Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
+        QuestFlags: WaypointQuestFlags(conn));
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
     {
@@ -1874,12 +2036,16 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     foreach (var (id, transition) in layout.AreaTransitions)
         messages.Add(($"0x02b9 create area transition 0x{id:x} {transition}",
             InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(transition.Type), transition.Blob())));
+    if (layout.Waypoint is { } waypoint)
+        messages.Add(($"0x02b9 create waypoint 0x{WaypointCatalog.ObjectId:x} {waypoint}",
+            InstanceEntities.CreateObject(WaypointCatalog.ObjectId, InstanceEntities.ObjectTypeHash(WaypointObject.MetadataPath), waypoint.Blob())));
     if (Environment.GetEnvironmentVariable("Game_GATEWAY_ENTER") == "1")
     {
         messages.Add(("0x0021 enter area", InstanceProtocol.EnterArea()));
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.AreaTransitions) messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
+        if (layout.Waypoint is not null) messages.Add(($"0x01a9 waypoint 0x{WaypointCatalog.ObjectId:x} enters wake zone", InstanceProtocol.EnterWakeZone(WaypointCatalog.ObjectId)));
         // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
         // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
         messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. baseStats])));
@@ -1903,6 +2069,11 @@ sealed partial class Program
         "hidden and cannot move. Set Options > Game > Network Mode to Predictive, then log out to the character screen and Play again.";
     // How close (cells, centre to centre) the player must be to use an area transition.
     internal const double AreaTransitionReach = 6;
+    // How close the player must be to use a waypoint (Waypoint.ot object_size 6, as an area transition), and how close
+    // it activates on its own.
+    internal const double WaypointReach = 6, WaypointActivationRange = 25;
+    // Destination tickets of waypoint travel: that connection's player arrives next to the area's waypoint.
+    internal static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, byte> WaypointArrivals = new();
     // The height u32 of S→C 0x1ba (+0x28, passed with the move to Positioned vtable +0xd8) and 0x1b7 (→ +0x290): the
     // fixed height, 0x7fffffff = none, follow the terrain. 0 pinned a moving projectile under the ground (live 2026-10-18).
     internal const uint TerrainHeight = 0x7fffffff;
@@ -1995,8 +2166,12 @@ static class StatKeys
 sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int SpawnX, int SpawnY,
     Func<int, int, bool>? Walkable, (uint Id, AreaTransitionObject Transition)[] AreaTransitions)
 {
+    /// <summary>The area's waypoint (WaypointCatalog), if it has one and its place is known.</summary>
+    public WaypointObject? Waypoint { get; init; }
+
     public string Describe() =>
-        $"area {Id} (0x{Hash:x4}) grid {GridW}x{GridH} spawn ({SpawnX}, {SpawnY}), {(Walkable is null ? "no walkability" : "walkability")}, {AreaTransitions.Length} area transition(s)";
+        $"area {Id} (0x{Hash:x4}) grid {GridW}x{GridH} spawn ({SpawnX}, {SpawnY}), {(Walkable is null ? "no walkability" : "walkability")}, {AreaTransitions.Length} area transition(s)" +
+        (Waypoint is { } w ? $", waypoint at ({w.GridX}, {w.GridY})" : "");
 
     // One-way entries have no exit back to stand next to: the arrival is the layout's named entrance point
     // (08-area-transitions.md §3). Lioneye's Watch from The Twilight Strand: "entrance1" (disabled in beachtown.dgr).
@@ -2058,6 +2233,11 @@ static class AreaLayouts
     public static AreaLayout For(ushort hash, uint seed)
     {
         string id = Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? $"0x{hash:x4}";
+        return WithoutWaypoint(hash, id, seed) with { Waypoint = WaypointCatalog.For(hash, id, seed) };
+    }
+
+    static AreaLayout WithoutWaypoint(ushort hash, string id, uint seed)
+    {
         byte[]? cells = LoadCells(id, seed, out int w, out int h);
         var notes = new List<string>();
         var transitions = AreaTransitionCatalog.For(hash, id, seed, notes);
@@ -2124,7 +2304,7 @@ static class AreaLayouts
             {
                 await Task.Delay(200);   // the capture is rewritten per object; let the last ones land
                 var better = For(layout.Hash, seed);
-                return better.AreaTransitions.Length > 0 ? better : null;
+                return better.AreaTransitions.Length > 0 || better.Waypoint is not null ? better : null;
             }
             await Task.Delay(100);
         }
@@ -2179,7 +2359,8 @@ static class AreaLayouts
 }
 
 /// <param name="AtSpawn">Arrive at the destination's spawn (Resurrect in Town) instead of next to the exit back.</param>
-sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpawn = false);
+/// <param name="AtWaypoint">Waypoint travel: arrive next to the destination's waypoint.</param>
+sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpawn = false, bool AtWaypoint = false);
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
@@ -2237,7 +2418,7 @@ sealed record RighteousFireState(ushort Buff, ushort SelfAura, uint Ring, ushort
 }
 
 // The last instance list shown (0xae); 0xaf picks a row of it.
-sealed record ChooserList(ushort Area, IReadOnlyList<ulong> Ids);
+sealed record ChooserList(ushort Area, IReadOnlyList<ulong> Ids, bool AtWaypoint = false);
 
 sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
 {
@@ -2312,6 +2493,12 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public volatile bool AiEnabled = true, Closed;
     // Whether the lockstep warning was shown on this connection.
     public bool WarnedLockstep;
+    // The character's activated waypoints (WorldAreas Ids, kept in its save) and whether this connection was reached
+    // by waypoint travel (the player then appears next to the area's waypoint).
+    public readonly HashSet<string> Waypoints = [];
+    // The areas the character has entered (WorldAreas Ids, kept in its save): their visit quest flags.
+    public readonly HashSet<string> Visited = [];
+    public bool ArriveAtWaypoint;
 
     /// <summary>A walk estimate for a server object on this area's walk map.</summary>
     public WalkEstimator NewWalk(int x, int y, double speed) =>
