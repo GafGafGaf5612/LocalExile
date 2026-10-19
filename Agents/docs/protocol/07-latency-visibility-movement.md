@@ -21,21 +21,22 @@ unframed bytes. Index 0 then always pops a stale entry. Live in The Coast the qu
 167 ms), and the meter read ~400 ms. The first 0x1c of each connection, and the first after an unframed read, therefore
 sends index 0xFFFF (`ClientInbox.NextAckIndex`). After that the queue held 1 at every 0x1c.
 
-**What the overlay shows.** The network update `0x142148880` runs once per client frame on the network thread. It
-reads the socket, handles each 0x1c (pop), stores the latency sample `+0xc480` (now − queue front, 0 when empty) and
-sends a 0x1b every 100 ms (500 ms after more than 100 ms without a client send, `+0xc488`). It also keeps a peak
-`+0xc490`: raised when a sample exceeds it (plus a margin from a setting at `+0x11c`), never lowered, and reset only
-when a connection starts (`0x142144b50`). "network: N ms" shows that peak, not the live sample (live Frida 2026-10-19:
-the sample was 0 at every update at both ~6 and ~60 fps, while the overlay and `+0xc490` held 14). So the 12–14 ms is
-one moment early in the connection when an answer arrived one update late, held until the next area change.
+**What the latency graph shows.** The network update `0x142148880` runs once per client frame on the network thread:
+it reads the socket, handles each 0x1c, sets the sample `+0xc480` = now − queue front (0 when empty), and sends a 0x1b
+every 100 ms (500 ms after more than 100 ms without a client send, `+0xc488`). The graph and "latency N ms" show
+`+0xc490` (`0x140d57cd0` feeds it to the perf ring). Two places move it:
 
-So the meter reads 0 while every tick is answered at once, and a spike is exactly how long the server left a tick
-unanswered. The Gateway used to answer ticks in the same per-connection loop as every other handler, so the overlay
-jumped to seconds while 0x7d populated the area or an area change ran (issue #46). Now the read loop answers each 0x1b
-as soon as it is framed, and every other message waits, in order, for the connection's one handler task
-(`ClientInbox`, `RunHandlers`). Nagle is off (`NoDelay`), since it could hold a 0x1c back ~200 ms. The log shows
-`slow tick #N` for a 0x1c sent more than 50 ms after its 0x1b was read, and `slow handler` for a read whose handlers ran
-longer than that. A client-side hitch (loading after a zone change) still counts: replies sit unread while it is frozen.
+- the network update raises it to the sample when the sample exceeds it by a margin (a tick overdue);
+- the 0x1c handler (`0x14214b8dc`, after the pop) computes rtt = now − the popped send time, subtracts the 0x1c's
+  u16 server delay from rtt and from the sample, and clamps the value into [sample − delay, rtt − delay]: it only
+  drops when an rtt comes in below it.
+
+So the value is the lowest round trip measured since the last overdue tick, and it cannot go below one client
+update: the client reads the 0x1c at the start of the update after the one that sent the 0x1b (live: socket read →
+pop → send the next tick, all in one update). Live Frida 2026-10-19 in town: sample 0, value 12, rtt 166–169 ms with
+the client in the background (~6 updates/s), so the value stayed at the 12 measured while it ran at full frame rate.
+The server answers within a millisecond; the 12–14 ms is the client's own frame interval. The u16 server delay could
+hide it, but it is meant for time the server held the tick, so the Gateway sends 0.
 
 ## 2. HNC, the hidden side channel
 
