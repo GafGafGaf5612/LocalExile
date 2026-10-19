@@ -121,7 +121,12 @@ keeps the ids of the last list it sent (`ChooserList`).
   - 0xaf or a plain click → 0x2b2.
   - 0x2cb → `transfer` → 0x27 with the key for the new ticket.
   - On the new connection, `resolve` gives the area and seed. Layout: `data/walkability/<id>_seed<seed>.bin` + `.json`.
-    The spawn is the deepest walkable cell until arrival points are known.
+    The player arrives next to the exit leading back to the area they left (`AreaLayout.Arrival`, `SpawnNear`'s
+    nearest walkable cell 6–20 cells away). `Transfer` remembers that area per destination ticket
+    (`AreaLayouts.CameFrom`, in memory); Resurrect in Town (`PendingTransfer.AtSpawn`) and logins have none and use
+    the spawn: the town's fixed point, or the deepest walkable cell. One-way entries have no exit back and use a named
+    entrance point (`OneWayArrivals`: Lioneye's Watch from The Twilight Strand, `entrance1`) or the spawn. Resurrect
+    at Checkpoint revives at the arrival point.
 - **Where a login starts** (Play, login 0x0e → `InstanceDirectory.AssignStart`): the spawn point of the character's
   **last town**, as in the real game, which never logs a character into a combat area or at a saved position. This
   holds after logging out, Exit to Character Selection, a crash, a server restart, or disconnecting while dead. The
@@ -138,7 +143,7 @@ keeps the ids of the last list it sent (`ChooserList`).
 
 ## 5. Open
 
-- Arrival point: where the player appears next to the exit they came through. The Coast currently uses the deepest cell.
+- Named entrance points for the other one-way entries ([Roadmap](../../Roadmap.md) "One-way entries").
 - The Coast's own exits (back to town, to The Mud Flats) and the exits of other areas.
 - 0x2cb's layout, 0x27's u32 +0x34 and u8 +0x88, 0xae's u8 fields.
 - After 0x153 the client's log says "Abnormal disconnect: An unexpected disconnection occurred." (nothing on screen).
