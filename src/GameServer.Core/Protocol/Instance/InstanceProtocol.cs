@@ -53,8 +53,20 @@ public static class InstanceProtocol
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
         InstanceItems.InventoryRequestId => 8, InstanceItems.ItemActionId => 12, InstanceItems.SocketGemId => 16,
         InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
-        InstanceEntities.AllocatePassiveId => 7, InstanceEntities.PanelToggleId => 3, _ => null,
+        InstanceEntities.AllocatePassiveId => 7, InstanceEntities.PanelToggleId => 3,
+        LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, _ => null,
     };
+
+    public const ushort LockstepMoveStartId = 0x018e, LockstepMoveUpdateId = 0x0192, LockstepMoveStopId = 0x0195;
+
+    /// <summary>
+    /// What the client sends to move instead of 0x25 when it runs in lockstep (Options → Network Mode; "auto" chose it
+    /// on localhost, live 2026-10-18): 0x018e (15 bytes: i32, i32 offsets from the player, u16 skill id 0x2909 Move, u16
+    /// flags 0x0400 / 0x0402, u8), then 0x0192 (10 bytes: two i32) and 0x0195 (id only). Lengths from 26 captures of each,
+    /// every one alone in its chunk; the layout is inferred, not read from the client's serializers. The server does not
+    /// answer them, so in lockstep the player is never drawn and cannot move: the Gateway asks for Predictive instead.
+    /// </summary>
+    public static bool IsLockstepMovement(ushort id) => id is LockstepMoveStartId or LockstepMoveUpdateId or LockstepMoveStopId;
 
     public const ushort SkillBarId = 0x53, SkillBarSlots = 13;
 

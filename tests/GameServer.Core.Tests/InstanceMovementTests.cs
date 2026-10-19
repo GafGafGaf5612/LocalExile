@@ -48,6 +48,29 @@ public class InstanceMovementTests
     }
 
     [Fact]
+    public void Lockstep_movement_messages_are_framed()
+    {
+        // Captured live 2026-10-18 with Network Mode "auto" (lockstep on localhost): one click sent start, update, stop.
+        // Each is followed here by a tick, which must still be framed.
+        byte[] chunk = Convert.FromHexString("018E00000029FFFFFFEF2909040200" + "001B0046997F00" + "019200000010FFFFFFF2" +
+            "001B0046997F00" + "0195" + "001B0046997F00");
+        var msgs = InstanceProtocol.SplitClientMessages(chunk, out byte[] partial, out byte[] unknown);
+        Assert.Equal(new ushort[] { 0x018e, 0x001b, 0x0192, 0x001b, 0x0195, 0x001b }, msgs.Select(m => m.Id));
+        Assert.Equal(new[] { 15, 7, 10, 7, 2, 7 }, msgs.Select(m => m.Bytes.Length));
+        Assert.Empty(partial);
+        Assert.Empty(unknown);
+    }
+
+    [Theory]
+    [InlineData(0x018e, true)]
+    [InlineData(0x0192, true)]
+    [InlineData(0x0195, true)]
+    [InlineData(0x0025, false)]   // predictive move (UseSkillAtLocation)
+    [InlineData(0x001b, false)]   // tick
+    public void Only_the_three_lockstep_messages_count_as_lockstep_movement(ushort id, bool lockstep) =>
+        Assert.Equal(lockstep, InstanceProtocol.IsLockstepMovement(id));
+
+    [Fact]
     public void Splitter_frames_known_messages_and_keeps_partials()
     {
         // 0x0099 then a tick, as one live chunk; then a tick cut in two.
