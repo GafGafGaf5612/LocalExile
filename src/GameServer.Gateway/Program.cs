@@ -107,7 +107,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, League = resolved.League, Hardcore = resolved.Hardcore, LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             conn.Commands = Commands(remote, stream, ciphers, conn);
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
             LoadProgress(conn, resolved.Level);
@@ -1590,8 +1590,8 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
 }
 
 // The death screen's buttons (C→S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
-// checkpoint" revives at the area's arrival point (teleport 0x1b7), "in town" in Lioneye's Watch (an area change; in town
-// it is the same as the checkpoint).
+// checkpoint" revives at the area's arrival point (teleport 0x1b7), "in town" in the character's last town (an area change;
+// in that town it is the same as the checkpoint).
 static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool inTown)
 {
     lock (conn.Monsters)
@@ -1603,10 +1603,10 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0054 resurrect {(inTown ? "in town" : "at checkpoint")}");
     await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(0x02), "0x0055 hide the death screen");
-    if (inTown && conn.Layout.Hash != AreaLayouts.LioneyesWatch)
+    if (inTown && conn.Layout.Hash != conn.LastTown)
     {
         // The new area's player object is created with full life.
-        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(AreaLayouts.LioneyesWatch, 0, false), "resurrect in town");
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(conn.LastTown, 0, false), "resurrect in town");
         return;
     }
     // Revive first: a teleport sent while the player is dead left them where they died (live 2026-10-17).
@@ -2202,6 +2202,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public string? Character { get; init; }
     public string? League { get; init; }
     public bool Hardcore { get; init; }
+    /// <summary>The character's last town (HASH16, from Auth's resolve): Resurrect in Town goes there.</summary>
+    public ushort LastTown { get; init; }
     // The character's class: its Characters.dat row (the Witch: 1).
     public int ClassRow { get; init; } = SkillCatalog.WitchRow;
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();

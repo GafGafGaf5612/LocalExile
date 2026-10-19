@@ -115,11 +115,11 @@ Items are in rough priority order within each section. "Known" says what is alre
   every login starts at the last town's spawn point ([09](docs/protocol/09-area-change.md) §4). This follows the real
   game on purpose: the area and position a character was in are not saved, because the real client never logs anyone
   into them. New characters start in Lioneye's Watch (`AccountService.StartingArea`). The death screen's "Resurrect in
-  Town" always goes to Lioneye's Watch; "Resurrect at Checkpoint" goes to the area's arrival point ([09](docs/protocol/09-area-change.md) §7).
+  Town" goes to the last town, with a loading screen; "Resurrect at Checkpoint" goes to the area's arrival point
+  ([09](docs/protocol/09-area-change.md) §7).
 - **Done when:** as in the real game, a new character starts on The Twilight Strand (`StartingArea`), reaches Lioneye's
-  Watch only after defeating Brutus, and logs in on the Twilight Strand until then; "Resurrect in Town" goes to the last
-  town, with a loading screen; "Resurrect at Checkpoint" goes to the last activated checkpoint of the area, with no
-  loading screen (checkpoint objects are not implemented yet).
+  Watch only after defeating Brutus, and logs in on the Twilight Strand until then; "Resurrect at Checkpoint" goes to
+  the last activated checkpoint of the area, with no loading screen (checkpoint objects are not implemented yet).
 
 ## 4. Server design
 
