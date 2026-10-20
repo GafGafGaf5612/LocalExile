@@ -37,8 +37,19 @@ Real skills (gems, the default attack) come from the server, inside the **Actor 
 `0x1421932b0`** (the part after the main body, [04](04-player-entity.md) §4.9; also what S→C 0x2ba runs). Its first flag
 byte f0:
 
-- **f0 0x40 → `0x142197b10`**: the skill list (replaces the manager's server skills).
-- f0 0x20 → `0x142198800`: also reads skill records through `0x1421981d0` (an update; not used yet).
+- **f0 0x40 → `0x142197b10`**: the skill list. It adds each record or replaces the one with the same id; it never
+  removes a skill, so a skill missing from a later list stays on the client (and selectable on the skill bar).
+- **f0 0x20 → `0x142198800`**: the update that can remove skills (`InstanceEntities.PlayerSkillsRemove`):
+  ```
+  u8 a, u8 b
+  a × skill record (0x1421981d0, as in the list: add or replace)
+  b × u16 skill id (0x142198560: binary search of the manager's skills at +0x158 by id (+0x40), the manager's
+                    vtable +0x40 runs for it, then it is erased; an unknown id is skipped)
+  u8 c, c × (u32, u32)        → manager +0x188
+  u8 d, d × (u32, u32, u32)
+  ```
+  The Gateway remembers the ids the client has per connection (`ClientSkillIds`, from the player object and every list
+  since) and sends the ones that left after each list (`SendSkills`).
 
 `0x142197b10`:
 ```

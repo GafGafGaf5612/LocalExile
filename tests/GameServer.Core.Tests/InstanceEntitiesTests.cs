@@ -329,6 +329,15 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Player_skills_remove_is_a_0x20_update_with_only_ids()
+    {
+        byte[] m = InstanceEntities.PlayerSkillsRemove(0x1000, [0x0103, 0x0104]);
+        // index 9 = Actor, flags 0x20, no records, two ids (u16 LE), no 0x188 entries, no triples
+        string body = "09" + "2000" + "00" + "02" + "0301" + "0401" + "00" + "00";
+        Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, Convert.ToHexString(m));
+    }
+
+    [Fact]
     public void Monster_blob_with_a_skill_and_stats()
     {
         // Live 2026-10-17: Hungry Corpse with Melee (GEPL 4394) in its Actor and its attack stats: 175 bytes, 0 left.

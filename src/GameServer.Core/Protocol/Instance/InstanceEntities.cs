@@ -195,6 +195,19 @@ public static class InstanceEntities
     }
 
     /// <summary>
+    /// Removes skills from the player (0x2ba to the Actor, flags 0x20 → <c>0x142198800</c>): u8 records to add (none),
+    /// u8 ids to remove, the u16 ids (<c>0x142198560</c>: found by id in the skill manager, its remove handler runs),
+    /// then u8 0 and u8 0 for the two lists that follow. The 0x40 list only adds or replaces, so a skill whose gem left
+    /// the equipment stays on the client until it is removed here.
+    /// </summary>
+    public static byte[] PlayerSkillsRemove(uint playerId, IReadOnlyList<ushort> ids)
+    {
+        var w = new BlobWriter().U8(0x20).U8(0).U8(0).U8((byte)ids.Count);
+        foreach (var id in ids) w.U16(id);
+        return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.U8(0).U8(0).ToArray());
+    }
+
+    /// <summary>
     /// The player's experience (0x2ba to the Player component, reader <c>0x141e7ee30</c>): u16 flags, bit0 = u32 experience,
     /// which goes through the same setter as creation (<c>0x141e7f6b0</c>): the level is derived again from it and, when
     /// it changed, the component's level-change handler (vtable +0x108) runs. The other flags stay off.
