@@ -118,4 +118,24 @@ public class DamageModelTests
         Assert.True(DamageModel.Hits(5, 4));
         Assert.False(DamageModel.Hits(5, 5));
     }
+
+    [Fact]
+    public void Armour_reduction_matches_PoB_and_is_capped()
+    {
+        // PoB CalcDefence: armour / (armour + damage * 5) * 100, rounded, capped at 90%.
+        Assert.Equal(17, DamageModel.ArmourReduction(1000, 1000));
+        Assert.Equal(0, DamageModel.ArmourReduction(0, 1000));
+        Assert.Equal(0, DamageModel.ArmourReduction(1000, 0));
+        Assert.Equal(90, DamageModel.ArmourReduction(1_000_000, 1));
+        Assert.Equal(830, DamageModel.MitigatePhysical(1000, 1000));
+        Assert.Equal(0, DamageModel.MitigatePhysical(0, 1000));
+    }
+
+    [Fact]
+    public void Evasion_is_the_missing_part_of_the_attack_hit_chance()
+    {
+        Assert.Equal(7, DamageModel.EvadeChance(67, 30));
+        Assert.Equal(95, DamageModel.EvadeChance(1_000_000, 30));
+        Assert.Equal(95, DamageModel.EvadeChance(67, 0));
+    }
 }

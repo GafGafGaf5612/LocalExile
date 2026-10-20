@@ -41,6 +41,27 @@ sealed class InstanceState
     public volatile List<SavedMonster>? Monsters;
     internal int Connections;
     internal DateTimeOffset? EmptySince;
+    readonly Dictionary<string, (uint Id, Item Weapon)> _startWeapons = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Puts a character's start weapon (<see cref="PlayerInventories.StartWeapon"/>) on this instance's ground
+    /// once: its ground id, or null when this weapon was put here before (it is still on the ground, or was picked up).
+    /// A new character of a deleted one's name has a weapon of its own, so it gets it here too.</summary>
+    public uint? PlaceStartWeapon(string character, WorldItemObject weapon)
+    {
+        lock (_startWeapons)
+        {
+            if (_startWeapons.TryGetValue(character, out var placed) && ReferenceEquals(placed.Weapon, weapon.Item)) return null;
+            uint id = Ground.Add(weapon);
+            _startWeapons[character] = (id, weapon.Item);
+            return id;
+        }
+    }
+
+    /// <summary>Whether ground item <paramref name="id"/> is the start weapon put here for <paramref name="character"/>.</summary>
+    public bool IsStartWeapon(string character, uint id)
+    {
+        lock (_startWeapons) return _startWeapons.TryGetValue(character, out var placed) && placed.Id == id;
+    }
 }
 
 /// <summary>An instance's items on the ground. Their object ids come from their own range, so they stay the same for every

@@ -35,6 +35,15 @@ public static class InstanceChat
     /// listeners at +0xa1f0): a message box with the text and an OK button. Live 2026-10-16.</summary>
     public static byte[] MessageBox(string text) => new LoginWriter().U16(MessageBoxId).WStr(text).ToArray();
 
+    public const ushort ChatLineId = 0x17;
+
+    /// <summary>S→C 0x17 (class 0x1435dcec0, read 0x140e0c710; dispatcher case 2 → listeners at instance +0xb78 → chat
+    /// panel 0x140179f20 / 0x14017a300): one line in the chat panel. wstr sender (its first character picks the channel),
+    /// wstr text, wstr guild tag, u16 flags (bit 8 sends it to +0xd78 instead, bit 3 adds a field), u8, u8, 8 bytes, u8,
+    /// u8 n + n linked items. An empty sender and zeros print the text alone. Live 2026-10-20.</summary>
+    public static byte[] ChatLine(string text, string sender = "") =>
+        new LoginWriter().U16(ChatLineId).WStr(sender).WStr(text).WStr("").U16(0).U8(0).U8(0).RawU64(0).U8(0).U8(0).ToArray();
+
     public static ChatInput ReadChat(ReadOnlySpan<byte> m)
     {
         var r = new LoginReader(m[2..]);

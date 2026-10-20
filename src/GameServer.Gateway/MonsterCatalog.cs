@@ -58,6 +58,15 @@ sealed class MonsterCatalog(string folder = "data")
     public int? BaseExperience(Variety v, byte level) =>
         _life.Value is { } t && level >= 1 && level <= t.Levels.Count ? t.Levels[level - 1].Experience : null;
 
+    /// <summary>A normal monster's damage at this level, before a variety's multiplier: DefaultMonsterStats `Damage`.
+    /// Used by the defence probe; the actual hit spread is in <see cref="BaseDamage(Variety, byte)"/>.</summary>
+    public int? BaseDamage(int level) =>
+        _life.Value is { } t && level >= 1 && level <= t.Levels.Count ? (int)Math.Round(t.Levels[level - 1].Damage) : null;
+
+    /// <summary>A monster's accuracy at this level: DefaultMonsterStats `Accuracy`.</summary>
+    public int? BaseAccuracy(int level) =>
+        _life.Value is { } t && level >= 1 && level <= t.Levels.Count ? t.Levels[level - 1].Accuracy : null;
+
     /// <summary>A monster's evasion rating at this level: DefaultMonsterStats `Evasion` (the same table PoB uses for
     /// <c>monsterEvasionTable</c>). Null when the tables are missing.</summary>
     public int? BaseEvasion(int level) =>
@@ -68,7 +77,8 @@ sealed class MonsterCatalog(string folder = "data")
     public int? BaseEvasiveEvasion(int level) =>
         _life.Value is { } t && level >= 1 && level <= t.Levels.Count ? t.Levels[level - 1].EvasiveEvasion : null;
 
-    private sealed record LifeTables(List<(int MonsterLife, int MinionLife, int AltLife1, int AltLife2, double Damage, int Experience, int Evasion, int EvasiveEvasion)> Levels,
+    private sealed record LifeTables(List<(int MonsterLife, int MinionLife, int AltLife1, int AltLife2, double Damage,
+        int Experience, int Accuracy, int Evasion, int EvasiveEvasion)> Levels,
         List<(bool Minion, bool AltLife1, bool AltLife2)> Types)
     {
         public static LifeTables? Load(string folder)
@@ -80,7 +90,7 @@ sealed class MonsterCatalog(string folder = "data")
             return new LifeTables(
                 [.. s.RootElement.EnumerateArray().Select(r => (r.GetProperty("MonsterLife").GetInt32(), r.GetProperty("MinionLife").GetInt32(),
                     r.GetProperty("AltLife1").GetInt32(), r.GetProperty("AltLife2").GetInt32(), r.GetProperty("Damage").GetDouble(),
-                    r.GetProperty("Experience").GetInt32(), r.GetProperty("Evasion").GetInt32(),
+                    r.GetProperty("Experience").GetInt32(), r.GetProperty("Accuracy").GetInt32(), r.GetProperty("Evasion").GetInt32(),
                     r.GetProperty("EvasiveEvasion").GetInt32()))],
                 [.. t.RootElement.EnumerateArray().Select(r => (r.GetProperty("IsPlayerMinion").GetBoolean(), r.GetProperty("AltLife1").GetBoolean(),
                     r.GetProperty("AltLife2").GetBoolean()))]);

@@ -186,6 +186,9 @@ G = global / static data.
 | `0x141ea10a0` | Fn | WorldItem component read |
 | `0x141e1ee30` → `0x1424f44e0` | Fn | player Inventories component: visible equipment entries |
 | `0x1402ce5f0` | Fn | item attribute requirement check (virtual_*_for_requirements) |
+| `0x1424a6d90` | Fn | an item's requirement for one attribute (type value, flat and % item stats) ([13](13-items.md) §2d) |
+| `0x1421e03d0` | Fn | an item's level requirement → Mods +0x2bc (type level, mod level × 4 / 5, override, +); not run for network items, which keep the sent byte ([13](13-items.md) §2d) |
+| `0x1421eca50` | Fn | can the player use this item: level (Mods +0x2bc vs Player +0x1ac), gem levels, attributes |
 | `0x141e80340`, `0x141e802d0` | Fn | Player caches: requirement attributes; UI attributes |
 | `0x1402f36c0` | Fn | item's AttributeRequirements component getter |
 | `0x141e1dce0` | Fn | InteractionAction type parser (`interaction_distance_override` → +0x1bb) |
@@ -218,9 +221,33 @@ G = global / static data.
 | `0x140797750` | Fn | area accessible: all WorldAreas +0x54 quest flags set (Player component) |
 | `0x140a9a7d0` / `0x140a9aa90` | Fn | connection lines: only between two shown pins |
 | `0x141e83340` | Fn | flag set reader (u16 n × (u8 block, u64 bits)); Player +0x1b8 quest flags, +0x1d0 |
-| `0x14012aae0` | Fn | flag set test |
-| `0x141e7ee30` | Fn | Player component update reader (0x2ba): u16 flags, 0x02 quest flags, 0x08 second set, 0x200 9 bytes, 0x01 experience |
-| `0x141e1c550` | Fn | HideoutDoodad reader (only with type data +0x14e) |
+| `0x14012aae0` | Fn | flag set test `(set, bit)` |
+| `0x141e7ee30` | Fn | Player component update reader (0x2ba): u16 flags, 0x02 quest flags, 0x08 league quest flags, 0x10 Hideouts keys, 0x200 9 bytes, 0x01 experience |
+| `0x141e1c550` | Fn | HideoutDoodad reader: u32 MTX hash, u8 variation, u8 flag, only when the object's data +0x14e is set (in hideouts) |
+
+## Hideouts ([21](21-hideouts.md))
+| Address | Kind | What |
+|---|---|---|
+| `0x141e7dc10` / `0x141e7ee30` | Fn | Player reader / update: the two Hideouts keys (update bit 0x10, then vtable +0x130) |
+| `0x142fca900` | Data | league quest flags: 0x776 sorted {UTF-16 name, length, u32 id} |
+| `0x1423f1fb0` / `0x141de7f60` | Fn | league quest flag name → id (0x777 unknown) |
+| `0x14155cdf0` | Fn | league flag test on Player +0x1d0 with bit id − 1 |
+| `0x141e65563` | Call | the map device's Targetable test of `UnlockedMapDevice` (bit 349) |
+| `0x14216c840` | Fn | HUD hideout panel check: quest flag HASH32 0x2f1b9c25 in the Player component |
+| `0x1401ff190` | Fn | hideout panel shown or hidden by `0x14216c840` |
+| `0x1401fc880` | Fn | hideout panel (palette) constructor |
+| `0x142163420` case 5 | Fn | S→C 0x7b kind 5 → listeners at instance +0x1778 → `0x140dcd9a0` |
+| `0x140dcd9a0` / `0x140dce1f0` / `0x140dce290` | Fn | open the map device window (modes 0xd, 0x5e, 0x56; lists +0x1778, +0x17f8, +0x1878) |
+| `0x140c2a1c0` | Fn | map device window: Activate button (mode 0xd → `0x142166480`, mode 0x5e → C→S 0x296) |
+| `0x142166480` | Fn | C→S 0x00d8 Activate: u16 (target +0x7b), u8 (writer class `0x1435bff20`) |
+| `0x1435dcc00` (read `0x1421a0a00`, write `0x1421a08a0`) | Cls | S→C 0x008f the map device's portals (dispatcher case 0x21) |
+| `0x142186070` | Fn | 0x008f handler: per portal PortalClient +0xb8, `on_map_portal_opened` / `on_map_portal_closed` |
+| `0x1421b9af0` | Fn | 0x008f portal list read (u32 object, u16 area, then u16, u8, u8, u8, wstr when the area is set) |
+| `0x14161a020` | Fn | PortalClient vtable +0xb8: set the portal's area, model (`0x141e2d240`) and rendering |
+| `0x141e2cee0` / `0x141e2cf40` | Fn | Portal component read (u8) / set the multiplex portal type (the "portal" state) |
+| `0x1423f3f10` / `0x1423f3e60` | Fn | item Map component read / write (u8, u8, u8 flag [u32]) |
+| `0x140c276c0` | Fn | map device window constructor (HUD +0x7d8) |
+| `0x140dbcd40` | Fn | HUD: registers its 0x7b listeners on the instance lists |
 
 ## Stash ([18](18-stash.md))
 | Address | Kind | What |

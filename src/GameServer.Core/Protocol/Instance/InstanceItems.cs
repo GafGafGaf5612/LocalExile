@@ -64,7 +64,16 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     public static readonly HashSet<string> NoData = ["LocalStats", "AttributeRequirements", "Weapon", "Usable", "Flask", "Quest", "Shield", "RenderItem"];
 
     /// <summary>Components <see cref="Payload"/> can write.</summary>
-    public static readonly HashSet<string> Supported = [.. NoData, "Base", "Mods", "Armour", "Quality", "Sockets", "Charges", "Stack", "SkillGem"];
+    public static readonly HashSet<string> Supported = [.. NoData, "Base", "Mods", "Armour", "Quality", "Sockets", "Charges", "Stack", "SkillGem", "Map"];
+
+    /// <summary>The character level the item requires, sent in the Mods component (+0x2bc). The client keeps the byte
+    /// it receives (it only recomputes it, 0x1421e03d0, when an item's mods change on its side) and shows it in the
+    /// tooltip and checks it before equipping, so the server must send it. The Gateway sets this from the type and the
+    /// mods; without it 0 is sent. <see cref="RequiredLevel"/> overrides it for one item.</summary>
+    public static Func<Item, int>? LevelRequirementOf { get; set; }
+
+    /// <summary>This item's level requirement, instead of <see cref="LevelRequirementOf"/>.</summary>
+    public int? RequiredLevel { get; init; }
 
     public static bool CanSerialize(IEnumerable<string> components) => components.All(Supported.Contains);
 
@@ -106,12 +115,18 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 case "Armour":
                     w.U8(0);
                     break;
-                // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit 6 incubator, bit 4 → u8, bit 15 a 0x1c8
-                // record), the base magic properties 0x142201d70 (MagicProperties), u8, u8.
-                case "Mods": w.U8(ItemLevel).U8(0).U16(0); MagicProperties(w); w.U8(0).U8(0); break;
+                // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc (level requirement, kept as sent), u16 flags (bit 6
+                // incubator, bit 4 → u8, bit 15 a 0x1c8 record), the base magic properties 0x142201d70 (MagicProperties), u8, u8.
+                case "Mods":
+                    w.U8(ItemLevel).U8((byte)Math.Clamp(RequiredLevel ?? LevelRequirementOf?.Invoke(this) ?? 0, 0, 255)).U16(0);
+                    MagicProperties(w); w.U8(0).U8(0);
+                    break;
                 case "Quality": w.U8(Quality); break;                 // 0x1424aec50
                 case "Charges": w.CompactI(Charges); break;           // 0x14249d4b0: signed compact (0x141e490e0)
                 case "Stack": w.U16(StackSize); break;                // 0x1423f4b30
+                // 0x1423f3f10 (write 0x1423f3e60): u8 +0x19, u8 +0x18, u8 flag (1: a u32 HASH32 follows, looked up in a
+                // table; stored at +0x20). Zeros: the map's tier and area come from Maps.dat by its type.
+                case "Map": w.U8(0).U8(0).U8(0); break;
                 // 0x14246eb00: i32 experience (-1: none), u32 +0x3c, u8 +0x10, u16 +0x40.
                 case "SkillGem": w.I32(GemExperience).U32(0).U8(0).U16(0); break;
                 // 0x1421e2e20: u8 = bit0/bit1 (special, nothing more) | socket count << 2 | link group count << 5; per socket
@@ -244,6 +259,9 @@ public static class InstanceItems
     /// <summary>Commands.dat row 8 (DestroyCursorItem, "/destroy") + 1: what the Keep / Destroy popup's Destroy sends.</summary>
     public const byte DestroyCursorItemCommand = 9;
 
+    /// <summary>Commands.dat row 44 (WarpToHideout, "/hideout") + 1: the chat command that goes to the hideout.</summary>
+    public const byte WarpToHideoutCommand = 45;
+
     /// <summary>
     /// C→S 0x16 (class 0x1435bff00, write 0x141f91480, sender 0x14215c3b0): a chat command from Commands.dat with
     /// SendsGenericCommandPacket. u8 command (row + 1), then the argument: u16 byte count + UTF-8 (0x140e0c9b0; at most
@@ -329,6 +347,16 @@ public static class InstanceItems
         var r = new LoginReader(m[2..]);
         return new(r.U32(), r.U32());
     }
+
+    public const ushort UseFlaskId = 0x70;
+    public const int UseFlaskLength = 6;
+
+    /// <summary>
+    /// C→S 0x70 (6 bytes, live 2026-10-20): a flask key was pressed. u32 big-endian, the flask slot (0 for key 1, 1 for
+    /// key 2, …: the x cell in the flask bar, Inventories row 11). Inferred from presses of the start kit's two flasks, not
+    /// read from the client's serializer. The client changes nothing itself: the server spends the charges and recovers.
+    /// </summary>
+    public static uint ReadUseFlask(ReadOnlySpan<byte> m) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]);
 
     public const ushort UseItemOnId = 0x71;
     public const int UseItemOnLength = 18;

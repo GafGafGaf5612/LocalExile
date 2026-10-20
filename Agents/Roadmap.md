@@ -72,6 +72,14 @@ Items are in rough priority order within each section. "Known" says what is alre
   deserializer, schema.md). Check every new component with `scripts/re/frida/check-components.js`.
 - **Done when:** monsters in areas match the official game's (mods, rarity bonuses, emerge, boss bar).
 
+### Hideouts: decorations, editing and the map device
+- **Known:** the Lush Hideout works: travel, waypoint, stash, Nessa, the Edit button and the map device: slots, Activate
+  and six portals into the map ([21](docs/protocol/21-hideouts.md) §5). Its decoration (`data/hideouts.json`) lists every doodad with its type and model.
+- **Start:** create the decorations (`HideoutObject`, each type's components from data/object-types.json); the Edit
+  mode's client messages (move, place, remove, save); maps: the arrival point, a return portal, fragments and device
+  recipes, map mods; log in to the hideout after logging out there; the hideout selection window.
+- **Done when:** the hideout looks like the real one, can be edited and saved, and maps can be run from its device.
+
 ### NPCs: dialogue options, shops and the other towns
 - **Known:** NPC objects, Lioneye's Watch placements and the dialogue window (S→C 0x84, C→S 0x85) work
   ([17](docs/protocol/17-npcs.md)). The client picks the NPCTalk row itself (`0x141e76d40`).
@@ -127,12 +135,18 @@ Items are in rough priority order within each section. "Known" says what is alre
   attribute colour, which is the pre-3.29 look.
 - **Done when:** items' damage and defences count, and flasks and currency can be used.
 
-### A damage model (next)
-- **Known:** both sides hit with flat damage ranges ([11](docs/protocol/11-skills.md) §5, §6); the player's life is a
-  fixed 50.
-- **Start:** the player's real stats (below), then armour / evasion / resistances and the remaining conditional
-  critical strike stats from the stats both sides already carry; monster skills beyond the first granted effect
-  (ranged, spells).
+### Damage model (foundation done, deeper defence next)
+- **Done:** hits are per-type `DamagePacket`s; conversion follows physical, lightning, cold, fire, chaos, including
+  chained conversion, the 100% cap and gain-as-extra. DoT/ailment formulas and fractional ticks are in the same model,
+  and per-type resistance mitigation works on packets. The default attack, Fireball and monster melee use packets and
+  read the player's/skill's conversion stats ([20](docs/protocol/20-damage.md)). The player's real life, resistances,
+  armour and evasion are computed from level, passives and base equipment, and armour/evasion mitigate monster hits
+  (Status: Armour and Evasion).
+- **Known:** both sides still have flat damage ranges ([11](docs/protocol/11-skills.md) 5, 6); energy shield,
+  penetration, exposure, ailment application, added damage and support modifiers are not modelled.
+- **Start:** energy shield, penetration/exposure, the remaining conditional critical strike stats from the stats both
+  sides already carry; monster skills beyond the first granted effect (ranged, spells). Add support effects through
+  `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
 ### Death screen variants
@@ -236,7 +250,7 @@ data is in [19](docs/protocol/19-gems.md).
   waypoint is done; the separate `Metadata/MiscellaneousObjects/Checkpoint` objects are not placed yet, so "last
   activated" across several checkpoints is open. Dying
   in a boss arena revives just outside the arena's door, even with a checkpoint activated; dying in a map revives in
-  the hideout (no hideouts yet).
+  the hideout (hideouts exist, [21](docs/protocol/21-hideouts.md); maps do not).
 - **One-way entries:** the arrival next to the exit back needs an exit back. Lioneye's Watch from The Twilight Strand
   uses the town's named point `entrance1` (`AreaLayout.OneWayArrivals`, [08](docs/protocol/08-area-transitions.md) §3):
   in the real game the player comes out on the town side of the gate. Other one-way links fall back to the area's spawn

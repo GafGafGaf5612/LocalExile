@@ -29,7 +29,7 @@ static class AreaTransitionCatalog
         var area = Atlas.Value?.GetValueOrDefault(hash);
         if (area is null)
         {
-            notes.Add(Atlas.Value is null ? $"no {AtlasFile} (run scripts/re/atlas)" : $"area 0x{hash:x4} is not in the atlas");
+            notes.Add(Atlas.Value is null ? $"no {AtlasFile} (run scripts/dev/extract-data.ps1)" : $"area 0x{hash:x4} is not in the atlas");
             return [];
         }
         var topologies = area.Topologies ?? [];
@@ -37,6 +37,7 @@ static class AreaTransitionCatalog
         var placed = new List<AreaTransitionObject>();
         if (captured is not null)
         {
+            var local = new List<CapturedObject>();
             // The graph variant the client generated: the one whose transition models cover the capture best.
             var best = topologies.MaxBy(t => captured.Count(o => t.Transitions?.Any(x => x.Model == o.Model) == true));
             foreach (var o in captured)
@@ -47,6 +48,7 @@ static class AreaTransitionCatalog
                 string what = $"{o.Model?.Split('/')[^1]} at ({o.X}, {o.Y})";
                 if (destinations.Count != 1)
                 {
+                    if (candidates.Count == 0) { local.Add(o); continue; }
                     notes.Add(candidates.Count == 0 ? $"{what}: not in topology {best?.Id}"
                         : destinations.Count == 0 ? $"{what}: {string.Join("/", candidates.Select(x => x.Enabled == false ? "disabled" : x.Status).Distinct())}, not created"
                         : $"{what}: ambiguous ({string.Join(", ", usable.Select(x => x.Destination).Distinct())}), not created");
@@ -58,6 +60,19 @@ static class AreaTransitionCatalog
                     Type: type));
                 notes.Add($"{what} → {entry.Destination} (captured, topology {best?.Id})");
             }
+            // Gates no topology names lead within the area: a map's boss room has a pair (MapBeach2 boss_1.arm: points
+            // teleport1-%areaname%, telepad1, teleport2-Arena, telepad2), into the arena and back. Two are paired, each
+            // to the other; any other number is left out.
+            if (local.Count == 2)
+                for (int i = 0; i < 2; i++)
+                {
+                    var (o, other) = (local[i], local[1 - i]);
+                    placed.Add(new AreaTransitionObject(o.X, o.Y, hash, o.Model, Rotation: o.Rotation, Height: o.Z,
+                        Type: Resolve(o.ObjectType, $"{o.Model?.Split('/')[^1]} at ({o.X}, {o.Y})", notes)) { TeleportTo = (other.X, other.Y) });
+                    notes.Add($"{o.Model?.Split('/')[^1]} at ({o.X}, {o.Y}): not in topology {best?.Id}, a gate within the area to ({other.X}, {other.Y})");
+                }
+            else
+                foreach (var o in local) notes.Add($"{o.Model?.Split('/')[^1]} at ({o.X}, {o.Y}): not in topology {best?.Id}");
         }
         else
         {

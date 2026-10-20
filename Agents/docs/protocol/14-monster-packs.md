@@ -93,3 +93,10 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
 - Kept monsters lose their corpses (a corpse is removed 10 s after death anyway) and a `/spawn_mob` name.
 - Each new (area, seed) needs a `-Walkmaps` visit for its room points; without the capture there is no unique boss
   (the log says so).
+
+## Maps
+
+A map's area has no MonsterPacks row of its own: its packs are the map's Maps.dat `MonsterPacksKeys` (by
+`Regular_WorldAreasKey`; Beach → `atlas-crab1`, 6–9 parasite crabs), scattered like an area's with weight
+`PackCatalog.MapPackWeight` (100), at the area's level (Beach 69). The boss at `mapboss` comes from WorldAreas `Bosses`
+as for any area (Beach: Glace). 21-hideouts.md §5.

@@ -60,13 +60,20 @@ public static class InstanceEntities
     /// u32 +0x64 (the source object), u16 +0x60 (the source skill), u8 flags (bit0 u8 u32 u8 u16, bit1 u32 +0x68, bit2
     /// u16 stacks +0x70 (default 1), bit3 u16 u16, bit4 u16 BuffVisuals override (default the row's), bit5 u8 +0x80
     /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32
-    /// per GrantedStats value when its IsRecovery (+0x7c) is set, and a u32-counted list of u32. The buff's visual
-    /// (BuffVisuals) plays while it lasts.
+    /// per GrantedStats value when its IsRecovery (+0x7c) is set (<paramref name="values"/>: the caller must give exactly
+    /// that many, or the client misreads the message), and a u32-counted list of u32. The buff's visual (BuffVisuals)
+    /// plays while it lasts.
     /// </summary>
     public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
-        IReadOnlyList<uint>? values = null) =>
-        new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(0)
-            .Bytes([.. (values ?? []).SelectMany(v => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v })]).U32(0).ToArray();
+        IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null)
+    {
+        // flags bit1: u32 +0x68; bit7: f32 +0x6c (read right after bit1's field).
+        byte flags = (byte)((u68 is null ? 0 : 0x02) | (f6c is null ? 0 : 0x80));
+        var w = new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(flags);
+        if (u68 is { } a) w.U32(a);
+        if (f6c is { } f) w.U32(BitConverter.SingleToUInt32Bits(f));
+        return w.Bytes([.. (values ?? []).SelectMany(v => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v })]).U32(0).ToArray();
+    }
 
     /// <summary>S→C 0x1c2 (class 0x1435dd918, read 0x141fdfdd0): object header, u16 buff instance: the buff ends.</summary>
     public static byte[] RemoveBuff(uint objectId, ushort buffInstance) =>
@@ -222,6 +229,22 @@ public static class InstanceEntities
         return ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, w.ToArray());
     }
 
+    /// <summary>
+    /// The player's two Hideouts.dat keys (0x2ba to the Player component, reader 0x141e7ee30): u16 flags, bit4 (0x10) =
+    /// u16 + u16, looked up by HASH16 like the creation blob's, then the component's vtable +0x130 (hideout changed).
+    /// </summary>
+    public static byte[] PlayerHideoutsUpdate(uint playerId, ushort hideout, ushort hideout2) =>
+        ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, new BlobWriter().U16(0x10).U16(hideout).U16(hideout2).ToArray());
+
+    /// <summary>The player's league quest flags (0x2ba to the Player component): u16 flags, bit3 (0x08) = the whole
+    /// second flag set (+0x1d0) again, as <see cref="PlayerObject.WriteFlagSet"/>.</summary>
+    public static byte[] PlayerLeagueQuestFlagsUpdate(uint playerId, IEnumerable<int> flags)
+    {
+        var w = new BlobWriter().U16(8);
+        PlayerObject.WriteFlagSet(w, flags);
+        return ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, w.ToArray());
+    }
+
     public const ushort GoldId = 0x2a9;
 
     /// <summary>S→C 0x2a9 (class 0x14316c420, read 0x140913050): u32 BE, the character's gold. The instance dispatcher (case
@@ -339,6 +362,10 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
     float Rotation = 0, float? Height = null, string Type = AreaTransitionObject.MetadataPath)
 {
     public const string MetadataPath = "Metadata/MiscellaneousObjects/AreaTransition";
+
+    /// <summary>Set for a transition that leads within its own area (a map's boss arena gate): where it takes the player.
+    /// Server side only; the blob names the area itself as the destination.</summary>
+    public (int X, int Y)? TeleportTo { get; init; }
 
     /// <summary>Components that read data, in the order the client deserializes them for this type (traced live
     /// 2026-10-16: Positioned, BaseEvents (no data), Animated, AreaTransition (live vtable 0x14346de00), Stats,
@@ -608,7 +635,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null,
     IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null,
     IReadOnlyList<VisibleItem>? Equipped = null, IReadOnlyCollection<int>? QuestFlags = null,
-    uint ManaReserved = 0)
+    uint ManaReserved = 0, ushort Hideout = 0, ushort Hideout2 = 0, IReadOnlyCollection<int>? LeagueQuestFlags = null)
 {
     /// <summary>The Player component's index in the player object's component order (04 §3).</summary>
     public const byte PlayerComponentIndex = 6;
@@ -668,9 +695,12 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U32(0).U16(0).U16(0)
          ;
         WriteFlagSet(w, QuestFlags);   // the quest flags (+0x1b8, 0x141e83340)
-        w.U16(0)            // a second flag set (+0x1d0; WorldAreas __col60 values − 1)
+        // The league quest flags (+0x1d0, same layout; WorldAreas __col60 values − 1): bit = id − 1 of the client's built-in
+        // name table (0x142fca900), e.g. UnlockedMapDevice 350 → bit 349, which the map device's Targetable requires (21-hideouts.md §1).
+        WriteFlagSet(w, LeagueQuestFlags);
+        w
          .Zeros(9)           // raw +0x1e8
-         .U16(0).U16(0)      // Hideouts.dat keys
+         .U16(Hideout).U16(Hideout2)   // Hideouts.dat keys (HASH16; 0 finds no row): the character's hideout (21-hideouts.md §1)
          .U8(0)              // +0x1b1 (non-zero → "WashedUp" state)
          .U8(0).U8(0).U8(0).U8(0).U8(0)
          .U32(0)             // u32 count + u32 list (vtable +0x158)

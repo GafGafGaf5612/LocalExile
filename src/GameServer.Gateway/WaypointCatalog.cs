@@ -18,7 +18,7 @@ static class WaypointCatalog
     {
         var w = WorldAreaWaypoints.Load("data/tables/WorldAreas.json");
         Console.WriteLine(w.Entries.Count == 0
-            ? "[gateway] waypoints: no data/tables/WorldAreas.json, waypoints are off"
+            ? "[gateway] waypoints: no data/tables/WorldAreas.json (run scripts/dev/extract-data.ps1), waypoints are off"
             : $"[gateway] waypoints: {w.Entries.Count} waypoint areas");
         return w;
     });

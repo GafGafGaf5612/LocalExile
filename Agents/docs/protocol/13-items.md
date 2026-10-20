@@ -20,6 +20,8 @@ chain is the row's `InheritsFrom`. `client { }` blocks (RenderItem) are never re
 python -I scripts/re/ot_components.py --items --json data/item-types.json
 ```
 
+`scripts/dev/extract-data.ps1` runs it (entry `item-types`; a change to the output bumps the entry's version).
+
 | Type | Components the reader reaches |
 |---|---|
 | Wand1 (any weapon) | Base, LocalStats, Mods, AttributeRequirements, Weapon, Quality, Sockets |
@@ -45,7 +47,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Component | Vtable | Read | Data |
 |---|---|---|---|
 | Base | `0x1435e0168` | `0x1421e69c0` | u16 ItemVisualIdentity **HASH16** (unknown → "Attempt to set visual identity to NULL"), u8 +0xc0, u8 +0xc7 flags, u16 flags (low bit0 → u8, bit1 flavour text u16, bit2 wide string, bit3 u32, bit4 wide string, bit5 u8 n × (u32, i32), bit6 nested item, bit7 u8 n × (u32 item type, compact); high bits 0-2 → +0xc4, bit4 → 2 × u32), u8 +0xc6 |
-| Mods | `0x1435df838` | `0x1421df6e0` | u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit6 incubator u16 u16 u8, bit4 → u8, bit15 → 0x1c8 record `0x1424b70c0`), base magic properties `0x142201d70` (rarity, identified, mod lists: §2a), u8, u8 |
+| Mods | `0x1435df838` | `0x1421df6e0` | u8 +0x2b8 (item level), u8 +0x2bc (the level requirement, kept as sent: §2d), u16 flags (bit6 incubator u16 u16 u8, bit4 → u8, bit15 → 0x1c8 record `0x1424b70c0`), base magic properties `0x142201d70` (rarity, identified, mod lists: §2a), u8, u8 |
 | Quality | `0x14363acd8` | `0x1424aec50` | u8 |
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
@@ -55,6 +57,12 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
 
 Minimal item the server sends: flags 0, Base with only the visual identity, Mods identified and normal with no mods.
+
+**Base defences:** an `ArmourTypes.dat` row is keyed by `BaseItemTypesKey` (the BaseItemTypes row) and gives
+`ArmourMin`/`ArmourMax` and `EvasionMin`/`EvasionMax`. The client interpolates between them with the item's base
+percentile; our items send the Armour component's default `0`, so the server uses the minimum for the character's
+armour and evasion. Only the base body armour, helmet, gloves and boots are counted for now; mods, quality, local
+defence rolls and shields are not.
 
 ## 2a. Mods: rarity and mod lists
 
@@ -96,8 +104,8 @@ implicits again. Dev commands on the held item: `/mod [implicit|explicit|enchant
 their own), GenerationType 1 (prefix) or 2 (suffix), Level at most the item level, is not essence-only, and has a
 weight above 0 for the item's **tags**: the first of its SpawnWeight tags the item has gives the weight, the first
 matching GenerationWeight tag multiplies it by weight / 100. An item's tags are the `tag = "…"` lines of the Base
-sections along its `.it` chain (`ot_components.py --items` writes them to `data/item-types.json` as `tags`; regenerate
-an older file) plus the row's own TagsKeys: Driftwood Wand → default, weapon, onehand, wand, ranged, one_hand_weapon,
+sections along its `.it` chain (`ot_components.py --items` writes them to `data/item-types.json` as `tags`)
+plus the row's own TagsKeys: Driftwood Wand → default, weapon, onehand, wand, ranged, one_hand_weapon,
 wand_can_roll_caster_modifiers.
 
 Each affix is drawn by weight from all allowed mods (prefixes and suffixes compete), skipping mods that share a
@@ -112,7 +120,7 @@ of the time, at the monster's level as item level, and drops **unidentified**. D
 
 **Identifying** (C→S 0x71, §4): right-click a Scroll of Wisdom, then click an unidentified item. The server marks it
 identified, sends it again (its explicit list and name) and takes one scroll from the stack; an identified target
-changes nothing.
+changes nothing. Nessa's **Identify Items** identifies the whole main inventory for free ([17](17-npcs.md) §3).
 
 ## 2c. Mods on the character
 
@@ -130,6 +138,35 @@ increases) and `local_accuracy_rating` adds flat accuracy. Weapon damage, armour
 not modelled yet, so their local mods change nothing. Verified live 2026-10-20: +20 maximum Life, +30% fire resistance
 and +25 strength on a ring, a local attack speed mod on the wand, and spell damage on the wand raising Fireball's
 damage (11-skills.md §9).
+
+## 2d. Requirements and inactive items
+
+**Attribute requirements are computed by the client from the item type and the mods; the level requirement is sent.**
+
+- **Attributes** (`0x1424a6d90`, per attribute, read by the equip check `0x1402ce5f0`): the type's
+  AttributeRequirements value plus the item's flat requirement stats (`local_strength_and_intelligence_requirement_+` …),
+  × (100 + `local_attribute_requirements_+%` + the attribute's own %) / 100, at least 0;
+  `local_no_attribute_requirements` and `local_unique_tabula_rasa_no_requirement_or_energy_shield` make it 0. The check
+  compares it × (100 + the player's `global_item_attribute_requirements_+%`) / 100 with
+  `virtual_*_for_requirements`, and the client refuses the move itself.
+- **Level** (Mods component +0x2bc). **This one is sent:** the Mods reader `0x1421df6e0` stores the byte it receives,
+  and the client only recomputes it (`0x1421e03d0`) when an item's mods change on its side (crafting paths
+  `0x1421e0600`, `0x1421e00d0` …). The tooltip shows that byte, and the client's use check `0x1421eca50` refuses an
+  item when it is above the player's level (Player +0x1ac, derived from the experience). With 0 (as we used to send)
+  nothing shows and nothing is checked. The client's formula, which the Gateway uses (`ItemModStats.LevelRequirement`,
+  sent through `Item.LevelRequirementOf`): 0 for types with the flag at type data +0xcb; else
+  `local_level_requirement_override` if non-zero; else max(the type's level, Mods.dat Level × 4 / 5 for every mod in all
+  five lists) + `local_level_requirement_+`, at least 0. Gems send 0: their requirement comes from the SkillGem
+  component (`0x14246fff0`). The server also refuses 0x2a / 0x4a into equipment rows below it (`LevelTooLow`).
+
+**Inactive items** (`ItemModStats.Inactive`): a worn item whose requirements stop being met (an attribute item taken
+off, a lower level) stays on but does nothing: no mod stats, no local weapon mods, no gem skills (their skill ids are
+kept). After each change, items that fall short are switched off one at a time, counting the attributes of every
+active item including their own, until all active items are satisfied; an inactive item comes back when the character
+and the other active items meet its requirement without its own attributes.
+
+**Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
+sent before that is gone now (`PlayerStatsWithCleared`).
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 
@@ -269,9 +306,19 @@ gems must not be granted:** a support's effect in the list crashed the client in
 
 ## 7. Start kit, saves and dev command
 
-A new character gets Characters.dat
-StartWeapons[0] in Weapon1 with two linked sockets in its colour, StartSkillGem and StartSupportGem in the main
-inventory, and a Small Life Flask and Small Mana Flask in the flask bar. `Game_START_ITEMS=0` starts empty.
+A new character gets Characters.dat StartSkillGem and StartSupportGem in the main inventory, and in the flask bar two
+Small Life Flasks (cells 0 and 1: flask keys 1 and 2) and a Small Mana Flask (cell 4: key 5). Its StartWeapons[0], with two linked sockets in the start gems' colours, lies on the
+ground instead, as on the real game's Twilight Strand: `PlayerInventories.StartWeapon` keeps it (in the save as
+`StartWeapon`) until it is picked up, and on entering an instance outside towns the Gateway puts it once per character, weapon
+and instance (`InstanceState.PlaceStartWeapon`) on the first walkable cell 6 to 20 cells from the spawn
+(`AreaLayout.Near`), as a WorldItem like loot. Picking it up (C→S 0x24) clears it in the same save as the item's new cell,
+so a crash never keeps it both waiting and in the inventory. A new instance or a Gateway restart before the pickup puts
+it there again; so does a new character with a deleted one's name in the same instance (its weapon is another item).
+`Game_START_WEAPON=equipped` equips it in Weapon1 instead; `Game_START_ITEMS=0` starts empty.
+
+The kit is built once, when the character has no save, and saved at once. Without `data/tables` (`Characters.json`,
+`SkillGems.json`) and `data/item-types.json` it is empty, the Gateway logs `start kit is empty`, and the character keeps
+the empty kit: set its save aside (`data/saves/<name>.json`, with the Gateway stopped) to give it the kit again.
 
 **Saves.** Every inventory change writes the character's items to `data/saves/<name>.json` (`CharacterSaves`, git-ignored):
 per Inventories.dat row the item ids, cells and items by BaseItemTypes HASH32 with level, quality, charges, stack size,
@@ -298,15 +345,48 @@ not in the save ("Open"), so dropping one takes it out of the save, and a discon
 `/item <BaseItemTypes row, Id or name> [count]` adds items to the main inventory; types with a Sockets component get two
 linked sockets in the colour of their highest attribute requirement (ComponentAttributeRequirements).
 
+## 8. Life and mana flasks
+
+**C→S 0x70** (6 bytes, live 2026-10-20): a flask key. u32 big-endian, the flask-bar cell (0 for key 1 … 4 for key 5).
+Inferred from presses of the start kit's flasks (cells 0 and 1 sent 0 and 1), not read from the client's serializer.
+The client changes nothing by itself: no charges, no recovery until the server answers.
+
+The Gateway (`UseFlask`, `Flasks.cs`) takes the flask in that cell of the flask bar (Inventories row 11). Its use comes
+from the tables (`ItemCatalog.FlaskOf`): Flasks.dat LifePerUse / ManaPerUse over RecoveryTime (tenths of a second) and
+ComponentCharges PerCharge of MaxCharges. Small Life Flask: 70 life over 3 s, 7 of 21 charges; Small Mana Flask: 50
+mana over 3 s, 6 of 24. A use with fewer charges than PerCharge, or while dead, does nothing. Otherwise:
+
+1. The charges are spent and saved, and the flask goes to the client again (S→C 0xbf: the item removed and added with
+   its new Charges, same id).
+2. The flask's buff goes on the player (S→C 0x1c1): BuffDefinitions row 5 `flask_effect_life` ("Healing") or row 9
+   `flask_effect_mana` ("Regenerating Mana"). Both are invisible, cancelled on death and removed once the pool is full.
+   Both rows are `IsRecovery` (+0x7c), so 0x1c1 carries one u32 per GrantedStats entry: the recovery per minute
+   (`base_life_recovery_per_minute_from_flask`, 70 × 60 / 3 = 1400 for the Small Life Flask). Live 2026-10-20: without
+   that value the client misread the message and showed no life change from then on, although the server sent every
+   0x1b1. `Game_FLASK_BUFFS=0` recovers without the buffs.
+   Being tested: the buff's duration, from which the orb may draw the recovery still to come. `Game_FLASK_BUFF_DURATION`
+   picks the field: `ms` (default) flags bit1, u32 +0x68 = 3000; `f6c` flags bit7, f32 +0x6c = 3.0; `0` none.
+3. `RunFlaskRecovery` adds the recovery evenly from the use to its end, by the clock, every 20 ms while a flask
+   recovers, and sends each whole point at once (S→C 0x1b1): the orb rises by +1 about every 43 ms for a Small Life
+   Flask, not in the player tick's 250 ms steps of 6 (live 2026-10-20: those looked jerky). The buff comes off
+   (S→C 0x1c2) when the time is up, the pool is full, or the player dies. Using a flask whose effect still runs
+   restarts it (the rest of the old one is lost); two flasks recover together.
+
+Charges come back: every kill fills every life and mana flask in the bar (a choice for playing locally; with
+`Game_FLASK_KILL_CHARGES=rarity` a kill gives 1 normal, 2 magic, 5 rare, 10 unique, our own numbers: the real game's are
+not known yet), and they fill up on entering a town or a hideout and on resurrection.
+
 ## Open
 
+- Flasks: the real game's charges per kill (a kill fills every flask for now), flask quality and mods, utility and hybrid flasks' effects (a hybrid flask
+  recovers both pools but shows only the life buff), instant recovery, and the effects across an area change (they end).
 - Gem levels and experience, support gems and links.
 - The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); local weapon damage and
   armour / evasion / energy shield mods (items have no base defences or damage on the server yet), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
-  effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
+  effects; the meaning of Base +0xc0 / +0xc6 / +0xc7.
 - C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
   `0x14031c0a0`: probably currency use on an item).
-- Flask use and currency use other than the Orb of Regret. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
+- Currency use other than the Orb of Regret. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
   on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
   Gateway shows each client only its own player).

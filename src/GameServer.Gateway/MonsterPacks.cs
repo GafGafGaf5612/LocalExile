@@ -6,8 +6,9 @@ using GameServer.Core.Protocol.Instance;
 /// monsters, the pack's boss), MonsterPackEntries (the varieties and their weights) and WorldAreas (the area level and
 /// its unique boss, Bosses_MonsterVarietiesKeys). Packs with a weight for the area are scattered over the walk map;
 /// packs named "&lt;area&gt;-…" (weight 0) stand at the room points of the layout that name them ("%area%-cannibalfire"
-/// → "1_1_2-cannibalfire"); the room point "mapboss" takes the area's boss with the pack "&lt;area&gt;-bosspack".
-/// Agents/docs/protocol/14-monster-packs.md.
+/// → "1_1_2-cannibalfire"); the room point "mapboss" takes the area's boss with the pack "&lt;area&gt;-bosspack". A map's
+/// area (Maps.dat Regular_WorldAreasKey) also gets the map's own packs (Maps.dat MonsterPacksKeys: Beach → atlas-crab1),
+/// which no MonsterPacks row lists by area. Agents/docs/protocol/14-monster-packs.md.
 /// </summary>
 sealed class PackCatalog(string folder = "data")
 {
@@ -27,7 +28,10 @@ sealed class PackCatalog(string folder = "data")
     public sealed record AreaPacks(string AreaId, int AreaLevel, IReadOnlyList<(Pack Pack, int Weight)> Scattered,
         IReadOnlyDictionary<string, Pack> Named, IReadOnlyList<int> Bosses);
 
-    private readonly Lazy<(List<Pack> Packs, List<(string Id, int Level, int[] Bosses)> Areas)?> _data = new(() => Load(folder));
+    /// <summary>The weight of a map's own packs (Maps.dat MonsterPacksKeys), which have none for the area.</summary>
+    public const int MapPackWeight = 100;
+
+    private readonly Lazy<(List<Pack> Packs, List<(string Id, int Level, int[] Bosses)> Areas, Dictionary<int, List<int>> MapPacks)?> _data = new(() => Load(folder));
 
     public AreaPacks? For(string areaId)
     {
@@ -42,10 +46,13 @@ sealed class PackCatalog(string folder = "data")
             if (p.Id.StartsWith(areaId + "-", StringComparison.Ordinal)) named[p.Id[(areaId.Length + 1)..]] = p;
             else if (p.AreaWeights.GetValueOrDefault(row) is int w and > 0) scattered.Add((p, w));
         }
+        foreach (int pack in d.MapPacks.GetValueOrDefault(row) ?? [])
+            if (pack < d.Packs.Count && d.Packs[pack].Entries.Count > 0 && !scattered.Any(s => s.Item1.Row == pack))
+                scattered.Add((d.Packs[pack], MapPackWeight));
         return new AreaPacks(areaId, d.Areas[row].Level, scattered, named, d.Areas[row].Bosses);
     }
 
-    private static (List<Pack>, List<(string, int, int[])>)? Load(string folder)
+    private static (List<Pack>, List<(string, int, int[])>, Dictionary<int, List<int>>)? Load(string folder)
     {
         string packs = Path.Combine(folder, "tables", "MonsterPacks.json"), entries = Path.Combine(folder, "tables", "MonsterPackEntries.json"),
             areas = Path.Combine(folder, "tables", "WorldAreas.json");
@@ -79,7 +86,18 @@ sealed class PackCatalog(string folder = "data")
             foreach (var a in doc.RootElement.EnumerateArray())
                 areaRows.Add((a.GetProperty("Id").GetString() ?? "", a.GetProperty("AreaLevel").GetInt32(),
                     [.. a.GetProperty("Bosses_MonsterVarietiesKeys").EnumerateArray().Select(b => b.GetInt32())]));
-        return (result, areaRows);
+        // Maps.dat: a map's area → its packs (optional table: without it maps have no packs of their own).
+        var mapPacks = new Dictionary<int, List<int>>();
+        string maps = Path.Combine(folder, "tables", "Maps.json");
+        if (File.Exists(maps))
+            using (var doc = JsonDocument.Parse(File.ReadAllBytes(maps)))
+                foreach (var m in doc.RootElement.EnumerateArray())
+                    if (m.GetProperty("Regular_WorldAreasKey") is { ValueKind: JsonValueKind.Number } area)
+                    {
+                        if (!mapPacks.TryGetValue(area.GetInt32(), out var list)) mapPacks[area.GetInt32()] = list = [];
+                        list.AddRange([.. m.GetProperty("MonsterPacksKeys").EnumerateArray().Select(k => k.GetInt32()).Where(k => !list.Contains(k)).Distinct()]);
+                    }
+        return (result, areaRows, mapPacks);
     }
 }
 

@@ -13,7 +13,9 @@ idle monster next to the player (§5).
 | u8 | 0 in every capture |
 
 What arrives is the text as typed: slash commands as is (`/spawn_mob 42`), plain chat with the channel prefix the client
-added (`#hello server` for global). The client handles none of our commands locally. `InstanceChat.Length` frames it
+added (`#hello server` for global). The client handles none of our commands locally, but the words of Commands.dat
+rows with `SendsGenericCommandPacket` never arrive as chat: the client sends C→S 0x16 with the row + 1 instead
+(`/destroy` 9, `/hideout` 45: [21](21-hideouts.md) §3), so our commands must not reuse those words. `InstanceChat.Length` frames it
 (the length depends on the text), and `SplitClientMessages` uses it for id 0x15.
 
 ## 2. Server → client text
@@ -32,7 +34,13 @@ Candidates that read a wide string were found by mapping every S→C factory cas
 | 0xa9 | party info | Not chat. |
 | 0xc9 | u8, wstr, wstr | Friend presence map. Not chat. |
 
-The chat line message (sender + text in the chat panel) is not found yet. It does not go over the login connection
+**S→C 0x17: chat line** (class `0x1435dcec0`, read `0x140e0c710`, dispatcher case 2 → listeners at instance +0xb78 →
+chat panel `0x140179f20` / `0x14017a300`; verified 2026-10-20 with `/raw`): wstr sender (its first character picks the
+channel), wstr text, wstr guild tag, u16 flags (raw; bit 8 sends the message to the +0xd78 listeners instead, bit 3 adds a
+field read by `0x1408402a0`, bit 7 sets a mode 5), u8, u8, 8 bytes, u8, u8 n + n × (u32, item) linked items. An empty
+sender with every other field 0 prints the text alone (`InstanceChat.ChatLine`).
+
+Previously: the chat line message was not found. It does not go over the login connection
 (Auth received nothing after Play). The client also prints "Timeout while joining global chat channel 820", so the
 channel join is a request we don't answer yet.
 
@@ -77,8 +85,9 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/add_passive <PassiveSkillGraphId>` | allocates one passive node through the same checks as C→S 0x34, saved and sent back (0x33) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
 | `/resistances` | the character's uncapped and capped fire/cold/lightning/chaos resistance |
-| `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model, showing the resistance used and the life left |
+| `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model (physical through armour), showing the mitigation used and the life left |
 | `/accuracy [monster level]` | final accuracy rating and attack hit chance against a normal and an evasive monster of that level (default: your level; spells always hit) |
+| `/defences [monster level]` | armour, physical reduction and evasion with the chance to evade a monster of that level |
 | `/auras` | active auras, their flat/percent reservation, reserved and unreserved mana, reservation efficiency and aura effect ([11](11-skills.md) 13) |
 | `/suppression` | Spell Suppression chance and damage reduction |
 | `/spellhit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: a spell hit through resistance and Spell Suppression, rolling the suppression chance |
@@ -220,7 +229,7 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 
 ## 6. Open
 
-- The chat line message, and the channel join request and its answer.
+- The chat line's flags and channels, and the channel join request and its answer.
 - Monsters: **skills** (their GrantedEffects, so they fight back), mods (the
   ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
   varieties with other components (NPC, ControlZone, …), AI and combat.

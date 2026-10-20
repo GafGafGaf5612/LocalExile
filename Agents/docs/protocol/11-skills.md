@@ -142,8 +142,10 @@ with level), the bases and attributes from Characters.dat:
 | `maximum_life` | BaseMaxLife (38) + 12 × level + strength / 2 |
 | `maximum_mana` | BaseMaxMana (34) + 6 × level + intelligence / 2 |
 | `accuracy_rating` | (2 × level + 2 × dexterity + flat) × (1 + increased / 100) |
-| `evasion_rating` | 15 × (1 + `evasion_rating_+%` / 100) |
-| `evasion_rating_+%` | dexterity / 5 |
+| `physical_damage_reduction_rating` | (flat armour from passives + base body/helmet/gloves/boots) × (1 + increased armour / 100) |
+| `evasion_rating` | (15 + flat evasion from passives + base body/helmet/gloves/boots) × (1 + `evasion_rating_+%` / 100) |
+| `evasion_rating_+%` | dexterity / 5 + increased evasion passives |
+| `physical_damage_reduction_rating_+%` | increased armour passives |
 | `maximum_energy_shield_+%` | intelligence / 5 |
 | `melee_physical_damage_+%` | strength / 5 |
 
@@ -155,12 +157,28 @@ unique/close enemies) are not modelled. The final values go to the client as `ac
 panel's Main Hand / Off Hand Accuracy rows, `main_hand_accuracy_rating` / `off_hand_accuracy_rating`. Its Chance to
 Hit rows are sent directly as `main_hand_chance_to_hit_%` / `off_hand_chance_to_hit_%` (and the evasive-monster
 variants), against a reference monster of the character's level; `character_sheet_reference_evasion` and
-`..._high_dex_evasion` carry that monster's evasion. Life and mana still ignore passives and items; evasion takes its
-passive increases (`evasion_rating_+%`) but not items.
+`..._high_dex_evasion` carry that monster's evasion.
 
-The default attack's damage (`Unarmed.Damage`) is MinDamage..MaxDamage × (1 + (`damage_+%` + `physical_damage_+%` +
-`melee_damage_+%` + `melee_physical_damage_+%`) / 100), rounded down; the server rolls its hits from the same range.
-`/set_stat` overrides any of these.
+Armour and evasion are summed from the passive tree and the **base types** of the equipped body armour, helmet, gloves
+and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `base_evasion_rating` are flat, while
+`physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%`
+(Cloth and Chain and similar nodes), `global_defences_+%` and the combined armour/evasion increase are additive
+increased modifiers. **Iron Reflexes** (`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
+passive/item flat evasion, to armour and removes dexterity's 1% per 5 evasion; the converted part keeps the armour,
+evasion and shared defence increases once each. Item mods, quality, local defence rolls, shields and auras are not counted
+yet; the base value is the armour row's minimum, which is the client's default when the item's Armour component is zero.
+The final `physical_damage_reduction_rating` and `evasion_rating` (with their `_+%`) go to the client. Armour uses
+PoB's `armour / (armour + damage × 5) × 100`, rounded and capped at 90% (`DamageModel.ArmourReduction`); evasion uses
+the same hit-chance formula as accuracy, so the chance to evade is `100 - AccuracyHitChance(evasion, attacker accuracy)`
+(`DamageModel.EvadeChance`). Monster melee rolls the same formula against `DefaultMonsterStats.Accuracy` at the
+monster's level and evades before damage; physical monster hits then go through armour and block. `/defences` prints
+both against a reference monster of the character's level. Life and mana still ignore passives and items.
+
+The default attack's damage (`Unarmed.HitDamage`) is a physical `DamagePacket`: MinDamage..MaxDamage × (1 +
+(`damage_+%` + `physical_damage_+%` + `melee_damage_+%` + `melee_physical_damage_+%`) / 100). The packet goes through
+the conversion and gain-as-extra stats, then rolls one number per damage type; the server uses the same packet for its
+hits. `/set_stat` overrides any of these. The packet, conversion order and damage-over-time model are in
+[20-damage.md](20-damage.md); the panel's older `Unarmed.Damage` tuple is only the physical display range.
 
 **Changing a skill after entering:** S→C **0x2ba** on the player with component index 9 (Actor) and the slot-20 data
 `f0 0x40, f1 0, skill list`: the list replaces the skill of the same id, new stats included. Live: the swing sped up at
@@ -194,6 +212,18 @@ stats for attacks, and `spell_critical_strike_chance_+%` / `base_spell_critical_
 client, so the Offence panel shows them. Timed, charge, enemy-state and similar conditional crit stats are not modelled;
 `/crit` prints both final values.
 
+**Impale.** A hit that rolls `impale_on_hit_%_chance` stores 10% of the swing's physical damage on the monster as a
+stack: five at most, each lasting five physical hits. The stored amount is taken from the packet's physical **maximum**,
+not the rolled damage, so it is steady for a given weapon. Every later physical hit on that monster first takes the
+stored total as extra physical (a `DamageRange(stored, stored)` added to the packet before `RollTotal`, so it converts and
+mitigates with the hit) and then spends one hit of every stack. Order, in `Gateway.Attack`: add the bonus, `AfterHit()`,
+then roll `Apply(physical)` — a new stack applied first would lose one of its five hits on the swing that made it. The
+stack count and stored total are read before the hit applies because a killing blow clears them, which is why the log
+reports the real stacks on the killing 0x1b1. Only physical is stored. Live 2026-10-20, `/set_stat
+attacks_impale_on_hit_%_chance 100` on one monster: `hit for 5, impaled (1 stack(s), 0.5 stored)`, then `impale +0.5 (2
+stack(s))`, `impale +1 (3)`, `impale +1.5 (4)`, `impale +2 (5 stack(s), 2.6 stored)` on the killing critical, and the next
+monster reopened at one stack.
+
 Exits use the same approach (`ExitReach` = 6 cells) before the area change or the instance list.
 
 **Life bar on death:** when life reaches 0 the client's Life tick (`0x141e6a190`) stops notifying its listeners, so the
@@ -221,9 +251,14 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
 - **AI** (`RunMonsterAi`, 500 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
   0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
   the player is still within reach + 2: 0x1b1 on the player.
-- **Player life** (`ClientState.PlayerLife`, 50 for the level-1 Witch). At 0 the client plays the death animation and
-  blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is hidden at 0
-  (`hide_mini_life_bar`, as for monsters) and shown again on revive.
+- **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level; the server rolls the player's
+  evasion with the same `AccuracyHitChance` formula and sends no life update on a miss. The roll uses PoE's shared
+  entropy counter (0–99): each attack adds its hit chance, 100 or more means a hit and subtracts 100, and the counter is
+  randomized after 3.33 s without an attack. A hit then goes through the player's armour (`MitigatePhysical`) and
+  block. `/defences` prints the reference values.
+- **Player life** (`ClientState.PlayerLife`, from the level/class/passive pools). At 0 the client plays the death
+  animation and blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is
+  hidden at 0 (`hide_mini_life_bar`, as for monsters) and shown again on revive.
 
 ## 7. The death screen
 
@@ -302,7 +337,8 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   the skill's own. The server's hits roll between the unrounded minimum and maximum and drop the fraction; the skill's
   tooltip gets `display_hundred_times_damage_per_skill_use` (the unrounded average × 100) and
   `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
-  DPS with the player's stats. More multipliers, added and converted damage are not modelled.
+  DPS with the player's stats. Conversion is applied per type through `DamagePacket`; more multipliers and added
+  damage are not modelled.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
@@ -416,8 +452,10 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   `0x141e11720`): object header (u32 id, u32, u16), u16 buff instance (+0x20), u16 BuffDefinitions row, u32 +0x64 (the
   source object), u16 +0x60 (the source skill), u8 flags (bit0: u8 u32 u8 u16; bit1: u32 +0x68; bit2: u16 stacks,
   default 1; bit3: u16 u16; bit4: u16 BuffVisuals override, default the row's; bit5: u8 +0x80, default 2; bit6 → +0x81;
-  bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set, one u32 per GrantedStats entry when the row's
-  `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. The client reads the BuffDefinitions row in memory as the
+  bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set (`__col44` in the vendored schema), one u32
+  per GrantedStats entry when the row's `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. A row with either
+  flag needs those fields, or the client misreads the message and the ones after it (the flask buffs, rows 5 and 9:
+  [13](13-items.md) §8). The client reads the BuffDefinitions row in memory as the
   .dat row (BuffVisualsKey at +0x55). **S→C 0x1c2** (class `0x1435dd918`): object header, u16 buff instance: removes it.
   The Buffs component has no 0x2ba update reader; its creation blob holds the same entries ([04](04-player-entity.md)).
 - **Righteous Fire** (`ActivateRighteousFire`, `RunPlayerTick`, `BurnAround`): cast on the player itself (§9), it puts
@@ -449,8 +487,9 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`base_maximum_all_resistances_% = 75`) and `src/Modules/CalcDefence.lua` (the clamp). The project is cloned locally
   into the git-ignored `Tools/PathOfBuilding` as the source of these formulas. Righteous Fire's self-burn is mitigated
   by fire resistance; `/resistances` prints the modifier, penalty and final values and `/hit <type> <damage>` applies
-  the same rule. Armour, player evasion as avoidance against monster attacks, penetration and max-resistance
-  modifiers are still not modelled; monster evasion is used for the player's accuracy check (§5).
+  the same rule. Armour reduction and player evasion as avoidance against monster attacks now exist (see §4);
+  penetration and max-resistance modifiers are still not modelled, and monster evasion is used for the player's
+  accuracy check (§5).
 - **Spell Suppression** (`CharacterStats`, `DamageModel`): the passives' `base_spell_suppression_chance_%` is summed into
   `Pools` (capped at 100%, PoB `SuppressionChanceCap`); a successful roll makes a spell hit take 40% less damage
   (`SuppressionEffect` in PoB `src/Modules/Data.lua`). The passives' unconditional
@@ -535,6 +574,62 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
 - **Dev check.** `/auras` prints the active auras, flat/percent reservation, reserved and unreserved mana,
   reservation efficiency and aura effect. Area changes recreate the player object, so `SendPlayer` puts the
   running auras' buffs back on it.
+
+## 14. Character panel sums
+
+The character panel (CharacterPanelStats.dat, 387 rows) reads mostly virtual stats that the server computes; the client
+derives none of them (§4). Passives and item mods give the base form (`base_stun_recovery_+%`) while the Stun Recovery
+row reads `stun_recovery_+%`. `PanelStats` (issue #75) lists, for about 150 display stats, what each one sums: the display
+stat's own value (Haste gives `cast_speed_+%` itself), its base form and the unconditional combined stats that apply to
+it:
+
+| Display | Also counts |
+|---|---|
+| `avoid_ignite/chill/freeze/shock_%` | `avoid_all_elemental_status_%` (Avoid Elemental Ailments) |
+| `self_*_duration_-%` (elemental ailments) | `self_elemental_status_duration_-%` |
+| `virtual_ignite/chill/freeze/shock/scorch/frostburn/sap_duration_+%` | `base_elemental_status_ailment_duration_+%`, `base_all_ailment_duration_+%`, the per-element ailment duration, `chill_and_freeze_duration_+%` |
+| `virtual_chill/shock/scorch/frostburn/sap_effect_+%` | `non_damaging_ailment_effect_+%`, `cold_` / `lightning_ailment_effect_+%` |
+| `chance_to_freeze_%`, `chance_to_shock_%`, the ignite chances | `chance_to_freeze_shock_ignite_%` |
+| `reduce_enemy_fire/cold/lightning_resistance_%` | `reduce_enemy_elemental_resistance_%`, `base_penetrate_elemental_resistances_%` |
+| `cast_speed_+%` | `attack_and_cast_speed_+%` (also counted in attack speed) |
+| `life/mana_leech_from_*_damage_permyriad` | the elemental leech for fire, cold, lightning; life also `horrible_ugly_life_leech_from_*_damage_perhundredthousand` ÷ 10 |
+| `virtual_life/mana/energy_shield_leech_speed_+%` | `life_mana_es_leech_speed_+%` |
+| `virtual_endurance/frenzy/power_charge_duration_+%` | `charge_duration_+%`, `base_charge_duration_+%` |
+| `display_skill_increased_item_rarity/quantity_+%` | `base_item_found_rarity/quantity_+%` |
+| `virtual_trap/mine_throwing_speed_+%` | `trap_and_mine_throwing_speed_+%` (mine: `mine_laying_speed_+%`) |
+| `minimum/maximum_*_damage_to_return_to_melee_attacker` | `*_damage_to_return_to_melee_attacker` (both ends) |
+| `extra_damage_taken_from_crit_+%` | − `base_self_critical_strike_multiplier_-%` |
+| `impale_on_hit_%_chance` | `attacks_impale_on_hit_%_chance` (the attack reads this row's name) |
+| `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
+
+**Main hand / off hand rows** (`main_hand_…` / `off_hand_…`, `virtual_total_main_hand_…`) add the global stats and that
+hand's item's own local stats (`HandLocalStats`: the active item in the first weapon set, else the second):
+`local_chance_to_bleed_on_hit_%`, `local_poison_on_hit_%`, `local_attacks_impale_on_hit_%_chance`,
+`local_chance_to_blind_on_hit_%`, `local_fire/cold/lightning/chaos/elemental_penetration_%`,
+`local_stun_threshold_reduction_+%`, `local_life/mana_gain_per_target`, `local_life/mana_leech_from_physical_damage_permyriad`
+and `local_double_damage_to_chilled_enemies`. Spell and secondary rows use the global stats only (`spells_…` where the
+game has a spell form).
+
+**Damage rows from the hit the server swings with** (`PanelStats.HandDamage`, issue #75):
+`main_hand_minimum_total_damage`, `main_hand_maximum_total_damage` and the per-type
+`main_hand_minimum/maximum_{physical,fire,cold,lightning,chaos}_damage` are computed from
+`Skills.UnarmedFor(ClassRow).HitDamage(stats)` after conversion, rounded down because the client shows whole numbers, and
+sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
+the main hand is filled, since the server attacks with it; an empty packet adds no rows.
+
+**Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
+`additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`
+(with `spell_block_differs_against_projectiles` 1, which shows the row), each capped at its maximum, and
+`chaos_damage_over_time_resistance_%` (and its uncapped form) = chaos resistance +
+`additional_chaos_resistance_against_damage_over_time_%`, capped at the chaos maximum. Each is sent only when its stat is set.
+
+Conditional stats (while, if, per charge, against …) are not counted. Flags (`cannot_be_frozen`, `immune_to_ignite`
+…) are 1 when any source is set; "Immune to Ignite and Shock" sets both. Only non-zero values are sent; a sum that drops
+to zero is cleared with the other stale stats (`PlayerStatsWithCleared`). A stat set with `/set_stat` keeps its value.
+`cast_speed_+%` is now the total, so `CastSpeedPct` reads only it. Which combined stats count is from the game's
+documented behaviour, not a capture; the signs of the crit-taken and action speed rows are not confirmed. Live
+2026-10-20: `/set_stat base_stun_recovery_+% 30`, `avoid_all_elemental_status_% 20` and `base_cannot_be_frozen 1` show
+on the Defence tab as Stun Recovery 30%, the four Avoidance rows at 20% and "Cannot be Frozen".
 
 ## Open
 

@@ -9,7 +9,8 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class PlayerInventories
 {
-    public const byte MainInventory = 0, Weapon1 = 2, Offhand1 = 3, Flask = 11, Cursor = InstanceInventories.CursorRow;
+    public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
+        Boots = 9, Flask = 11, MapDevice = 13, Cursor = InstanceInventories.CursorRow;
 
     private static readonly ConcurrentDictionary<string, PlayerInventories> ByCharacter = new(StringComparer.OrdinalIgnoreCase);
 
@@ -19,16 +20,46 @@ sealed class PlayerInventories
     private readonly Lock _lock = new();
     private string? _owner;   // the character whose save this is; null while the start kit is being built
     private ModCatalog? _mods;  // to save mods by their Mods.dat Id
+    private Item? _startWeapon;
 
-    /// <summary>Writes the character's save (every inventory, with item ids and cells).</summary>
+    /// <summary>The class's start weapon while it waits on the ground for the character (as on the real game's Twilight
+    /// Strand: the Gateway puts it near the spawn of each instance the character enters outside towns); null once picked
+    /// up, or with <c>Game_START_WEAPON=equipped</c>, which equips it in the start kit instead.</summary>
+    public Item? StartWeapon
+    {
+        get { lock (_lock) return _startWeapon; }
+    }
+
+    /// <summary>Makes <paramref name="weapon"/> the start weapon waiting on the ground, and saves it.</summary>
+    public void SetStartWeapon(Item weapon)
+    {
+        lock (_lock) _startWeapon = weapon;
+        Persist();
+    }
+
+    /// <summary>The start weapon was picked up: true the first time. It leaves the save with the pickup's own change (the
+    /// <see cref="Put"/> that follows), so a crash never keeps it both waiting and in an inventory.</summary>
+    public bool ClaimStartWeapon()
+    {
+        lock (_lock)
+        {
+            if (_startWeapon is null) return false;
+            _startWeapon = null;
+            return true;
+        }
+    }
+
+    /// <summary>Writes the character's save (every inventory, with item ids and cells, and the start weapon).</summary>
     void Persist()
     {
         if (_owner is null) return;
         // Copied and written under the items' lock: two changes can't write their copies out of order, and an older copy
         // never lands on the disk after a newer one. The rest of the save (skill bar, experience, passives) stays as it is.
         lock (_lock)
-            CharacterSaves.SetInventories(_owner, _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
-                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList()));
+            CharacterSaves.SetInventories(_owner,
+                _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
+                    kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList()),
+                _startWeapon is null ? null : CharacterSaves.ToSaved(_startWeapon, _mods));
     }
 
     public static uint InventoryId(byte row) => (uint)row + 1;
@@ -114,6 +145,7 @@ sealed class PlayerInventories
             {
                 if (x < 0 || y < 0 || x + shape.Width > slot.Width || y + shape.Height > slot.Height) { why = "outside the grid"; return null; }
                 if (row == Flask && !Accepts(row, shape.Class)) { why = $"{shape.Class} does not go in the flask slots"; return null; }
+                if (row == MapDevice && !Accepts(row, shape.Class)) { why = $"{shape.Class} does not go in the map device"; return null; }
                 inTheWay = [.. ItemsIn(row).Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height)];
             }
             if (inTheWay.Count > 1) { why = $"{inTheWay.Count} items in the way"; return null; }
@@ -275,17 +307,21 @@ sealed class PlayerInventories
     }
 
     /// <summary>The gems socketed in the items of the visible equipment rows, in row and socket order.</summary>
-    public IReadOnlyList<Item> SocketedGems()
+    public IReadOnlyList<Item> SocketedGems() => [.. SocketedGemsByItem().Select(g => g.Gem)];
+
+    /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
+    public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem()
     {
         lock (_lock)
             return [.. VisibleSlots.Keys.Order().SelectMany(r => _items.TryGetValue(r, out var l) ? l : [])
-                .SelectMany(i => i.Item.Sockets).Select(s => s.Gem).OfType<Item>()];
+                .SelectMany(i => i.Item.Sockets.Select(s => s.Gem).OfType<Item>().Select(g => (i.Id, g)))];
     }
 
     static readonly string[] OneHand = ["Claw", "Dagger", "Wand", "One Hand Sword", "Thrusting One Hand Sword", "One Hand Axe", "One Hand Mace", "Sceptre", "Rune Dagger"];
     static readonly string[] TwoHand = ["Bow", "Staff", "Two Hand Sword", "Two Hand Axe", "Two Hand Mace", "Warstaff", "FishingRod"];
 
-    /// <summary>Whether an item class goes into an equipment row (Inventories.dat rows 1-11, 14, 15, 102). Other single-item
+    /// <summary>Whether an item class goes into an equipment row (Inventories.dat rows 1-11, 14, 15, 102) or the map device's
+    /// slots (row 13: maps and map fragments). Other single-item
     /// rows (crafting benches …) take anything.</summary>
     public static bool Accepts(byte row, string itemClass) => row switch
     {
@@ -298,6 +334,7 @@ sealed class PlayerInventories
         8 => itemClass == "Gloves",
         9 => itemClass == "Boots",
         10 => itemClass == "Belt",
+        MapDevice => itemClass is global::MapDevice.MapClass or global::MapDevice.FragmentClass,
         Flask => itemClass is "LifeFlask" or "ManaFlask" or "HybridFlask" or "UtilityFlask" or "UtilityFlaskCritical",
         _ => true,
     };
@@ -383,6 +420,22 @@ sealed class PlayerInventories
         }
         Persist();
         return result;
+    }
+
+    /// <summary>Identifies every unidentified item with mods in a row (an NPC's Identify Items) in one save. Returns them
+    /// as they are now (same ids and cells).</summary>
+    public IReadOnlyList<InventoryItem> IdentifyAll(byte row)
+    {
+        var identified = new List<InventoryItem>();
+        lock (_lock)
+        {
+            var items = ItemsIn(row);
+            for (int i = 0; i < items.Count; i++)
+                if (!items[i].Item.Identified && items[i].Item.Components.Contains("Mods"))
+                    identified.Add(items[i] = items[i] with { Item = items[i].Item with { Identified = true } });
+        }
+        if (identified.Count > 0) Persist();
+        return identified;
     }
 
     /// <summary>Sets the size of a stack (same id), or removes it at 0, in one save. Returns it as it is now (null when
@@ -614,14 +667,16 @@ sealed class PlayerInventories
                     if (p.Id < AccountStash.FirstItemId) inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
                 }
                 else Console.WriteLine($"[gateway] {character}: saved item type 0x{p.Item.Type:x8} is unknown, dropped");
+        if (save.StartWeapon is { } weapon) inv._startWeapon = CharacterSaves.FromSaved(weapon, catalog);
         return inv;
     }
 
     /// <summary>
-    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) in Weapon1, the
+    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) as the
+    /// <see cref="StartWeapon"/> waiting on the ground (Game_START_WEAPON=equipped: in Weapon1), the
     /// StartSkillGem and StartSupportGem (SkillGems rows → their BaseItemTypes: Fireball, Arcane Surge Support) in the main
-    /// inventory, and a
-    /// Small Life Flask and Small Mana Flask in the flask slots. Missing tables or unsupported types are skipped;
+    /// inventory, and
+    /// two Small Life Flasks (flask keys 1 and 2) and a Small Mana Flask (key 5). Missing tables or unsupported types are skipped;
     /// Game_START_ITEMS=0 starts empty.
     /// </summary>
     static PlayerInventories StartKit(ItemCatalog catalog, string folder, int characterRow = 1)
@@ -629,7 +684,12 @@ sealed class PlayerInventories
         var inv = new PlayerInventories();
         if (Environment.GetEnvironmentVariable("Game_START_ITEMS") == "0") return inv;
         string chars = Path.Combine(folder, "tables", "Characters.json"), gems = Path.Combine(folder, "tables", "SkillGems.json");
-        if (catalog.Error is not null || !File.Exists(chars) || !File.Exists(gems)) return inv;
+        if (catalog.Error is not null || !File.Exists(chars) || !File.Exists(gems))
+        {
+            // The empty kit is saved like any other, so this character stays empty: say why.
+            Console.WriteLine($"[gateway] start kit is empty: {catalog.Error ?? $"no {chars} or {gems}"} (extract the tables and data/item-types.json first, Agents/GettingStarted.md)");
+            return inv;
+        }
         using var c = JsonDocument.Parse(File.ReadAllBytes(chars));
         using var g = JsonDocument.Parse(File.ReadAllBytes(gems));
         var row = c.RootElement[characterRow];
@@ -652,11 +712,17 @@ sealed class PlayerInventories
         // The start weapon with two linked sockets in the start gems' colours (the Witch: blue, blue), empty, for its gems.
         if (row.GetProperty("StartWeapons").EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Number } w &&
             catalog.Row(w.GetInt32()) is { Supported: true } weapon)
-            inv.Add(Weapon1, 0, 0, ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]));
+        {
+            var item = ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]);
+            if (Environment.GetEnvironmentVariable("Game_START_WEAPON") == "equipped") inv.Add(Weapon1, 0, 0, item);
+            else inv._startWeapon = item;
+        }
         Put(MainInventory, 0, 0, Gem("StartSkillGem"));
         Put(MainInventory, 1, 0, Gem("StartSupportGem"));
+        // Keys 1 and 2: life; key 5: mana, as players set the bar up.
         Put(Flask, 0, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));
-        Put(Flask, 1, 0, catalog.Find("Metadata/Items/Flasks/FlaskMana1"));
+        Put(Flask, 1, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));
+        Put(Flask, 4, 0, catalog.Find("Metadata/Items/Flasks/FlaskMana1"));
         return inv;
     }
 }

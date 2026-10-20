@@ -47,6 +47,13 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Mods_component_carries_the_level_requirement_after_the_item_level()
+    {
+        var item = new Item(1, ["Mods"], 0) { ItemLevel = 40, RequiredLevel = 84 };
+        Assert.StartsWith("01000000" + "0000" + "28" + "54", Convert.ToHexString(item.Payload()));
+    }
+
+    [Fact]
     public void A_rare_name_comes_before_the_explicit_list_and_only_when_identified()
     {
         var item = new Item(1, ["Mods"], 0)
@@ -69,6 +76,17 @@ public class InstanceItemsTests
         Assert.Equal(InstanceItems.UseItemOnLength, m.Length);
         Assert.Equal(InstanceItems.UseItemOnLength, InstanceProtocol.KnownClientLength(InstanceItems.UseItemOnId));
         Assert.Equal(new InstanceItems.UseItemOn(1, 0x40000018, 1, 187), InstanceItems.ReadUseItemOn(m));
+    }
+
+    [Fact]
+    public void Use_flask_reads_the_flask_bar_slot()
+    {
+        // Live 2026-10-20: flask keys 1 and 2 of the start kit.
+        byte[] key1 = Convert.FromHexString("007000000000"), key2 = Convert.FromHexString("007000000001");
+        Assert.Equal(InstanceItems.UseFlaskLength, key2.Length);
+        Assert.Equal(InstanceItems.UseFlaskLength, InstanceProtocol.KnownClientLength(InstanceItems.UseFlaskId));
+        Assert.Equal(0u, InstanceItems.ReadUseFlask(key1));
+        Assert.Equal(1u, InstanceItems.ReadUseFlask(key2));
     }
 
     [Fact]
@@ -115,8 +133,8 @@ public class InstanceItemsTests
     [Fact]
     public void Unsupported_components_are_refused()
     {
-        Assert.False(Item.CanSerialize(["Base", "Map"]));
-        Assert.Throws<ArgumentException>(() => new Item(1, ["Map"], 0).Payload());
+        Assert.False(Item.CanSerialize(["Base", "MapKey"]));
+        Assert.Throws<ArgumentException>(() => new Item(1, ["MapKey"], 0).Payload());
     }
 
     [Fact]

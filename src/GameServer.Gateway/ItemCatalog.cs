@@ -17,6 +17,8 @@ sealed class ItemCatalog
         _requirements = new(() => LoadRequirements(folder));
         _shieldBlocks = new(() => LoadShieldBlocks(folder));
         _weaponCrits = new(() => LoadWeaponCrits(folder));
+        _defences = new(() => LoadDefences(folder));
+        _flasks = new(() => LoadFlasks(folder, _rows.Value.Rows));
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
@@ -97,6 +99,31 @@ sealed class ItemCatalog
         return result;
     }
 
+    /// <summary>A base's defence range from ArmourTypes.dat (the values the client interpolates with the item's base
+    /// percentile). Body armour, helmets, gloves, boots and shields have them; most other bases are zero.</summary>
+    public readonly record struct BaseDefences(int ArmourMin, int ArmourMax, int EvasionMin, int EvasionMax);
+
+    private Lazy<Dictionary<int, BaseDefences>> _defences = null!;
+
+    /// <summary>The base defence range of an item type, or null when it has no armour row.</summary>
+    public BaseDefences? Defences(BaseType t) => _defences.Value.TryGetValue(t.Row, out var d) ? d : null;
+
+    private static Dictionary<int, BaseDefences> LoadDefences(string folder)
+    {
+        string path = Path.Combine(folder, "tables", "ArmourTypes.json");
+        var result = new Dictionary<int, BaseDefences>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+        {
+            if (r.GetProperty("BaseItemTypesKey") is not { ValueKind: JsonValueKind.Number } key) continue;
+            result[(int)Math.Max(0, key.GetInt32())] = new BaseDefences(
+                r.GetProperty("ArmourMin").GetInt32(), r.GetProperty("ArmourMax").GetInt32(),
+                r.GetProperty("EvasionMin").GetInt32(), r.GetProperty("EvasionMax").GetInt32());
+        }
+        return result;
+    }
+
     private Lazy<Dictionary<int, int>> _weaponCrits = null!;
 
     /// <summary>The weapon's base critical strike chance (permyriad: 500 = 5%) from WeaponTypes.dat.</summary>
@@ -112,6 +139,31 @@ sealed class ItemCatalog
             if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b &&
                 r.GetProperty("Critical") is { ValueKind: JsonValueKind.Number } crit)
                 result.TryAdd(b.GetInt32(), crit.GetInt32());
+        return result;
+    }
+
+    private Lazy<Dictionary<int, Flasks.Flask>> _flasks = null!;
+
+    /// <summary>A life or mana flask's use (Flasks.dat and ComponentCharges), or null for other types, utility flasks
+    /// included.</summary>
+    public Flasks.Flask? FlaskOf(BaseType t) => _flasks.Value.GetValueOrDefault(t.Row);
+
+    private static Dictionary<int, Flasks.Flask> LoadFlasks(string folder, IReadOnlyList<BaseType> rows)
+    {
+        string flasks = Path.Combine(folder, "tables", "Flasks.json"), charges = Path.Combine(folder, "tables", "ComponentCharges.json");
+        var result = new Dictionary<int, Flasks.Flask>();
+        if (!File.Exists(flasks) || !File.Exists(charges)) return result;
+        var perUse = new Dictionary<string, (int Max, int PerCharge)>();
+        using (var c = JsonDocument.Parse(File.ReadAllBytes(charges)))
+            foreach (var r in c.RootElement.EnumerateArray())
+                perUse.TryAdd(r.GetProperty("BaseItemTypesKey").GetString() ?? "", (r.GetProperty("MaxCharges").GetInt32(), r.GetProperty("PerCharge").GetInt32()));
+        using var f = JsonDocument.Parse(File.ReadAllBytes(flasks));
+        foreach (var r in f.RootElement.EnumerateArray())
+            if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b && b.GetInt32() < rows.Count &&
+                perUse.TryGetValue(rows[b.GetInt32()].Id, out var use) &&
+                (r.GetProperty("LifePerUse").GetInt32(), r.GetProperty("ManaPerUse").GetInt32()) is var (life, mana) && life + mana > 0)
+                // RecoveryTime is in tenths of a second (Small Life Flask: 30, 3 s).
+                result.TryAdd(b.GetInt32(), new(life, mana, r.GetProperty("RecoveryTime").GetInt32() / 10.0, use.PerCharge, use.Max));
         return result;
     }
 
@@ -147,6 +199,9 @@ sealed class ItemCatalog
 
     private Lazy<Dictionary<string, (int Str, int Dex, int Int)>> _requirements = null!;
 
+    /// <summary>The base's attribute requirements (ComponentAttributeRequirements), zero when it has none.</summary>
+    public (int Str, int Dex, int Int) Requirements(BaseType t) => _requirements.Value.GetValueOrDefault(t.Id);
+
     private static Dictionary<string, (int, int, int)> LoadRequirements(string folder)
     {
         string path = Path.Combine(folder, "tables", "ComponentAttributeRequirements.json");
@@ -174,7 +229,7 @@ sealed class ItemCatalog
         var components = new Dictionary<string, IReadOnlyList<string>>();
         var itemTags = new Dictionary<string, IReadOnlyList<string>>();
         string types = Path.Combine(folder, "item-types.json");
-        if (!File.Exists(types)) return ([], $"{types} is missing: python -I scripts/re/ot_components.py --items --json {types}");
+        if (!File.Exists(types)) return ([], $"{types} is missing: run scripts/dev/extract-data.ps1");
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(types)))
             foreach (var t in doc.RootElement.GetProperty("types").EnumerateArray())
             {

@@ -27,11 +27,13 @@ static class CharacterSaves
     /// character's total (its level is the account's; a save from another level is ignored). Passives: the allocated
     /// nodes' PassiveSkillGraphId. Waypoints: the WorldAreas Ids of the activated waypoints; Visited: of the areas
     /// entered (their visit quest flags reveal the World panel's pins). QuestFlags: the quest flags quests set
-    /// (QuestFlags.dat Ids, 12-quests.md §5). Gold: only in older saves, see <see cref="TakeGold"/>.</summary>
+    /// (QuestFlags.dat Ids, 12-quests.md §5). Gold: only in older saves, see <see cref="TakeGold"/>. StartWeapon: the
+    /// class's start weapon while it waits on the ground for the character to pick it up (<see cref="PlayerInventories.StartWeapon"/>).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
-        Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null);
+        Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
+        SavedItem? StartWeapon = null);
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
     static readonly Lock Gate = new();
@@ -73,9 +75,9 @@ static class CharacterSaves
         }
     }
 
-    /// <summary>Records the character's inventories, keeping the rest of the save.</summary>
-    public static void SetInventories(string character, Dictionary<byte, List<SavedPlacement>> inventories) =>
-        Update(character, s => s with { Inventories = inventories });
+    /// <summary>Records the character's inventories and its start weapon still on the ground, keeping the rest of the save.</summary>
+    public static void SetInventories(string character, Dictionary<byte, List<SavedPlacement>> inventories, SavedItem? startWeapon = null) =>
+        Update(character, s => s with { Inventories = inventories, StartWeapon = startWeapon });
 
     /// <summary>Records the character's experience, keeping the rest of the save.</summary>
     public static void SetExperience(string character, uint experience) => Update(character, s => s with { Experience = experience });

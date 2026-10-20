@@ -125,6 +125,38 @@ public class PlayerInventoriesTests : IDisposable
     }
 
     [Fact]
+    public void The_start_weapon_waits_in_the_save_until_its_pickup_is_saved()
+    {
+        var items = NewInventories();
+        Assert.Null(items.StartWeapon);
+
+        items.SetStartWeapon(Wand());
+        Assert.Equal(0xd9b1a12fu, CharacterSaves.Load(_character)!.StartWeapon?.Type);
+
+        // The pickup: claimed once, and the save changes with the item's Put, never in between.
+        Assert.True(items.ClaimStartWeapon());
+        Assert.False(items.ClaimStartWeapon());
+        Assert.Null(items.StartWeapon);
+        Assert.NotNull(CharacterSaves.Load(_character)!.StartWeapon);
+        var placed = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), 0, 0, Wand()));
+
+        var save = CharacterSaves.Load(_character)!;
+        Assert.Null(save.StartWeapon);
+        Assert.Equal([placed.Id], save.Inventories[PlayerInventories.MainInventory].Select(p => p.Id));
+    }
+
+    [Fact]
+    public void Saving_items_keeps_the_waiting_start_weapon()
+    {
+        var items = NewInventories();
+        items.SetStartWeapon(Wand());
+
+        items.Add(PlayerInventories.MainInventory, 0, 0, Wand());
+
+        Assert.NotNull(CharacterSaves.Load(_character)!.StartWeapon);
+    }
+
+    [Fact]
     public void Gold_an_older_save_kept_is_taken_once_and_the_rest_stays()
     {
         CharacterSaves.Write(_character, new CharacterSaves.Save([], Experience: 42, Gold: 750));
@@ -379,6 +411,23 @@ public class PlayerInventoriesTests : IDisposable
         Assert.True(gone!.Removed);
         Assert.Null(gone.Left);
         Assert.Null(items.ConsumeOne(PlayerInventories.MainInventory, orb.Id));
+    }
+
+    [Fact]
+    public void Identify_all_identifies_only_unidentified_items_with_mods_and_saves_them()
+    {
+        var items = NewInventories();
+        var ring = items.Add(PlayerInventories.MainInventory, 0, 0, new Item(0xd9b1a12f, ["Base", "Mods"], 0x40a1) { Rarity = ItemRarity.Rare, Identified = false });
+        var known = items.Add(PlayerInventories.MainInventory, 1, 0, new Item(0xd9b1a12f, ["Base", "Mods"], 0x40a1) { Rarity = ItemRarity.Magic });
+        items.Add(PlayerInventories.MainInventory, 2, 0, Wand() with { Identified = false });
+
+        var identified = items.IdentifyAll(PlayerInventories.MainInventory);
+
+        Assert.Equal([(ring.Id, (byte)0, (byte)0)], identified.Select(i => (i.Id, i.X, i.Y)));
+        Assert.True(identified[0].Item.Identified);
+        Assert.True(items.Items(PlayerInventories.MainInventory).Single(i => i.Id == known.Id).Item.Identified);
+        Assert.True(CharacterSaves.Load(_character)!.Inventories[PlayerInventories.MainInventory].Single(p => p.Id == ring.Id).Item.Identified);
+        Assert.Empty(items.IdentifyAll(PlayerInventories.MainInventory));
     }
 
     [Fact]
