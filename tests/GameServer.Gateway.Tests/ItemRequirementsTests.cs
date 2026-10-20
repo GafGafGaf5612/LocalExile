@@ -14,36 +14,53 @@ public class ItemRequirementsTests
     }
 
     static HashSet<uint> Inactive((int, int, int) baseAttributes, int level, params ItemModStats.Worn[] worn) =>
-        ItemModStats.Inactive(worn, baseAttributes, level, i => Gives[i.TypeHash]);
+        Inactive(baseAttributes, level, null, worn);
+
+    static HashSet<uint> Inactive((int, int, int) baseAttributes, int level, HashSet<uint>? previous, params ItemModStats.Worn[] worn) =>
+        ItemModStats.Inactive(worn, baseAttributes, level, i => Gives[i.TypeHash], previous);
 
     [Fact]
-    public void An_item_does_not_meet_its_own_requirement()
+    public void Taking_off_a_ring_leaves_items_the_rest_still_supports()
     {
-        Assert.Equal([1u], Inactive((10, 0, 0), 1, Item(1, (20, 0, 0), gives: (20, 0, 0))));
+        // Live 2026-10-20: 14 strength, a +30 ring, a +30 Chestplate (needs 25), a Cone Helmet (needs 21): 74.
+        // Without the ring 44 is left, enough for both.
+        var chest = Item(1, (25, 0, 0), gives: (30, 0, 0));
+        var helmet = Item(2, (21, 0, 0));
+        Assert.Empty(Inactive((14, 0, 0), 10, chest, helmet));
+    }
+
+    [Fact]
+    public void Switching_one_off_is_counted_again_before_the_next()
+    {
+        // 14 base; a +10 amulet needs 30 (only reachable with itself and the belt): with the belt gone it fails, and the
+        // boots that needed its +10 fail after it.
+        var amulet = Item(10, (30, 0, 0), gives: (10, 0, 0));
+        var boots = Item(11, (24, 0, 0));
+        Assert.Equal([10u, 11u], Inactive((14, 0, 0), 10, amulet, boots).Order());
+    }
+
+    [Fact]
+    public void An_inactive_item_does_not_count_its_own_attributes_to_come_back()
+    {
+        var chest = Item(20, (25, 0, 0), gives: (30, 0, 0));
+        // Off before, and 14 + nothing else < 25: it stays off even though 14 + its own 30 would be enough.
+        Assert.Equal([20u], Inactive((14, 0, 0), 10, [20], chest));
+        // A ring that gives the rest comes back on.
+        var ring = Item(21, (0, 0, 0), gives: (11, 0, 0));
+        Assert.Empty(Inactive((14, 0, 0), 10, [20], chest, ring));
     }
 
     [Fact]
     public void Two_items_can_qualify_each_other()
     {
-        Assert.Empty(Inactive((0, 0, 0), 1, Item(1, (20, 0, 0), gives: (0, 20, 0)), Item(2, (0, 20, 0), gives: (20, 0, 0))));
-    }
-
-    [Fact]
-    public void Losing_an_item_cascades()
-    {
-        // The ring gives the strength the armour needs, the armour gives the dexterity the boots need.
-        var ring = Item(10, (0, 0, 0), gives: (20, 0, 0));
-        var armour = Item(11, (20, 0, 0), gives: (0, 20, 0));
-        var boots = Item(12, (0, 20, 0));
-        Assert.Empty(Inactive((0, 0, 0), 1, ring, armour, boots));
-        Assert.Equal([11u, 12u], Inactive((0, 0, 0), 1, armour, boots).Order());
+        Assert.Empty(Inactive((0, 0, 0), 1, Item(30, (20, 0, 0), gives: (0, 20, 0)), Item(31, (0, 20, 0), gives: (20, 0, 0))));
     }
 
     [Fact]
     public void An_inactive_items_attributes_do_not_count()
     {
         // The amulet needs more intelligence than anyone has, so its +30 strength cannot carry the helmet.
-        Assert.Equal([20u, 21u], Inactive((0, 0, 0), 1, Item(20, (0, 0, 50), gives: (30, 0, 0)), Item(21, (30, 0, 0))).Order());
+        Assert.Equal([40u, 41u], Inactive((0, 0, 0), 1, Item(40, (0, 0, 50), gives: (30, 0, 0)), Item(41, (30, 0, 0))).Order());
     }
 
     [Fact]

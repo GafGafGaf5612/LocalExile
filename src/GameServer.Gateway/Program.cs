@@ -1725,9 +1725,9 @@ static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<
             ? new ItemModStats.Worn(x.i.Id, x.i.Item, Items.Requirements(t).Str, Items.Requirements(t).Dex, Items.Requirements(t).Int,
                 ItemModStats.LevelRequirement(x.i.Item, t.DropLevel, Items.Mods))
             : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0)).ToList();
-    var inactive = ItemModStats.Inactive(worn, (c.Strength + ps + god, c.Dexterity + pd + god, c.Intelligence + pi + god),
-        level ?? conn.Pools.Level, i => ItemModStats.Attributes(i, Items.Mods));
     var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
+    var inactive = ItemModStats.Inactive(worn, (c.Strength + ps + god, c.Dexterity + pd + god, c.Intelligence + pi + god),
+        level ?? conn.Pools.Level, i => ItemModStats.Attributes(i, Items.Mods), before);
     InactiveItems[CharacterName(conn)] = inactive;
     if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
         Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +

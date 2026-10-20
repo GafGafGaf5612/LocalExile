@@ -45,30 +45,39 @@ static class ItemModStats
 
     /// <summary>
     /// The worn items that are inactive (their requirements are not met), as in the game: an item stays equipped but its
-    /// mods and socketed gems do nothing. An item is checked against the character's own attributes
-    /// (<paramref name="baseAttributes"/>: class and passives) plus those of every <i>other</i> active item, never its
-    /// own, and the character's level. Every item starts active and items are switched off until nothing changes, so a
-    /// lost item can cascade, and two items can still qualify each other.
+    /// mods and socketed gems do nothing. It works step by step from <paramref name="previous"/> (the inactive items
+    /// before this change; ids no longer worn are dropped):
+    /// <list type="number">
+    /// <item>An inactive item comes back when the character (<paramref name="baseAttributes"/>: class and passives), the
+    /// active items and the level meet its requirement; its own attributes do not count while it is off.</item>
+    /// <item>Then, with the attributes of every active item counted (its own too: the client only lets an item be put
+    /// on when its requirements are met without it, so a worn active item has qualified), one item that falls short is
+    /// switched off, the totals are counted again, and so on until every active item is satisfied.</item>
+    /// </list>
+    /// Taking off a +30 strength ring that another +30 strength item needed leaves that item on if the rest still
+    /// reaches its requirement; an item it switches off can switch off more.
     /// </summary>
     public static HashSet<uint> Inactive(IReadOnlyList<Worn> worn, (int Str, int Dex, int Int) baseAttributes, int level,
-        Func<Item, (int Str, int Dex, int Int)> attributesOf)
+        Func<Item, (int Str, int Dex, int Int)> attributesOf, IReadOnlySet<uint>? previous = null)
     {
-        var inactive = new HashSet<uint>();
         var own = worn.ToDictionary(w => w.Id, w => attributesOf(w.Item));
+        var inactive = worn.Where(w => previous?.Contains(w.Id) == true).Select(w => w.Id).ToHashSet();
+        (int, int, int) Totals() => (baseAttributes.Str + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Str),
+            baseAttributes.Dex + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Dex),
+            baseAttributes.Int + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Int));
+        bool Meets(Worn w, (int Str, int Dex, int Int) t) => level >= w.Level && t.Str >= w.Strength && t.Dex >= w.Dexterity && t.Int >= w.Intelligence;
+        // 1. Back on: met by the others (an inactive item is not in the totals).
         for (bool changed = true; changed;)
         {
             changed = false;
-            var active = worn.Where(w => !inactive.Contains(w.Id)).ToList();
-            var (str, dex, intel) = (baseAttributes.Str + active.Sum(w => own[w.Id].Str), baseAttributes.Dex + active.Sum(w => own[w.Id].Dex),
-                baseAttributes.Int + active.Sum(w => own[w.Id].Int));
-            foreach (var w in active)
-            {
-                var (s, d, i) = own[w.Id];
-                if (level >= w.Level && str - s >= w.Strength && dex - d >= w.Dexterity && intel - i >= w.Intelligence) continue;
-                inactive.Add(w.Id);
-                changed = true;
-                break;   // the totals changed: check the rest again against the new ones
-            }
+            if (worn.FirstOrDefault(w => inactive.Contains(w.Id) && Meets(w, Totals())) is { } back) { inactive.Remove(back.Id); changed = true; }
+        }
+        // 2. Off, one at a time, in equipment order, recounting after each.
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            var totals = Totals();
+            if (worn.FirstOrDefault(w => !inactive.Contains(w.Id) && !Meets(w, totals)) is { } off) { inactive.Add(off.Id); changed = true; }
         }
         return inactive;
     }
