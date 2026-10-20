@@ -284,9 +284,6 @@ Captured maps are saved as `data/walkability/<area>_seed<seed>.bin` and `.json` 
 .\scripts\dev\live.ps1            # add -Walkmaps if you did step 8
 ```
 
-Or double-click `run.bat` in the repository root: it runs `live.ps1 -Walkmaps` (or `live.ps1` with the arguments you
-give it, e.g. `run.bat -Only Gateway`) without changing the execution policy, and keeps its window open.
-
 Success, in order:
 1. The script prints `client pid ...`, then `servers up`. With `-Walkmaps`, it first prints
    `walk-map capture on (logs\walkmaps.log)`.
