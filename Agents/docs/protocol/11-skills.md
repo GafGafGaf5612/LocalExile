@@ -296,6 +296,13 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   without enough), and `RunPlayerTick` regenerates 1.75% of maximum mana per second (Character.ot
   `mana_regeneration_rate_per_minute_%` 105) plus `base_mana_regeneration_rate_per_minute`, raised by
   `mana_regeneration_rate_+%`. Changes go out as 0x1b1 with pool 1.
+- **Damage** (`SpellDamage.cs`). A spell's hit is, per damage type, its `spell_minimum/maximum_base_{type}_damage`
+  × (1 + `damage_+%` + `spell_damage_+%` + `elemental_damage_+%` for fire / cold / lightning + `{type}_damage_+%` +
+  `projectile_damage_+%` for `base_is_projectile` skills), from the player's stats (passives, item mods, auras) under
+  the skill's own. The server's hits roll between the unrounded minimum and maximum and drop the fraction; the skill's
+  tooltip gets `display_hundred_times_damage_per_skill_use` (the unrounded average × 100) and
+  `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
+  DPS with the player's stats. More multipliers, added and converted damage are not modelled.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
