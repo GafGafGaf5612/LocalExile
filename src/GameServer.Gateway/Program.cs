@@ -1506,6 +1506,13 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
         .Concat(PanelStats.FromPools(Get, conn.Pools)))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
+    // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
+    // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
+    // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
+    if (Stats.Key("skill_uses_main_hand") is uint usesMainHand && !devSet.Contains(usesMainHand)) stats[usesMainHand] = 1;
+    var attack = Skills.UnarmedFor(conn.ClassRow).HitDamage(stats);
+    foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
+        if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The conditions as they are now; the player tick sends the chance again when they change.
     int suppression = Suppression(conn).Chance;
     foreach (uint key in SuppressionChanceKeys) stats[key] = suppression;

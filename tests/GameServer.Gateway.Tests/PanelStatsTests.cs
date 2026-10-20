@@ -1,3 +1,5 @@
+using GameServer.Core.World;
+
 namespace GameServer.Gateway.Tests;
 
 public class PanelStatsTests
@@ -132,5 +134,38 @@ public class PanelStatsTests
             "additional_block_chance_against_projectiles_%", "base_spell_projectile_block_%",
             "additional_chaos_resistance_against_damage_over_time_%" })
             Assert.NotNull(Stats.Value.Key(name));
+    }
+
+    [Fact]
+    public void Every_hand_damage_row_exists_in_Stats_dat()
+    {
+        var packet = DamagePacket.Of(DamageType.Physical, 5, 12).Add(DamageType.Fire, new DamageRange(3, 7));
+        Assert.All(PanelStats.HandDamage(packet, "main_hand"), r => Assert.NotNull(Stats.Value.Key(r.Stat)));
+    }
+
+    [Fact]
+    public void The_hand_damage_rows_carry_each_type_and_the_total()
+    {
+        var packet = DamagePacket.Of(DamageType.Physical, 5, 12).Add(DamageType.Fire, new DamageRange(3, 7));
+        var rows = PanelStats.HandDamage(packet, "main_hand").ToDictionary(r => r.Stat, r => r.Value);
+        Assert.Equal(8, rows["main_hand_minimum_total_damage"]);
+        Assert.Equal(19, rows["main_hand_maximum_total_damage"]);
+        Assert.Equal(5, rows["main_hand_minimum_physical_damage"]);
+        Assert.Equal(12, rows["main_hand_maximum_physical_damage"]);
+        Assert.Equal(3, rows["main_hand_minimum_fire_damage"]);
+        Assert.Equal(7, rows["main_hand_maximum_fire_damage"]);
+    }
+
+    [Fact]
+    public void An_empty_attack_adds_no_damage_rows()
+    {
+        Assert.Empty(PanelStats.HandDamage(DamagePacket.Empty, "main_hand"));
+    }
+
+    [Fact]
+    public void Impale_chance_sums_the_attacks_form()
+    {
+        var panel = Compute(("attacks_impale_on_hit_%_chance", 20));
+        Assert.Equal(20, panel["impale_on_hit_%_chance"]);
     }
 }
