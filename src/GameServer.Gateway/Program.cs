@@ -326,7 +326,15 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         {
             var command = InstanceItems.ReadCommand(bytes);
             if (command.Id == InstanceItems.DestroyCursorItemCommand) await DestroyHeldItem(remote, stream, ciphers, conn);
+            else if (command.Id == InstanceItems.WarpToHideoutCommand) await WarpToHideout(remote, stream, ciphers, conn, "/hideout");
             else Console.WriteLine($"[gateway] {remote} <= 0x0016 command {command} (not handled)");
+        }
+        else if (id == InstanceWaypoints.VisitHideoutId)
+        {
+            var visit = InstanceWaypoints.ReadVisitHideout(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x017a visit the hideout of {visit.Character} (from object 0x{visit.Waypoint:x}, u8 {visit.Flag})");
+            // Only the player's own hideout exists (no parties or other players' hideouts yet).
+            await WarpToHideout(remote, stream, ciphers, conn, "World panel Hideout button");
         }
         else if (id == InstanceItems.UnsocketGemId)
             await UnsocketGem(remote, stream, ciphers, conn, InstanceItems.ReadUnsocketGem(bytes));
@@ -472,6 +480,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SendGroundItems(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 await SpawnTownStash(remote, stream, ciphers, conn);
+                await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
             }
@@ -618,6 +627,13 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     if (npc is not null)
     {
         await TalkToNpc(remote, stream, ciphers, conn, use, npc);
+        return;
+    }
+    HideoutCatalog.Doodad? doodad;
+    lock (conn.HideoutDoodads) doodad = conn.HideoutDoodads.GetValueOrDefault(use.TargetId);
+    if (doodad is not null)
+    {
+        await UseMapDevice(remote, stream, ciphers, conn, use, doodad);
         return;
     }
     if (conn.StashObject != 0 && use.TargetId == conn.StashObject)
@@ -1770,7 +1786,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Passives = [.. (save?.Passives ?? []).Where(n => Passives.Find(n) is { IsAscendancy: false })];
         conn.Waypoints.UnionWith(save?.Waypoints ?? []);
         conn.Visited.UnionWith(save?.Visited ?? []);
-        conn.QuestFlags = [.. save?.QuestFlags ?? []];
+        conn.QuestFlags = [.. save?.QuestFlags ?? [], .. Quests.EveryCharacter];
         conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
         conn.RefundPoints = save?.RefundPoints ?? 0;
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
@@ -2508,6 +2524,19 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
     }
 }
 
+// To the character's hideout (21-hideouts.md §3): "/hideout" (C→S 0x16 command 45) or the World panel's Hideout button
+// (C→S 0x17a). Its own instance (Auth re-enters the live one), arriving next to its waypoint.
+static async Task WarpToHideout(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
+{
+    if (HideoutCatalog.Default is not { } hideout)
+    {
+        Console.WriteLine($"[gateway] {remote} {why}: no data/hideouts.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts)");
+        return;
+    }
+    if (conn.Layout.Hash == hideout.AreaHash16) { Console.WriteLine($"[gateway] {remote} {why}: already in the {hideout.Name}"); return; }
+    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hideout.AreaHash16, 0, false, AtWaypoint: true), $"{why}: {hideout.Name}");
+}
+
 // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
 static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
 {
@@ -3131,6 +3160,27 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         string target = string.Join(' ', args);
         if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
         await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
+    })
+    .Add("league_flag", "/league_flag [<id> [off]] (dev: list, set or clear league quest flags by the client's id, e.g. /league_flag 350)", async args =>
+    {
+        if (args.Length < 1 || !int.TryParse(args[0], out int flag))
+        {
+            await Send(remote, stream, ciphers, InstanceChat.ChatLine($"League quest flags: {string.Join(", ", conn.LeagueQuestFlags.Order())}"), "0x0017 chat line: league quest flags");
+            return;
+        }
+        bool off = args.Length > 1 && args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
+        if (off) conn.LeagueQuestFlags.Remove(flag); else conn.LeagueQuestFlags.Add(flag);
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerLeagueQuestFlagsUpdate(PlayerId, Quests.League.Bits(conn.LeagueQuestFlags)),
+            $"0x02ba player league quest flags: {string.Join(", ", conn.LeagueQuestFlags.Order())}");
+        await Send(remote, stream, ciphers, InstanceChat.ChatLine($"League quest flag {flag} {(off ? "cleared" : "set")}."), $"0x0017 chat line: league quest flag {flag}");
+    })
+    .Add("hideout_keys", "/hideout_keys <a> <b> (dev: the Player component's two Hideouts.dat keys, HASH16 hex or a hideout area id)", async args =>
+    {
+        ushort Key(string s) => HideoutCatalog.Hideouts.FirstOrDefault(h => h.AreaId.Equals(s, StringComparison.OrdinalIgnoreCase)) is { } h ? h.Hash16
+            : ushort.TryParse(s.Replace("0x", ""), System.Globalization.NumberStyles.HexNumber, null, out var k) ? k : (ushort)0;
+        ushort a = args.Length > 0 ? Key(args[0]) : (ushort)0, b = args.Length > 1 ? Key(args[1]) : (ushort)0;
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerHideoutsUpdate(PlayerId, a, b), $"0x02ba player hideout keys 0x{a:x4} 0x{b:x4}");
+        await Send(remote, stream, ciphers, InstanceChat.ChatLine($"Hideout keys 0x{a:x4} 0x{b:x4}."), "0x0017 chat line: hideout keys");
     })
     .Add("waypoints", "/waypoints [all | reset] (list the activated waypoints; dev: activate all and visit every pinned area, or keep only the towns')", async args =>
     {
@@ -4044,6 +4094,42 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
     conn.StashObject = id;
 }
 
+// A hideout's placed doodads (HideoutCatalog.IsPlaced: the map device) from its decoration, with their HideoutDoodad data.
+static async Task SpawnHideoutDoodads(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (HideoutCatalog.ByArea(conn.Layout.Hash) is not { } hideout) return;
+    foreach (var d in hideout.Doodads.Where(HideoutCatalog.IsPlaced))
+    {
+        if (HideoutCatalog.TypeOf(d.Type!) is not var (components, states) || !HideoutObject.CanSerialize(components))
+        {
+            Console.WriteLine($"[gateway] {remote} hideout doodad {d.Name} ({d.Type}): unknown type or unsupported components, not created");
+            continue;
+        }
+        uint id = conn.NextObjectId++;
+        // "active" 1: the map device stands open and idle (its .ot: per-player quest flag MapDeviceActive).
+        var obj = new HideoutObject(d.X, d.Y, d.Rotation, components, new HideoutDoodad(d.Hash, (byte)d.Variation),
+            [.. states.Select(s => s == "active" ? 1 : 0)]);
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(d.Type!), obj.Blob()),
+            $"0x02b9 create hideout doodad 0x{id:x} {d.Name} ({d.Type}) at ({d.X}, {d.Y}), components {string.Join(", ", components)}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 hideout doodad 0x{id:x} enters wake zone");
+        lock (conn.HideoutDoodads) conn.HideoutDoodads[id] = d;
+    }
+}
+
+// A click on the map device (C→S 0x24): walk there, then S→C 0x7b kind 5 opens the map device window (21-hideouts.md §4).
+// Its slots and the activation are not served yet.
+static async Task UseMapDevice(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, HideoutCatalog.Doodad device)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(device.X, device.Y, StashReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 {device.Name} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.MapDeviceUi, use.TargetId), "0x007b open the map device window");
+}
+
 // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects
 // the tab carrying that affinity bit in the tab list, which only the account's last tab does (AccountStash.Records).
 static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
@@ -4250,7 +4336,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
-        QuestFlags: PlayerQuestFlags(conn));
+        QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)]);
     conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
@@ -4515,8 +4601,10 @@ static class AreaLayouts
 
     public static AreaLayout For(ushort hash, uint seed)
     {
-        string id = Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? $"0x{hash:x4}";
-        return WithoutWaypoint(hash, id, seed) with { Waypoint = WaypointCatalog.For(hash, id, seed) };
+        var hideout = HideoutCatalog.ByArea(hash);
+        string id = Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? hideout?.AreaId ?? $"0x{hash:x4}";
+        // A hideout's waypoint is one of its decoration's doodads (21-hideouts.md §2), not a tile object.
+        return WithoutWaypoint(hash, id, seed) with { Waypoint = hideout is null ? WaypointCatalog.For(hash, id, seed) : HideoutCatalog.Waypoint(hideout) };
     }
 
     static AreaLayout WithoutWaypoint(ushort hash, string id, uint seed)
@@ -4848,6 +4936,12 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>
     public HashSet<string> QuestFlags = [];
+
+    /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
+    public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter];
+
+    /// <summary>The hideout doodads created in this area (the map device), by object id.</summary>
+    public readonly Dictionary<uint, HideoutCatalog.Doodad> HideoutDoodads = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
     // Items on the ground by object id (dropped with C→S 0x29).

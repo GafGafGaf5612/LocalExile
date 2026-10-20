@@ -72,6 +72,14 @@ Items are in rough priority order within each section. "Known" says what is alre
   deserializer, schema.md). Check every new component with `scripts/re/frida/check-components.js`.
 - **Done when:** monsters in areas match the official game's (mods, rarity bonuses, emerge, boss bar).
 
+### Hideouts: decorations, editing and the map device
+- **Known:** the Lush Hideout works: travel, waypoint, stash, Nessa, the Edit button and the map device window
+  ([21](docs/protocol/21-hideouts.md)). Its decoration (`data/hideouts.json`) lists every doodad with its type and model.
+- **Start:** create the decorations (`HideoutObject`, each type's components from data/object-types.json); the Edit
+  mode's client messages (move, place, remove, save); the map device's slots (Inventories row 13 `Map1`), Activate and
+  portals (C→S 0x00d8 seen); log in to the hideout after logging out there; the hideout selection window.
+- **Done when:** the hideout looks like the real one, can be edited and saved, and maps can be run from its device.
+
 ### NPCs: dialogue options, shops and the other towns
 - **Known:** NPC objects, Lioneye's Watch placements and the dialogue window (S→C 0x84, C→S 0x85) work
   ([17](docs/protocol/17-npcs.md)). The client picks the NPCTalk row itself (`0x141e76d40`).
@@ -242,7 +250,7 @@ data is in [19](docs/protocol/19-gems.md).
   waypoint is done; the separate `Metadata/MiscellaneousObjects/Checkpoint` objects are not placed yet, so "last
   activated" across several checkpoints is open. Dying
   in a boss arena revives just outside the arena's door, even with a checkpoint activated; dying in a map revives in
-  the hideout (no hideouts yet).
+  the hideout (hideouts exist, [21](docs/protocol/21-hideouts.md); maps do not).
 - **One-way entries:** the arrival next to the exit back needs an exit back. Lioneye's Watch from The Twilight Strand
   uses the town's named point `entrance1` (`AreaLayout.OneWayArrivals`, [08](docs/protocol/08-area-transitions.md) §3):
   in the real game the player comes out on the town side of the gate. Other one-way links fall back to the area's spawn

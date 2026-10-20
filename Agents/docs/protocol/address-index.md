@@ -221,9 +221,25 @@ G = global / static data.
 | `0x140797750` | Fn | area accessible: all WorldAreas +0x54 quest flags set (Player component) |
 | `0x140a9a7d0` / `0x140a9aa90` | Fn | connection lines: only between two shown pins |
 | `0x141e83340` | Fn | flag set reader (u16 n × (u8 block, u64 bits)); Player +0x1b8 quest flags, +0x1d0 |
-| `0x14012aae0` | Fn | flag set test |
-| `0x141e7ee30` | Fn | Player component update reader (0x2ba): u16 flags, 0x02 quest flags, 0x08 second set, 0x200 9 bytes, 0x01 experience |
-| `0x141e1c550` | Fn | HideoutDoodad reader (only with type data +0x14e) |
+| `0x14012aae0` | Fn | flag set test `(set, bit)` |
+| `0x141e7ee30` | Fn | Player component update reader (0x2ba): u16 flags, 0x02 quest flags, 0x08 league quest flags, 0x10 Hideouts keys, 0x200 9 bytes, 0x01 experience |
+| `0x141e1c550` | Fn | HideoutDoodad reader: u32 MTX hash, u8 variation, u8 flag, only when the object's data +0x14e is set (in hideouts) |
+
+## Hideouts ([21](21-hideouts.md))
+| Address | Kind | What |
+|---|---|---|
+| `0x141e7dc10` / `0x141e7ee30` | Fn | Player reader / update: the two Hideouts keys (update bit 0x10, then vtable +0x130) |
+| `0x142fca900` | Data | league quest flags: 0x776 sorted {UTF-16 name, length, u32 id} |
+| `0x1423f1fb0` / `0x141de7f60` | Fn | league quest flag name → id (0x777 unknown) |
+| `0x14155cdf0` | Fn | league flag test on Player +0x1d0 with bit id − 1 |
+| `0x141e65563` | Call | the map device's Targetable test of `UnlockedMapDevice` (bit 349) |
+| `0x14216c840` | Fn | HUD hideout panel check: quest flag HASH32 0x2f1b9c25 in the Player component |
+| `0x1401ff190` | Fn | hideout panel shown or hidden by `0x14216c840` |
+| `0x1401fc880` | Fn | hideout panel (palette) constructor |
+| `0x142163420` case 5 | Fn | S→C 0x7b kind 5 → listeners at instance +0x1778 → `0x140dcd9a0` |
+| `0x140dcd9a0` / `0x140dce1f0` / `0x140dce290` | Fn | open the map device window (modes 0xd, 0x5e, 0x56; lists +0x1778, +0x17f8, +0x1878) |
+| `0x140c276c0` | Fn | map device window constructor (HUD +0x7d8) |
+| `0x140dbcd40` | Fn | HUD: registers its 0x7b listeners on the instance lists |
 
 ## Stash ([18](18-stash.md))
 | Address | Kind | What |

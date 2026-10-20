@@ -1,6 +1,7 @@
 /// <summary>
 /// Where a town's Stash stands (Agents/docs/protocol/18-stash.md §1). The client files do not place it (Stash.ot has only
-/// its model; the town tiles' .tmd records hold the waypoint and doodads), so the cells are ours, as for the NPCs.
+/// its model; the town tiles' .tmd records hold the waypoint and doodads), so the cells are ours, as for the NPCs. A
+/// hideout's comes from its decoration (HideoutCatalog).
 /// </summary>
 static class StashCatalog
 {
@@ -12,5 +13,7 @@ static class StashCatalog
         [AreaLayouts.LioneyesWatch] = new(319, 272, 0),
     };
 
-    public static Placement? In(ushort areaHash) => Towns.GetValueOrDefault(areaHash);
+    public static Placement? In(ushort areaHash) =>
+        Towns.GetValueOrDefault(areaHash)
+        ?? (HideoutCatalog.ByArea(areaHash)?.First(GameServer.Core.Protocol.Instance.StashObject.MetadataPath) is { } d ? new(d.X, d.Y, d.Rotation) : null);
 }

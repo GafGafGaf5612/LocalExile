@@ -86,6 +86,11 @@ python -I scripts/re/ot_components.py --items --json data/item-types.json
 Without `data/item-types.json` characters start with no items and `/item` answers that the file is missing. Regenerate it after pulling 2026-10-20 or later: the file now carries
 each item type's tags, and without them no magic or rare item can roll affixes.
 
+The hideouts' decorations (Agents/docs/protocol/21-hideouts.md §2; game data, git-ignored; without it there are no hideouts):
+```powershell
+dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts
+```
+
 The rooms with monster points (the unique boss's `mapboss`, named packs), used to place an area's unique boss
 (Agents/docs/protocol/14-monster-packs.md §3; game data, git-ignored):
 

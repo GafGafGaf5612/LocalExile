@@ -13,7 +13,9 @@ idle monster next to the player (§5).
 | u8 | 0 in every capture |
 
 What arrives is the text as typed: slash commands as is (`/spawn_mob 42`), plain chat with the channel prefix the client
-added (`#hello server` for global). The client handles none of our commands locally. `InstanceChat.Length` frames it
+added (`#hello server` for global). The client handles none of our commands locally, but the words of Commands.dat
+rows with `SendsGenericCommandPacket` never arrive as chat: the client sends C→S 0x16 with the row + 1 instead
+(`/destroy` 9, `/hideout` 45: [21](21-hideouts.md) §3), so our commands must not reuse those words. `InstanceChat.Length` frames it
 (the length depends on the text), and `SplitClientMessages` uses it for id 0x15.
 
 ## 2. Server → client text
