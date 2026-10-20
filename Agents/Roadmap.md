@@ -105,8 +105,8 @@ Items are in rough priority order within each section. "Known" says what is alre
   visuals and `/auras`, awaiting live verification ([11](docs/protocol/11-skills.md) 13, [Status](Status.md)).
 - **Start:** the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
   Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar active border is still open: 0x25f is a
-  client UI event, not a server message. Support gems, gem levels, party and minion auras and life reservation come with
-  their own systems.
+  client UI event, not a server message. Support gems and gem levels come with the gem system ("Gems" below); party and
+  minion auras and life reservation with their own systems.
 - **Done when:** the standard auras reserve correctly, their effects match PoB, and the character panel and HUD show the
   same reserved and unreserved values.
 
@@ -147,13 +147,75 @@ Items are in rough priority order within each section. "Known" says what is alre
   a1q4's Glyph Wall (§1–4) is the next world-changing one.
 - **Done when:** the campaign's quests can be played through, with their world changes, logs and rewards.
 
-### Gem skills
-- **Known:** active gems in equipment are granted with their level-1 stats; Fireball casts, flies as a server-made
-  projectile object and hits the targeted monster ([11](docs/protocol/11-skills.md) §9–10). Support gems crash the client
-  when granted as skills.
-- **Start:** height grids for more areas (or in the walk-map recorder), collision with doodads and objects that have their own colliders;
-  the skill record's support list (linked supports); gem experience and levels.
-- **Done when:** Fireball with Arcane Surge linked can be cast and does its damage, and looks like the real one.
+### Gems: how they work
+The gem system as agreed on 2026-10-20, built in the parts below (#62, #63, #64). What is known about the client and the
+data is in [19](docs/protocol/19-gems.md).
+
+- **A gem item** is a base type and a variant: the normal gem; a transfigured ("of X") or Trarthan ("of Trarthus")
+  variant, which acts as its own skill with its own effect, tags and mechanics; or a Vaal gem, which grants the regular
+  Vaal skill and its base skill (transfigured or Trarthan if its variant is). A gem's level comes from its experience,
+  up to the cap of its experience type: 20 for most gems, 3 for exceptional supports, 4 for Awakened Empower,
+  Enhance and Enlighten, 5 for the other awakened supports, 1 for single-level gems. Corruption and bonus levels can
+  go higher, never past 40.
+- **Rules:** socketing a gem whose level or attribute requirements aren't met is refused. A socketed gem that stops
+  meeting them is disabled: its skill stays on the skill bar but can't be used, its supports don't apply, its level-up
+  icon is greyed, and the gem stays in its socket. Each socketed skill gem is its own skill, with an id kept while it
+  stays socketed; an aura ends when its gem leaves. Support gems are never granted as skills. Awakened supports other
+  than Empower, Enhance and Enlighten (disabled since 3.28), the "[DNT]" placeholder variants and the gem rows named
+  "[UNUSED] …" or "WIP …" are never created.
+
+### Gems 1: gem levels, stable skill ids and requirements (#62)
+- **Known:** every socketed skill gem grants its level-1 skill, with ids in socket order. The client derives a gem's
+  level from its experience ([19](docs/protocol/19-gems.md) §1). GrantedEffectsPerLevel, GrantedEffectStatSetsPerLevel
+  and GrantedEffectQualityStats hold each level's numbers and the quality stats.
+- **Start:** three PRs. (a) One skill id per gem, kept while it stays socketed, and auras that end with their gem.
+  (b) Gem levels: the level from experience, each level's stats, cost, cooldown and reservation, quality stats (rounded
+  down), transfigured and Trarthan variants, the Vaal gem's base skill, and `/gem <name> [level] [quality]`. One PR if
+  it holds together, with extra live testing; first find where the variant sits in the gem's item data. (c) Requirements:
+  the level and attribute requirements, refusing to socket, and the disabled state.
+- **Done when:** a `/gem` gem of any level and quality casts with that level's numbers, transfigured and Vaal gems grant
+  the right skills, skill ids don't change when other gems move, and requirements match the tooltips and are enforced.
+
+### Gems 2: gem experience and levelling (#63)
+- **Known:** saves keep each gem's experience; character experience arrives in one place (`GainExperience`); the
+  "Click to level up" column under the minimap is client UI.
+- **Start:** research first: the panel's client messages, how "ready to level" works when the client derives the level
+  from experience, and where the lock is kept. Then gems in equipped items (both weapon sets) get 10% of every
+  experience gain before the level penalty, and stop at the next level until the player levels them. Then the panel:
+  level up, level all, lock (right click), the locked list under the inventory (right click levels, Shift + right click
+  unlocks), greyed when the requirements aren't met.
+- **Done when:** killing monsters levels socketed gems the way the real game does, and locked gems stay locked across
+  logins.
+
+### Gems 3: support gems and links (#64)
+- **Known:** the skill record has a support list ([11](docs/protocol/11-skills.md) §3); granting a support as a skill
+  crashes the client ([13](docs/protocol/13-items.md) §6). GrantedEffects holds each support's compatible skill types and
+  its skill-bar letter; GrantedEffectsPerLevel its cost multiplier.
+- **Start:** the supports of each link group on their compatible skills, the support list in the skill record, cost
+  multipliers, the higher-level-duplicate rule and the skill-bar letters. Then the effects the server's combat already
+  models (added damage, more or less damage, cast and attack speed, critical strike, accuracy); every other support is
+  listed in the docs as "linked, no effect yet". The rest of the combat effects are split with Qblolz on #64.
+- **Done when:** Fireball linked with Arcane Surge shows the support's letter and pays the multiplied cost, a modelled
+  support such as Faster Casting changes the skill, and the support crash is gone.
+
+### Gems later: quality, getting gems, corruption, bonus levels
+- **Quality** from Gemcutter's Prism needs currency on items (C→S 0x4a, "Items" above).
+- **Getting gems:** quest rewards (QuestRewards, QuestRewardOffers: by class), the Act 1–4 vendors whose gems follow the
+  character's level, class and quest progress, Siosa (Act 3) and Lilly Roth (Act 6 and later), and drops. Needs the
+  quests and NPC shop items.
+- **Corruption and Vaal skills:** Vaal Orb outcomes on gems (one level over the cap, quality up to 23%, the Vaal
+  variant), the Lapidary Lens's double corruption, and Vaal souls for the Vaal skills. Goes with item corruption (#60).
+- **Bonus levels:** "+1 to Level of Socketed Gems" and other item mods (#59), Empower Support and the awakened
+  exceptional supports. Never past level 40, and they don't raise the gem's requirements.
+- **Awakened supports:** their effects override their regular versions instead of stacking; their level requirements
+  start at 72.
+
+### Skill projectiles
+- **Known:** Fireball casts, flies as a server-made projectile object and hits the targeted monster
+  ([11](docs/protocol/11-skills.md) §9–10).
+- **Start:** height grids for more areas (or in the walk-map recorder), collision with doodads and objects that have
+  their own colliders.
+- **Done when:** Fireball looks like the real one in every area: over the terrain, stopping at walls and objects.
 
 ### The game's start and resurrection
 - **Known:** items, equipment, the skill bar, experience and passives are saved per character in `data/saves/`
