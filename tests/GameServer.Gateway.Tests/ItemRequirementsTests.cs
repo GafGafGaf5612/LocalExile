@@ -71,13 +71,22 @@ public class ItemRequirementsTests
     }
 
     [Fact]
-    public void The_level_requirement_is_the_base_or_80_percent_of_the_highest_mod()
+    public void A_mods_item_level_is_not_a_character_level_requirement()
     {
         var mods = new ItemCatalog(Data()).Mods;
-        var life = mods.All.First(m => m.Id.StartsWith("IncreasedLife") && m.Level >= 50);
-        var item = new Item(1, ["Mods"], 0) { Mods = [life.Roll(ModSection.Explicit, Random.Shared)] };
-        Assert.Equal(life.Level * 8 / 10, ItemModStats.LevelRequirement(item, 5, mods));
-        Assert.Equal(70, ItemModStats.LevelRequirement(item, 70, mods));
+        var item = new Item(1, ["Mods"], 0) { Mods = [mods.ById("IncreasedLife12")!.Roll(ModSection.Explicit, Random.Shared)] };
+        Assert.Equal(5, ItemModStats.LevelRequirement(item, 5, mods));
+    }
+
+    [Fact]
+    public void Level_requirement_mods_raise_lower_or_override_it()
+    {
+        var mods = new ItemCatalog(Data()).Mods;
+        var plus = mods.All.First(m => m.Stats.Any(s => s.Id == "local_level_requirement_+"));
+        var over = mods.ById("LevelRequirementOverrideUnique__7")!;
+        Item With(ModCatalog.Mod m, int v) => new(1, ["Mods"], 0) { Mods = [m.With(ModSection.Explicit, [v], Random.Shared)] };
+        Assert.Equal(15, ItemModStats.LevelRequirement(With(plus, 10), 5, mods));
+        Assert.Equal(7, ItemModStats.LevelRequirement(With(over, 7), 60, mods));
     }
 
     static string Data()
