@@ -237,6 +237,17 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void A_recovery_buff_carries_its_stat_values_before_the_list()
+    {
+        // flask_effect_life (row 5, IsRecovery, one GrantedStats entry): 1400 life per minute, then the empty list.
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0002" + "0005" + "00001000" + "0000" + "00" + "00000578" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 2, 5, 0x1000, values: [1400])));
+        // Flags bit1 (u32 +0x68) and bit7 (f32 +0x6c) come right after the flags, before the stat values.
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0002" + "0005" + "00001000" + "0000" + "82" + "00000BB8" + "40400000" + "00000578" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 2, 5, 0x1000, values: [1400], u68: 3000, f6c: 3f)));
+    }
+
+    [Fact]
     public void Character_passives_layout()
     {
         // u16 refund, u16 quest, u16 ascendancy points (big-endian), u8 level, u8 class, u8, u8 flags, vec16 nodes (count

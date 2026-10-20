@@ -284,6 +284,9 @@ Captured maps are saved as `data/walkability/<area>_seed<seed>.bin` and `.json` 
 .\scripts\dev\live.ps1            # add -Walkmaps if you did step 8
 ```
 
+Or double-click `run.bat` in the repository root: it runs `live.ps1 -Walkmaps` (or `live.ps1` with the arguments you
+give it, e.g. `run.bat -Only Gateway`) without changing the execution policy, and keeps its window open.
+
 Success, in order:
 1. The script prints `client pid ...`, then `servers up`. With `-Walkmaps`, it first prints
    `walk-map capture on (logs\walkmaps.log)`.
@@ -335,6 +338,7 @@ Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and 
 | "The password is not correct for this account" | wrong password, or an account created after the login server started | check the password; restart with `live.ps1` (it reloads accounts) |
 | "Account does not exist" | the name in the Email field does not match `register name=` | use the registered name |
 | Login hangs, no "Connected to login server" | gateway list not patched (step 6), or the login server is not running | redo step 6; check `logs\live-auth.log` |
+| A new character has no items, no weapon on the ground (`start kit is empty` in `live-gateway.log`) | it first logged in before `data/tables` and `data/item-types.json` existed, and that empty kit was saved | extract them (see "Third-party tools"), stop the Gateway, move `data\saves\<character>.json` away, run `live.ps1` again |
 | Character select shows no characters | the character was created after the login server started | run `live.ps1` again |
 | `dotnet build` / `dotnet test` fails with `MSB3027` ... `locked by: ".NET Host"` | the servers `live.ps1` started are running from the same `bin\` folders | let `live.ps1` rebuild them (`-Only Gateway` …), or build and test elsewhere with a short path: `dotnet test tests/GameServer.Gateway.Tests --artifacts-path C:\Temp\lx` |
 | In town, but your character is invisible and clicks do nothing | Network Mode is lockstep ("auto" picks it on localhost); the Gateway log says `lockstep movement` | Options → Game → Network Mode → Predictive, then log out to the character screen and Play again |
@@ -360,6 +364,9 @@ Environment variables, read when each server starts:
 | `Game_CLIENT_EXE` | `Client/Game.exe` | client executable the Gateway reads protocol constants from |
 | `Game_RANDOM_SEEDS` | unset | `1` = random seeds for new non-town instances (each needs its own walk map) |
 | `Game_LEAGUE` | `standard` | `hardcore` shows the hardcore death screen (a single Exit button) |
+| `Game_START_WEAPON` | unset | `equipped` = a new character's class weapon starts equipped instead of on the ground near the spawn |
+| `Game_FLASK_BUFFS` | unset | `0` = flasks recover without putting their flask_effect buff on the player |
+| `Game_FLASK_KILL_CHARGES` | unset | unset = every kill fills all flasks; `rarity` = a few charges per kill, more for rarer monsters |
 | `Game_PLAYER_ATTACK` | `PlayerMelee` | GrantedEffects `Id` of the player's default attack (level 1) |
 | `Game_MOVE_MODE` | `echo` | `echo`, `move` or `teleport` |
 | `Game_WALK_SPEED` | 37 | walk speed in cells per second, used for position estimates |

@@ -304,9 +304,19 @@ gems must not be granted:** a support's effect in the list crashed the client in
 
 ## 7. Start kit, saves and dev command
 
-A new character gets Characters.dat
-StartWeapons[0] in Weapon1 with two linked sockets in its colour, StartSkillGem and StartSupportGem in the main
-inventory, and a Small Life Flask and Small Mana Flask in the flask bar. `Game_START_ITEMS=0` starts empty.
+A new character gets Characters.dat StartSkillGem and StartSupportGem in the main inventory, and in the flask bar two
+Small Life Flasks (cells 0 and 1: flask keys 1 and 2) and a Small Mana Flask (cell 4: key 5). Its StartWeapons[0], with two linked sockets in the start gems' colours, lies on the
+ground instead, as on the real game's Twilight Strand: `PlayerInventories.StartWeapon` keeps it (in the save as
+`StartWeapon`) until it is picked up, and on entering an instance outside towns the Gateway puts it once per character, weapon
+and instance (`InstanceState.PlaceStartWeapon`) on the first walkable cell 6 to 20 cells from the spawn
+(`AreaLayout.Near`), as a WorldItem like loot. Picking it up (C→S 0x24) clears it in the same save as the item's new cell,
+so a crash never keeps it both waiting and in the inventory. A new instance or a Gateway restart before the pickup puts
+it there again; so does a new character with a deleted one's name in the same instance (its weapon is another item).
+`Game_START_WEAPON=equipped` equips it in Weapon1 instead; `Game_START_ITEMS=0` starts empty.
+
+The kit is built once, when the character has no save, and saved at once. Without `data/tables` (`Characters.json`,
+`SkillGems.json`) and `data/item-types.json` it is empty, the Gateway logs `start kit is empty`, and the character keeps
+the empty kit: set its save aside (`data/saves/<name>.json`, with the Gateway stopped) to give it the kit again.
 
 **Saves.** Every inventory change writes the character's items to `data/saves/<name>.json` (`CharacterSaves`, git-ignored):
 per Inventories.dat row the item ids, cells and items by BaseItemTypes HASH32 with level, quality, charges, stack size,
@@ -323,15 +333,48 @@ not in the save ("Open"), so dropping one takes it out of the save, and a discon
 `/item <BaseItemTypes row, Id or name> [count]` adds items to the main inventory; types with a Sockets component get two
 linked sockets in the colour of their highest attribute requirement (ComponentAttributeRequirements).
 
+## 8. Life and mana flasks
+
+**C→S 0x70** (6 bytes, live 2026-10-20): a flask key. u32 big-endian, the flask-bar cell (0 for key 1 … 4 for key 5).
+Inferred from presses of the start kit's flasks (cells 0 and 1 sent 0 and 1), not read from the client's serializer.
+The client changes nothing by itself: no charges, no recovery until the server answers.
+
+The Gateway (`UseFlask`, `Flasks.cs`) takes the flask in that cell of the flask bar (Inventories row 11). Its use comes
+from the tables (`ItemCatalog.FlaskOf`): Flasks.dat LifePerUse / ManaPerUse over RecoveryTime (tenths of a second) and
+ComponentCharges PerCharge of MaxCharges. Small Life Flask: 70 life over 3 s, 7 of 21 charges; Small Mana Flask: 50
+mana over 3 s, 6 of 24. A use with fewer charges than PerCharge, or while dead, does nothing. Otherwise:
+
+1. The charges are spent and saved, and the flask goes to the client again (S→C 0xbf: the item removed and added with
+   its new Charges, same id).
+2. The flask's buff goes on the player (S→C 0x1c1): BuffDefinitions row 5 `flask_effect_life` ("Healing") or row 9
+   `flask_effect_mana` ("Regenerating Mana"). Both are invisible, cancelled on death and removed once the pool is full.
+   Both rows are `IsRecovery` (+0x7c), so 0x1c1 carries one u32 per GrantedStats entry: the recovery per minute
+   (`base_life_recovery_per_minute_from_flask`, 70 × 60 / 3 = 1400 for the Small Life Flask). Live 2026-10-20: without
+   that value the client misread the message and showed no life change from then on, although the server sent every
+   0x1b1. `Game_FLASK_BUFFS=0` recovers without the buffs.
+   Being tested: the buff's duration, from which the orb may draw the recovery still to come. `Game_FLASK_BUFF_DURATION`
+   picks the field: `ms` (default) flags bit1, u32 +0x68 = 3000; `f6c` flags bit7, f32 +0x6c = 3.0; `0` none.
+3. `RunFlaskRecovery` adds the recovery evenly from the use to its end, by the clock, every 20 ms while a flask
+   recovers, and sends each whole point at once (S→C 0x1b1): the orb rises by +1 about every 43 ms for a Small Life
+   Flask, not in the player tick's 250 ms steps of 6 (live 2026-10-20: those looked jerky). The buff comes off
+   (S→C 0x1c2) when the time is up, the pool is full, or the player dies. Using a flask whose effect still runs
+   restarts it (the rest of the old one is lost); two flasks recover together.
+
+Charges come back: every kill fills every life and mana flask in the bar (a choice for playing locally; with
+`Game_FLASK_KILL_CHARGES=rarity` a kill gives 1 normal, 2 magic, 5 rare, 10 unique, our own numbers: the real game's are
+not known yet), and they fill up on entering a town or a hideout and on resurrection.
+
 ## Open
 
+- Flasks: the real game's charges per kill (a kill fills every flask for now), flask quality and mods, utility and hybrid flasks' effects (a hybrid flask
+  recovers both pools but shows only the life buff), instant recovery, and the effects across an area change (they end).
 - Gem levels and experience, support gems and links.
 - The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); local weapon damage and
   armour / evasion / energy shield mods (items have no base defences or damage on the server yet), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
   effects; the meaning of Base +0xc0 / +0xc6 / +0xc7.
 - C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
   `0x14031c0a0`: probably currency use on an item).
-- Flask use and currency use other than the Orb of Regret. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
+- Currency use other than the Orb of Regret. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
   on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
   Gateway shows each client only its own player).

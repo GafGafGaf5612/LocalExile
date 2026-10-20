@@ -132,7 +132,11 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
             // Load the items now: a new character's start kit is built only while it has no save, and the save is written
             // at 0x7d by the area visit (RecordVisit), before the player object first needs the items.
-            ItemsOf(conn);
+            var startItems = ItemsOf(conn);
+            // Towns and hideouts refill the flasks, before the inventories go to the client.
+            if ((WaypointCatalog.Areas.Find(layout.Hash) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == layout.Hash))
+                && FillFlasks(startItems, int.MaxValue).Count > 0)
+                Console.WriteLine($"[gateway] {remote} flasks refilled in town");
             LoadProgress(conn, resolved.Level);
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.PlayerMana = conn.Pools.Mana;
@@ -348,6 +352,8 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             await SplitStack(remote, stream, ciphers, conn, InstanceItems.ReadSplitStack(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceItems.UseItemId)
             await UseItem(remote, stream, ciphers, conn, InstanceItems.ReadUseItem(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.UseFlaskId)
+            await UseFlask(remote, stream, ciphers, conn, InstanceItems.ReadUseFlask(bytes));
         else if (id == InstanceItems.UseItemOnId)
             await UseItemOn(remote, stream, ciphers, conn, InstanceItems.ReadUseItemOn(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceItems.InventoryRequestId)
@@ -478,11 +484,13 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
                 await SendGroundItems(remote, stream, ciphers, conn);
+                await PlaceStartWeapon(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 await SpawnTownStash(remote, stream, ciphers, conn);
                 await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
+                _ = RunFlaskRecovery(remote, stream, ciphers, conn);
             }
         }
     }
@@ -2245,6 +2253,8 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
         uint xp = Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, m.Rarity, conn.Pools.Level, m.Level);
         await GainExperience(remote, stream, ciphers, conn, xp, $"{m.Rarity} {m.Label} 0x{id:x}");
     }
+    await GainFlaskCharges(remote, stream, ciphers, conn, Flasks.KillCharges(m.Rarity, Environment.GetEnvironmentVariable("Game_FLASK_KILL_CHARGES")),
+        $"{m.Rarity} {m.Label} 0x{id:x} killed");
     await DropLoot(remote, stream, ciphers, conn, m, at);
 }
 
@@ -2451,7 +2461,7 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
             continue;
         }
         if (after != before) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, after), null);
-        uint manaBefore, manaAfter;
+        uint manaBefore, manaAfter, manaCap;
         double manaRegen = ManaRegenPerSecond(conn) * seconds;
         lock (conn.Monsters)
         {
@@ -2459,7 +2469,7 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
             double change = manaCarry + manaRegen;
             int whole = (int)Math.Truncate(change);
             manaCarry = change - whole;
-            uint manaCap = (uint)UnreservedMana(conn);
+            manaCap = (uint)UnreservedMana(conn);
             conn.PlayerMana = manaAfter = (uint)Math.Clamp((long)manaBefore + whole, 0, manaCap);
             if (manaAfter == manaCap) manaCarry = 0;
         }
@@ -2477,6 +2487,65 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
             && Dist(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds), (waypoint.GridX, waypoint.GridY)) <= WaypointActivationRange)
             await ActivateWaypoint(remote, stream, ciphers, conn, "the player came near");
     }
+}
+
+// The flasks' recovery, apart from the player tick so the orb fills smoothly: while a flask recovers, every
+// FlaskStepMs the life and mana it gave since the last step are added, and each whole point goes to the client at once
+// (S→C 0x1b1; a Small Life Flask's 23 life per second is a +1 about every 43 ms). Effects end when their time is up,
+// their pool is full, or the player dies (13-items.md §8).
+static async Task RunFlaskRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    double lifeCarry = 0, manaCarry = 0, last = conn.Clock.Elapsed.TotalSeconds;
+    while (!conn.Closed)
+    {
+        await Task.Delay(FlaskStepMs);
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        if (!conn.FlaskEffects.Any)
+        {
+            (lifeCarry, manaCarry, last) = (0, 0, now);
+            continue;
+        }
+        var (life, mana, ended) = conn.FlaskEffects.Advance(last, now);
+        last = now;
+        uint lifeBefore, lifeAfter, manaBefore, manaAfter, manaCap;
+        bool dead;
+        lock (conn.Monsters)
+        {
+            lifeBefore = conn.PlayerLife;
+            dead = lifeBefore == 0;
+            lifeCarry += life;
+            int lifeWhole = (int)Math.Truncate(lifeCarry);
+            lifeCarry -= lifeWhole;
+            conn.PlayerLife = lifeAfter = dead ? 0 : (uint)Math.Min((long)lifeBefore + lifeWhole, conn.PlayerMaxLife);
+            manaBefore = conn.PlayerMana;
+            manaCarry += mana;
+            int manaWhole = (int)Math.Truncate(manaCarry);
+            manaCarry -= manaWhole;
+            manaCap = (uint)UnreservedMana(conn);
+            conn.PlayerMana = manaAfter = dead ? manaBefore : (uint)Math.Min((long)manaBefore + manaWhole, manaCap);
+        }
+        if (dead)
+        {
+            // Flask effects end with death (CancelOnDeath).
+            await EndFlaskEffects(remote, stream, ciphers, conn, [.. ended, .. conn.FlaskEffects.End(_ => true)], "death");
+            continue;
+        }
+        if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
+        if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
+        // A flask's effect also ends once its pool is full (the flask_effect buffs are not "not removed when full").
+        bool lifeFull = lifeAfter == conn.PlayerMaxLife, manaFull = manaAfter == manaCap;
+        ended.AddRange(conn.FlaskEffects.End(e => (e.LifePerSecond == 0 || lifeFull) && (e.ManaPerSecond == 0 || manaFull)));
+        if (ended.Count > 0)
+            await EndFlaskEffects(remote, stream, ciphers, conn, ended, $"life {lifeAfter}/{conn.PlayerMaxLife}, mana {manaAfter}/{manaCap}");
+    }
+}
+
+// The ended flask effects' buffs come off the player (S→C 0x1c2).
+static async Task EndFlaskEffects(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, List<Flasks.Effect> ended, string why)
+{
+    foreach (var e in ended)
+        if (FlaskBuffs) await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, e.Buff), $"0x01c2 player buff {e.Buff}: flask {e.Slot} effect ends ({why})");
+        else Console.WriteLine($"[gateway] {remote} flask {e.Slot} effect ends ({why})");
 }
 
 // Righteous Fire's damage to the hostile monsters within its radius for one tick, with their aura buff on while they
@@ -3476,6 +3545,8 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0054 resurrect {(inTown ? "in town" : "at checkpoint")}");
     await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(0x02), "0x0055 hide the death screen");
+    // The flasks are full again after a death.
+    await GainFlaskCharges(remote, stream, ciphers, conn, int.MaxValue, "resurrected");
     if (inTown && conn.LastTown != 0 && conn.Layout.Hash != conn.LastTown)
     {
         // The new area's player object is created with full life.
@@ -3780,6 +3851,84 @@ static async Task SendGroundItems(string remote, NetworkStream stream, Connectio
     }
 }
 
+// C→S 0x70: a flask key. The flask in that cell of the flask bar spends its charges (S→C 0xbf with the changed item) and
+// its life or mana comes back over its recovery time in the player tick, under the flask_effect_life / _mana buff
+// (13-items.md §8). Without enough charges, or while dead, nothing happens.
+static async Task UseFlask(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint slot)
+{
+    var items = ItemsOf(conn);
+    var flask = items.Items(PlayerInventories.Flask).FirstOrDefault(i => i.X == slot);
+    if (flask is null || Items.ByHash(flask.Item.TypeHash) is not { } type || Items.FlaskOf(type) is not { } use)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot}: {(flask is null ? "no flask there" : "not a life or mana flask (not handled)")}");
+        return;
+    }
+    if (conn.PlayerLife == 0 || Flasks.Spend(flask.Item, use) is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {(conn.PlayerLife == 0 ? "dead" : $"{flask.Item.Charges}/{use.MaxCharges} charges, a use needs {use.ChargesPerUse}")}");
+        return;
+    }
+    if (items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Spend(i, use) ?? i) is not { } spent) return;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
+        items.NextRevision(PlayerInventories.Flask), [spent.Id], [spent]), $"0x00bf flask {slot}: {spent.Item.Charges}/{use.MaxCharges} charges");
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    ushort buff;
+    lock (conn.Monsters) buff = conn.NextBuff++;
+    ushort row = use.LifePerUse > 0 ? FlaskEffectLifeBuffRow : FlaskEffectManaBuffRow;
+    var effect = new Flasks.Effect((byte)slot, buff, row, use.LifePerUse / use.Seconds, use.ManaPerUse / use.Seconds, now, now + use.Seconds);
+    if (conn.FlaskEffects.Start(effect) is { } replaced && FlaskBuffs)
+        await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, replaced.Buff), null);
+    Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {use.LifePerUse} life, {use.ManaPerUse} mana over {use.Seconds:0.##} s");
+    // Both rows are IsRecovery: 0x1c1 carries one u32 per GrantedStats entry, here base_life (or mana)
+    // _recovery_per_minute_from_flask. Without it the client misread the message and showed no life change after it
+    // (live 2026-10-20).
+    uint perMinute = (uint)Math.Round((use.LifePerUse > 0 ? use.LifePerUse : use.ManaPerUse) * 60 / use.Seconds);
+    // Being tested: the duration, from which the orb could draw the life still to come. Game_FLASK_BUFF_DURATION picks
+    // the field: "ms" (default) u32 +0x68 in milliseconds (flags bit1), "f6c" f32 +0x6c in seconds (bit7), "0" none.
+    string durationField = Environment.GetEnvironmentVariable("Game_FLASK_BUFF_DURATION") ?? "ms";
+    uint? u68 = durationField == "ms" ? (uint)Math.Round(use.Seconds * 1000) : null;
+    float? f6c = durationField == "f6c" ? (float)use.Seconds : null;
+    if (FlaskBuffs)
+        await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, buff, row, PlayerId, values: [perMinute], u68: u68, f6c: f6c),
+            $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, duration field {durationField}");
+}
+
+// Gives each life and mana flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them: the
+// flasks that changed.
+static List<InventoryItem> FillFlasks(PlayerInventories items, int charges)
+{
+    List<InventoryItem> changed = [];
+    foreach (var flask in items.Items(PlayerInventories.Flask))
+        if (Items.ByHash(flask.Item.TypeHash) is { } type && Items.FlaskOf(type) is { } use && flask.Item.Charges < use.MaxCharges &&
+            items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges)) is { } done)
+            changed.Add(done);
+    return changed;
+}
+
+// FillFlasks, and the changed flasks to the client (one S→C 0xbf).
+static async Task GainFlaskCharges(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int charges, string why)
+{
+    var items = ItemsOf(conn);
+    if (FillFlasks(items, charges) is not { Count: > 0 } changed) return;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
+        items.NextRevision(PlayerInventories.Flask), [.. changed.Select(c => c.Id)], changed),
+        $"0x00bf flasks: {string.Join(", ", changed.Select(c => $"{c.X}: {c.Item.Charges}"))} charges ({why})");
+}
+
+// A new character's class weapon lies on the ground a few cells from where it appears, as on the real game's Twilight
+// Strand, until it is picked up (PlayerInventories.StartWeapon): put once into each instance it enters outside towns.
+static async Task PlaceStartWeapon(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (ItemsOf(conn).StartWeapon is not { } weapon || WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true }) return;
+    var (x, y) = conn.Layout.Near((conn.Layout.SpawnX, conn.Layout.SpawnY));
+    var ground = new WorldItemObject(x, y, weapon);
+    // Put here on an earlier connection: SendGroundItems has sent it already, if it still lies here.
+    if (conn.Instance.PlaceStartWeapon(CharacterName(conn), ground) is not { } id) return;
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), ground.Blob()),
+        $"0x02b9 create world item 0x{id:x} start weapon {Items.ByHash(weapon.TypeHash)?.Name} at ({x}, {y}), spawn ({conn.Layout.SpawnX}, {conn.Layout.SpawnY})");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+}
+
 // C→S 0x29: drop the held item where the player stands, as a WorldItem object (0x2b9 + wake zone 0x1a9).
 static async Task DropItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
@@ -3843,6 +3992,9 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
         cell = free;
     }
     if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+    // The start weapon stops waiting; the Put below saves both changes at once.
+    if (conn.Instance.IsStartWeapon(CharacterName(conn), id) && items.ClaimStartWeapon())
+        Console.WriteLine($"[gateway] {remote} start weapon picked up");
 
     var placed = items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
@@ -4466,6 +4618,12 @@ sealed partial class Program
     internal static readonly AnimationContacts Animations = new();
     // BuffDefinitions rows: righteous_fire (on the caster) and righteous_fire_aura (on the enemies it burns).
     internal const ushort RighteousFireBuffRow = 12, RighteousFireAuraBuffRow = 13;
+    // The flask buffs' BuffDefinitions rows (flask_effect_life "Healing", flask_effect_mana "Regenerating Mana": invisible,
+    // ended by death or a full pool). Game_FLASK_BUFFS=0 recovers without them.
+    internal const ushort FlaskEffectLifeBuffRow = 5, FlaskEffectManaBuffRow = 9;
+    /// <summary>The flask recovery's step (RunFlaskRecovery): short enough for one update per point of life.</summary>
+    internal const int FlaskStepMs = 20;
+    internal static bool FlaskBuffs => Environment.GetEnvironmentVariable("Game_FLASK_BUFFS") != "0";
     // MiscAnimated RighteousFireRing: the big burning circle around a Righteous Fire caster.
     internal const string RighteousFireRingAo = "Metadata/Effects/Spells/ri_fire/rifire.ao";
     // The player's own tick (RunPlayerTick): regeneration and damage over time.
@@ -4907,6 +5065,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
     public RighteousFireState? RighteousFire;
+    /// <summary>The flasks recovering life and mana (C→S 0x70), applied by the player tick.</summary>
+    public Flasks.Effects FlaskEffects { get; } = new();
     public ushort NextBuff = 1;
     public uint PlayerMaxLife => Pools.Life;
     // The player's life as the server keeps it (PlayerObject's Life, full on creation); 0 = dead.
