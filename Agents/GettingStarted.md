@@ -200,13 +200,15 @@ How it decides: the manifest at the top of `scripts\dev\extract-data.ps1` gives 
 number. The script runs every entry whose file is missing or whose stamp (`data\extract-stamps.json`) has another
 version, and the entries that need one that ran (everything needs the tables). A pull that changes a file's format
 bumps its version, and your next run regenerates it. Options: `-Force` (everything), `-Only hideouts,room-points`
-(just these), `-List` (each entry's state; runs nothing). Each run's output is in `logs\extract-<name>.log`.
+(just these), `-List` (each entry's state; runs nothing). Each run's output is in `logs\extract-<name>.log`. It
+builds each .NET tool once (`logs\extract-build-<project>.log`) and runs it with `dotnet run --no-build`.
 
 | Problem | Meaning |
 |---|---|
 | `setup incomplete: Node.js not found` / `Tools\ooz\node_modules missing` | install Node, then `cd Tools\ooz; npm install` |
 | `setup incomplete: Python 3.9+ ...` | install Python from python.org (see step 9 for the Store alias) |
 | `extract-data: <name> failed` | read `logs\extract-<name>.log`; the tables report `schema mismatch: 0` when the client is 3.29.3b |
+| `extract-data: building <project> failed` | read `logs\extract-build-<project>.log`; a build error there is a code problem in that tool, not in the game data |
 
 ## 8. Create an account and a character
 
@@ -330,6 +332,7 @@ Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and 
 |---|---|---|
 | `setup incomplete: ...` from `live.ps1` | a one-time step is missing | do the step named in the message |
 | A feature is off (no hideouts, no items, no unique boss); the Gateway log starts with `WARNING: ... game data file(s) missing` | a game data file was not extracted, or `live.ps1 -NoExtract` skipped it | run `.\scripts\dev\extract-data.ps1` (or `-List` to see what is stale), then `live.ps1 -Only Gateway` |
+| `live.ps1` stops at `extracting <name> ...` | the entry is still working (area-transitions takes ~10 min), or, before #93, `Start-Process -Wait` waited on the MSBuild worker node `dotnet run` left behind | check that `logs\extract-<name>.log` still grows; on an older checkout, pull, or set `MSBUILDDISABLENODEREUSE=1` and `DOTNET_CLI_USE_MSBUILD_SERVER=0` before `live.ps1` |
 | `port 8080 is used by <program>` | another program (often a web server) holds a dev port | close it, or set `Game_PATCH_URL=http://127.0.0.1:<port>/` |
 | `patch server did not start` | `Client\Content.ggpk` missing, locked or unreadable | close every client, check the path |
 | Client shows a patching/update screen or downloads | started without `live.ps1`, or the patch server is not running | close it immediately; start only through `live.ps1` |
