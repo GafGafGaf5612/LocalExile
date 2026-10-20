@@ -72,6 +72,19 @@ static class CharacterStats
     /// Act 5 and Act 10 Kitava each take another 30% away; see <see cref="ResistancePenalty"/> in the Gateway.</summary>
     public const int BaseResistance = 0;
 
+    /// <summary>Strength, dexterity and intelligence from attribute stats: the single ones, all attributes and the
+    /// pairs, each in its base_ and additional_ form.</summary>
+    public static (int Strength, int Dexterity, int Intelligence) Attributes(Func<string, int> get)
+    {
+        int all = get("additional_all_attributes") + get("base_all_attributes");
+        int strDex = get("base_strength_and_dexterity") + get("additional_strength_and_dexterity");
+        int strInt = get("base_strength_and_intelligence") + get("additional_strength_and_intelligence");
+        int dexInt = get("base_dexterity_and_intelligence") + get("additional_dexterity_and_intelligence");
+        return (get("base_strength") + get("additional_strength") + all + strDex + strInt,
+            get("base_dexterity") + get("additional_dexterity") + all + strDex + dexInt,
+            get("base_intelligence") + get("additional_intelligence") + all + strInt + dexInt);
+    }
+
     public static Pools For(SkillCatalog.ClassInfo c, int level, Bonus? bonus = null, string folder = "data")
     {
         var b = bonus ?? Bonus.None;
