@@ -1,9 +1,9 @@
 # 19. Gems
 
-State of 2026-10-20: gem items serialize, socket and save ([13](13-items.md)). Every socketed skill gem grants its skill
-at level 1 ([13](13-items.md) §6), and skill changes after login go out as the Actor's 0x20 update
-([11](11-skills.md) §3). Gem levels, experience, requirements, quality and supports are planned in the Roadmap's "Gems"
-items (#62, #63, #64). This file collects what is known for them.
+State of 2026-10-20: gem items serialize, socket and save ([13](13-items.md)). Every socketed skill gem grants its
+variant's skill at the gem's level and quality (§3), and skill changes after login go out as the Actor's 0x20 update
+([11](11-skills.md) §3). Gem experience, requirements and supports are planned in the Roadmap's "Gems" items (#62,
+#63, #64). This file collects what is known for them.
 
 ## 1. The gem in the item data (SkillGem component)
 
@@ -12,9 +12,9 @@ The SkillGem component's reader `0x14246eb00` takes, in order:
 | Data | Stored at | Use |
 |---|---|---|
 | i32 experience | +0x28 | -1 is special (below) |
-| u32 | +0x3c | unknown |
-| u8 | +0x10 | unknown (read through `0x140e28cf0`) |
-| u16 | +0x40 | unknown; probably the variant (transfigured or Trarthan, §2): Roadmap "Gems 1" (b) |
+| u32 | +0x3c | the variant: an index into the SkillGems row's `GemVariants` (0 the normal gem) |
+| u8 | +0x10 | flags (read through `0x140e28cf0`); bit 5 is set when the variant is not 0 |
+| u16 | +0x40 | an IndexableSupportGems row's `Index` (0: none); not used for gems yet |
 
 The reader zeroes the level (+0x2c) and two experience thresholds (+0x30, +0x34) first. Then:
 
@@ -27,8 +27,12 @@ The reader zeroes the level (+0x2c) and two experience thresholds (+0x30, +0x34)
 So the client derives the level from the experience alone; the server sends experience, not a level. How a gem that
 can level up but hasn't been levelled by the player is represented is open (Roadmap "Gems 2").
 
-The server writes the component as `i32 experience, u32 0, u8 0, u16 0` (`Item.Payload`); saves keep the experience
-(`GemExperience`).
+The variant: the copy `0x14246fa50` checks +0x3c against the `GemVariants` count (the SkillGems row's +0x77, the list's
+count in the 3.29 layout) and keeps 0 when it is outside the list. The u16: `0x14246fae3` and `0x1424732c3` look it up
+in `Data/IndexableSupportGems.dat` when it is not 0.
+
+The server writes the component as `i32 experience, u32 variant, u8 0, u16 0` (`Item.Payload`, `GemVariant`); saves keep
+the experience and the variant (`GemExperience`, `GemVariant`).
 
 ## 2. The game data
 
@@ -70,7 +74,28 @@ The server writes the component as `i32 experience, u32 0, u8 0, u16 0` (`Item.P
 
 ## 3. Skills from gems today
 
-- Each socketed skill gem's GrantedEffect at level 1, sent in the Actor skill list (`GemSkills`, `GemSkillEffects`).
+- Each socketed skill gem's skill at the gem's level, sent in the Actor skill list (`GemSkills`, `GemSkillEffects`):
+  - **Level** from the experience as the client derives it (§1; `ItemCatalog.GemType.Level`), capped by the experience
+    type (§2). Experience -1 is the cap + 1.
+  - **Skill:** the variant's GemEffects `GrantedEffect`; a transfigured or Trarthan gem is its own skill (Ice Nova of
+    Frostbolts grants IceNovaAltX). A Vaal gem grants two skills, its Vaal skill and its base skill (`GrantedEffect2`),
+    each with its own skill id. A support gem grants none.
+  - **Numbers** from the level's rows: the GrantedEffectsPerLevel row (cost, reservation, cooldown, Vaal souls) and the
+    GrantedEffectStatSetsPerLevel row (damage and the other stats), the highest level at or below the gem's when a
+    skill lacks that level. Fireball deals 9–14 for 5 mana at level 1 and 1883–2825 for 20 mana at level 20; Clarity
+    reserves 34 mana at level 1 and 279 at level 20.
+  - **Quality:** GrantedEffectQualityStats per 1% in thousandths × the quality, rounded toward zero (Fireball at 20%:
+    150 × 20 / 1000 = +3 radius). Whether the 16 negative quality values round toward zero or down is unverified.
+  - **Cooldown:** a skill with a GrantedEffectsPerLevel `Cooldown` (the auras' 1.2 s) can't be used again until it ends.
+    `StoredUses` (several uses per cooldown) is not modelled.
+  - **Vaal skills** need their `VaalSouls`; souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill is refused.
+- **Not created** (`ItemCatalog.FindGem`, `/gem`): the "[DNT]" placeholder variants, the "[UNUSED] …", "[DNT] …" and
+  "WIP …" gem rows, the awakened supports other than Awakened Empower, Enhance and Enlighten, and the Vaal variants
+  whose base skill is only a placeholder's (Vaal Fireball has only its normal variant). A Vaal variant's name is "Vaal "
+  and its base variant's ("Vaal Ice Nova of Frostbolts"); the table names them all "Vaal Ice Nova". Whether the game
+  names them so is unverified.
+- `/gem <name> [level] [quality]` puts a gem into the inventory (any variant by its name, levels 1 to the cap,
+  quality 0 to 20).
 - **Skill ids stay with their gem** (`GemSkillIds`): a gem keeps its skill id while it stays socketed, a gem moved to
   another socket keeps it too (matched by its skill), and a new gem takes the lowest free one of the 64 gem skill ids. The
   client binds skill bar keys by skill id: with ids given in socket order, taking Haste out of a wand gave Righteous Fire
@@ -84,7 +109,9 @@ The server writes the component as `i32 experience, u32 0, u8 0, u16 0` (`Item.P
 
 ## Open
 
-- The SkillGem component's u32 (+0x3c), u8 (+0x10) and u16 (+0x40).
+- The SkillGem component's u8 (+0x10) and what IndexableSupportGems (+0x40) is for.
+- Not checked with the real client yet: a gem of a higher level or with quality, a transfigured gem's tooltip and skill,
+  a Vaal gem's two skills, and how the client shows a Vaal skill without souls and a skill on cooldown.
 - "Ready to level": how the client shows a gem that can level up when it derives the level from experience; the
   level-up panel's messages; where a gem's lock is kept.
 - The attribute requirement formula.

@@ -1,14 +1,15 @@
 /// <summary>
 /// The skill ids of one character's socketed gems. The client binds skill bar keys by skill id, so each gem keeps its id
 /// while it stays socketed, and other gems coming or going never change it: a gem that stays in its socket keeps its id,
-/// a gem moved to another socket keeps it too (matched by its skill), and a new gem takes the lowest free id.
+/// a gem moved to another socket keeps it too (matched by its skill), and a new gem takes the lowest free id. A Vaal
+/// gem has two skills in its socket (its Vaal skill and its base skill), each with its own id.
 /// </summary>
 sealed class GemSkillIds
 {
     /// <summary>A socketed gem: the item it is in, its socket, its GrantedEffects row.</summary>
     public readonly record struct Gem(uint Host, int Socket, int Effect);
 
-    Dictionary<(uint Host, int Socket), (ushort Id, int Effect)> _byPlace = [];
+    Dictionary<(uint Host, int Socket, int Effect), ushort> _byPlace = [];
     readonly Lock _lock = new();
 
     /// <summary>The ids of <paramref name="gems"/>, in their order, from <paramref name="pool"/> (the ids gem skills may
@@ -21,10 +22,10 @@ sealed class GemSkillIds
             var used = new HashSet<ushort>();
             // A gem in the same socket with the same skill keeps its id.
             for (int i = 0; i < gems.Count; i++)
-                if (_byPlace.TryGetValue((gems[i].Host, gems[i].Socket), out var had) && had.Effect == gems[i].Effect && used.Add(had.Id))
-                    ids[i] = had.Id;
+                if (_byPlace.TryGetValue((gems[i].Host, gems[i].Socket, gems[i].Effect), out var had) && used.Add(had))
+                    ids[i] = had;
             // A gem moved to another socket keeps the id of the same skill's gem that left its place.
-            var left = _byPlace.Where(p => !used.Contains(p.Value.Id)).Select(p => p.Value).ToList();
+            var left = _byPlace.Where(p => !used.Contains(p.Value)).Select(p => (Id: p.Value, p.Key.Effect)).ToList();
             for (int i = 0; i < gems.Count; i++)
                 if (ids[i] is null && left.FindIndex(l => l.Effect == gems[i].Effect) is var at and >= 0)
                 {
@@ -41,7 +42,7 @@ sealed class GemSkillIds
                 }
             _byPlace = [];
             for (int i = 0; i < gems.Count; i++)
-                if (ids[i] is ushort id) _byPlace[(gems[i].Host, gems[i].Socket)] = (id, gems[i].Effect);
+                if (ids[i] is ushort id) _byPlace[(gems[i].Host, gems[i].Socket, gems[i].Effect)] = id;
             return ids;
         }
     }

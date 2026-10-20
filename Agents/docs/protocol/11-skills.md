@@ -565,7 +565,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   - **Determination, Grace and Discipline:** the reservation is known, but armour, evasion as avoidance and energy shield
     are not modelled; they are not in `AuraCatalog` yet.
   - **Partial effects:** Purity of Elements' elemental-ailment immunity is not applied. Purity of Fire/Ice/Lightning
-    max-resistance values are read, but at gem level 1 they are 0.
+    max-resistance values are read at the gem's level (0 at level 1).
   - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;
     Reservation1 (damage per aura), Reservation2 (max resistances with reserved life and mana) and Reservation6 (aura
     duration) are not. Skill-specific reservation efficiency/effect stats are not modelled.

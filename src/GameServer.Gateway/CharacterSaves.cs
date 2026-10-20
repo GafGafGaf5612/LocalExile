@@ -17,7 +17,8 @@ static class CharacterSaves
     /// <summary>Mods: null in saves from before mods (the item gets its type's implicits again), else every mod.</summary>
     public sealed record SavedItem(uint Type, byte ItemLevel = 1, byte Quality = 0, int Charges = 0, ushort StackSize = 1,
         List<SavedSocket>? Sockets = null, List<byte>? Links = null, int GemExperience = 0,
-        ItemRarity Rarity = ItemRarity.Normal, bool Identified = true, List<SavedMod>? Mods = null, List<uint>? Name = null);
+        ItemRarity Rarity = ItemRarity.Normal, bool Identified = true, List<SavedMod>? Mods = null, List<uint>? Name = null,
+        int GemVariant = 0);
 
     public sealed record SavedPlacement(uint Id, byte X, byte Y, SavedItem Item);
 
@@ -133,7 +134,7 @@ static class CharacterSaves
         i.Sockets.Count == 0 ? null : [.. i.Sockets.Select(s => new SavedSocket(s.Colour, s.Gem is null ? null : ToSaved(s.Gem, mods)))],
         i.Links is null ? null : [.. i.Links], i.GemExperience, i.Rarity, i.Identified,
         [.. i.Mods.Select(m => new SavedMod(mods?.ByHash(m.Hash)?.Id ?? $"0x{m.Hash:x4}", m.Section, [.. m.Values]))],
-        i.NameWords.Count == 0 ? null : [.. i.NameWords]);
+        i.NameWords.Count == 0 ? null : [.. i.NameWords], i.GemVariant);
 
     /// <summary>The item again, or null when its type is no longer known.</summary>
     public static Item? FromSaved(SavedItem s, ItemCatalog catalog)
@@ -141,7 +142,7 @@ static class CharacterSaves
         if (catalog.ByHash(s.Type) is not { } t) return null;
         return ItemCatalog.Create(t) with
         {
-            ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience,
+            ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience, GemVariant = s.GemVariant,
             Sockets = [.. (s.Sockets ?? []).Select(k => new ItemSocket(k.Colour, k.Gem is null ? null : FromSaved(k.Gem, catalog)))],
             Links = s.Links, Rarity = s.Rarity, Identified = s.Identified, NameWords = s.Name ?? [],
         } is var item && s.Mods is null ? item : item with { Mods = [.. s.Mods.Select(m => FromSaved(m, catalog.Mods)).OfType<ItemMod>()] };

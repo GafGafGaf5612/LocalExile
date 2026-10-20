@@ -180,14 +180,13 @@ data is in [19](docs/protocol/19-gems.md).
   "[UNUSED] …" or "WIP …" are never created.
 
 ### Gems 1: gem levels, stable skill ids and requirements (#62)
-- **Known:** every socketed skill gem grants its level-1 skill; each keeps its skill id while it stays socketed, and an
-  aura or Righteous Fire ends with its gem (part (a), [19](docs/protocol/19-gems.md) §3). The client derives a gem's
-  level from its experience ([19](docs/protocol/19-gems.md) §1). GrantedEffectsPerLevel, GrantedEffectStatSetsPerLevel
-  and GrantedEffectQualityStats hold each level's numbers and the quality stats.
-- **Start:** two more PRs. (b) Gem levels: the level from experience, each level's stats, cost, cooldown and reservation, quality stats (rounded
-  down), transfigured and Trarthan variants, the Vaal gem's base skill, and `/gem <name> [level] [quality]`. One PR if
-  it holds together, with extra live testing; first find where the variant sits in the gem's item data. (c) Requirements:
-  the level and attribute requirements, refusing to socket, and the disabled state.
+- **Known:** each socketed gem keeps its skill id while it stays socketed, and an aura or Righteous Fire ends with its
+  gem (part (a)). Part (b): a gem's skill uses its level (from its experience) and quality, transfigured, Trarthan and
+  Vaal gems grant their skills, the variant is the SkillGem data's u32, and `/gem` makes any gem
+  ([19](docs/protocol/19-gems.md) §1, §3); not yet checked with the real client.
+- **Start:** check part (b) live (a level 20 Fireball's damage and cost, a quality aura, Ice Nova of Frostbolts, a Vaal
+  gem's two skills). Then (c) requirements: the level and attribute requirements, refusing to socket, and the disabled
+  state.
 - **Done when:** a `/gem` gem of any level and quality casts with that level's numbers, transfigured and Vaal gems grant
   the right skills, skill ids don't change when other gems move, and requirements match the tooltips and are enforced.
 

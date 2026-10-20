@@ -66,16 +66,23 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Stable gem skill ids (tested, not yet checked with the real client).** Each gem keeps its skill id while it stays
   socketed (a moved gem keeps its own), so skill bar keys no longer move when other gems come or go; a skill that goes
   away ends its aura or Righteous Fire; one aura of a kind runs at a time (`GemSkillIds.cs`; [19](docs/protocol/19-gems.md) §3).
+- **Gem levels (tested, not yet checked with the real client).** A gem's level comes from its experience up to its
+  experience type's cap; its skill uses that level's cost, damage, reservation and cooldown, and its quality stats;
+  transfigured and Trarthan gems grant their own skill, Vaal gems their Vaal skill and their base skill (refused without
+  Vaal souls, which are not gathered yet); the variant is sent in the SkillGem data and saved; `/gem <name> [level]
+  [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](docs/protocol/19-gems.md) §1, §3). Not yet: requirements, gem
+  experience, supports, corruption.
 
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel
   (`ManaReservationFlat` / `ManaReservationPercent`), reduced by the passive/mastery reservation efficiency and sent as
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
-  Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their level-1 effects and buff visuals.
+  Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their gem's level and quality effects and
+  buff visuals.
   The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
   sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
   curse auras, Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield
   are not applied), Purity ailment immunity, Reservation
-  masteries 1/2/6, supports, gem levels, party/minion auras and life reservation
+  masteries 1/2/6, supports, party/minion auras and life reservation
   ([11](docs/protocol/11-skills.md) 13).
 - **Positions are estimated, not simulated.** The Gateway estimates where the player is from clicks, walk speed and the
   walk map; there is no server-side pathing or collision.
@@ -133,7 +140,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate opens without its
   animation; its force wall and Doorman are not created ([12](docs/protocol/12-quests.md) §6). Only quest a1q1 is
   scripted; no quest log.
-- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom and Orb of Regret; currency use; utility flasks; support gems and links; gem levels
+- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom and Orb of Regret; currency use; utility flasks; support gems and links
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
   Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).
@@ -154,7 +161,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Tests
 
 `dotnet test tests/GameServer.Core.Tests` (306 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (196: stable gem skill ids, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`tests/GameServer.Gateway.Tests` (206: gem levels, quality and variants, stable gem skill ids, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.

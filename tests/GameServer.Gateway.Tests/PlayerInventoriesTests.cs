@@ -393,4 +393,19 @@ public class PlayerInventoriesTests : IDisposable
         Assert.Null(items.RowOf(b.Id));
         Assert.Null(items.RowOf(999));
     }
+
+    [Fact]
+    public void Socketed_gems_come_with_their_item_and_socket()
+    {
+        var items = NewInventories();
+        var fireball = new Item(0x11111111, ["Base", "SkillGem"], 0x1111);
+        var clarity = new Item(0x22222222, ["Base", "SkillGem"], 0x2222);
+        var wand = items.Add(PlayerInventories.Weapon1, 0, 0, Wand() with
+        {
+            Sockets = [new(SocketColour.Blue, fireball), new(SocketColour.Blue), new(SocketColour.Blue, clarity)]
+        });
+        items.Add(PlayerInventories.MainInventory, 0, 0, Wand() with { Sockets = [new(SocketColour.Blue, fireball)] });
+
+        Assert.Equal([(wand.Id, 0, fireball), (wand.Id, 2, clarity)], items.SocketedGemPlaces());
+    }
 }

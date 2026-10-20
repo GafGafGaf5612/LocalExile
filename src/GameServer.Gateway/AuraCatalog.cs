@@ -5,9 +5,10 @@
 /// </summary>
 static class AuraCatalog
 {
-    /// <summary>One active reservation skill: the skill id, its GrantedEffects row and id, and its buff instance.</summary>
+    /// <summary>One active reservation skill: the skill id, its GrantedEffects row and id, its buff instance, and its gem's
+    /// level and quality.</summary>
     public sealed record Aura(ushort SkillId, int Effect, string EffectId, string Name, ushort Buff, ushort BuffRow,
-        int ManaFlat, int ManaPercent);
+        int ManaFlat, int ManaPercent, int Level = 1, int Quality = 0);
 
     /// <summary>The BuffDefinitions row that draws each aura's visual and buff icon.</summary>
     private static readonly Dictionary<string, ushort> BuffRows = new()
@@ -60,32 +61,32 @@ static class AuraCatalog
             switch (aura.EffectId)
             {
                 case "PurityOfElements":
-                    int all = Value(skills, stats, aura.Effect, "base_resist_all_elements_%", auraEffectPct);
+                    int all = Value(skills, stats, aura, "base_resist_all_elements_%", auraEffectPct);
                     fire += all;
                     cold += all;
                     lightning += all;
                     break;
                 case "PurityOfFire":
-                    fire += Value(skills, stats, aura.Effect, "base_fire_damage_resistance_%", auraEffectPct);
-                    fireMax += Value(skills, stats, aura.Effect, "base_maximum_fire_damage_resistance_%", auraEffectPct);
+                    fire += Value(skills, stats, aura, "base_fire_damage_resistance_%", auraEffectPct);
+                    fireMax += Value(skills, stats, aura, "base_maximum_fire_damage_resistance_%", auraEffectPct);
                     break;
                 case "PurityOfIce":
-                    cold += Value(skills, stats, aura.Effect, "base_cold_damage_resistance_%", auraEffectPct);
-                    coldMax += Value(skills, stats, aura.Effect, "base_maximum_cold_damage_resistance_%", auraEffectPct);
+                    cold += Value(skills, stats, aura, "base_cold_damage_resistance_%", auraEffectPct);
+                    coldMax += Value(skills, stats, aura, "base_maximum_cold_damage_resistance_%", auraEffectPct);
                     break;
                 case "PurityOfLightning":
-                    lightning += Value(skills, stats, aura.Effect, "base_lightning_damage_resistance_%", auraEffectPct);
-                    lightningMax += Value(skills, stats, aura.Effect, "base_maximum_lightning_damage_resistance_%", auraEffectPct);
+                    lightning += Value(skills, stats, aura, "base_lightning_damage_resistance_%", auraEffectPct);
+                    lightningMax += Value(skills, stats, aura, "base_maximum_lightning_damage_resistance_%", auraEffectPct);
                     break;
                 case "Precision":
-                    accuracy += Value(skills, stats, aura.Effect, "accuracy_rating", auraEffectPct);
-                    int crit = Value(skills, stats, aura.Effect, "skill_buff_grants_critical_strike_chance_+%",
+                    accuracy += Value(skills, stats, aura, "accuracy_rating", auraEffectPct);
+                    int crit = Value(skills, stats, aura, "skill_buff_grants_critical_strike_chance_+%",
                         auraEffectPct);
                     criticalChance += crit;
                     break;
                 case "Haste":
-                    attackSpeed += Value(skills, stats, aura.Effect, "attack_speed_+%_granted_from_skill", auraEffectPct);
-                    movementSpeed += Value(skills, stats, aura.Effect, "base_movement_velocity_+%", auraEffectPct);
+                    attackSpeed += Value(skills, stats, aura, "attack_speed_+%_granted_from_skill", auraEffectPct);
+                    movementSpeed += Value(skills, stats, aura, "base_movement_velocity_+%", auraEffectPct);
                     break;
             }
         }
@@ -120,16 +121,16 @@ static class AuraCatalog
             {
                 if (stats.Key(name) is not uint key) return;
                 result[key] = result.GetValueOrDefault(key)
-                    + Value(skills, stats, aura.Effect, source ?? name, auraEffectPct);
+                    + Value(skills, stats, aura, source ?? name, auraEffectPct);
             }
         }
         return result.Select(kv => (kv.Key, kv.Value));
     }
 
-    private static int Value(SkillCatalog skills, StatCatalog stats, int effect, string name, int auraEffectPct)
+    private static int Value(SkillCatalog skills, StatCatalog stats, Aura aura, string name, int auraEffectPct)
     {
         if (stats.Key(name) is not uint key) return 0;
-        int value = skills.EffectStats(effect, 1).FirstOrDefault(kv => kv.Item1 == key).Item2;
+        int value = skills.EffectStats(aura.Effect, aura.Level, aura.Quality).FirstOrDefault(kv => kv.Item1 == key).Item2;
         return (int)Math.Round(value * Math.Max(0, 100 + auraEffectPct) / 100.0, MidpointRounding.AwayFromZero);
     }
 }

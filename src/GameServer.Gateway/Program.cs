@@ -1298,24 +1298,41 @@ static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCi
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
-    if (gem.Name is not null && Skills.Reservation(gem.Effect, 1) is { } reservation)
+    if (gem.Name is not null)
     {
-        await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation);
+        // Vaal souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill never has the souls it needs.
+        if (Skills.Uses(gem.Effect, gem.Level).VaalSouls is int souls and > 0)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: needs {souls} Vaal souls, has 0");
+            return;
+        }
+        double now = conn.Clock.Elapsed.TotalSeconds, readyAt;
+        lock (conn.Monsters) readyAt = conn.SkillReadyAt.GetValueOrDefault(skillId);
+        if (readyAt > now)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: on cooldown for {readyAt - now:0.00} s");
+            return;
+        }
+    }
+    if (gem.Name is not null && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
+    {
+        await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, gem.Level, gem.Quality);
         return;
     }
     if (gem.Name is not null)
     {
-        if (!PayMana(conn, gem.Effect, out uint cost))
+        if (!PayMana(conn, gem.Effect, gem.Level, gem.Quality, out uint cost))
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: not enough mana ({conn.PlayerMana} < {cost})");
             return;
         }
+        StartCooldown(conn, skillId, gem.Effect, gem.Level);
         if (cost > 0)
             await SendPlayerMana(remote, stream, ciphers, conn,
                 $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name})");
     }
     if (gem.Name is not null && IsRighteousFire(gem.Effect))
-        await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect);
+        await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality);
     else
         await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId);
 }
@@ -1323,7 +1340,7 @@ static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCi
 // Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them
 // off. The reserved mana is sent in the Life pool and in every later 0x1b1 mana update; the client does not derive it.
 static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    ushort skillId, int effect, string name, (int Flat, int Percent) reservation)
+    ushort skillId, int effect, string name, (int Flat, int Percent) reservation, int level, int quality)
 {
     string? effectId = Skills.EffectId(effect);
     if (effectId is null || !AuraCatalog.Supported(effectId))
@@ -1346,7 +1363,7 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
         else
         {
             var aura = new AuraCatalog.Aura(skillId, effect, effectId, name, conn.NextBuff++,
-                AuraCatalog.BuffRow(effectId), reservation.Flat, reservation.Percent);
+                AuraCatalog.BuffRow(effectId), reservation.Flat, reservation.Percent, level, quality);
             conn.Auras[skillId] = aura;
             int reserved = AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
             if (reserved > conn.Pools.Mana)
@@ -1361,6 +1378,7 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
         }
         conn.Pools = PoolsFor(conn, conn.Pools.Level);
         conn.ApplyMovementSpeed();
+        StartCooldown(conn, skillId, effect, level);
     }
 
     if (ended is not null)
@@ -1471,10 +1489,10 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
         // types separate so conversion and per-type mitigation apply.
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        foreach (var (k, v) in Skills.EffectStats(gem.Effect, 1)) stats[k] = v;
-        var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, 1),
+        foreach (var (k, v) in Skills.EffectStats(gem.Effect, gem.Level, gem.Quality)) stats[k] = v;
+        var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, gem.Level, gem.Quality),
                 name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
-            .Convert(ConversionFor(conn, gem.Effect, 1, attack: false));
+            .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false));
         int damage = hit.RollTotal(Random.Shared);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
@@ -1683,17 +1701,18 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
         if (Stats.Key(stat) is uint key) yield return (key, value);
 }
 
-// The skills of the gems socketed in the equipped items: each gem's GrantedEffects row at level 1 with its own stats
+// The skills of the gems socketed in the equipped items: each gem's GrantedEffects row at the gem's level with its own stats
 // (SkillCatalog.EffectStats: damage, cast time, mana cost) after the player's, with ids after the default attack's that
 // no basic action uses (SkillCatalog.SkillIds).
 static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint, int)>? player = null)
 {
     var playerStats = player?.ToList() ?? [];
-    foreach (var (id, effect, name) in GemSkillEffects(character))
+    foreach (var (id, effect, name, level, quality) in GemSkillEffects(character))
     {
         var stats = new Dictionary<uint, int>();
         foreach (var (k, v) in playerStats) stats[k] = v;
-        foreach (var (k, v) in Skills.EffectStats(effect, 1)) stats[k] = v;
+        var own = Skills.EffectStats(effect, level, quality);
+        foreach (var (k, v) in own) stats[k] = v;
         // Increased cast speed shortens the cast the client plays (the final values: 11-skills.md §4).
         if (CastSpeedPct(stats) is int castSpeed and not 0 && Skills.CastMs(effect) is int castMs and > 0)
         {
@@ -1710,10 +1729,10 @@ static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint,
             stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = perUse;
             stats[StatKeys.HundredTimesDamagePerSecond] = perSecond;
         }
-        if (Skills.FindByRow(id, effect, 1, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
+        if (Skills.FindByRow(id, effect, level, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
         {
-            Console.WriteLine($"[gateway] gem skill 0x{skill.Id:x4} {name} (effect {effect}): GEPL {skill.EffectsPerLevelRow}, GESSPL {skill.StatSetsPerLevelRow}, " +
-                string.Join(", ", Skills.EffectStats(effect, 1).Select(kv => $"{Stats.Name(kv.Item1)} {kv.Item2}")));
+            Console.WriteLine($"[gateway] gem skill 0x{skill.Id:x4} {name} level {level} quality {quality} (effect {effect}): GEPL {skill.EffectsPerLevelRow}, " +
+                $"GESSPL {skill.StatSetsPerLevelRow}, " + string.Join(", ", own.Select(kv => $"{Stats.Name(kv.Item1)} {kv.Item2}")));
             yield return skill;
         }
     }
@@ -1767,22 +1786,22 @@ static bool IsInactive(ClientState conn, uint itemId) => InactiveItems.GetValueO
 
 static string CharacterName(ClientState conn) => string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character;
 
-// The active gems socketed in the equipped items in skill-list order: skill id, GrantedEffects row, gem name. Each gem keeps
-// its skill id while it stays socketed (GemSkillIds): the client binds skill bar keys by skill id.
-static IEnumerable<(ushort Id, int Effect, string Name)> GemSkillEffects(string? character)
+// The skills of the active gems socketed in the equipped items in skill-list order: skill id, GrantedEffects row, gem
+// name, and the gem's level (from its experience) and quality. A transfigured or Trarthan gem grants its variant's skill, a
+// Vaal gem its Vaal skill and its base skill (ItemCatalog.GemEffects). Each skill keeps its id while its gem stays socketed
+// (GemSkillIds): the client binds skill bar keys by skill id.
+static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality)> GemSkillEffects(string? character)
 {
     string name = string.IsNullOrEmpty(character) ? "Exile" : character;
     var inactive = InactiveItems.GetValueOrDefault(name);
     var gems = PlayerInventories.For(name, Items).SocketedGemPlaces()
-        .Select(g => (g.ItemId, g.Socket, Type: Items.ByHash(g.Gem.TypeHash)))
-        .Select(g => (g.ItemId, g.Socket, g.Type, Effect: g.Type is { } t ? Items.GemEffect(t) : -1))
-        .Where(g => g.Effect >= 0).ToList();
+        .SelectMany(g => Items.GemEffects(g.Gem).Select(effect => (g.ItemId, g.Socket, g.Gem, Effect: effect))).ToList();
     var ids = GemSkillIdsOf.GetOrAdd(name, _ => new GemSkillIds())
         .Assign([.. gems.Select(g => new GemSkillIds.Gem(g.ItemId, g.Socket, g.Effect))], GemSkillIdPool.Value);
     // Gems in an inactive item grant nothing, but keep their id.
     for (int i = 0; i < gems.Count; i++)
         if (ids[i] is ushort id && inactive?.Contains(gems[i].ItemId) != true)
-            yield return (id, gems[i].Effect, gems[i].Type!.Name);
+            yield return (id, gems[i].Effect, Items.GemName(gems[i].Gem), Items.GemLevel(gems[i].Gem), gems[i].Gem.Quality);
 }
 
 static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
@@ -2419,10 +2438,19 @@ static Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCipher
     Send(remote, stream, ciphers,
         InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool), log);
 
-// A gem skill's mana cost (its mana_cost stat), paid when the cast starts. False when the player lacks the mana.
-static bool PayMana(ClientState conn, int effect, out uint cost)
+// A used skill's cooldown at its gem's level (GrantedEffectsPerLevel Cooldown) starts; callers hold or take the Monsters lock.
+// shortcut: one use per cooldown, StoredUses (several uses per cooldown) is not modelled yet.
+static void StartCooldown(ClientState conn, ushort skillId, int effect, int level)
 {
-    cost = Stats.Key("mana_cost") is uint k ? (uint)Skills.EffectStats(effect, 1).Where(kv => kv.Item1 == k).Select(kv => kv.Item2).FirstOrDefault() : 0;
+    if (Skills.Uses(effect, level).CooldownMs is int ms and > 0)
+        lock (conn.Monsters) conn.SkillReadyAt[skillId] = conn.Clock.Elapsed.TotalSeconds + ms / 1000.0;
+}
+
+// A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
+// the mana.
+static bool PayMana(ClientState conn, int effect, int level, int quality, out uint cost)
+{
+    cost = Stats.Key("mana_cost") is uint k ? (uint)Skills.EffectStats(effect, level, quality).Where(kv => kv.Item1 == k).Select(kv => kv.Item2).FirstOrDefault() : 0;
     lock (conn.Monsters)
     {
         if (conn.PlayerMana < cost) return false;
@@ -2456,7 +2484,8 @@ static async Task FollowRighteousFire(string remote, NetworkStream stream, Conne
     await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(rf.Ring, to.X, to.Y, (float)Math.Max(0.05, arrives - now), u28: TerrainHeight), null);
 }
 
-static async Task ActivateRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, ushort skillId, int effect)
+static async Task ActivateRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, ushort skillId,
+    int effect, int level, int quality)
 {
     ushort buff, aura;
     uint ring;
@@ -2468,7 +2497,7 @@ static async Task ActivateRighteousFire(string remote, NetworkStream stream, Con
         aura = conn.NextBuff++;
         ring = conn.NextObjectId++;
         at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
-        var stats = Skills.EffectStats(effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var stats = Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int Get(string name, int fallback) => Stats.Key(name) is uint k && stats.TryGetValue(k, out int v) ? v : fallback;
         conn.RighteousFire = new RighteousFireState(buff, aura, ring, skillId,
             DamagePctPerMinute: Get("base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute", 4200),
@@ -2899,6 +2928,32 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (added.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
             items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
+    })
+    .Add("gem", "/gem <name> [level] [quality] (a gem into the inventory at that level and quality, e.g. /gem Fireball 20 20, /gem Ice Nova of Frostbolts, /gem Vaal Fireball 5)", async args =>
+    {
+        // The trailing numbers: the level, then the quality.
+        var numbers = new List<int>();
+        while (args.Length > 1 && numbers.Count < 2 && int.TryParse(args[^1], out int n)) { numbers.Insert(0, n); args = args[..^1]; }
+        if (args.Length == 0) throw new ArgumentException("which gem?");
+        if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
+        string query = string.Join(' ', args);
+        if (Items.FindGem(query) is not var (type, variant) || Items.Gem(type) is not { } gem) { await conn.Commands!.Reply($"No gem \"{query}\""); return; }
+        if (!type.Supported)
+        {
+            await conn.Commands!.Reply($"{variant.Name} has components the server cannot write yet: {string.Join(", ", type.Components.Where(c => !Item.Supported.Contains(c)))}");
+            return;
+        }
+        int level = numbers.Count > 0 ? numbers[0] : 1, quality = numbers.Count > 1 ? numbers[1] : 0;
+        // Corruption (one level over the cap, quality up to 23%) is not modelled yet: the uncorrupted limits.
+        if (level < 1 || level > gem.MaxLevel) { await conn.Commands!.Reply($"{variant.Name} has levels 1 to {gem.MaxLevel}"); return; }
+        if (quality is < 0 or > 20) { await conn.Commands!.Reply("Quality is 0 to 20"); return; }
+        var items = ItemsOf(conn);
+        if (items.FreeCell(PlayerInventories.MainInventory, type.Width, type.Height, ShapeOf) is not { } cell) { await conn.Commands!.Reply("No room in the inventory"); return; }
+        var created = ItemCatalog.Create(type) with { GemExperience = gem.ExperienceFor(level), GemVariant = variant.Index, Quality = (byte)quality };
+        var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, created));
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+            items.NextRevision(PlayerInventories.MainInventory), [], [added]),
+            $"0x00bf inventory 1: /gem {variant.Name} (variant {variant.Index}) level {level}, {quality}% quality, experience {created.GemExperience}");
     })
     .Add("map_portal", "/map_portal [type 1-4] [created 0|1] [open after ms, -1 never] [model 0-2] (dev: one MultiplexPortal next to you, listed in the map device's 0x8f)", async args =>
     {
@@ -5374,6 +5429,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
     public RighteousFireState? RighteousFire;
+
+    /// <summary>When each gem skill's cooldown ends (seconds on <see cref="Clock"/>); guarded by the Monsters lock.</summary>
+    public readonly Dictionary<ushort, double> SkillReadyAt = [];
     /// <summary>The flasks recovering life and mana (C→S 0x70), applied by the player tick.</summary>
     public Flasks.Effects FlaskEffects { get; } = new();
     public ushort NextBuff = 1;

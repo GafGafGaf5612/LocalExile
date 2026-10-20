@@ -13,7 +13,7 @@ sealed class ItemCatalog
         Mods = new ModCatalog(folder);
         _rows = new(() => Load(folder, Mods));
         _byHash = new(() => _rows.Value.Rows.GroupBy(t => t.Hash).ToDictionary(g => g.Key, g => g.First()));
-        _gemEffects = new(() => LoadGemEffects(folder));
+        _gems = new(() => LoadGems(folder));
         _requirements = new(() => LoadRequirements(folder));
         _shieldBlocks = new(() => LoadShieldBlocks(folder));
         _weaponCrits = new(() => LoadWeaponCrits(folder));
@@ -76,10 +76,61 @@ sealed class ItemCatalog
         return null;
     }
 
-    /// <summary>The GrantedEffects row an active skill gem type grants (SkillGems → its first GemEffects variant), or -1.
-    /// Support gems grant none: they modify the linked active skills (granting one as a skill crashed the client in the
-    /// Actor skill reader, 0x141ee795a).</summary>
-    public int GemEffect(BaseType t) => _gemEffects.Value.GetValueOrDefault(t.Row, -1);
+    /// <summary>A gem's variant (SkillGems GemVariants → GemEffects; the SkillGem component's u32 +0x3c is its index): its
+    /// name, the GrantedEffects rows it grants (a Vaal gem's Vaal skill, then its base skill; -1 for none), and whether
+    /// it may be created.</summary>
+    public sealed record GemVariant(int Index, string Name, int Effect, int Effect2, bool Creatable);
+
+    /// <summary>A gem type (a SkillGems row): its variants (the first is the normal gem) and its experience thresholds,
+    /// ItemExperiencePerLevel's Experience for levels 1, 2, … of its experience type; the last level is the cap.</summary>
+    public sealed record GemType(int Row, bool IsSupport, IReadOnlyList<GemVariant> Variants, IReadOnlyList<int> Thresholds)
+    {
+        public int MaxLevel => Thresholds.Count;
+
+        /// <summary>The level as the client derives it (0x14246f900): the levels whose threshold the experience reaches, up
+        /// to the cap. Experience -1 is the cap + 1 (0x14246eb00; a guess: the corrupted gems over their cap).</summary>
+        public int Level(int experience) => experience == -1 ? MaxLevel + 1 : Thresholds.Count(t => t <= experience);
+
+        /// <summary>The experience a gem of this level starts with (the level clamped to 1 … the cap).</summary>
+        public int ExperienceFor(int level) => Thresholds.Count == 0 ? 0 : Thresholds[Math.Clamp(level, 1, MaxLevel) - 1];
+
+        /// <summary>The variant the client uses: an index outside the list is the normal gem (0x14246fa50 resets it).</summary>
+        public GemVariant Variant(int index) => index > 0 && index < Variants.Count ? Variants[index] : Variants[0];
+    }
+
+    /// <summary>A base type's gem (its SkillGems row), or null for items that are not gems.</summary>
+    public GemType? Gem(BaseType t) => _gems.Value.GetValueOrDefault(t.Row);
+
+    /// <summary>The GrantedEffects rows a gem item grants as skills: its variant's effect and, for a Vaal gem, the base
+    /// skill. Support gems grant none: they modify the linked active skills (granting one as a skill crashed the client in
+    /// the Actor skill reader, 0x141ee795a).</summary>
+    public IEnumerable<int> GemEffects(Item gem)
+    {
+        if (ByHash(gem.TypeHash) is not { } t || Gem(t) is not { IsSupport: false } g || g.Variants.Count == 0) yield break;
+        var v = g.Variant(gem.GemVariant);
+        if (v.Effect >= 0) yield return v.Effect;
+        if (v.Effect2 >= 0) yield return v.Effect2;
+    }
+
+    /// <summary>A gem item's level from its experience (<see cref="GemType.Level"/>), 1 for an unknown gem type.</summary>
+    public int GemLevel(Item gem) => ByHash(gem.TypeHash) is { } t && Gem(t) is { } g ? g.Level(gem.GemExperience) : 1;
+
+    /// <summary>A gem item's name: its variant's ("Ice Nova of Frostbolts"), else the type's.</summary>
+    public string GemName(Item gem) => ByHash(gem.TypeHash) is not { } t ? "?"
+        : Gem(t) is { Variants.Count: > 0 } g ? g.Variant(gem.GemVariant).Name : t.Name;
+
+    /// <summary>A creatable gem by name, its type's or a variant's ("Ice Nova of Frostbolts", "Vaal Ice Nova of
+    /// Frostbolts"), case-insensitive: an exact name first, then the first that contains it.</summary>
+    public (BaseType Type, GemVariant Variant)? FindGem(string name)
+    {
+        var all = _rows.Value.Rows.Select(t => (Type: t, Gem: Gem(t))).Where(x => x.Gem is not null)
+            .SelectMany(x => x.Gem!.Variants.Where(v => v.Creatable).Select(v => (x.Type, Variant: v))).ToList();
+        foreach (var match in (Func<string, bool>[])[n => n.Equals(name, StringComparison.OrdinalIgnoreCase),
+            n => n.Contains(name, StringComparison.OrdinalIgnoreCase)])
+            foreach (var hit in all)
+                if (match(hit.Variant.Name)) return hit;
+        return null;
+    }
 
     private Lazy<Dictionary<int, int>> _shieldBlocks = null!;
 
@@ -167,20 +218,66 @@ sealed class ItemCatalog
         return result;
     }
 
-    private Lazy<Dictionary<int, int>> _gemEffects = null!;
+    private Lazy<Dictionary<int, GemType>> _gems = null!;
 
-    private static Dictionary<int, int> LoadGemEffects(string folder)
+    // Not creatable: the "[DNT]" placeholder variants, the "[UNUSED] …", "[DNT] …" and "WIP …" gem rows, the awakened
+    // supports other than Empower, Enhance and Enlighten (disabled since 3.28; theirs is GemProgressionExceptionalPlus),
+    // and a Vaal variant whose base skill is only a placeholder's. A Vaal variant is named "Vaal " + its base variant.
+    private static Dictionary<int, GemType> LoadGems(string folder)
     {
-        string gems = Path.Combine(folder, "tables", "SkillGems.json"), effects = Path.Combine(folder, "tables", "GemEffects.json");
-        var result = new Dictionary<int, int>();
-        if (!File.Exists(gems) || !File.Exists(effects)) return result;
-        using var g = JsonDocument.Parse(File.ReadAllBytes(gems));
-        using var e = JsonDocument.Parse(File.ReadAllBytes(effects));
+        string Table(string n) => Path.Combine(folder, "tables", n + ".json");
+        var result = new Dictionary<int, GemType>();
+        string[] needed = ["SkillGems", "GemEffects", "BaseItemTypes", "ItemExperiencePerLevel", "ItemExperienceTypes"];
+        if (needed.Any(n => !File.Exists(Table(n)))) return result;
+        using var g = JsonDocument.Parse(File.ReadAllBytes(Table("SkillGems")));
+        using var e = JsonDocument.Parse(File.ReadAllBytes(Table("GemEffects")));
+        using var b = JsonDocument.Parse(File.ReadAllBytes(Table("BaseItemTypes")));
+        using var x = JsonDocument.Parse(File.ReadAllBytes(Table("ItemExperiencePerLevel")));
+        using var xt = JsonDocument.Parse(File.ReadAllBytes(Table("ItemExperienceTypes")));
+        static int Row(JsonElement r, string name) => r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : -1;
+        var thresholds = x.RootElement.EnumerateArray().GroupBy(r => Row(r, "ItemExperienceType")).ToDictionary(t => t.Key,
+            t => (IReadOnlyList<int>)[.. t.OrderBy(r => Row(r, "ItemCurrentLevel")).Select(r => Row(r, "Experience"))]);
+        var effects = e.RootElement;
+        string Name(int row) => effects[row].GetProperty("Name").GetString() ?? "";
+        static IEnumerable<(int Row, int Index)> Variants(JsonElement r) =>
+            r.GetProperty("GemVariants").EnumerateArray().Select((v, i) => (v.GetInt32(), i));
+        // A regular skill's GrantedEffects row → its variant's name, for the Vaal variants that grant it as their base.
+        var regular = new Dictionary<int, string>();
+        var rows = new List<(int BaseRow, JsonElement Row, string BaseName)>();
         foreach (var r in g.RootElement.EnumerateArray())
-            if (!r.GetProperty("IsSupport").GetBoolean() && r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b &&
-                r.GetProperty("GemVariants").EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Number } v &&
-                e.RootElement[v.GetInt32()].GetProperty("GrantedEffect") is { ValueKind: JsonValueKind.Number } ge)
-                result.TryAdd(b.GetInt32(), ge.GetInt32());
+        {
+            int baseRow = Row(r, "BaseItemTypesKey");
+            if (baseRow < 0) continue;
+            string baseName = b.RootElement[baseRow].GetProperty("Name").GetString() ?? "";
+            rows.Add((baseRow, r, baseName));
+            if (r.GetProperty("IsVaalVariant").GetBoolean() || baseName.StartsWith('[')) continue;
+            foreach (var (v, i) in Variants(r))
+                if (Row(effects[v], "GrantedEffect") is int ge and >= 0 && !Name(v).StartsWith("[DNT]"))
+                    regular.TryAdd(ge, i == 0 ? baseName : Name(v));
+        }
+        foreach (var (baseRow, r, baseName) in rows)
+        {
+            bool vaal = r.GetProperty("IsVaalVariant").GetBoolean();
+            int expType = Row(r, "ItemExperienceType");
+            bool awakened = Row(r, "RegularVariant") >= 0
+                && (expType < 0 || xt.RootElement[expType].GetProperty("Id").GetString() != "GemProgressionExceptionalPlus");
+            bool rowCreatable = !baseName.StartsWith('[') && !baseName.StartsWith("WIP") && !awakened;
+            var variants = new List<GemVariant>();
+            foreach (var (v, i) in Variants(r))
+            {
+                int effect = Row(effects[v], "GrantedEffect"), effect2 = Row(effects[v], "GrantedEffect2");
+                string name = i == 0 ? baseName : Name(v);
+                bool creatable = rowCreatable && !name.StartsWith("[DNT]");
+                if (vaal && effect2 >= 0)
+                {
+                    creatable &= regular.TryGetValue(effect2, out var baseSkill);
+                    if (i > 0 && baseSkill is not null) name = "Vaal " + baseSkill;
+                }
+                variants.Add(new GemVariant(i, name, effect, effect2, creatable));
+            }
+            result.TryAdd(baseRow, new GemType(baseRow, r.GetProperty("IsSupport").GetBoolean(), variants,
+                thresholds.GetValueOrDefault(expType) ?? []));
+        }
         return result;
     }
 
