@@ -118,7 +118,7 @@ of the time, at the monster's level as item level, and drops **unidentified**. D
 
 **Identifying** (C→S 0x71, §4): right-click a Scroll of Wisdom, then click an unidentified item. The server marks it
 identified, sends it again (its explicit list and name) and takes one scroll from the stack; an identified target
-changes nothing.
+changes nothing. Nessa's **Identify Items** identifies the whole main inventory for free ([17](17-npcs.md) §3).
 
 ## 2c. Mods on the character
 

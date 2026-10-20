@@ -800,10 +800,41 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
             conn.InNpcTalk = false;
             await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.PassiveTreeUi, 1), "0x007b open the passive tree (respec)");
             break;
+        // Nessa's Identify Items (script: triggerer.IdentifyItems(), then the IdentifyAll sound): every unidentified item
+        // in the main inventory, free. The sound effect is not sent (its message is not mapped).
+        case "IdentifyItems":
+            await IdentifyInventory(remote, stream, ciphers, conn, npc);
+            break;
         default:
             Console.WriteLine($"[gateway] {remote} npc option category {talk.Category} is not implemented yet");
             break;
     }
+}
+
+// An NPC's Identify Items: the main inventory's unidentified items become identified (their explicit mods and rare names
+// are sent from now on). Removing and adding the same ids in one 0xbf replaces them on the client (see UseItemOn).
+static async Task IdentifyInventory(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedNpc npc)
+{
+    const byte row = PlayerInventories.MainInventory;
+    var items = ItemsOf(conn);
+    var identified = items.IdentifyAll(row);
+    if (identified.Count == 0)
+    {
+        Console.WriteLine($"[gateway] {remote} npc {npc.Npc.Name} identify items: nothing unidentified");
+        return;
+    }
+    uint inventory = PlayerInventories.InventoryId(row);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(inventory, items.NextRevision(row), [.. identified.Select(i => i.Id)], identified),
+        $"0x00bf inventory {inventory}: {npc.Npc.Name} identified {identified.Count} item(s)");
+    foreach (var i in identified)
+        Console.WriteLine($"[gateway] {remote} npc {npc.Npc.Name} identified item {i.Id}: {string.Join("; ", i.Item.Mods.Select(Items.Mods.Describe))}");
+    // ClientStrings IdentifyItemsChatMessage / IdentifyItemsChatMessageSingle, as a chat line (S→C 0x17).
+    string text = identified.Count == 1 ? "1 Item identified" : $"{identified.Count} Items identified";
+    await Send(remote, stream, ciphers, InstanceChat.ChatLine(text), $"0x0017 chat line \"{text}\"");
+    // The client decides itself whether the option is usable (NPCTalkCategory IdentifyItems, 0x141e754b0: gray with
+    // "No items in your inventory can be identified" when nothing is unidentified), but only when the options are
+    // listed: list them again.
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(conn.TalkingTo), $"0x0084 npc 0x{conn.TalkingTo:x}: options again");
 }
 
 // C→S 0x88: an item bought from the open shop tab. The client picked the free cell; the item leaves the tab (0xbf on
