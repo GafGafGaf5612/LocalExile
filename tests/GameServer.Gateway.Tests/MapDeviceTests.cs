@@ -50,18 +50,28 @@ public class MapDeviceTests
     public void Six_portals_each_taken_once_all_into_the_first_ones_instance()
     {
         string who = $"MapTester{Guid.NewGuid():N}";
-        Assert.Null(MapDevice.TakePortal(who));
+        Assert.Null(MapDevice.TakePortal(who, 0));
         MapDevice.Activate(who, Beach);
-        var first = MapDevice.TakePortal(who);
+        var first = MapDevice.TakePortal(who, 4);
         Assert.Equal((0UL, 5), (first!.Value.Map.Instance, first.Value.Left));
         MapDevice.Entered(who, Beach, 42);
-        for (int left = 4; left >= 0; left--)
+        Assert.Null(MapDevice.TakePortal(who, 4));                       // that one is gone
+        int left = 4;
+        foreach (int index in new[] { 0, 5, 1, 3, 2 })
         {
-            var next = MapDevice.TakePortal(who);
-            Assert.Equal((42UL, left), (next!.Value.Map.Instance, next.Value.Left));
+            var next = MapDevice.TakePortal(who, index);
+            Assert.Equal((42UL, left--), (next!.Value.Map.Instance, next.Value.Left));
         }
-        Assert.Null(MapDevice.TakePortal(who));
         Assert.Null(MapDevice.OpenOf(who));
+    }
+
+    [Fact]
+    public void The_portal_taken_is_the_one_missing_afterwards()
+    {
+        string who = $"MapTester{Guid.NewGuid():N}";
+        MapDevice.Activate(who, Beach);
+        MapDevice.TakePortal(who, 4);
+        Assert.Equal([0, 1, 2, 3, 5], MapDevice.OpenOf(who)!.Left);
     }
 
     [Fact]
@@ -69,7 +79,7 @@ public class MapDeviceTests
     {
         string who = $"MapTester{Guid.NewGuid():N}";
         MapDevice.Activate(who, Beach);
-        MapDevice.TakePortal(who);
+        MapDevice.TakePortal(who, 2);
         MapDevice.Entered(who, Beach, 7);
         var again = MapDevice.Activate(who, Beach);
         Assert.Equal((0UL, MapDevice.PortalCount), (again.Instance, again.PortalsLeft));
@@ -100,6 +110,37 @@ public class MapDeviceTests
             var device = MapDevice.Load(dir, row => row == 5 ? 0xabcu : null);
             Assert.Equal(1, device.Count);
             Assert.Equal(new MapDevice.MapArea(0x1234, "MapWorldsBeach", "Beach", 3), device.AreaOf(0xabc));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void A_maps_area_gets_the_maps_own_monster_packs()
+    {
+        string dir = Directory.CreateTempSubdirectory("mappacks").FullName;
+        try
+        {
+            string t = Path.Combine(dir, "tables");
+            Directory.CreateDirectory(t);
+            File.WriteAllText(Path.Combine(t, "MonsterPacks.json"), """
+                [{"Id":"Act1-CoastCrabs","MinCount":3,"MaxCount":5,"BossMonsterSpawnChance":0,"BossMonsterCount":0,"BossMonster_MonsterVarietiesKeys":[],"WorldAreasKeys":[0],"__col9":[100]},
+                 {"Id":"atlas-crab1","MinCount":6,"MaxCount":9,"BossMonsterSpawnChance":0,"BossMonsterCount":0,"BossMonster_MonsterVarietiesKeys":[],"WorldAreasKeys":[],"__col9":[]}]
+                """);
+            File.WriteAllText(Path.Combine(t, "MonsterPackEntries.json"), """
+                [{"MonsterPacksKey":0,"MonsterVarietiesKey":10,"Weight":1},{"MonsterPacksKey":1,"MonsterVarietiesKey":11,"Weight":1}]
+                """);
+            File.WriteAllText(Path.Combine(t, "WorldAreas.json"), """
+                [{"Id":"1_1_2","AreaLevel":2,"Bosses_MonsterVarietiesKeys":[]},{"Id":"MapAtlasBeach","AreaLevel":69,"Bosses_MonsterVarietiesKeys":[7]}]
+                """);
+            File.WriteAllText(Path.Combine(t, "Maps.json"), """
+                [{"Regular_WorldAreasKey":1,"MonsterPacksKeys":[1]},{"Regular_WorldAreasKey":1,"MonsterPacksKeys":[1]}]
+                """);
+            var packs = new PackCatalog(dir);
+            var beach = packs.For("MapAtlasBeach")!;
+            Assert.Equal(["atlas-crab1"], beach.Scattered.Select(s => s.Pack.Id));
+            Assert.Equal(PackCatalog.MapPackWeight, beach.Scattered[0].Weight);
+            Assert.Equal(69, beach.AreaLevel);
+            Assert.Equal(["Act1-CoastCrabs"], packs.For("1_1_2")!.Scattered.Select(s => s.Pack.Id));
         }
         finally { Directory.Delete(dir, true); }
     }

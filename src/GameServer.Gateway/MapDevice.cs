@@ -50,6 +50,9 @@ sealed class MapDevice
 
     public MapArea? AreaOf(uint itemType) => _byItemType.GetValueOrDefault(itemType);
 
+    /// <summary>Whether a map opens this area (WorldAreas HASH16): it gets a portal back to the hideout.</summary>
+    public bool IsMapArea(ushort hash16) => _byItemType.Values.Any(a => a.Hash16 == hash16);
+
     /// <summary>One item in the slots: its type hash and ItemClasses Id.</summary>
     public readonly record struct Slot(uint TypeHash, string Class, string Name);
 
@@ -72,27 +75,33 @@ sealed class MapDevice
         return area;
     }
 
-    /// <summary>A character's opened map: its area, its instance (0 until the first portal is taken) and the portals left.</summary>
-    public sealed record OpenMap(MapArea Area, ulong Instance, int PortalsLeft);
+    /// <summary>A character's opened map: its area, its instance (0 until the first portal is taken) and the places around
+    /// the device (0 to <see cref="PortalCount"/> - 1, <see cref="PortalCell"/>) whose portal is still there.</summary>
+    public sealed record OpenMap(MapArea Area, ulong Instance, IReadOnlyList<int> Left)
+    {
+        public int PortalsLeft => Left.Count;
+    }
 
     private static readonly ConcurrentDictionary<string, OpenMap> Open = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The character's open map, or null.</summary>
     public static OpenMap? OpenOf(string character) => Open.GetValueOrDefault(character);
 
-    /// <summary>Opens a map for the character, replacing the one open before (its portals close).</summary>
-    public static OpenMap Activate(string character, MapArea area) => Open[character] = new OpenMap(area, 0, PortalCount);
+    /// <summary>Opens a map for the character with a portal at every place, replacing the one open before.</summary>
+    public static OpenMap Activate(string character, MapArea area) =>
+        Open[character] = new OpenMap(area, 0, [.. Enumerable.Range(0, PortalCount)]);
 
-    /// <summary>Takes one portal of the character's open map. Returns the map as it was (its instance to enter, 0 for a
-    /// new one) and how many portals are left, or null when none is open.</summary>
-    public static (OpenMap Map, int Left)? TakePortal(string character)
+    /// <summary>Takes the portal at place <paramref name="index"/> of the character's open map, so it does not come back.
+    /// Returns the map as it was (its instance to enter, 0 for a new one) and how many portals are left, or null when no
+    /// map is open or that portal was taken already. The last one taken closes the map.</summary>
+    public static (OpenMap Map, int Left)? TakePortal(string character, int index)
     {
         while (Open.TryGetValue(character, out var map))
         {
-            if (map.PortalsLeft <= 0) { Open.TryRemove(new(character, map)); return null; }
-            var after = map with { PortalsLeft = map.PortalsLeft - 1 };
-            if (!Open.TryUpdate(character, after, map)) continue;
-            return (map, after.PortalsLeft);
+            if (!map.Left.Contains(index)) return null;
+            var after = map with { Left = [.. map.Left.Where(i => i != index)] };
+            bool done = after.Left.Count == 0 ? Open.TryRemove(new(character, map)) : Open.TryUpdate(character, after, map);
+            if (done) return (map, after.Left.Count);
         }
         return null;
     }

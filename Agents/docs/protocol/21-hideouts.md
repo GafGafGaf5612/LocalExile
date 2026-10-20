@@ -169,13 +169,27 @@ that one (`MapDevice.Entered`). The open map is kept per character in the Gatewa
 restart), so the portals left stand at the device again when the player comes back. A new Activate replaces them.
 `/map_portal [type] [created] [open ms] [model]` (dev) places one test portal.
 
+**Timing and order.** The portals left come up one after another, `Game_MAP_PORTAL_GAP_MS` (150) apart; each is listed
+in 0x008f `Game_MAP_PORTAL_LIST_MS` (100) after its create; on entering the hideout the first waits
+`Game_MAP_PORTAL_ENTRY_MS` (1500). With a list delay of 0 each portal is drawn only by the next one's list, so the last
+never is (live). The open map keeps the places left (0–5 on the ring), so the portal taken is the one missing later.
+
+**In the map.** Every area a map opens (`MapDevice.IsMapArea`) gets a portal back next to the arrival point, listed in
+0x008f with device 0 (the handler then skips the device's events but still sets the portal's area): it leads to the
+hideout and is not used up. The map's monster packs are its Maps.dat `MonsterPacksKeys` (Beach: `atlas-crab1`, level
+69), which no MonsterPacks row lists by area (14-monster-packs.md). Beach's boss room (`MapBeach2/Rooms/boss_1.arm`,
+points `teleport1-%areaname%`, `telepad1`, `teleport2-Arena`, `telepad2`) has two `grovewall_entrance` gates that no
+topology transition names: two such captured gates are paired, each teleporting the player (0x1b7) next to the other
+(`AreaTransitionObject.TeleportTo`); the telepads' own cells are not in `data/room-points.json`. Nessa sells 10 Beach
+Maps. Beach's walk map is a `-Walkmaps` capture (2484 × 1656; spawn the deepest cell, (459, 884)).
+
 ## Open
 
 - The decorations (trees, tents …): `Metadata/MiscellaneousObjects/HideoutDoodad` and other types, each with its own
   component list; `HideoutObject` writes the supported ones.
 - Editing: the Edit button shows; moving, placing and saving doodads (the client's messages) are not served.
-- The map device: the arrival in a map (no walk map: the player can stand in the sea; `live.ps1 -Walkmaps` per map),
-  a return portal in the map, fragments and device recipes (MapDeviceRecipes), the map's mods and area level, the map
+- The map device: the arrival in a map without a walk map (the player can stand in the sea; `live.ps1 -Walkmaps` per
+  map), the telepads' exact cells, fragments and device recipes (MapDeviceRecipes), the map's mods and area level, the map
   device type (3) portal's own model and "Map Portal" text (needs its open transition, which crashed), the window's
   u16 target and the 0x008f fields left at 0.
 - Logging in to the hideout after logging out there (the real game does); Resurrect in a map → the hideout.

@@ -483,6 +483,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 await SpawnTownStash(remote, stream, ciphers, conn);
                 await SpawnHideoutDoodads(remote, stream, ciphers, conn);
+                await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
             }
@@ -631,7 +632,12 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await TalkToNpc(remote, stream, ciphers, conn, use, npc);
         return;
     }
-    (int X, int Y)? portal;
+    if (conn.ReturnPortal is { } back && use.TargetId == back.Id)
+    {
+        await UseMapReturnPortal(remote, stream, ciphers, conn, use, (back.X, back.Y));
+        return;
+    }
+    (int X, int Y, int Index)? portal;
     lock (conn.MapPortals) portal = conn.MapPortals.TryGetValue(use.TargetId, out var at) ? at : null;
     if (portal is { } p)
     {
@@ -673,6 +679,15 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     if (Dist(stop, (transition.GridX, transition.GridY)) > AreaTransitionReach + 2)
     {
         Console.WriteLine($"[gateway] {remote} area transition 0x{use.TargetId:x} out of reach from ({stop.X}, {stop.Y})");
+        return;
+    }
+    // A gate within the area (a map's boss arena): next to its pair, in the same instance.
+    if (transition.TeleportTo is { } pair)
+    {
+        var (tx, ty) = conn.Layout.Near(pair);
+        conn.Walk.Teleport(tx, ty, conn.Clock.Elapsed.TotalSeconds);
+        await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, tx, ty),
+            $"0x01b7 player through the gate 0x{use.TargetId:x} to ({tx}, {ty}), next to its pair at ({pair.X}, {pair.Y})");
         return;
     }
     if (use.Ctrl)
@@ -2759,11 +2774,11 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
             new MapPortalObject(x, y, 0, type, created).Blob()), $"0x02b9 create test portal 0x{id:x} type {type}, transitionable {created}, at ({x}, {y})");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
-        lock (conn.MapPortals) conn.MapPortals[id] = (x, y);
+        lock (conn.MapPortals) conn.MapPortals[id] = (x, y, -1);
         if (openMs >= 0) OpenMapPortalLater(remote, stream, ciphers, conn, id, openMs);
         uint deviceId;
         lock (conn.HideoutDoodads) deviceId = conn.HideoutDoodads.Keys.FirstOrDefault();
-        if (deviceId != 0) SendMapPortalsLater(remote, stream, ciphers, conn, deviceId, MapDevice.OpenOf(CharacterName(conn))?.Area.Hash16 ?? conn.Layout.Hash, 1000);
+        if (deviceId != 0) SendMapPortalsLater(remote, stream, ciphers, conn, deviceId, MapDevice.OpenOf(CharacterName(conn))?.Area.Hash16 ?? conn.Layout.Hash, MapPortalListMs);
         await conn.Commands!.Reply($"Portal 0x{id:x}: type {type}, created {created}, " + (openMs >= 0 ? $"opens after {openMs} ms" : "not opened"));
     })
     .Add("mod", "/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
@@ -4143,7 +4158,7 @@ static async Task SpawnHideoutDoodads(string remote, NetworkStream stream, Conne
         lock (conn.HideoutDoodads) conn.HideoutDoodads[id] = d;
     }
     // The portals of the character's open map stand at the device again.
-    if (MapDevice.OpenOf(CharacterName(conn)) is { PortalsLeft: > 0 } open) await SpawnMapPortals(remote, stream, ciphers, conn, open, listAfterMs: 2000);
+    if (MapDevice.OpenOf(CharacterName(conn)) is { PortalsLeft: > 0 } open) await SpawnMapPortals(remote, stream, ciphers, conn, open, firstAfterMs: MapPortalEntryMs);
 }
 
 // A click on the map device (C→S 0x24): walk there, then S→C 0x7b kind 5 opens the map device window (21-hideouts.md §4).
@@ -4191,26 +4206,41 @@ static async Task ActivateMapDevice(string remote, NetworkStream stream, Connect
     await SpawnMapPortals(remote, stream, ciphers, conn, open);
 }
 
-// The open map's portals (MultiplexPortal, map device type) on a ring around the hideout's map device.
-static async Task SpawnMapPortals(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MapDevice.OpenMap open, int listAfterMs = 1000)
+// The open map's portals that are left, at their places on a ring around the hideout's map device, one after another
+// (MapPortalGapMs apart). 0x8f only reaches portal objects the client has already created, and a create sent in the same
+// burst is not done yet (live 2026-10-20), so each portal is listed MapPortalListMs after its create; on entering the
+// area the objects also wait until the world is active (firstAfterMs). A newer Activate or the portals' removal stops
+// the sequence.
+static Task SpawnMapPortals(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MapDevice.OpenMap open, int firstAfterMs = 0)
 {
     HideoutCatalog.Doodad? device;
     uint deviceId;
     lock (conn.HideoutDoodads) (deviceId, device) = conn.HideoutDoodads.Select(kv => (kv.Key, (HideoutCatalog.Doodad?)kv.Value)).FirstOrDefault();
-    if (device is null) return;
+    if (device is null) return Task.CompletedTask;
+    int generation = Interlocked.Increment(ref conn.MapPortalGeneration);
+    bool Current() => !conn.Closed && conn.MapPortalGeneration == generation;
     uint type = InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath);
-    for (int i = 0; i < open.PortalsLeft; i++)
+    _ = Task.Run(async () =>
     {
-        uint id = conn.NextObjectId++;
-        var (x, y) = MapDevice.PortalCell(device.X, device.Y, i);
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, new MapPortalObject(x, y, i, MapPortalType, Open: 1).Blob()),
-            $"0x02b9 create map portal 0x{id:x} {i + 1}/{open.PortalsLeft} to {open.Area.Name} at ({x}, {y})");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
-        lock (conn.MapPortals) conn.MapPortals[id] = (x, y);
-    }
-    // 0x8f only reaches portal objects the client has already created, and a create sent in the same burst is not done yet
-    // (live 2026-10-20); on entering the area the objects also wait until the world is active. So it goes a moment later.
-    SendMapPortalsLater(remote, stream, ciphers, conn, deviceId, open.Area.Hash16, listAfterMs);
+        if (firstAfterMs > 0) await Task.Delay(firstAfterMs);
+        int n = 0;
+        foreach (int index in open.Left)
+        {
+            if (!Current()) return;
+            if (n++ > 0) await Task.Delay(MapPortalGapMs);
+            if (!Current()) return;
+            uint id = conn.NextObjectId++;
+            var (x, y) = MapDevice.PortalCell(device.X, device.Y, index);
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, new MapPortalObject(x, y, index, MapPortalType, Open: 1).Blob()),
+                $"0x02b9 create map portal 0x{id:x} (place {index}, {n}/{open.PortalsLeft}) to {open.Area.Name} at ({x}, {y})");
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+            lock (conn.MapPortals) conn.MapPortals[id] = (x, y, index);
+            await Task.Delay(MapPortalListMs);
+            if (!Current()) return;
+            await SendMapPortals(remote, stream, ciphers, conn, deviceId, open.Area.Hash16);
+        }
+    });
+    return Task.CompletedTask;
 }
 
 static void SendMapPortalsLater(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint deviceId, ushort area, int delayMs) =>
@@ -4243,6 +4273,7 @@ static void OpenMapPortalLater(string remote, NetworkStream stream, ConnectionCi
 static async Task RemoveMapPortals(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     List<uint> ids;
+    Interlocked.Increment(ref conn.MapPortalGeneration);   // stops a sequence still placing them
     lock (conn.MapPortals) { ids = [.. conn.MapPortals.Keys]; conn.MapPortals.Clear(); }
     uint deviceId;
     lock (conn.HideoutDoodads) deviceId = conn.HideoutDoodads.Keys.FirstOrDefault();
@@ -4255,7 +4286,7 @@ static async Task RemoveMapPortals(string remote, NetworkStream stream, Connecti
 // A click on a map portal (C→S 0x24): walk there, then the portal is used up and the player goes into the open map, a new
 // instance for the first portal and that same instance for the others.
 static async Task UseMapPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    InstanceTransfer.UseSkillOnObject use, (int X, int Y) at)
+    InstanceTransfer.UseSkillOnObject use, (int X, int Y, int Index) at)
 {
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
@@ -4267,7 +4298,8 @@ static async Task UseMapPortal(string remote, NetworkStream stream, ConnectionCi
     string character = CharacterName(conn);
     uint deviceId;
     lock (conn.HideoutDoodads) deviceId = conn.HideoutDoodads.Keys.FirstOrDefault();
-    if (MapDevice.TakePortal(character) is not var (map, left))
+    // The portal at this place is used up: it is not there when the player comes back (the others are).
+    if (MapDevice.TakePortal(character, at.Index) is not var (map, left))
     {
         Console.WriteLine($"[gateway] {remote} map portal 0x{use.TargetId:x}: no open map");
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(use.TargetId), $"0x{InstanceProtocol.RemoveObjectId:x4} remove map portal 0x{use.TargetId:x}");
@@ -4275,7 +4307,7 @@ static async Task UseMapPortal(string remote, NetworkStream stream, ConnectionCi
     }
     if (deviceId != 0) await SendMapPortals(remote, stream, ciphers, conn, deviceId, map.Area.Hash16, closed: use.TargetId);
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(use.TargetId), $"0x{InstanceProtocol.RemoveObjectId:x4} remove map portal 0x{use.TargetId:x} (used)");
-    Console.WriteLine($"[gateway] {remote} map portal taken: {left} left, into {(map.Instance == 0 ? "a new instance" : $"instance {map.Instance}")} of {map.Area.Name}");
+    Console.WriteLine($"[gateway] {remote} map portal at place {at.Index} taken: {left} left, into {(map.Instance == 0 ? "a new instance" : $"instance {map.Instance}")} of {map.Area.Name}");
     await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(map.Area.Hash16, map.Instance, map.Instance == 0)
     {
         Done = r =>
@@ -4284,6 +4316,39 @@ static async Task UseMapPortal(string remote, NetworkStream stream, ConnectionCi
             else MapDevice.Close(character);
         },
     }, $"map portal to {map.Area.Name}");
+}
+
+// In a map's area (one a map item opens): a portal back to the hideout next to the arrival point, listed in 0x8f without
+// a device once the world is active (21-hideouts.md §5). It is not used up.
+static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (!MapDevices.Value.IsMapArea(conn.Layout.Hash) || HideoutCatalog.Default is not { } hideout) return;
+    var (x, y) = conn.Layout.Near((conn.Layout.SpawnX, conn.Layout.SpawnY));
+    uint id = conn.NextObjectId++;
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
+        new MapPortalObject(x, y, -1, MapPortalType, Open: 1).Blob()), $"0x02b9 create the portal back to the {hideout.Name} 0x{id:x} at ({x}, {y})");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+    conn.ReturnPortal = (id, x, y);
+    string owner = CharacterName(conn);
+    _ = Task.Delay(MapPortalEntryMs).ContinueWith(async _ =>
+    {
+        if (!conn.Closed)
+            await Send(remote, stream, ciphers, InstanceMapDevice.Portals(0, [new(id, hideout.AreaHash16, owner)]),
+                $"0x008f the portal 0x{id:x} leads to the {hideout.Name} (0x{hideout.AreaHash16:x4})");
+    });
+}
+
+// A click on the map's portal back (C→S 0x24): walk there, then to the hideout, next to its waypoint.
+static async Task UseMapReturnPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, (int X, int Y) at)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(at.X, at.Y, AreaTransitionReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 portal back 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    await WarpToHideout(remote, stream, ciphers, conn, "map portal back");
 }
 
 // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects
@@ -4606,6 +4671,11 @@ sealed partial class Program
     // The map device's portals are MultiplexPortals of the player type (1): the map device type (3) is only drawn after an
     // open transition, which hung or crashed the client (21-hideouts.md §5). Game_MAP_PORTAL_TYPE overrides it.
     internal static readonly byte MapPortalType = byte.TryParse(Environment.GetEnvironmentVariable("Game_MAP_PORTAL_TYPE"), out byte t) ? t : MapPortalObject.PlayerPortal;
+    // Map portal timing (ms): each portal's 0x8f after its create, the gap between portals, the first one after entering
+    // the hideout (Game_MAP_PORTAL_LIST_MS, _GAP_MS, _ENTRY_MS).
+    internal static readonly int MapPortalListMs = EnvMs("Game_MAP_PORTAL_LIST_MS", 100), MapPortalGapMs = EnvMs("Game_MAP_PORTAL_GAP_MS", 150),
+        MapPortalEntryMs = EnvMs("Game_MAP_PORTAL_ENTRY_MS", 1500);
+    static int EnvMs(string name, int fallback) => int.TryParse(Environment.GetEnvironmentVariable(name), out int ms) && ms >= 0 ? ms : fallback;
     // What dying monsters drop (ItemDrops.cs).
     // Magic and rare items (ItemRolls.cs).
     internal static readonly ItemRolls Rolls = new(Items);
@@ -5109,7 +5179,13 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, HideoutCatalog.Doodad> HideoutDoodads = [];
 
     /// <summary>The open map's portals created in this area, by object id: where each stands.</summary>
-    public readonly Dictionary<uint, (int X, int Y)> MapPortals = [];
+    public readonly Dictionary<uint, (int X, int Y, int Index)> MapPortals = [];
+
+    /// <summary>Counts the map portal sequences started (SpawnMapPortals); a newer one stops the older.</summary>
+    public int MapPortalGeneration;
+
+    /// <summary>In a map's area: the portal back to the hideout (object id and cell), or null.</summary>
+    public (uint Id, int X, int Y)? ReturnPortal;
 
     /// <summary>The 0x8f entries' model byte (/map_portal sets it for experiments).</summary>
     public byte MapPortalStyle;

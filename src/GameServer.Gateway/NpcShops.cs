@@ -33,6 +33,8 @@ static class NpcShops
         [
             ("Small Life Flask", 3), ("Small Mana Flask", 3), ("Medium Life Flask", 1), ("Scroll of Wisdom", 5),
             ("Portal Scroll", 5), ("Orb of Transmutation", 1), ("Fireball", 1), ("Frostblink", 1),
+            // Maps for the hideout's map device (21-hideouts.md §5).
+            ("Beach Map", 10),
         ],
         ["Metadata/NPC/Act1/Bestel"] =
         [
