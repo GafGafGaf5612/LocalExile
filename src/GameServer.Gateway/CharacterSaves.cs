@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Saves;
 
 /// <summary>
 /// A character's saved state: its items per inventory (Inventories.dat row) and its skill bar, one JSON file per character

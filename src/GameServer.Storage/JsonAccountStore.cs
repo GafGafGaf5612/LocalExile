@@ -1,9 +1,12 @@
 using System.Text.Json;
 using GameServer.Core.Accounts;
+using GameServer.Core.Saves;
 
 namespace GameServer.Storage;
 
-/// <summary>Durable store: whole state in one JSON file (atomic replace). Pass null path for memory-only.</summary>
+/// <summary>Durable store: whole state in one JSON file (SaveFiles: replaced whole, the previous version kept as .bak).
+/// A file that can't be read stops the store (UnreadableSaveException) instead of starting it empty, which the next change
+/// would write over every account and character. Pass null path for memory-only.</summary>
 public sealed class JsonAccountStore : IAccountStore
 {
     private sealed record State(List<Account> Accounts, List<Character> Characters);
@@ -15,16 +18,12 @@ public sealed class JsonAccountStore : IAccountStore
     public JsonAccountStore(string? path = null)
     {
         _path = path;
-        if (path is not null && File.Exists(path))
-            _s = JsonSerializer.Deserialize<State>(File.ReadAllText(path), Opts) ?? _s;
+        if (path is not null) _s = SaveFiles.Load<State>(path, Opts) ?? _s;
     }
 
     private void Save()
     {
-        if (_path is null) return;
-        var tmp = _path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(_s, Opts));
-        File.Move(tmp, _path, overwrite: true);
+        if (_path is not null) SaveFiles.Write(_path, JsonSerializer.Serialize(_s, Opts));
     }
 
     public Account? FindAccount(string name) { lock (_gate) return _s.Accounts.FirstOrDefault(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)); }

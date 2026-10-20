@@ -24,12 +24,11 @@ sealed class PlayerInventories
     void Persist()
     {
         if (_owner is null) return;
-        Dictionary<byte, List<CharacterSaves.SavedPlacement>> items;
+        // Copied and written under the items' lock: two changes can't write their copies out of order, and an older copy
+        // never lands on the disk after a newer one. The rest of the save (skill bar, experience, passives) stays as it is.
         lock (_lock)
-            items = _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
-                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList());
-        // The rest of the save (skill bar, experience, passives) stays as it is.
-        CharacterSaves.SetInventories(_owner, items);
+            CharacterSaves.SetInventories(_owner, _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
+                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList()));
     }
 
     public static uint InventoryId(byte row) => (uint)row + 1;

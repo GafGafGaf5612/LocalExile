@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Saves;
 
 /// <summary>
 /// An account's stash (Agents/docs/protocol/18-stash.md): its tabs and their items, shared by every character of the
@@ -100,14 +101,17 @@ sealed class AccountStash
 
     void Persist()
     {
-        Save save;
+        // Copied and written under the stash's lock: two changes can't write their copies out of order, and an older copy
+        // never lands on the disk after a newer one.
         lock (_lock)
-            save = new([.. _tabs.Select(t => t.Saved with
+        {
+            var save = new Save([.. _tabs.Select(t => t.Saved with
             {
                 Items = [.. t.Items.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods)))],
             })], _lastTab, _nextItemId, _gold);
-        Directory.CreateDirectory(Folder);
-        SaveFiles.Write(PathOf(_account), JsonSerializer.Serialize(save, Opts));
+            Directory.CreateDirectory(Folder);
+            SaveFiles.Write(PathOf(_account), JsonSerializer.Serialize(save, Opts));
+        }
     }
 
     public int Count { get { lock (_lock) return _tabs.Count; } }

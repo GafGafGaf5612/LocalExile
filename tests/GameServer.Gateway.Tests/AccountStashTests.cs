@@ -1,4 +1,5 @@
 using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Saves;
 
 namespace GameServer.Gateway.Tests;
 
@@ -31,6 +32,18 @@ public class AccountStashTests : IDisposable
 
         AccountStash.Reset();
         Assert.Equal(1, Open().LastTab);
+    }
+
+    [Fact]
+    public void Gold_changed_concurrently_is_saved_as_it_ends()
+    {
+        var stash = Open();
+
+        // Every change saves; an older copy of the stash must never land on disk after a newer one.
+        Parallel.For(0, 200, _ => stash.AddGold(1));
+
+        AccountStash.Reset();
+        Assert.Equal(200u, Open().Gold);
     }
 
     [Fact]
@@ -139,7 +152,7 @@ public class AccountStashTests : IDisposable
 
         // The file holds the item where it lay (this catalog has no item tables, so loading would drop its type).
         var saved = System.Text.Json.JsonSerializer.Deserialize<AccountStash.Save>(
-            File.ReadAllText(Directory.GetFiles(_folder).Single()))!;
+            File.ReadAllText(StashPath()))!;
         var again = Open();
 
         Assert.Equal([(kept.Id, (byte)6, (byte)6)], saved.Tabs[4].Items.Select(p => (p.Id, p.X, p.Y)));

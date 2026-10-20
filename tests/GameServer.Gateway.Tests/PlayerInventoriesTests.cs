@@ -1,4 +1,5 @@
 using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Saves;
 
 namespace GameServer.Gateway.Tests;
 
@@ -32,6 +33,25 @@ public class PlayerInventoriesTests : IDisposable
         var save = CharacterSaves.Load(_character)!;
         Assert.Equal(123u, save.Experience);
         Assert.Equal([(ushort)7], save.Passives);
+    }
+
+    [Fact]
+    public void Items_changed_concurrently_are_saved_as_they_end()
+    {
+        var items = NewInventories();
+
+        // Every change saves; an older copy of the items must never land on disk after a newer one.
+        Parallel.For(0, 16, t =>
+        {
+            for (int i = 0; i < 40; i++)
+            {
+                var it = items.Add(PlayerInventories.MainInventory, (byte)t, (byte)(i % 5), Wand());
+                if (i % 2 == 0) items.Remove(PlayerInventories.MainInventory, it.Id);
+            }
+        });
+
+        var saved = CharacterSaves.Load(_character)!.Inventories.GetValueOrDefault(PlayerInventories.MainInventory) ?? [];
+        Assert.Equal(items.Items(PlayerInventories.MainInventory).Select(i => i.Id).Order(), saved.Select(p => p.Id).Order());
     }
 
     [Fact]

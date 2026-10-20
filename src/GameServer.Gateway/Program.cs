@@ -8,6 +8,7 @@ using WalkEstimator = GameServer.Core.World.WalkEstimator;
 using Progression = GameServer.Core.World.Progression;
 using DamageModel = GameServer.Core.World.DamageModel;
 using DamageType = GameServer.Core.World.DamageType;
+using SaveFiles = GameServer.Core.Saves.SaveFiles;
 
 // GameServer.Gateway — the instance (game) server the client connects to after login 0x14, or after 0x27 on an area
 // change (Agents/docs/protocol/02, 09).
