@@ -147,6 +147,9 @@ sealed class ItemCatalog
 
     private Lazy<Dictionary<string, (int Str, int Dex, int Int)>> _requirements = null!;
 
+    /// <summary>The base's attribute requirements (ComponentAttributeRequirements), zero when it has none.</summary>
+    public (int Str, int Dex, int Int) Requirements(BaseType t) => _requirements.Value.GetValueOrDefault(t.Id);
+
     private static Dictionary<string, (int, int, int)> LoadRequirements(string folder)
     {
         string path = Path.Combine(folder, "tables", "ComponentAttributeRequirements.json");

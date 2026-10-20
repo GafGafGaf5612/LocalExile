@@ -40,6 +40,50 @@ static class ItemModStats
     /// <summary>One item's local stats by Stats.dat Id (local_critical_strike_chance_+% …).</summary>
     public static Dictionary<string, int> Local(Item item, ModCatalog mods) => Sum([item], mods, local: true);
 
+    /// <summary>A worn item with what it needs: strength, dexterity, intelligence and character level.</summary>
+    public sealed record Worn(uint Id, Item Item, int Strength, int Dexterity, int Intelligence, int Level);
+
+    /// <summary>
+    /// The worn items that are inactive (their requirements are not met), as in the game: an item stays equipped but its
+    /// mods and socketed gems do nothing. An item is checked against the character's own attributes
+    /// (<paramref name="baseAttributes"/>: class and passives) plus those of every <i>other</i> active item, never its
+    /// own, and the character's level. Every item starts active and items are switched off until nothing changes, so a
+    /// lost item can cascade, and two items can still qualify each other.
+    /// </summary>
+    public static HashSet<uint> Inactive(IReadOnlyList<Worn> worn, (int Str, int Dex, int Int) baseAttributes, int level,
+        Func<Item, (int Str, int Dex, int Int)> attributesOf)
+    {
+        var inactive = new HashSet<uint>();
+        var own = worn.ToDictionary(w => w.Id, w => attributesOf(w.Item));
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            var active = worn.Where(w => !inactive.Contains(w.Id)).ToList();
+            var (str, dex, intel) = (baseAttributes.Str + active.Sum(w => own[w.Id].Str), baseAttributes.Dex + active.Sum(w => own[w.Id].Dex),
+                baseAttributes.Int + active.Sum(w => own[w.Id].Int));
+            foreach (var w in active)
+            {
+                var (s, d, i) = own[w.Id];
+                if (level >= w.Level && str - s >= w.Strength && dex - d >= w.Dexterity && intel - i >= w.Intelligence) continue;
+                inactive.Add(w.Id);
+                changed = true;
+                break;   // the totals changed: check the rest again against the new ones
+            }
+        }
+        return inactive;
+    }
+
+    /// <summary>The attributes an item's global mods give (additional_strength, all attributes, the pairs …).</summary>
+    public static (int Str, int Dex, int Int) Attributes(Item item, ModCatalog mods)
+    {
+        var stats = Sum([item], mods);
+        return CharacterStats.Attributes(name => stats.GetValueOrDefault(name));
+    }
+
+    /// <summary>An item's level requirement: the higher of its base's drop level and 80% of its highest mod level.</summary>
+    public static int LevelRequirement(Item item, int dropLevel, ModCatalog mods) =>
+        Math.Max(dropLevel, item.Mods.Select(m => mods.ByHash(m.Hash)?.Level ?? 0).DefaultIfEmpty(0).Max() * 8 / 10);
+
     /// <summary>Two stat dictionaries added together (passives + items).</summary>
     public static Dictionary<uint, int> Plus(Dictionary<uint, int> a, Dictionary<uint, int> b)
     {

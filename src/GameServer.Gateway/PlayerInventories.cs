@@ -276,11 +276,14 @@ sealed class PlayerInventories
     }
 
     /// <summary>The gems socketed in the items of the visible equipment rows, in row and socket order.</summary>
-    public IReadOnlyList<Item> SocketedGems()
+    public IReadOnlyList<Item> SocketedGems() => [.. SocketedGemsByItem().Select(g => g.Gem)];
+
+    /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
+    public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem()
     {
         lock (_lock)
             return [.. VisibleSlots.Keys.Order().SelectMany(r => _items.TryGetValue(r, out var l) ? l : [])
-                .SelectMany(i => i.Item.Sockets).Select(s => s.Gem).OfType<Item>()];
+                .SelectMany(i => i.Item.Sockets.Select(s => s.Gem).OfType<Item>().Select(g => (i.Id, g)))];
     }
 
     static readonly string[] OneHand = ["Claw", "Dagger", "Wand", "One Hand Sword", "Thrusting One Hand Sword", "One Hand Axe", "One Hand Mace", "Sceptre", "Rune Dagger"];
