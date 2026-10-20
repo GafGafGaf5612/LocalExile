@@ -238,6 +238,14 @@ G = global / static data.
 | `0x1401fc880` | Fn | hideout panel (palette) constructor |
 | `0x142163420` case 5 | Fn | S→C 0x7b kind 5 → listeners at instance +0x1778 → `0x140dcd9a0` |
 | `0x140dcd9a0` / `0x140dce1f0` / `0x140dce290` | Fn | open the map device window (modes 0xd, 0x5e, 0x56; lists +0x1778, +0x17f8, +0x1878) |
+| `0x140c2a1c0` | Fn | map device window: Activate button (mode 0xd → `0x142166480`, mode 0x5e → C→S 0x296) |
+| `0x142166480` | Fn | C→S 0x00d8 Activate: u16 (target +0x7b), u8 (writer class `0x1435bff20`) |
+| `0x1435dcc00` (read `0x1421a0a00`, write `0x1421a08a0`) | Cls | S→C 0x008f the map device's portals (dispatcher case 0x21) |
+| `0x142186070` | Fn | 0x008f handler: per portal PortalClient +0xb8, `on_map_portal_opened` / `on_map_portal_closed` |
+| `0x1421b9af0` | Fn | 0x008f portal list read (u32 object, u16 area, then u16, u8, u8, u8, wstr when the area is set) |
+| `0x14161a020` | Fn | PortalClient vtable +0xb8: set the portal's area, model (`0x141e2d240`) and rendering |
+| `0x141e2cee0` / `0x141e2cf40` | Fn | Portal component read (u8) / set the multiplex portal type (the "portal" state) |
+| `0x1423f3f10` / `0x1423f3e60` | Fn | item Map component read / write (u8, u8, u8 flag [u32]) |
 | `0x140c276c0` | Fn | map device window constructor (HUD +0x7d8) |
 | `0x140dbcd40` | Fn | HUD: registers its 0x7b listeners on the instance lists |
 

@@ -122,8 +122,8 @@ public class InstanceItemsTests
     [Fact]
     public void Unsupported_components_are_refused()
     {
-        Assert.False(Item.CanSerialize(["Base", "Map"]));
-        Assert.Throws<ArgumentException>(() => new Item(1, ["Map"], 0).Payload());
+        Assert.False(Item.CanSerialize(["Base", "MapKey"]));
+        Assert.Throws<ArgumentException>(() => new Item(1, ["MapKey"], 0).Payload());
     }
 
     [Fact]
