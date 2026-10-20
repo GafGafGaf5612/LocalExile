@@ -51,7 +51,7 @@ The server writes the component as `i32 experience, u32 0, u8 0, u16 0` (`Item.P
   | GemProgressionExceptional | 3 | the 52 exceptional supports (Empower, Enhance, Enlighten, Greater Spell Cascade, Eclipse, …) |
   | GemProgressionExceptionalPlus | 4 | Awakened Empower, Enhance and Enlighten |
   | GemProgressionPlus1 … Plus7 | 5 | the 35 awakened supports |
-  | GemProgressionSingleLevel | 1 | 21 rows: Portal, Detonate Mines, Convocation, Capture Monster, …, and some named "[UNUSED] …" or "WIP …" |
+  | GemProgressionSingleLevel | 1 | 21 rows: Portal, Detonate Mines, Convocation, Capture Monster, …, and some named "[UNUSED] …" or "WIP …" (never created, like the "[DNT]" variants) |
   | GemProgressionBrandRecall, BloodAndSand, PlayTest | 6 | three special cases |
   | GemProgressionRoyale1, Royale4 | 10 | Royale gems |
   | GemProgressionGraftSkill | 40 | graft skills |

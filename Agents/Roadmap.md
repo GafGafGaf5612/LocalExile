@@ -160,7 +160,8 @@ data is in [19](docs/protocol/19-gems.md).
   meeting them is disabled: its skill stays on the skill bar but can't be used, its supports don't apply, its level-up
   icon is greyed, and the gem stays in its socket. Each socketed skill gem is its own skill, with an id kept while it
   stays socketed; an aura ends when its gem leaves. Support gems are never granted as skills. Awakened supports other
-  than Empower, Enhance and Enlighten (disabled since 3.28) and the "[DNT]" placeholder variants are never created.
+  than Empower, Enhance and Enlighten (disabled since 3.28), the "[DNT]" placeholder variants and the gem rows named
+  "[UNUSED] …" or "WIP …" are never created.
 
 ### Gems 1: gem levels, stable skill ids and requirements (#62)
 - **Known:** every socketed skill gem grants its level-1 skill, with ids in socket order. The client derives a gem's
