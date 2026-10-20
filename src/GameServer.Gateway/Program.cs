@@ -2697,8 +2697,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         args = [.. args.Where(a => !a.Equals("friendly", StringComparison.OrdinalIgnoreCase))];
         if (args.Length == 0) throw new ArgumentException("which monster");
         if (Monsters.Error is { } error) { await conn.Commands!.Reply(error); return; }
-        // Words up to a rarity keyword name the monster; words after it are a custom name.
-        int r = Array.FindIndex(args, a => Enum.TryParse<MonsterRarity>(a, ignoreCase: true, out _));
+        // Words up to a rarity keyword name the monster; words after it are a custom name. Only the four names count:
+        // Enum.TryParse would also accept "100" as a rarity number and send a byte the client cannot read (Buffer Underflow).
+        int r = Array.FindIndex(args, a => a.ToLowerInvariant() is "normal" or "magic" or "rare" or "unique");
         var rarity = r < 0 ? MonsterRarity.Normal : Enum.Parse<MonsterRarity>(args[r], ignoreCase: true);
         string? name = r < 0 || r == args.Length - 1 ? null : string.Join(' ', args[(r + 1)..]);
         if (r == 0) throw new ArgumentException("which monster");
@@ -2709,6 +2710,12 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             level = byte.Parse(query[(at + 1)..]);
             if (level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
             query = query[..at];
+        }
+        else if (r < 0 && args.Length > 1 && int.TryParse(args[^1], out int bare) && bare is >= 1 and <= 100)
+        {
+            // A bare number after the monster is the level most people mean (the syntax itself wants @).
+            level = (byte)bare;
+            query = query[..query.LastIndexOf(' ')];
         }
         if (Monsters.Find(query) is not { } variety) { await conn.Commands!.Reply($"No monster matches \"{query}\"."); return; }
         if (!variety.Supported)
