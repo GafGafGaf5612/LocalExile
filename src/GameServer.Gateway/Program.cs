@@ -1892,6 +1892,7 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
     // Defences: the tree's flat armour/evasion and their increased modifiers. "Defences" and the combined armour and
     // evasion increase apply to both ratings, as in PoB's calcLib.mod.
     int defencesPct = Get("global_defences_+%") + Get("combined_global_defences_+%")
+        + Get("evasion_and_physical_damage_reduction_rating_+%")
         + Get("combined_armour_and_evasion_rating_+%");
     int armourPct = Get("physical_damage_reduction_rating_+%") + defencesPct;
     int evasionPct = Get("evasion_rating_+%") + defencesPct;

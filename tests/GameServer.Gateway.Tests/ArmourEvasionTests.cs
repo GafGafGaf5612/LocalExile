@@ -39,4 +39,15 @@ public class ArmourEvasionTests
         Assert.Equal(new ItemCatalog.BaseDefences(27, 38, 27, 38), catalog.Defences(catalog.Find("Scale Vest")!));
         Assert.Equal(new ItemCatalog.BaseDefences(0, 0, 13, 18), catalog.Defences(catalog.Find("Rawhide Gloves")!));
     }
+
+    [Fact]
+    public void Cloth_and_Chain_uses_the_combined_armour_and_evasion_increase()
+    {
+        var tree = new PassiveTree(Data());
+        var catalog = new StatCatalog(Data());
+        var stats = tree.Stats([21435]);
+
+        Assert.Equal("Cloth and Chain", tree.Find(21435)?.Name);
+        Assert.Equal(24, stats[catalog.Key("evasion_and_physical_damage_reduction_rating_+%")!.Value]);
+    }
 }
