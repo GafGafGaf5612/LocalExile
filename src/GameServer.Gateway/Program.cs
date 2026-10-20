@@ -1738,7 +1738,6 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons)
 {
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
-    int all = Get("additional_all_attributes") + Get("base_all_attributes");
     int allRes = Get("base_resist_all_elements_%");
     // The game's block stats are conditional on the equipped weapons:
     // - dual_wield_or_shield_block_%: dual wielding or a shield;
@@ -1845,10 +1844,9 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
     int auraEffect = Get("non_curse_aura_effect_+%") + Get("aura_effect_+%")
         + Get("aura_effect_on_self_from_your_skills_+%");
     int auraArea = Get("base_aura_area_of_effect_+%");
+    var (strength, dexterity, intelligence) = CharacterStats.Attributes(Get);
     return new CharacterStats.Bonus(
-        Strength: Get("base_strength") + Get("additional_strength") + all + Get("additional_strength_and_dexterity") + Get("additional_strength_and_intelligence"),
-        Dexterity: Get("base_dexterity") + Get("additional_dexterity") + all + Get("additional_strength_and_dexterity") + Get("additional_dexterity_and_intelligence"),
-        Intelligence: Get("base_intelligence") + Get("additional_intelligence") + all + Get("additional_strength_and_intelligence") + Get("additional_dexterity_and_intelligence"),
+        Strength: strength, Dexterity: dexterity, Intelligence: intelligence,
         Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
         EvasionPct: Get("evasion_rating_+%"), EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
         FireResistance: allRes + Get("base_fire_damage_resistance_%"),
