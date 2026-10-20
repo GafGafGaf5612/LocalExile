@@ -1154,6 +1154,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         }
         m.Life = (uint)Math.Max(0, (long)m.Life - damage);
         life = m.Life;
+        conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
         if (life == 0) { m.Aggro = false; m.Dead = true; }
     }
     // At 0 the client's Life tick (0x141e6a190) stops notifying its listeners, so the mini life bar would keep the last
@@ -1365,6 +1366,7 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         {
             m.Life = (uint)Math.Max(0, (long)m.Life - damage);
             life = m.Life;
+            conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
             if (life == 0) { m.Aggro = false; m.Dead = true; }
         }
         if (life == 0)
@@ -1418,6 +1420,9 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
         foreach (uint key in StatKeys.AttackSpeedInputs)
             devAttackSpeed += conn.PlayerStats.GetValueOrDefault(key);
     stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
+    // The conditions as they are now; the player tick sends the chance again when they change.
+    int suppression = Suppression(conn).Chance;
+    foreach (uint key in SuppressionChanceKeys) stats[key] = suppression;
     return stats;
 }
 
@@ -1875,6 +1880,9 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         SpellSuppressionEffect: Get("base_spell_damage_%_suppressed"),
         SpellSuppressionLucky: Get("spell_suppression_chance_is_lucky") != 0,
         SpellSuppressionUnlucky: Get("spell_suppression_chance_is_unlucky") != 0,
+        SpellSuppressionWhileFullLife: Get("spell_suppression_chance_%_while_on_full_life"),
+        SpellSuppressionWhileMoving: Get("spell_suppression_chance_%_while_moving"),
+        SpellSuppressionIfHitRecently: Get("spell_suppression_chance_%_if_enemy_hit_recently"),
         MovementVelocityPct: Get("base_movement_velocity_+%"),
         BlockChance: Get("additional_block_%") + Get("attack_block_%") + Get("monster_base_block_%")
             + blockWhileDualOrShield + shieldBlock + staffBlock + dualBlock + bowBlock,
@@ -2241,6 +2249,7 @@ static async Task EndRighteousFire(string remote, NetworkStream stream, Connecti
 static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     double carry = 0, manaCarry = 0;   // fractions of life and mana between ticks
+    int suppression = Suppression(conn).Chance;   // the panel's Spell Suppression chance as of the last tick
     while (!conn.Closed)
     {
         await Task.Delay(PlayerTickMs);
@@ -2285,6 +2294,14 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         }
         if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
         if (rf is not null) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
+        // The character panel's Spell Suppression chance again (0x1b3 with only its stats) when a condition changed
+        // it: full life lost or regained, a walk started or ended, an enemy hit 4 s ago.
+        if (Suppression(conn).Chance is var chance && chance != suppression)
+        {
+            suppression = chance;
+            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. SuppressionChanceKeys.Select(k => (k, chance))]),
+                $"0x01b3 player Spell Suppression chance {chance}%");
+        }
         if (conn.Layout.Waypoint is { } waypoint
             && Dist(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds), (waypoint.GridX, waypoint.GridY)) <= WaypointActivationRange)
             await ActivateWaypoint(remote, stream, ciphers, conn, "the player came near");
@@ -2406,12 +2423,22 @@ static int MaxResistance(ClientState conn, DamageType type) => type switch
     _ => DamageModel.DefaultMaxResistance,
 };
 
-// Spell Suppression: chance in 0..100, the damage reduction on a successful suppress (40% by default) and its lucky or
-// unlucky roll (PoB's suppressRolls).
-static (int Chance, int Effect, bool Lucky, bool Unlucky) Suppression(ClientState conn) =>
-    (Math.Min(DamageModel.SpellSuppressionChanceCap, conn.Pools.SpellSuppressionChance),
+// Spell Suppression: chance in 0..100 with the conditional passives that hold now (full life, moving, an enemy hit in the
+// last 4 s: PoB's "recently"), the damage reduction on a successful suppress (40% by default) and its lucky or unlucky
+// roll (PoB's suppressRolls).
+static (int Chance, int Effect, bool Lucky, bool Unlucky) Suppression(ClientState conn)
+{
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    bool fullLife, hitRecently;
+    lock (conn.Monsters)
+    {
+        fullLife = conn.PlayerLife > 0 && conn.PlayerLife >= conn.PlayerMaxLife;
+        hitRecently = now - conn.LastEnemyHitAt <= RecentlySeconds;
+    }
+    return (CharacterStats.SuppressionChance(conn.Pools, fullLife, moving: now < conn.Walk.ArrivesAt, hitRecently),
         Math.Max(0, conn.Pools.SpellSuppressionEffect),
         conn.Pools.SpellSuppressionLucky, conn.Pools.SpellSuppressionUnlucky);
+}
 
 static DamageType? ParseDamageType(string text) => text.ToLowerInvariant() switch
 {
@@ -3906,6 +3933,8 @@ sealed partial class Program
     // has a town (The Twilight Strand) only bit2, as in the real game.
     internal static byte DeathScreenFlags(ClientState conn) => ForceHardcore || conn.Hardcore ? (byte)0x01 : conn.LastTown == 0 ? (byte)0x04 : (byte)0x0c;
     internal const double TickSeconds = 1.0 / TickRate;
+    // PoB's "recently": the last 4 seconds.
+    internal const double RecentlySeconds = 4;
     // Shown once per connection when the client moves in lockstep (InstanceProtocol.IsLockstepMovement).
     internal const string LockstepWarning = "Your Network Mode is lockstep, which this server does not support yet: your character stays " +
         "hidden and cannot move. Set Options > Game > Network Mode to Predictive, then log out to the character screen and Play again.";
@@ -3945,6 +3974,9 @@ sealed partial class Program
     internal static readonly SkillCatalog Skills = new();
     // Stat names ↔ client keys (Stats.dat row + 1).
     internal static readonly StatCatalog Stats = new();
+    // The character panel's Spell Suppression chance stats (the client reads the final value).
+    internal static readonly uint[] SuppressionChanceKeys = [.. new[] { "spell_suppression_chance_%",
+        "base_spell_suppression_chance_%", "combined_spell_suppression_chance_%" }.Select(n => Stats.Key(n)).OfType<uint>()];
     // Item types (BaseItemTypes + data/item-types.json); loaded with the first player.
     internal static readonly ItemCatalog Items = new();
     // What dying monsters drop (ItemDrops.cs).
@@ -4379,6 +4411,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
     // Dev-only forced lucky block, on top of the stats (Svalinn's "Chance to Block is Lucky").
     public bool ForceAttackBlockLucky, ForceSpellBlockLucky;
+    // When the player last hit an enemy (attack or spell hit; Clock seconds), for "if you've hit an enemy recently".
+    // Guarded by the Monsters lock.
+    public double LastEnemyHitAt = double.NegativeInfinity;
     // Dev-only forced lucky/unlucky Spell Suppression rolls, on top of the passive stat.
     public bool ForceSpellSuppressionLucky, ForceSpellSuppressionUnlucky;
     // The character's experience (the Player component's; the level follows from it) and its allocated passives
