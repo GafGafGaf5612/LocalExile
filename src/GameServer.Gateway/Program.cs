@@ -30,6 +30,11 @@ if (!File.Exists(clientExe))
 }
 HncSender.LoadMask(File.ReadAllBytes(clientExe));
 
+// Every item sent carries its level requirement (13-items.md §2d): the client shows and checks the byte it receives.
+// Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead.
+Item.LevelRequirementOf = item => !item.Components.Contains("SkillGem") && Items.ByHash(item.TypeHash) is { } t
+    ? ItemModStats.LevelRequirement(item, t.DropLevel, Items.Mods) : 0;
+
 // Local play only by default; Game_BIND=0.0.0.0 to accept other machines (then also set Game_GATEWAY_HOST).
 var bind = IPAddress.Parse(Environment.GetEnvironmentVariable("Game_BIND") ?? "127.0.0.1");
 var listener = new TcpListener(bind, port);
@@ -1609,7 +1614,8 @@ static string? SkillEffectId(ClientState conn, ushort skillId) =>
     : GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId) is { Name: not null } g ? Skills.EffectId(g.Effect) : null;
 
 // Why the held item may not go into an equipment row: the character is below its level requirement
-// (ItemModStats.LevelRequirement). The client checks attributes before it sends the move, but not the level.
+// (ItemModStats.LevelRequirement). The client also checks it (0x1421eca50) against the level we send in the item data,
+// but the server does not trust that.
 static string? LevelTooLow(ClientState conn, byte row, Item? held)
 {
     if (held is null || !(ItemModStats.EquipmentRows.Contains(row) || row is 14 or 15)) return null;

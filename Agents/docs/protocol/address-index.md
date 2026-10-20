@@ -187,7 +187,8 @@ G = global / static data.
 | `0x141e1ee30` → `0x1424f44e0` | Fn | player Inventories component: visible equipment entries |
 | `0x1402ce5f0` | Fn | item attribute requirement check (virtual_*_for_requirements) |
 | `0x1424a6d90` | Fn | an item's requirement for one attribute (type value, flat and % item stats) ([13](13-items.md) §2d) |
-| `0x1421e03d0` | Fn | an item's level requirement → Mods +0x2bc (type level, mod level × 4 / 5, override, +) ([13](13-items.md) §2d) |
+| `0x1421e03d0` | Fn | an item's level requirement → Mods +0x2bc (type level, mod level × 4 / 5, override, +); not run for network items, which keep the sent byte ([13](13-items.md) §2d) |
+| `0x1421eca50` | Fn | can the player use this item: level (Mods +0x2bc vs Player +0x1ac), gem levels, attributes |
 | `0x141e80340`, `0x141e802d0` | Fn | Player caches: requirement attributes; UI attributes |
 | `0x1402f36c0` | Fn | item's AttributeRequirements component getter |
 | `0x141e1dce0` | Fn | InteractionAction type parser (`interaction_distance_override` → +0x1bb) |

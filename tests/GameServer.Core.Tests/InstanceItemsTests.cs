@@ -47,6 +47,13 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Mods_component_carries_the_level_requirement_after_the_item_level()
+    {
+        var item = new Item(1, ["Mods"], 0) { ItemLevel = 40, RequiredLevel = 84 };
+        Assert.StartsWith("01000000" + "0000" + "28" + "54", Convert.ToHexString(item.Payload()));
+    }
+
+    [Fact]
     public void A_rare_name_comes_before_the_explicit_list_and_only_when_identified()
     {
         var item = new Item(1, ["Mods"], 0)
