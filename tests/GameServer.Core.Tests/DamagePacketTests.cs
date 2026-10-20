@@ -55,8 +55,23 @@ public class DamagePacketTests
         var result = DamagePacket.Of(DamageType.Physical, 100, 100).Convert(conversion);
 
         Assert.Equal(0, result[DamageType.Physical].Min, 6);
-        Assert.Equal(66.667, result[DamageType.Fire].Min, 3);
-        Assert.Equal(33.333, result[DamageType.Cold].Min, 3);
+        Assert.Equal(67, result[DamageType.Fire].Min, 6);
+        Assert.Equal(33, result[DamageType.Cold].Min, 6);
+        Assert.Equal(100, result.MinTotal);
+    }
+
+    [Fact]
+    public void Skill_conversion_has_priority_over_global_conversion()
+    {
+        var conversion = new DamageConversion()
+            .AddSkill(DamageType.Physical, DamageType.Fire, 80)
+            .Add(DamageType.Physical, DamageType.Cold, 80);
+
+        var result = DamagePacket.Of(DamageType.Physical, 100, 100).Convert(conversion);
+
+        Assert.Equal(0, result[DamageType.Physical].Min, 6);
+        Assert.Equal(80, result[DamageType.Fire].Min, 6);
+        Assert.Equal(20, result[DamageType.Cold].Min, 6);
         Assert.Equal(100, result.MinTotal);
     }
 
@@ -127,6 +142,9 @@ public class DamagePacketTests
         Assert.Equal(0.5, carry, 3);
         Assert.Equal(4, second);
         Assert.Equal(0.0, carry2, 3);
+
+        var shortDot = new DamageOverTime(DamageType.Fire, 10, 0.5);
+        Assert.Equal(5, shortDot.Tick(1).Damage);
     }
 
     [Fact]

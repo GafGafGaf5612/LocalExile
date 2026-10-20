@@ -28,10 +28,14 @@ static class DamageStats
     {
         var conversion = new DamageConversion();
         int Get(string name) => catalog.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
-        void Add(string name, DamageType from, DamageType to)
+        void Add(string name, DamageType from, DamageType to, bool skill = false)
         {
             int percent = Get(name);
-            if (percent > 0) conversion.Add(from, to, percent);
+            if (percent > 0)
+            {
+                if (skill) conversion.AddSkill(from, to, percent);
+                else conversion.AddGlobal(from, to, percent);
+            }
         }
         void Gain(string name, DamageType from, DamageType to)
         {
@@ -49,7 +53,7 @@ static class DamageStats
                 string target = Slug(to);
                 Add($"{source}_damage_%_to_convert_to_{target}", from, to);
                 Add($"base_{source}_damage_%_to_convert_to_{target}", from, to);
-                Add($"skill_{source}_damage_%_to_convert_to_{target}", from, to);
+                Add($"skill_{source}_damage_%_to_convert_to_{target}", from, to, skill: true);
                 Add($"{(attack ? "attack" : "spell")}_{source}_damage_%_to_convert_to_{target}", from, to);
                 Gain($"{source}_damage_%_to_add_as_{target}", from, to);
                 Gain($"skill_{source}_damage_%_to_add_as_{target}", from, to);

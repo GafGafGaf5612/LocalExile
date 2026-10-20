@@ -1145,8 +1145,9 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
             $"{hitChance}% chance");
         return;
     }
+    int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
     var hit = weapon.HitDamage(CharacterPlayerStats(conn))
-        .Convert(ConversionFor(conn, -1, attack: true));
+        .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
     int damage = hit.RollTotal(Random.Shared);
     bool critical = conn.Pools.AttackCriticalStrikeChance > 0
         && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
@@ -1367,7 +1368,7 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         foreach (var (k, v) in Skills.EffectStats(gem.Effect, 1)) stats[k] = v;
         var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, 1),
                 name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
-            .Convert(ConversionFor(conn, gem.Effect, attack: false));
+            .Convert(ConversionFor(conn, gem.Effect, 1, attack: false));
         int damage = hit.RollTotal(Random.Shared);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
@@ -1439,11 +1440,11 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
 
 // Conversion for one hit: the player's stats plus the skill's own stats (base/skill conversion). Player stats win on
 // a key collision; the normal case is that the skill adds stats the player does not have.
-static GameServer.Core.World.DamageConversion ConversionFor(ClientState conn, int effectRow, bool attack)
+static GameServer.Core.World.DamageConversion ConversionFor(ClientState conn, int effectRow, int level, bool attack)
 {
     var stats = CharacterPlayerStats(conn);
     if (effectRow >= 0)
-        foreach (var (key, value) in Skills.EffectStats(effectRow, 1)) stats.TryAdd(key, value);
+        foreach (var (key, value) in Skills.EffectStats(effectRow, level)) stats.TryAdd(key, value);
     return DamageStats.Conversion(stats, Stats, attack);
 }
 

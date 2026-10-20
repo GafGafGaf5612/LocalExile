@@ -42,10 +42,11 @@ base skill/weapon damage by type
   → roll a whole number per type and send the life change
 ```
 
-`DamagePacket` is immutable and holds one `DamageRange` per type. `DamageConversion` holds conversion and
-gain-as-extra percentages. `DamageConversion.Apply` processes the types in the table's order, so a converted portion
-reaches the next type and can be converted again; each type's outgoing conversion is capped at 100% and scaled down
-together if the total is higher. Gains are added to the destination without reducing the source, matching the wiki's
+`DamagePacket` is immutable and holds one `DamageRange` per type. `DamageConversion` holds global conversion,
+skill conversion and gain-as-extra percentages. `DamageConversion.Apply` processes the types in the table's order, so a
+converted portion reaches the next type and can be converted again. Skill conversion is applied first; global
+conversion fills whatever remains of the 100% cap, and the final conversion for a pair is stored as a whole percent,
+as in Path of Building. Gains are added to the destination without reducing the source, matching the wiki's
 "gain as extra" rule.
 
 The same packet is used for attacks, spells and monster hits. The caller decides whether the attack-only or spell-only
@@ -61,15 +62,17 @@ stats apply; `DamageStats` reads the Stats.dat names:
 | gain as extra | `physical_damage_%_to_add_as_fire` |
 | non-chaos as chaos | `non_chaos_damage_to_add_as_chaos_damage_%` |
 
-Conditional variants ("while affected by Anger", "against frozen enemies", ...) are not read yet. Skill-specific and
-global percentages are added and then normalised by the conversion cap; the game gives skill conversion priority when
-the two together exceed 100%, which is a later refinement.
+`skill_…` stats use the skill-conversion table; `base_…`, `attack_…`, `spell_…` and the plain
+`…_damage_%_to_convert_to_…` names use the global table. Conditional variants ("while affected by Anger", "against
+frozen enemies", ...) are not read yet. Skill conversion takes precedence when skill and global conversion together
+exceed 100%, matching PoB's `buildConversionTable`.
 
 ## 3. Damage over time and ailments
 
 DoT is one damage type, has no hit, cannot critically strike and uses that type's resistance. `DamageOverTime` carries
 the damage per second, the remaining seconds and an optional ailment. `Tick(seconds, carry)` returns whole damage and
-the fraction to carry into the next server tick, so a 0.35 s tick does not lose damage.
+the fraction to carry into the next server tick, so a 0.35 s tick does not lose damage; it never runs past
+`RemainingSeconds`. Call `Advance` when applying a duration.
 
 The modelled damaging ailments are:
 
@@ -79,10 +82,12 @@ The modelled damaging ailments are:
 | Bleed | physical | 70% of the hit's physical damage per second (200% while moving is not modelled) | 5 s |
 | Poison | chaos | 30% of the hit's physical + chaos damage per second, stacking | 2 s |
 
-`Ailments.Ignite/Bleed/Poison` build the effect from a hit packet; the caller applies the DoT multiplier and the
-target's resistance. Non-damaging ailments (chill, freeze, shock), critical ailment damage, ailment chance and
-application, and ailment duration stats are not modelled yet. Righteous Fire still uses its existing per-tick
-percentage-of-life burn; it is a fire DoT but not an ignite.
+`Ailments.Ignite/Bleed/Poison` build the effect from a hit packet. Pass the **converted base packet before hit-only
+increased/more modifiers**; the method's `increasedPct`/`more` arguments are the ailment-specific multipliers, so a
+caller cannot double-count hit modifiers. For a specific hit pass its rolled packet; for expected damage pass the
+average range. The caller applies the target's resistance. Non-damaging ailments (chill, freeze, shock), critical
+ailment damage, ailment chance/application and ailment duration stats are not modelled yet. Righteous Fire still uses
+its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignite.
 
 ## 4. What the server uses now
 

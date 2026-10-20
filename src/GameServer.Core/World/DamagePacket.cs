@@ -82,7 +82,7 @@ public sealed class DamagePacket
     public static DamagePacket Of(DamageType type, DamageRange range)
     {
         var ranges = new DamageRange[5];
-        ranges[Index(type)] = range.NonNegative;
+        ranges[Index(type)] = range.Normalized.NonNegative;
         return new DamagePacket(ranges);
     }
 
@@ -120,7 +120,7 @@ public sealed class DamagePacket
     public DamagePacket Add(DamageType type, DamageRange range)
     {
         var ranges = (DamageRange[])_ranges.Clone();
-        ranges[Index(type)] = ranges[Index(type)].Add(range.NonNegative);
+        ranges[Index(type)] = ranges[Index(type)].Add(range.Normalized.NonNegative);
         return new DamagePacket(ranges);
     }
 
@@ -140,7 +140,7 @@ public sealed class DamagePacket
     {
         var ranges = new DamageRange[5];
         for (int i = 0; i < ranges.Length; i++)
-            ranges[i] = change((DamageType)i, _ranges[i]).NonNegative;
+            ranges[i] = change((DamageType)i, _ranges[i]).Normalized.NonNegative;
         return new DamagePacket(ranges);
     }
 
@@ -176,7 +176,10 @@ public sealed class DamagePacket
 /// </summary>
 public sealed class DamageConversion
 {
-    private readonly int[,] _conversion = new int[5, 5];
+    // Skill conversion takes precedence over global conversion when their sum exceeds 100%, as in PoB's
+    // buildConversionTable: skill conversion is scaled and global conversion is discarded or reduced.
+    private readonly int[,] _global = new int[5, 5];
+    private readonly int[,] _skill = new int[5, 5];
     private readonly int[,] _gain = new int[5, 5];
 
     public bool IsEmpty
@@ -185,19 +188,31 @@ public sealed class DamageConversion
         {
             for (int from = 0; from < 5; from++)
                 for (int to = 0; to < 5; to++)
-                    if (_conversion[from, to] != 0 || _gain[from, to] != 0) return false;
+                    if (_global[from, to] != 0 || _skill[from, to] != 0 || _gain[from, to] != 0) return false;
             return true;
         }
     }
 
-    /// <summary>Add a conversion, e.g. 50% of physical to fire. Throws for a conversion against the sequence.</summary>
-    public DamageConversion Add(DamageType from, DamageType to, int percent)
+    /// <summary>Add a global conversion, e.g. 50% of physical to fire. Throws for a conversion against the sequence.
+    /// Use <see cref="AddSkill"/> for a skill's own ("Skill…ConvertTo…") conversion.</summary>
+    public DamageConversion Add(DamageType from, DamageType to, int percent) => AddGlobal(from, to, percent);
+
+    /// <summary>Add a global conversion, e.g. 50% of physical to fire.</summary>
+    public DamageConversion AddGlobal(DamageType from, DamageType to, int percent) =>
+        AddTo(_global, from, to, percent);
+
+    /// <summary>Add a skill's own conversion. It is applied before global conversion and wins when both overflow
+    /// 100%, matching Path of Building's conversion table.</summary>
+    public DamageConversion AddSkill(DamageType from, DamageType to, int percent) =>
+        AddTo(_skill, from, to, percent);
+
+    private DamageConversion AddTo(int[,] table, DamageType from, DamageType to, int percent)
     {
         if (percent <= 0) return this;
         if (!DamageTypes.CanConvert(from, to))
             throw new ArgumentOutOfRangeException(nameof(to),
                 $"{from} cannot be converted to {to}; the conversion order is physical → lightning → cold → fire → chaos");
-        _conversion[(int)from, (int)to] = Math.Min(100, _conversion[(int)from, (int)to] + percent);
+        table[(int)from, (int)to] += percent;
         return this;
     }
 
@@ -213,11 +228,15 @@ public sealed class DamageConversion
         return this;
     }
 
-    public int ConversionPercent(DamageType from, DamageType to) => _conversion[(int)from, (int)to];
+    /// <summary>The raw skill + global conversion for a pair, before the 100% cap.</summary>
+    public int ConversionPercent(DamageType from, DamageType to) =>
+        _skill[(int)from, (int)to] + _global[(int)from, (int)to];
+
     public int GainPercent(DamageType from, DamageType to) => _gain[(int)from, (int)to];
 
     /// <summary>Apply conversion and gain in the game's order. Converted paths stay fractional until the caller rolls
-    /// the final packet; each type's outgoing conversion is capped at 100%.</summary>
+    /// the final packet. Per source, skill conversion is applied first; global conversion fills the remaining
+    /// percentage, and a source's total outgoing conversion is capped at 100%.</summary>
     public DamagePacket Apply(DamagePacket packet)
     {
         var incomingMin = new double[5];
@@ -230,21 +249,36 @@ public sealed class DamageConversion
             double min = source.Min + incomingMin[from];
             double max = source.Max + incomingMax[from];
 
-            double conversionTotal = 0;
-            for (int to = from + 1; to < 5; to++) conversionTotal += _conversion[from, to];
-            double conversionScale = conversionTotal > 100 ? 100.0 / conversionTotal : 1.0;
+            double skillTotal = 0, globalTotal = 0;
+            for (int to = from + 1; to < 5; to++)
+            {
+                skillTotal += _skill[from, to];
+                globalTotal += _global[from, to];
+            }
 
-            double kept = 1 - Math.Min(1, conversionTotal / 100.0);
+            double skillScale = skillTotal > 100 ? 100 / skillTotal : 1;
+            double globalScale = skillTotal > 100 ? 0
+                : globalTotal > 0 ? Math.Min(1, Math.Max(0, (100 - skillTotal) / globalTotal)) : 1;
+
+            double convertedTotal = 0;
+            var converted = new double[5];
+            for (int to = from + 1; to < 5; to++)
+            {
+                // PoB stores the final conversion as a whole percent.
+                double percent = Math.Floor(_skill[from, to] * skillScale + _global[from, to] * globalScale + 0.5);
+                converted[to] = percent;
+                convertedTotal += percent;
+            }
+            double kept = Math.Max(0, 1 - Math.Min(100, convertedTotal) / 100.0);
             result[from] = new DamageRange(min * kept, max * kept);
 
             for (int to = from + 1; to < 5; to++)
             {
-                double converted = _conversion[from, to] * conversionScale / 100.0;
                 double gained = _gain[from, to] / 100.0;
-                if (converted != 0)
+                if (converted[to] != 0)
                 {
-                    incomingMin[to] += min * converted;
-                    incomingMax[to] += max * converted;
+                    incomingMin[to] += min * converted[to] / 100.0;
+                    incomingMax[to] += max * converted[to] / 100.0;
                 }
                 if (gained != 0)
                 {
@@ -274,10 +308,13 @@ public readonly record struct DamageOverTime(
     public DamageOverTime Advance(double seconds) =>
         this with { RemainingSeconds = Math.Max(0, RemainingSeconds - Math.Max(0, seconds)) };
 
-    /// <summary>Whole damage for this tick and the fraction to carry into the next one.</summary>
+    /// <summary>Whole damage for this tick and the fraction to carry into the next one. A tick never runs past the
+    /// effect's remaining duration.</summary>
     public (int Damage, double Carry) Tick(double seconds, double carry = 0)
     {
-        double total = Math.Max(0, carry) + Math.Max(0, DamagePerSecond) * Math.Max(0, seconds);
+        if (RemainingSeconds <= 0) return (0, 0);
+        double effective = Math.Min(Math.Max(0, seconds), RemainingSeconds);
+        double total = Math.Max(0, carry) + Math.Max(0, DamagePerSecond) * effective;
         int whole = (int)Math.Truncate(total);
         return (whole, total - whole);
     }
@@ -291,17 +328,17 @@ public static class Ailments
     public const double BleedDurationSeconds = 5;
     public const double PoisonDurationSeconds = 2;
 
-    public static DamageOverTime Ignite(DamagePacket hit, double increasedPct = 0, double more = 1) =>
-        new(DamageType.Fire, hit[DamageType.Fire].Average * 0.9 * Scale(increasedPct, more),
+    public static DamageOverTime Ignite(DamagePacket baseHit, double increasedPct = 0, double more = 1) =>
+        new(DamageType.Fire, baseHit[DamageType.Fire].Average * 0.9 * Scale(increasedPct, more),
             IgniteDurationSeconds, Ailment.Ignite);
 
-    public static DamageOverTime Bleed(DamagePacket hit, double increasedPct = 0, double more = 1) =>
-        new(DamageType.Physical, hit[DamageType.Physical].Average * 0.7 * Scale(increasedPct, more),
+    public static DamageOverTime Bleed(DamagePacket baseHit, double increasedPct = 0, double more = 1) =>
+        new(DamageType.Physical, baseHit[DamageType.Physical].Average * 0.7 * Scale(increasedPct, more),
             BleedDurationSeconds, Ailment.Bleed);
 
-    public static DamageOverTime Poison(DamagePacket hit, double increasedPct = 0, double more = 1) =>
+    public static DamageOverTime Poison(DamagePacket baseHit, double increasedPct = 0, double more = 1) =>
         new(DamageType.Chaos,
-            (hit[DamageType.Physical].Average + hit[DamageType.Chaos].Average) * 0.3 * Scale(increasedPct, more),
+            (baseHit[DamageType.Physical].Average + baseHit[DamageType.Chaos].Average) * 0.3 * Scale(increasedPct, more),
             PoisonDurationSeconds, Ailment.Poison);
 
     private static double Scale(double increasedPct, double more) =>

@@ -102,12 +102,13 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   (`TickRate`), the AI runs every 500 ms. Item mods count through the global item stats; "emerge" monsters stay hidden;
   346 varieties with NPC / ControlZone / ... components are refused.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`; `DamageConversion` handles
-  the game's physical, lightning, cold, fire, chaos order, chained conversion, the 100% cap and gain-as-extra. DoT is a
-  single type with fractional tick carry, and `Ailments` has the ignite/bleed/poison base formulas. The default
-  attack, Fireball and monster melee build packets and read the player's/skill's conversion stats; packet mitigation
-  applies each type's own resistance, and the physical part then goes through armour. Righteous Fire's burn uses the
-  DoT tick model. Not yet: energy shield, penetration/exposure, added damage, increased/more support modifiers,
-  ailment application/duration and monster resistances ([20](docs/protocol/20-damage.md)).
+  the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global precedence, the 100% cap
+  and gain-as-extra. DoT is a single type with fractional tick carry, and `Ailments` has the ignite/bleed/poison base
+  formulas. The default attack, Fireball and monster melee build packets and read the player's/skill's conversion
+  stats; packet mitigation applies each type's own resistance, and the physical part then goes through armour.
+  Righteous Fire's burn uses the DoT tick model. Not yet: energy shield, penetration/exposure, added damage,
+  increased/more support modifiers, ailment application/duration and monster resistances
+  ([20](docs/protocol/20-damage.md)).
 
 ## Not working yet
 
@@ -138,7 +139,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (289 tests), `tests/GameServer.Data.Tests` (15) and
+`dotnet test tests/GameServer.Core.Tests` (290 tests), `tests/GameServer.Data.Tests` (15) and
 `tests/GameServer.Gateway.Tests` (131: inventory moves, stacks, arrival points, instance ground items and monsters,
 quests, passives, spell suppression, attack speed, critical strikes, accuracy, armour/evasion, item mods, auras,
 damage conversion and the account stash) pass.
