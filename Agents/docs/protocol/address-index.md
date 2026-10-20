@@ -276,6 +276,7 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x142192860` | Fn | ClientActor ctor: basic actions from the type's u16 list (`type+0xf8`) |
 | `0x142198d40` | Fn | AddSkill(manager, ActionTypes HASH16): basic action |
 | `0x1421932b0` | Fn | Actor slot 20 reader (f0 0x40 skill list, 0x20 skill update, …) |
+| `0x14246f900` | Fn | SkillGem: the level from the experience (thresholds from ItemExperiencePerLevel) |
 | `0x142197b10` | Fn | Actor f0 0x40: skill list |
 | `0x142198800` | Fn | Actor f0 0x20: skill update (add records, remove ids) |
 | `0x142198560` | Fn | Actor f0 0x20: remove u16 skill ids from the skill manager |
