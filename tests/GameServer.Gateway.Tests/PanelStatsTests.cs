@@ -20,7 +20,7 @@ public class PanelStatsTests
     [Fact]
     public void Every_stat_in_the_table_exists_in_Stats_dat()
     {
-        var names = PanelStats.Sums.SelectMany(s => s.Sources.Prepend(s.Display).Concat(s.PerHundredThousand ?? []));
+        var names = PanelStats.Sums.SelectMany(s => s.Sources.Concat(s.Local ?? []).Select(x => x.Name).Prepend(s.Display));
         Assert.DoesNotContain(names, n => Stats.Value.Key(n) is null);
         Assert.Equal(PanelStats.Sums.Length, PanelStats.Sums.Select(s => s.Display).Distinct().Count());
     }
@@ -76,5 +76,61 @@ public class PanelStatsTests
     {
         Assert.Empty(Compute());
         Assert.Empty(Compute(("base_avoid_stun_%", 0)));
+    }
+
+    [Fact]
+    public void Rarity_and_quantity_sum_the_item_mods()
+    {
+        var panel = Compute(("base_item_found_rarity_+%", 30), ("base_item_found_quantity_+%", 6));
+        Assert.Equal(30, panel["display_skill_increased_item_rarity_+%"]);
+        Assert.Equal(6, panel["display_skill_increased_item_quantity_+%"]);
+    }
+
+    [Fact]
+    public void Reduction_stats_count_negative()
+    {
+        var panel = Compute(("base_self_critical_strike_multiplier_-%", 20), ("action_speed_-%", 5));
+        Assert.Equal(-20, panel["extra_damage_taken_from_crit_+%"]);
+        Assert.Equal(-5, panel["intermediary_combined_action_speed_+%"]);
+    }
+
+    [Fact]
+    public void Hand_rows_add_only_their_own_weapons_local_stats()
+    {
+        var global = new Dictionary<string, int> { ["bleed_on_hit_with_attacks_%"] = 10, ["reduce_enemy_elemental_resistance_%"] = 4 };
+        var main = new Dictionary<string, int> { ["local_chance_to_bleed_on_hit_%"] = 25, ["local_fire_penetration_%"] = 6 };
+        var panel = PanelStats.Compute(n => global.GetValueOrDefault(n), n => main.GetValueOrDefault(n), _ => 0)
+            .ToDictionary(s => s.Stat, s => s.Value);
+        Assert.Equal(35, panel["virtual_total_main_hand_chance_to_bleed_on_hit_%"]);
+        Assert.Equal(10, panel["virtual_total_off_hand_chance_to_bleed_on_hit_%"]);
+        Assert.Equal(10, panel["main_hand_attack_damage_penetrates_fire_resist_%"]);
+        Assert.Equal(4, panel["off_hand_attack_damage_penetrates_fire_resist_%"]);
+    }
+
+    [Fact]
+    public void Pool_rows_add_their_stat_and_cap()
+    {
+        var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 1) with
+        {
+            BlockChanceUncapped = 70, BlockChanceMax = 75, SpellBlockChance = 20, SpellBlockChanceMax = 75, ChaosResistance = -30
+        };
+        var given = new Dictionary<string, int> { ["additional_block_chance_against_projectiles_%"] = 10,
+            ["base_spell_projectile_block_%"] = 15, ["additional_chaos_resistance_against_damage_over_time_%"] = 25 };
+        var panel = PanelStats.FromPools(n => given.GetValueOrDefault(n), pools).ToDictionary(s => s.Stat, s => s.Value);
+        Assert.Equal(75, panel["projectile_attack_block_%"]);
+        Assert.Equal(35, panel["spell_projectile_block_%"]);
+        Assert.Equal(1, panel["spell_block_differs_against_projectiles"]);
+        Assert.Equal(-5, panel["chaos_damage_over_time_resistance_%"]);
+        Assert.Empty(PanelStats.FromPools(_ => 0, pools));
+    }
+
+    [Fact]
+    public void Pool_row_stats_exist_in_Stats_dat()
+    {
+        foreach (var name in new[] { "projectile_attack_block_%", "spell_projectile_block_%", "spell_block_differs_against_projectiles",
+            "uncapped_chaos_damage_over_time_resistance_%", "chaos_damage_over_time_resistance_%",
+            "additional_block_chance_against_projectiles_%", "base_spell_projectile_block_%",
+            "additional_chaos_resistance_against_damage_over_time_%" })
+            Assert.NotNull(Stats.Value.Key(name));
     }
 }

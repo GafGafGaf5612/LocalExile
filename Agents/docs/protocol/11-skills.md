@@ -565,7 +565,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
 
 The character panel (CharacterPanelStats.dat, 387 rows) reads mostly virtual stats that the server computes; the client
 derives none of them (§4). Passives and item mods give the base form (`base_stun_recovery_+%`) while the Stun Recovery
-row reads `stun_recovery_+%`. `PanelStats` (issue #75) lists, for 74 display stats, what each one sums: the display
+row reads `stun_recovery_+%`. `PanelStats` (issue #75) lists, for about 150 display stats, what each one sums: the display
 stat's own value (Haste gives `cast_speed_+%` itself), its base form and the unconditional combined stats that apply to
 it:
 
@@ -573,22 +573,41 @@ it:
 |---|---|
 | `avoid_ignite/chill/freeze/shock_%` | `avoid_all_elemental_status_%` (Avoid Elemental Ailments) |
 | `self_*_duration_-%` (elemental ailments) | `self_elemental_status_duration_-%` |
-| `virtual_ignite/chill/freeze/shock_duration_+%` | `base_elemental_status_ailment_duration_+%`, `base_all_ailment_duration_+%`, the per-element ailment duration, `chill_and_freeze_duration_+%` |
-| `virtual_chill/shock/scorch_effect_+%` | `non_damaging_ailment_effect_+%`, `cold_` / `lightning_ailment_effect_+%` |
-| `chance_to_freeze_%`, `chance_to_shock_%` | `chance_to_freeze_shock_ignite_%` |
-| `reduce_enemy_fire/cold/lightning_resistance_%` | `reduce_enemy_elemental_resistance_%` |
+| `virtual_ignite/chill/freeze/shock/scorch/frostburn/sap_duration_+%` | `base_elemental_status_ailment_duration_+%`, `base_all_ailment_duration_+%`, the per-element ailment duration, `chill_and_freeze_duration_+%` |
+| `virtual_chill/shock/scorch/frostburn/sap_effect_+%` | `non_damaging_ailment_effect_+%`, `cold_` / `lightning_ailment_effect_+%` |
+| `chance_to_freeze_%`, `chance_to_shock_%`, the ignite chances | `chance_to_freeze_shock_ignite_%` |
+| `reduce_enemy_fire/cold/lightning_resistance_%` | `reduce_enemy_elemental_resistance_%`, `base_penetrate_elemental_resistances_%` |
 | `cast_speed_+%` | `attack_and_cast_speed_+%` (also counted in attack speed) |
 | `life/mana_leech_from_*_damage_permyriad` | the elemental leech for fire, cold, lightning; life also `horrible_ugly_life_leech_from_*_damage_perhundredthousand` ÷ 10 |
 | `virtual_life/mana/energy_shield_leech_speed_+%` | `life_mana_es_leech_speed_+%` |
-| `virtual_endurance/power_charge_duration_+%` | `charge_duration_+%`, `base_charge_duration_+%` |
+| `virtual_endurance/frenzy/power_charge_duration_+%` | `charge_duration_+%`, `base_charge_duration_+%` |
+| `display_skill_increased_item_rarity/quantity_+%` | `base_item_found_rarity/quantity_+%` |
+| `virtual_trap/mine_throwing_speed_+%` | `trap_and_mine_throwing_speed_+%` (mine: `mine_laying_speed_+%`) |
+| `minimum/maximum_*_damage_to_return_to_melee_attacker` | `*_damage_to_return_to_melee_attacker` (both ends) |
+| `extra_damage_taken_from_crit_+%` | − `base_self_critical_strike_multiplier_-%` |
+| `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
+
+**Main hand / off hand rows** (`main_hand_…` / `off_hand_…`, `virtual_total_main_hand_…`) add the global stats and that
+hand's item's own local stats (`HandLocalStats`: the active item in the first weapon set, else the second):
+`local_chance_to_bleed_on_hit_%`, `local_poison_on_hit_%`, `local_attacks_impale_on_hit_%_chance`,
+`local_chance_to_blind_on_hit_%`, `local_fire/cold/lightning/chaos/elemental_penetration_%`,
+`local_stun_threshold_reduction_+%`, `local_life/mana_gain_per_target`, `local_life/mana_leech_from_physical_damage_permyriad`
+and `local_double_damage_to_chilled_enemies`. Spell and secondary rows use the global stats only (`spells_…` where the
+game has a spell form).
+
+**Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
+`additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`
+(with `spell_block_differs_against_projectiles` 1, which shows the row), each capped at its maximum, and
+`chaos_damage_over_time_resistance_%` (and its uncapped form) = chaos resistance +
+`additional_chaos_resistance_against_damage_over_time_%`, capped at the chaos maximum. Each is sent only when its stat is set.
 
 Conditional stats (while, if, per charge, against …) are not counted. Flags (`cannot_be_frozen`, `immune_to_ignite`
 …) are 1 when any source is set; "Immune to Ignite and Shock" sets both. Only non-zero values are sent; a sum that drops
 to zero is cleared with the other stale stats (`PlayerStatsWithCleared`). A stat set with `/set_stat` keeps its value.
 `cast_speed_+%` is now the total, so `CastSpeedPct` reads only it. Which combined stats count is from the game's
-documented behaviour, not a capture. Live 2026-10-20: `/set_stat base_stun_recovery_+% 30`,
-`avoid_all_elemental_status_% 20` and `base_cannot_be_frozen 1` show on the Defence tab as Stun Recovery 30%, the four
-Avoidance rows at 20% and "Cannot be Frozen".
+documented behaviour, not a capture; the signs of the crit-taken and action speed rows are not confirmed. Live
+2026-10-20: `/set_stat base_stun_recovery_+% 30`, `avoid_all_elemental_status_% 20` and `base_cannot_be_frozen 1` show
+on the Defence tab as Stun Recovery 30%, the four Avoidance rows at 20% and "Cannot be Frozen".
 
 ## Open
 

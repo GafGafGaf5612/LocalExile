@@ -1455,7 +1455,9 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     HashSet<uint> devSet;
     lock (conn.Monsters) devSet = [.. conn.PlayerStats.Keys];
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
-    foreach (var (stat, value) in PanelStats.Compute(Get))
+    var (mainLocal, offLocal) = HandLocalStats(conn);
+    foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
+        .Concat(PanelStats.FromPools(Get, conn.Pools)))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The conditions as they are now; the player tick sends the chance again when they change.
     int suppression = Suppression(conn).Chance;
@@ -3500,6 +3502,17 @@ static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
 }
 
 // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
+// The local stats of the active main hand and off hand items (the first weapon set, else the second), for the panel's
+// hand rows (PanelStats).
+static (Dictionary<string, int> Main, Dictionary<string, int> Off) HandLocalStats(ClientState conn)
+{
+    var items = ItemsOf(conn);
+    Dictionary<string, int> Local(byte row, byte swap) =>
+        items.Items(row).Concat(items.Items(swap)).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault() is { } item
+            ? ItemModStats.Local(item, Items.Mods) : [];
+    return (Local(2, 14), Local(3, 15));
+}
+
 static WeaponProfile WeaponProfileFor(ClientState conn)
 {
     var items = ItemsOf(conn);
