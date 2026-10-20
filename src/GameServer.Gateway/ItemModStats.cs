@@ -89,16 +89,18 @@ static class ItemModStats
         return CharacterStats.Attributes(name => stats.GetValueOrDefault(name));
     }
 
-    /// <summary>An item's character level requirement: its base's drop level (or a unique's
-    /// local_level_requirement_override) raised by local_level_requirement_+, and at least 80% of the level of its
-    /// highest-level mod. Mods only raise it.</summary>
+    /// <summary>
+    /// An item's character level requirement, as the client computes it (0x1421e03d0, stored in the Mods component
+    /// +0x2bc; nothing is sent): a local_level_requirement_override wins outright; otherwise the item type's level, raised
+    /// to Mods.dat Level × 4 / 5 of every mod in all five lists, plus local_level_requirement_+, at least 0. The client
+    /// shows it in the tooltip but does not refuse an equip below it, so the server does.
+    /// </summary>
     public static int LevelRequirement(Item item, int dropLevel, ModCatalog mods)
     {
         var local = Sum([item], mods, local: true);
-        int fromBase = (local.GetValueOrDefault("local_level_requirement_override") is int over and > 0 ? over : dropLevel)
-            + Math.Max(0, local.GetValueOrDefault("local_level_requirement_+"));
-        int fromMods = item.Mods.Select(m => mods.ByHash(m.Hash)?.Level ?? 0).DefaultIfEmpty(0).Max() * 8 / 10;
-        return Math.Max(1, Math.Max(fromBase, fromMods));
+        if (local.GetValueOrDefault("local_level_requirement_override") is int over and not 0) return Math.Max(0, over);
+        int required = Math.Max(dropLevel, item.Mods.Select(m => (mods.ByHash(m.Hash)?.Level ?? 0) * 4 / 5).DefaultIfEmpty(0).Max());
+        return Math.Max(0, required + local.GetValueOrDefault("local_level_requirement_+"));
     }
 
     /// <summary>Two stat dictionaries added together (passives + items).</summary>

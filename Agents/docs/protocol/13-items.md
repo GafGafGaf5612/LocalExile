@@ -45,7 +45,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Component | Vtable | Read | Data |
 |---|---|---|---|
 | Base | `0x1435e0168` | `0x1421e69c0` | u16 ItemVisualIdentity **HASH16** (unknown → "Attempt to set visual identity to NULL"), u8 +0xc0, u8 +0xc7 flags, u16 flags (low bit0 → u8, bit1 flavour text u16, bit2 wide string, bit3 u32, bit4 wide string, bit5 u8 n × (u32, i32), bit6 nested item, bit7 u8 n × (u32 item type, compact); high bits 0-2 → +0xc4, bit4 → 2 × u32), u8 +0xc6 |
-| Mods | `0x1435df838` | `0x1421df6e0` | u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit6 incubator u16 u16 u8, bit4 → u8, bit15 → 0x1c8 record `0x1424b70c0`), base magic properties `0x142201d70` (rarity, identified, mod lists: §2a), u8, u8 |
+| Mods | `0x1435df838` | `0x1421df6e0` | u8 +0x2b8 (item level), u8 +0x2bc (the level requirement, recomputed by the client: §2d), u16 flags (bit6 incubator u16 u16 u8, bit4 → u8, bit15 → 0x1c8 record `0x1424b70c0`), base magic properties `0x142201d70` (rarity, identified, mod lists: §2a), u8, u8 |
 | Quality | `0x14363acd8` | `0x1424aec50` | u8 |
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
@@ -130,6 +130,31 @@ increases) and `local_accuracy_rating` adds flat accuracy. Weapon damage, armour
 not modelled yet, so their local mods change nothing. Verified live 2026-10-20: +20 maximum Life, +30% fire resistance
 and +25 strength on a ring, a local attack speed mod on the wand, and spell damage on the wand raising Fireball's
 damage (11-skills.md §9).
+
+## 2d. Requirements and inactive items
+
+**Nothing about requirements is sent; the client computes both kinds from the item type and the mods it receives.**
+
+- **Attributes** (`0x1424a6d90`, per attribute, read by the equip check `0x1402ce5f0`): the type's
+  AttributeRequirements value plus the item's flat requirement stats (`local_strength_and_intelligence_requirement_+` …),
+  × (100 + `local_attribute_requirements_+%` + the attribute's own %) / 100, at least 0;
+  `local_no_attribute_requirements` and `local_unique_tabula_rasa_no_requirement_or_energy_shield` make it 0. The check
+  compares it × (100 + the player's `global_item_attribute_requirements_+%`) / 100 with
+  `virtual_*_for_requirements`, and the client refuses the move itself.
+- **Level** (`0x1421e03d0`, stored in the Mods component's +0x2bc, overwriting the byte the network read put there): 0
+  for types with the flag at type data +0xcb; else `local_level_requirement_override` if non-zero; else max(the type's
+  level, Mods.dat Level × 4 / 5 for every mod in all five lists) + `local_level_requirement_+`, at least 0. The tooltip
+  shows it, but **the client does not refuse an equip below it**: the server refuses 0x2a / 0x4a into equipment rows
+  (`LevelTooLow`), and the item stays on the cursor.
+
+**Inactive items** (`ItemModStats.Inactive`): a worn item whose requirements stop being met (an attribute item taken
+off, a lower level) stays on but does nothing: no mod stats, no local weapon mods, no gem skills (their skill ids are
+kept). After each change, items that fall short are switched off one at a time, counting the attributes of every
+active item including their own, until all active items are satisfied; an inactive item comes back when the character
+and the other active items meet its requirement without its own attributes.
+
+**Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
+sent before that is gone now (`PlayerStatsWithCleared`).
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 

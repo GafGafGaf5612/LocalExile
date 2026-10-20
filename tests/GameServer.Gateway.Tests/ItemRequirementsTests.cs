@@ -81,14 +81,18 @@ public class ItemRequirementsTests
     }
 
     [Fact]
-    public void Level_requirement_mods_raise_or_override_the_base()
+    public void Level_requirement_plus_comes_after_the_80_percent_and_an_override_wins()
     {
+        // 0x1421e03d0: max(type level, mod level * 4 / 5) + local_level_requirement_+; an override ignores the mods.
         var mods = new ItemCatalog(Data()).Mods;
         var plus = mods.All.First(m => m.Stats.Any(s => s.Id == "local_level_requirement_+") && m.Level <= 1);
         var over = mods.ById("LevelRequirementOverrideUnique__7")!;
-        Item With(ModCatalog.Mod m, int v) => new(1, ["Mods"], 0) { Mods = [m.With(ModSection.Explicit, [v], Random.Shared)] };
-        Assert.Equal(15, ItemModStats.LevelRequirement(With(plus, 10), 5, mods));
-        Assert.Equal(Math.Max(7, over.Level * 8 / 10), ItemModStats.LevelRequirement(With(over, 7), 60, mods));
+        var life = mods.ById("IncreasedLife12")!;
+        Item With(params (ModCatalog.Mod Mod, int Value)[] m) =>
+            new(1, ["Mods"], 0) { Mods = [.. m.Select(x => x.Mod.With(ModSection.Explicit, [x.Value], Random.Shared))] };
+        Assert.Equal(15, ItemModStats.LevelRequirement(With((plus, 10)), 5, mods));
+        Assert.Equal(life.Level * 4 / 5 + 10, ItemModStats.LevelRequirement(With((plus, 10), (life, 50)), 5, mods));
+        Assert.Equal(7, ItemModStats.LevelRequirement(With((over, 7), (life, 50)), 60, mods));
     }
 
     static string Data()
