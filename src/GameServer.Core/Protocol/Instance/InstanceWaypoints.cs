@@ -80,11 +80,14 @@ public static class InstanceWaypoints
 /// "active"), client Render + Targetable. Like an area transition it is a tile object: the area's .tmd record gives its
 /// place, rotation, height and virtual .ao (08-area-transitions.md §5, §7).
 /// <para>HideoutDoodad (slot 22 0x141e1c550, reached through slot 17 0x1415d9920) reads u32 + u8 + u8 only when the
-/// type's HideoutDoodad data sets +0x14e; Waypoint.ot's section is empty, so it reads nothing. StateMachine as for
+/// object's data has +0x14e set: not in a town, but in a hideout it does (Buffer Underflow live 2026-10-20 without it).
+/// The u32 is the doodad's MtxTypeGameSpecific HASH32, the first u8 its variation, the second a flag (0)
+/// (<see cref="HideoutDoodad"/>, 21-hideouts.md §2). StateMachine as for
 /// monsters: u8 1 shared state, u8 0 timers, compact int "active" + u8 flags. The client plays the waypoint's look
 /// from S→C 0x4c, not from "active" (its client handler plays the "inert" animation).</para>
 /// </summary>
-public sealed record WaypointObject(int GridX, int GridY, string? Model = null, float Rotation = 0, float? Height = null, int Active = 0)
+public sealed record WaypointObject(int GridX, int GridY, string? Model = null, float Rotation = 0, float? Height = null, int Active = 0,
+    HideoutDoodad? Hideout = null)
 {
     public const string MetadataPath = "Metadata/MiscellaneousObjects/Waypoint";
 
@@ -96,6 +99,7 @@ public sealed record WaypointObject(int GridX, int GridY, string? Model = null, 
         w.I32(GridX).I32(GridY).F32(Rotation).U16(0).U8((byte)(Height is null ? 0 : 0x04)).U8(0);
         if (Height is float z) w.I32((int)MathF.Round(z / 7.8125f)).F32(z);
         if (Model is null) w.U8(0); else w.U8(1).WStr32(Model);                    // Animated
+        Hideout?.Write(w);                                                          // HideoutDoodad, in a hideout only
         w.U8(0);                                                                    // MinimapIcon flags
         w.U8(0);                                                                    // InteractionAction flags
         w.U8(1).U8(0);                                                              // StateMachine: 1 shared state, 0 timers
@@ -103,4 +107,13 @@ public sealed record WaypointObject(int GridX, int GridY, string? Model = null, 
         w.U8(0);                                                                    // tasks
         return w.ToArray();
     }
+}
+
+/// <summary>
+/// A hideout doodad's HideoutDoodad component data (reader 0x141e1c550), sent for objects in a hideout: u32 the doodad's
+/// MtxTypeGameSpecific HASH32 (its HideoutDoodads row), u8 variation (index into Variation_AOFiles), u8 flag.
+/// </summary>
+public sealed record HideoutDoodad(uint Hash, byte Variation, byte Flag = 0)
+{
+    public void Write(BlobWriter w) => w.U32(Hash).U8(Variation).U8(Flag);
 }

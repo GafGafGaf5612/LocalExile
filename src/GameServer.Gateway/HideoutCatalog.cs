@@ -13,7 +13,7 @@ static class HideoutCatalog
     public const string DefaultArea = "HideoutForest";
 
     /// <summary>A doodad of a hideout's decoration, in area grid cells; Rotation in radians (the file's r / 65536 turns).</summary>
-    public sealed record Doodad(string Name, string? Type, string? Model, int X, int Y, float Rotation, int Variation);
+    public sealed record Doodad(string Name, uint Hash, string? Type, string? Model, int X, int Y, float Rotation, int Variation);
 
     /// <summary>One hideout: Hash16 is its Hideouts.dat key (the Player component's), AreaHash16 its WorldAreas row's.</summary>
     public sealed record Hideout(int Row, ushort Hash16, string AreaId, ushort AreaHash16, string Name, IReadOnlyList<Doodad> Doodads)
@@ -41,7 +41,8 @@ static class HideoutCatalog
 
     /// <summary>The hideout's waypoint as the waypoint object (its variation's model), or null.</summary>
     public static WaypointObject? Waypoint(Hideout h) =>
-        h.First(WaypointObject.MetadataPath) is { } d ? new WaypointObject(d.X, d.Y, d.Model, d.Rotation) : null;
+        h.First(WaypointObject.MetadataPath) is { } d
+            ? new WaypointObject(d.X, d.Y, d.Model, d.Rotation, Hideout: new HideoutDoodad(d.Hash, (byte)d.Variation)) : null;
 
     public static List<Hideout> Load(string hideoutsJson, string tables)
     {
@@ -58,7 +59,7 @@ static class HideoutCatalog
                 int fv = d.GetProperty("fv").GetInt32();
                 var (type, models) = doodadTypes.GetValueOrDefault(hash);
                 string? model = models is { Length: > 0 } ? models[Math.Clamp(fv, 0, models.Length - 1)] : null;
-                doodads.Add(new Doodad(d.GetProperty("name").GetString() ?? "", type, model, d.GetProperty("x").GetInt32(), d.GetProperty("y").GetInt32(),
+                doodads.Add(new Doodad(d.GetProperty("name").GetString() ?? "", hash, type, model, d.GetProperty("x").GetInt32(), d.GetProperty("y").GetInt32(),
                     d.GetProperty("r").GetInt32() / 65536f * 2 * MathF.PI, fv));
             }
             result.Add(new Hideout(h.GetProperty("row").GetInt32(), (ushort)h.GetProperty("hash16").GetInt32(), h.GetProperty("area").GetString() ?? "",

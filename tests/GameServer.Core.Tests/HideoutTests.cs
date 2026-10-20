@@ -57,3 +57,18 @@ public class VisitHideoutTests
         Assert.Empty(unknown);
     }
 }
+
+public class HideoutWaypointTests
+{
+    [Fact]
+    public void A_hideout_waypoint_carries_its_HideoutDoodad_data_after_Animated()
+    {
+        var town = new WaypointObject(218, 335, "w.ao").Blob();
+        var hideout = new WaypointObject(218, 335, "w.ao", Hideout: new HideoutDoodad(1224707366, 5)).Blob();
+        // u32 LE MtxTypeGameSpecific HASH32 (Waypoint), u8 variation 5, u8 flag 0, right before MinimapIcon.
+        string doodad = Convert.ToHexString(BitConverter.GetBytes(1224707366u)) + "05" + "00";
+        // After Animated: MinimapIcon, InteractionAction, StateMachine (1 state, 0 timers, "active" 0, flags), tasks.
+        string t = Convert.ToHexString(town);
+        Assert.Equal(t[..^14] + doodad + t[^14..], Convert.ToHexString(hideout));
+    }
+}
