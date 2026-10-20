@@ -561,6 +561,35 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   reservation efficiency and aura effect. Area changes recreate the player object, so `SendPlayer` puts the
   running auras' buffs back on it.
 
+## 14. Character panel sums
+
+The character panel (CharacterPanelStats.dat, 387 rows) reads mostly virtual stats that the server computes; the client
+derives none of them (§4). Passives and item mods give the base form (`base_stun_recovery_+%`) while the Stun Recovery
+row reads `stun_recovery_+%`. `PanelStats` (issue #75) lists, for 74 display stats, what each one sums: the display
+stat's own value (Haste gives `cast_speed_+%` itself), its base form and the unconditional combined stats that apply to
+it:
+
+| Display | Also counts |
+|---|---|
+| `avoid_ignite/chill/freeze/shock_%` | `avoid_all_elemental_status_%` (Avoid Elemental Ailments) |
+| `self_*_duration_-%` (elemental ailments) | `self_elemental_status_duration_-%` |
+| `virtual_ignite/chill/freeze/shock_duration_+%` | `base_elemental_status_ailment_duration_+%`, `base_all_ailment_duration_+%`, the per-element ailment duration, `chill_and_freeze_duration_+%` |
+| `virtual_chill/shock/scorch_effect_+%` | `non_damaging_ailment_effect_+%`, `cold_` / `lightning_ailment_effect_+%` |
+| `chance_to_freeze_%`, `chance_to_shock_%` | `chance_to_freeze_shock_ignite_%` |
+| `reduce_enemy_fire/cold/lightning_resistance_%` | `reduce_enemy_elemental_resistance_%` |
+| `cast_speed_+%` | `attack_and_cast_speed_+%` (also counted in attack speed) |
+| `life/mana_leech_from_*_damage_permyriad` | the elemental leech for fire, cold, lightning; life also `horrible_ugly_life_leech_from_*_damage_perhundredthousand` ÷ 10 |
+| `virtual_life/mana/energy_shield_leech_speed_+%` | `life_mana_es_leech_speed_+%` |
+| `virtual_endurance/power_charge_duration_+%` | `charge_duration_+%`, `base_charge_duration_+%` |
+
+Conditional stats (while, if, per charge, against …) are not counted. Flags (`cannot_be_frozen`, `immune_to_ignite`
+…) are 1 when any source is set; "Immune to Ignite and Shock" sets both. Only non-zero values are sent; a sum that drops
+to zero is cleared with the other stale stats (`PlayerStatsWithCleared`). A stat set with `/set_stat` keeps its value.
+`cast_speed_+%` is now the total, so `CastSpeedPct` reads only it. Which combined stats count is from the game's
+documented behaviour, not a capture. Live 2026-10-20: `/set_stat base_stun_recovery_+% 30`,
+`avoid_all_elemental_status_% 20` and `base_cannot_be_frozen 1` show on the Defence tab as Stun Recovery 30%, the four
+Avoidance rows at 20% and "Cannot be Frozen".
+
 ## Open
 
 - Attacks still land at half the attack time: use the attack animations' contact keyframes (data/animation-contacts.json)

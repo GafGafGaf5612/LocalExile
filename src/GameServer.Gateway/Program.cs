@@ -1451,6 +1451,12 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
         foreach (uint key in StatKeys.AttackSpeedInputs)
             devAttackSpeed += conn.PlayerStats.GetValueOrDefault(key);
     stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
+    // The character panel's sums of base forms (PanelStats); a stat /set_stat set keeps its value.
+    HashSet<uint> devSet;
+    lock (conn.Monsters) devSet = [.. conn.PlayerStats.Keys];
+    int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+    foreach (var (stat, value) in PanelStats.Compute(Get))
+        if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The conditions as they are now; the player tick sends the chance again when they change.
     int suppression = Suppression(conn).Chance;
     foreach (uint key in SuppressionChanceKeys) stats[key] = suppression;
@@ -1881,7 +1887,7 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
     // Attack speed passives, conditional on the equipped weapon shape as in PoB's ModFlags: generic, melee,
     // one-/two-handed melee, all one-handed, the weapon families, shields and dual wielding. Minion, totem and
     // timed/conditional stats are not player attack speed here.
-    int attackSpeed = Get("attack_speed_+%")
+    int attackSpeed = Get("attack_speed_+%") + Get("attack_and_cast_speed_+%")
         + (weapons.Melee ? Get("melee_attack_speed_+%") : 0)
         + (weapons.OneHandMelee ? Get("one_handed_melee_attack_speed_+%") : 0)
         + (weapons.TwoHandMelee ? Get("two_handed_melee_attack_speed_+%") : 0)
@@ -2284,8 +2290,9 @@ static bool PayMana(ClientState conn, int effect, out uint cost)
 // A cast's time in ms: the effect's CastTime scaled by the player's increased cast speed.
 static int CastMs(ClientState conn, int effect) => (int)Math.Round(Skills.CastMs(effect) / (1 + CastSpeedPct(CharacterPlayerStats(conn)) / 100.0));
 
+// cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
 static int CastSpeedPct(IReadOnlyDictionary<uint, int> stats) =>
-    (Stats.Key("base_cast_speed_+%") is uint a ? stats.GetValueOrDefault(a) : 0) + (Stats.Key("cast_speed_+%") is uint b ? stats.GetValueOrDefault(b) : 0);
+    Stats.Key("cast_speed_+%") is uint k ? stats.GetValueOrDefault(k) : 0;
 
 // Righteous Fire (GrantedEffects RighteousFire): casting it puts the righteous_fire buff (BuffDefinitions row 12: the
 // flames around the player, BuffVisuals 15) on the player with S→C 0x1c1. While it lasts the player burns for 90% of
