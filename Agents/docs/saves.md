@@ -38,7 +38,7 @@ none of it is. An item is never lost between its two places, nor counted in both
 | Change | In one transaction (`ItemMoves`, Program.cs) |
 |---|---|
 | Stash → cursor (C→S 0x28), stash → inventory (0xe3) | out of the tab, the last tab, onto the cursor / into the inventory |
-| Inventory → stash (0xe0) | out of the inventory, into the tab, the last tab |
+| Inventory → stash (0xe0) | out of the inventory, into the tab (a slotted tab: the item's slot), the last tab |
 | Held item into a tab (0x2a): merge, Shift-place one, swap | the tab's stack or item, the cursor |
 | Split a tab's stack (0x7c) | the tab's stack, the split-off part on the cursor |
 | Buy from an NPC (0x88) | the price off the inventory's stacks, the item in |
@@ -113,5 +113,6 @@ header until its first save, which gives every tab its row.
 `ItemMovesTests` (every change above, each with a write made to fail part-way, then both saves loaded again; a control
 test shows the same failure without a transaction loses the item), `ProgressSaveTests` (quest flags, waypoints, level,
 unknown fields and items), `UnsavedProgressTests` (experience and flask charges kept in memory and saved),
-`StashRowsTests` (one tab per write, imported stashes), `SaleImprintTests` (the sell window) and, in the Core tests,
+`StashRowsTests` (one tab per write, imported stashes), `SaleImprintTests` (the sell window), `StashRulesTests` (what
+each tab holds, slots, the repair at load) and, in the Core tests,
 `SqliteAccountStoreTests` (accounts, deletion with its save, the import).

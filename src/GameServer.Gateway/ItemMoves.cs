@@ -31,8 +31,9 @@ static class ItemMoves
         return items.Put(Main, taken with { X = cell.X, Y = cell.Y });
     });
 
-    /// <summary>An item out of whichever inventory holds it into a stash tab's first free cell (C→S 0xe0), with a stash id.
-    /// Returns the row it left and the item as placed, or null with the reason (nothing changes).</summary>
+    /// <summary>An item out of whichever inventory holds it into a stash tab's first free cell (C→S 0xe0; a slotted tab:
+    /// its slot), with a stash id. Returns the row it left and the item as placed, or null with the reason (nothing
+    /// changes): the tab doesn't hold it, or it is full.</summary>
     public static (byte From, InventoryItem Removed, InventoryItem Placed)? InventoryToStash(AccountStash stash, PlayerInventories items, int tab,
         uint itemId, Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
     {
@@ -43,13 +44,13 @@ static class ItemMoves
             if (items.RowOf(itemId) is not byte from || items.Items(from).FirstOrDefault(i => i.Id == itemId) is not { } item)
             { reason = "the item is not in the inventories"; return null; }
             if (shapeOf(item.Item) is not { } shape) { reason = "unknown item type"; return null; }
-            if (stash.FreeCell(tab, shape.Width, shape.Height, shapeOf) is not { } cell) { reason = "the tab is full"; return null; }
+            if (!stash.Holds(tab, item.Item.TypeHash)) { reason = $"the {stash.TypeOf(tab)} tab doesn't hold that item"; return null; }
+            // A free place (a slotted tab: the item's slot, which must be empty), so nothing is swapped out.
+            if (stash.FreeCell(tab, shape.Width, shape.Height, shapeOf) is not { } cell || !stash.IsFree(tab, cell.X, cell.Y, item.Item, shapeOf))
+            { reason = "the tab is full"; return null; }
             var removed = items.Remove(from, itemId)!;
-            if (stash.Place(tab, cell.X, cell.Y, removed, shapeOf, out reason) is not var (placed, _))
-            {
-                items.Put(from, removed);   // in the same transaction: nothing changes
-                return null;
-            }
+            if (stash.Place(tab, cell.X, cell.Y, removed, shapeOf, out reason) is not (var placed, null))
+                throw new InvalidOperationException($"stash tab {tab} refused item {itemId} at a free place: {reason}");
             stash.SetLastTab(tab);
             return (from, removed, placed);
         });
@@ -81,10 +82,10 @@ static class ItemMoves
                 return new StashPlacement(stack, held, items.SetStackSize(Cursor, held.Id, held.Item.StackSize - moved), null, Merged: true, One: one);
             if (one)
             {
-                if (stash.Inventory(tab).Items.Any(i => shapeOf(i.Item) is { } s && i.X <= x && x < i.X + s.Width && i.Y <= y && y < i.Y + s.Height))
-                { reason = "something in the way"; return null; }
+                // Into an empty place only (a slotted tab: its slot), so nothing is swapped out.
+                if (!stash.IsFree(tab, x, y, held.Item, shapeOf)) { reason = "something in the way, or the tab doesn't hold it"; return null; }
                 var single = new InventoryItem(items.NewItemId(), 0, 0, held.Item with { StackSize = 1 });
-                if (stash.Place(tab, x, y, single, shapeOf, out reason) is not var (put, _)) return null;
+                if (stash.Place(tab, x, y, single, shapeOf, out reason) is not (var put, null)) throw new InvalidOperationException($"stash tab {tab}: one item into a free place refused: {reason}");
                 return new StashPlacement(put, held, items.SetStackSize(Cursor, held.Id, held.Item.StackSize - 1), null, Merged: false, One: true);
             }
             if (stash.Place(tab, x, y, held, shapeOf, out reason) is not var (placed, displaced)) return null;

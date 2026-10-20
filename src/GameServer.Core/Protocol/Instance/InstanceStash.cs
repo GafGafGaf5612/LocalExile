@@ -163,6 +163,28 @@ public static class InstanceStash
     }
 
     public const int TakeFromTabLength = 12;
+
+    public const ushort SetAffinitiesId = 0xd3;
+
+    /// <summary>C→S 0xd3: the tab settings' affinities, confirmed (the window's check mark).</summary>
+    public sealed record SetAffinities(ushort Tab, byte Kind, IReadOnlyList<(byte Affinity, bool On)> Changes);
+
+    /// <summary>
+    /// C→S 0xd3 (class 0x1435c0338, read 0x141f96f70, write 0x141f96da0; built by 0x1421674c0): u16 BE tab, u8 kind, u8 n,
+    /// n × (u8 affinity, u8 on). Live 2026-10-20 on the Currency tab (index 5): <c>00D3 0005 00 01 03 01</c> (Currency on).
+    /// </summary>
+    public static SetAffinities ReadSetAffinities(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        ushort tab = r.U16();
+        byte kind = r.U8();
+        var changes = new List<(byte, bool)>();
+        for (int i = 0, n = r.U8(); i < n; i++) changes.Add((r.U8(), r.U8() != 0));
+        return new(tab, kind, changes);
+    }
+
+    /// <summary>The length of a C→S 0xd3 at the start of <paramref name="m"/>, or null until its count arrived.</summary>
+    public static int? SetAffinitiesLength(ReadOnlySpan<byte> m) => m.Length < 6 ? null : 6 + 2 * m[5];
 }
 
 /// <summary>

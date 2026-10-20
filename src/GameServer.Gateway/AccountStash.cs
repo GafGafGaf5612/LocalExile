@@ -23,7 +23,9 @@ sealed class AccountStash
 
     public static uint InventoryId(int tab) => FirstInventoryId + (uint)tab;
 
-    public sealed record SavedTab(string Name, byte Type, byte R, byte G, byte B, List<CharacterSaves.SavedPlacement> Items);
+    /// <summary>A tab: name, StashType row, colour, items, and its affinities (a bitset of StashTabAffinityId rows, set in the
+    /// tab settings, C→S 0xd3).</summary>
+    public sealed record SavedTab(string Name, byte Type, byte R, byte G, byte B, List<CharacterSaves.SavedPlacement> Items, uint Affinities = 0);
 
     public sealed record Save(List<SavedTab> Tabs, int LastTab = 0, uint NextItemId = FirstItemId, uint Gold = 0)
     {
@@ -73,6 +75,7 @@ sealed class AccountStash
     Dictionary<string, JsonElement>? _unknown;  // fields of a newer build's save, written back as they are
     bool _stale;  // dropped after a failed save: the database has the stash as it is
     bool _itemsInHeader;  // loaded from a stash saved before tabs had rows: the next save writes every tab
+    StashRules _rules = new();  // what each tab type holds (the catalog's)
 
     AccountStash(string account) => _account = account;
 
@@ -81,7 +84,7 @@ sealed class AccountStash
     public static AccountStash For(string account, ItemCatalog catalog) =>
         ByAccount.GetOrAdd(account, name =>
         {
-            var stash = new AccountStash(name) { _mods = catalog.Mods };
+            var stash = new AccountStash(name) { _mods = catalog.Mods, _rules = catalog.Stash };
             var save = Load(name);
             var headers = save?.Tabs ?? [.. StarterTabs];
             for (int i = 0; i < headers.Count; i++)
@@ -102,6 +105,8 @@ sealed class AccountStash
             stash._gold = save?.Gold ?? 0;
             stash._unknown = save?.Unknown;
             if (save is null) stash.Persist([.. Enumerable.Range(0, stash._tabs.Count)]);
+            else if (stash.Repair(i => catalog.ByHash(i.TypeHash) is { } t ? new PlayerInventories.Shape(t.Width, t.Height, t.Class) : null) is { Count: > 0 } repaired)
+                stash.Persist([.. repaired]);
             return stash;
         });
 
@@ -176,6 +181,24 @@ sealed class AccountStash
         Persist();
     }
 
+    /// <summary>Turns tab affinities on or off (the tab settings' check mark, C→S 0xd3; rows of StashTabAffinityId, up to
+    /// 31). Returns the tab's affinities after, or null when there is no such tab.</summary>
+    public uint? SetAffinities(int tab, IEnumerable<(byte Affinity, bool On)> changes)
+    {
+        uint now;
+        lock (_lock)
+        {
+            if (tab < 0 || tab >= _tabs.Count) return null;
+            now = _tabs[tab].Saved.Affinities;
+            foreach (var (affinity, on) in changes.Where(c => c.Affinity is > 0 and < 32))
+                now = on ? now | 1u << affinity : now & ~(1u << affinity);
+            if (now == _tabs[tab].Saved.Affinities) return now;
+            _tabs[tab].Saved = _tabs[tab].Saved with { Affinities = now };
+        }
+        Persist();
+        return now;
+    }
+
     /// <summary>The tab of a stash inventory id, or null.</summary>
     public int? TabOf(uint inventoryId)
     {
@@ -192,7 +215,7 @@ sealed class AccountStash
             return [.. _tabs.Select((t, i) => new InstanceStash.Tab((ushort)i, t.Saved.Name, InventoryId(i), t.Saved.Type,
                 t.Saved.R, t.Saved.G, t.Saved.B,
                 Flags: t.Saved.Type is 1 or 7 ? InstanceStash.TabFlags.Premium : InstanceStash.TabFlags.None,
-                Position: (ushort)i, Affinities: selectBit is int b && i == _lastTab ? 1u << b : 0,
+                Position: (ushort)i, Affinities: t.Saved.Affinities | (selectBit is int b && i == _lastTab ? 1u << b : 0),
                 Loaded: loaded?.Contains(i) ?? false, Id: $"{i + 1:x8}"))];
     }
 
@@ -229,8 +252,37 @@ sealed class AccountStash
         return it;
     }
 
-    /// <summary>The item put into a tab at (x, y), and the one item it was dropped on (taken out, for the cursor), or null
-    /// with the reason: outside the grid or more than one item in the way.</summary>
+    /// <summary>Whether a tab holds items of this type (<see cref="StashRules"/>: a special tab only its own kind).</summary>
+    public bool Holds(int tab, uint itemType)
+    {
+        lock (_lock) return tab >= 0 && tab < _tabs.Count && _rules.Holds(_tabs[tab].Saved.Type, itemType);
+    }
+
+    // Where an item goes in a tab: (x, y) itself in a grid tab, its own slot (slot, 0) in a slotted one (dropped anywhere
+    // on the tab, it goes there); null when the tab doesn't hold it or has no slot for it.
+    (int X, int Y)? CellIn(TabState t, Item item, int x, int y, out string why)
+    {
+        why = "";
+        if (!_rules.Holds(t.Saved.Type, item.TypeHash)) { why = $"the {TypeName(t)} tab doesn't hold that item"; return null; }
+        if (!_rules.Slotted(t.Saved.Type)) return (x, y);
+        if (_rules.SlotOf(t.Saved.Type, item.TypeHash) is not int slot) { why = $"the {TypeName(t)} tab has no slot for that item"; return null; }
+        return (slot, 0);
+    }
+
+    static string TypeName(TabState t) => Types.TryGetValue(t.Saved.Type, out var n) ? n.Name : $"type {t.Saved.Type}";
+
+    // The items covering an item of this shape at (x, y): in a slotted tab, the item in that slot.
+    List<InventoryItem> InTheWay(TabState t, int x, int y, PlayerInventories.Shape shape, Func<Item, PlayerInventories.Shape?> shapeOf) =>
+        _rules.Slotted(t.Saved.Type)
+            ? [.. t.Items.Where(i => i.X == x && i.Y == y)]
+            : [.. t.Items.Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height)];
+
+    // How many of an item one cell of the tab holds: a currency tab's slot more than the item's own stack.
+    int MaxStack(TabState t, Item item, PlayerInventories.Shape shape) => _rules.MaxStack(t.Saved.Type, item.TypeHash) ?? shape.MaxStack;
+
+    /// <summary>The item put into a tab at (x, y) (in a slotted tab, its own slot), and the one item it was dropped on
+    /// (taken out, for the cursor), or null with the reason: the tab doesn't hold it, outside the grid or more than one
+    /// item in the way.</summary>
     public (InventoryItem Placed, InventoryItem? Displaced)? Place(int tab, int x, int y, InventoryItem held,
         Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
     {
@@ -241,8 +293,10 @@ sealed class AccountStash
             if (tab < 0 || tab >= _tabs.Count) { why = "no such tab"; return null; }
             var t = _tabs[tab];
             if (shapeOf(held.Item) is not { } shape) { why = "unknown item type"; return null; }
-            if (x < 0 || y < 0 || x + shape.Width > t.Grid.W || y + shape.Height > t.Grid.H) { why = "outside the grid"; return null; }
-            var inTheWay = t.Items.Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height).ToList();
+            if (CellIn(t, held.Item, x, y, out why) is not var (cx, cy)) return null;
+            (x, y) = (cx, cy);
+            if (x < 0 || y < 0 || (!_rules.Slotted(t.Saved.Type) && (x + shape.Width > t.Grid.W || y + shape.Height > t.Grid.H))) { why = "outside the grid"; return null; }
+            var inTheWay = InTheWay(t, x, y, shape, shapeOf);
             if (inTheWay.Count > 1) { why = $"{inTheWay.Count} items in the way"; return null; }
             InventoryItem? displaced = null;
             if (inTheWay.Count == 1)
@@ -260,9 +314,10 @@ sealed class AccountStash
     }
 
     /// <summary>
-    /// The held stack put on a stack of its type with room at (x, y) in a tab: that stack grows by what fits (up to the
-    /// type's max; at most <paramref name="most"/>) and is returned with how many moved; null (nothing changes) when there
-    /// is no such stack. A full stack becomes its full-stack item (<see cref="PlayerInventories.Completed"/>).
+    /// The held stack put on a stack of its type with room at (x, y) in a tab (in a slotted tab, its own slot): that stack
+    /// grows by what fits (up to the tab's max for the type; at most <paramref name="most"/>) and is returned with how many
+    /// moved; null (nothing changes) when there is no such stack. In a grid tab a full stack becomes its full-stack item
+    /// (<see cref="PlayerInventories.Completed"/>).
     /// </summary>
     public (InventoryItem Stack, int Moved)? Merge(int tab, int x, int y, InventoryItem held, Func<Item, PlayerInventories.Shape?> shapeOf,
         int most = int.MaxValue)
@@ -271,12 +326,14 @@ sealed class AccountStash
         lock (_lock)
         {
             if (tab < 0 || tab >= _tabs.Count || shapeOf(held.Item) is not { MaxStack: > 1 } shape) return null;
-            var items = _tabs[tab].Items;
-            var inTheWay = items.Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height).ToList();
-            if (inTheWay is not [var under] || under.Item.TypeHash != held.Item.TypeHash || under.Item.StackSize >= shape.MaxStack) return null;
-            int moved = Math.Min(Math.Min(held.Item.StackSize, most), shape.MaxStack - under.Item.StackSize);
-            var grown = PlayerInventories.Completed(under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } }, shape);
-            items[items.IndexOf(under)] = grown;
+            var t = _tabs[tab];
+            if (CellIn(t, held.Item, x, y, out _) is not var (cx, cy)) return null;
+            int max = MaxStack(t, held.Item, shape);
+            if (InTheWay(t, cx, cy, shape, shapeOf) is not [var under] || under.Item.TypeHash != held.Item.TypeHash || under.Item.StackSize >= max) return null;
+            int moved = Math.Min(Math.Min(held.Item.StackSize, most), max - under.Item.StackSize);
+            var bigger = under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } };
+            var grown = _rules.Slotted(t.Saved.Type) ? bigger : PlayerInventories.Completed(bigger, shape);
+            t.Items[t.Items.IndexOf(under)] = grown;
             result = (grown, moved);
         }
         Persist(tab);
@@ -315,6 +372,53 @@ sealed class AccountStash
         return null;
     }
 
+    /// <summary>Whether an item dropped at (x, y) (in a slotted tab: into its slot) would land in an empty place.</summary>
+    public bool IsFree(int tab, int x, int y, Item item, Func<Item, PlayerInventories.Shape?> shapeOf)
+    {
+        lock (_lock)
+            return tab >= 0 && tab < _tabs.Count && shapeOf(item) is { } shape && CellIn(_tabs[tab], item, x, y, out _) is var (cx, cy)
+                && InTheWay(_tabs[tab], cx, cy, shape, shapeOf).Count == 0;
+    }
+
+    // Items a special tab can't hold (or a slotted tab holds outside their slot) can't be seen or taken there: the client
+    // only draws a special tab's own items. At load they go into their slot, else into the first normal tab with room.
+    // Returns the tabs that changed.
+    List<int> Repair(Func<Item, PlayerInventories.Shape?> shapeOf)
+    {
+        var changed = new List<int>();
+        for (int tab = 0; tab < _tabs.Count; tab++)
+        {
+            var t = _tabs[tab];
+            // Without the tables there is nothing to check a special tab against, except a tab that shows nothing.
+            if (StashRules.IsGrid(t.Saved.Type) || (!_rules.Loaded && !StashRules.NotShown(t.Saved.Type))) continue;
+            foreach (var it in t.Items.ToList())
+            {
+                if (CellIn(t, it.Item, it.X, it.Y, out _) is var (sx, sy) && (sx, sy) == (it.X, it.Y)) continue;
+                t.Items.Remove(it);
+                if (CellIn(t, it.Item, 0, 0, out _) is var (cx, cy) && !t.Items.Any(i => i.X == cx && i.Y == cy))
+                {
+                    t.Items.Add(it with { X = (byte)cx, Y = (byte)cy });
+                    Console.WriteLine($"[gateway] stash of {_account}: item {it.Id} moved into its slot {cx} of tab {tab}");
+                    changed.Add(tab);
+                    continue;
+                }
+                var shape = shapeOf(it.Item) ?? new(1, 1, "");
+                var home = Enumerable.Range(0, _tabs.Count).Where(i => StashRules.IsGrid(_tabs[i].Saved.Type))
+                    .Select(i => (Tab: i, Cell: FreeCellIn(_tabs[i], shape.Width, shape.Height, shapeOf))).FirstOrDefault(h => h.Cell is not null);
+                if (home.Cell is not { } cell)
+                {
+                    t.Items.Add(it);   // nowhere to put it: it stays saved where it is
+                    Console.WriteLine($"[gateway] stash of {_account}: item {it.Id} can't be shown in tab {tab} and no normal tab has room for it; it stays there");
+                    continue;
+                }
+                _tabs[home.Tab].Items.Add(it with { X = cell.X, Y = cell.Y });
+                Console.WriteLine($"[gateway] stash of {_account}: item {it.Id} can't be shown in the {TypeName(t)} tab {tab}; moved to tab {home.Tab} at ({cell.X}, {cell.Y})");
+                changed.Add(tab);
+                changed.Add(home.Tab);
+            }
+        }
+        return [.. changed.Distinct()];
+    }
     /// <summary>A fresh stash item id.</summary>
     public uint NewItemId() { lock (_lock) return _nextItemId++; }
 

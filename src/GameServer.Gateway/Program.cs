@@ -486,6 +486,8 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         }
         else if (id == InstanceStash.MoveToTabId)
             await MoveToStash(remote, stream, ciphers, conn, InstanceStash.ReadMoveToTab(bytes));
+        else if (id == InstanceStash.SetAffinitiesId)
+            await SetTabAffinities(remote, stream, ciphers, conn, InstanceStash.ReadSetAffinities(bytes));
         else if (id == InstanceStash.TakeFromTabId)
         {
             var (tab, item, a, b, c, d) = InstanceStash.ReadTakeFromTab(bytes);
@@ -4768,6 +4770,18 @@ static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionC
         $"0x00bf stash tab {tab}: remove item {itemId}");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
         items.NextRevision(PlayerInventories.MainInventory), [], [placed]), $"0x00bf inventory 1: add item {placed.Id} at ({placed.X}, {placed.Y}) (from the stash)");
+}
+
+// C→S 0xd3: the tab settings' affinities, confirmed: saved with the tab, and the tab list again (S→C 0x136), which the
+// settings window waits for.
+static async Task SetTabAffinities(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.SetAffinities set)
+{
+    var stash = StashOf(conn);
+    uint? now = set.Kind == InstanceStash.Personal ? stash.SetAffinities(set.Tab, set.Changes) : null;
+    Console.WriteLine($"[gateway] {remote} <= 0x00d3 stash tab {set.Tab} affinities [{string.Join(", ", set.Changes.Select(c => $"{c.Affinity}={(c.On ? "on" : "off")}"))}]" +
+        (now is uint bits ? $": now 0x{bits:x}" : ": refused (no such personal tab)"));
+    var tabs = stash.Records(null, conn.StashTabsSent);
+    await Send(remote, stream, ciphers, InstanceStash.TabList(tabs), $"0x0136 stash tab list again ({tabs.Count} tabs, after the affinities)");
 }
 
 // The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
