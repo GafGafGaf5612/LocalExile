@@ -1608,6 +1608,16 @@ static string? SkillEffectId(ClientState conn, ushort skillId) =>
     skillId == SkillCatalog.FirstSkillId ? Environment.GetEnvironmentVariable("Game_PLAYER_ATTACK") ?? "PlayerMelee"
     : GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId) is { Name: not null } g ? Skills.EffectId(g.Effect) : null;
 
+// Why the held item may not go into an equipment row: the character is below its level requirement
+// (ItemModStats.LevelRequirement). The client checks attributes before it sends the move, but not the level.
+static string? LevelTooLow(ClientState conn, byte row, Item? held)
+{
+    if (held is null || !(ItemModStats.EquipmentRows.Contains(row) || row is 14 or 15)) return null;
+    if (Items.ByHash(held.TypeHash) is not { } t) return null;
+    int needs = ItemModStats.LevelRequirement(held, t.DropLevel, Items.Mods);
+    return conn.Pools.Level < needs ? $"{t.Name} requires level {needs} (character is {conn.Pools.Level})" : null;
+}
+
 // A worn item whose requirements are not met (CharacterStatSources): its mods and gems do nothing.
 static bool IsInactive(ClientState conn, uint itemId) => InactiveItems.GetValueOrDefault(CharacterName(conn))?.Contains(itemId) == true;
 
@@ -3760,7 +3770,10 @@ static async Task HeldOntoItem(string remote, NetworkStream stream, ConnectionCi
         return;
     }
     string why = "unknown inventory";
-    var done = PlayerInventories.Row(a.InventoryId) is byte row ? items.MergeOnto(row, a.ItemId, ShapeOf, out why, OneOf(a)) : null;
+    var done = PlayerInventories.Row(a.InventoryId) is byte row
+        ? LevelTooLow(conn, row, items.Items(PlayerInventories.Cursor).FirstOrDefault()?.Item) is { } low ? null : items.MergeOnto(row, a.ItemId, ShapeOf, out why, OneOf(a))
+        : null;
+    if (done is null && PlayerInventories.Row(a.InventoryId) is byte lr && LevelTooLow(conn, lr, items.Items(PlayerInventories.Cursor).FirstOrDefault()?.Item) is { } tooLow) why = tooLow;
     if (done is null)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a}: refused ({why}): {hex}");
@@ -3810,8 +3823,10 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
     if (place.A != 0) Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: one of the held stack (Shift)");
     PlayerInventories.Placement? done = null;
     string why = "unknown inventory";
-    if (PlayerInventories.Row(place.InventoryId) is byte row)
-        done = items.Place(row, (int)place.X, (int)place.Y, ShapeOf, out why, one: place.A != 0);
+    if (PlayerInventories.Row(place.InventoryId) is byte row && LevelTooLow(conn, row, items.Items(PlayerInventories.Cursor).FirstOrDefault()?.Item) is { } low)
+        why = low;
+    else if (PlayerInventories.Row(place.InventoryId) is byte r)
+        done = items.Place(r, (int)place.X, (int)place.Y, ShapeOf, out why, one: place.A != 0);
     if (done is null)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: refused ({why})");

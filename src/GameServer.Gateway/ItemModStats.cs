@@ -89,14 +89,16 @@ static class ItemModStats
         return CharacterStats.Attributes(name => stats.GetValueOrDefault(name));
     }
 
-    /// <summary>An item's character level requirement: its base's drop level, raised by its mods'
-    /// local_level_requirement_+ and lowered by local_level_requirement_-, or a local_level_requirement_override.
-    /// A mod's Mods.dat Level is the item level it needs to roll, not a requirement of the character.</summary>
+    /// <summary>An item's character level requirement: its base's drop level (or a unique's
+    /// local_level_requirement_override) raised by local_level_requirement_+, and at least 80% of the level of its
+    /// highest-level mod. Mods only raise it.</summary>
     public static int LevelRequirement(Item item, int dropLevel, ModCatalog mods)
     {
         var local = Sum([item], mods, local: true);
-        if (local.GetValueOrDefault("local_level_requirement_override") is int over and > 0) return over;
-        return Math.Max(1, dropLevel + local.GetValueOrDefault("local_level_requirement_+") - local.GetValueOrDefault("local_level_requirement_-"));
+        int fromBase = (local.GetValueOrDefault("local_level_requirement_override") is int over and > 0 ? over : dropLevel)
+            + Math.Max(0, local.GetValueOrDefault("local_level_requirement_+"));
+        int fromMods = item.Mods.Select(m => mods.ByHash(m.Hash)?.Level ?? 0).DefaultIfEmpty(0).Max() * 8 / 10;
+        return Math.Max(1, Math.Max(fromBase, fromMods));
     }
 
     /// <summary>Two stat dictionaries added together (passives + items).</summary>
