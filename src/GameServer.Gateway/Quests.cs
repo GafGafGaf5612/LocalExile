@@ -37,6 +37,18 @@ static class Quests
     /// (0x14216c840; 21-hideouts.md §1).</summary>
     public static readonly string[] EveryCharacter = ["HideoutUnlocked", "HideoutJukeboxEnabled"];
 
+    /// <summary>
+    /// League quest flags: a set of their own, kept in the Player component's second flag set (+0x1d0). They are not a
+    /// table: the client has the names built in, sorted, with their ids (0x142fca900, 0x776 entries; lookup
+    /// 0x1423f1fb0). Every character has the hideout ones (21-hideouts.md §1).
+    /// </summary>
+    public static class League
+    {
+        public const int UnlockedHideouts = 3, HaveHideout = 200, UnlockedMapDevice = 350;
+
+        public static readonly int[] EveryCharacter = [UnlockedHideouts, HaveHideout, UnlockedMapDevice];
+    }
+
     public static IReadOnlyList<string> OnMonsterKilled(string areaId, string varietyId) =>
         [.. All.SelectMany(s => s.OnMonsterKilled(areaId, varietyId))];
 

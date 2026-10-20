@@ -629,6 +629,14 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await TalkToNpc(remote, stream, ciphers, conn, use, npc);
         return;
     }
+    HideoutCatalog.Doodad? doodad;
+    lock (conn.HideoutDoodads) doodad = conn.HideoutDoodads.GetValueOrDefault(use.TargetId);
+    if (doodad is not null)
+    {
+        // The map device's panel (its 0x7b kind and the client's map messages) is not known yet (21-hideouts.md "Open").
+        Console.WriteLine($"[gateway] {remote} <= 0x0024 hideout doodad 0x{use.TargetId:x} {doodad.Name} ({doodad.Type}): {use} (no action yet)");
+        return;
+    }
     if (conn.StashObject != 0 && use.TargetId == conn.StashObject)
     {
         await OpenStash(remote, stream, ciphers, conn, use);
@@ -3123,6 +3131,15 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
         await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
     })
+    .Add("league_flag", "/league_flag [<id> [off]] (dev: list, set or clear league quest flags by the client's id, e.g. /league_flag 350)", async args =>
+    {
+        if (args.Length < 1 || !int.TryParse(args[0], out int flag)) { await conn.Commands!.Reply(string.Join(", ", conn.LeagueQuestFlags.Order())); return; }
+        bool off = args.Length > 1 && args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
+        if (off) conn.LeagueQuestFlags.Remove(flag); else conn.LeagueQuestFlags.Add(flag);
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerLeagueQuestFlagsUpdate(PlayerId, conn.LeagueQuestFlags),
+            $"0x02ba player league quest flags: {string.Join(", ", conn.LeagueQuestFlags.Order())}");
+        await conn.Commands!.Reply($"League quest flag {flag} {(off ? "cleared" : "set")}.");
+    })
     .Add("hideout_keys", "/hideout_keys <a> <b> (dev: the Player component's two Hideouts.dat keys, HASH16 hex or a hideout area id)", async args =>
     {
         ushort Key(string s) => HideoutCatalog.Hideouts.FirstOrDefault(h => h.AreaId.Equals(s, StringComparison.OrdinalIgnoreCase)) is { } h ? h.Hash16
@@ -4055,10 +4072,13 @@ static async Task SpawnHideoutDoodads(string remote, NetworkStream stream, Conne
             continue;
         }
         uint id = conn.NextObjectId++;
-        var obj = new HideoutObject(d.X, d.Y, d.Rotation, components, new HideoutDoodad(d.Hash, (byte)d.Variation), states);
+        // "active" 1: the map device stands open and idle (its .ot: per-player quest flag MapDeviceActive).
+        var obj = new HideoutObject(d.X, d.Y, d.Rotation, components, new HideoutDoodad(d.Hash, (byte)d.Variation),
+            [.. states.Select(s => s == "active" ? 1 : 0)]);
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(d.Type!), obj.Blob()),
             $"0x02b9 create hideout doodad 0x{id:x} {d.Name} ({d.Type}) at ({d.X}, {d.Y}), components {string.Join(", ", components)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 hideout doodad 0x{id:x} enters wake zone");
+        lock (conn.HideoutDoodads) conn.HideoutDoodads[id] = d;
     }
 }
 
@@ -4268,7 +4288,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
-        QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0);
+        QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0, LeagueQuestFlags: [.. conn.LeagueQuestFlags]);
     conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
@@ -4868,6 +4888,12 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>
     public HashSet<string> QuestFlags = [];
+
+    /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
+    public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter];
+
+    /// <summary>The hideout doodads created in this area (the map device), by object id.</summary>
+    public readonly Dictionary<uint, HideoutCatalog.Doodad> HideoutDoodads = [];
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
     // Items on the ground by object id (dropped with C→S 0x29).

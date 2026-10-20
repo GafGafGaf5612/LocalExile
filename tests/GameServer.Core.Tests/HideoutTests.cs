@@ -81,12 +81,12 @@ public class HideoutObjectTests
         // StrDexIntMappingDevice: Positioned, BaseEvents, Animated, InteractionAction, HideoutDoodad, StateMachine (opening,
         // active), MinimapIcon. Lush Hideout's Map Device: (449, 460), MTX hash 2306038834, variation 0.
         string[] components = ["Positioned", "BaseEvents", "Animated", "InteractionAction", "HideoutDoodad", "StateMachine", "MinimapIcon"];
-        var blob = new HideoutObject(449, 460, 0, components, new HideoutDoodad(2306038834, 0), SharedStates: 2).Blob();
+        var blob = new HideoutObject(449, 460, 0, components, new HideoutDoodad(2306038834, 0), States: [0, 1]).Blob();
         string hex = Convert.ToHexString(blob);
         Assert.Equal("0000" + "C1010000" + "CC010000" + "00000000" + "0000" + "00" + "02" + "00" + "01"   // flags, Positioned
             + "00" + "00"                                                                                // Animated, InteractionAction
             + Convert.ToHexString(BitConverter.GetBytes(2306038834u)) + "00" + "00"                      // HideoutDoodad
-            + "02" + "00" + "0000" + "0000"                                                              // StateMachine
+            + "02" + "00" + "0000" + "0100"                                                              // StateMachine: opening 0, active 1
             + "00" + "00", hex);                                                                         // MinimapIcon, tasks
     }
 
@@ -95,5 +95,23 @@ public class HideoutObjectTests
     {
         Assert.False(HideoutObject.CanSerialize(["Positioned", "NPC"]));
         Assert.True(HideoutObject.CanSerialize(["Positioned", "BaseEvents", "Animated", "HideoutDoodad"]));
+    }
+}
+
+public class LeagueQuestFlagTests
+{
+    [Fact]
+    public void League_quest_flags_go_in_the_second_flag_set_and_its_update_bit_8()
+    {
+        // Quest flag 0 marks where the first set ends; the league set follows it.
+        string questSet = "0100" + "00" + "0100000000000000";
+        string none = Convert.ToHexString(new PlayerObject("A", 1, 0, 0, 10, 10, QuestFlags: [0]).Blob());
+        string some = Convert.ToHexString(new PlayerObject("A", 1, 0, 0, 10, 10, QuestFlags: [0], LeagueQuestFlags: [350]).Blob());
+        int at = none.IndexOf(questSet, StringComparison.Ordinal) + questSet.Length;
+        // 350 = block 5, bit 30: u16 count 1, u8 5, u64 LE 0x40000000, in place of the empty set's u16 0.
+        Assert.Equal("0000", none.Substring(at, 4));
+        Assert.Equal(none[..at] + "0100" + "05" + "0000004000000000" + none[(at + 4)..], some);
+        Assert.Equal(InstanceEntities.ComponentUpdate(0x1000, PlayerObject.PlayerComponentIndex, Convert.FromHexString("0800" + "0100" + "05" + "0000004000000000")),
+            InstanceEntities.PlayerLeagueQuestFlagsUpdate(0x1000, [350]));
     }
 }

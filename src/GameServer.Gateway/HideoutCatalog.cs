@@ -56,12 +56,12 @@ static class HideoutCatalog
     };
 
     /// <summary>An object type's deserialized components and shared-state count (data/object-types.json), or null.</summary>
-    public static (IReadOnlyList<string> Components, int SharedStates)? TypeOf(string type) =>
+    public static (IReadOnlyList<string> Components, IReadOnlyList<string> SharedStates)? TypeOf(string type) =>
         ObjectTypes.Value.TryGetValue(type, out var t) ? t : null;
 
-    static readonly Lazy<Dictionary<string, (IReadOnlyList<string>, int)>> ObjectTypes = new(() =>
+    static readonly Lazy<Dictionary<string, (IReadOnlyList<string>, IReadOnlyList<string>)>> ObjectTypes = new(() =>
     {
-        var result = new Dictionary<string, (IReadOnlyList<string>, int)>(StringComparer.Ordinal);
+        var result = new Dictionary<string, (IReadOnlyList<string>, IReadOnlyList<string>)>(StringComparer.Ordinal);
         const string file = "data/object-types.json";
         if (!File.Exists(file)) return result;
         using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
@@ -70,7 +70,7 @@ static class HideoutCatalog
             string type = t.GetProperty("type").GetString()!;
             if (!type.Contains("Hideout", StringComparison.OrdinalIgnoreCase)) continue;
             result[type] = ([.. t.GetProperty("components").EnumerateArray().Take(t.GetProperty("read").GetInt32()).Select(c => c.GetString()!)],
-                t.GetProperty("shared_states").GetArrayLength());
+                [.. t.GetProperty("shared_states").EnumerateArray().Select(s => s[0].GetString()!)]);
         }
         return result;
     });
