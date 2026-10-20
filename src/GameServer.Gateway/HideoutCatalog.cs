@@ -26,7 +26,7 @@ static class HideoutCatalog
         var list = Load("data/hideouts.json", "data/tables");
         Console.WriteLine(list.Count == 0
             ? "[gateway] hideouts: no data/hideouts.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts), hideouts are off"
-            : $"[gateway] hideouts: {list.Count}, default {Default?.Name ?? "none"}");
+            : $"[gateway] hideouts: {list.Count}, default {DefaultOf(list)?.Name ?? "none"}");
         return list;
     });
 
@@ -35,7 +35,9 @@ static class HideoutCatalog
     /// <summary>The hideout whose area this is, or null.</summary>
     public static Hideout? ByArea(ushort areaHash16) => Hideouts.FirstOrDefault(h => h.AreaHash16 == areaHash16);
 
-    public static Hideout? Default => Hideouts.FirstOrDefault(h => h.AreaId == DefaultArea) ?? Hideouts.FirstOrDefault();
+    public static Hideout? Default => DefaultOf(Hideouts);
+
+    static Hideout? DefaultOf(IReadOnlyList<Hideout> list) => list.FirstOrDefault(h => h.AreaId == DefaultArea) ?? list.FirstOrDefault();
 
     /// <summary>The hideout's waypoint as the waypoint object (its variation's model), or null.</summary>
     public static WaypointObject? Waypoint(Hideout h) =>
