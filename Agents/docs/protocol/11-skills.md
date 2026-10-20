@@ -174,9 +174,11 @@ the same hit-chance formula as accuracy, so the chance to evade is `100 - Accura
 monster's level and evades before damage; physical monster hits then go through armour and block. `/defences` prints
 both against a reference monster of the character's level. Life and mana still ignore passives and items.
 
-The default attack's damage (`Unarmed.Damage`) is MinDamage..MaxDamage × (1 + (`damage_+%` + `physical_damage_+%` +
-`melee_damage_+%` + `melee_physical_damage_+%`) / 100), rounded down; the server rolls its hits from the same range.
-`/set_stat` overrides any of these.
+The default attack's damage (`Unarmed.HitDamage`) is a physical `DamagePacket`: MinDamage..MaxDamage × (1 +
+(`damage_+%` + `physical_damage_+%` + `melee_damage_+%` + `melee_physical_damage_+%`) / 100). The packet goes through
+the conversion and gain-as-extra stats, then rolls one number per damage type; the server uses the same packet for its
+hits. `/set_stat` overrides any of these. The packet, conversion order and damage-over-time model are in
+[20-damage.md](20-damage.md); the panel's older `Unarmed.Damage` tuple is only the physical display range.
 
 **Changing a skill after entering:** S→C **0x2ba** on the player with component index 9 (Actor) and the slot-20 data
 `f0 0x40, f1 0, skill list`: the list replaces the skill of the same id, new stats included. Live: the swing sped up at
@@ -323,7 +325,8 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   the skill's own. The server's hits roll between the unrounded minimum and maximum and drop the fraction; the skill's
   tooltip gets `display_hundred_times_damage_per_skill_use` (the unrounded average × 100) and
   `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
-  DPS with the player's stats. More multipliers, added and converted damage are not modelled.
+  DPS with the player's stats. Conversion is applied per type through `DamagePacket`; more multipliers and added
+  damage are not modelled.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
