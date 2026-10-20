@@ -62,3 +62,14 @@ public class HideoutCatalogTests
         return null;
     }
 }
+
+public class LeagueQuestFlagBitTests
+{
+    [Fact]
+    public void League_flag_ids_go_to_the_client_as_bit_id_minus_one()
+    {
+        // UnlockedMapDevice is id 350 in the client's table; its Targetable tests bit 349 (live trace 2026-10-20).
+        Assert.Equal([2, 199, 349], Quests.League.Bits(Quests.League.EveryCharacter));
+        Assert.Empty(Quests.League.Bits([0]));
+    }
+}

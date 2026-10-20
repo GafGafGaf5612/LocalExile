@@ -684,8 +684,8 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U32(0).U16(0).U16(0)
          ;
         WriteFlagSet(w, QuestFlags);   // the quest flags (+0x1b8, 0x141e83340)
-        // The league quest flags (+0x1d0, same layout; WorldAreas __col60 values − 1): ids from the client's built-in
-        // name table (0x142fca900), e.g. UnlockedMapDevice 350, which the map device's Targetable requires (21-hideouts.md §1).
+        // The league quest flags (+0x1d0, same layout; WorldAreas __col60 values − 1): bit = id − 1 of the client's built-in
+        // name table (0x142fca900), e.g. UnlockedMapDevice 350 → bit 349, which the map device's Targetable requires (21-hideouts.md §1).
         WriteFlagSet(w, LeagueQuestFlags);
         w
          .Zeros(9)           // raw +0x1e8
