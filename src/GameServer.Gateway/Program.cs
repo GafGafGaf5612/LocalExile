@@ -486,8 +486,12 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         }
         else if (id == InstanceStash.MoveToTabId)
             await MoveToStash(remote, stream, ciphers, conn, InstanceStash.ReadMoveToTab(bytes));
+        else if (id == InstanceStash.MoveToAffinityTabId)
+            await MoveToAffinityTab(remote, stream, ciphers, conn, InstanceStash.ReadMoveToAffinityTab(bytes));
         else if (id == InstanceStash.SetAffinitiesId)
             await SetTabAffinities(remote, stream, ciphers, conn, InstanceStash.ReadSetAffinities(bytes));
+        else if (id == InstanceNpcs.CtrlBuyId)
+            await CtrlBuyFromShop(remote, stream, ciphers, conn, InstanceNpcs.ReadCtrlBuy(bytes));
         else if (id == InstanceStash.TakeFromTabId)
         {
             var (tab, item, a, b, c, d) = InstanceStash.ReadTakeFromTab(bytes);
@@ -962,25 +966,75 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
         return;
     }
     var items = ItemsOf(conn);
-    // The price: the item's price list (its first entry), taken from the main inventory's stacks together with the item's
-    // arrival (one transaction).
+    var stash = StashOf(conn);
+    // The price: the item's price list (its first entry), paid from the main inventory and then the stash, together with
+    // the item's arrival (one transaction). Not enough: nothing happens (the client shows the price in red).
     (uint Currency, int Amount)? price = item.Item.Price is [var (currency, amount), ..] ? (currency, (int)amount) : null;
-    if (ItemMoves.Buy(items, row, item with { X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] } }, price) is not var (paid, bought))
+    if (ItemMoves.Buy(items, stash, row, item with { X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] } }, price) is not var (paid, bought))
     {
         lock (conn.Npcs) shop.Items[item.Id] = item;
-        string name = Items.ByHash(price!.Value.Currency)?.Name ?? $"0x{price.Value.Currency:x8}";
-        Console.WriteLine($"[gateway] {remote} <= 0x0088 buy item {item.Id}: costs {price.Value.Amount} × {name}, not enough in the inventory");
-        await conn.Commands!.Reply($"Not enough {name}: it costs {price.Value.Amount}.");
+        Console.WriteLine($"[gateway] {remote} <= 0x0088 buy item {item.Id}: costs {price!.Value.Amount} × {Items.ByHash(price.Value.Currency)?.Name ?? $"0x{price.Value.Currency:x8}"}, not enough in the inventory and the stash");
         return;
     }
-    if (paid is not null)
+    if (paid?.Inventory is { } fromInventory)
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
-            items.NextRevision(PlayerInventories.MainInventory), [.. paid.Removed, .. paid.Changed.Select(c => c.Id)], paid.Changed),
-            $"0x00bf inventory 1: paid {price!.Value.Amount} (stacks emptied [{string.Join(", ", paid.Removed)}], changed [{string.Join(", ", paid.Changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
+            items.NextRevision(PlayerInventories.MainInventory), [.. fromInventory.Removed, .. fromInventory.Changed.Select(c => c.Id)], fromInventory.Changed),
+            $"0x00bf inventory 1: paid (stacks emptied [{string.Join(", ", fromInventory.Removed)}], changed [{string.Join(", ", fromInventory.Changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
+    await SendStashPayment(remote, stream, ciphers, conn, stash, paid?.Stash);
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(shop.Tab, ++shop.Revision, [item.Id], [], NpcShops.Manager),
         $"0x00bf shop tab {shop.Tab}: item {item.Id} sold");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(buy.InventoryId, items.NextRevision(row), [], [bought]),
         $"0x00bf inventory {buy.InventoryId}: bought item {item.Id} from {shop.Npc.Npc.Name} at ({buy.X}, {buy.Y}) ({buy})");
+}
+
+// What a price took from the stash (ItemMoves.Price.Stash), to the client: one 0xbf per tab this connection has the
+// contents of (the others come whole when it asks, 0xc7).
+static async Task SendStashPayment(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, AccountStash stash, AccountStash.Payment? paid)
+{
+    foreach (var (tab, (removed, changed)) in paid?.Tabs ?? new Dictionary<int, (List<uint>, List<InventoryItem>)>())
+        if (conn.StashTabsSent.Contains(tab))
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(tab), stash.NextRevision(tab), [.. removed, .. changed.Select(c => c.Id)], changed),
+                $"0x00bf stash tab {tab}: paid (stacks emptied [{string.Join(", ", removed)}], changed [{string.Join(", ", changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
+}
+
+// C→S 0x8a: Ctrl + click on an item in the open shop tab: bought into the main inventory (a stack onto stacks of its type,
+// then the first free cell), the price paid from the inventory and then the stash in the same transaction
+// (ItemMoves.BuyToInventory). Without room or enough to pay, nothing happens.
+static async Task CtrlBuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.CtrlBuy buy)
+{
+    OpenShop? shop;
+    InventoryItem? item = null;
+    lock (conn.Npcs)
+    {
+        shop = conn.Shop;
+        if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) item = found;
+    }
+    if (shop is null || item is null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x008a Ctrl + click buy {buy}: {(shop is null ? "no shop open" : "not in the shop")}");
+        return;
+    }
+    var items = ItemsOf(conn);
+    var stash = StashOf(conn);
+    (uint Currency, int Amount)? price = item.Item.Price is [var (currency, amount), ..] ? (currency, (int)amount) : null;
+    if (ItemMoves.BuyToInventory(items, stash, item.Item with { Price = [] }, price, ShapeOf, out string why) is not var (paid, into))
+    {
+        lock (conn.Npcs) shop.Items[item.Id] = item;
+        Console.WriteLine($"[gateway] {remote} <= 0x008a Ctrl + click buy item {item.Id}: refused ({why})");
+        return;
+    }
+    // The payment and the item land in the same inventory: one 0xbf with every stack that shrank, emptied, grew or arrived.
+    var fromInventory = paid?.Inventory;
+    var gone = new List<uint>([.. fromInventory?.Removed ?? [], .. fromInventory?.Changed.Select(c => c.Id) ?? [], .. into.Changed.Select(c => c.Id)]);
+    var now = new Dictionary<uint, InventoryItem>();
+    foreach (var i in (IEnumerable<InventoryItem>)[.. fromInventory?.Changed ?? [], .. into.Changed, .. into.Added]) now[i.Id] = i;
+    foreach (var removed in fromInventory?.Removed ?? []) now.Remove(removed);
+    await SendStashPayment(remote, stream, ciphers, conn, stash, paid?.Stash);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(shop.Tab, ++shop.Revision, [item.Id], [], NpcShops.Manager),
+        $"0x00bf shop tab {shop.Tab}: item {item.Id} sold");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+        items.NextRevision(PlayerInventories.MainInventory), [.. gone.Distinct()], [.. now.Values]),
+        $"0x00bf inventory 1: bought item {item.Id} from {shop.Npc.Npc.Name} with Ctrl + click" + (price is var (_, a) ? $" for {a}" : ""));
 }
 
 // An item goes into the sell offer (C→S 0xb2, or 0x2a on the offer inventory) from the inventory it is in (the cursor, or
@@ -4200,9 +4254,9 @@ static async Task SplitStack(string remote, NetworkStream stream, ConnectionCiph
             Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}: refused: {hex}");
             return;
         }
-        Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}");
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, stash.NextRevision(tab), [left.Id], [left]),
-            $"0x00bf stash tab {tab}: stack {left.Id} now {left.Item.StackSize}");
+        Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}" + (left is null ? " (the whole stack: picked up)" : ""));
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, stash.NextRevision(tab), [left?.Id ?? part.Id], left is null ? [] : [left]),
+            left is null ? $"0x00bf stash tab {tab}: remove item {part.Id}" : $"0x00bf stash tab {tab}: stack {left.Id} now {left.Item.StackSize}");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
             items.NextRevision(PlayerInventories.Cursor), [], [part]), $"0x00bf cursor: hold {part.Item.StackSize} as item {part.Id}");
         return;
@@ -4737,39 +4791,77 @@ static async Task PlaceInStash(string remote, NetworkStream stream, ConnectionCi
         "0x00bf cursor: " + (done.Held is null ? $"remove item {before.Id}" : done.Displaced is null ? $"stack {before.Id} now {done.Held.Item.StackSize}" : $"remove item {before.Id}, hold item {done.Held.Id}"));
 }
 
-// C→S 0xe0: Ctrl + click on an inventory item while a stash tab is shown. The item goes to the tab's first free cell
-// (with a stash id), out of whichever inventory holds it; one transaction (ItemMoves.InventoryToStash).
+// C→S 0xe0: Ctrl + click on an inventory item while a stash tab is shown: into that tab (ItemMoves.InventoryToStash: a
+// stack onto the tab's stacks, a special tab only its own items, a slotted tab into the item's slot), one transaction.
 static async Task MoveToStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToTab move)
+{
+    if (move.Kind != InstanceStash.Personal)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x00e0 move item {move.ItemId} to stash tab {move.Tab} ({move}): refused (not the personal stash)");
+        return;
+    }
+    await CtrlClickToStash(remote, stream, ciphers, conn, move.Tab, move.ItemId, $"0x00e0 ({move})");
+}
+
+// C→S 0xe1: Ctrl + click on an inventory item that has an affinity tab (currency …): into the tab the client picked for it
+// (StashTabAffinities), whichever tab is shown.
+static async Task MoveToAffinityTab(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToAffinityTab move)
+{
+    if (move.Tabs is not [var (tab, affinity), ..])
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x00e1 move item {move.ItemId} to its affinity tab: refused (no tab named) ({move})");
+        return;
+    }
+    await CtrlClickToStash(remote, stream, ciphers, conn, tab, move.ItemId, $"0x00e1 (affinity {affinity})");
+}
+
+static async Task CtrlClickToStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId, string why)
 {
     var stash = StashOf(conn);
     var items = ItemsOf(conn);
-    int tab = move.Tab;
-    string why = "no such tab";
-    var moved = move.Kind == InstanceStash.Personal ? ItemMoves.InventoryToStash(stash, items, tab, move.ItemId, ShapeOf, out why) : null;
-    Console.WriteLine($"[gateway] {remote} <= 0x00e0 move item {move.ItemId} to stash tab {tab} ({move})" + (moved is null ? $": refused ({why})" : ""));
-    if (moved is not var (from, it, placed)) return;
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(from), items.NextRevision(from), [it.Id], []),
-        $"0x00bf inventory {PlayerInventories.InventoryId(from)}: remove item {it.Id} (to the stash)");
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(tab), stash.NextRevision(tab), [], [placed]),
-        $"0x00bf stash tab {tab}: add item {placed.Id} at ({placed.X}, {placed.Y})");
-    if (PlayerInventories.ShowsOnModel(from)) await SendEquipment(remote, stream, ciphers, conn, items);
+    var moved = ItemMoves.InventoryToStash(stash, items, tab, itemId, ShapeOf, out string refused);
+    Console.WriteLine($"[gateway] {remote} <= {why}: move item {itemId} to stash tab {tab}" + (moved is null ? $": refused ({refused})" : ""));
+    if (moved is not null) await SendTransfer(remote, stream, ciphers, conn, items, stash, moved, tabFirst: false);
 }
 
-// An item out of a stash tab into the main inventory's first free cell (C→S 0xe3), keeping its id; one transaction
-// (ItemMoves.StashToInventory).
+// An item out of a stash tab into the main inventory (C→S 0xe3), a stack onto the inventory's stacks first
+// (ItemMoves.StashToInventory), one transaction.
 static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId)
 {
     var stash = StashOf(conn);
     var items = ItemsOf(conn);
-    if (ItemMoves.StashToInventory(stash, items, tab, itemId, ShapeOf) is not { } placed)
+    if (ItemMoves.StashToInventory(stash, items, tab, itemId, ShapeOf) is not { } moved)
     {
         Console.WriteLine($"[gateway] {remote} stash tab {tab} item {itemId}: refused (not there, unknown type or no room in the inventory)");
         return;
     }
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(tab), stash.NextRevision(tab), [itemId], []),
-        $"0x00bf stash tab {tab}: remove item {itemId}");
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
-        items.NextRevision(PlayerInventories.MainInventory), [], [placed]), $"0x00bf inventory 1: add item {placed.Id} at ({placed.X}, {placed.Y}) (from the stash)");
+    await SendTransfer(remote, stream, ciphers, conn, items, stash, moved, tabFirst: true);
+}
+
+// What a Ctrl + click moved (ItemMoves.Transfer), to the client: one 0xbf for the inventory row, one for the tab (only if
+// this connection has the tab's contents: else it gets them whole when it asks, 0xc7).
+static async Task SendTransfer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PlayerInventories items,
+    AccountStash stash, ItemMoves.Transfer t, bool tabFirst)
+{
+    List<uint> invGone = [.. t.InventoryChanged.Select(i => i.Id)], tabGone = [.. t.TabChanged.Select(i => i.Id)];
+    List<InventoryItem> invNow = [.. t.InventoryChanged, .. t.InventoryAdded], tabNow = [.. t.TabChanged, .. t.TabAdded];
+    if (t.InventoryItemId != 0) { invGone.Add(t.InventoryItemId); if (t.LeftInInventory is { } l) invNow.Add(l); }
+    if (t.TabItemId != 0) { tabGone.Add(t.TabItemId); if (t.LeftInTab is { } l) tabNow.Add(l); }
+    async Task Inventory()
+    {
+        if (invGone.Count + invNow.Count == 0) return;
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(t.Row), items.NextRevision(t.Row), invGone, invNow),
+            $"0x00bf inventory {PlayerInventories.InventoryId(t.Row)}: remove [{string.Join(", ", invGone)}], add [{string.Join(", ", invNow.Select(i => $"{i.Id} at ({i.X}, {i.Y}) x{i.Item.StackSize}"))}]");
+    }
+    async Task Tab()
+    {
+        if (tabGone.Count + tabNow.Count == 0 || !conn.StashTabsSent.Contains(t.Tab)) return;
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(t.Tab), stash.NextRevision(t.Tab), tabGone, tabNow),
+            $"0x00bf stash tab {t.Tab}: remove [{string.Join(", ", tabGone)}], add [{string.Join(", ", tabNow.Select(i => $"{i.Id} at ({i.X}, {i.Y}) x{i.Item.StackSize}"))}]");
+    }
+    if (tabFirst) { await Tab(); await Inventory(); }
+    else { await Inventory(); await Tab(); }
+    if (t.InventoryItemId != 0 && PlayerInventories.ShowsOnModel(t.Row)) await SendEquipment(remote, stream, ciphers, conn, items);
 }
 
 // C→S 0xd3: the tab settings' affinities, confirmed: saved with the tab, and the tab list again (S→C 0x136), which the

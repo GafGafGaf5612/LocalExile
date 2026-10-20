@@ -37,11 +37,11 @@ none of it is. An item is never lost between its two places, nor counted in both
 
 | Change | In one transaction (`ItemMoves`, Program.cs) |
 |---|---|
-| Stash → cursor (C→S 0x28), stash → inventory (0xe3) | out of the tab, the last tab, onto the cursor / into the inventory |
-| Inventory → stash (0xe0) | out of the inventory, into the tab (a slotted tab: the item's slot), the last tab |
+| Stash → cursor (C→S 0x28), stash → inventory (0xe3, a stack onto the inventory's stacks) | out of the tab (or what doesn't fit stays), the last tab, onto the cursor / into the inventory |
+| Inventory → stash (0xe0 into the shown tab, 0xe1 into the item's affinity tab) | out of the inventory (or what doesn't fit stays), into the tab (a stack onto its stacks, a slotted tab into the item's slot), the last tab |
 | Held item into a tab (0x2a): merge, Shift-place one, swap | the tab's stack or item, the cursor |
 | Split a tab's stack (0x7c) | the tab's stack, the split-off part on the cursor |
-| Buy from an NPC (0x88) | the price off the inventory's stacks, the item in |
+| Buy from an NPC (0x88, Ctrl + click 0x8a) | the price off the inventory's stacks and then the stash's, the item in |
 | Sell to an NPC (Accept) | the offered items out, the reward in |
 | Scroll of Wisdom on an item (0x71) | one scroll off its stack, the item identified |
 | Orb of Regret (0x58) | one orb off its stack, the refund point |
@@ -114,5 +114,6 @@ header until its first save, which gives every tab its row.
 test shows the same failure without a transaction loses the item), `ProgressSaveTests` (quest flags, waypoints, level,
 unknown fields and items), `UnsavedProgressTests` (experience and flask charges kept in memory and saved),
 `StashRowsTests` (one tab per write, imported stashes), `SaleImprintTests` (the sell window), `StashRulesTests` (what
-each tab holds, slots, the repair at load) and, in the Core tests,
+each tab holds, slots, the repair at load), `CtrlClickTests` (Ctrl + click to and from the stash and a shop) and, in the
+Core tests,
 `SqliteAccountStoreTests` (accounts, deletion with its save, the import).

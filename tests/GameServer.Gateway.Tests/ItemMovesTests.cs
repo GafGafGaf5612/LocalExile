@@ -121,10 +121,10 @@ public class ItemMovesTests : IDisposable
 
         var moved = ItemMoves.InventoryToStash(stash, items, 1, wand.Id, Shapes, out _);
 
-        Assert.True(moved!.Value.Placed.Id >= AccountStash.FirstItemId);
+        Assert.True(moved!.TabAdded.Single().Id >= AccountStash.FirstItemId);
         var (again, stashAgain) = Reload();
         Assert.Empty(again.Items(Main));
-        Assert.Equal([moved.Value.Placed.Id], Ids(stashAgain.Inventory(1).Items));
+        Assert.Equal([moved.TabAdded.Single().Id], Ids(stashAgain.Inventory(1).Items));
     }
 
     [Fact]
@@ -212,14 +212,14 @@ public class ItemMovesTests : IDisposable
         items.Add(Main, 0, 0, Orbs(10));
         var wand = new InventoryItem(items.NewItemId(), 4, 0, Wand());
 
-        var bought = ItemMoves.Buy(items, Main, wand, (OrbType, 3));
+        var bought = ItemMoves.Buy(items, null, Main, wand, (OrbType, 3));
 
         Assert.NotNull(bought);
         var (again, _) = Reload();
         Assert.Equal(7, again.Items(Main).Single(i => i.Item.TypeHash == OrbType).Item.StackSize);
         Assert.Contains(again.Items(Main), i => i.Id == wand.Id);
         // Not enough: nothing changes.
-        Assert.Null(ItemMoves.Buy(again, Main, new InventoryItem(again.NewItemId(), 6, 0, Wand()), (OrbType, 8)));
+        Assert.Null(ItemMoves.Buy(again, null, Main, new InventoryItem(again.NewItemId(), 6, 0, Wand()), (OrbType, 8)));
         Assert.Equal(2, Reload().Items.Items(Main).Count);
     }
 
@@ -230,7 +230,7 @@ public class ItemMovesTests : IDisposable
         items.Add(Main, 0, 0, Orbs(10));
         FailWrites(_character, from: 2);   // the payment's write goes through, the item's fails
 
-        Assert.ThrowsAny<IOException>(() => ItemMoves.Buy(items, Main, new InventoryItem(items.NewItemId(), 4, 0, Wand()), (OrbType, 3)));
+        Assert.ThrowsAny<IOException>(() => ItemMoves.Buy(items, null, Main, new InventoryItem(items.NewItemId(), 4, 0, Wand()), (OrbType, 3)));
         Saves.FailWrite = null;
 
         var (again, _) = Reload();

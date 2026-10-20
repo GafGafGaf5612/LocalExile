@@ -19,40 +19,112 @@ static class ItemMoves
         return items.Put(Cursor, taken with { X = 0, Y = 0 });
     });
 
-    /// <summary>An item out of a stash tab into the main inventory's first free cell (C→S 0xe3), keeping its id. Null
-    /// (nothing changes) when it is not there, its type is unknown or the inventory has no room.</summary>
-    public static InventoryItem? StashToInventory(AccountStash stash, PlayerInventories items, int tab, uint itemId,
+    /// <summary>What a Ctrl + click moved between an inventory row and a stash tab: the inventory side (the row, the item id
+    /// that left or changed, and what is left of it there: null when all of it moved) and the tab side (stacks that grew,
+    /// items that arrived; or the item id that left the tab and what is left of it there).</summary>
+    public sealed record Transfer(byte Row, uint InventoryItemId, InventoryItem? LeftInInventory, int Tab,
+        IReadOnlyList<InventoryItem> TabChanged, IReadOnlyList<InventoryItem> TabAdded,
+        IReadOnlyList<InventoryItem> InventoryChanged, IReadOnlyList<InventoryItem> InventoryAdded, uint TabItemId = 0, InventoryItem? LeftInTab = null);
+
+    /// <summary>
+    /// An item out of a stash tab into the main inventory (Ctrl + click, C→S 0xe3): a stack onto the inventory's stacks of
+    /// its type first, then into free cells, and what doesn't fit stays in the tab; any other item into the first free cell,
+    /// keeping its id. Null (nothing changes) when it is not there, its type is unknown or nothing fits.
+    /// </summary>
+    public static Transfer? StashToInventory(AccountStash stash, PlayerInventories items, int tab, uint itemId,
         Func<Item, PlayerInventories.Shape?> shapeOf) => Saves.Atomically(() =>
     {
         if (tab < 0 || tab >= stash.Count || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } inTab
-            || shapeOf(inTab.Item) is not { } shape || items.FreeCell(Main, shape.Width, shape.Height, shapeOf) is not { } cell
-            || stash.Take(tab, itemId) is not { } taken) return null;
+            || shapeOf(inTab.Item) is not { } shape) return null;
+        if (shape.MaxStack > 1)
+        {
+            var stacked = items.AddStacked(Main, inTab.Item, shapeOf);
+            int moved = inTab.Item.StackSize - stacked.Left;
+            if (moved == 0) return null;
+            var leftInTab = stacked.Left == 0 ? null : stash.Shrink(tab, itemId, moved);
+            if (stacked.Left == 0) stash.Take(tab, itemId);
+            stash.SetLastTab(tab);
+            return new Transfer(Main, 0, null, tab, [], [], stacked.Changed, stacked.Added, itemId, leftInTab);
+        }
+        if (items.FreeCell(Main, shape.Width, shape.Height, shapeOf) is not { } cell || stash.Take(tab, itemId) is not { } taken) return null;
         stash.SetLastTab(tab);
-        return items.Put(Main, taken with { X = cell.X, Y = cell.Y });
+        var placed = items.Put(Main, taken with { X = cell.X, Y = cell.Y });
+        return new Transfer(Main, 0, null, tab, [], [], [], [placed], itemId);
     });
 
-    /// <summary>An item out of whichever inventory holds it into a stash tab's first free cell (C→S 0xe0; a slotted tab:
-    /// its slot), with a stash id. Returns the row it left and the item as placed, or null with the reason (nothing
-    /// changes): the tab doesn't hold it, or it is full.</summary>
-    public static (byte From, InventoryItem Removed, InventoryItem Placed)? InventoryToStash(AccountStash stash, PlayerInventories items, int tab,
+    /// <summary>
+    /// An item out of whichever inventory holds it into a stash tab (Ctrl + click: C→S 0xe0 into the shown tab, 0xe1 into
+    /// the tab of its affinity): a stack onto the tab's stacks of its type first, then into free cells (a slotted tab: its
+    /// own slot), and what doesn't fit stays in the inventory; any other item into the first free cell (or its slot) with a
+    /// stash id. Null with the reason (nothing changes): the tab doesn't hold it, or it is full.
+    /// </summary>
+    public static Transfer? InventoryToStash(AccountStash stash, PlayerInventories items, int tab,
         uint itemId, Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
     {
         string reason = "";
-        var result = Saves.Atomically<(byte, InventoryItem, InventoryItem)?>(() =>
+        var result = Saves.Atomically(() =>
         {
             if (tab < 0 || tab >= stash.Count) { reason = "no such tab"; return null; }
             if (items.RowOf(itemId) is not byte from || items.Items(from).FirstOrDefault(i => i.Id == itemId) is not { } item)
             { reason = "the item is not in the inventories"; return null; }
             if (shapeOf(item.Item) is not { } shape) { reason = "unknown item type"; return null; }
             if (!stash.Holds(tab, item.Item.TypeHash)) { reason = $"the {stash.TypeOf(tab)} tab doesn't hold that item"; return null; }
-            // A free place (a slotted tab: the item's slot, which must be empty), so nothing is swapped out.
-            if (stash.FreeCell(tab, shape.Width, shape.Height, shapeOf) is not { } cell || !stash.IsFree(tab, cell.X, cell.Y, item.Item, shapeOf))
-            { reason = "the tab is full"; return null; }
+            if (shape.MaxStack > 1)
+            {
+                if (stash.AddStacked(tab, item.Item, shapeOf, out reason) is not { } stacked) return null;
+                if (stacked.Left == item.Item.StackSize) { reason = "the tab is full"; return null; }
+                var left = stacked.Left == 0 ? null : items.SetStackSize(from, itemId, stacked.Left);
+                if (stacked.Left == 0) items.Remove(from, itemId);
+                stash.SetLastTab(tab);
+                return new Transfer(from, itemId, left, tab, stacked.Changed, stacked.Added, [], []);
+            }
+            if (stash.CellFor(tab, item.Item, shapeOf) is not { } cell) { reason = "the tab is full"; return null; }
             var removed = items.Remove(from, itemId)!;
-            if (stash.Place(tab, cell.X, cell.Y, removed, shapeOf, out reason) is not (var placed, null))
-                throw new InvalidOperationException($"stash tab {tab} refused item {itemId} at a free place: {reason}");
+            if (stash.Place(tab, cell.X, cell.Y, removed, shapeOf, out reason) is not var (placed, _))
+                throw new InvalidOperationException($"stash tab {tab} refused item {itemId} at its free cell: {reason}");   // CellFor said it fits
             stash.SetLastTab(tab);
-            return (from, removed, placed);
+            return new Transfer(from, itemId, null, tab, [], [placed], [], []);
+        });
+        why = result is null && reason == "" ? "refused" : reason;
+        return result;
+    }
+
+    /// <summary>A price paid: what it took from the main inventory's stacks and from the stash's (either may be null).</summary>
+    public sealed record Price(PlayerInventories.Payment? Inventory, AccountStash.Payment? Stash);
+
+    /// <summary>
+    /// Pays <paramref name="amount"/> of a currency type: from the main inventory's stacks first, the rest from the stash's
+    /// (any tab), as a vendor takes it. Null (nothing changes) when the two together hold fewer. Call it inside a
+    /// transaction with what the price buys.
+    /// </summary>
+    static Price? Pay(PlayerInventories items, AccountStash? stash, uint currency, int amount)
+    {
+        int inInventory = items.Count(Main, currency), inStash = stash?.CountOf(currency) ?? 0;
+        if (inInventory + inStash < amount) return null;
+        int fromInventory = Math.Min(amount, inInventory);
+        var paid = fromInventory > 0 ? items.Pay(Main, currency, fromInventory) : null;
+        var fromStash = amount > fromInventory ? stash!.Pay(currency, amount - fromInventory) : null;
+        return new Price(paid, fromStash);
+    }
+
+    /// <summary>
+    /// Ctrl + click on a shop item (C→S 0x8a): the price (or nothing, when free) paid (<see cref="Pay"/>: the inventory, then
+    /// the stash) and the item into the main inventory (a stack onto stacks of its type, then free cells), together. Null
+    /// with the reason (nothing changes) when there is no room or the price can't be paid.
+    /// </summary>
+    public static (Price? Paid, PlayerInventories.Stacking Into)? BuyToInventory(PlayerInventories items, AccountStash? stash, Item item,
+        (uint Currency, int Amount)? price, Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
+    {
+        // Checked before anything is paid: the room as the inventory is now (paying first could free a cell, never take one).
+        if (!items.Fits(Main, item, shapeOf)) { why = "no room in the inventory"; return null; }
+        string reason = "";
+        var result = Saves.Atomically<(Price?, PlayerInventories.Stacking)?>(() =>
+        {
+            Price? paid = null;
+            if (price is var (currency, amount) && (paid = Pay(items, stash, currency, amount)) is null) { reason = "not enough to pay"; return null; }
+            var into = items.AddStacked(Main, item, shapeOf);
+            if (into.Left > 0) throw new InvalidOperationException("a bought item that fit before the payment didn't after it");
+            return (paid, into);
         });
         why = reason;
         return result;
@@ -100,27 +172,31 @@ static class ItemMoves
 
     /// <summary>Splits <paramref name="amount"/> off a stash tab's stack onto the empty cursor (C→S 0x7c), as a new
     /// character item. Returns the tab's stack as it is now and the held part, or null (nothing changes).</summary>
-    public static (InventoryItem Left, InventoryItem Part)? SplitFromStash(AccountStash stash, PlayerInventories items, int tab, uint itemId, int amount) =>
-        Saves.Atomically<(InventoryItem, InventoryItem)?>(() =>
+    public static (InventoryItem? Left, InventoryItem Part)? SplitFromStash(AccountStash stash, PlayerInventories items, int tab, uint itemId, int amount) =>
+        Saves.Atomically<(InventoryItem?, InventoryItem)?>(() =>
         {
-            if (items.Items(Cursor).Count > 0 || tab < 0 || tab >= stash.Count
-                || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } source
-                || stash.Shrink(tab, itemId, amount) is not { } left) return null;
+            if (items.Items(Cursor).Count > 0 || tab < 0 || tab >= stash.Count || amount < 1
+                || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } source) return null;
+            // The whole stack: a plain click on a special tab's item sends it this way (a currency slot, live 2026-10-20). It
+            // goes onto the cursor as it is, keeping its id.
+            if (amount >= source.Item.StackSize)
+                return stash.Take(tab, itemId) is { } taken ? (null, items.Put(Cursor, taken with { X = 0, Y = 0 })) : null;
+            if (stash.Shrink(tab, itemId, amount) is not { } left) return null;
             var part = items.Put(Cursor, new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = (ushort)amount }));
             return (left, part);
         });
 
     /// <summary>
-    /// A purchase (C→S 0x88): the price (<paramref name="price"/>: currency type and amount, or null when free) is taken
-    /// from the main inventory's stacks and the item goes to <paramref name="row"/> at its cell, together. Null when the
+    /// A purchase (C→S 0x88): the price (<paramref name="price"/>: currency type and amount, or null when free) paid from the
+    /// main inventory and then the stash, and the item goes to <paramref name="row"/> at its cell, together. Null when the
     /// price can't be paid (nothing changes).
     /// </summary>
-    public static (PlayerInventories.Payment? Paid, InventoryItem Bought)? Buy(PlayerInventories items, byte row, InventoryItem item,
+    public static (Price? Paid, InventoryItem Bought)? Buy(PlayerInventories items, AccountStash? stash, byte row, InventoryItem item,
         (uint Currency, int Amount)? price) =>
-        Saves.Atomically<(PlayerInventories.Payment?, InventoryItem)?>(() =>
+        Saves.Atomically<(Price?, InventoryItem)?>(() =>
         {
-            PlayerInventories.Payment? paid = null;
-            if (price is var (currency, amount) && (paid = items.Pay(Main, currency, amount)) is null) return null;
+            Price? paid = null;
+            if (price is var (currency, amount) && (paid = Pay(items, stash, currency, amount)) is null) return null;
             return (paid, items.Put(row, item));
         });
 

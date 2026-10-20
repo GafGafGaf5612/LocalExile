@@ -97,9 +97,18 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   tab names. Listener `0x140dcccf0` → VendorBuy (UI +0x7b8, vtable `0x1431356b8`, +0x380 = `0x14073d570`).
 - **C→S 0x88** (write `0x141f95380`): u32 BE shop item, u32 BE destination inventory (masked like 0x28's), u8 x, u8 y,
   u8, u8 flags, compact uint. The Gateway moves the item (0xbf on the tab, manager 1, and on the inventory) and takes the
-  price from the main inventory's stacks, in one transaction.
+  price from the main inventory's stacks and then the stash's (any tab, as 3.29 vendors do), in one transaction. Not
+  enough: nothing happens, no message (the real client shows the price in red; whether ours does is not checked: it may
+  count only what it knows of the inventory).
+- **C→S 0x8a** (dispatcher case 0x8a): Ctrl + click on a shop item. Read from live bytes (2026-10-20, Nessa): u32 BE shop
+  item, u8, u8 flags, compact uint (as 0x88's), u16 token (raw); `008A 00000061 00 00 00 A777`, 11 bytes. No cell: the
+  Gateway puts the item into the main inventory (a stack onto stacks of its type, then the first free cell) and takes the
+  price from the inventory and then the stash, in one transaction (`ItemMoves.BuyToInventory`); with no room or not
+  enough to pay, nothing happens.
 - **Prices**: item Base flag bit 7: u8 n + n × (u32 item type hash, compact uint amount), stored in the Base's +0xb8 list.
-  Ours: 1 Scroll of Wisdom for everything (`NpcShops`); whether the tooltip shows it is not checked.
+  Ours: 1 Scroll of Wisdom for everything (`NpcShops`); whether the tooltip shows it is not checked. In 3.29 the price
+  turns red when the player can't pay it; ours didn't on 2026-10-20 (live): the client may count only what it knows of the
+  inventory, or need a message we don't send. Open.
 - **Stock** is the server's (NPCShop only names shops): `NpcShops.Stock`.
 - **Sell**: S→C 0xb8 (write `0x141d6acc0`): u32 BE other party (0 = NPC sale → VendorSell, UI +0x7c8), u32 BE your offer,
   u32 BE their offer (both manager-1 inventories, grids `0x140317440` / `0x140c605f0`), u8 flags, wstr name, u32 BE

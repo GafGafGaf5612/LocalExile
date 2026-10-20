@@ -32,8 +32,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** the stash opens on the last tab, tabs load and items move by click and Ctrl + click
   ([18](docs/protocol/18-stash.md)); special tabs hold only their own items, the currency, essence and fragment tabs each
   item in its slot, and affinities (0xd3) are saved (18 §7). Switching to a loaded tab sends nothing to the server.
-- **Start:** check live that the affinity window closes on S→C 0x136; Ctrl + click on currency (C→S 0xe1, to the
-  affinity tab); tab rename / colour (0xd2), order (0xcc) and folders (0xd1); the unique and divination tabs.
+- **Start:** check live that the affinity window closes on S→C 0x136 and that currency Ctrl + click (0xe1) lands in its
+  slot; tab rename / colour (0xd2), order (0xcc) and folders (0xd1); the unique and divination tabs.
 - **Done when:** tab settings are kept and every special tab takes its items as the real one does.
 
 ## 2. The world
