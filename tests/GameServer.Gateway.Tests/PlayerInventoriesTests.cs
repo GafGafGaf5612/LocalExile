@@ -322,6 +322,23 @@ public class PlayerInventoriesTests : IDisposable
     }
 
     [Fact]
+    public void Identify_all_identifies_only_unidentified_items_with_mods_and_saves_them()
+    {
+        var items = NewInventories();
+        var ring = items.Add(PlayerInventories.MainInventory, 0, 0, new Item(0xd9b1a12f, ["Base", "Mods"], 0x40a1) { Rarity = ItemRarity.Rare, Identified = false });
+        var known = items.Add(PlayerInventories.MainInventory, 1, 0, new Item(0xd9b1a12f, ["Base", "Mods"], 0x40a1) { Rarity = ItemRarity.Magic });
+        items.Add(PlayerInventories.MainInventory, 2, 0, Wand() with { Identified = false });
+
+        var identified = items.IdentifyAll(PlayerInventories.MainInventory);
+
+        Assert.Equal([(ring.Id, (byte)0, (byte)0)], identified.Select(i => (i.Id, i.X, i.Y)));
+        Assert.True(identified[0].Item.Identified);
+        Assert.True(items.Items(PlayerInventories.MainInventory).Single(i => i.Id == known.Id).Item.Identified);
+        Assert.True(CharacterSaves.Load(_character)!.Inventories[PlayerInventories.MainInventory].Single(p => p.Id == ring.Id).Item.Identified);
+        Assert.Empty(items.IdentifyAll(PlayerInventories.MainInventory));
+    }
+
+    [Fact]
     public void Refund_points_are_saved_alongside_the_other_passive_points()
     {
         CharacterSaves.SetExtraPassivePoints(_character, 2);

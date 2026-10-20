@@ -390,6 +390,22 @@ sealed class PlayerInventories
         return result;
     }
 
+    /// <summary>Identifies every unidentified item with mods in a row (an NPC's Identify Items) in one save. Returns them
+    /// as they are now (same ids and cells).</summary>
+    public IReadOnlyList<InventoryItem> IdentifyAll(byte row)
+    {
+        var identified = new List<InventoryItem>();
+        lock (_lock)
+        {
+            var items = ItemsIn(row);
+            for (int i = 0; i < items.Count; i++)
+                if (!items[i].Item.Identified && items[i].Item.Components.Contains("Mods"))
+                    identified.Add(items[i] = items[i] with { Item = items[i].Item with { Identified = true } });
+        }
+        if (identified.Count > 0) Persist();
+        return identified;
+    }
+
     /// <summary>Sets the size of a stack (same id), or removes it at 0, in one save. Returns it as it is now (null when
     /// removed or not there).</summary>
     public InventoryItem? SetStackSize(byte row, uint itemId, int size)
