@@ -55,6 +55,17 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Player_blob_carries_reserved_mana()
+    {
+        byte[] b = new PlayerObject("Ab", ClassIndex: 1, GridX: 0x73, GridY: 0x45, Life: 50, Mana: 40,
+            ManaReserved: 17).Blob();
+        string hex = Convert.ToHexString(b);
+        int mana = hex.IndexOf("28000000", StringComparison.Ordinal);   // current mana 40, little-endian
+        Assert.True(mana >= 0);
+        Assert.Equal("11000000", hex.Substring(mana + 8, 8));           // then the reserved amount, 17
+    }
+
+    [Fact]
     public void Player_blob_with_stats_and_a_granted_skill()
     {
         // Live 2026-10-17: the default attack (PlayerMelee, GEPL 4474, GESSPL 4430) with the Witch's unarmed stats.
@@ -308,13 +319,22 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
-    public void Player_skills_update_is_a_0x2ba_on_the_actor()
+    public void Player_skills_remove_is_a_0x20_update_with_only_ids()
     {
-        byte[] m = InstanceEntities.PlayerSkillsUpdate(0x1000, [new GrantedSkill(0x0102, 4474, 4430)]);
-        string hex = Convert.ToHexString(m);
-        string body = "09" + "4000" + "01" + "0201" + "00" + "7A110000" + "00" + "4E110000" + "00" + "00" +
-            "00000000" + "00000000" + "00000000" + "00" + "00" + "00" + "00000000"; // index 9 = Actor, f0 0x40, one skill, no stats
-        Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, hex);
+        byte[] m = InstanceEntities.PlayerSkillsChange(0x1000, [], [0x0103, 0x0104]);
+        // index 9 = Actor, flags 0x20, no records, two ids (u16 LE), no 0x188 entries, no triples
+        string body = "09" + "2000" + "00" + "02" + "0301" + "0401" + "00" + "00";
+        Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, Convert.ToHexString(m));
+    }
+
+    [Fact]
+    public void Player_skills_change_carries_records_like_the_list_then_the_removed_ids()
+    {
+        byte[] m = InstanceEntities.PlayerSkillsChange(0x1000, [new GrantedSkill(0x0102, 4474, 4430)], [0x0104]);
+        // flags 0x20, one record (the 0x40 list's record layout), one id to remove, then the two empty lists
+        string body = "09" + "2000" + "01" + "01" + "0201" + "00" + "7A110000" + "00" + "4E110000" + "00" + "00" +
+            "00000000" + "00000000" + "00000000" + "00" + "00" + "0401" + "00" + "00";
+        Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, Convert.ToHexString(m));
     }
 
     [Fact]

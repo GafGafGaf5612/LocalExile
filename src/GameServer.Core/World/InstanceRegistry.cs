@@ -76,6 +76,24 @@ public sealed class InstanceRegistry(TimeProvider? clock = null)
         }
     }
 
+    /// <summary>Every player leaves every instance, which starts the expiry of the ones they were in: a Gateway that
+    /// restarted lost its connections without sending "leave". Returns how many players were removed.</summary>
+    public int LeaveAll()
+    {
+        lock (_lock)
+        {
+            var now = _clock.GetUtcNow();
+            int removed = 0;
+            foreach (var inst in _instances.Values.Where(i => i.Players.Count > 0))
+            {
+                removed += inst.Players.Count;
+                inst.Players.Clear();
+                inst.EmptySince = now;
+            }
+            return removed;
+        }
+    }
+
     /// <summary>Live instances of an area, newest first.</summary>
     public IReadOnlyList<AreaInstanceState> List(ushort area)
     {

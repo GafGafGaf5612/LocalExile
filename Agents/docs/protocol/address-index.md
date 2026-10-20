@@ -280,7 +280,8 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x142198d40` | Fn | AddSkill(manager, ActionTypes HASH16): basic action |
 | `0x1421932b0` | Fn | Actor slot 20 reader (f0 0x40 skill list, 0x20 skill update, …) |
 | `0x142197b10` | Fn | Actor f0 0x40: skill list |
-| `0x142198800` | Fn | Actor f0 0x20: skill update |
+| `0x142198800` | Fn | Actor f0 0x20: skill update (add records, remove ids) |
+| `0x142198560` | Fn | Actor f0 0x20: remove u16 skill ids from the skill manager |
 | `0x1421981d0` | Fn | read n skill records into the manager |
 | `0x142196ce0` | Fn | skill record reader |
 | `0x1424a0dc0` | Fn | GrantedEffectsPerLevel reference reader |

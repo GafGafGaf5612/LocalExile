@@ -99,13 +99,31 @@ Items are in rough priority order within each section. "Known" says what is alre
   (PassiveSkillGraph.psg) so the server checks them too.
 - **Done when:** passives can be refunded with points from quests, and ascendancies chosen.
 
+### Auras: reservation and effects
+- **Known:** `GrantedEffectsPerLevel` carries the reservation; the Life pool's reserved field and S→C 0x1b1 update it;
+  Purity of Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste are implemented with their buff
+  visuals and `/auras`, awaiting live verification ([11](docs/protocol/11-skills.md) 13, [Status](Status.md)).
+- **Start:** the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
+  Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar active border is still open: 0x25f is a
+  client UI event, not a server message. Support gems, gem levels, party and minion auras and life reservation come with
+  their own systems.
+- **Done when:** the standard auras reserve correctly, their effects match PoB, and the character panel and HUD show the
+  same reserved and unreserved values.
+
 ### Items: mods, rarity, using flasks and currency
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); rarity, implicits and every mod
   list are sent and saved (13 §2a). Open issues: rolling magic / rare items and rare names (#58), mod stats on the
-  character (#59), enchants / crafted / corrupted / influences / uniques (#60), area and monster mods (#61). The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`,
-  [12](docs/protocol/12-quests.md)).
+  character (#59), enchants / crafted / corrupted / influences / uniques (#60), area and monster mods (#61).
+  The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`, [12](docs/protocol/12-quests.md)).
 - **Start:** Mods.dat spawn weights by the base's tags and ModFamily for rolling; the Words.dat key in
   ObjectMagicProperties bit 8; C→S 0x4a for currency on an item (13 §4), flask charges after use.
+- **Socket colours (3.29 rules):** any gem goes into any socket, whatever the colours, and a gem in a red, green or blue
+  socket of its own colour gets +10% quality. Sockets are white by default; each has a small chance to be red, green or
+  blue instead, in proportion to the item's attribute requirements, and that chance rises with item level. Chromatic Orbs
+  force one socket to be coloured and roll the rest normally (more quality, more coloured sockets). Jeweller's Orbs, Orbs
+  of Binding and the Crafting Bench add white sockets. Vaal Orb corruption turns a white socket coloured, and the Locus
+  of Corruption turns all white sockets coloured. Today `ItemCatalog.DefaultSockets` makes every socket the item's main
+  attribute colour, which is the pre-3.29 look.
 - **Done when:** items drop magic and rare with rolled affixes that count on the character, and flasks and currency
   can be used.
 
@@ -146,13 +164,15 @@ Items are in rough priority order within each section. "Known" says what is alre
   into them. New characters start on The Twilight Strand and log in there until they enter a town; Hillock's death
   (quest a1q1) opens the gate into Lioneye's Watch ([12](docs/protocol/12-quests.md) §6). The death
   screen's "Resurrect in Town" goes to the last town, with a loading screen, and is not offered before the character
-  has one; "Resurrect at Checkpoint" goes to the area's arrival point ([09](docs/protocol/09-area-change.md) §7).
+  has one; "Resurrect at Checkpoint" goes next to the area's activated waypoint, else to the area's arrival point
+  ([09](docs/protocol/09-area-change.md) §7).
 - **Done when** (low priority: the start and the gate work, these are visual): the Strand's gate plays its opening when
   Hillock dies, the force wall blocks the way while he lives and the Doorman opens the door
   ([12](docs/protocol/12-quests.md) §6, "The gate's animation");
   "Resurrect at Checkpoint" goes to
-  the last activated checkpoint of the area, with no loading screen (checkpoint objects are not implemented yet).
-  Without an activated checkpoint it revives where the player entered the area, which the Gateway already does. Dying
+  the last activated checkpoint of the area, with no loading screen. Waypoints are checkpoints, and the activated
+  waypoint is done; the separate `Metadata/MiscellaneousObjects/Checkpoint` objects are not placed yet, so "last
+  activated" across several checkpoints is open. Dying
   in a boss arena revives just outside the arena's door, even with a checkpoint activated; dying in a map revives in
   the hideout (no hideouts yet).
 - **One-way entries:** the arrival next to the exit back needs an exit back. Lioneye's Watch from The Twilight Strand

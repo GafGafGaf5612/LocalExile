@@ -116,6 +116,8 @@ keeps the ids of the last list it sent (`ChooserList`).
   `resolve`, `list`, `transfer` (returns the new `Ticket`), `leave`, `set_level` (`Level`: saved to the account store and
   carried by the character's next tickets). A `leave` from an older ticket of a character whose latest ticket is in the
   same instance is ignored, so re-entering the instance one is in (Instance Manager) keeps the character in it.
+  `gateway_started` (no ticket) is the Gateway's first call: every player leaves every instance (`InstanceRegistry.LeaveAll`),
+  so a Gateway that stopped without sending `leave` (a restart, a crash) does not keep its players' instances alive.
 - **Gateway**:
   - Ctrl+click → `list` → 0xae.
   - 0xaf or a plain click → 0x2b2.
@@ -126,7 +128,8 @@ keeps the ids of the last list it sent (`ChooserList`).
     (`AreaLayouts.CameFrom`, in memory); Resurrect in Town (`PendingTransfer.AtSpawn`) and logins have none and use
     the spawn: the town's fixed point, or the deepest walkable cell. One-way entries have no exit back and use a named
     entrance point (`OneWayArrivals`: Lioneye's Watch from The Twilight Strand, `entrance1`) or the spawn. Resurrect
-    at Checkpoint revives at the arrival point.
+    at Checkpoint revives next to the area's waypoint once the character has activated it (waypoints are
+    checkpoints), else at the arrival point (`AreaLayout.Checkpoint`).
 - **Where a login starts** (Play, login 0x0e → `InstanceDirectory.AssignStart`): the spawn point of the character's
   **last town**, as in the real game, which never logs a character into a combat area or at a saved position. This
   holds after logging out, Exit to Character Selection, a crash, a server restart, or disconnecting while dead. The
