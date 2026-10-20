@@ -1,38 +1,26 @@
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Saves;
+using GameServer.Storage;
 
 namespace GameServer.Gateway.Tests;
 
-// One class: AccountStash.Folder is static.
 public class AccountStashTests : IDisposable
 {
-    readonly string _folder = Path.Combine(Path.GetTempPath(), $"stashes-{Guid.NewGuid():N}");
+    // The test items' types (Wand, Orbs, the 2 x 2 helmet), so a stash holding them loads again.
+    readonly string _folder = TestSaves.Catalog(new(0xd9b1a12f, "Wand", 1, 3), new(0x1234abcd, "Orb", StackSize: 40), new(0x1234, "Helmet", 2, 2));
     readonly string _account = $"Acc{Guid.NewGuid():N}"[..16];
 
-    public AccountStashTests() => AccountStash.Folder = _folder;
+    public AccountStashTests() => TestSaves.Ensure();
 
     public void Dispose()
     {
-        AccountStash.Reset();
         if (Directory.Exists(_folder)) Directory.Delete(_folder, recursive: true);
     }
 
     AccountStash Open() => AccountStash.For(_account, new ItemCatalog(_folder));
 
-    string StashPath() => Path.Combine(_folder, _account + ".json");
-
-    [Fact]
-    public void A_stash_change_while_the_file_is_briefly_held_is_saved()
-    {
-        var stash = Open();   // a new account's stash is written at once
-
-        // A reader that doesn't share delete, like an antivirus scan: replacing the file is refused while it reads.
-        using (FileHold.For(StashPath(), FileShare.ReadWrite, 300))
-            stash.SetLastTab(1);
-
-        AccountStash.Reset();
-        Assert.Equal(1, Open().LastTab);
-    }
+    // A restart of the Gateway: the stash is loaded again from the database.
+    void Restart() => AccountStash.Forget(_account);
 
     [Fact]
     public void Gold_changed_concurrently_is_saved_as_it_ends()
@@ -42,29 +30,32 @@ public class AccountStashTests : IDisposable
         // Every change saves; an older copy of the stash must never land on disk after a newer one.
         Parallel.For(0, 200, _ => stash.AddGold(1));
 
-        AccountStash.Reset();
+        Restart();
         Assert.Equal(200u, Open().Gold);
     }
 
-    [Fact]
-    public void A_briefly_locked_stash_is_read_once_it_is_free()
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("null")]
+    public void A_stash_that_cannot_be_read_is_refused_and_not_replaced_by_starter_tabs(string content)
     {
-        Open().SetLastTab(2);
-        AccountStash.Reset();
+        Saves.Db.Put(SaveDatabase.Table.Stashes, _account, content);
 
-        using var held = FileHold.For(StashPath(), FileShare.None, 300);
-
-        Assert.Equal(2, Open().LastTab);
+        Assert.Throws<UnreadableSaveException>(() => Open());
+        Assert.Equal(content, Saves.Get(SaveDatabase.Table.Stashes, _account));
     }
 
     [Fact]
-    public void A_stash_file_that_cannot_be_read_is_refused_and_not_replaced_by_starter_tabs()
+    public void A_stash_holding_an_item_the_game_data_does_not_know_is_refused_and_kept()
     {
-        Directory.CreateDirectory(_folder);
-        File.WriteAllText(StashPath(), "{ not json");
+        var stash = Open();
+        stash.Place(0, 0, 0, new InventoryItem(1, 0, 0, Wand()), Shape, out _);
+        string saved = Saves.Get(SaveDatabase.Table.Stashes, _account)!;
+        Restart();
 
-        Assert.Throws<UnreadableSaveException>(() => Open());
-        Assert.Equal("{ not json", File.ReadAllText(StashPath()));
+        // No item tables at all (not extracted): the wand's type is unknown.
+        Assert.Throws<UnknownSavedItemException>(() => AccountStash.For(_account, new ItemCatalog(Path.Combine(_folder, "none"))));
+        Assert.Equal(saved, Saves.Get(SaveDatabase.Table.Stashes, _account));
     }
 
     static Item Wand() => new(0xd9b1a12f, ["Base"], 0x40a1);
@@ -148,14 +139,12 @@ public class AccountStashTests : IDisposable
         stash.Take(4, placed.Id);
         var kept = stash.Place(4, 6, 6, new InventoryItem(10, 0, 0, Wand()), Shape, out _)!.Value.Placed;
         stash.SetLastTab(4);
-        AccountStash.Reset();
+        Restart();
 
-        // The file holds the item where it lay (this catalog has no item tables, so loading would drop its type).
-        var saved = System.Text.Json.JsonSerializer.Deserialize<AccountStash.Save>(
-            File.ReadAllText(StashPath()))!;
         var again = Open();
 
-        Assert.Equal([(kept.Id, (byte)6, (byte)6)], saved.Tabs[4].Items.Select(p => (p.Id, p.X, p.Y)));
+        Assert.Equal([(kept.Id, (byte)6, (byte)6)], again.Inventory(4).Items.Select(i => (i.Id, i.X, i.Y)));
+        Assert.Equal(0xd9b1a12fu, again.Inventory(4).Items[0].Item.TypeHash);
         Assert.Equal(4, again.LastTab);
         // The id taken out earlier is not handed out again.
         Assert.True(again.NewItemId() > kept.Id);
@@ -178,7 +167,7 @@ public class AccountStashTests : IDisposable
         Assert.Equal(500u, stash.AddGold(500));
         Assert.Equal(0u, stash.AddGold(-1000));   // never below 0
         stash.AddGold(1200);
-        AccountStash.Reset();
+        Restart();
 
         Assert.Equal(1200u, Open().Gold);
     }

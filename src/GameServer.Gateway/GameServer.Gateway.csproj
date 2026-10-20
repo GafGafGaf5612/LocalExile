@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GameServer.Core\GameServer.Core.csproj" />
+    <ProjectReference Include="..\GameServer.Storage\GameServer.Storage.csproj" />
   </ItemGroup>
 
   <!-- The Gateway's types are internal (top-level program); its tests reach them. -->

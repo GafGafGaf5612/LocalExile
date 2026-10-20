@@ -62,12 +62,13 @@ public class ItemModsTests
     }
 
     [Fact]
-    public void Saves_from_before_mods_get_the_types_implicits_and_unknown_mods_are_dropped()
+    public void Saves_from_before_mods_get_the_types_implicits_and_unknown_mods_stop_the_load()
     {
         var old = new CharacterSaves.SavedItem(Catalog.Value.Row(384)!.Hash);
-        Assert.Single(CharacterSaves.FromSaved(old, Catalog.Value)!.Mods);
+        Assert.Single(CharacterSaves.FromSaved(old, Catalog.Value).Mods);
 
+        // Dropping the mod would lose it at the next save: the load stops instead.
         var unknown = old with { Mods = [new("NoSuchMod", ModSection.Explicit, [1])] };
-        Assert.Empty(CharacterSaves.FromSaved(unknown, Catalog.Value)!.Mods);
+        Assert.Throws<UnknownSavedItemException>(() => CharacterSaves.FromSaved(unknown, Catalog.Value));
     }
 }

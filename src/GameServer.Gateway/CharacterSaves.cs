@@ -1,11 +1,16 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Saves;
+using GameServer.Core.World;
+using GameServer.Storage;
 
 /// <summary>
-/// A character's saved state: its items per inventory (Inventories.dat row) and its skill bar, one JSON file per character
-/// in data/saves/ (git-ignored, like the account store). Items are stored by BaseItemTypes HASH32 and rebuilt through the
-/// <see cref="ItemCatalog"/>, so the file holds no client-side layout. Writes replace the file atomically.
+/// A character's saved state: its items per inventory (Inventories.dat row), its skill bar and its progress, one row per
+/// character in the save database (<see cref="Saves"/>, data/saves.db, git-ignored). Items are stored by BaseItemTypes
+/// HASH32 and rebuilt through the <see cref="ItemCatalog"/>, so the save holds no client-side layout. Every change is a
+/// transaction: it reads the row, changes one part and writes it back, and nothing else writes in between.
 /// </summary>
 static class CharacterSaves
 {
@@ -33,64 +38,120 @@ static class CharacterSaves
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
-        SavedItem? StartWeapon = null);
-
-    static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
-    static readonly Lock Gate = new();
-
-    public static string Folder { get; set; } = Path.Combine("data", "saves");
-
-    static string PathOf(string character)
+        SavedItem? StartWeapon = null)
     {
-        string safe = string.Concat(character.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
-        return Path.Combine(Folder, safe + ".json");
+        /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
+        [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
     }
 
-    /// <summary>The character's save, or null when it has none. A save that can't be read throws
-    /// <see cref="UnreadableSaveException"/> and stays as it is (<see cref="SaveFiles.Load{T}"/>).</summary>
+    public static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
+
+    /// <summary>The character's save, or null when it has none, with the experience gained since it was last saved
+    /// (<see cref="AddExperience"/>): every write that loads it saves that too. A save that can't be read throws
+    /// <see cref="UnreadableSaveException"/> and stays as it is.</summary>
     public static Save? Load(string character)
     {
-        lock (Gate) return SaveFiles.Load<Save>(PathOf(character), Opts);
+        var save = Saves.Load<Save>(SaveDatabase.Table.Characters, character, Opts);
+        return save is not null && UnsavedExperience.TryGetValue(character, out uint xp) ? save with { Experience = xp } : save;
     }
 
-    public static void Write(string character, Save save)
-    {
-        string path = PathOf(character);
-        lock (Gate)
-        {
-            Directory.CreateDirectory(Folder);
-            SaveFiles.Write(path, JsonSerializer.Serialize(save, Opts));
-        }
-    }
+    public static void Write(string character, Save save) =>
+        Saves.Put(SaveDatabase.Table.Characters, character, JsonSerializer.Serialize(save, Opts));
 
     /// <summary>Records what a skill bar slot holds (see <see cref="Save.SkillBar"/>), keeping the saved items.</summary>
-    public static void SetSkillBar(string character, byte slot, string entry)
+    public static void SetSkillBar(string character, byte slot, string entry) => Update(character, save =>
     {
-        lock (Gate)
-        {
-            var save = Load(character) ?? new Save([]);
-            var bar = save.SkillBar is null ? new Dictionary<int, string>() : new Dictionary<int, string>(save.SkillBar);
-            bar[slot] = entry;
-            Write(character, save with { SkillBar = bar });
-        }
-    }
+        var bar = save.SkillBar is null ? new Dictionary<int, string>() : new Dictionary<int, string>(save.SkillBar);
+        bar[slot] = entry;
+        return save with { SkillBar = bar };
+    });
 
     /// <summary>Records the character's inventories and its start weapon still on the ground, keeping the rest of the save.</summary>
     public static void SetInventories(string character, Dictionary<byte, List<SavedPlacement>> inventories, SavedItem? startWeapon = null) =>
         Update(character, s => s with { Inventories = inventories, StartWeapon = startWeapon });
 
-    /// <summary>Records the character's experience, keeping the rest of the save.</summary>
-    public static void SetExperience(string character, uint experience) => Update(character, s => s with { Experience = experience });
+    /// <summary>The character's level: from its saved experience. The account's level (Auth, the ticket's) is only a copy
+    /// for the character list, which a failed update at a level-up leaves behind; it counts only for a save without
+    /// experience (an older one, or none).</summary>
+    public static int LevelOf(Save? save, int accountLevel, IReadOnlyList<uint>? levelStarts = null) => save?.Experience is uint xp
+        ? Progression.LevelFor(xp, levelStarts ?? CharacterStats.LevelStarts)
+        : Math.Clamp(accountLevel, 1, Progression.MaxLevel);
 
-    /// <summary>Records the character's quest flags (QuestFlags.dat Ids), keeping the rest of the save.</summary>
-    public static void SetQuestFlags(string character, IEnumerable<string> flags) => Update(character, s => s with { QuestFlags = [.. flags.Order()] });
+    /// <summary>Records the character's experience (a level set by hand) at once, keeping the rest of the save.</summary>
+    public static void SetExperience(string character, uint experience)
+    {
+        // Through the unsaved total, so a kill's gain meanwhile adds to this one instead of to the old total.
+        UnsavedExperience[character] = experience;
+        try { SaveExperience(character); }
+        catch
+        {
+            UnsavedExperience.TryRemove(new KeyValuePair<string, uint>(character, experience));   // not set: the caller hears why
+            throw;
+        }
+    }
 
-    /// <summary>Records the character's allocated passives, keeping the rest of the save.</summary>
-    public static void SetPassives(string character, IEnumerable<ushort> nodes) => Update(character, s => s with { Passives = [.. nodes] });
+    /// <summary>How long experience may wait in memory before it is saved (<see cref="SaveExperience()"/>).</summary>
+    public static readonly TimeSpan ExperienceSaveInterval = TimeSpan.FromSeconds(5);
 
-    /// <summary>Records the selected mastery effects (node -> effect HASH16), keeping the rest of the save.</summary>
-    public static void SetMasteryEffects(string character, IReadOnlyDictionary<ushort, ushort> effects) =>
-        Update(character, s => s with { MasteryEffects = new(effects) });
+    // The character's experience total gained since it was last saved. Kills come by the hundred per second, and a
+    // committed write per kill would queue the Gateway behind the disk; a crash or a power cut loses at most the last few
+    // seconds of it. Shared by every connection of the character, so an older connection's gains still count.
+    static readonly ConcurrentDictionary<string, uint> UnsavedExperience = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Adds experience to the character's total (<paramref name="add"/>: the total before → after) and returns both. The
+    /// total is the character's, not a connection's copy: gains from an older connection still running (an area change) or
+    /// from several tasks at once all count. It is kept in memory and saved within <see cref="ExperienceSaveInterval"/>,
+    /// at a level-up, when the connection ends, or with any other write of the character's save. A save without
+    /// experience starts from <paramref name="start"/>.
+    /// </summary>
+    public static (uint Before, uint After) AddExperience(string character, uint start, Func<uint, uint> add)
+    {
+        uint before = 0, after = 0;
+        // The last run of either function is the one stored (ConcurrentDictionary retries a lost race).
+        UnsavedExperience.AddOrUpdate(character,
+            name => after = add(before = Saves.Load<Save>(SaveDatabase.Table.Characters, name, Opts)?.Experience ?? start),
+            (_, total) => after = add(before = total));
+        return (before, after);
+    }
+
+    /// <summary>Saves the character's unsaved experience, if any. A character with no save any more (deleted) only drops it.</summary>
+    public static void SaveExperience(string character)
+    {
+        if (!UnsavedExperience.TryGetValue(character, out uint xp)) return;
+        Saves.Atomically(() =>
+        {
+            if (Saves.Load<Save>(SaveDatabase.Table.Characters, character, Opts) is { } save) Write(character, save with { Experience = xp });
+        });
+        UnsavedExperience.TryRemove(new KeyValuePair<string, uint>(character, xp));   // a gain meanwhile waits for the next save
+    }
+
+    /// <summary>Saves every character's unsaved experience (the Gateway's timer, its shutdown). One that can't be saved
+    /// stays in memory for the next try and doesn't stop the others.</summary>
+    public static void SaveExperience()
+    {
+        foreach (string character in UnsavedExperience.Keys)
+            try { SaveExperience(character); }
+            catch (IOException e) { Console.WriteLine($"[saves] experience of {character} not saved yet: {e.Message}"); }
+    }
+
+    /// <summary>Drops a character's unsaved experience without saving it: its save is gone (deleted), and a new character
+    /// of that name must not get it.</summary>
+    public static void ForgetExperience(string character) => UnsavedExperience.TryRemove(character, out _);
+
+    /// <summary>Sets (or clears) quest flags (QuestFlags.dat Ids) in the save and keeps the others, so flags another
+    /// connection set meanwhile stay.</summary>
+    public static void ChangeQuestFlags(string character, IEnumerable<string> flags, bool on) => Update(character, s =>
+    {
+        var saved = new HashSet<string>(s.QuestFlags ?? []);
+        if (on) saved.UnionWith(flags); else saved.ExceptWith(flags);
+        return s with { QuestFlags = [.. saved.Order()] };
+    });
+
+    /// <summary>Records the allocated passives (PassiveSkillGraphId) with their mastery effects (node → effect HASH16), and
+    /// the refund points when given, in one write.</summary>
+    public static void SetPassives(string character, IEnumerable<ushort> nodes, IReadOnlyDictionary<ushort, ushort> effects, ushort? refundPoints = null) =>
+        Update(character, s => s with { Passives = [.. nodes], MasteryEffects = new(effects), RefundPoints = refundPoints ?? s.RefundPoints });
 
     /// <summary>Records the extra passive skill points from /add_passive_points.</summary>
     public static void SetExtraPassivePoints(string character, ushort points) =>
@@ -103,15 +164,12 @@ static class CharacterSaves
 
     /// <summary>Takes the gold an older save kept with the character (gold is the account's now, AccountStash.Gold): the
     /// amount, 0 when there is none; the save no longer holds it.</summary>
-    public static uint TakeGold(string character)
+    public static uint TakeGold(string character) => Saves.Atomically(() =>
     {
-        lock (Gate)
-        {
-            if (Load(character) is not { Gold: uint gold } save) return 0;
-            Write(character, save with { Gold = null });
-            return gold;
-        }
-    }
+        if (Load(character) is not { Gold: uint gold } save) return 0u;
+        Write(character, save with { Gold = null });
+        return gold;
+    });
 
     /// <summary>Records the character's activated waypoints, keeping the rest of the save.</summary>
     public static void SetWaypoints(string character, IEnumerable<string> areaIds) => Update(character, s => s with { Waypoints = [.. areaIds] });
@@ -119,10 +177,16 @@ static class CharacterSaves
     /// <summary>Records the areas the character has entered, keeping the rest of the save.</summary>
     public static void SetVisited(string character, IEnumerable<string> areaIds) => Update(character, s => s with { Visited = [.. areaIds] });
 
-    static void Update(string character, Func<Save, Save> change)
-    {
-        lock (Gate) Write(character, change(Load(character) ?? new Save([])));
-    }
+    /// <summary>Adds activated waypoints to the saved ones (another connection's additions meanwhile stay).</summary>
+    public static void AddWaypoints(string character, IEnumerable<string> areaIds) =>
+        Update(character, s => s with { Waypoints = [.. (s.Waypoints ?? []).Union(areaIds)] });
+
+    /// <summary>Adds entered areas to the saved ones (another connection's additions meanwhile stay).</summary>
+    public static void AddVisited(string character, IEnumerable<string> areaIds) =>
+        Update(character, s => s with { Visited = [.. (s.Visited ?? []).Union(areaIds)] });
+
+    static void Update(string character, Func<Save, Save> change) =>
+        Saves.Atomically(() => Write(character, change(Load(character) ?? new Save([]))));
 
     public static SavedItem ToSaved(Item i, ModCatalog? mods = null) => new(i.TypeHash, i.ItemLevel, i.Quality, i.Charges, i.StackSize,
         i.Sockets.Count == 0 ? null : [.. i.Sockets.Select(s => new SavedSocket(s.Colour, s.Gem is null ? null : ToSaved(s.Gem, mods)))],
@@ -130,24 +194,31 @@ static class CharacterSaves
         [.. i.Mods.Select(m => new SavedMod(mods?.ByHash(m.Hash)?.Id ?? $"0x{m.Hash:x4}", m.Section, [.. m.Values]))],
         i.NameWords.Count == 0 ? null : [.. i.NameWords]);
 
-    /// <summary>The item again, or null when its type is no longer known.</summary>
-    public static Item? FromSaved(SavedItem s, ItemCatalog catalog)
+    /// <summary>The item again, with its socketed gems and mods. A type, gem or mod the game data doesn't know throws
+    /// <see cref="UnknownSavedItemException"/>: dropping it would lose it at the next save.</summary>
+    public static Item FromSaved(SavedItem s, ItemCatalog catalog)
     {
-        if (catalog.ByHash(s.Type) is not { } t) return null;
+        if (catalog.ByHash(s.Type) is not { } t)
+            throw new UnknownSavedItemException($"item type 0x{s.Type:x8}" + (catalog.Error is { } e ? $" ({e})" : ""));
         return ItemCatalog.Create(t) with
         {
             ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience,
             Sockets = [.. (s.Sockets ?? []).Select(k => new ItemSocket(k.Colour, k.Gem is null ? null : FromSaved(k.Gem, catalog)))],
             Links = s.Links, Rarity = s.Rarity, Identified = s.Identified, NameWords = s.Name ?? [],
-        } is var item && s.Mods is null ? item : item with { Mods = [.. s.Mods.Select(m => FromSaved(m, catalog.Mods)).OfType<ItemMod>()] };
+        } is var item && s.Mods is null ? item : item with { Mods = [.. s.Mods.Select(m => FromSaved(m, catalog.Mods))] };
     }
 
-    /// <summary>The mod again (by Id, or by an "0x…" hash when Mods.dat was not loaded at save time), or null when
-    /// Mods.dat no longer has it: an unknown hash would stop the client.</summary>
-    static ItemMod? FromSaved(SavedMod m, ModCatalog mods)
+    /// <summary>The mod again, by Id, or by an "0x…" hash when Mods.dat was not loaded at save time.</summary>
+    static ItemMod FromSaved(SavedMod m, ModCatalog mods)
     {
         var mod = m.Id.StartsWith("0x") && ushort.TryParse(m.Id[2..], System.Globalization.NumberStyles.HexNumber, null, out ushort h)
             ? mods.ByHash(h) : mods.ById(m.Id);
-        return mod?.With(m.Section, m.Values, Random.Shared);
+        return mod?.With(m.Section, m.Values, Random.Shared) ?? throw new UnknownSavedItemException($"mod {m.Id}");
     }
 }
+
+/// <summary>A save holds an item, gem or mod the extracted game data doesn't know (tables missing or out of date). The
+/// login stops and the save stays as it is.</summary>
+sealed class UnknownSavedItemException(string what) : IOException(
+    $"the save holds {what}, which the game data doesn't know; nothing was changed: extract the game data " +
+    "(scripts/dev/extract-data.ps1, Agents/GettingStarted.md) and log in again");

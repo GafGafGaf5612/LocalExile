@@ -233,7 +233,7 @@ data is in [19](docs/protocol/19-gems.md).
 - **Done when:** Fireball looks like the real one in every area: over the terrain, stopping at walls and objects.
 
 ### The game's start and resurrection
-- **Known:** items, equipment, the skill bar, experience and passives are saved per character in `data/saves/`
+- **Known:** items, equipment, the skill bar, experience and passives are saved per character in `data/saves.db` ([saves](docs/saves.md))
   ([13](docs/protocol/13-items.md) §7, [11](docs/protocol/11-skills.md) §11, [15](docs/protocol/15-progression.md)), and
   every login starts at the last town's spawn point ([09](docs/protocol/09-area-change.md) §4). This follows the real
   game on purpose: the area and position a character was in are not saved, because the real client never logs anyone

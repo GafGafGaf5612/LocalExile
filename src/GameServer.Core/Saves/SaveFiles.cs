@@ -4,7 +4,8 @@ using System.Text.Json;
 namespace GameServer.Core.Saves;
 
 /// <summary>
-/// Reads and replaces the server's save files (characters, stashes, the account store, walk-map captures). On Windows
+/// Reads and replaces the server's save files (the account store, walk-map captures, and the JSON saves imported into the
+/// save database once; characters and stashes are in the database, GameServer.Storage.SaveDatabase). On Windows
 /// another process (an antivirus scan, the search indexer) can hold a file for a moment, so a read or a replace waits for
 /// the file to be free. A file that stays unreadable throws instead of counting as missing: the callers would otherwise
 /// start over and write over it.

@@ -35,6 +35,20 @@ if (!File.Exists(clientExe))
 HncSender.LoadMask(File.ReadAllBytes(clientExe));
 if (GameDataFiles.Warning() is { } missingData) Console.WriteLine(missingData);
 
+// Characters and stashes: the save database (Saves). Saves from before it (data/saves, data/stashes) go into it once; one
+// that can't be read stops the Gateway, so no character starts over.
+try
+{
+    Saves.Open(Saves.DefaultPath);
+    Saves.ImportJson(Saves.Db, "data", CharacterSaves.Opts);
+    Console.WriteLine($"[gateway] saves: {Saves.Db.Path}");
+}
+catch (Exception e) when (e is IOException or Microsoft.Data.Sqlite.SqliteException)
+{
+    Console.Error.WriteLine($"[gateway] the save database can't be opened: {e.Message}");
+    return 1;
+}
+
 // Every item sent carries its level requirement (13-items.md §2d): the client shows and checks the byte it receives.
 // Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead.
 Item.LevelRequirementOf = item => !item.Components.Contains("SkillGem") && Items.ByHash(item.TypeHash) is { } t
@@ -52,6 +66,9 @@ Console.WriteLine($"[gateway] listening on {bind}:{port}");
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+// What waits in memory to be saved (experience, flask charges from kills) is saved every few seconds, and at the end.
+var saving = SaveUnsavedProgress(cts.Token);
+AppDomain.CurrentDomain.ProcessExit += (_, _) => SaveUnsavedProgressNow("the Gateway stops");
 
 while (!cts.IsCancellationRequested)
 {
@@ -69,8 +86,37 @@ while (!cts.IsCancellationRequested)
 }
 
 listener.Stop();
+await saving;
+SaveUnsavedProgressNow("the Gateway stopped");
 Console.WriteLine("[gateway] stopped");
 return 0;
+
+// Experience and flask charges from kills wait in memory (CharacterSaves.AddExperience, PlayerInventories.ChangeUnsaved)
+// and are saved here at least every few seconds: a crash or a power cut loses at most those seconds of them.
+static async Task SaveUnsavedProgress(CancellationToken stop)
+{
+    using var timer = new PeriodicTimer(CharacterSaves.ExperienceSaveInterval);
+    try
+    {
+        while (await timer.WaitForNextTickAsync(stop)) SaveUnsavedProgressNow(null);
+    }
+    catch (OperationCanceledException) { }
+}
+
+static void SaveUnsavedProgressNow(string? why)
+{
+    try
+    {
+        CharacterSaves.SaveExperience();
+        PlayerInventories.SaveAllUnsaved();
+        if (why is not null) Console.WriteLine($"[gateway] unsaved progress saved ({why})");
+    }
+    catch (Exception e)
+    {
+        // Kept in memory: the next save tries again.
+        Console.WriteLine($"[gateway] unsaved progress not saved{(why is null ? "" : $" ({why})")}: {e.GetType().Name}: {e.Message}");
+    }
+}
 
 static string? FindUp(string relative)
 {
@@ -110,10 +156,15 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
 
             // Which area and instance this ticket was issued for (Auth's instance registry).
             var resolved = await InstanceControl.CallAsync(new ControlRequest { Op = "resolve", Ticket = ticket });
-            if (!resolved.Ok) Console.WriteLine($"[gateway] {remote} resolve failed ({resolved.Error}); using Lioneye's Watch");
-            ushort areaHash = resolved.Ok ? resolved.Area : AreaLayouts.LioneyesWatch;
-            uint seed = resolved.Ok ? resolved.Seed : 1;
-            ulong instanceId = resolved.Ok ? resolved.Instance : 1;
+            if (!resolved.Ok || string.IsNullOrEmpty(resolved.Character))
+            {
+                // Without the character, its progress would go to another save: refuse instead.
+                Console.WriteLine($"[gateway] {remote} resolve failed ({resolved.Error ?? "no character"}); connection refused");
+                return;
+            }
+            ushort areaHash = resolved.Area;
+            uint seed = resolved.Seed;
+            ulong instanceId = resolved.Instance;
             var layout = AreaLayouts.For(areaHash, seed);
             AreaLayouts.Announce(layout, seed);
             Console.WriteLine($"[gateway] {remote} ticket 0x{ticket:x8}: {resolved.Character ?? "?"} → instance {instanceId}, {layout.Describe()}");
@@ -127,7 +178,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.Ok ? resolved.LastTown : AreaLayouts.LioneyesWatch, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             left = conn;
             conn.Commands = Commands(remote, stream, ciphers, conn);
             conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
@@ -139,7 +190,18 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             if ((WaypointCatalog.Areas.Find(layout.Hash) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == layout.Hash))
                 && FillFlasks(startItems, int.MaxValue).Count > 0)
                 Console.WriteLine($"[gateway] {remote} flasks refilled in town");
-            LoadProgress(conn, resolved.Level);
+            // A sale still open when the last connection ended (a disconnect, a crash) ended as a cancel: every offered
+            // item is in its cell (it never left it).
+            if (startItems.CancelOffers().Count is > 0 and var cancelled)
+                Console.WriteLine($"[gateway] {remote} {cancelled} item(s) offered in an unfinished sale are back in their cells");
+            int level = LoadProgress(conn, resolved.Level);
+            if (level != resolved.Level)
+            {
+                // The saved experience is the character's level: Auth's (the ticket's) was not updated at the last level-up.
+                var fixedLevel = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = ticket, Level = level });
+                Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {level} from the saved experience (the account had {resolved.Level})" +
+                    (fixedLevel.Ok ? "" : $"; not saved to the account: {fixedLevel.Error}"));
+            }
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.PlayerMana = conn.Pools.Mana;
             Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}, attack speed +{conn.Pools.AttackSpeedPct}%), league {conn.League ?? "?"}");
@@ -176,6 +238,16 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
     }
     if (left is not null)
     {
+        // The connection ends (a logout, an area change, a crash of the client): what waits in memory is saved now.
+        try
+        {
+            CharacterSaves.SaveExperience(CharacterName(left));
+            ItemsOf(left).SaveUnsaved();
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[gateway] {remote} unsaved progress not saved at disconnect (kept for the next save): {e.GetType().Name}: {e.Message}");
+        }
         // The instance keeps its monsters as they are now, for the next connection (#12).
         if (left.MonstersPlaced)
             lock (left.Monsters) left.Instance.Monsters = SavedMonster.Save(left.Monsters.Values, left.Clock.Elapsed.TotalSeconds);
@@ -387,7 +459,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             var (item, inventory) = InstanceNpcs.ReadTradeMove(bytes);
             Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} trade move item {item} (inventory {inventory})");
             if (conn.Sale is not { } sale) Console.WriteLine($"[gateway] {remote} trade move: no sale open");
-            else if (sale.Offered.ContainsKey(item)) await TakeFromSale(remote, stream, ciphers, conn, sale, item);
+            else if (ItemsOf(conn).Offered().Any(i => i.Id == item)) await TakeFromSale(remote, stream, ciphers, conn, sale, item);
             else await OfferFromInventory(remote, stream, ciphers, conn, sale, inventory, item);
         }
         else if (id == InstanceNpcs.TradeAcceptId)
@@ -888,23 +960,21 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
         return;
     }
     var items = ItemsOf(conn);
-    // The price: the item's price list (its first entry), taken from the main inventory's stacks.
-    if (item.Item.Price is [var (currency, amount), ..])
+    // The price: the item's price list (its first entry), taken from the main inventory's stacks together with the item's
+    // arrival (one transaction).
+    (uint Currency, int Amount)? price = item.Item.Price is [var (currency, amount), ..] ? (currency, (int)amount) : null;
+    if (ItemMoves.Buy(items, row, item with { X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] } }, price) is not var (paid, bought))
     {
-        var paid = items.Pay(PlayerInventories.MainInventory, currency, (int)amount);
-        if (paid is null)
-        {
-            lock (conn.Npcs) shop.Items[item.Id] = item;
-            string name = Items.ByHash(currency)?.Name ?? $"0x{currency:x8}";
-            Console.WriteLine($"[gateway] {remote} <= 0x0088 buy item {item.Id}: costs {amount} × {name}, not enough in the inventory");
-            await conn.Commands!.Reply($"Not enough {name}: it costs {amount}.");
-            return;
-        }
+        lock (conn.Npcs) shop.Items[item.Id] = item;
+        string name = Items.ByHash(price!.Value.Currency)?.Name ?? $"0x{price.Value.Currency:x8}";
+        Console.WriteLine($"[gateway] {remote} <= 0x0088 buy item {item.Id}: costs {price.Value.Amount} × {name}, not enough in the inventory");
+        await conn.Commands!.Reply($"Not enough {name}: it costs {price.Value.Amount}.");
+        return;
+    }
+    if (paid is not null)
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
             items.NextRevision(PlayerInventories.MainInventory), [.. paid.Removed, .. paid.Changed.Select(c => c.Id)], paid.Changed),
-            $"0x00bf inventory 1: paid {amount} (stacks emptied [{string.Join(", ", paid.Removed)}], changed [{string.Join(", ", paid.Changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
-    }
-    var bought = items.Put(row, item with { X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] } });
+            $"0x00bf inventory 1: paid {price!.Value.Amount} (stacks emptied [{string.Join(", ", paid.Removed)}], changed [{string.Join(", ", paid.Changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(shop.Tab, ++shop.Revision, [item.Id], [], NpcShops.Manager),
         $"0x00bf shop tab {shop.Tab}: item {item.Id} sold");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(buy.InventoryId, items.NextRevision(row), [], [bought]),
@@ -912,47 +982,38 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
 }
 
 // An item goes into the sell offer (C→S 0xb2, or 0x2a on the offer inventory) from the inventory it is in (the cursor, or
-// the main inventory on a Ctrl-click); the NPC answers with one Scroll Fragment per offered item in its own offer.
+// the main inventory on a Ctrl-click); the NPC answers with one Scroll Fragment per offered item in its own offer. As in
+// 3.29 the item keeps its inventory cell (the client's greyed imprint) until the sale ends: PlayerInventories.Offer.
 static async Task OfferForSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale,
     uint fromInventory, uint itemId, byte x, byte y)
 {
     var items = ItemsOf(conn);
-    if (PlayerInventories.Row(fromInventory) is not byte row || items.Remove(row, itemId) is not { } taken)
+    if (PlayerInventories.Row(fromInventory) is not byte row || items.Offer(row, itemId, x, y, ShapeOf) is not var (_, offered))
     {
-        Console.WriteLine($"[gateway] {remote} sell offer: item {itemId} is not in inventory {fromInventory}");
+        Console.WriteLine($"[gateway] {remote} sell offer: item {itemId} is not in inventory {fromInventory} (or no cell to wait in)");
         return;
     }
-    var offered = taken with { X = x, Y = y };
-    lock (conn.Npcs) sale.Offered[offered.Id] = offered;
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(fromInventory, items.NextRevision(row), [taken.Id], []),
-        $"0x00bf inventory {fromInventory}: remove item {taken.Id} (offered)");
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [], [offered], NpcShops.Manager),
-        $"0x00bf sell offer: item {offered.Id} at ({offered.X}, {offered.Y})");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(fromInventory, items.NextRevision(row), [offered.Id], []),
+        $"0x00bf inventory {fromInventory}: remove item {offered.Id} (offered; its cell stays its own)");
+    var inOffer = offered with { X = x, Y = y };
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [], [inOffer], NpcShops.Manager),
+        $"0x00bf sell offer: item {inOffer.Id} at ({x}, {y})");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
-// An offered item taken back (C→S 0xb3, or 0x28 on the offer inventory) goes back to the main inventory (a free cell), or
-// to the cursor when the inventory is full and the cursor empty.
+// An offered item taken back (C→S 0xb3, or 0x28 on the offer inventory) is in its inventory cell again.
 static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, uint itemId)
 {
     var items = ItemsOf(conn);
-    InventoryItem? it;
-    lock (conn.Npcs) it = sale.Offered.GetValueOrDefault(itemId);
-    var shape = it is null ? null : ShapeOf(it.Item);
-    byte row = PlayerInventories.MainInventory;
-    (byte X, byte Y)? cell = shape is { } s ? items.FreeCell(row, s.Width, s.Height, ShapeOf) : null;
-    if (cell is null && items.Items(PlayerInventories.Cursor).Count == 0) { row = PlayerInventories.Cursor; cell = (0, 0); }
-    if (it is null || cell is not { } at)
+    if (items.TakeBack(itemId) is not var (row, back))
     {
-        Console.WriteLine($"[gateway] {remote} sell offer item {itemId}: {(it is null ? "not offered" : "no room to take it back")}");
+        Console.WriteLine($"[gateway] {remote} sell offer item {itemId}: not offered");
         return;
     }
-    lock (conn.Npcs) sale.Offered.Remove(itemId);
-    var back = items.Put(row, it with { X = at.X, Y = at.Y });
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [itemId], [], NpcShops.Manager),
         $"0x00bf sell offer: remove item {itemId}");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [back]),
-        $"0x00bf inventory {PlayerInventories.InventoryId(row)}: item {itemId} back at ({at.X}, {at.Y})");
+        $"0x00bf inventory {PlayerInventories.InventoryId(row)}: item {itemId} back at ({back.X}, {back.Y})");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
@@ -960,8 +1021,7 @@ static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCi
 static async Task SendSaleReward(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale)
 {
     var items = ItemsOf(conn);
-    int count;
-    lock (conn.Npcs) count = sale.Offered.Count;
+    int count = items.Offered().Count;
     var fragment = Items.Find(NpcShops.SellReward);
     var reward = new List<InventoryItem>();
     if (fragment is not null)
@@ -991,8 +1051,7 @@ static async Task OfferFromInventory(string remote, NetworkStream stream, Connec
     byte? row = PlayerInventories.Row(inventory);
     var it = row is byte r ? items.Items(r).FirstOrDefault(i => i.Id == itemId) : null;
     if (it is null || ShapeOf(it.Item) is not { } shape) { Console.WriteLine($"[gateway] {remote} sell offer: item {itemId} not in inventory {inventory}"); return; }
-    List<(InventoryItem Item, PlayerInventories.Shape? Shape)> offered;
-    lock (conn.Npcs) offered = [.. sale.Offered.Values.Select(o => (o, ShapeOf(o.Item)))];
+    List<(InventoryItem Item, PlayerInventories.Shape? Shape)> offered = [.. items.Offered().Select(o => (o, ShapeOf(o.Item)))];
     (byte X, byte Y)? cell = null;
     for (int x = 0; x + shape.Width <= NpcShops.Offer.Width && cell is null; x++)
         for (int y = 0; y + shape.Height <= NpcShops.Offer.Height && cell is null; y++)
@@ -1002,49 +1061,42 @@ static async Task OfferFromInventory(string remote, NetworkStream stream, Connec
     await OfferForSale(remote, stream, ciphers, conn, sale, inventory, itemId, c.X, c.Y);
 }
 
-// Ends the sale. Accepted: the offered items are gone and the NPC's offer goes into the inventory. Cancelled: the offered
-// items go back to the inventory. Either way S→C 0xb9 closes the window.
+// Ends the sale. Accepted: the offered items are gone and the NPC's offer goes into the inventory, in one save; when the
+// offer doesn't fit (the offered items' cells free up first, so it nearly always does), nothing changes and the window
+// stays open. Cancelled: every offered item is in its cell again (it kept it). Then S→C 0xb9 closes the window.
 static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool accepted)
 {
     NpcSale? sale;
-    lock (conn.Npcs)
-    {
-        sale = conn.Sale;
-        conn.Sale = null;
-    }
+    lock (conn.Npcs) sale = conn.Sale;
     if (sale is null) Console.WriteLine($"[gateway] {remote} trade: no sale open");
     accepted &= sale is not null;
-    if (sale is not null)
+    var items = ItemsOf(conn);
+    if (accepted)
     {
-        var items = ItemsOf(conn);
-        List<InventoryItem> back = accepted ? sale.Reward : [.. sale.Offered.Values];
-        var added = new List<InventoryItem>();
-        var grown = new Dictionary<uint, InventoryItem>();
-        foreach (var it in back)
+        int count = items.Offered().Count;
+        var fragment = Items.Find(NpcShops.SellReward);
+        PlayerInventories.Stacking? added = null;
+        string? refused = count == 0 ? null
+            : fragment is null ? $"{NpcShops.SellReward} is not in the game data"
+            : (added = items.Sell(ItemCatalog.Create(fragment) with { StackSize = (ushort)count }, ShapeOf)) is null ? "not enough room in the inventory for the offer"
+            : null;
+        if (refused is not null)
         {
-            if (Items.ByHash(it.Item.TypeHash) is { Stackable: true })
-            {
-                // Currency joins the inventory's stacks of its type.
-                var stacked = items.AddStacked(PlayerInventories.MainInventory, it.Item, ShapeOf);
-                foreach (var c in stacked.Changed) grown[c.Id] = c;
-                added.AddRange(stacked.Added);
-                if (stacked.Left > 0) Console.WriteLine($"[gateway] {remote} sale: no room for {stacked.Left} of item {it.Id} in the inventory, lost");
-                continue;
-            }
-            if (Items.ByHash(it.Item.TypeHash) is not { } t || items.FreeCell(PlayerInventories.MainInventory, t.Width, t.Height, ShapeOf) is not { } cell)
-            {
-                Console.WriteLine($"[gateway] {remote} sale: no room for item {it.Id} in the inventory, it is lost");
-                continue;
-            }
-            added.Add(items.Put(PlayerInventories.MainInventory, it with { X = cell.X, Y = cell.Y }));
+            Console.WriteLine($"[gateway] {remote} sale accepted: refused ({refused}); the window stays open");
+            await conn.Commands!.Reply(fragment is null ? "This sale can't be made: the game data is missing." : "Not enough room in your inventory.");
+            return;
         }
-        // A stack that grew and then took more is sent once, as it is now; new stacks that grew later are in "added".
-        foreach (var a in added.ToList()) if (grown.Remove(a.Id, out var later)) added[added.IndexOf(a)] = later;
-        if (added.Count + grown.Count > 0)
+        Console.WriteLine($"[gateway] {remote} sale accepted: {count} item(s) sold for {count} × {NpcShops.SellReward}");
+        if (added is { Any: true })
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
-                items.NextRevision(PlayerInventories.MainInventory), [.. grown.Keys], [.. grown.Values, .. added]),
-                $"0x00bf inventory 1: {added.Count} item(s) " + (accepted ? $"of {NpcShops.SellReward} for {sale.Offered.Count} sold item(s)" : "offered and taken back"));
+                items.NextRevision(PlayerInventories.MainInventory), added.RemovedIds, added.AddedItems),
+                $"0x00bf inventory 1: {added.Changed.Count} stack(s) grown, {added.Added.Count} new (the NPC's offer)");
     }
+    else if (sale is not null)
+        foreach (var group in items.CancelOffers().GroupBy(b => b.Row))
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(group.Key), items.NextRevision(group.Key), [],
+                [.. group.Select(b => b.Item)]), $"0x00bf inventory {PlayerInventories.InventoryId(group.Key)}: {group.Count()} offered item(s) back in their cells");
+    lock (conn.Npcs) if (conn.Sale == sale) conn.Sale = null;
     await Send(remote, stream, ciphers, InstanceNpcs.TradeClose(0, accepted), $"0x00b9 sell window closed ({(accepted ? "accepted" : "cancelled")})");
     // The client is still talking to the NPC (session +0xd7c0 = 2, +0xd7c4 = the NPC, live 2026-10-19) and the player cannot
     // move until 0x84 with object 0 ends the talk. Cancel sends 0x85 for it, Accept sends nothing, so end it here.
@@ -1058,6 +1110,7 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
 static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedNpc npc)
 {
     uint mine = NpcShops.FirstTabId + 0x10, theirs = mine + 1;
+    ItemsOf(conn).CancelOffers();   // none should be left; a new sale must not count them
     lock (conn.Npcs) conn.Sale = new NpcSale(npc, mine, theirs);
     await Send(remote, stream, ciphers, InstanceInventories.AddInventory(mine, NpcShops.Offer, NpcShops.Manager), $"0x00c0 sell offer {mine} (manager {NpcShops.Manager})");
     await Send(remote, stream, ciphers, InstanceInventories.AddInventory(theirs, NpcShops.Offer, NpcShops.Manager), $"0x00c0 {npc.Npc.Name}'s offer {theirs} (manager {NpcShops.Manager})");
@@ -1082,18 +1135,14 @@ static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCip
     await Send(remote, stream, ciphers, InstanceNpcs.Dialogue(npcObject, (ushort)Math.Max(0, npc.Npc.ShopRow), false, [tab], []),
         $"0x008c open the buy window of {npc.Npc.Name} (NPCShop row {npc.Npc.ShopRow}) on tab {tab}");}
 
-// Activates this area's waypoint for the character (saved) and tells the client: a new 0x4c with the area's bit set
-// plays the waypoint's activation. Towns activate on entry, other waypoints when the player comes near or clicks them.
+// Activates this area's waypoint for the character (saved, added to the saved ones) and tells the client: a new 0x4c with
+// the area's bit set plays the waypoint's activation. Towns activate on entry, other waypoints when the player comes near
+// or clicks them.
 static async Task ActivateWaypoint(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
 {
     if (WaypointCatalog.Areas.Find(conn.Layout.Hash) is not { } entry) return;
-    string[] all;
-    lock (conn.Waypoints)
-    {
-        if (!conn.Waypoints.Add(entry.Id)) return;
-        all = [.. conn.Waypoints];
-    }
-    CharacterSaves.SetWaypoints(CharacterName(conn), all);
+    lock (conn.Waypoints) if (!conn.Waypoints.Add(entry.Id)) return;
+    CharacterSaves.AddWaypoints(CharacterName(conn), [entry.Id]);
     await SendWaypointList(remote, stream, ciphers, conn, $"waypoint of {entry.Name} ({entry.Id}) activated: {why}");
 }
 
@@ -1103,9 +1152,9 @@ static async Task SendWaypoints(string remote, NetworkStream stream, ConnectionC
     if (WaypointCatalog.Areas.Entries.Count == 0) return;
     if (WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true } town)
     {
-        string[]? all = null;
-        lock (conn.Waypoints) if (conn.Waypoints.Add(town.Id)) all = [.. conn.Waypoints];
-        if (all is not null) CharacterSaves.SetWaypoints(CharacterName(conn), all);
+        bool added;
+        lock (conn.Waypoints) added = conn.Waypoints.Add(town.Id);
+        if (added) CharacterSaves.AddWaypoints(CharacterName(conn), [town.Id]);
     }
     await SendWaypointList(remote, stream, ciphers, conn, "the character's waypoints");
 }
@@ -1138,17 +1187,12 @@ static List<int> PlayerQuestFlags(ClientState conn)
             .Distinct().Order()];
 }
 
-// Entering an area marks it visited (saved) before the player object carries the quest flags.
+// Entering an area marks it visited (saved, added to the saved ones) before the player object carries the quest flags.
 static void RecordVisit(ClientState conn)
 {
     if (WaypointCatalog.Visits.For(conn.Layout.Id).Count == 0) return;
-    string[] all;
-    lock (conn.Waypoints)
-    {
-        if (!conn.Visited.Add(conn.Layout.Id)) return;
-        all = [.. conn.Visited];
-    }
-    CharacterSaves.SetVisited(CharacterName(conn), all);
+    lock (conn.Waypoints) if (!conn.Visited.Add(conn.Layout.Id)) return;
+    CharacterSaves.AddVisited(CharacterName(conn), [conn.Layout.Id]);
 }
 
 // C→S 0x4d: a waypoint picked on the World panel. An activated waypoint changes area (the player arrives next to its
@@ -1793,13 +1837,19 @@ static async Task SetLevel(string remote, NetworkStream stream, ConnectionCipher
 static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int level)
 {
     int before = conn.Pools.Level;
+    List<ushort>? trimmed = null;
+    Dictionary<ushort, ushort> effects;
     lock (conn.Monsters)
     {
+        int had = conn.Passives.Count;
         TrimPassives(conn, level);
+        if (conn.Passives.Count != had) trimmed = [.. conn.Passives];
+        effects = conn.MasteryEffects.Where(kv => conn.Passives.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
         conn.Pools = PoolsFor(conn, level);
         conn.ApplyMovementSpeed();
     }
-    CharacterSaves.SetPassives(CharacterName(conn), PassiveState(conn).Nodes);
+    // Only a lower level (/set_level) drops passives; otherwise the saved ones stay as they are.
+    if (trimmed is not null) CharacterSaves.SetPassives(CharacterName(conn), trimmed, effects);
     Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}, {Progression.PassivePoints(level)} passive point(s))");
     await SendCharacterStats(remote, stream, ciphers, conn, $"level {level}");
     int mana = UnreservedMana(conn);
@@ -1828,19 +1878,26 @@ static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiph
         (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
 }
 
-// The character's experience and passives from its save, with the account's level: experience saved at another level
-// (/set_level, an older save) gives way to the level's start, and passives beyond the level's points are dropped.
-static void LoadProgress(ClientState conn, int level)
+// The character's experience and passives from its save; returns its level. The saved experience decides the level: the
+// account's (the ticket's) is only a copy for the character list, which a failed update at a level-up leaves behind. A save
+// without experience (an older one) starts at the account's level. Passives beyond the level's points are dropped.
+static int LoadProgress(ClientState conn, int level)
 {
     var save = CharacterSaves.Load(CharacterName(conn));
-    level = Math.Clamp(level, 1, Progression.MaxLevel);
-    // Gold is the account's (AccountStash.Gold): gold an older save kept with the character moves into the account. The
-    // account gets it first and the save lets go of it after: if anything stops in between (an unreadable stash, a crash),
-    // the gold is counted twice rather than lost.
+    level = CharacterSaves.LevelOf(save, level);
+    // Without the tree the saved passives can't be checked; dropping them would lose them at the next save.
+    if (save?.Passives is { Count: > 0 } && !Passives.Loaded)
+        throw new UnknownSavedItemException("allocated passives, but the passive tree (data/tables/PassiveSkills.json) is not loaded");
+    // Gold is the account's (AccountStash.Gold): gold an older save kept with the character moves into the account, in one
+    // transaction with the save letting go of it.
     if (save?.Gold is > 0 and uint oldGold)
     {
-        uint now = StashOf(conn).AddGold(oldGold);
-        CharacterSaves.TakeGold(CharacterName(conn));
+        uint now = Saves.Atomically(() =>
+        {
+            uint gold = StashOf(conn).AddGold(oldGold);
+            CharacterSaves.TakeGold(CharacterName(conn));
+            return gold;
+        });
         Console.WriteLine($"[gateway] {CharacterName(conn)}: {oldGold} gold from the character save moved to the account, now {now}");
     }
     lock (conn.Monsters)
@@ -1851,8 +1908,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.QuestFlags = [.. save?.QuestFlags ?? [], .. Quests.EveryCharacter];
         conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
         conn.RefundPoints = save?.RefundPoints ?? 0;
-        conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
-            ? xp : CharacterStats.ExperienceFor(level);
+        conn.Experience = save?.Experience ?? CharacterStats.ExperienceFor(level);
         TrimPassives(conn, level);
         conn.MasteryEffects = (save?.MasteryEffects ?? []).Where(kv => conn.Passives.Contains(kv.Key)
             && Passives.FindEffect(kv.Value) is { } effect && Passives.IsEffectFor(kv.Key, effect))
@@ -1860,6 +1916,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Pools = PoolsFor(conn, level);
         conn.ApplyMovementSpeed();
     }
+    return level;
 }
 
 // The pools of the character's class at this level with its passives (call under the Monsters lock).
@@ -2218,18 +2275,31 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
             error = $"not enough passive skill points ({Progression.PassivePoints(conn.Pools.Level) + conn.ExtraPassivePoints} at level {conn.Pools.Level}, {next.Count} wanted)";
         if (error is null && refundPoints && refundsSpent > conn.RefundPoints)
             error = $"not enough refund points ({refundsSpent} needed, {conn.RefundPoints} held)";
-        // Paid last, from the account's gold: nothing is taken when the change is refused.
-        if (error is null && goldRespec)
+        if (goldRespec) cost = Passives.GoldRespecCost(nodes, conn.Pools.Level);
+        now = next;
+        effectsNow = effects;
+        refundsNow = (ushort)(conn.RefundPoints - (refundPoints && error is null ? refundsSpent : 0));
+    }
+    // Saved before it applies, in one transaction: the gold (paid last, from the account's gold: nothing is taken when the
+    // change is refused), the passives, their mastery effects and the refund points.
+    if (error is null)
+        error = Saves.Atomically(() =>
         {
-            cost = Passives.GoldRespecCost(nodes, conn.Pools.Level);
-            if (StashOf(conn).TrySpendGold(cost) is uint left) gold = left;
-            else error = $"not enough gold ({cost} needed, {StashOf(conn).Gold} held)";
-        }
+            if (goldRespec)
+            {
+                if (StashOf(conn).TrySpendGold(cost) is not uint left) return $"not enough gold ({cost} needed, {StashOf(conn).Gold} held)";
+                gold = left;
+            }
+            CharacterSaves.SetPassives(CharacterName(conn), now, effectsNow, refundPoints ? refundsNow : null);
+            return null;
+        });
+    lock (conn.Monsters)
+    {
         if (error is null)
         {
-            conn.Passives = next;
-            conn.MasteryEffects = effects;
-            if (refundPoints) conn.RefundPoints -= (ushort)refundsSpent;
+            conn.Passives = now;
+            conn.MasteryEffects = effectsNow;
+            conn.RefundPoints = refundsNow;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
@@ -2246,9 +2316,6 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
             (refundPoints ? $", {refundsSpent} refund point(s) spent, {refundsNow} left" : "")));
     if (error is null)
     {
-        CharacterSaves.SetPassives(CharacterName(conn), now);
-        CharacterSaves.SetMasteryEffects(CharacterName(conn), effectsNow);
-        if (refundPoints) CharacterSaves.SetRefundPoints(CharacterName(conn), refundsNow);
         if (goldRespec)
         {
             await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (respec, {cost} paid)");
@@ -2266,20 +2333,19 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
 // points (ApplyLevel) and the account's level (Auth set_level, for the character list).
 static async Task GainExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain, string why)
 {
-    uint before, after;
+    // Added to the character's total (an older connection's or another task's gain is never written over), kept in memory
+    // and saved every few seconds; a new level is saved at once.
+    uint start;
     int oldLevel;
-    lock (conn.Monsters)
-    {
-        before = conn.Experience;
-        oldLevel = conn.Pools.Level;
-        conn.Experience = after = Progression.AddExperience(before, gain, CharacterStats.LevelStarts);
-    }
+    lock (conn.Monsters) (start, oldLevel) = (conn.Experience, conn.Pools.Level);
+    var (before, after) = CharacterSaves.AddExperience(CharacterName(conn), start, xp => Progression.AddExperience(xp, gain, CharacterStats.LevelStarts));
     if (after == before) return;
+    lock (conn.Monsters) conn.Experience = Math.Max(conn.Experience, after);
     int level = Progression.LevelFor(after, CharacterStats.LevelStarts);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerExperienceUpdate(PlayerId, after),
         $"0x02ba player Player: experience {before} + {after - before} = {after} (level {level}; {why})");
-    CharacterSaves.SetExperience(CharacterName(conn), after);
     if (level <= oldLevel) return;
+    CharacterSaves.SaveExperience(CharacterName(conn));   // a new level is saved at once, before the account hears of it
     var r = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level });
     if (!r.Ok) Console.WriteLine($"[gateway] {remote} level {level} not saved to the account: {r.Error}");
     await ApplyLevel(remote, stream, ciphers, conn, level);
@@ -3906,15 +3972,14 @@ static async Task DestroyHeldItem(string remote, NetworkStream stream, Connectio
 // Sets or clears quest flags for the character (saved at once) and sends the player's flag set again.
 static async Task SetQuestFlags(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on = true)
 {
-    bool changed = false;
-    foreach (string flag in flags)
-        if (on ? conn.QuestFlags.Add(flag) : conn.QuestFlags.Remove(flag))
-        {
-            changed = true;
-            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: quest flag {flag} {(on ? "set" : "cleared")}");
-        }
-    if (!changed) return;
-    CharacterSaves.SetQuestFlags(CharacterName(conn), conn.QuestFlags);
+    var changed = new List<string>();
+    lock (conn.Monsters)
+        foreach (string flag in flags)
+            if (on ? conn.QuestFlags.Add(flag) : conn.QuestFlags.Remove(flag)) changed.Add(flag);
+    if (changed.Count == 0) return;
+    // Only the changed flags: a flag another connection of the character set meanwhile stays in the save.
+    CharacterSaves.ChangeQuestFlags(CharacterName(conn), changed, on);
+    foreach (string flag in changed) Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: quest flag {flag} {(on ? "set" : "cleared")}");
     if (!conn.PlayerSent) return;
     var all = PlayerQuestFlags(conn);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, all), $"0x02ba player quest flags: {all.Count}");
@@ -3973,14 +4038,15 @@ static async Task UseFlask(string remote, NetworkStream stream, ConnectionCipher
             $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, duration field {durationField}");
 }
 
-// Gives each life and mana flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them: the
+// Gives each life and mana flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them (or, for
+// the refills of kills and the like, lets them wait for the next save: PlayerInventories.ChangeUnsaved): the
 // flasks that changed.
-static List<InventoryItem> FillFlasks(PlayerInventories items, int charges)
+static List<InventoryItem> FillFlasks(PlayerInventories items, int charges, bool saveNow = true)
 {
     List<InventoryItem> changed = [];
     foreach (var flask in items.Items(PlayerInventories.Flask))
         if (Items.ByHash(flask.Item.TypeHash) is { } type && Items.FlaskOf(type) is { } use && flask.Item.Charges < use.MaxCharges &&
-            items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges)) is { } done)
+            (saveNow ? items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges)) : items.ChangeUnsaved(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges))) is { } done)
             changed.Add(done);
     return changed;
 }
@@ -3989,7 +4055,7 @@ static List<InventoryItem> FillFlasks(PlayerInventories items, int charges)
 static async Task GainFlaskCharges(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int charges, string why)
 {
     var items = ItemsOf(conn);
-    if (FillFlasks(items, charges) is not { Count: > 0 } changed) return;
+    if (FillFlasks(items, charges, saveNow: false) is not { Count: > 0 } changed) return;
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
         items.NextRevision(PlayerInventories.Flask), [.. changed.Select(c => c.Id)], changed),
         $"0x00bf flasks: {string.Join(", ", changed.Select(c => $"{c.X}: {c.Item.Charges}"))} charges ({why})");
@@ -4055,7 +4121,16 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
             return;
         }
         if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
-        var stacked = items.AddStacked(PlayerInventories.MainInventory, ground.Item, ShapeOf);
+        var stacked = KeepOnGroundIfNotSaved(conn, ground, () => items.AddStacked(PlayerInventories.MainInventory, ground.Item, ShapeOf));
+        if (stacked.Left > 0)
+        {
+            // Fits said yes, so this is not expected; the rest goes back on the ground rather than vanish.
+            var rest = new WorldItemObject(ground.GridX, ground.GridY, ground.Item with { StackSize = (ushort)stacked.Left });
+            uint restId = conn.Instance.Ground.Add(rest);
+            Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: {stacked.Left} didn't fit, back on the ground as 0x{restId:x}");
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(restId, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), rest.Blob()),
+                $"0x02b9 create world item 0x{restId:x} (the rest of 0x{id:x})");
+        }
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), stacked.RemovedIds, stacked.AddedItems),
             $"0x00bf inventory 1: {ground.Item.StackSize} picked up ({stacked.Changed.Count} stack(s) grown, {stacked.Added.Count} new)");
@@ -4076,10 +4151,22 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
     if (conn.Instance.IsStartWeapon(CharacterName(conn), id) && items.ClaimStartWeapon())
         Console.WriteLine($"[gateway] {remote} start weapon picked up");
 
-    var placed = items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
+    var placed = KeepOnGroundIfNotSaved(conn, ground, () => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item)));
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
         toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
+}
+
+// A pickup whose save fails puts the item back on the ground before the error closes the connection: it left the ground
+// first, and the items are loaded again as saved (Saves).
+static T KeepOnGroundIfNotSaved<T>(ClientState conn, WorldItemObject ground, Func<T> pickUp)
+{
+    try { return pickUp(); }
+    catch
+    {
+        conn.Instance.Ground.Add(ground);
+        throw;
+    }
 }
 
 // C→S 0x7c: Shift + click on a stack, then the split window's amount. The stack shrinks in place (0xbf removing and adding
@@ -4090,15 +4177,13 @@ static async Task SplitStack(string remote, NetworkStream stream, ConnectionCiph
     int amount = (int)Math.Min(split.Amount, ushort.MaxValue);
     if (StashOf(conn).TabOf(split.InventoryId) is int tab)
     {
-        // From a stash tab: the tab's stack shrinks (written first), the split-off part is held with a character id.
+        // From a stash tab: the tab's stack shrinks and the split-off part is held with a character id, in one transaction.
         var stash = StashOf(conn);
-        if (items.Items(PlayerInventories.Cursor).Count > 0 || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == split.ItemId) is not { } source ||
-            stash.Shrink(tab, split.ItemId, amount) is not { } left)
+        if (ItemMoves.SplitFromStash(stash, items, tab, split.ItemId, amount) is not var (left, part))
         {
             Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}: refused: {hex}");
             return;
         }
-        var part = items.Put(PlayerInventories.Cursor, new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = (ushort)amount }));
         Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(split.InventoryId, stash.NextRevision(tab), [left.Id], [left]),
             $"0x00bf stash tab {tab}: stack {left.Id} now {left.Item.StackSize}");
@@ -4156,16 +4241,15 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
             Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: refund points are already at the maximum");
             return;
         }
-        refunds = ++conn.RefundPoints;
+        refunds = (ushort)(conn.RefundPoints + 1);
     }
-    var taken = items.ConsumeOne(r, use.ItemId);
-    if (taken is null)
+    // The orb and the point are saved together.
+    if (ItemMoves.UseForRefundPoint(items, CharacterName(conn), r, use.ItemId, refunds) is not { } taken)
     {
-        lock (conn.Monsters) conn.RefundPoints--;
         Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: item {use.ItemId} disappeared: {hex}");
         return;
     }
-    CharacterSaves.SetRefundPoints(CharacterName(conn), refunds);
+    lock (conn.Monsters) conn.RefundPoints = refunds;
     uint inventoryId = PlayerInventories.InventoryId(r);
     // Every change removes the id first: the client keeps an item by id, so a stack that only shrinks needs the remove
     // and the add of the same id with its new Stack component (as SendMerged does).
@@ -4200,8 +4284,8 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         Console.WriteLine($"[gateway] {remote} <= 0x0071 Scroll of Wisdom on item {use.TargetId}: already identified");
         return;
     }
-    if (items.ConsumeOne(usedRow, used.Id) is not { } taken) return;
-    if (items.Change(targetRow, target.Id, i => i with { Identified = true }) is not { } identified) return;
+    // The scroll and the identified item are saved together.
+    if (ItemMoves.UseOn(items, usedRow, used.Id, targetRow, target.Id, i => i with { Identified = true }) is not var (taken, identified)) return;
     // Remove and add the same ids: the client replaces an item only that way (see UseItem).
     uint usedInventory = PlayerInventories.InventoryId(usedRow), targetInventory = PlayerInventories.InventoryId(targetRow);
     if (usedRow == targetRow)
@@ -4385,7 +4469,8 @@ static async Task ActivateMapDevice(string remote, NetworkStream stream, Connect
         await Tell(why);
         return;
     }
-    var consumed = slots.Where(i => items.Remove(PlayerInventories.MapDevice, i.Id) is not null).Select(i => i.Id).ToList();
+    // Every slot's item is consumed in one transaction: all of them or none.
+    var consumed = Saves.Atomically(() => slots.Where(i => items.Remove(PlayerInventories.MapDevice, i.Id) is not null).Select(i => i.Id).ToList());
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MapDevice),
         items.NextRevision(PlayerInventories.MapDevice), consumed, []),
         $"0x00bf inventory {PlayerInventories.InventoryId(PlayerInventories.MapDevice)}: the map device consumed {consumed.Count} item(s)");
@@ -4596,109 +4681,57 @@ static async Task SendStashTab(string remote, NetworkStream stream, ConnectionCi
     await Send(remote, stream, ciphers, InstanceStash.TabLoaded(tab, inventory), $"0x00c8 stash tab {tab} loaded");
 }
 
-// C→S 0x28 on a stash tab: the item leaves the tab for the (empty) cursor, keeping its id. The stash is written before
-// the character, so a crash between the two loses the item rather than copying it.
+// C→S 0x28 on a stash tab: the item leaves the tab for the (empty) cursor, keeping its id; both saves in one transaction
+// (ItemMoves).
 static async Task PickUpFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, InstanceItems.PickUpItem pick)
 {
     var stash = StashOf(conn);
     var items = ItemsOf(conn);
-    if (items.Items(PlayerInventories.Cursor).Count > 0 || stash.Take(tab, pick.ItemId) is not { } taken)
+    if (ItemMoves.StashToCursor(stash, items, tab, pick.ItemId) is not { } held)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x0028 pick up {pick} from stash tab {tab}: refused");
         return;
     }
-    stash.SetLastTab(tab);   // the player works in this tab: it is on screen
-    var held = items.Put(PlayerInventories.Cursor, taken with { X = 0, Y = 0 });
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(pick.InventoryId, stash.NextRevision(tab), [held.Id], []),
         $"0x00bf stash tab {tab}: remove item {held.Id}");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
         items.NextRevision(PlayerInventories.Cursor), [], [held]), $"0x00bf cursor: add item {held.Id} (from the stash)");
 }
 
-// C→S 0x2a on a stash tab: the held item goes into the tab (with a stash id, AccountStash.Place); the one item it was
-// dropped on comes onto the cursor.
+// C→S 0x2a on a stash tab: the held item goes into the tab (with a stash id, AccountStash.Place) or onto a stack of its
+// type there; the one item it was dropped on comes onto the cursor. One transaction (ItemMoves.HeldToStash).
 static async Task PlaceInStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, InstanceItems.PlaceItem place)
 {
     var stash = StashOf(conn);
     var items = ItemsOf(conn);
-    if (items.Items(PlayerInventories.Cursor) is not [var held, ..])
-    {
-        Console.WriteLine($"[gateway] {remote} <= 0x002a place {place} in stash tab {tab}: nothing held");
-        return;
-    }
-    bool one = place.A != 0 && held.Item.StackSize > 1;
-    if (stash.Merge(tab, (int)place.X, (int)place.Y, held, ShapeOf, one ? 1 : int.MaxValue) is var (stack, moved))
-    {
-        // Onto a stack of its type: the tab's stack grows (written first), the held one shrinks or is gone.
-        var rest = items.SetStackSize(PlayerInventories.Cursor, held.Id, held.Item.StackSize - moved);
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [stack.Id], [stack]),
-            $"0x00bf stash tab {tab}: stack {stack.Id} now {stack.Item.StackSize}");
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
-            items.NextRevision(PlayerInventories.Cursor), [held.Id], rest is null ? [] : [rest]),
-            "0x00bf cursor: " + (rest is null ? $"remove item {held.Id} (merged)" : $"stack {rest.Id} now {rest.Item.StackSize}"));
-        return;
-    }
-    if (one)
-    {
-        // Shift + click: one of the held stack into an empty cell of the tab (written first), the rest stays held.
-        int px = (int)place.X, py = (int)place.Y;
-        if (stash.Inventory(tab).Items.Any(i => ShapeOf(i.Item) is { } s && i.X <= px && px < i.X + s.Width && i.Y <= py && py < i.Y + s.Height))
-        {
-            Console.WriteLine($"[gateway] {remote} <= 0x002a place one {place} in stash tab {tab}: refused (something in the way)");
-            return;
-        }
-        var single = new InventoryItem(items.NewItemId(), 0, 0, held.Item with { StackSize = 1 });
-        if (stash.Place(tab, px, py, single, ShapeOf, out string whyNot) is not var (put, _))
-        {
-            Console.WriteLine($"[gateway] {remote} <= 0x002a place one {place} in stash tab {tab}: refused ({whyNot})");
-            return;
-        }
-        var left = items.SetStackSize(PlayerInventories.Cursor, held.Id, held.Item.StackSize - 1);
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [], [put]),
-            $"0x00bf stash tab {tab}: add one as item {put.Id} at ({put.X}, {put.Y})");
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
-            items.NextRevision(PlayerInventories.Cursor), [held.Id], left is null ? [] : [left]), $"0x00bf cursor: stack {held.Id} now {left?.Item.StackSize ?? 0}");
-        return;
-    }
-    if (stash.Place(tab, (int)place.X, (int)place.Y, held, ShapeOf, out string why) is not var (placed, displaced))
+    if (ItemMoves.HeldToStash(stash, items, tab, (int)place.X, (int)place.Y, place.A != 0, ShapeOf, out string why) is not { } done)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place} in stash tab {tab}: refused ({why})");
         return;
     }
-    stash.SetLastTab(tab);
-    items.Remove(PlayerInventories.Cursor, held.Id);
-    if (displaced is not null) items.Put(PlayerInventories.Cursor, displaced);
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), displaced is null ? [] : [displaced.Id], [placed]),
-        $"0x00bf stash tab {tab}: add item {placed.Id} at ({placed.X}, {placed.Y})" + (displaced is null ? "" : $", remove item {displaced.Id}"));
+    var (inTab, before) = (done.InTab, done.HeldBefore);
+    if (done.Merged)
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), [inTab.Id], [inTab]),
+            $"0x00bf stash tab {tab}: stack {inTab.Id} now {inTab.Item.StackSize}");
+    else
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(place.InventoryId, stash.NextRevision(tab), done.Displaced is null ? [] : [done.Displaced.Id], [inTab]),
+            $"0x00bf stash tab {tab}: add item {inTab.Id} at ({inTab.X}, {inTab.Y})" + (done.Displaced is null ? "" : $", remove item {done.Displaced.Id}"));
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
-        items.NextRevision(PlayerInventories.Cursor), [held.Id], displaced is null ? [] : [displaced]),
-        $"0x00bf cursor: remove item {held.Id}" + (displaced is null ? "" : $", hold item {displaced.Id}"));
+        items.NextRevision(PlayerInventories.Cursor), [before.Id], done.Held is null ? [] : [done.Held]),
+        "0x00bf cursor: " + (done.Held is null ? $"remove item {before.Id}" : done.Displaced is null ? $"stack {before.Id} now {done.Held.Item.StackSize}" : $"remove item {before.Id}, hold item {done.Held.Id}"));
 }
 
 // C→S 0xe0: Ctrl + click on an inventory item while a stash tab is shown. The item goes to the tab's first free cell
-// (with a stash id), out of whichever inventory holds it.
+// (with a stash id), out of whichever inventory holds it; one transaction (ItemMoves.InventoryToStash).
 static async Task MoveToStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToTab move)
 {
     var stash = StashOf(conn);
     var items = ItemsOf(conn);
     int tab = move.Tab;
-    string refused = move.Kind != InstanceStash.Personal || tab >= stash.Count ? "no such tab"
-        : items.RowOf(move.ItemId) is not byte row ? "the item is not in the inventories"
-        : items.Items(row).First(i => i.Id == move.ItemId) is var item && ShapeOf(item.Item) is not { } shape ? "unknown item type"
-        : stash.FreeCell(tab, shape.Width, shape.Height, ShapeOf) is not { } cell ? "the tab is full"
-        : "";
-    Console.WriteLine($"[gateway] {remote} <= 0x00e0 move item {move.ItemId} to stash tab {tab} ({move})" + (refused == "" ? "" : $": refused ({refused})"));
-    if (refused != "") return;
-    byte from = items.RowOf(move.ItemId)!.Value;
-    var it = items.Remove(from, move.ItemId)!;
-    var (fx, fy) = stash.FreeCell(tab, ShapeOf(it.Item)!.Value.Width, ShapeOf(it.Item)!.Value.Height, ShapeOf)!.Value;
-    if (stash.Place(tab, fx, fy, it, ShapeOf, out string why) is not var (placed, _))
-    {
-        items.Put(from, it);
-        Console.WriteLine($"[gateway] {remote} stash tab {tab}: {why}");
-        return;
-    }
-    stash.SetLastTab(tab);
+    string why = "no such tab";
+    var moved = move.Kind == InstanceStash.Personal ? ItemMoves.InventoryToStash(stash, items, tab, move.ItemId, ShapeOf, out why) : null;
+    Console.WriteLine($"[gateway] {remote} <= 0x00e0 move item {move.ItemId} to stash tab {tab} ({move})" + (moved is null ? $": refused ({why})" : ""));
+    if (moved is not var (from, it, placed)) return;
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(from), items.NextRevision(from), [it.Id], []),
         $"0x00bf inventory {PlayerInventories.InventoryId(from)}: remove item {it.Id} (to the stash)");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(tab), stash.NextRevision(tab), [], [placed]),
@@ -4706,25 +4739,21 @@ static async Task MoveToStash(string remote, NetworkStream stream, ConnectionCip
     if (PlayerInventories.ShowsOnModel(from)) await SendEquipment(remote, stream, ciphers, conn, items);
 }
 
-// An item out of a stash tab into the main inventory's first free cell (C→S 0xe3), keeping its id.
+// An item out of a stash tab into the main inventory's first free cell (C→S 0xe3), keeping its id; one transaction
+// (ItemMoves.StashToInventory).
 static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId)
 {
     var stash = StashOf(conn);
     var items = ItemsOf(conn);
-    if (tab >= stash.Count || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } inTab
-        || ShapeOf(inTab.Item) is not { } shape
-        || items.FreeCell(PlayerInventories.MainInventory, shape.Width, shape.Height, ShapeOf) is not { } cell)
+    if (ItemMoves.StashToInventory(stash, items, tab, itemId, ShapeOf) is not { } placed)
     {
         Console.WriteLine($"[gateway] {remote} stash tab {tab} item {itemId}: refused (not there, unknown type or no room in the inventory)");
         return;
     }
-    if (stash.Take(tab, itemId) is not { } taken) return;
-    stash.SetLastTab(tab);
-    var placed = items.Put(PlayerInventories.MainInventory, taken with { X = cell.X, Y = cell.Y });
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(AccountStash.InventoryId(tab), stash.NextRevision(tab), [itemId], []),
         $"0x00bf stash tab {tab}: remove item {itemId}");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
-        items.NextRevision(PlayerInventories.MainInventory), [], [placed]), $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y}) (from the stash)");
+        items.NextRevision(PlayerInventories.MainInventory), [], [placed]), $"0x00bf inventory 1: add item {placed.Id} at ({placed.X}, {placed.Y}) (from the stash)");
 }
 
 // The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
@@ -5200,7 +5229,7 @@ sealed class NpcSale(SpawnedNpc npc, uint mine, uint theirs)
     public SpawnedNpc Npc { get; } = npc;
     public uint Mine { get; } = mine;
     public uint Theirs { get; } = theirs;
-    public Dictionary<uint, InventoryItem> Offered { get; } = [];
+    // The offered items stay in the character's inventory cells until the sale ends (PlayerInventories.Offer).
     public List<InventoryItem> Reward = [];
     public uint MineRevision, TheirsRevision;
 }

@@ -440,7 +440,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   little-endian; basic actions by their own id, Move = 0x2909), then u16 +0x2a and u16 +0x2c (sent 0). The bar (vtable `0x14319d870`) rebuilds from such an array in
   vtable +0x390 `0x140ae0fb0`: it looks each id up in the ActiveSkillManager and fills the slot; an unknown id (0)
   clears it. Without 0x53 the bar is empty after every area change and login.
-- **The Gateway** saves each 0x4e (`CharacterSaves`, data/saves/) as slot → a GrantedEffects Id for gems and the default
+- **The Gateway** saves each 0x4e (`CharacterSaves`, `data/saves.db`) as slot → a GrantedEffects Id for gems and the default
   attack (skill ids change with the socketed gems), `Action/<ActionTypes Id>` for a basic action (Move 0x2909 =
   "Move only"), or "" for a cleared slot. It sends 0x53 right after the player and area messages, no delay needed,
   with the default attack on slot 0 only when nothing was saved there. Live 2026-10-18: Fireball on the right mouse

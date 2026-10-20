@@ -112,9 +112,9 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
 
 ## 6. The server's stash
 
-`AccountStash` (Gateway): per account (Auth's resolve now returns `Account`), saved as `data/stashes/<account>.json`
-the way character saves are ([13](13-items.md) §7, `SaveFiles`): a held file is waited for, and a stash file that can't
-be read stops what needed it instead of becoming the starter tabs, which used to be written over it at once.
+`AccountStash` (Gateway): per account (Auth's resolve now returns `Account`), saved as its row in `data/saves.db` the way
+character saves are ([saves](../saves.md)): a stash that can't be read stops what needed it instead of becoming the
+starter tabs, and every move between the stash and a character's items is one transaction.
 Tab i's inventory id is 0x800 + i. A new account gets two normal tabs, two premium tabs, a quad tab and Currency,
 Essence, Fragment, Map, Flask and Gem tabs. An item put into the stash gets a stash id (from 0x40000000, never reused;
 the next id is saved) and keeps it when a character takes it out: characters count their item ids from 1 each, and

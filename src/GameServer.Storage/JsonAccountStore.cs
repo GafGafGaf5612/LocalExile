@@ -26,6 +26,9 @@ public sealed class JsonAccountStore : IAccountStore
         if (_path is not null) SaveFiles.Write(_path, JsonSerializer.Serialize(_s, Opts));
     }
 
+    /// <summary>Every account and character (the import into the save database, <see cref="SqliteAccountStore.ImportJson"/>).</summary>
+    public (IReadOnlyList<Account> Accounts, IReadOnlyList<Character> Characters) All() { lock (_gate) return ([.. _s.Accounts], [.. _s.Characters]); }
+
     public Account? FindAccount(string name) { lock (_gate) return _s.Accounts.FirstOrDefault(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)); }
     public Account? GetAccount(Guid id) { lock (_gate) return _s.Accounts.FirstOrDefault(a => a.Id == id); }
     public void AddAccount(Account a) { lock (_gate) { _s.Accounts.Add(a); Save(); } }
