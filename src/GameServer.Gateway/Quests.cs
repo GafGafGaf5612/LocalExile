@@ -32,9 +32,10 @@ static class Quests
 
     static readonly Script[] All = [new EnemyAtTheGate()];
 
-    /// <summary>Flags every character has from the start (added on login, not a quest's): the hideout is unlocked
-    /// (21-hideouts.md §1).</summary>
-    public static readonly string[] EveryCharacter = ["HideoutUnlocked"];
+    /// <summary>Flags every character has from the start (added on login, not a quest's): the hideout is unlocked, and
+    /// HASH32 0x2f1b9c25 (row 718, named HideoutJukeboxEnabled by the schema), the flag the hideout edit controls check
+    /// (0x14216c840; 21-hideouts.md §1).</summary>
+    public static readonly string[] EveryCharacter = ["HideoutUnlocked", "HideoutJukeboxEnabled"];
 
     public static IReadOnlyList<string> OnMonsterKilled(string areaId, string varietyId) =>
         [.. All.SelectMany(s => s.OnMonsterKilled(areaId, varietyId))];

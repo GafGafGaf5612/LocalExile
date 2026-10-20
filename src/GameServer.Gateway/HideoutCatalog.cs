@@ -44,6 +44,30 @@ static class HideoutCatalog
         h.First(WaypointObject.MetadataPath) is { } d
             ? new WaypointObject(d.X, d.Y, d.Model, d.Rotation, Hideout: new HideoutDoodad(d.Hash, (byte)d.Variation)) : null;
 
+    /// <summary>The doodads the server creates in a hideout besides the waypoint and stash: the map device (21-hideouts.md
+    /// §2). Decorations are not created yet.</summary>
+    public static bool IsPlaced(Doodad d) => d.Type?.EndsWith("MappingDevice", StringComparison.Ordinal) == true;
+
+    /// <summary>An object type's deserialized components and shared-state count (data/object-types.json), or null.</summary>
+    public static (IReadOnlyList<string> Components, int SharedStates)? TypeOf(string type) =>
+        ObjectTypes.Value.TryGetValue(type, out var t) ? t : null;
+
+    static readonly Lazy<Dictionary<string, (IReadOnlyList<string>, int)>> ObjectTypes = new(() =>
+    {
+        var result = new Dictionary<string, (IReadOnlyList<string>, int)>(StringComparer.Ordinal);
+        const string file = "data/object-types.json";
+        if (!File.Exists(file)) return result;
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var t in doc.RootElement.GetProperty("types").EnumerateArray())
+        {
+            string type = t.GetProperty("type").GetString()!;
+            if (!type.Contains("Hideout", StringComparison.OrdinalIgnoreCase)) continue;
+            result[type] = ([.. t.GetProperty("components").EnumerateArray().Take(t.GetProperty("read").GetInt32()).Select(c => c.GetString()!)],
+                t.GetProperty("shared_states").GetArrayLength());
+        }
+        return result;
+    });
+
     public static List<Hideout> Load(string hideoutsJson, string tables)
     {
         if (!File.Exists(hideoutsJson)) return [];

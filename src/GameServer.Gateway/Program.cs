@@ -480,6 +480,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SendGroundItems(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 await SpawnTownStash(remote, stream, ciphers, conn);
+                await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
             }
@@ -4040,6 +4041,25 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
         $"0x02b9 create stash 0x{id:x} at ({at.X}, {at.Y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 stash 0x{id:x} enters wake zone");
     conn.StashObject = id;
+}
+
+// A hideout's placed doodads (HideoutCatalog.IsPlaced: the map device) from its decoration, with their HideoutDoodad data.
+static async Task SpawnHideoutDoodads(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (HideoutCatalog.ByArea(conn.Layout.Hash) is not { } hideout) return;
+    foreach (var d in hideout.Doodads.Where(HideoutCatalog.IsPlaced))
+    {
+        if (HideoutCatalog.TypeOf(d.Type!) is not var (components, states) || !HideoutObject.CanSerialize(components))
+        {
+            Console.WriteLine($"[gateway] {remote} hideout doodad {d.Name} ({d.Type}): unknown type or unsupported components, not created");
+            continue;
+        }
+        uint id = conn.NextObjectId++;
+        var obj = new HideoutObject(d.X, d.Y, d.Rotation, components, new HideoutDoodad(d.Hash, (byte)d.Variation), states);
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(d.Type!), obj.Blob()),
+            $"0x02b9 create hideout doodad 0x{id:x} {d.Name} ({d.Type}) at ({d.X}, {d.Y}), components {string.Join(", ", components)}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 hideout doodad 0x{id:x} enters wake zone");
+    }
 }
 
 // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects

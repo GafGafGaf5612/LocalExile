@@ -72,3 +72,28 @@ public class HideoutWaypointTests
         Assert.Equal(t[..^14] + doodad + t[^14..], Convert.ToHexString(hideout));
     }
 }
+
+public class HideoutObjectTests
+{
+    [Fact]
+    public void The_map_device_writes_its_components_in_type_order()
+    {
+        // StrDexIntMappingDevice: Positioned, BaseEvents, Animated, InteractionAction, HideoutDoodad, StateMachine (opening,
+        // active), MinimapIcon. Lush Hideout's Map Device: (449, 460), MTX hash 2306038834, variation 0.
+        string[] components = ["Positioned", "BaseEvents", "Animated", "InteractionAction", "HideoutDoodad", "StateMachine", "MinimapIcon"];
+        var blob = new HideoutObject(449, 460, 0, components, new HideoutDoodad(2306038834, 0), SharedStates: 2).Blob();
+        string hex = Convert.ToHexString(blob);
+        Assert.Equal("0000" + "C1010000" + "CC010000" + "00000000" + "0000" + "00" + "02" + "00" + "01"   // flags, Positioned
+            + "00" + "00"                                                                                // Animated, InteractionAction
+            + Convert.ToHexString(BitConverter.GetBytes(2306038834u)) + "00" + "00"                      // HideoutDoodad
+            + "02" + "00" + "0000" + "0000"                                                              // StateMachine
+            + "00" + "00", hex);                                                                         // MinimapIcon, tasks
+    }
+
+    [Fact]
+    public void Types_with_other_components_are_refused()
+    {
+        Assert.False(HideoutObject.CanSerialize(["Positioned", "NPC"]));
+        Assert.True(HideoutObject.CanSerialize(["Positioned", "BaseEvents", "Animated", "HideoutDoodad"]));
+    }
+}
