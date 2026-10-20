@@ -185,25 +185,19 @@ public static class InstanceEntities
     public static byte[] AnimatedModel(uint entityId, byte animatedIndex, string ao) =>
         ComponentUpdate(entityId, animatedIndex, new BlobWriter().U8(1).WStr32(ao).ToArray());
 
-    /// <summary>The player's Actor (component 9) skill list again (slot 20 f0 0x40, 11-skills.md §3): replaces skills of the
-    /// same id, e.g. with new stats.</summary>
-    public static byte[] PlayerSkillsUpdate(uint playerId, IReadOnlyList<GrantedSkill> skills)
-    {
-        var w = new BlobWriter().U8(0x40).U8(0);
-        PlayerObject.WriteSkillList(w, skills);
-        return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.ToArray());
-    }
 
     /// <summary>
-    /// Removes skills from the player (0x2ba to the Actor, flags 0x20 → <c>0x142198800</c>): u8 records to add (none),
-    /// u8 ids to remove, the u16 ids (<c>0x142198560</c>: found by id in the skill manager, its remove handler runs),
-    /// then u8 0 and u8 0 for the two lists that follow. The 0x40 list only adds or replaces, so a skill whose gem left
-    /// the equipment stays on the client until it is removed here.
+    /// Changes the player's skills (0x2ba to the Actor, flags 0x20 → <c>0x142198800</c>): u8 records, u8 ids, the skill
+    /// records (as in the 0x40 list: added, or replacing the one with the same id), the u16 ids to remove
+    /// (<c>0x142198560</c>: found by id in the skill manager, its remove handler runs), then u8 0 and u8 0 for the two
+    /// lists that follow. Unlike the 0x40 list it removes skills, and it tells the client's UI that the skills changed
+    /// (<c>0x140b14b00</c> before and after, when there is a record or an id): the character panel's skill list follows it.
     /// </summary>
-    public static byte[] PlayerSkillsRemove(uint playerId, IReadOnlyList<ushort> ids)
+    public static byte[] PlayerSkillsChange(uint playerId, IReadOnlyList<GrantedSkill> skills, IReadOnlyList<ushort> removed)
     {
-        var w = new BlobWriter().U8(0x20).U8(0).U8(0).U8((byte)ids.Count);
-        foreach (var id in ids) w.U16(id);
+        var w = new BlobWriter().U8(0x20).U8(0).U8((byte)skills.Count).U8((byte)removed.Count);
+        foreach (var s in skills) PlayerObject.WriteSkillRecord(w, s);
+        foreach (var id in removed) w.U16(id);
         return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.U8(0).U8(0).ToArray());
     }
 
@@ -708,18 +702,19 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     internal static void WriteSkillList(BlobWriter w, IReadOnlyList<GrantedSkill> skills)
     {
         w.U8((byte)skills.Count);
-        foreach (var s in skills)
-        {
-            w.U16(s.Id)
-             .U8(0).U32(s.EffectsPerLevelRow)      // GEPL reference
-             .U8(0).U32(s.StatSetsPerLevelRow)     // its stat set
-             .U8(0)                                // flags: no parent object
-             .U8(0)                                // supports
-             .U32(0).U32(0).U32(0).U8(0)
-             .Stats(s.Stats);                      // the skill's own stats
-        }
+        foreach (var s in skills) WriteSkillRecord(w, s);
         w.U8(0).U32(0);
     }
+
+    /// <summary>One skill record (<c>0x142196ce0</c>), as the 0x40 list and the 0x20 update carry it.</summary>
+    internal static void WriteSkillRecord(BlobWriter w, GrantedSkill s) =>
+        w.U16(s.Id)
+         .U8(0).U32(s.EffectsPerLevelRow)      // GEPL reference
+         .U8(0).U32(s.StatSetsPerLevelRow)     // its stat set
+         .U8(0)                                // flags: no parent object
+         .U8(0)                                // supports
+         .U32(0).U32(0).U32(0).U8(0)
+         .Stats(s.Stats);                      // the skill's own stats
 
     /// <summary>One Life pool (0x141e6be70): u32 +0x30 current, u32 +0x10 reserved (flat), i16 +0x14 (reserved percent?),
     /// u32 +0x28, u32 +0x40. The maximum is not in the blob: the client computes it from stats (Witch level 1: life 50,

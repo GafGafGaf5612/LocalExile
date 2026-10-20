@@ -1627,18 +1627,16 @@ static async Task SendCharacterStats(string remote, NetworkStream stream, Connec
     await SendSkills(remote, stream, ciphers, conn);
 }
 
-// The player's skills again (0x2ba Actor, flags 0x40), then the removal (flags 0x20) of the skills the client still has
-// whose gems left the equipment: the list only adds or replaces by id.
+// The player's skills again, and the removal of the ones the client still has whose gems left the equipment, in one
+// Actor 0x20 update (PlayerSkillsChange): the 0x40 list neither removes skills nor tells the character panel.
 static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     var skills = PlayerSkills(conn);
-    await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills),
-        $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats");
     var gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
     conn.ClientSkillIds = [.. skills.Select(s => s.Id)];
-    if (gone.Count > 0)
-        await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsRemove(PlayerId, gone),
-            $"0x02ba player Actor: remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}");
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone),
+        $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats" +
+        (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
 }
 
 // The character's experience and passives from its save, with the account's level: experience saved at another level
