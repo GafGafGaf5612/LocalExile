@@ -20,6 +20,8 @@ chain is the row's `InheritsFrom`. `client { }` blocks (RenderItem) are never re
 python -I scripts/re/ot_components.py --items --json data/item-types.json
 ```
 
+`scripts/dev/extract-data.ps1` runs it (entry `item-types`; a change to the output bumps the entry's version).
+
 | Type | Components the reader reaches |
 |---|---|
 | Wand1 (any weapon) | Base, LocalStats, Mods, AttributeRequirements, Weapon, Quality, Sockets |
@@ -102,8 +104,8 @@ implicits again. Dev commands on the held item: `/mod [implicit|explicit|enchant
 their own), GenerationType 1 (prefix) or 2 (suffix), Level at most the item level, is not essence-only, and has a
 weight above 0 for the item's **tags**: the first of its SpawnWeight tags the item has gives the weight, the first
 matching GenerationWeight tag multiplies it by weight / 100. An item's tags are the `tag = "…"` lines of the Base
-sections along its `.it` chain (`ot_components.py --items` writes them to `data/item-types.json` as `tags`; regenerate
-an older file) plus the row's own TagsKeys: Driftwood Wand → default, weapon, onehand, wand, ranged, one_hand_weapon,
+sections along its `.it` chain (`ot_components.py --items` writes them to `data/item-types.json` as `tags`)
+plus the row's own TagsKeys: Driftwood Wand → default, weapon, onehand, wand, ranged, one_hand_weapon,
 wand_can_roll_caster_modifiers.
 
 Each affix is drawn by weight from all allowed mods (prefixes and suffixes compete), skipping mods that share a

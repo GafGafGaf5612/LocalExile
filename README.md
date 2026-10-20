@@ -5,6 +5,8 @@ This project is for fun and education only. It is intended for local-gameplay wi
 Everything here is made by Claude Opus 5.5. You can pull-request and are encouraged to. I'm running only on two pro subs
 and Im broke and unemployed, so help out folks.
 
+[Join Discord](https://discord.gg/pd2Fd5M6Hd)
+
 # To get started [Humans]
 - Open up a Frontier Model (such as Claude Opus 5.5) and tell them to set-up this project on your machine. 
 - Tell them to read all the Agents/ folder and all the MD files.
@@ -80,7 +82,8 @@ robocopy "<your PoE 3.29.3b folder>" Client /E; Copy-Item Client\PathOfExile.exe
 dotnet run --project src/GameServer.Auth -- keygen Client/Game.exe
 dotnet run --project src/GameServer.Auth -- patch Client/Game.exe Client/Game.patched.exe
 dotnet run --project src/GameServer.Patch -- gateway --login 127.0.0.1:20493
-# create an account + character: GameServer.Host and GameServer.DevClient (Agents/GettingStarted.md, step 7)
+# needs Node.js (+ npm install in Tools/ooz) and Python 3.9+: live.ps1 extracts the game data first (scripts/dev/extract-data.ps1)
+# create an account + character: GameServer.Host and GameServer.DevClient (Agents/GettingStarted.md, step 8)
 .\scripts\dev\live.ps1 -Walkmaps   # -Walkmaps is optional: needs `pip install frida`, captures walk maps
 ```
 

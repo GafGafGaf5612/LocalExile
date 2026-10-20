@@ -229,7 +229,7 @@ sealed class ItemCatalog
         var components = new Dictionary<string, IReadOnlyList<string>>();
         var itemTags = new Dictionary<string, IReadOnlyList<string>>();
         string types = Path.Combine(folder, "item-types.json");
-        if (!File.Exists(types)) return ([], $"{types} is missing: python -I scripts/re/ot_components.py --items --json {types}");
+        if (!File.Exists(types)) return ([], $"{types} is missing: run scripts/dev/extract-data.ps1");
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(types)))
             foreach (var t in doc.RootElement.GetProperty("types").EnumerateArray())
             {

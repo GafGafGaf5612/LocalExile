@@ -32,6 +32,7 @@ if (!File.Exists(clientExe))
     return 1;
 }
 HncSender.LoadMask(File.ReadAllBytes(clientExe));
+if (GameDataFiles.Warning() is { } missingData) Console.WriteLine(missingData);
 
 // Every item sent carries its level requirement (13-items.md §2d): the client shows and checks the byte it receives.
 // Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead.
@@ -1206,8 +1207,20 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         return;
     }
     int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
-    var hit = weapon.HitDamage(CharacterPlayerStats(conn))
+    var player = CharacterPlayerStats(conn);
+    var hit = weapon.HitDamage(player)
         .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
+    // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
+    // hits, and the hit's own physical damage may store a new stack for the hits after it.
+    double physical = hit[DamageType.Physical].Max;
+    double stored = m.Impale.Bonus;
+    if (stored > 0) hit = hit.Add(DamageType.Physical, new DamageRange(stored, stored));
+    m.Impale.AfterHit();
+    int impaleChance = Stats.Key("impale_on_hit_%_chance") is uint impaleKey ? player.GetValueOrDefault(impaleKey) : 0;
+    bool impaled = impaleChance > 0 && Random.Shared.Next(100) < impaleChance && m.Impale.Apply(physical);
+    // Read before the hit is applied: a killing blow clears the target's impales.
+    int impaleStacks = m.Impale.Stacks;
+    double impaleStored = m.Impale.Bonus;
     int damage = hit.RollTotal(Random.Shared);
     bool critical = conn.Pools.AttackCriticalStrikeChance > 0
         && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
@@ -1223,7 +1236,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         m.Life = (uint)Math.Max(0, (long)m.Life - damage);
         life = m.Life;
         conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
-        if (life == 0) { m.Aggro = false; m.Dead = true; }
+        if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
     }
     // At 0 the client's Life tick (0x141e6a190) stops notifying its listeners, so the mini life bar would keep the last
     // value: hide it with the stat its listener watches (hide_mini_life_bar).
@@ -1231,7 +1244,10 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(use.TargetId, [(StatKeys.HideMiniLifeBar, 1)]),
             $"0x01b3 monster 0x{use.TargetId:x} hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
-        $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}" +
+        (stored > 0 ? $", impale +{stored:0.#} ({impaleStacks} stack(s))" : "") +
+        (impaled ? $", impaled ({impaleStacks} stack(s), {impaleStored:0.#} stored)" : "") +
+        $", life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, use.TargetId, m);
 }
 
@@ -1513,6 +1529,13 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     var (mainLocal, offLocal) = HandLocalStats(conn);
     foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
         .Concat(PanelStats.FromPools(Get, conn.Pools)))
+        if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
+    // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
+    // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
+    // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
+    if (Stats.Key("skill_uses_main_hand") is uint usesMainHand && !devSet.Contains(usesMainHand)) stats[usesMainHand] = 1;
+    var attack = Skills.UnarmedFor(conn.ClassRow).HitDamage(stats);
+    foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The conditions as they are now; the player tick sends the chance again when they change.
     int suppression = Suppression(conn).Chance;
@@ -2599,7 +2622,7 @@ static async Task WarpToHideout(string remote, NetworkStream stream, ConnectionC
 {
     if (HideoutCatalog.Default is not { } hideout)
     {
-        Console.WriteLine($"[gateway] {remote} {why}: no data/hideouts.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts)");
+        Console.WriteLine($"[gateway] {remote} {why}: no data/hideouts.json (run scripts/dev/extract-data.ps1)");
         return;
     }
     if (conn.Layout.Hash == hideout.AreaHash16) { Console.WriteLine($"[gateway] {remote} {why}: already in the {hideout.Name}"); return; }
@@ -2744,8 +2767,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         args = [.. args.Where(a => !a.Equals("friendly", StringComparison.OrdinalIgnoreCase))];
         if (args.Length == 0) throw new ArgumentException("which monster");
         if (Monsters.Error is { } error) { await conn.Commands!.Reply(error); return; }
-        // Words up to a rarity keyword name the monster; words after it are a custom name.
-        int r = Array.FindIndex(args, a => Enum.TryParse<MonsterRarity>(a, ignoreCase: true, out _));
+        // Words up to a rarity keyword name the monster; words after it are a custom name. Only the four names count:
+        // Enum.TryParse would also accept "100" as a rarity number and send a byte the client cannot read (Buffer Underflow).
+        int r = Array.FindIndex(args, a => a.ToLowerInvariant() is "normal" or "magic" or "rare" or "unique");
         var rarity = r < 0 ? MonsterRarity.Normal : Enum.Parse<MonsterRarity>(args[r], ignoreCase: true);
         string? name = r < 0 || r == args.Length - 1 ? null : string.Join(' ', args[(r + 1)..]);
         if (r == 0) throw new ArgumentException("which monster");
@@ -2756,6 +2780,12 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             level = byte.Parse(query[(at + 1)..]);
             if (level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
             query = query[..at];
+        }
+        else if (r < 0 && args.Length > 1 && int.TryParse(args[^1], out int bare) && bare is >= 1 and <= 100)
+        {
+            // A bare number after the monster is the level most people mean (the syntax itself wants @).
+            level = (byte)bare;
+            query = query[..query.LastIndexOf(' ')];
         }
         if (Monsters.Find(query) is not { } variety) { await conn.Commands!.Reply($"No monster matches \"{query}\"."); return; }
         if (!variety.Supported)
@@ -4953,6 +4983,8 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public MonsterRarity Rarity { get; init; }
     // Damage over time not yet applied (fractions of a point between ticks).
     public double Burn;
+    // The impales the player's attacks have left on it (Impale.cs); cleared when it dies.
+    public readonly ImpaleState Impale = new();
     // While a swing runs (Clock seconds) the monster neither chases nor swings again.
     public double BusyUntil;
     public string Label => label;
