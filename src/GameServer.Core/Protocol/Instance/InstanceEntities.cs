@@ -222,6 +222,13 @@ public static class InstanceEntities
         return ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, w.ToArray());
     }
 
+    /// <summary>
+    /// The player's two Hideouts.dat keys (0x2ba to the Player component, reader 0x141e7ee30): u16 flags, bit4 (0x10) =
+    /// u16 + u16, looked up by HASH16 like the creation blob's, then the component's vtable +0x130 (hideout changed).
+    /// </summary>
+    public static byte[] PlayerHideoutsUpdate(uint playerId, ushort hideout, ushort hideout2) =>
+        ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, new BlobWriter().U16(0x10).U16(hideout).U16(hideout2).ToArray());
+
     public const ushort GoldId = 0x2a9;
 
     /// <summary>S→C 0x2a9 (class 0x14316c420, read 0x140913050): u32 BE, the character's gold. The instance dispatcher (case
@@ -608,7 +615,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null,
     IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null,
     IReadOnlyList<VisibleItem>? Equipped = null, IReadOnlyCollection<int>? QuestFlags = null,
-    uint ManaReserved = 0)
+    uint ManaReserved = 0, ushort Hideout = 0, ushort Hideout2 = 0)
 {
     /// <summary>The Player component's index in the player object's component order (04 §3).</summary>
     public const byte PlayerComponentIndex = 6;
@@ -670,7 +677,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
         WriteFlagSet(w, QuestFlags);   // the quest flags (+0x1b8, 0x141e83340)
         w.U16(0)            // a second flag set (+0x1d0; WorldAreas __col60 values − 1)
          .Zeros(9)           // raw +0x1e8
-         .U16(0).U16(0)      // Hideouts.dat keys
+         .U16(Hideout).U16(Hideout2)   // Hideouts.dat keys (HASH16; 0 finds no row): the character's hideout (21-hideouts.md §1)
          .U8(0)              // +0x1b1 (non-zero → "WashedUp" state)
          .U8(0).U8(0).U8(0).U8(0).U8(0)
          .U32(0)             // u32 count + u32 list (vtable +0x158)

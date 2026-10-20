@@ -1,0 +1,85 @@
+using System.Text.Json;
+using GameServer.Core.Protocol.Instance;
+
+/// <summary>
+/// Hideouts (Agents/docs/protocol/21-hideouts.md): every Hideouts.dat row with its area and default decoration, from
+/// data/hideouts.json (scripts/re/atlas hideouts). A placed doodad's hash is an MtxTypeGameSpecific HASH32; the
+/// HideoutDoodads row of that MtxTypeGameSpecific row gives its object type (InheritsFrom) and models
+/// (Variation_AOFiles, picked by the placement's variation). Every character has the <see cref="Default"/> hideout.
+/// </summary>
+static class HideoutCatalog
+{
+    /// <summary>The first campaign hideout (Hideouts row 0, found in The Dread Thicket): every character's.</summary>
+    public const string DefaultArea = "HideoutForest";
+
+    /// <summary>A doodad of a hideout's decoration, in area grid cells; Rotation in radians (the file's r / 65536 turns).</summary>
+    public sealed record Doodad(string Name, string? Type, string? Model, int X, int Y, float Rotation, int Variation);
+
+    /// <summary>One hideout: Hash16 is its Hideouts.dat key (the Player component's), AreaHash16 its WorldAreas row's.</summary>
+    public sealed record Hideout(int Row, ushort Hash16, string AreaId, ushort AreaHash16, string Name, IReadOnlyList<Doodad> Doodads)
+    {
+        public Doodad? First(string type) => Doodads.FirstOrDefault(d => d.Type == type);
+    }
+
+    static readonly Lazy<IReadOnlyList<Hideout>> All = new(() =>
+    {
+        var list = Load("data/hideouts.json", "data/tables");
+        Console.WriteLine(list.Count == 0
+            ? "[gateway] hideouts: no data/hideouts.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts), hideouts are off"
+            : $"[gateway] hideouts: {list.Count}, default {Default?.Name ?? "none"}");
+        return list;
+    });
+
+    public static IReadOnlyList<Hideout> Hideouts => All.Value;
+
+    /// <summary>The hideout whose area this is, or null.</summary>
+    public static Hideout? ByArea(ushort areaHash16) => Hideouts.FirstOrDefault(h => h.AreaHash16 == areaHash16);
+
+    public static Hideout? Default => Hideouts.FirstOrDefault(h => h.AreaId == DefaultArea) ?? Hideouts.FirstOrDefault();
+
+    /// <summary>The hideout's waypoint as the waypoint object (its variation's model), or null.</summary>
+    public static WaypointObject? Waypoint(Hideout h) =>
+        h.First(WaypointObject.MetadataPath) is { } d ? new WaypointObject(d.X, d.Y, d.Model, d.Rotation) : null;
+
+    public static List<Hideout> Load(string hideoutsJson, string tables)
+    {
+        if (!File.Exists(hideoutsJson)) return [];
+        var doodadTypes = DoodadTypes(tables);
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(hideoutsJson));
+        var result = new List<Hideout>();
+        foreach (var h in doc.RootElement.GetProperty("hideouts").EnumerateArray())
+        {
+            var doodads = new List<Doodad>();
+            foreach (var d in h.GetProperty("doodads").EnumerateArray())
+            {
+                uint hash = d.GetProperty("hash").GetUInt32();
+                int fv = d.GetProperty("fv").GetInt32();
+                var (type, models) = doodadTypes.GetValueOrDefault(hash);
+                string? model = models is { Length: > 0 } ? models[Math.Clamp(fv, 0, models.Length - 1)] : null;
+                doodads.Add(new Doodad(d.GetProperty("name").GetString() ?? "", type, model, d.GetProperty("x").GetInt32(), d.GetProperty("y").GetInt32(),
+                    d.GetProperty("r").GetInt32() / 65536f * 2 * MathF.PI, fv));
+            }
+            result.Add(new Hideout(h.GetProperty("row").GetInt32(), (ushort)h.GetProperty("hash16").GetInt32(), h.GetProperty("area").GetString() ?? "",
+                (ushort)h.GetProperty("areaHash16").GetInt32(), h.GetProperty("name").GetString() ?? "", doodads));
+        }
+        return result;
+    }
+
+    // MtxTypeGameSpecific HASH32 → (HideoutDoodads InheritsFrom, Variation_AOFiles).
+    static Dictionary<uint, (string? Type, string[]? Models)> DoodadTypes(string tables)
+    {
+        var result = new Dictionary<uint, (string?, string[]?)>();
+        string mtxFile = Path.Combine(tables, "MtxTypeGameSpecific.json"), doodadFile = Path.Combine(tables, "HideoutDoodads.json");
+        if (!File.Exists(mtxFile) || !File.Exists(doodadFile)) return result;
+        using var mtx = JsonDocument.Parse(File.ReadAllBytes(mtxFile));
+        var hashOfRow = mtx.RootElement.EnumerateArray().Select(r => r.GetProperty("HASH32").GetUInt32()).ToList();
+        using var doodads = JsonDocument.Parse(File.ReadAllBytes(doodadFile));
+        foreach (var r in doodads.RootElement.EnumerateArray())
+        {
+            if (r.GetProperty("MtxTypeGameSpecific") is not { ValueKind: JsonValueKind.Number } key || key.GetInt32() is not (>= 0 and var row) || row >= hashOfRow.Count) continue;
+            result.TryAdd(hashOfRow[row], (r.GetProperty("InheritsFrom").GetString(),
+                [.. r.GetProperty("Variation_AOFiles").EnumerateArray().Select(a => a.GetString() ?? "")]));
+        }
+        return result;
+    }
+}

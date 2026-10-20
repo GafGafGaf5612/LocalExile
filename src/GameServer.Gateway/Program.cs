@@ -1739,7 +1739,7 @@ static void LoadProgress(ClientState conn, int level)
         conn.Passives = [.. (save?.Passives ?? []).Where(n => Passives.Find(n) is { IsAscendancy: false })];
         conn.Waypoints.UnionWith(save?.Waypoints ?? []);
         conn.Visited.UnionWith(save?.Visited ?? []);
-        conn.QuestFlags = [.. save?.QuestFlags ?? []];
+        conn.QuestFlags = [.. save?.QuestFlags ?? [], .. Quests.EveryCharacter];
         conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
         conn.RefundPoints = save?.RefundPoints ?? 0;
         conn.Experience = save?.Experience is uint xp && Progression.LevelFor(xp, CharacterStats.LevelStarts) == level
@@ -2477,6 +2477,10 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
     }
 }
 
+// The character's hideout (21-hideouts.md): its own instance (Auth keeps re-entering the live one), next to its waypoint.
+static Task GoToHideout(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, HideoutCatalog.Hideout hideout, string why) =>
+    ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hideout.AreaHash16, 0, false, AtWaypoint: true), $"{why}: {hideout.Name}");
+
 // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
 static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
 {
@@ -3100,6 +3104,20 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         string target = string.Join(' ', args);
         if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
         await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
+    })
+    .Add("hideout", "/hideout (go to your hideout)", async _ =>
+    {
+        if (HideoutCatalog.Default is not { } hideout) { await conn.Commands!.Reply("No hideouts (needs data/hideouts.json: dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts)."); return; }
+        if (conn.Layout.Hash == hideout.AreaHash16) { await conn.Commands!.Reply($"You are in your hideout, the {hideout.Name}."); return; }
+        await GoToHideout(remote, stream, ciphers, conn, hideout, "/hideout");
+    })
+    .Add("hideout_keys", "/hideout_keys <a> <b> (dev: the Player component's two Hideouts.dat keys, HASH16 hex or a hideout area id)", async args =>
+    {
+        ushort Key(string s) => HideoutCatalog.Hideouts.FirstOrDefault(h => h.AreaId.Equals(s, StringComparison.OrdinalIgnoreCase)) is { } h ? h.Hash16
+            : ushort.TryParse(s.Replace("0x", ""), System.Globalization.NumberStyles.HexNumber, null, out var k) ? k : (ushort)0;
+        ushort a = args.Length > 0 ? Key(args[0]) : (ushort)0, b = args.Length > 1 ? Key(args[1]) : (ushort)0;
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerHideoutsUpdate(PlayerId, a, b), $"0x02ba player hideout keys 0x{a:x4} 0x{b:x4}");
+        await conn.Commands!.Reply($"Hideout keys 0x{a:x4} 0x{b:x4}.");
     })
     .Add("waypoints", "/waypoints [all | reset] (list the activated waypoints; dev: activate all and visit every pinned area, or keep only the towns')", async args =>
     {
@@ -4219,7 +4237,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
-        QuestFlags: PlayerQuestFlags(conn));
+        QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0);
     conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
@@ -4484,8 +4502,10 @@ static class AreaLayouts
 
     public static AreaLayout For(ushort hash, uint seed)
     {
-        string id = Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? $"0x{hash:x4}";
-        return WithoutWaypoint(hash, id, seed) with { Waypoint = WaypointCatalog.For(hash, id, seed) };
+        var hideout = HideoutCatalog.ByArea(hash);
+        string id = Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? hideout?.AreaId ?? $"0x{hash:x4}";
+        // A hideout's waypoint is one of its decoration's doodads (21-hideouts.md §2), not a tile object.
+        return WithoutWaypoint(hash, id, seed) with { Waypoint = hideout is null ? WaypointCatalog.For(hash, id, seed) : HideoutCatalog.Waypoint(hideout) };
     }
 
     static AreaLayout WithoutWaypoint(ushort hash, string id, uint seed)

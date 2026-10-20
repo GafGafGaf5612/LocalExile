@@ -32,6 +32,10 @@ static class Quests
 
     static readonly Script[] All = [new EnemyAtTheGate()];
 
+    /// <summary>Flags every character has from the start (added on login, not a quest's): the hideout is unlocked
+    /// (21-hideouts.md §1).</summary>
+    public static readonly string[] EveryCharacter = ["HideoutUnlocked"];
+
     public static IReadOnlyList<string> OnMonsterKilled(string areaId, string varietyId) =>
         [.. All.SelectMany(s => s.OnMonsterKilled(areaId, varietyId))];
 
