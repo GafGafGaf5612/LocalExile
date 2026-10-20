@@ -32,10 +32,12 @@ static class Quests
 
     static readonly Script[] All = [new EnemyAtTheGate()];
 
-    /// <summary>Flags every character has from the start (added on login, not a quest's): the hideout is unlocked, and
-    /// HASH32 0x2f1b9c25 (row 718, named HideoutJukeboxEnabled by the schema), the flag the hideout edit controls check
-    /// (0x14216c840; 21-hideouts.md §1).</summary>
-    public static readonly string[] EveryCharacter = ["HideoutUnlocked", "HideoutJukeboxEnabled"];
+    /// <summary>Flags every character has from the start (added on login, not a quest's), all for the hideout
+    /// (21-hideouts.md §1): HideoutUnlocked; HASH32 0x2f1b9c25 (row 718, the schema's "HideoutJukeboxEnabled"), which the
+    /// HUD's hideout panel checks (0x14216c840); CanEditHideout, tested before the Edit button shows (live trace
+    /// 2026-10-20); MapDeviceActive, the map device's per-player "active" state (its .ot:
+    /// per_player_quest_flag_state_active_1).</summary>
+    public static readonly string[] EveryCharacter = ["HideoutUnlocked", "HideoutJukeboxEnabled", "CanEditHideout", "MapDeviceActive"];
 
     /// <summary>
     /// League quest flags: a set of their own, kept in the Player component's second flag set (+0x1d0). They are not a

@@ -3164,12 +3164,16 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     })
     .Add("league_flag", "/league_flag [<id> [off]] (dev: list, set or clear league quest flags by the client's id, e.g. /league_flag 350)", async args =>
     {
-        if (args.Length < 1 || !int.TryParse(args[0], out int flag)) { await conn.Commands!.Reply(string.Join(", ", conn.LeagueQuestFlags.Order())); return; }
+        if (args.Length < 1 || !int.TryParse(args[0], out int flag))
+        {
+            await Send(remote, stream, ciphers, InstanceChat.ChatLine($"League quest flags: {string.Join(", ", conn.LeagueQuestFlags.Order())}"), "0x0017 chat line: league quest flags");
+            return;
+        }
         bool off = args.Length > 1 && args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
         if (off) conn.LeagueQuestFlags.Remove(flag); else conn.LeagueQuestFlags.Add(flag);
         await Send(remote, stream, ciphers, InstanceEntities.PlayerLeagueQuestFlagsUpdate(PlayerId, conn.LeagueQuestFlags),
             $"0x02ba player league quest flags: {string.Join(", ", conn.LeagueQuestFlags.Order())}");
-        await conn.Commands!.Reply($"League quest flag {flag} {(off ? "cleared" : "set")}.");
+        await Send(remote, stream, ciphers, InstanceChat.ChatLine($"League quest flag {flag} {(off ? "cleared" : "set")}."), $"0x0017 chat line: league quest flag {flag}");
     })
     .Add("hideout_keys", "/hideout_keys <a> <b> (dev: the Player component's two Hideouts.dat keys, HASH16 hex or a hideout area id)", async args =>
     {
@@ -3177,7 +3181,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             : ushort.TryParse(s.Replace("0x", ""), System.Globalization.NumberStyles.HexNumber, null, out var k) ? k : (ushort)0;
         ushort a = args.Length > 0 ? Key(args[0]) : (ushort)0, b = args.Length > 1 ? Key(args[1]) : (ushort)0;
         await Send(remote, stream, ciphers, InstanceEntities.PlayerHideoutsUpdate(PlayerId, a, b), $"0x02ba player hideout keys 0x{a:x4} 0x{b:x4}");
-        await conn.Commands!.Reply($"Hideout keys 0x{a:x4} 0x{b:x4}.");
+        await Send(remote, stream, ciphers, InstanceChat.ChatLine($"Hideout keys 0x{a:x4} 0x{b:x4}."), "0x0017 chat line: hideout keys");
     })
     .Add("waypoints", "/waypoints [all | reset] (list the activated waypoints; dev: activate all and visit every pinned area, or keep only the towns')", async args =>
     {
