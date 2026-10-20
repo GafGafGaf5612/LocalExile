@@ -56,6 +56,12 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 
 Minimal item the server sends: flags 0, Base with only the visual identity, Mods identified and normal with no mods.
 
+**Base defences:** an `ArmourTypes.dat` row is keyed by `BaseItemTypesKey` (the BaseItemTypes row) and gives
+`ArmourMin`/`ArmourMax` and `EvasionMin`/`EvasionMax`. The client interpolates between them with the item's base
+percentile; our items send the Armour component's default `0`, so the server uses the minimum for the character's
+armour and evasion. Only the base body armour, helmet, gloves and boots are counted for now; mods, quality, local
+defence rolls and shields are not.
+
 ## 2a. Mods: rarity and mod lists
 
 The Mods component's base magic properties are ObjectMagicProperties, read by `0x142201d70` (decompiled:
