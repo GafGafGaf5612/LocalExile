@@ -64,7 +64,8 @@ idle (bit set) or inactive (bit clear); when a later 0x4c sets the bit it plays 
 Class `0x1435dc2a0`, read `0x1421a0450`, dispatcher case 0x1c → `0x142163420` (a switch over 0x73 UI kinds): u8 kind,
 four u32 BE. **Kind 0** notifies the listeners at instance +0xff8; the in-game UI's `0x140dcd570` opens the World panel
 and sets its travel mode (`0x140ab1440` → `0x140a97330`, panel +0x522). The u32s are not used by kind 0; the Gateway
-sends the waypoint object id.
+sends the waypoint object id. The panel's Hideout button sends C→S 0x17a (character name, waypoint object id), which
+takes the player to the hideout ([21](21-hideouts.md) §3).
 
 ### C→S 0x4d — travel (9 bytes)
 

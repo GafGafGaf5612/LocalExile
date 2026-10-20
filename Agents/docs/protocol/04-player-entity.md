@@ -183,9 +183,9 @@ u32. With 0 nothing else is read.
 | u16 | +0x1a8 | |
 | u16 | +0x1aa | |
 | vec16⟨u8 + 8 bytes⟩ | +0x1b8 | `0x141e83340` |
-| vec16⟨u8 + 8 bytes⟩ | +0x1d0 | |
+| vec16⟨u8 + 8 bytes⟩ | +0x1d0 | **league quest flags**: bit id − 1 of the client's built-in list ([21](21-hideouts.md) §1) |
 | 9 raw bytes | +0x1e8 | |
-| u16, u16 | → +0x1f8, +0x208 | Hideouts.dat keys (lookups that fail give null and are tolerated) |
+| u16, u16 | → +0x1f8, +0x208 | Hideouts.dat keys by HASH16 (lookups that fail give null and are tolerated); the first is the character's hideout ([21](21-hideouts.md) §1) |
 | u8 | +0x1b1 | non-zero → "WashedUp" state |
 | u8 × 5 | +0x1ae, +0x1ad, +0x1b0, +0x1af, +0x238 | |
 | u32 n + n × u32 | → vtable +0x158 | |
