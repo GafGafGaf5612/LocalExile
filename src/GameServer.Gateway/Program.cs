@@ -2514,9 +2514,11 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
         await SpawnMonster(remote, stream, ciphers, conn, variety, level, rarity, x, y, name, friendly);
     })
-    .Add("item", "/item <BaseItemTypes row, Id or name> [count] (into the inventory, e.g. /item Small Life Flask 2, /item 384)", async args =>
+    .Add("item", "/item <BaseItemTypes row, Id or name> [count] [magic|rare] (into the inventory, e.g. /item Small Life Flask 2, /item Iron Ring rare)", async args =>
     {
         if (args.Length == 0) throw new ArgumentException("which item?");
+        ItemRarity rolled = ItemRarity.Normal;
+        if (args.Length > 1 && args[^1].ToLowerInvariant() is "magic" or "rare") { rolled = Enum.Parse<ItemRarity>(args[^1], true); args = args[..^1]; }
         int count = 1, requested = 1;
         if (args.Length > 1 && int.TryParse(args[^1], out int n)) { requested = n; count = Math.Clamp(n, 1, 60); args = args[..^1]; }
         if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
@@ -2544,7 +2546,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         for (int i = 0; i < count; i++)
         {
             if (items.FreeCell(PlayerInventories.MainInventory, type.Width, type.Height, ShapeOf) is not { } cell) break;
-            added.Add(items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ItemCatalog.Create(type, sockets, links))));
+            var created = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)Math.Clamp(conn.Pools.Level, 1, 100) };
+            if (rolled != ItemRarity.Normal) created = Rolls.Roll(created, rolled, Random.Shared);
+            added.Add(items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, created)));
         }
         if (added.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
@@ -2567,10 +2571,19 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         var added = mod.With(section ?? mod.DefaultSection, values, Random.Shared);
         await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Mods = [.. i.Mods, added] }, $"+ {Items.Mods.Describe(added)}");
     })
+    .Add("roll", "/roll <magic|rare> [item level] (new affixes and name for the held item)", async args =>
+    {
+        if (args.Length == 0 || !Enum.TryParse<ItemRarity>(args[0], true, out var rarity) || rarity is not (ItemRarity.Magic or ItemRarity.Rare))
+            throw new ArgumentException("magic or rare");
+        byte? level = args.Length > 1 ? byte.Parse(args[1]) : null;
+        await ChangeHeldItem(remote, stream, ciphers, conn, i => Rolls.Roll(level is byte l ? i with { ItemLevel = l } : i, rarity, Random.Shared),
+            $"rolled {rarity}");
+    })
     .Add("mods", "/mods (the held item's rarity and mods)", async args =>
     {
         if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
-        await conn.Commands!.Reply($"{Items.ByHash(held.Item.TypeHash)?.Name} ilvl {held.Item.ItemLevel}, {held.Item.Rarity}" +
+        await conn.Commands!.Reply($"{(held.Item.NameWords.Count > 0 ? Rolls.NameOf(held.Item.NameWords) + ", " : "")}" +
+            $"{Items.ByHash(held.Item.TypeHash)?.Name} ilvl {held.Item.ItemLevel}, {held.Item.Rarity}" +
             $"{(held.Item.Identified ? "" : ", unidentified")}: " +
             (held.Item.Mods.Count == 0 ? "no mods" : string.Join("; ", held.Item.Mods.Select(Items.Mods.Describe))));
     })
@@ -4033,7 +4046,9 @@ sealed partial class Program
     // Item types (BaseItemTypes + data/item-types.json); loaded with the first player.
     internal static readonly ItemCatalog Items = new();
     // What dying monsters drop (ItemDrops.cs).
-    internal static readonly ItemDrops Drops = new(Items);
+    // Magic and rare items (ItemRolls.cs).
+    internal static readonly ItemRolls Rolls = new(Items);
+    internal static readonly ItemDrops Drops = new(Items, Rolls);
     // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
     // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
     internal static readonly InstanceStore Instances = new(TimeProvider.System, new GameServer.Core.World.InstanceRegistry().Lifetime);

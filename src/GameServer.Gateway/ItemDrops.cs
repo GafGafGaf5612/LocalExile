@@ -4,11 +4,22 @@ using GameServer.Core.Protocol.Instance;
 /// What a dying monster drops: a first, basic loot table of our own (the game's drop pools, item rarity and mods come
 /// later; Agents/docs/protocol/15-progression.md §3). How many items: normal 1 at 35%, magic 1–2 (one sure), rare 2–4,
 /// unique 4–6. Each item is currency (45%: the common orbs and scrolls, weighted), a life or mana flask (10%) or a piece
-/// of equipment (45%: any weapon, armour or jewellery base whose DropLevel is at most the monster's level), normal, at the
-/// monster's level as its item level.
+/// of equipment (45%: any weapon, armour or jewellery base whose DropLevel is at most the monster's level) at the
+/// monster's level as its item level. Equipment is magic or rare by <see cref="EquipmentRarity"/> (our own chances),
+/// with affixes from <see cref="ItemRolls"/>.
 /// </summary>
-sealed class ItemDrops(ItemCatalog catalog)
+sealed class ItemDrops(ItemCatalog catalog, ItemRolls? rolls = null)
 {
+    /// <summary>Chances (magic, rare) of a dropped piece of equipment by the monster's rarity: our own numbers until the
+    /// game's are known.</summary>
+    public static (double Magic, double Rare) EquipmentRarity(MonsterRarity monster) => monster switch
+    {
+        MonsterRarity.Magic => (0.35, 0.10),
+        MonsterRarity.Rare => (0.40, 0.25),
+        MonsterRarity.Unique => (0.30, 0.50),
+        _ => (0.25, 0.05),
+    };
+
     // (BaseItemTypes Id, weight): Scroll of Wisdom and Portal Scroll most, then shards' worth of basic orbs.
     static readonly (string Id, int Weight)[] Currency =
     [
@@ -51,11 +62,11 @@ sealed class ItemDrops(ItemCatalog catalog)
         };
         var drops = new List<Drop>();
         for (int i = 0; i < count; i++)
-            if (RollOne(monsterLevel, rng) is { } d) drops.Add(d);
+            if (RollOne(monsterLevel, rarity, rng) is { } d) drops.Add(d);
         return drops;
     }
 
-    Drop? RollOne(int level, Random rng)
+    Drop? RollOne(int level, MonsterRarity monster, Random rng)
     {
         var (currency, equipment, flasks) = _pools.Value;
         double kind = rng.NextDouble();
@@ -71,7 +82,15 @@ sealed class ItemDrops(ItemCatalog catalog)
             type = e[rng.Next(e.Count)].Type;
         if (type is null) return null;
         var (sockets, links) = catalog.DefaultSockets(type);
-        return new Drop(ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)Math.Clamp(level, 1, 100) }, type);
+        var item = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)Math.Clamp(level, 1, 100) };
+        if (rolls is not null && EquipmentClasses.Contains(type.Class))
+        {
+            var (magic, rare) = EquipmentRarity(monster);
+            double r = rng.NextDouble();
+            if (r < rare) item = rolls.Roll(item, ItemRarity.Rare, rng);
+            else if (r < rare + magic) item = rolls.Roll(item, ItemRarity.Magic, rng);
+        }
+        return new Drop(item, type);
     }
 
     private static (List<(ItemCatalog.BaseType, int)>, List<(ItemCatalog.BaseType, int)>, List<(ItemCatalog.BaseType, int)>) Build(ItemCatalog catalog)

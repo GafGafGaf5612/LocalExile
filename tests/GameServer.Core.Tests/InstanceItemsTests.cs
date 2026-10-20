@@ -47,6 +47,21 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void A_rare_name_comes_before_the_explicit_list_and_only_when_identified()
+    {
+        var item = new Item(1, ["Mods"], 0)
+        {
+            Rarity = ItemRarity.Rare, NameWords = [0x11223344, 0xaabbccdd], Mods = [new(ModSection.Explicit, 0x1234, [3])],
+        };
+        Assert.Equal("01000000" + "0000" + "01" + "00" + "0000" +
+            "2A01" + "00" +                                // rare | identified | bit 5 | bit 8
+            "02" + "44332211" + "DDCCBBAA" +               // u8 n × u32 Words.dat key
+            "01" + "3412" + "03" + "00" + "00",
+            Convert.ToHexString(item.Payload()));
+        Assert.Equal("0200", Convert.ToHexString((item with { Identified = false }).Payload(), 10, 2));
+    }
+
+    [Fact]
     public void Unidentified_items_send_no_explicit_mods()
     {
         var item = new Item(1, ["Mods"], 0)

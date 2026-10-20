@@ -23,6 +23,12 @@ sealed class ItemCatalog
         IReadOnlyList<string> Components, int MaxCharges, string Class = "", byte Stance = 0xff, int DropLevel = 0, ushort MaxStack = 1,
         int FullStackRow = -1, IReadOnlyList<ModCatalog.Mod>? Implicits = null)
     {
+        /// <summary>Tags.dat Ids for mod spawn weights: the .it chain's Base tags (item-types.json) and the row's TagsKeys.</summary>
+        public IReadOnlySet<string> Tags { get; init; } = new HashSet<string>();
+
+        /// <summary>BaseItemTypes ModDomain: the Mods.dat Domain its affixes come from (1 items, 2 flasks, …).</summary>
+        public int ModDomain { get; init; } = 1;
+
         public bool Supported => Components.Count > 0 && Item.CanSerialize(Components);
         /// <summary>Several of the type share one cell (a Stack component and a CurrencyItems StackSize above 1).</summary>
         public bool Stackable => MaxStack > 1;
@@ -166,12 +172,17 @@ sealed class ItemCatalog
         string bases = Path.Combine(folder, "tables", "BaseItemTypes.json"), visuals = Path.Combine(folder, "tables", "ItemVisualIdentity.json");
         if (!File.Exists(bases) || !File.Exists(visuals)) return ([], $"{bases} is missing: extract the game tables (Tools/PoEDataExtractor)");
         var components = new Dictionary<string, IReadOnlyList<string>>();
+        var itemTags = new Dictionary<string, IReadOnlyList<string>>();
         string types = Path.Combine(folder, "item-types.json");
         if (!File.Exists(types)) return ([], $"{types} is missing: python -I scripts/re/ot_components.py --items --json {types}");
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(types)))
             foreach (var t in doc.RootElement.GetProperty("types").EnumerateArray())
+            {
                 components[t.GetProperty("type").GetString()!] =
                     [.. t.GetProperty("components").EnumerateArray().Take(t.GetProperty("read").GetInt32()).Select(c => c.GetString()!)];
+                // "tags" since 2026-10-20; older files have none (regenerate with ot_components.py --items).
+                if (t.TryGetProperty("tags", out var tg)) itemTags[t.GetProperty("type").GetString()!] = [.. tg.EnumerateArray().Select(x => x.GetString()!)];
+            }
         List<ushort> visualHashes;
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(visuals)))
             visualHashes = [.. doc.RootElement.EnumerateArray().Select(r => (ushort)r.GetProperty("HASH16").GetInt32())];
@@ -207,6 +218,13 @@ sealed class ItemCatalog
             classes = [.. doc.RootElement.EnumerateArray().Select(r => r.GetProperty("Id").GetString() ?? "")];
             stances = [.. doc.RootElement.EnumerateArray().Select(r => r.GetProperty("ItemStance") is { ValueKind: JsonValueKind.Number } s ? (byte)s.GetInt32() : (byte)0xff)];
         }
+        List<string> tagIds = [];
+        string tagsPath = Path.Combine(folder, "tables", "Tags.json");
+        if (File.Exists(tagsPath))
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllBytes(tagsPath));
+            tagIds = [.. doc.RootElement.EnumerateArray().Select(r => r.GetProperty("Id").GetString() ?? "")];
+        }
         var rows = new List<BaseType>();
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(bases)))
         {
@@ -227,7 +245,12 @@ sealed class ItemCatalog
                     itemComponents.Contains("Stack") ? stackSizes.GetValueOrDefault(rows.Count, (ushort)1) : (ushort)1,
                     fullStacks.GetValueOrDefault(rows.Count, -1),
                     // Implicit_ModsKeys: Mods.dat rows every item of the type has (Driftwood Wand: 8-12% increased Spell Damage)
-                    [.. r.GetProperty("Implicit_ModsKeys").EnumerateArray().Select(k => mods.Row(k.GetInt32())).OfType<ModCatalog.Mod>()]));
+                    [.. r.GetProperty("Implicit_ModsKeys").EnumerateArray().Select(k => mods.Row(k.GetInt32())).OfType<ModCatalog.Mod>()])
+                {
+                    Tags = new HashSet<string>([.. itemTags.GetValueOrDefault(id) ?? [],
+                        .. r.GetProperty("TagsKeys").EnumerateArray().Select(k => k.GetInt32()).Where(k => k < tagIds.Count).Select(k => tagIds[k])]),
+                    ModDomain = r.GetProperty("ModDomain").GetInt32(),
+                });
             }
         }
         return (rows, null);
