@@ -17,7 +17,8 @@ public class SpellDamageTests
             ("spell_damage_+%", 10), ("fire_damage_+%", 10), ("elemental_damage_+%", 5), ("damage_+%", 5),
             ("base_is_projectile", 1), ("projectile_damage_+%", 10),
             ("cold_damage_+%", 100), ("attack_damage_+%", 100)));   // other types and attacks do not count
-        Assert.Equal(((int)(9 * 1.4), (int)(14 * 1.4)), hit);
+        Assert.Equal(9 * 1.4, hit.Min, 6);
+        Assert.Equal(14 * 1.4, hit.Max, 6);
     }
 
     [Fact]
@@ -31,6 +32,23 @@ public class SpellDamageTests
     public void Skills_without_spell_damage_hit_for_nothing()
     {
         Assert.Equal((0, 0), SpellDamage.Hit(Stats(("spell_damage_+%", 50))));
+    }
+
+    [Fact]
+    public void Damage_per_use_keeps_the_fractions()
+    {
+        // 9-14 with 22% increased: 10.98-17.08, average 14.03 (not (10 + 17) / 2 = 13.5).
+        var hit = SpellDamage.Hit(Stats(("spell_minimum_base_fire_damage", 9), ("spell_maximum_base_fire_damage", 14), ("spell_damage_+%", 22)));
+        Assert.Equal(1403, SpellDamage.Display(hit, 1).PerUse);
+    }
+
+    [Fact]
+    public void Hits_roll_between_minimum_and_maximum_without_the_fraction()
+    {
+        var rng = new Random(5);
+        var rolls = Enumerable.Range(0, 2000).Select(_ => SpellDamage.Roll((10.17, 15.82), rng)).ToList();
+        Assert.Equal(10, rolls.Min());
+        Assert.Equal(15, rolls.Max());
     }
 
     [Fact]

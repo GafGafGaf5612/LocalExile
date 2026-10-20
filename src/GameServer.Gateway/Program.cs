@@ -1359,8 +1359,7 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them.
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         foreach (var (k, v) in Skills.EffectStats(gem.Effect, 1)) stats[k] = v;
-        var (min, max) = SpellDamage.Hit(name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0);
-        int damage = Random.Shared.Next(min, Math.Max(min, max) + 1);
+        int damage = SpellDamage.Roll(SpellDamage.Hit(name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0), Random.Shared);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);

@@ -9,8 +9,9 @@ static class SpellDamage
 {
     static readonly string[] Types = ["physical", "fire", "cold", "lightning", "chaos"];
 
-    /// <summary>The summed minimum and maximum hit; (0, 0) for a skill with no base spell damage.</summary>
-    public static (int Min, int Max) Hit(Func<string, int> get)
+    /// <summary>The summed minimum and maximum hit, unrounded (the tooltip averages these; a real hit rolls between them
+    /// and drops the fraction, <see cref="Roll"/>); (0, 0) for a skill with no base spell damage.</summary>
+    public static (double Min, double Max) Hit(Func<string, int> get)
     {
         int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
         double min = 0, max = 0;
@@ -23,11 +24,14 @@ static class SpellDamage
             min += baseMin * factor;
             max += baseMax * factor;
         }
-        return ((int)Math.Floor(min), (int)Math.Floor(Math.Max(min, max)));
+        return (min, Math.Max(min, max));
     }
 
+    /// <summary>One hit: uniform between the minimum and the maximum, fraction dropped.</summary>
+    public static int Roll((double Min, double Max) hit, Random rng) => (int)Math.Floor(hit.Min + rng.NextDouble() * (hit.Max - hit.Min));
+
     /// <summary>The panel's Damage per Use and Damage per Second (both × 100) for a spell cast this often.</summary>
-    public static (int PerUse, int PerSecond) Display((int Min, int Max) hit, double castsPerSecond)
+    public static (int PerUse, int PerSecond) Display((double Min, double Max) hit, double castsPerSecond)
     {
         double average = (hit.Min + hit.Max) / 2.0;
         return ((int)Math.Round(100 * average), (int)Math.Round(100 * average * castsPerSecond));
