@@ -633,8 +633,7 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     lock (conn.HideoutDoodads) doodad = conn.HideoutDoodads.GetValueOrDefault(use.TargetId);
     if (doodad is not null)
     {
-        // The map device's panel (its 0x7b kind and the client's map messages) is not known yet (21-hideouts.md "Open").
-        Console.WriteLine($"[gateway] {remote} <= 0x0024 hideout doodad 0x{use.TargetId:x} {doodad.Name} ({doodad.Type}): {use} (no action yet)");
+        await UseMapDevice(remote, stream, ciphers, conn, use, doodad);
         return;
     }
     if (conn.StashObject != 0 && use.TargetId == conn.StashObject)
@@ -4115,6 +4114,20 @@ static async Task SpawnHideoutDoodads(string remote, NetworkStream stream, Conne
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 hideout doodad 0x{id:x} enters wake zone");
         lock (conn.HideoutDoodads) conn.HideoutDoodads[id] = d;
     }
+}
+
+// A click on the map device (C→S 0x24): walk there, then S→C 0x7b kind 5 opens the map device window (21-hideouts.md §4).
+// Its slots and the activation are not served yet.
+static async Task UseMapDevice(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, HideoutCatalog.Doodad device)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.Approach(device.X, device.Y, StashReach, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 {device.Name} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.ActionCount != action) return;
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.MapDeviceUi, use.TargetId), "0x007b open the map device window");
 }
 
 // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects

@@ -35,6 +35,11 @@ public static class InstanceWaypoints
     /// +0xff8 → 0x140dcd570 → 0x140ab1440 → each panel's 0x140a97330).</summary>
     public const byte WorldPanelUi = 0;
 
+    /// <summary>S→C 0x7b kind that opens the map device window (case 5 → listeners at instance +0x1778 → HUD 0x140dcd9a0:
+    /// the window at HUD +0x7d8, mode 0xd). Kinds for its other modes go to +0x17f8 (0x140dce1f0, mode 0x5e) and +0x1878
+    /// (0x140dce290, mode 0x56). 21-hideouts.md §4.</summary>
+    public const byte MapDeviceUi = 5;
+
     /// <summary>
     /// S→C 0x4c (class 0x1435dc7e0, read 0x14219f460; dispatcher case 0x12): u32 BE (+0x10, passed with the bitset to the
     /// listeners at instance +0x73f0), then 19 raw bytes (+0x14) copied to instance +0xcf31: bit i = the i-th WorldAreas
