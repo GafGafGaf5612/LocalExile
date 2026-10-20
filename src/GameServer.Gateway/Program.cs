@@ -1624,9 +1624,19 @@ static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiph
 static async Task SendCharacterStats(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
 {
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]), $"0x01b3 player stats ({why})");
+    await SendSkills(remote, stream, ciphers, conn);
+}
+
+// The player's skills again, and the removal of the ones the client still has whose gems left the equipment, in one
+// Actor 0x20 update (PlayerSkillsChange): the 0x40 list neither removes skills nor tells the character panel.
+static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
     var skills = PlayerSkills(conn);
-    await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills),
-        $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats");
+    var gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
+    conn.ClientSkillIds = [.. skills.Select(s => s.Id)];
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone),
+        $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats" +
+        (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
 }
 
 // The character's experience and passives from its save, with the account's level: experience saved at another level
@@ -2441,9 +2451,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
             $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
         // Skills compute with their own stats (the attack and the character panel read those), so send them again.
-        var skills = PlayerSkills(conn);
-        await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills),
-            $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats");
+        await SendSkills(remote, stream, ciphers, conn);
     })
     .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
     {
@@ -3269,8 +3277,7 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
         $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
     conn.Pools = PoolsFor(conn, conn.Pools.Level);
     lock (conn.Monsters) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
-    var skills = PlayerSkills(conn);
-    await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsUpdate(PlayerId, skills), $"0x02ba player Actor: {skills.Count} skill(s)");
+    await SendSkills(remote, stream, ciphers, conn);
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
         "0x01b3 player stats (equipment)");
     await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
@@ -3830,6 +3837,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
         QuestFlags: PlayerQuestFlags(conn));
+    conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
     {
@@ -4350,6 +4358,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, int> PlayerStats = [];
     // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
+    // The skill ids the client has on this connection's player (SendPlayer, SendSkills): the 0x40 skill list only adds,
+    // so the ones that leave are removed by id.
+    public HashSet<ushort> ClientSkillIds = [];
     // The character's level and the pools that follow from it and the class (CharacterStats).
     public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
     // Dev-only forced lucky block, on top of the stats (Svalinn's "Chance to Block is Lucky").

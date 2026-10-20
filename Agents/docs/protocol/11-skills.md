@@ -37,8 +37,23 @@ Real skills (gems, the default attack) come from the server, inside the **Actor 
 `0x1421932b0`** (the part after the main body, [04](04-player-entity.md) §4.9; also what S→C 0x2ba runs). Its first flag
 byte f0:
 
-- **f0 0x40 → `0x142197b10`**: the skill list (replaces the manager's server skills).
-- f0 0x20 → `0x142198800`: also reads skill records through `0x1421981d0` (an update; not used yet).
+- **f0 0x40 → `0x142197b10`**: the skill list. It adds each record or replaces the one with the same id; it never
+  removes a skill, so a skill missing from a later list stays on the client (and selectable on the skill bar), and it
+  does not tell the UI: the character panel's skill list does not show a skill added this way after login.
+- **f0 0x20 → `0x142198800`**: the skill update (`InstanceEntities.PlayerSkillsChange`). When it has a record or an id
+  it calls `0x140b14b00` before (`0x1402fffbc`) and after (`0x1401d8280`) them, which the character panel's skill list
+  follows:
+  ```
+  u8 a, u8 b
+  a × skill record (0x1421981d0, as in the list: add or replace)
+  b × u16 skill id (0x142198560: binary search of the manager's skills at +0x158 by id (+0x40), the manager's
+                    vtable +0x40 runs for it, then it is erased; an unknown id is skipped)
+  u8 c, c × (u32, u32)        → manager +0x188
+  u8 d, d × (u32, u32, u32)
+  ```
+  After login the Gateway sends every skill change this way (`SendSkills`): all the player's skills as records and the
+  ids that left. It remembers the ids the client has per connection (`ClientSkillIds`, from the player object and every
+  update since). Live: a re-socketed gem's skill appears in the character panel again (with 0x40 it did not).
 
 `0x142197b10`:
 ```
@@ -148,8 +163,8 @@ The default attack's damage (`Unarmed.Damage`) is MinDamage..MaxDamage × (1 + (
 `/set_stat` overrides any of these.
 
 **Changing a skill after entering:** S→C **0x2ba** on the player with component index 9 (Actor) and the slot-20 data
-`f0 0x40, f1 0, skill list` (`InstanceEntities.PlayerSkillsUpdate`): the list replaces the skill of the same id, new
-stats included. Live: the swing sped up at once.
+`f0 0x40, f1 0, skill list`: the list replaces the skill of the same id, new stats included. Live: the swing sped up at
+once. The Gateway now sends the 0x20 update instead (above), which also removes skills and updates the character panel.
 
 ## 5. Combat timing (Gateway `Attack`)
 
