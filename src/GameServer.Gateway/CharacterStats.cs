@@ -24,6 +24,7 @@ static class CharacterStats
         int LightningMaxResistance = DamageModel.DefaultMaxResistance, int ChaosMaxResistance = DamageModel.DefaultMaxResistance,
         int SpellSuppressionChance = 0, int SpellSuppressionEffect = DamageModel.SpellSuppressionEffect,
         bool SpellSuppressionLucky = false, bool SpellSuppressionUnlucky = false,
+        int SpellSuppressionWhileFullLife = 0, int SpellSuppressionWhileMoving = 0, int SpellSuppressionIfHitRecently = 0,
         int MovementVelocityPct = 0, int BlockChance = 0, int SpellBlockChance = 0,
         int BlockChanceMax = DamageModel.DefaultMaxBlockChance, int SpellBlockChanceMax = DamageModel.DefaultMaxSpellBlockChance,
         int BlockChanceBase = 0, int BlockChanceUncapped = 0,
@@ -49,6 +50,7 @@ static class CharacterStats
         int FireMaxResistance = 0, int ColdMaxResistance = 0, int LightningMaxResistance = 0, int ChaosMaxResistance = 0,
         int SpellSuppressionChance = 0, int SpellSuppressionEffect = 0,
         bool SpellSuppressionLucky = false, bool SpellSuppressionUnlucky = false,
+        int SpellSuppressionWhileFullLife = 0, int SpellSuppressionWhileMoving = 0, int SpellSuppressionIfHitRecently = 0,
         int MovementVelocityPct = 0, int BlockChance = 0, int SpellBlockChance = 0,
         int BlockChanceMax = 0, int SpellBlockChanceMax = 0,
         int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
@@ -71,6 +73,14 @@ static class CharacterStats
     /// <summary>Path of Exile's resistance before the quest penalties: 0% to all four types at character level 1.
     /// Act 5 and Act 10 Kitava each take another 30% away; see <see cref="ResistancePenalty"/> in the Gateway.</summary>
     public const int BaseResistance = 0;
+
+    /// <summary>Spell Suppression chance with the conditional passives whose condition holds now (on full life, moving,
+    /// hit an enemy recently), capped at 100%. Energy shield is not modelled, so its full-ES stat is not counted.</summary>
+    public static int SuppressionChance(Pools p, bool fullLife, bool moving, bool hitRecently) =>
+        Math.Min(DamageModel.SpellSuppressionChanceCap, p.SpellSuppressionChance
+            + (fullLife ? p.SpellSuppressionWhileFullLife : 0)
+            + (moving ? p.SpellSuppressionWhileMoving : 0)
+            + (hitRecently ? p.SpellSuppressionIfHitRecently : 0));
 
     public static Pools For(SkillCatalog.ClassInfo c, int level, Bonus? bonus = null, string folder = "data")
     {
@@ -114,6 +124,9 @@ static class CharacterStats
             SpellSuppressionChance: Math.Min(DamageModel.SpellSuppressionChanceCap, b.SpellSuppressionChance),
             SpellSuppressionEffect: Math.Max(0, DamageModel.SpellSuppressionEffect + b.SpellSuppressionEffect),
             SpellSuppressionLucky: b.SpellSuppressionLucky, SpellSuppressionUnlucky: b.SpellSuppressionUnlucky,
+            SpellSuppressionWhileFullLife: b.SpellSuppressionWhileFullLife,
+            SpellSuppressionWhileMoving: b.SpellSuppressionWhileMoving,
+            SpellSuppressionIfHitRecently: b.SpellSuppressionIfHitRecently,
             MovementVelocityPct: b.MovementVelocityPct,
             BlockChance: b.BlockChance, SpellBlockChance: b.SpellBlockChance,
             BlockChanceMax: maxBlock, SpellBlockChanceMax: maxSpellBlock, BlockChanceUncapped: b.BlockChance,
