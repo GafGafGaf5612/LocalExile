@@ -330,6 +330,21 @@ public static class InstanceItems
         return new(r.U32(), r.U32());
     }
 
+    public const ushort UseItemOnId = 0x71;
+    public const int UseItemOnLength = 18;
+
+    /// <summary>
+    /// C→S 0x71 (18 bytes, live 2026-10-20): use an item on another one, e.g. right-click a Scroll of Wisdom, then click
+    /// an unidentified item. u32 inventory id and u32 item id of the used item, then of the target, all big-endian.
+    /// </summary>
+    public sealed record UseItemOn(uint InventoryId, uint ItemId, uint TargetInventoryId, uint TargetId);
+
+    public static UseItemOn ReadUseItemOn(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32(), r.U32(), r.U32());
+    }
+
     public const int ItemActionLength = 14;
 
     /// <summary>

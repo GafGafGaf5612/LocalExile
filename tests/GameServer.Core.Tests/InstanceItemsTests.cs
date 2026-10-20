@@ -62,6 +62,16 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Use_item_on_item_reads_both_items_big_endian()
+    {
+        // Live 2026-10-20: a Scroll of Wisdom (stash-range id 0x40000018) on an unidentified ring (187), both in the main inventory.
+        byte[] m = Convert.FromHexString("0071000000014000001800000001000000BB");
+        Assert.Equal(InstanceItems.UseItemOnLength, m.Length);
+        Assert.Equal(InstanceItems.UseItemOnLength, InstanceProtocol.KnownClientLength(InstanceItems.UseItemOnId));
+        Assert.Equal(new InstanceItems.UseItemOn(1, 0x40000018, 1, 187), InstanceItems.ReadUseItemOn(m));
+    }
+
+    [Fact]
     public void Unidentified_items_send_no_explicit_mods()
     {
         var item = new Item(1, ["Mods"], 0)

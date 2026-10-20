@@ -87,8 +87,9 @@ sealed class ItemDrops(ItemCatalog catalog, ItemRolls? rolls = null)
         {
             var (magic, rare) = EquipmentRarity(monster);
             double r = rng.NextDouble();
-            if (r < rare) item = rolls.Roll(item, ItemRarity.Rare, rng);
-            else if (r < rare + magic) item = rolls.Roll(item, ItemRarity.Magic, rng);
+            // Magic and rare items drop unidentified (a Scroll of Wisdom identifies them, C→S 0x71).
+            if (r < rare) item = rolls.Roll(item, ItemRarity.Rare, rng) with { Identified = false };
+            else if (r < rare + magic) item = rolls.Roll(item, ItemRarity.Magic, rng) with { Identified = false };
         }
         return new Drop(item, type);
     }

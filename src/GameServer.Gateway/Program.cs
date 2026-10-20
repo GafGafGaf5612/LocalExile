@@ -332,6 +332,8 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             await SplitStack(remote, stream, ciphers, conn, InstanceItems.ReadSplitStack(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceItems.UseItemId)
             await UseItem(remote, stream, ciphers, conn, InstanceItems.ReadUseItem(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.UseItemOnId)
+            await UseItemOn(remote, stream, ciphers, conn, InstanceItems.ReadUseItemOn(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceItems.InventoryRequestId)
             Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (inventory request, not handled yet): {Convert.ToHexString(bytes)}");
         else if (id == InstanceItems.PickUpItemId)
@@ -3630,6 +3632,48 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
         $"0x00bf inventory {inventoryId}: {type.Name} used" + (taken.Left is { } now ? $", {now.Item.StackSize} left" : ", stack empty"));
     await SendPassives(remote, stream, ciphers, conn);
     Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name} ({use.ItemId}): {refunds} refund point(s)");
+}
+
+// C→S 0x71: an item used on another one. A Scroll of Wisdom identifies an unidentified item (its explicit mods and rare
+// name are sent from now on) and loses one from its stack. Other currency is not handled yet.
+static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.UseItemOn use, string hex)
+{
+    const string Wisdom = "Metadata/Items/Currency/CurrencyIdentification";
+    var items = ItemsOf(conn);
+    if (items.RowOf(use.ItemId) is not byte usedRow || items.Items(usedRow).FirstOrDefault(i => i.Id == use.ItemId) is not { } used ||
+        items.RowOf(use.TargetId) is not byte targetRow || items.Items(targetRow).FirstOrDefault(i => i.Id == use.TargetId) is not { } target)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0071 use item on item {use}: no such item: {hex}");
+        return;
+    }
+    var type = Items.ByHash(used.Item.TypeHash);
+    if (type?.Id != Wisdom)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: not handled: {hex}");
+        return;
+    }
+    if (target.Item.Identified || !target.Item.Components.Contains("Mods"))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0071 Scroll of Wisdom on item {use.TargetId}: already identified");
+        return;
+    }
+    if (items.ConsumeOne(usedRow, used.Id) is not { } taken) return;
+    if (items.Change(targetRow, target.Id, i => i with { Identified = true }) is not { } identified) return;
+    // Remove and add the same ids: the client replaces an item only that way (see UseItem).
+    uint usedInventory = PlayerInventories.InventoryId(usedRow), targetInventory = PlayerInventories.InventoryId(targetRow);
+    if (usedRow == targetRow)
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [used.Id, target.Id],
+            taken.Left is { } left ? [left, identified] : [identified]), $"0x00bf inventory {targetInventory}: item {target.Id} identified, scroll used");
+    else
+    {
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(usedInventory, items.NextRevision(usedRow), [used.Id],
+            taken.Left is { } left ? [left] : []), $"0x00bf inventory {usedInventory}: scroll used");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [target.Id], [identified]),
+            $"0x00bf inventory {targetInventory}: item {target.Id} identified");
+        if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x0071 Scroll of Wisdom ({used.Id}) identified item {target.Id}: " +
+        string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe)));
 }
 
 // C→S 0x4a: the held item clicked on an item. A stack of the same type with room takes what fits (PlayerInventories.MergeOnto,
