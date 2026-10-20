@@ -18,6 +18,42 @@ public class AccountStashTests : IDisposable
 
     AccountStash Open() => AccountStash.For(_account, new ItemCatalog(_folder));
 
+    string StashPath() => Path.Combine(_folder, _account + ".json");
+
+    [Fact]
+    public void A_stash_change_while_the_file_is_briefly_held_is_saved()
+    {
+        var stash = Open();   // a new account's stash is written at once
+
+        // A reader that doesn't share delete, like an antivirus scan: replacing the file is refused while it reads.
+        using (FileHold.For(StashPath(), FileShare.ReadWrite, 300))
+            stash.SetLastTab(1);
+
+        AccountStash.Reset();
+        Assert.Equal(1, Open().LastTab);
+    }
+
+    [Fact]
+    public void A_briefly_locked_stash_is_read_once_it_is_free()
+    {
+        Open().SetLastTab(2);
+        AccountStash.Reset();
+
+        using var held = FileHold.For(StashPath(), FileShare.None, 300);
+
+        Assert.Equal(2, Open().LastTab);
+    }
+
+    [Fact]
+    public void A_stash_file_that_cannot_be_read_is_refused_and_not_replaced_by_starter_tabs()
+    {
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(StashPath(), "{ not json");
+
+        Assert.Throws<UnreadableSaveException>(() => Open());
+        Assert.Equal("{ not json", File.ReadAllText(StashPath()));
+    }
+
     static Item Wand() => new(0xd9b1a12f, ["Base"], 0x40a1);
 
     // Every test item is 1 × 3, like a wand.

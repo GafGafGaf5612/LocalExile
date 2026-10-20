@@ -4285,8 +4285,7 @@ static class AreaLayouts
                 id = layout.Id, seed, hash = layout.Hash, written = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 nonce = Guid.NewGuid().ToString("N"),
             });
-            File.WriteAllText($"{Folder}/current.json.tmp", json);
-            File.Move($"{Folder}/current.json.tmp", $"{Folder}/current.json", overwrite: true);
+            SaveFiles.Write($"{Folder}/current.json", json);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }

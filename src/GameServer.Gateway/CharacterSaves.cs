@@ -43,15 +43,11 @@ static class CharacterSaves
         return Path.Combine(Folder, safe + ".json");
     }
 
+    /// <summary>The character's save, or null when it has none. A save that can't be read throws
+    /// <see cref="UnreadableSaveException"/> and stays as it is (<see cref="SaveFiles.Load{T}"/>).</summary>
     public static Save? Load(string character)
     {
-        string path = PathOf(character);
-        lock (Gate)
-        {
-            if (!File.Exists(path)) return null;
-            try { return JsonSerializer.Deserialize<Save>(File.ReadAllText(path), Opts); }
-            catch (Exception e) { Console.WriteLine($"[gateway] save {path} unreadable: {e.Message}"); return null; }
-        }
+        lock (Gate) return SaveFiles.Load<Save>(PathOf(character), Opts);
     }
 
     public static void Write(string character, Save save)
@@ -60,9 +56,7 @@ static class CharacterSaves
         lock (Gate)
         {
             Directory.CreateDirectory(Folder);
-            string tmp = path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(save, Opts));
-            File.Move(tmp, path, overwrite: true);
+            SaveFiles.Write(path, JsonSerializer.Serialize(save, Opts));
         }
     }
 

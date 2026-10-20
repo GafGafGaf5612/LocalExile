@@ -18,6 +18,46 @@ public class PlayerInventoriesTests : IDisposable
     // No item tables in this folder: the character starts with no kit, and items are kept by their type hash.
     PlayerInventories NewInventories() => PlayerInventories.For(_character, new ItemCatalog(_folder));
 
+    string SavePath() => Path.Combine(_folder, _character + ".json");
+
+    [Fact]
+    public void A_change_while_the_save_file_is_briefly_held_is_saved()
+    {
+        CharacterSaves.Write(_character, new CharacterSaves.Save([], Passives: [7]));
+
+        // A reader that doesn't share delete, like an antivirus scan: replacing the file is refused while it reads.
+        using (FileHold.For(SavePath(), FileShare.ReadWrite, 300))
+            CharacterSaves.SetExperience(_character, 123);
+
+        var save = CharacterSaves.Load(_character)!;
+        Assert.Equal(123u, save.Experience);
+        Assert.Equal([(ushort)7], save.Passives);
+    }
+
+    [Fact]
+    public void A_briefly_locked_save_is_read_once_it_is_free()
+    {
+        CharacterSaves.Write(_character, new CharacterSaves.Save([], Experience: 55));
+
+        using var held = FileHold.For(SavePath(), FileShare.None, 300);
+
+        Assert.Equal(55u, CharacterSaves.Load(_character)?.Experience);
+    }
+
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("null")]
+    public void A_save_that_cannot_be_read_stops_the_login_and_every_change_and_stays_as_it_is(string content)
+    {
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(SavePath(), content);
+
+        Assert.Throws<UnreadableSaveException>(() => PlayerInventories.SetClass(_character, 1));   // the login
+        Assert.Throws<UnreadableSaveException>(() => NewInventories());                          // the items
+        Assert.Throws<UnreadableSaveException>(() => CharacterSaves.SetExperience(_character, 1)); // a change
+        Assert.Equal(content, File.ReadAllText(SavePath()));
+    }
+
     static Item Wand() => new(0xd9b1a12f, ["Base"], 0x40a1);
 
     [Fact]

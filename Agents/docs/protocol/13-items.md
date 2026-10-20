@@ -262,6 +262,13 @@ sockets (with their gems), links and gem experience. A saved character loads fro
 and equipment survive Gateway restarts and logins (live 2026-10-18). The file also holds the skill bar
 ([11](11-skills.md) §11).
 
+Saves go to `<file>.tmp` first and then replace the file (`SaveFiles`). A read or a replace waits up to 2 s for a file
+another program holds for a moment (an antivirus scan, the search indexer: Windows then refuses the replace with "Access
+to the path is denied"). A save that exists but can't be read (broken JSON, `null`, held for longer) is never taken for a
+missing one: it is left as it is, logged, and the login or the change that needed it stops with
+`UnreadableSaveException`, which closes the connection. Before, the character started over from the start kit and the
+next change wrote over the save.
+
 Each move is one change and one save, so a crash at any moment leaves an item in exactly one inventory: picking up
 (`PlayerInventories.PickUp`, C→S 0x28: off its row and onto the cursor), placing or swapping (`Place`, 0x2a), socketing
 and unsocketing (0x30, 0x2f) each change everything under one lock and then write the file once. Items on the ground are

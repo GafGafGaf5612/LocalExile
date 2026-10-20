@@ -94,17 +94,9 @@ sealed class AccountStash
     static string PathOf(string account) =>
         Path.Combine(Folder, string.Concat(account.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_')) + ".json");
 
-    static Save? Load(string account)
-    {
-        string path = PathOf(account);
-        if (!File.Exists(path)) return null;
-        try { return JsonSerializer.Deserialize<Save>(File.ReadAllText(path), Opts); }
-        catch (Exception e) when (e is IOException or JsonException)
-        {
-            Console.WriteLine($"[gateway] stash {path} unreadable: {e.Message}");
-            return null;
-        }
-    }
+    // A stash file that can't be read throws UnreadableSaveException and stays as it is (SaveFiles.Load), instead of
+    // becoming the starter tabs, which For would write over it.
+    static Save? Load(string account) => SaveFiles.Load<Save>(PathOf(account), Opts);
 
     void Persist()
     {
@@ -114,11 +106,8 @@ sealed class AccountStash
             {
                 Items = [.. t.Items.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods)))],
             })], _lastTab, _nextItemId, _gold);
-        string path = PathOf(_account);
         Directory.CreateDirectory(Folder);
-        string tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(save, Opts));
-        File.Move(tmp, path, overwrite: true);
+        SaveFiles.Write(PathOf(_account), JsonSerializer.Serialize(save, Opts));
     }
 
     public int Count { get { lock (_lock) return _tabs.Count; } }
