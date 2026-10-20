@@ -15,6 +15,10 @@ This project is not affiliated with or endorsed by Grinding Gear Games. It conta
 You need your own installed copy of the client, and everything the servers need is generated locally from it.
 
 ## Showcase (Most recent to older)
+https://github.com/user-attachments/assets/e20dd43d-4453-40d4-8f81-eb902a87817f
+
+Items, NPCs, Stash, Waypoints [(youtube)](https://youtu.be/-QDRFEWCmpU)
+
 https://github.com/user-attachments/assets/fead9d6a-b2ce-4908-9e73-ccaaae78a08a
 
 Mobs, Loot, RF, Level/XP, Passive Tree (better quality showcase is on [youtube](https://www.youtube.com/watch?v=rfnCaXQaxBo))

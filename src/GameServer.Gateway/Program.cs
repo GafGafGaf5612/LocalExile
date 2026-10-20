@@ -1357,10 +1357,10 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     if (hitId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(hitId);
     if (m is not null && m.Life > 0)
     {
-        var stats = Skills.EffectStats(gem.Effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int min = Stats.Key("spell_minimum_base_fire_damage") is uint kmin ? stats.GetValueOrDefault(kmin) : 0;
-        int max = Stats.Key("spell_maximum_base_fire_damage") is uint kmax ? stats.GetValueOrDefault(kmax) : 0;
-        int damage = Random.Shared.Next(min, Math.Max(min, max) + 1);
+        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them.
+        var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        foreach (var (k, v) in Skills.EffectStats(gem.Effect, 1)) stats[k] = v;
+        int damage = SpellDamage.Roll(SpellDamage.Hit(name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0), Random.Shared);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
@@ -1438,7 +1438,7 @@ static IEnumerable<(uint, int)> BaseStats(ClientState conn)
     foreach (var (k, v) in ClassAttributes(conn.ClassRow, conn.Pools)) if (seen.Add(k)) yield return (k, v);
     List<ushort> nodes;
     lock (conn.Monsters) nodes = [.. conn.Passives];
-    var extra = Passives.Stats(nodes, conn.MasteryEffects);
+    var extra = CharacterStatSources(conn, nodes);
     if (conn.God)
     {
         foreach (var (stat, value) in GodStats)
@@ -1544,6 +1544,15 @@ static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint,
             int ms = (int)Math.Round(castMs / (1 + castSpeed / 100.0));
             if (Stats.Key("virtual_base_spell_cast_time_ms") is uint vk) stats[vk] = ms;
             if (Stats.Key("hundred_times_casts_per_second") is uint hk) stats[hk] = (int)Math.Round(100_000.0 / Math.Max(1, ms));
+        }
+        // A spell's tooltip DPS is its own hit (SpellDamage) × casts per second, not the default attack's values that
+        // came with the player's stats.
+        int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        if (SpellDamage.Hit(Get) is { Max: > 0 } hit && Get("hundred_times_casts_per_second") is int cps and > 0)
+        {
+            var (perUse, perSecond) = SpellDamage.Display(hit, cps / 100.0);
+            stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = perUse;
+            stats[StatKeys.HundredTimesDamagePerSecond] = perSecond;
         }
         if (Skills.FindByRow(id, effect, 1, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
         {
@@ -1686,10 +1695,19 @@ static void LoadProgress(ClientState conn, int level)
 }
 
 // The pools of the character's class at this level with its passives (call under the Monsters lock).
+// The character's stats from its allocated passives and the global mods of its equipped items (ItemModStats), by
+// client stat key.
+static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<ushort>? nodes = null)
+{
+    var items = ItemsOf(conn);
+    var equipped = ItemModStats.EquipmentRows.SelectMany(items.Items).Select(i => i.Item);
+    return ItemModStats.Plus(Passives.Stats(nodes ?? conn.Passives, conn.MasteryEffects), ItemModStats.Global(equipped, Items.Mods, Stats));
+}
+
 static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 {
     var weapons = WeaponProfileFor(conn);
-    var bonus = PassiveBonus(Passives.Stats(conn.Passives, conn.MasteryEffects), weapons);
+    var bonus = PassiveBonus(CharacterStatSources(conn), weapons);
     List<AuraCatalog.Aura> auras;
     lock (conn.Monsters) auras = [.. conn.Auras.Values];
     var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
@@ -1804,8 +1822,9 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         + (weapons.Wand ? Get("wand_attack_speed_+%") : 0)
         + (weapons.Bow ? Get("bow_attack_speed_+%") : 0)
         + (weapons.Staff ? Get("staff_attack_speed_+%") : 0);
-    // PoB Misc.lua: 10% more attack speed while dual wielding; unarmed attacks count as dual wielding.
-    int attackSpeedMore = weapons.DualWield || weapons.Unarmed ? 10 : 0;
+    // PoB Misc.lua: 10% more attack speed while dual wielding; unarmed attacks count as dual wielding. The main hand's
+    // local attack speed scales the weapon's own rate before the global increases, so it multiplies like a more.
+    int attackSpeedMore = (int)Math.Round(((weapons.DualWield || weapons.Unarmed ? 1.10 : 1.0) * (1 + weapons.LocalAttackSpeedPct / 100.0) - 1) * 100);
     // Unconditional critical strike chance and multiplier passives: generic, attack/melee/weapon-shape and spell.
     // Timed or enemy-state conditions are not modelled.
     int criticalChance = Get("critical_strike_chance_+%") + Get("attack_critical_strike_chance_+%")
@@ -1841,7 +1860,7 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
     // Accuracy passives: generic flat and increased, the weapon-specific flat and increased stats, and the Accuracy
     // Mastery's conversions. Conditional stats (nearby ally, marked enemy, low life, frenzy charges, unique/close
     // enemies) are not modelled here. Unarmed attacks count as dual wielding, as they do for attack speed.
-    int accuracyFlat = Get("accuracy_rating")
+    int accuracyFlat = Get("accuracy_rating") + weapons.LocalAccuracy
         + (weapons.Sword ? Get("sword_accuracy_rating") : 0)
         + (weapons.Axe ? Get("axe_accuracy_rating") : 0)
         + (weapons.Mace ? Get("mace_accuracy_rating") : 0)
@@ -3315,6 +3334,8 @@ static WeaponProfile WeaponProfileFor(ClientState conn)
     var dual = Pair(main1, off1) || Pair(main2, off2);
     var claws = (main1?.Class == "Claw" && off1?.Class == "Claw") || (main2?.Class == "Claw" && off2?.Class == "Claw");
     var unarmed = main1 is null && main2 is null;
+    var mainItem = items.Items(2).Concat(items.Items(14)).Select(i => i.Item).FirstOrDefault();
+    var local = mainItem is null ? [] : ItemModStats.Local(mainItem, Items.Mods);
     return new WeaponProfile(
         Shield: HasShield(conn),
         DualWield: dual,
@@ -3333,7 +3354,11 @@ static WeaponProfile WeaponProfileFor(ClientState conn)
         Claw: all.Any(t => t.Class == "Claw"),
         Dagger: all.Any(t => t.Class is "Dagger" or "Rune Dagger"),
         Wand: all.Any(t => t.Class == "Wand"),
-        Critical: (main1 ?? main2) is { } main ? Items.WeaponCritical(main) : 0);
+        // The main hand's local mods: increased critical strike chance scales its base, attack speed and accuracy go
+        // into PassiveBonus.
+        Critical: (main1 ?? main2) is { } main ? Items.WeaponCritical(main) * (100 + local.GetValueOrDefault("local_critical_strike_chance_+%")) / 100 : 0,
+        LocalAttackSpeedPct: local.GetValueOrDefault("local_attack_speed_+%"),
+        LocalAccuracy: local.GetValueOrDefault("local_accuracy_rating"));
 }
 
 // The equipped off hand(s): Weapon1's off hand is row 3, Weapon2's is row 15.
