@@ -1198,8 +1198,20 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         return;
     }
     int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
-    var hit = weapon.HitDamage(CharacterPlayerStats(conn))
+    var player = CharacterPlayerStats(conn);
+    var hit = weapon.HitDamage(player)
         .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
+    // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
+    // hits, and the hit's own physical damage may store a new stack for the hits after it.
+    double physical = hit[DamageType.Physical].Max;
+    double stored = m.Impale.Bonus;
+    if (stored > 0) hit = hit.Add(DamageType.Physical, new DamageRange(stored, stored));
+    m.Impale.AfterHit();
+    int impaleChance = Stats.Key("impale_on_hit_%_chance") is uint impaleKey ? player.GetValueOrDefault(impaleKey) : 0;
+    bool impaled = impaleChance > 0 && Random.Shared.Next(100) < impaleChance && m.Impale.Apply(physical);
+    // Read before the hit is applied: a killing blow clears the target's impales.
+    int impaleStacks = m.Impale.Stacks;
+    double impaleStored = m.Impale.Bonus;
     int damage = hit.RollTotal(Random.Shared);
     bool critical = conn.Pools.AttackCriticalStrikeChance > 0
         && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
@@ -1215,7 +1227,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         m.Life = (uint)Math.Max(0, (long)m.Life - damage);
         life = m.Life;
         conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
-        if (life == 0) { m.Aggro = false; m.Dead = true; }
+        if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
     }
     // At 0 the client's Life tick (0x141e6a190) stops notifying its listeners, so the mini life bar would keep the last
     // value: hide it with the stat its listener watches (hide_mini_life_bar).
@@ -1223,7 +1235,10 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(use.TargetId, [(StatKeys.HideMiniLifeBar, 1)]),
             $"0x01b3 monster 0x{use.TargetId:x} hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
-        $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}" +
+        (stored > 0 ? $", impale +{stored:0.#} ({impaleStacks} stack(s))" : "") +
+        (impaled ? $", impaled ({impaleStacks} stack(s), {impaleStored:0.#} stored)" : "") +
+        $", life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, use.TargetId, m);
 }
 
@@ -4802,6 +4817,8 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public MonsterRarity Rarity { get; init; }
     // Damage over time not yet applied (fractions of a point between ticks).
     public double Burn;
+    // The impales the player's attacks have left on it (Impale.cs); cleared when it dies.
+    public readonly ImpaleState Impale = new();
     // While a swing runs (Clock seconds) the monster neither chases nor swings again.
     public double BusyUntil;
     public string Label => label;
