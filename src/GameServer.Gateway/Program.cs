@@ -983,25 +983,33 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
 
 // An item goes into the sell offer (C→S 0xb2, or 0x2a on the offer inventory) from the inventory it is in (the cursor, or
 // the main inventory on a Ctrl-click); the NPC answers with one Scroll Fragment per offered item in its own offer. As in
-// 3.29 the item keeps its inventory cell (the client's greyed imprint) until the sale ends: PlayerInventories.Offer.
+// 3.29 the item keeps its inventory cell until the sale ends (PlayerInventories.Offer), and the client keeps it there too:
+// no 0xbf takes it out of the inventory, so the client can draw its greyed imprint. A held item goes back to its cell
+// (0xbf: off the cursor, into the inventory) first.
 static async Task OfferForSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale,
     uint fromInventory, uint itemId, byte x, byte y)
 {
     var items = ItemsOf(conn);
-    if (PlayerInventories.Row(fromInventory) is not byte row || items.Offer(row, itemId, x, y, ShapeOf) is not var (_, offered))
+    if (PlayerInventories.Row(fromInventory) is not byte row || items.Offer(row, itemId, x, y, ShapeOf) is not var (waits, offered))
     {
         Console.WriteLine($"[gateway] {remote} sell offer: item {itemId} is not in inventory {fromInventory} (or no cell to wait in)");
         return;
     }
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(fromInventory, items.NextRevision(row), [offered.Id], []),
-        $"0x00bf inventory {fromInventory}: remove item {offered.Id} (offered; its cell stays its own)");
+    if (waits != row)
+    {
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(fromInventory, items.NextRevision(row), [offered.Id], []),
+            $"0x00bf inventory {fromInventory}: remove item {offered.Id} (offered from the cursor)");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(waits), items.NextRevision(waits), [], [offered]),
+            $"0x00bf inventory {PlayerInventories.InventoryId(waits)}: item {offered.Id} waits at ({offered.X}, {offered.Y}) while offered");
+    }
     var inOffer = offered with { X = x, Y = y };
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [], [inOffer], NpcShops.Manager),
         $"0x00bf sell offer: item {inOffer.Id} at ({x}, {y})");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
-// An offered item taken back (C→S 0xb3, or 0x28 on the offer inventory) is in its inventory cell again.
+// An offered item taken back (C→S 0xb3, or 0x28 on the offer inventory) is in its inventory cell again: it never left the
+// client's inventory, so only the offer changes.
 static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, uint itemId)
 {
     var items = ItemsOf(conn);
@@ -1011,9 +1019,7 @@ static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCi
         return;
     }
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [itemId], [], NpcShops.Manager),
-        $"0x00bf sell offer: remove item {itemId}");
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [back]),
-        $"0x00bf inventory {PlayerInventories.InventoryId(row)}: item {itemId} back at ({back.X}, {back.Y})");
+        $"0x00bf sell offer: remove item {itemId} (back in inventory {PlayerInventories.InventoryId(row)} at ({back.X}, {back.Y}))");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
@@ -1074,6 +1080,7 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
     if (accepted)
     {
         int count = items.Offered().Count;
+        var sold = items.OfferedInPlace();   // where the client still has them: they leave its inventory now
         var fragment = Items.Find(NpcShops.SellReward);
         PlayerInventories.Stacking? added = null;
         string? refused = count == 0 ? null
@@ -1087,15 +1094,22 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
             return;
         }
         Console.WriteLine($"[gateway] {remote} sale accepted: {count} item(s) sold for {count} × {NpcShops.SellReward}");
+        foreach (var group in sold.GroupBy(s => s.Row).Where(g => g.Key != PlayerInventories.MainInventory || added is not { Any: true }))
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(group.Key), items.NextRevision(group.Key),
+                [.. group.Select(s => s.Item.Id)], []), $"0x00bf inventory {PlayerInventories.InventoryId(group.Key)}: {group.Count()} item(s) sold");
+        // The main inventory's sold items and the reward in one 0xbf.
         if (added is { Any: true })
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
-                items.NextRevision(PlayerInventories.MainInventory), added.RemovedIds, added.AddedItems),
-                $"0x00bf inventory 1: {added.Changed.Count} stack(s) grown, {added.Added.Count} new (the NPC's offer)");
+                items.NextRevision(PlayerInventories.MainInventory),
+                [.. sold.Where(s => s.Row == PlayerInventories.MainInventory).Select(s => s.Item.Id), .. added.RemovedIds], added.AddedItems),
+                $"0x00bf inventory 1: sold items out, {added.Changed.Count} stack(s) grown, {added.Added.Count} new (the NPC's offer)");
     }
     else if (sale is not null)
-        foreach (var group in items.CancelOffers().GroupBy(b => b.Row))
-            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(group.Key), items.NextRevision(group.Key), [],
-                [.. group.Select(b => b.Item)]), $"0x00bf inventory {PlayerInventories.InventoryId(group.Key)}: {group.Count()} offered item(s) back in their cells");
+    {
+        // The offered items never left the client's inventory: nothing to send back.
+        int back = items.CancelOffers().Count;
+        if (back > 0) Console.WriteLine($"[gateway] {remote} sale cancelled: {back} offered item(s) stay where they are");
+    }
     lock (conn.Npcs) if (conn.Sale == sale) conn.Sale = null;
     await Send(remote, stream, ciphers, InstanceNpcs.TradeClose(0, accepted), $"0x00b9 sell window closed ({(accepted ? "accepted" : "cancelled")})");
     // The client is still talking to the NPC (session +0xd7c0 = 2, +0xd7c4 = the NPC, live 2026-10-19) and the player cannot

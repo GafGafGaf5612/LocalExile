@@ -784,6 +784,12 @@ sealed class PlayerInventories
         return result;
     }
 
+    /// <summary>The items offered for sale where they wait in the inventories (their rows and cells).</summary>
+    public IReadOnlyList<(byte Row, InventoryItem Item)> OfferedInPlace()
+    {
+        lock (_lock) return [.. _items.SelectMany(kv => kv.Value.Where(i => _offered.ContainsKey(i.Id)).Select(i => (kv.Key, i)))];
+    }
+
     /// <summary>An offered item taken back out of the offer: it is in its cell again. Returns its row and the item, or
     /// null when it is not offered.</summary>
     public (byte Row, InventoryItem Item)? TakeBack(uint itemId)

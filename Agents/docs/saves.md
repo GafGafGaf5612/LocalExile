@@ -83,7 +83,7 @@ last town.
 As in 3.29, an item offered to an NPC moves to the sell window but keeps its inventory cell: the client shows a greyed
 imprint with the item's size and collision, and nothing else can take that cell or move or use the item
 (`PlayerInventories.Offer`). An item offered from the cursor waits in the cell it was picked up from (or the first free
-one), saved there. Cancel, closing the window, a disconnect or a crash end the sale with every item where it was; the
+one), saved there. The client is not told the item left its inventory (its imprint is the client's to draw). Cancel, closing the window, a disconnect or a crash end the sale with every item where it was; the
 offer itself is only in memory, so the save already has every item in its cell. Accept takes the offered items and puts
 the reward in, in one save; the offered items' cells free up first, so the reward nearly always fits. When it doesn't,
 nothing changes and the window stays open ("Not enough room in your inventory.").
