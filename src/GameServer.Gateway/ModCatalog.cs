@@ -13,9 +13,25 @@ sealed class ModCatalog(string folder = "data")
 
     /// <summary>A Mods.dat row. GenerationType 1 prefix, 2 suffix, 3 unique / base implicit, 10 enchantment …;
     /// Domain 1 items.</summary>
+    /// <summary>A Mods.dat row. Rolling (ItemRolls): SpawnWeights is the (Tags.dat Id, weight) list where the first tag the
+    /// item has decides, GenerationWeights multiply that by weight / 100, Families exclude each other on one item.</summary>
     public sealed record Mod(int Row, string Id, ushort Hash, string Name, int Domain, int GenerationType, int Level,
         IReadOnlyList<ModStat> Stats)
     {
+        public IReadOnlyList<int> Families { get; init; } = [];
+        public IReadOnlyList<(string Tag, int Weight)> SpawnWeights { get; init; } = [];
+        public IReadOnlyList<(string Tag, int Weight)> GenerationWeights { get; init; } = [];
+        public bool EssenceOnly { get; init; }
+
+        /// <summary>The weight for an item with these tags: the first spawn tag it has, times the first generation tag
+        /// it has / 100; 0 when no spawn tag matches.</summary>
+        public int WeightFor(IReadOnlySet<string> tags)
+        {
+            int weight = SpawnWeights.FirstOrDefault(w => tags.Contains(w.Tag)).Weight;
+            if (weight > 0 && GenerationWeights.FirstOrDefault(w => tags.Contains(w.Tag)) is { Tag: not null } g) weight = weight * g.Weight / 100;
+            return weight;
+        }
+
         /// <summary>The list a mod goes into when nothing else says so: prefixes and suffixes are explicit,
         /// enchantments enchants, everything else (base implicits, corruptions …) implicit.</summary>
         public ModSection DefaultSection => GenerationType switch { 1 or 2 => ModSection.Explicit, 10 => ModSection.Enchant, _ => ModSection.Implicit };
@@ -45,6 +61,8 @@ sealed class ModCatalog(string folder = "data")
 
     public Mod? ById(string id) => _mods.Value.ById.GetValueOrDefault(id);
 
+    public IReadOnlyList<Mod> All => _mods.Value.Rows;
+
     /// <summary>A mod by row number, exact Id (any case), then the first Id that contains the text.</summary>
     public Mod? Find(string query)
     {
@@ -59,12 +77,20 @@ sealed class ModCatalog(string folder = "data")
 
     private static (List<Mod>, Dictionary<ushort, Mod>, Dictionary<string, Mod>) Load(string folder)
     {
-        string path = Path.Combine(folder, "tables", "Mods.json"), statsPath = Path.Combine(folder, "tables", "Stats.json");
+        string path = Path.Combine(folder, "tables", "Mods.json"), statsPath = Path.Combine(folder, "tables", "Stats.json"),
+            tagsPath = Path.Combine(folder, "tables", "Tags.json");
         var rows = new List<Mod>();
         if (!File.Exists(path) || !File.Exists(statsPath)) return (rows, [], []);
         List<string> stats;
         using (var s = JsonDocument.Parse(File.ReadAllBytes(statsPath)))
             stats = [.. s.RootElement.EnumerateArray().Select(r => r.GetProperty("Id").GetString() ?? "")];
+        List<string> tags = [];
+        if (File.Exists(tagsPath))
+            using (var t = JsonDocument.Parse(File.ReadAllBytes(tagsPath)))
+                tags = [.. t.RootElement.EnumerateArray().Select(r => r.GetProperty("Id").GetString() ?? "")];
+        List<(string, int)> Weights(JsonElement r, string keys, string values) =>
+            [.. r.GetProperty(keys).EnumerateArray().Zip(r.GetProperty(values).EnumerateArray(),
+                (k, v) => (k.GetInt32() < tags.Count ? tags[k.GetInt32()] : $"#{k.GetInt32()}", v.GetInt32()))];
         using var d = JsonDocument.Parse(File.ReadAllBytes(path));
         foreach (var r in d.RootElement.EnumerateArray())
         {
@@ -78,7 +104,13 @@ sealed class ModCatalog(string folder = "data")
             }
             rows.Add(new Mod(rows.Count, r.GetProperty("Id").GetString() ?? "", (ushort)r.GetProperty("HASH16").GetInt32(),
                 r.GetProperty("Name").GetString() ?? "", r.GetProperty("Domain").GetInt32(), r.GetProperty("GenerationType").GetInt32(),
-                r.GetProperty("Level").GetInt32(), modStats));
+                r.GetProperty("Level").GetInt32(), modStats)
+            {
+                Families = [.. r.GetProperty("Families").EnumerateArray().Select(f => f.GetInt32())],
+                SpawnWeights = Weights(r, "SpawnWeight_TagsKeys", "SpawnWeight_Values"),
+                GenerationWeights = Weights(r, "GenerationWeight_TagsKeys", "GenerationWeight_Values"),
+                EssenceOnly = r.GetProperty("IsEssenceOnlyModifier").GetBoolean(),
+            });
         }
         var byHash = new Dictionary<ushort, Mod>();
         var byId = new Dictionary<string, Mod>(StringComparer.OrdinalIgnoreCase);

@@ -49,6 +49,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// <summary>Implicit, explicit and other mods, written into the Mods component per <see cref="ModSection"/>.</summary>
     public IReadOnlyList<ItemMod> Mods { get; init; } = [];
 
+    /// <summary>A rare item's name: Words.dat keys (ObjectMagicProperties bit 8), prefix then suffix; only sent for
+    /// identified items.</summary>
+    public IReadOnlyList<uint> NameWords { get; init; } = [];
+
     /// <summary>A vendor price: (item type hash, amount) entries, Base flag bit 7 (17-npcs.md §5). Empty for items not
     /// in a shop.</summary>
     public IReadOnlyList<(uint TypeHash, uint Amount)> Price { get; init; } = [];
@@ -140,11 +144,18 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     void MagicProperties(BlobWriter w)
     {
         var sections = Mods.Where(m => Identified || m.Section != ModSection.Explicit).GroupBy(m => m.Section).ToDictionary(g => g.Key, g => g.ToList());
-        ushort flags = (ushort)((byte)Rarity & 7 | (Identified ? 0x8 : 0));
+        bool named = Identified && NameWords.Count > 0;
+        ushort flags = (ushort)((byte)Rarity & 7 | (Identified ? 0x8 : 0) | (named ? 0x100 : 0));
         foreach (var s in sections.Keys) flags |= (ushort)(1 << (byte)s);
         w.U16(flags).U8(0);
         foreach (var s in new[] { ModSection.Implicit, ModSection.Enchant, ModSection.Scourge, ModSection.Hidden, ModSection.Explicit })
         {
+            // The name comes between the lists read for every item and the identified-only explicit list.
+            if (s == ModSection.Explicit && named)
+            {
+                w.U8((byte)Math.Min(NameWords.Count, 255));
+                foreach (uint word in NameWords.Take(255)) w.U32(word);
+            }
             if (!sections.TryGetValue(s, out var mods)) continue;
             w.U8((byte)Math.Min(mods.Count, 255));
             foreach (var m in mods.Take(255))
@@ -317,6 +328,21 @@ public static class InstanceItems
     {
         var r = new LoginReader(m[2..]);
         return new(r.U32(), r.U32());
+    }
+
+    public const ushort UseItemOnId = 0x71;
+    public const int UseItemOnLength = 18;
+
+    /// <summary>
+    /// C→S 0x71 (18 bytes, live 2026-10-20): use an item on another one, e.g. right-click a Scroll of Wisdom, then click
+    /// an unidentified item. u32 inventory id and u32 item id of the used item, then of the target, all big-endian.
+    /// </summary>
+    public sealed record UseItemOn(uint InventoryId, uint ItemId, uint TargetInventoryId, uint TargetId);
+
+    public static UseItemOn ReadUseItemOn(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32(), r.U32(), r.U32());
     }
 
     public const int ItemActionLength = 14;

@@ -88,7 +88,7 @@ def parse(text):
     """-> {extends: [...], abstract, sections: [names], client: [names], server: [names]}"""
     toks = TOKEN.findall(re.sub(r"//[^\n]*", "", text))
     r = {"extends": [], "abstract": False, "sections": [], "client": [], "server": [], "version": None,
-         "shared_states": [], "shared_timers": [], "transitionable": {}}
+         "shared_states": [], "shared_timers": [], "transitionable": {}, "tags": []}
     i = 0
 
     def block(i):  # i at '{' -> index after matching '}', plus the names of sections directly inside
@@ -123,6 +123,9 @@ def parse(text):
                     state_machine(toks[i + 2:j - 1], r)
                 elif t == "Transitionable":
                     top_level_keys(toks[i + 2:j - 1], r["transitionable"], ("num_states", "no_serialise"))
+                elif t == "Base":  # item tags (Tags.dat Ids) for mod spawn weights: tag = "wand"
+                    body = toks[i + 2:j - 1]
+                    r["tags"] += [body[k + 2].strip("\"'") for k in range(len(body) - 2) if body[k] == "tag" and body[k + 1] == "="]
             i = j
         else:
             i += 1
@@ -293,6 +296,8 @@ def merge_items():
         else:
             continue
         r["type"] = tid
+        # Tags along the chain, parents first (the BaseItemTypes row adds its own TagsKeys on top).
+        r["tags"] = list(dict.fromkeys(tag for p in r["chain"] for tag in files.get(p, {}).get("tags", [])))
         for k in ("shared_states", "shared_timers", "transitionable"):
             r.pop(k, None)
         out[tid] = r
