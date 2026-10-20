@@ -27,6 +27,19 @@ public class SaveFilesTests : IDisposable
     }
 
     [Fact]
+    public void A_held_backup_does_not_stop_the_save()
+    {
+        SaveFiles.Write(Save, "one");
+        SaveFiles.Write(Save, "two");
+
+        // Someone reading the backup (no write sharing): the backup can't be refreshed, but the save must still happen.
+        using (FileHold.For(Save + ".bak", FileShare.Read, 4000))
+            SaveFiles.Write(Save, "three");
+
+        Assert.Equal("three", File.ReadAllText(Save));
+    }
+
+    [Fact]
     public void A_write_that_cannot_replace_the_file_leaves_the_old_one_whole()
     {
         SaveFiles.Write(Save, "old");

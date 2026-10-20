@@ -1657,9 +1657,15 @@ static void LoadProgress(ClientState conn, int level)
 {
     var save = CharacterSaves.Load(CharacterName(conn));
     level = Math.Clamp(level, 1, Progression.MaxLevel);
-    // Gold is the account's (AccountStash.Gold): gold an older save kept with the character moves into the account.
-    if (CharacterSaves.TakeGold(CharacterName(conn)) is > 0 and var oldGold)
-        Console.WriteLine($"[gateway] {CharacterName(conn)}: {oldGold} gold from the character save moved to the account, now {StashOf(conn).AddGold(oldGold)}");
+    // Gold is the account's (AccountStash.Gold): gold an older save kept with the character moves into the account. The
+    // account gets it first and the save lets go of it after: if anything stops in between (an unreadable stash, a crash),
+    // the gold is counted twice rather than lost.
+    if (save?.Gold is > 0 and uint oldGold)
+    {
+        uint now = StashOf(conn).AddGold(oldGold);
+        CharacterSaves.TakeGold(CharacterName(conn));
+        Console.WriteLine($"[gateway] {CharacterName(conn)}: {oldGold} gold from the character save moved to the account, now {now}");
+    }
     lock (conn.Monsters)
     {
         conn.Passives = [.. (save?.Passives ?? []).Where(n => Passives.Find(n) is { IsAscendancy: false })];
