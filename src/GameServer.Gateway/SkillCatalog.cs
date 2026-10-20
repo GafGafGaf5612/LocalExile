@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Core.World;
 
 /// <summary>
 /// Skills the server grants: a GrantedEffects Id at a level becomes the GrantedEffectsPerLevel row and the
@@ -73,6 +74,40 @@ sealed class SkillCatalog(string folder = "data")
         return [.. stats.Select(kv => (kv.Key, kv.Value))];
 
         void Put(string name, int value) { if (_stats.Key(name) is uint k) stats[k] = value; }
+    }
+
+    /// <summary>
+    /// A skill's base hit damage by type, from its per-level stats (<c>spell_minimum_base_fire_damage</c> and so on).
+    /// The packet keeps the types separate so conversion and mitigation can be applied per type. Added damage and
+    /// increased/more modifiers are applied by the caller; this is the skill's own base range.
+    /// </summary>
+    public DamagePacket HitDamage(int effectRow, int level)
+    {
+        var stats = EffectStats(effectRow, level).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var result = DamagePacket.Empty;
+        foreach (var type in DamageTypes.ConversionOrder)
+        {
+            string slug = type switch
+            {
+                DamageType.Physical => "physical",
+                DamageType.Lightning => "lightning",
+                DamageType.Cold => "cold",
+                DamageType.Fire => "fire",
+                DamageType.Chaos => "chaos",
+                _ => throw new ArgumentOutOfRangeException(),
+            };
+            int min = Value(stats, $"spell_minimum_base_{slug}_damage", $"minimum_base_{slug}_damage");
+            int max = Value(stats, $"spell_maximum_base_{slug}_damage", $"maximum_base_{slug}_damage");
+            if (min > 0 || max > 0) result = result.Add(type, new DamageRange(min, Math.Max(min, max)));
+        }
+        return result;
+    }
+
+    private int Value(Dictionary<uint, int> stats, params string[] names)
+    {
+        foreach (string name in names)
+            if (_stats.Key(name) is uint key && stats.TryGetValue(key, out int value)) return value;
+        return 0;
     }
 
     /// <summary>The ActionTypes Id of a basic action's skill id (HASH16 &amp; 0x3fff: Move 0x2909), or null.</summary>
@@ -222,12 +257,19 @@ sealed class SkillCatalog(string folder = "data")
             return increased;
         }
 
+        /// <summary>The physical hit packet: Characters.dat MinDamage..MaxDamage × (1 + increased / 100).</summary>
+        public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player)
+        {
+            double scale = Math.Max(0, 100 + IncreasedDamage(player)) / 100.0;
+            return DamagePacket.Of(DamageType.Physical, new DamageRange(MinDamage * scale, MaxDamage * scale));
+        }
+
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,
         /// at least 0.</summary>
         public (int Min, int Max) Damage(IReadOnlyDictionary<uint, int>? player)
         {
-            int scale = Math.Max(0, 100 + IncreasedDamage(player));
-            return (MinDamage * scale / 100, MaxDamage * scale / 100);
+            var damage = HitDamage(player)[DamageType.Physical];
+            return ((int)Math.Floor(damage.Min), (int)Math.Floor(damage.Max));
         }
 
         /// <summary>The attack time: base / (1 + increased / 100), as the client computes the swing from the skill's

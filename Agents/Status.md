@@ -1,6 +1,6 @@
 # Status
 
-Where the project stands. Last updated 2026-10-19, against client **3.29.3b**. Update this file in the same pull request
+Where the project stands. Last updated 2026-10-20, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
 What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in [docs/README.md](docs/README.md).
@@ -28,8 +28,14 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Monster packs in areas: on entry the area fills with its MonsterPacks at the area level (The Coast: crab and Drowned packs, some magic, at least 2 with a rare; cannibal packs at the bonfires) and the unique boss at the camp's `mapboss` point with its boss pack (Fire Fury beside the campfire, verified live 2026-10-18); room points are found by fitting rooms to the doodads `-Walkmaps` captures | `MonsterPacks.cs`, Gateway (`PopulateArea`), `scripts/walkmaps`, `scripts/re/atlas room-points` | [14](docs/protocol/14-monster-packs.md) |
 | Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's 10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks per Second), and the server lowers the monster's life 2–5 at the contact point; moving cancels; the dead monster's life bar hides | `GrantedSkill`, `SkillCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) |
 | Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` / `off_hand_accuracy_rating` and the Chance to Hit rows at the character's level; `/accuracy [level]` | `CharacterStats.cs`, `DamageModel.cs`, `MonsterCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) §4–5 |
+<<<<<<< HEAD
 | Monsters fight back: their first granted effect as a non-pathing skill with MonsterVarieties attack time, reach and level damage; they swing (animated) when in reach and the player's life goes down; walking away dodges; death plays and blocks moving; the death screen (S→C 0x55) shows "Resurrect in Town" / "Resurrect at Checkpoint" (hardcore: "Exit"), and both buttons work (C→S 0x54; in town: the last town); `/heal` | `MonsterAttack`, `Resurrect`, Gateway | [11](docs/protocol/11-skills.md) §6–7 |
 | Items: the start kit (Characters.dat weapon with two linked sockets, its skill and support gems, life and mana flasks) in the inventories; pick up (0x28), put down, swap and equip (0x2a, slot classes and attribute requirements checked by the client; the level requirement is sent in the item data, shown in the tooltip and checked by both sides), one-hander off hand → main hand, socket and unsocket gems (0x30, 0x2f), drop to the ground outside town (0x29 → WorldItem) and pick up again (to the cursor with the inventory open, at the client's 22-cell range), Destroy in town (0x16 /destroy); stacks: merge a held stack onto one of its type up to the CurrencyItems StackSize (0x4a), split with Shift + click (0x7c), Shift + click while holding places one, full fragment / shard stacks become their item, pick-ups, `/item` and sale rewards fill existing stacks first; the equipped weapon on the model; active gems in equipment grant their skill; class attributes and the class on the character panel; `/item <row, Id or name> [count]` | `InstanceItems.cs`, Gateway (`ItemCatalog.cs`, `PlayerInventories.cs`) | [13](docs/protocol/13-items.md) §4a |
+=======
+| Armour and Evasion: flat armour/evasion from the passive tree (`base_physical_damage_reduction_rating`, `base_evasion_rating`) and the base body armour/helmet/gloves/boots (the `ArmourTypes.dat` minimum), with `physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%` (Cloth and Chain), `global_defences_+%` and the combined increase; the character panel gets the final `physical_damage_reduction_rating` / `evasion_rating`; physical `/hit` and monster melee apply PoB's armour reduction (90% cap), monster attacks use PoE's shared evasion entropy counter before damage, and `/defences` shows armour, physical reduction and the chance to evade a reference monster. Iron Reflexes converts all evasion to armour and drops dexterity's evasion bonus. Not yet: item mods/quality, shields or auras | `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) §4, [13](docs/protocol/13-items.md) §2 |
+| Monsters fight back: their first granted effect as a non-pathing skill with MonsterVarieties attack time, reach and level damage; they swing (animated) when in reach and the player's life goes down after evasion, armour and block; walking away dodges; death plays and blocks moving; the death screen (S→C 0x55) shows "Resurrect in Town" / "Resurrect at Checkpoint" (hardcore: "Exit"), and both buttons work (C→S 0x54; in town: the last town); `/heal` | `MonsterAttack`, `Resurrect`, Gateway | [11](docs/protocol/11-skills.md) §6–7 |
+| Items: the start kit (Characters.dat weapon with two linked sockets, its skill and support gems, life and mana flasks) in the inventories; pick up (0x28), put down, swap and equip (0x2a, slot classes and attribute requirements checked by the client), one-hander off hand → main hand, socket and unsocket gems (0x30, 0x2f), drop to the ground outside town (0x29 → WorldItem) and pick up again (to the cursor with the inventory open, at the client's 22-cell range), Destroy in town (0x16 /destroy); stacks: merge a held stack onto one of its type up to the CurrencyItems StackSize (0x4a), split with Shift + click (0x7c), Shift + click while holding places one, full fragment / shard stacks become their item, pick-ups, `/item` and sale rewards fill existing stacks first; the equipped weapon on the model; active gems in equipment grant their skill; class attributes and the class on the character panel; `/item <row, Id or name> [count]` | `InstanceItems.cs`, Gateway (`ItemCatalog.cs`, `PlayerInventories.cs`) | [13](docs/protocol/13-items.md) §4a |
+>>>>>>> origin/main
 | Item mods: rarity (normal, magic, rare, unique), identified, and the implicit, explicit, enchant, scourge and hidden mod lists in the Mods component; new items roll their BaseItemTypes implicits (Driftwood Wand 8-12% increased Spell Damage); magic names come from the affixes; rarity and mods are saved with the item (characters and stash); `/mod`, `/mods`, `/rarity` on the held item. Magic and rare items: affixes rolled from Mods.dat by domain, item level, the item's tags and families, rare names from Words.dat; equipment drops magic / rare and unidentified; a Scroll of Wisdom identifies (C→S 0x71); `/item <type> magic\|rare`, `/roll`. Equipped items' mods count on the character: global stats like a passive's (life, resistances, attributes, spell damage …), the main hand's local crit, attack speed and accuracy on the weapon. Not yet: local weapon damage and defence mods, uniques and special mods (#60) | `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`, `ItemCatalog.cs`, `CharacterSaves.cs`) | [13](docs/protocol/13-items.md) §2a-§2c |
 | Gem skills: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; the server creates the `Metadata/Projectiles/Fireball` object, flies it to the target at terrain height + `Game_PROJECTILE_HEIGHT` where the area has a height grid (Lioneye's Watch, The Coast seed 1; live 2026-10-18: above the ground at every level, at belly height), else on the terrain and hits the monster on arrival | `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`), `ProjectileObject` | [11](docs/protocol/11-skills.md) §9–10 |
 | Saving characters: items, equipment, sockets and the skill bar per character in `data/saves/`; the bar is restored with S→C 0x53 after login and area changes (binds are C→S 0x4e) | `CharacterSaves.cs`, `PlayerInventories.cs`, Gateway | [11](docs/protocol/11-skills.md) §11, [13](docs/protocol/13-items.md) §7 |
@@ -62,18 +68,19 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their level-1 effects and buff visuals.
   The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
   sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
-  curse auras, Determination/Grace/Discipline (no armour/evasion/ES model), Purity ailment immunity, Reservation
+  curse auras, Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield
+  are not applied), Purity ailment immunity, Reservation
   masteries 1/2/6, supports, gem levels, party/minion auras and life reservation
   ([11](docs/protocol/11-skills.md) 13).
 - **Positions are estimated, not simulated.** The Gateway estimates where the player is from clicks, walk speed and the
   walk map; there is no server-side pathing or collision.
 - **Stats.** The client's stat key is the Stats.dat row + 1 with the vendored schema ([11](docs/protocol/11-skills.md)
-  §8); `/set_stat` takes stat names or keys. The player's life, mana, accuracy and evasion come from its class and level,
-  with the attributes' bonuses (energy shield, evasion and melee physical damage increases); accuracy also takes its
-  flat/increased passives, weapon-specific stats and Accuracy Mastery, and the final value is sent as
-  `main_hand_accuracy_rating` / `off_hand_accuracy_rating` for the Offence panel; life and mana still ignore passives
-  and items, and evasion takes its passive increases but not items (attack speed is handled below)
-  ([11](docs/protocol/11-skills.md) §4).
+  §8); `/set_stat` takes stat names or keys. The player's life, mana, accuracy, armour and evasion come from its class
+  and level, with the attributes' bonuses (energy shield, evasion and melee physical damage increases); accuracy also
+  takes its flat/increased passives, weapon-specific stats and Accuracy Mastery, and the final value is sent as
+  `main_hand_accuracy_rating` / `off_hand_accuracy_rating` for the Offence panel; armour and evasion also take their
+  flat/increased passives and the base equipped armour pieces (body, helmet, gloves, boots), while life and mana still
+  ignore passives and items (attack speed is handled below) ([11](docs/protocol/11-skills.md) §4).
 - **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack speed
   is summed into the client's `main_hand_attack_speed_+%`; dual wielding adds PoB's 10% more and the server's unarmed
   attack uses the same final value. The default attack also sends the panel's `hundred_times_damage_per_second` and
@@ -93,11 +100,20 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
   stop it ([11](docs/protocol/11-skills.md) §10).
-- **Combat.** The player's default attack kills monsters (server-side damage: the unarmed range raised by strength's melee physical damage,
-  no armour or resistances; the contact point is half the attack time, not the animation's). Monsters use only their
-  first granted effect; the player's life comes from class, level and strength only. The server has no
-  simulation loop: hits use timers, attacks are bounded by a 30/s tick (`TickRate`), the AI runs every 500 ms. Monsters chase but do not attack: they have no granted skills yet. No mods; "emerge"
-  monsters stay hidden; 346 varieties with NPC / ControlZone / … components are refused.
+- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
+  yet; the contact point is half the attack time, not the animation's). Monsters use their first granted effect and
+  swing back; their attacks roll player evasion and then go through armour and block. The player's life comes from the
+  class/level/passive pools. The server has no simulation loop: hits use timers, attacks are bounded by a 30/s tick
+  (`TickRate`), the AI runs every 500 ms. Item mods count through the global item stats; "emerge" monsters stay hidden;
+  346 varieties with NPC / ControlZone / ... components are refused.
+- **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`; `DamageConversion` handles
+  the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global precedence, the 100% cap
+  and gain-as-extra. DoT is a single type with fractional tick carry, and `Ailments` has the ignite/bleed/poison base
+  formulas. The default attack, Fireball and monster melee build packets and read the player's/skill's conversion
+  stats; packet mitigation applies each type's own resistance, and the physical part then goes through armour.
+  Righteous Fire's burn uses the DoT tick model. Not yet: energy shield, penetration/exposure, added damage,
+  increased/more support modifiers, ailment application/duration and monster resistances
+  ([20](docs/protocol/20-damage.md)).
 
 ## Not working yet
 
@@ -128,9 +144,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (270 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (75: inventory moves, stacks, arrival points, instance ground items and monsters, quests,
-passives, spell suppression, attack speed, critical strikes, accuracy, auras and the account stash) pass.
+`dotnet test tests/GameServer.Core.Tests` (290 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (131: inventory moves, stacks, arrival points, instance ground items and monsters,
+quests, passives, spell suppression, attack speed, critical strikes, accuracy, armour/evasion, item mods, auras,
+damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
 
 ## Tooling

@@ -8,6 +8,9 @@ using WalkEstimator = GameServer.Core.World.WalkEstimator;
 using Progression = GameServer.Core.World.Progression;
 using DamageModel = GameServer.Core.World.DamageModel;
 using DamageType = GameServer.Core.World.DamageType;
+using DamagePacket = GameServer.Core.World.DamagePacket;
+using DamageRange = GameServer.Core.World.DamageRange;
+using DamageOverTime = GameServer.Core.World.DamageOverTime;
 
 // GameServer.Gateway — the instance (game) server the client connects to after login 0x14, or after 0x27 on an area
 // change (Agents/docs/protocol/02, 09).
@@ -505,7 +508,8 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
     // Its attack: the variety's first granted effect (Hungry Corpse: Melee) at its level, with the variety's attack time,
     // reach and the level's damage as the skill's final stats (11-skills.md §7).
     var damage = Monsters.BaseDamage(variety, level) ?? (1, 1);
-    var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange, damage.Min, damage.Max);
+    var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange,
+        DamagePacket.Of(DamageType.Physical, damage.Min, damage.Max));
     var skill = variety.GrantedEffects is [int effect, ..]
         ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
     var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
@@ -1146,8 +1150,10 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
             $"{hitChance}% chance");
         return;
     }
-    var (minDamage, maxDamage) = weapon.Damage(CharacterPlayerStats(conn));
-    int damage = Random.Shared.Next(minDamage, maxDamage + 1);
+    int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
+    var hit = weapon.HitDamage(CharacterPlayerStats(conn))
+        .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
+    int damage = hit.RollTotal(Random.Shared);
     bool critical = conn.Pools.AttackCriticalStrikeChance > 0
         && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
     if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
@@ -1175,8 +1181,8 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
 }
 
 // A gem skill used on a monster (C→S 0x24 with a skill id other than the default attack's): echo the action from where the
-// player stands, aimed at the monster, so the client plays the cast. No damage yet: what the client expects after it
-// (projectiles, hits) is still being found, so this logs what it sends.
+// player stands, aimed at the monster, so the client plays the cast. CastGemSkill then pays the cost and runs the
+// skill's effect (projectile, aura or self-cast).
 static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
 {
@@ -1275,8 +1281,8 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
 // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
 // aimed point and on to its range with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid
-// cell), stopping at the first wall or monster on its path; a monster takes the skill's fire damage
-// (spell_minimum/maximum_base_fire_damage; no damage model yet). It explodes there; then the object is removed.
+// cell), stopping at the first wall or monster on its path; a monster takes the skill's damage packet
+// (SkillCatalog.HitDamage, after conversion). It explodes there; then the object is removed.
 static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
@@ -1361,10 +1367,14 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     if (hitId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(hitId);
     if (m is not null && m.Life > 0)
     {
-        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them.
+        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
+        // types separate so conversion and per-type mitigation apply.
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         foreach (var (k, v) in Skills.EffectStats(gem.Effect, 1)) stats[k] = v;
-        int damage = SpellDamage.Roll(SpellDamage.Hit(name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0), Random.Shared);
+        var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, 1),
+                name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
+            .Convert(ConversionFor(conn, gem.Effect, 1, attack: false));
+        int damage = hit.RollTotal(Random.Shared);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
@@ -1447,6 +1457,16 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     return stats;
 }
 
+// Conversion for one hit: the player's stats plus the skill's own stats (base/skill conversion). Player stats win on
+// a key collision; the normal case is that the skill adds stats the player does not have.
+static GameServer.Core.World.DamageConversion ConversionFor(ClientState conn, int effectRow, int level, bool attack)
+{
+    var stats = CharacterPlayerStats(conn);
+    if (effectRow >= 0)
+        foreach (var (key, value) in Skills.EffectStats(effectRow, level)) stats.TryAdd(key, value);
+    return DamageStats.Conversion(stats, Stats, attack);
+}
+
 // The character's own stats: the class's attributes and the pools (ClassAttributes), then every other stat of the
 // allocated passives, summed (increased life and the attributes are already in the pools; the rest, such as increased
 // spell damage, the client only shows).
@@ -1476,9 +1496,10 @@ static IEnumerable<(uint, int)> BaseStats(ClientState conn)
 // checked against (0x1402ce5f0 via the Player cache 0x141e80340, keys 0x3d1b-0x3d1d; global_no_attribute_requirements
 // skips the check, global_item_attribute_requirements_+% scales it).
 // With the level-based pools (CharacterStats): level, maximum_life / maximum_mana (and their base_ forms),
-// accuracy_rating and evasion_rating (base_evasion_rating 15), as final values, and the attributes' increases:
-// evasion_rating_+% (dexterity), maximum_energy_shield_+% (intelligence) and melee_physical_damage_+% (strength).
-// The Offence panel's accuracy row reads main_hand_accuracy_rating (CharacterPanelStats MH_Accuracy); its Chance to
+// accuracy_rating, physical_damage_reduction_rating (armour) and evasion_rating (base_evasion_rating 15), as final
+// values, and the attributes' increases: armour/evasion_rating_+%, maximum_energy_shield_+% (intelligence) and
+// melee_physical_damage_+% (strength). The Offence panel's accuracy row reads main_hand_accuracy_rating
+// (CharacterPanelStats MH_Accuracy); its Chance to
 // Hit rows read main_hand_chance_to_hit_% and main_hand_chance_to_hit_evasive_monsters_% directly. The reference is a
 // monster of the character's level (the normal and high-dexterity evasion rows of DefaultMonsterStats).
 static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Pools pools)
@@ -1495,6 +1516,7 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
         ("off_hand_chance_to_hit_evasive_monsters_%", evasiveChanceToHit),
         ("character_sheet_reference_evasion", referenceEvasion),
         ("character_sheet_reference_high_dex_evasion", referenceEvasiveEvasion),
+        ("physical_damage_reduction_rating", pools.Armour), ("physical_damage_reduction_rating_+%", pools.ArmourPct),
         ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
         ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
         ("movement_velocity_+%", pools.MovementVelocityPct),
@@ -1758,6 +1780,8 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
     var sources = CharacterStatSources(conn, level: level);
     var weapons = WeaponProfileFor(conn);
     var bonus = PassiveBonus(sources, weapons);
+    var gear = EquippedBaseDefences(conn);
+    bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion };
     List<AuraCatalog.Aura> auras;
     lock (conn.Monsters) auras = [.. conn.Auras.Values];
     var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
@@ -1828,9 +1852,10 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 }
 
 // What the allocated passives add to the pools: attributes (base_* and additional_*, all attributes and the pairs),
-// flat and increased life, mana and accuracy, increased evasion, energy shield and melee physical damage, the base
-// resistances (base_resist_all_elements_% applies to fire, cold and lightning), the shield-specific block nodes when a
-// shield is equipped, critical strike chance and multiplier, and reservation efficiency and aura effect.
+// flat and increased life, mana and accuracy, flat and increased armour and evasion, energy shield and melee physical
+// damage, the base resistances (base_resist_all_elements_% applies to fire, cold and lightning), the shield-specific
+// block nodes when a shield is equipped, critical strike chance and multiplier, and reservation efficiency and aura
+// effect.
 static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons)
 {
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
@@ -1941,11 +1966,21 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
     int auraEffect = Get("non_curse_aura_effect_+%") + Get("aura_effect_+%")
         + Get("aura_effect_on_self_from_your_skills_+%");
     int auraArea = Get("base_aura_area_of_effect_+%");
+    // Defences: the tree's flat armour/evasion and their increased modifiers. "Defences" and the combined armour and
+    // evasion increase apply to both ratings, as in PoB's calcLib.mod.
+    int defencesPct = Get("global_defences_+%") + Get("combined_global_defences_+%")
+        + Get("evasion_and_physical_damage_reduction_rating_+%")
+        + Get("combined_armour_and_evasion_rating_+%");
+    int armourPct = Get("physical_damage_reduction_rating_+%") + defencesPct;
+    int evasionPct = Get("evasion_rating_+%") + defencesPct;
     var (strength, dexterity, intelligence) = CharacterStats.Attributes(Get);
     return new CharacterStats.Bonus(
         Strength: strength, Dexterity: dexterity, Intelligence: intelligence,
         Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
-        EvasionPct: Get("evasion_rating_+%"), EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
+        Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
+        Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
+        SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
+        EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
         FireResistance: allRes + Get("base_fire_damage_resistance_%"),
         ColdResistance: allRes + Get("base_cold_damage_resistance_%"),
         LightningResistance: allRes + Get("base_lightning_damage_resistance_%"),
@@ -2341,7 +2376,9 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         {
             before = conn.PlayerLife;
             dead = before == 0;
-            double burn = rf is null ? 0 : DamageModel.Mitigate(conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds,
+            double burnPerSecond = rf is null ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0;
+            var burnDot = new DamageOverTime(DamageType.Fire, burnPerSecond, seconds);
+            double burn = DamageModel.Mitigate(burnDot.TotalRemainingDamage,
                 Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
             double change = carry + regen - burn;
             int whole = (int)Math.Truncate(change);
@@ -2391,7 +2428,8 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
 static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, RighteousFireState rf, double seconds)
 {
     double now = conn.Clock.Elapsed.TotalSeconds;
-    double perTick = conn.PlayerMaxLife * rf.DamagePctPerMinute / 6000.0 * seconds;
+    double perSecond = conn.PlayerMaxLife * rf.DamagePctPerMinute / 6000.0;
+    var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
     var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
     var entered = new List<(uint Id, ushort Buff)>();
     var left = new List<(uint Id, ushort Buff)>();
@@ -2407,10 +2445,9 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
                 continue;
             }
             if (!rf.Auras.ContainsKey(id)) { rf.Auras[id] = conn.NextBuff; entered.Add((id, conn.NextBuff++)); }
-            m.Burn += perTick;
-            int damage = (int)Math.Truncate(m.Burn);
+            var (damage, carry) = damageOverTime.Tick(seconds, m.Burn);
+            m.Burn = carry;
             if (damage == 0) continue;
-            m.Burn -= damage;
             m.Life = (uint)Math.Max(0, (long)m.Life - damage);
             m.Aggro = m.Life > 0;
             if (m.Life == 0) { m.Dead = true; if (rf.Auras.Remove(id, out ushort b)) left.Add((id, b)); }
@@ -2749,14 +2786,19 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             $"Lightning {lightning}% (passives {p.LightningResistance}%, max {p.LightningMaxResistance}%, capped {DamageModel.Capped(lightning, p.LightningMaxResistance)}%), " +
             $"Chaos {chaos}% (passives {p.ChaosResistance}%, max {p.ChaosMaxResistance}%, capped {DamageModel.Capped(chaos, p.ChaosMaxResistance)}%).");
     })
-    .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: damage yourself through your resistances)", async args =>
+    .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: damage yourself through resistances or armour)", async args =>
     {
         if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
         if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
         if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
         int resistance = Resistance(conn, type);
         int maxResistance = MaxResistance(conn, type);
-        int dealt = DamageModel.Mitigate(amount, resistance, maxResistance);
+        int dealt = type == DamageType.Physical
+            ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
+            : DamageModel.Mitigate(amount, resistance, maxResistance);
+        string mitigation = type == DamageType.Physical
+            ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
+            : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
         uint life;
         bool wasDead;
         lock (conn.Monsters)
@@ -2778,10 +2820,10 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
                 "0x01b3 player hide_mini_life_bar = 1 (dev hit)");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-            $"0x01b1 player dev {type} hit for {dealt} ({amount} before {DamageModel.Capped(resistance, maxResistance)}% resistance), life {life}/{conn.PlayerMaxLife}");
+            $"0x01b1 player dev {type} hit for {dealt} ({amount} before {mitigation}), life {life}/{conn.PlayerMaxLife}");
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
-        await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; life {life}/{conn.PlayerMaxLife}.");
+        await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {mitigation}; life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("suppression", "/suppression (Spell Suppression chance, roll and damage reduction)", async _ =>
     {
@@ -2821,6 +2863,24 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             $"{chance}% chance to hit a level {level} monster (evasion {evasion}), " +
             $"{evasiveChance}% against evasive monsters (evasion {evasiveEvasion}). Spells always hit.");
     })
+    .Add("defences", "/defences [monster level] (armour, evasion and avoidance; default: your level)", async args =>
+    {
+        int level = conn.Pools.Level;
+        if (args.Length > 0)
+        {
+            if (!int.TryParse(args[0], out int requested) || requested is < 1 or > Progression.MaxLevel)
+                throw new ArgumentException($"monster level 1 to {Progression.MaxLevel}");
+            level = requested;
+        }
+        int monsterAccuracy = Monsters.BaseAccuracy(level) ?? 0;
+        int monsterDamage = Monsters.BaseDamage(level) ?? 0;
+        int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
+        int reduction = DamageModel.ArmourReduction(conn.Pools.Armour, monsterDamage);
+        await conn.Commands!.Reply($"Armour {conn.Pools.Armour} ({conn.Pools.ArmourPct}% increased): " +
+            $"{reduction}% physical reduction against a level {level} monster hit ({monsterDamage}), " +
+            $"evasion {conn.Pools.Evasion} ({conn.Pools.EvasionPct}% increased): {100 - hitChance}% chance to evade " +
+            $"(monster accuracy {monsterAccuracy}, {hitChance}% chance to be hit).");
+    })
     .Add("auras", "/auras (active auras, their reservation and the character's efficiency)", async _ =>
     {
         List<AuraCatalog.Aura> auras;
@@ -2847,7 +2907,12 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
         if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
         int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
-        int dealt = DamageModel.Mitigate(amount, resistance, maxResistance);
+        int dealt = type == DamageType.Physical
+            ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
+            : DamageModel.Mitigate(amount, resistance, maxResistance);
+        string mitigation = type == DamageType.Physical
+            ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
+            : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
         var (chance, effect, lucky, unlucky) = Suppression(conn);
         bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100), lucky, unlucky);
         if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
@@ -2872,11 +2937,11 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
                 "0x01b3 player hide_mini_life_bar = 1 (dev spell hit)");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-            $"0x01b1 player dev spell {type} hit for {dealt} ({amount} before {DamageModel.Capped(resistance, maxResistance)}% resistance, suppression {(suppressed ? "yes" : "no")}), life {life}/{conn.PlayerMaxLife}");
+            $"0x01b1 player dev spell {type} hit for {dealt} ({amount} before {mitigation}, suppression {(suppressed ? "yes" : "no")}), life {life}/{conn.PlayerMaxLife}");
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev spell hit)");
         double effective = DamageModel.EffectiveSuppressionChance(chance, lucky, unlucky);
-        await conn.Commands!.Reply($"{type} spell hit: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; " +
+        await conn.Commands!.Reply($"{type} spell hit: {amount} → {dealt} after {mitigation}; " +
             $"suppression {(suppressed ? "rolled" : "not rolled")} ({chance}% chance, effective {effective:0.#}%" +
             $"{(lucky ? ", lucky" : "")}{(unlucky ? ", unlucky" : "")}); life {life}/{conn.PlayerMaxLife}.");
     })
@@ -2920,7 +2985,12 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         int chance = spell ? conn.Pools.SpellBlockChance : conn.Pools.BlockChance;
         bool lucky = spell ? conn.Pools.SpellBlockLucky : conn.Pools.AttackBlockLucky;
         bool blocked = DamageModel.Blocks(chance, Random.Shared.NextDouble() * 100, lucky);
-        int dealt = blocked ? 0 : DamageModel.Mitigate(amount, resistance, maxResistance);
+        int dealt = blocked ? 0 : type == DamageType.Physical
+            ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
+            : DamageModel.Mitigate(amount, resistance, maxResistance);
+        string mitigation = type == DamageType.Physical
+            ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
+            : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
         uint life, mana, manaBefore;
         bool wasDead;
         lock (conn.Monsters)
@@ -2948,7 +3018,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
                 "0x01b3 player hide_mini_life_bar = 1 (dev block hit)");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-            $"0x01b1 player dev {(spell ? "spell" : "attack")} hit for {dealt} ({(blocked ? "blocked" : $"{DamageModel.Capped(resistance, maxResistance)}% resistance")}), life {life}/{conn.PlayerMaxLife}");
+            $"0x01b1 player dev {(spell ? "spell" : "attack")} hit for {dealt} ({(blocked ? "blocked" : mitigation)}), life {life}/{conn.PlayerMaxLife}");
         if (mana != manaBefore)
             await SendPlayerMana(remote, stream, ciphers, conn,
                 $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
@@ -3217,6 +3287,19 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
 // 0xffff), then at the contact point (half the attack time) the hit lands if the monster still lives and the player is
 // still in reach (walking away dodges it): the player's life goes down by the monster's damage (0x1b1 on the player).
 // At 0 the client runs the player's death.
+// PoE's evasion entropy (wiki: Evasion): shared by every attack against the player, reset after 3.33 s. Call under
+// the Monsters lock.
+static bool EvadesLocked(ClientState conn, int hitChance, double now)
+{
+    if (conn.EvasionEntropy < 0 || now - conn.LastEvasionAt > 3.33)
+        conn.EvasionEntropy = Random.Shared.Next(100);
+    conn.LastEvasionAt = now;
+    conn.EvasionEntropy += hitChance;
+    if (conn.EvasionEntropy < 100) return true;
+    conn.EvasionEntropy -= 100;
+    return false;
+}
+
 static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
     SpawnedMonster m, (int X, int Y) from, (int X, int Y) player)
 {
@@ -3227,9 +3310,8 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
     await Task.Delay(TimeSpan.FromSeconds(a.Seconds / 2));
     double now = conn.Clock.Elapsed.TotalSeconds;
     uint life, mana, manaBefore;
-    int damage = Random.Shared.Next(a.MinDamage, a.MaxDamage + 1);
-    bool blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
-    if (blocked) damage = 0;
+    int rawDamage = 0, damage = 0;
+    bool blocked;
     lock (conn.Monsters)
     {
         if (m.Dead || conn.PlayerLife == 0 || conn.Closed) return;
@@ -3239,6 +3321,33 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
             Console.WriteLine($"[gateway] {remote} monster 0x{id:x} missed: the player is {Dist(here, m.Walk.Position(now)):0.0} away");
             return;
         }
+        // The monster's accuracy comes from DefaultMonsterStats at its level. Evasion uses PoE's shared entropy
+        // counter: every attack adds its hit chance, and reaching 100 consumes 100 and hits (evasion cannot streak
+        // indefinitely). A new counter starts after 3.33 s without an attack.
+        int monsterAccuracy = Monsters.BaseAccuracy(m.Level) ?? 0;
+        int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
+        if (EvadesLocked(conn, hitChance, now))
+        {
+            Console.WriteLine($"[gateway] {remote} monster 0x{id:x} ({m.Label}) evaded: accuracy {monsterAccuracy} " +
+                $"vs evasion {conn.Pools.Evasion}, {hitChance}% chance to hit, entropy {conn.EvasionEntropy:0}");
+            return;
+        }
+        // Roll each damage type separately, apply its resistance, then armour to the physical part. The attack is
+        // currently physical only (MonsterAttack), but the packet path keeps future monster skills correct.
+        var rolled = a.Damage.Roll(Random.Shared);
+        var mitigated = DamageModel.Mitigate(rolled, type =>
+            new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)));
+        rawDamage = (int)Math.Round(rolled[DamageType.Physical].Min);
+        damage = 0;
+        foreach (var (type, range) in mitigated.Components)
+        {
+            int value = (int)Math.Round(range.Min);
+            damage += type == DamageType.Physical
+                ? DamageModel.MitigatePhysical(value, conn.Pools.Armour)
+                : value;
+        }
+        blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
+        if (blocked) damage = 0;
         manaBefore = conn.PlayerMana;
         int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
         int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
@@ -3252,7 +3361,9 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
             "0x01b3 player hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-        $"0x01b1 player hit by monster 0x{id:x} for {damage}{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 player hit by monster 0x{id:x} for {damage}" +
+        $"{(rawDamage != damage ? $" ({rawDamage} physical before {DamageModel.ArmourReduction(conn.Pools.Armour, rawDamage)}% armour)" : "")}" +
+        $"{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
     if (mana != manaBefore)
         await SendPlayerMana(remote, stream, ciphers, conn,
             $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
@@ -3363,6 +3474,23 @@ static async Task PickUpItem(string remote, NetworkStream stream, ConnectionCiph
 }
 
 static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
+
+// The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
+// row is used (its minimum roll, matching the item's default base percentile); local/global mods and quality are not
+// modelled. Shields are excluded for now. Inactive items (requirements not met) give none.
+static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
+{
+    var items = ItemsOf(conn);
+    int armour = 0, evasion = 0;
+    foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots })
+        if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
+            && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
+        {
+            armour += d.ArmourMin;
+            evasion += d.EvasionMin;
+        }
+    return (armour, evasion);
+}
 
 // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
 static WeaponProfile WeaponProfileFor(ClientState conn)
@@ -4470,17 +4598,19 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
-sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, int MinDamage, int MaxDamage)
+sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, DamagePacket Damage)
 {
     /// <summary>The attack's final stats (the client derives none, 11-skills.md §4): the swing time, reach and damage.
     /// These also go on the monster's Stats component.</summary>
     public IReadOnlyList<(uint, int)> Stats()
     {
         int ms = (int)Math.Round(Seconds * 1000);
+        var physical = Damage[DamageType.Physical];
+        int min = (int)Math.Floor(physical.Min), max = (int)Math.Floor(physical.Max);
         return
         [
-            (StatKeys.MainHandMinPhysical, MinDamage), (StatKeys.MainHandMaxPhysical, MaxDamage),
-            (StatKeys.MainHandMinTotal, MinDamage), (StatKeys.MainHandMaxTotal, MaxDamage),
+            (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
+            (StatKeys.MainHandMinTotal, min), (StatKeys.MainHandMaxTotal, max),
             (StatKeys.MainHandAttackDurationMs, ms), (StatKeys.MainHandTotalAttackDurationMs, ms),
             (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 / Seconds)),
             (StatKeys.MainHandBaseMaxAttackDistance, (int)Range), (StatKeys.MainHandMaxAttackDistance, (int)Range),
@@ -4619,6 +4749,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // When the player last hit an enemy (attack or spell hit; Clock seconds), for "if you've hit an enemy recently".
     // Guarded by the Monsters lock.
     public double LastEnemyHitAt = double.NegativeInfinity;
+    // PoE evasion entropy (0..99): every attack adds the attacker's hit chance, and 100+ means a hit. Shared by all
+    // attackers and reset after 3.33 s without an attack. Guarded by the Monsters lock.
+    public double EvasionEntropy = -1;
+    public double LastEvasionAt = double.NegativeInfinity;
     // Dev-only forced lucky/unlucky Spell Suppression rolls, on top of the passive stat.
     public bool ForceSpellSuppressionLucky, ForceSpellSuppressionUnlucky;
     // The character's experience (the Player component's; the level follows from it) and its allocated passives

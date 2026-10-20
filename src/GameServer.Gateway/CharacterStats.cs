@@ -9,14 +9,15 @@ using GameServer.Core.World;
 /// life = (Characters.dat BaseMaxLife (38) + 12 per level + 1 per 2 strength + flat life) × (1 + increased life);
 /// mana likewise with BaseMaxMana (34), 6 per level and intelligence; accuracy = (2 per level + 2 per dexterity + flat)
 /// × (1 + increased accuracy / 100), with the Accuracy Mastery's per-level and per-dexterity replacements;
-/// evasion = 15 raised by 1% per 5 dexterity; 1% increased maximum energy shield per 5 intelligence and 1% increased melee
-/// physical damage per 5 strength. Without these stats the client falls back to the base for level 1 (the Witch's 50
-/// life and 40 mana).
+/// armour = flat armour × (1 + increased armour / 100); evasion = (15 + flat evasion) raised by 1% per 5 dexterity and
+/// increased evasion; 1% increased maximum energy shield per 5 intelligence and 1% increased melee physical damage per 5
+/// strength. Without these stats the client falls back to the base for level 1 (the Witch's 50 life and 40 mana).
 /// </summary>
 static class CharacterStats
 {
     public sealed record Pools(int Level, uint Life, uint Mana, int Accuracy, uint Experience,
-        int Evasion = BaseEvasion, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
+        int Armour = 0, int ArmourPct = 0, int Evasion = BaseEvasion, int EvasionPct = 0,
+        int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int Strength = 0, int Dexterity = 0, int Intelligence = 0,
         int FireResistance = BaseResistance, int ColdResistance = BaseResistance,
         int LightningResistance = BaseResistance, int ChaosResistance = BaseResistance,
@@ -40,12 +41,13 @@ static class CharacterStats
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0);
 
-    /// <summary>What allocated passives add to the pools (PassiveBonus.From): attributes, flat and increased life,
-    /// mana and accuracy, increased evasion, energy shield and melee physical damage, the base resistances, attack
-    /// speed's increased and more multipliers, critical strike chance and multiplier, and the Accuracy Mastery's
-    /// conversions.</summary>
+    /// <summary>What allocated passives and equipped base items add to the pools: attributes, flat and increased life,
+    /// mana, armour and evasion, increased energy shield and melee physical damage, the base resistances, attack speed's
+    /// increased and more multipliers, critical strike chance and multiplier, and the Accuracy Mastery's conversions.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
-        int Mana = 0, int ManaPct = 0, int EvasionPct = 0, int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
+        int Mana = 0, int ManaPct = 0, int Armour = 0, int ArmourPct = 0, int Evasion = 0, int EvasionPct = 0,
+        int SharedDefencesPct = 0, bool IronReflexes = false,
+        int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
         int FireMaxResistance = 0, int ColdMaxResistance = 0, int LightningMaxResistance = 0, int ChaosMaxResistance = 0,
         int SpellSuppressionChance = 0, int SpellSuppressionEffect = 0,
@@ -109,7 +111,22 @@ static class CharacterStats
         int accuracyBase = Math.Max(0, accuracyPerLevel * level + accuracyPerDex * dex + b.Accuracy
             + (b.AccuracyEqualsIntelligence ? intel : 0));
         int accuracy = Math.Max(0, (int)Math.Floor(accuracyBase * (1 + b.AccuracyPct / 100.0)));
+        // PoB CalcDefence: armour and evasion are flat defences raised by their increased modifiers. Evasion keeps the
+        // character's 15 base and gains 1% per 5 dexterity; armour has no base outside items and passives.
+        int armourPct = b.ArmourPct;
+        int armour = Math.Max(0, b.Armour * (100 + armourPct) / 100);
         int evasionPct = dex / 5 + b.EvasionPct;
+        int evasionBase = BaseEvasion + b.Evasion;
+        int evasion = Math.Max(0, evasionBase * (100 + evasionPct) / 100);
+        if (b.IronReflexes)
+        {
+            // Iron Reflexes converts all evasion rating to armour and removes dexterity's evasion bonus. The converted
+            // evasion keeps the armour, evasion and shared defence increases (each once), but not dexterity.
+            int convertedPct = armourPct + b.EvasionPct - b.SharedDefencesPct;
+            armour = Math.Max(0, armour + evasionBase * (100 + convertedPct) / 100);
+            evasionPct = b.EvasionPct;
+            evasion = 0;
+        }
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
         int maxBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxBlockChance + b.BlockChanceMax);
         int maxSpellBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxSpellBlockChance + b.SpellBlockChanceMax);
@@ -127,7 +144,7 @@ static class CharacterStats
             MidpointRounding.AwayFromZero);
         attackSpeedPct = Math.Max(-99, attackSpeedPct);
         return new(level, life, mana, accuracy, ExperienceFor(level, folder),
-            Evasion: BaseEvasion * (100 + evasionPct) / 100, EvasionPct: evasionPct,
+            Armour: armour, ArmourPct: armourPct, Evasion: evasion, EvasionPct: evasionPct,
             EnergyShieldPct: intel / 5 + b.EnergyShieldPct, MeleePhysicalDamagePct: str / 5 + b.MeleePhysicalDamagePct,
             Strength: str, Dexterity: dex, Intelligence: intel,
             FireResistance: BaseResistance + b.FireResistance, ColdResistance: BaseResistance + b.ColdResistance,

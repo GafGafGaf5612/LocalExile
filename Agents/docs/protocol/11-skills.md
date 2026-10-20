@@ -142,8 +142,10 @@ with level), the bases and attributes from Characters.dat:
 | `maximum_life` | BaseMaxLife (38) + 12 × level + strength / 2 |
 | `maximum_mana` | BaseMaxMana (34) + 6 × level + intelligence / 2 |
 | `accuracy_rating` | (2 × level + 2 × dexterity + flat) × (1 + increased / 100) |
-| `evasion_rating` | 15 × (1 + `evasion_rating_+%` / 100) |
-| `evasion_rating_+%` | dexterity / 5 |
+| `physical_damage_reduction_rating` | (flat armour from passives + base body/helmet/gloves/boots) × (1 + increased armour / 100) |
+| `evasion_rating` | (15 + flat evasion from passives + base body/helmet/gloves/boots) × (1 + `evasion_rating_+%` / 100) |
+| `evasion_rating_+%` | dexterity / 5 + increased evasion passives |
+| `physical_damage_reduction_rating_+%` | increased armour passives |
 | `maximum_energy_shield_+%` | intelligence / 5 |
 | `melee_physical_damage_+%` | strength / 5 |
 
@@ -155,12 +157,28 @@ unique/close enemies) are not modelled. The final values go to the client as `ac
 panel's Main Hand / Off Hand Accuracy rows, `main_hand_accuracy_rating` / `off_hand_accuracy_rating`. Its Chance to
 Hit rows are sent directly as `main_hand_chance_to_hit_%` / `off_hand_chance_to_hit_%` (and the evasive-monster
 variants), against a reference monster of the character's level; `character_sheet_reference_evasion` and
-`..._high_dex_evasion` carry that monster's evasion. Life and mana still ignore passives and items; evasion takes its
-passive increases (`evasion_rating_+%`) but not items.
+`..._high_dex_evasion` carry that monster's evasion.
 
-The default attack's damage (`Unarmed.Damage`) is MinDamage..MaxDamage × (1 + (`damage_+%` + `physical_damage_+%` +
-`melee_damage_+%` + `melee_physical_damage_+%`) / 100), rounded down; the server rolls its hits from the same range.
-`/set_stat` overrides any of these.
+Armour and evasion are summed from the passive tree and the **base types** of the equipped body armour, helmet, gloves
+and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `base_evasion_rating` are flat, while
+`physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%`
+(Cloth and Chain and similar nodes), `global_defences_+%` and the combined armour/evasion increase are additive
+increased modifiers. **Iron Reflexes** (`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
+passive/item flat evasion, to armour and removes dexterity's 1% per 5 evasion; the converted part keeps the armour,
+evasion and shared defence increases once each. Item mods, quality, local defence rolls, shields and auras are not counted
+yet; the base value is the armour row's minimum, which is the client's default when the item's Armour component is zero.
+The final `physical_damage_reduction_rating` and `evasion_rating` (with their `_+%`) go to the client. Armour uses
+PoB's `armour / (armour + damage × 5) × 100`, rounded and capped at 90% (`DamageModel.ArmourReduction`); evasion uses
+the same hit-chance formula as accuracy, so the chance to evade is `100 - AccuracyHitChance(evasion, attacker accuracy)`
+(`DamageModel.EvadeChance`). Monster melee rolls the same formula against `DefaultMonsterStats.Accuracy` at the
+monster's level and evades before damage; physical monster hits then go through armour and block. `/defences` prints
+both against a reference monster of the character's level. Life and mana still ignore passives and items.
+
+The default attack's damage (`Unarmed.HitDamage`) is a physical `DamagePacket`: MinDamage..MaxDamage × (1 +
+(`damage_+%` + `physical_damage_+%` + `melee_damage_+%` + `melee_physical_damage_+%`) / 100). The packet goes through
+the conversion and gain-as-extra stats, then rolls one number per damage type; the server uses the same packet for its
+hits. `/set_stat` overrides any of these. The packet, conversion order and damage-over-time model are in
+[20-damage.md](20-damage.md); the panel's older `Unarmed.Damage` tuple is only the physical display range.
 
 **Changing a skill after entering:** S→C **0x2ba** on the player with component index 9 (Actor) and the slot-20 data
 `f0 0x40, f1 0, skill list`: the list replaces the skill of the same id, new stats included. Live: the swing sped up at
@@ -221,9 +239,14 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
 - **AI** (`RunMonsterAi`, 500 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
   0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
   the player is still within reach + 2: 0x1b1 on the player.
-- **Player life** (`ClientState.PlayerLife`, 50 for the level-1 Witch). At 0 the client plays the death animation and
-  blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is hidden at 0
-  (`hide_mini_life_bar`, as for monsters) and shown again on revive.
+- **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level; the server rolls the player's
+  evasion with the same `AccuracyHitChance` formula and sends no life update on a miss. The roll uses PoE's shared
+  entropy counter (0–99): each attack adds its hit chance, 100 or more means a hit and subtracts 100, and the counter is
+  randomized after 3.33 s without an attack. A hit then goes through the player's armour (`MitigatePhysical`) and
+  block. `/defences` prints the reference values.
+- **Player life** (`ClientState.PlayerLife`, from the level/class/passive pools). At 0 the client plays the death
+  animation and blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is
+  hidden at 0 (`hide_mini_life_bar`, as for monsters) and shown again on revive.
 
 ## 7. The death screen
 
@@ -302,7 +325,8 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   the skill's own. The server's hits roll between the unrounded minimum and maximum and drop the fraction; the skill's
   tooltip gets `display_hundred_times_damage_per_skill_use` (the unrounded average × 100) and
   `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
-  DPS with the player's stats. More multipliers, added and converted damage are not modelled.
+  DPS with the player's stats. Conversion is applied per type through `DamagePacket`; more multipliers and added
+  damage are not modelled.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
@@ -449,8 +473,9 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`base_maximum_all_resistances_% = 75`) and `src/Modules/CalcDefence.lua` (the clamp). The project is cloned locally
   into the git-ignored `Tools/PathOfBuilding` as the source of these formulas. Righteous Fire's self-burn is mitigated
   by fire resistance; `/resistances` prints the modifier, penalty and final values and `/hit <type> <damage>` applies
-  the same rule. Armour, player evasion as avoidance against monster attacks, penetration and max-resistance
-  modifiers are still not modelled; monster evasion is used for the player's accuracy check (§5).
+  the same rule. Armour reduction and player evasion as avoidance against monster attacks now exist (see §4);
+  penetration and max-resistance modifiers are still not modelled, and monster evasion is used for the player's
+  accuracy check (§5).
 - **Spell Suppression** (`CharacterStats`, `DamageModel`): the passives' `base_spell_suppression_chance_%` is summed into
   `Pools` (capped at 100%, PoB `SuppressionChanceCap`); a successful roll makes a spell hit take 40% less damage
   (`SuppressionEffect` in PoB `src/Modules/Data.lua`). The passives' unconditional

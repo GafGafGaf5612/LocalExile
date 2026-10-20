@@ -1,15 +1,17 @@
-# Human-Edit
+# Important Notice
+It's important to note that LocalExile is not an official Grinding Gear Games product, and it is not affiliated with or endorsed by Path of Exile or Grinding Gear Games. LocalExile does not in any case sponsor nor support illegal public servers. If you use this project to run an illegal public server and not for testing and learning it is your own personal choice.
 
-Hey, I hope this doesnt go viral and GGG sues me. GGG can reach out to me if they want this repo gone and I'll act on it. 
-This is for fun only and for local-gameplay with no internet. Lastly, I'm a human and I can make mistakes, warn me instead.
-
+This project is for fun and education only. It is intended for local-gameplay with no internet much like MMO Solutions (TrinityCore, AzerothCore, MangOS).
 Everything here is made by Claude Opus 5.5. You can pull-request and are encouraged to. I'm running only on two pro subs
 and Im broke and unemployed, so help out folks.
 
-# LocalExile
+# To get started [Humans]
+- Open up a Frontier Model (such as Claude Opus 5.5) and tell them to set-up this project on your machine. 
+- Tell them to read all the Agents/ folder and all the MD files.
 
-A local, from-scratch server for the Path of Exile **3.29.3b** client. It is written in C# (.NET 10) from reverse
-engineering of the client's network protocol. You play on your own machine against servers running on 127.0.0.1.
+# LocalExile
+A local, from-scratch server for the Path of Exile **3.29.3b** client. It is written in C# (.NET 10) from scratch to serve 
+the client's network protocol. You play on your own machine against servers running on 127.0.0.1.
 
 This project is not affiliated with or endorsed by Grinding Gear Games. It contains **no game files, keys or game data**.
 You need your own installed copy of the client, and everything the servers need is generated locally from it.
@@ -50,7 +52,7 @@ beyond town. Details: [Agents/Status.md](Agents/Status.md).
 
 People and AI agents are both welcome. Start with [AGENTS.md](AGENTS.md): the rules, then
 [Agents/Status.md](Agents/Status.md) (what works) and [Agents/Roadmap.md](Agents/Roadmap.md) (what to build next and
-how to pick up an item). The protocol reference and the reverse-engineering notes are in
+how to pick up an item). The protocol reference and the notes are in
 [Agents/docs/](Agents/docs/README.md).
 
 ## Projects

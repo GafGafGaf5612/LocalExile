@@ -1,7 +1,8 @@
 namespace GameServer.Core.World;
 
-/// <summary>The damage types the server can mitigate.</summary>
-public enum DamageType { Physical, Fire, Cold, Lightning, Chaos }
+/// <summary>The damage types the server can mitigate, numbered in the game's conversion order:
+/// physical, lightning, cold, fire, chaos.</summary>
+public enum DamageType { Physical, Lightning, Cold, Fire, Chaos }
 
 /// <summary>
 /// Path of Exile's resistance rule for the simple cases. The floor and absolute cap are taken from Path of Building
@@ -90,6 +91,19 @@ public static class DamageModel
         return damage * (100.0 - Capped(resistance, maxResistance)) / 100.0;
     }
 
+    /// <summary>The resistance and maximum resistance for one damage type.</summary>
+    public readonly record struct ResistanceValue(int Value, int Maximum = DefaultMaxResistance);
+
+    /// <summary>Mitigate every damage type in a hit separately. The game applies each type's own resistance and maximum
+    /// resistance; fractions stay fractional until the final roll.</summary>
+    public static DamagePacket Mitigate(DamagePacket damage, Func<DamageType, ResistanceValue> resistance) =>
+        damage.Select((type, range) =>
+        {
+            var r = resistance(type);
+            return new DamageRange(Mitigate(range.Min, r.Value, r.Maximum),
+                Mitigate(range.Max, r.Value, r.Maximum));
+        });
+
     /// <summary>Path of Building's <c>BlockChanceCap</c>: block chance cannot exceed 90%.</summary>
     public const int BlockChanceCap = 90;
 
@@ -121,4 +135,32 @@ public static class DamageModel
 
     /// <summary>Whether an attack hits; <paramref name="roll"/> is 0..99, and the chance is at least 5%.</summary>
     public static bool Hits(int chance, int roll) => roll < Math.Clamp(chance, 5, 100);
+
+    /// <summary>Path of Building's <c>data.misc.DamageReductionCap</c>: physical damage reduction from armour is
+    /// capped at 90%.</summary>
+    public const int DamageReductionCap = 90;
+
+    /// <summary>
+    /// The physical damage reduction an armour rating gives against one hit, as a whole percentage. This is PoB's
+    /// <c>calcs.armourReduction</c> (<c>armour / (armour + damage × 5) × 100</c>), rounded and capped at
+    /// <see cref="DamageReductionCap"/>.
+    /// </summary>
+    public static int ArmourReduction(int armour, int damage)
+    {
+        if (armour <= 0 || damage <= 0) return 0;
+        double reduction = armour / (armour + damage * 5.0) * 100;
+        return Math.Clamp((int)Math.Floor(reduction + 0.5), 0, DamageReductionCap);
+    }
+
+    /// <summary>The physical hit left after armour, rounded to the nearest point.</summary>
+    public static int MitigatePhysical(int damage, int armour)
+    {
+        if (damage <= 0) return 0;
+        int reduction = ArmourReduction(armour, damage);
+        return (int)Math.Max(0, Math.Round(damage * (100.0 - reduction) / 100.0));
+    }
+
+    /// <summary>The chance for an attack to evade a defender with this evasion rating, given the attacker's accuracy.
+    /// The 5% minimum hit chance means evasion cannot exceed 95%.</summary>
+    public static int EvadeChance(int evasion, int accuracy) => 100 - AccuracyHitChance(evasion, accuracy);
 }

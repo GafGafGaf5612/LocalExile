@@ -17,6 +17,7 @@ sealed class ItemCatalog
         _requirements = new(() => LoadRequirements(folder));
         _shieldBlocks = new(() => LoadShieldBlocks(folder));
         _weaponCrits = new(() => LoadWeaponCrits(folder));
+        _defences = new(() => LoadDefences(folder));
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
@@ -94,6 +95,31 @@ sealed class ItemCatalog
             if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b &&
                 r.GetProperty("Block") is { ValueKind: JsonValueKind.Number } block)
                 result.TryAdd(b.GetInt32(), block.GetInt32());
+        return result;
+    }
+
+    /// <summary>A base's defence range from ArmourTypes.dat (the values the client interpolates with the item's base
+    /// percentile). Body armour, helmets, gloves, boots and shields have them; most other bases are zero.</summary>
+    public readonly record struct BaseDefences(int ArmourMin, int ArmourMax, int EvasionMin, int EvasionMax);
+
+    private Lazy<Dictionary<int, BaseDefences>> _defences = null!;
+
+    /// <summary>The base defence range of an item type, or null when it has no armour row.</summary>
+    public BaseDefences? Defences(BaseType t) => _defences.Value.TryGetValue(t.Row, out var d) ? d : null;
+
+    private static Dictionary<int, BaseDefences> LoadDefences(string folder)
+    {
+        string path = Path.Combine(folder, "tables", "ArmourTypes.json");
+        var result = new Dictionary<int, BaseDefences>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+        {
+            if (r.GetProperty("BaseItemTypesKey") is not { ValueKind: JsonValueKind.Number } key) continue;
+            result[(int)Math.Max(0, key.GetInt32())] = new BaseDefences(
+                r.GetProperty("ArmourMin").GetInt32(), r.GetProperty("ArmourMax").GetInt32(),
+                r.GetProperty("EvasionMin").GetInt32(), r.GetProperty("EvasionMax").GetInt32());
+        }
         return result;
     }
 
