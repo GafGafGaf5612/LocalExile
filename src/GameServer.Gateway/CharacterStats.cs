@@ -46,6 +46,7 @@ static class CharacterStats
     /// increased and more multipliers, critical strike chance and multiplier, and the Accuracy Mastery's conversions.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
         int Mana = 0, int ManaPct = 0, int Armour = 0, int ArmourPct = 0, int Evasion = 0, int EvasionPct = 0,
+        int SharedDefencesPct = 0, bool IronReflexes = false,
         int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
         int FireMaxResistance = 0, int ColdMaxResistance = 0, int LightningMaxResistance = 0, int ChaosMaxResistance = 0,
@@ -117,6 +118,15 @@ static class CharacterStats
         int evasionPct = dex / 5 + b.EvasionPct;
         int evasionBase = BaseEvasion + b.Evasion;
         int evasion = Math.Max(0, evasionBase * (100 + evasionPct) / 100);
+        if (b.IronReflexes)
+        {
+            // Iron Reflexes converts all evasion rating to armour and removes dexterity's evasion bonus. The converted
+            // evasion keeps the armour, evasion and shared defence increases (each once), but not dexterity.
+            int convertedPct = armourPct + b.EvasionPct - b.SharedDefencesPct;
+            armour = Math.Max(0, armour + evasionBase * (100 + convertedPct) / 100);
+            evasionPct = b.EvasionPct;
+            evasion = 0;
+        }
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
         int maxBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxBlockChance + b.BlockChanceMax);
         int maxSpellBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxSpellBlockChance + b.SpellBlockChanceMax);

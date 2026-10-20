@@ -50,4 +50,29 @@ public class ArmourEvasionTests
         Assert.Equal("Cloth and Chain", tree.Find(21435)?.Name);
         Assert.Equal(24, stats[catalog.Key("evasion_and_physical_damage_reduction_rating_+%")!.Value]);
     }
+
+    [Fact]
+    public void Iron_Reflexes_converts_evasion_to_armour_and_drops_dexterity_evasion()
+    {
+        // Witch dexterity 14 would normally add 2% evasion. Iron Reflexes removes that and converts the
+        // 15 base + 100 flat evasion at the armour/evasion increases: 100 × 1.50 + 115 × 2.00 = 380.
+        var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 1,
+            new CharacterStats.Bonus(Armour: 100, ArmourPct: 50, Evasion: 100, EvasionPct: 50,
+                IronReflexes: true));
+
+        Assert.Equal(380, pools.Armour);
+        Assert.Equal(0, pools.Evasion);
+        Assert.Equal(50, pools.EvasionPct);
+    }
+
+    [Fact]
+    public void Iron_Reflexes_is_the_keystone_stat_on_the_tree()
+    {
+        var tree = new PassiveTree(Data());
+        var catalog = new StatCatalog(Data());
+        var stats = tree.Stats([10661]);
+
+        Assert.Equal("Iron Reflexes", tree.Find(10661)?.Name);
+        Assert.Equal(1, stats[catalog.Key("keystone_iron_reflexes")!.Value]);
+    }
 }

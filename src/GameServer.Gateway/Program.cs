@@ -1902,6 +1902,7 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
         Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
         Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
         Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
+        SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
         EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
         FireResistance: allRes + Get("base_fire_damage_resistance_%"),
         ColdResistance: allRes + Get("base_cold_damage_resistance_%"),

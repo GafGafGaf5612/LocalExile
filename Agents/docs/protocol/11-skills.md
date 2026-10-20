@@ -163,7 +163,9 @@ Armour and evasion are summed from the passive tree and the **base types** of th
 and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `base_evasion_rating` are flat, while
 `physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%`
 (Cloth and Chain and similar nodes), `global_defences_+%` and the combined armour/evasion increase are additive
-increased modifiers. Item mods, quality, local defence rolls, shields and auras are not counted
+increased modifiers. **Iron Reflexes** (`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
+passive/item flat evasion, to armour and removes dexterity's 1% per 5 evasion; the converted part keeps the armour,
+evasion and shared defence increases once each. Item mods, quality, local defence rolls, shields and auras are not counted
 yet; the base value is the armour row's minimum, which is the client's default when the item's Armour component is zero.
 The final `physical_damage_reduction_rating` and `evasion_rating` (with their `_+%`) go to the client. Armour uses
 PoB's `armour / (armour + damage × 5) × 100`, rounded and capped at 90% (`DamageModel.ArmourReduction`); evasion uses
