@@ -114,6 +114,23 @@ of the time, at the monster's level as item level, and drops **unidentified**. D
 identified, sends it again (its explicit list and name) and takes one scroll from the stack; an identified target
 changes nothing.
 
+## 2c. Mods on the character
+
+`ItemModStats.cs`. The items in the worn equipment rows (Inventories.dat 1-10: body armour, the first weapon set,
+helmet, amulet, rings, gloves, boots, belt; not the second weapon set or the flasks) count, with every mod list. The
+client does not let the player equip an unidentified item, so only identified items reach these rows. A stat that
+Stats.dat marks **IsLocal** belongs to its item; every other stat is the character's: it is added to the allocated
+passives' stats (`CharacterStatSources`), so it reaches the pools (`PassiveBonus` → `CharacterStats.For`: life, mana,
+attributes, resistances, block, suppression, speeds, crit, accuracy …) and the stats the client shows (0x1b3), the same
+way a passive's would. They are sent again when equipment changes (`SendEquipment`).
+
+Local mods on the main hand (row 2, else 14) change the weapon profile: `local_critical_strike_chance_+%` scales the
+WeaponTypes base critical chance, `local_attack_speed_+%` multiplies the attack rate (like a more, before the global
+increases) and `local_accuracy_rating` adds flat accuracy. Weapon damage, armour, evasion and energy shield of items are
+not modelled yet, so their local mods change nothing. Verified live 2026-10-20: +20 maximum Life, +30% fire resistance
+and +25 strength on a ring, a local attack speed mod on the wand, and spell damage on the wand raising Fireball's
+damage (11-skills.md §9).
+
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 
 0xc0 ([05](05-inventories-and-ui.md) §2) carries the items after the inventory header: compact count, then per item
@@ -274,8 +291,8 @@ linked sockets in the colour of their highest attribute requirement (ComponentAt
 ## Open
 
 - Gem levels and experience, support gems and links.
-- The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); mod stats on the character
-  (#59), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
+- The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); local weapon damage and
+  armour / evasion / energy shield mods (items have no base defences or damage on the server yet), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
   effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
 - C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
   `0x14031c0a0`: probably currency use on an item).

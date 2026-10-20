@@ -4,4 +4,4 @@ readonly record struct WeaponProfile(bool Shield, bool DualWield, bool Staff, bo
     bool Unarmed = false, bool OneHand = false, bool TwoHand = false, bool Melee = false,
     bool OneHandMelee = false, bool TwoHandMelee = false,
     bool Axe = false, bool Sword = false, bool Mace = false, bool Claw = false, bool Dagger = false, bool Wand = false,
-    int Critical = 0);
+    int Critical = 0, int LocalAttackSpeedPct = 0, int LocalAccuracy = 0);
