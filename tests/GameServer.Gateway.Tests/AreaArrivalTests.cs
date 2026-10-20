@@ -33,6 +33,22 @@ public class AreaArrivalTests
     }
 
     [Fact]
+    public void Resurrect_at_checkpoint_revives_next_to_the_activated_waypoint()
+    {
+        var layout = Layout() with { Waypoint = new WaypointObject(80, 30) };
+        var (x, y) = layout.Checkpoint(waypointActivated: true);
+        Assert.True(x >= 50, $"({x}, {y}) is not walkable");
+        Assert.InRange(Math.Max(Math.Abs(x - 80), Math.Abs(y - 30)), 6, 20);
+    }
+
+    [Fact]
+    public void Without_an_activated_waypoint_the_checkpoint_is_where_the_player_entered()
+    {
+        Assert.Equal((70, 70), (Layout() with { Waypoint = new WaypointObject(80, 30) }).Checkpoint(waypointActivated: false));
+        Assert.Equal((70, 70), Layout().Checkpoint(waypointActivated: true)); // the waypoint's place is not known
+    }
+
+    [Fact]
     public void The_Twilight_Strand_arrives_at_the_towns_one_way_entrance()
     {
         Assert.Equal((123, 308), Layout(hash: Town).Arrival(cameFrom: Strand));

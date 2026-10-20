@@ -252,7 +252,8 @@ The buttons (`0x140290bf0`) send **C→S 0x54**: `u16 0x0054, u8 flags`, bit0 = 
 checkpoint / plain "Resurrect" (0). The Gateway (`Resurrect`): hides the screen (0x55 bit1); in town → area change to
 the character's last town (`LastTown` in Auth's "resolve" answer, the town the next login would start in; the new player
 object has full life); at the checkpoint → 0x1b1 full life first (a teleport sent while
-dead was ignored), then 0x1b7 to the area's arrival point (no waypoints yet). `Game_LEAGUE=hardcore` sends 0x01;
+dead was ignored), then 0x1b7 next to the area's waypoint if the character has activated it, else to the area's arrival point
+(`AreaLayout.Checkpoint`). `Game_LEAGUE=hardcore` sends 0x01;
 `/death_screen [flags]` previews any variant.
 
 ## 8. Stat keys

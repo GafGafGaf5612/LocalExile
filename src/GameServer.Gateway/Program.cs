@@ -3108,7 +3108,8 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
 }
 
 // The death screen's buttons (C→S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
-// checkpoint" revives at the area's arrival point (teleport 0x1b7), "in town" in the character's last town (an area change;
+// checkpoint" revives next to the area's activated waypoint, else at its arrival point (teleport 0x1b7, AreaLayout.Checkpoint),
+// "in town" in the character's last town (an area change;
 // in that town it is the same as the checkpoint).
 static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool inTown)
 {
@@ -3131,11 +3132,15 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
         $"0x01b1 player revived with {conn.PlayerMaxLife} life");
     await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
-    // The checkpoint: where the player entered the area, as in the real game before any checkpoint is activated
-    // (checkpoints are not implemented yet).
-    var (x, y) = (conn.Layout.SpawnX, conn.Layout.SpawnY);
+    // The checkpoint: the area's waypoint once activated, else where the player entered the area, as in the real game
+    // before any checkpoint is activated. Checkpoint objects and boss arenas (revive at the arena's door) are not done.
+    bool activated;
+    lock (conn.Waypoints)
+        activated = WaypointCatalog.Areas.Find(conn.Layout.Hash) is { } entry && conn.Waypoints.Contains(entry.Id);
+    var (x, y) = conn.Layout.Checkpoint(activated);
     conn.Walk.Teleport(x, y, conn.Clock.Elapsed.TotalSeconds);
-    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, x, y), $"0x01b7 player to the arrival point ({x}, {y})");
+    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, x, y),
+        $"0x01b7 player to the checkpoint ({x}, {y}): {(activated && conn.Layout.Waypoint is not null ? "the activated waypoint" : "the arrival point")}");
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 0)]),
         "0x01b3 player hide_mini_life_bar = 0");
 }
@@ -4045,6 +4050,11 @@ sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int Spawn
             if (t.DestinationHash16 == from) return Near((t.GridX, t.GridY));
         return (SpawnX, SpawnY);
     }
+
+    /// <summary>Where "Resurrect at Checkpoint" revives: next to the area's waypoint once the character has activated it
+    /// (waypoints are checkpoints), else where the player entered the area (the spawn, set to the arrival on entry).</summary>
+    public (int X, int Y) Checkpoint(bool waypointActivated) =>
+        waypointActivated && Waypoint is { } w ? Near((w.GridX, w.GridY)) : (SpawnX, SpawnY);
 
     /// <summary>A walkable cell a few cells from (x, y), nearest first; (x + 8, y) without a walk map.</summary>
     public (int X, int Y) Near((int X, int Y) at)
