@@ -2404,7 +2404,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
             items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
     })
-    .Add("mod", "/mod [implicit|explicit|enchant|s10|s11] <Mods row, Id or part of it> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
+    .Add("mod", "/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
     {
         if (args.Length == 0) throw new ArgumentException("which mod?");
         ModSection? section = null;
@@ -3194,8 +3194,8 @@ static ModSection? ParseSection(string text) => text.ToLowerInvariant() switch
     "implicit" or "imp" => ModSection.Implicit,
     "explicit" or "exp" => ModSection.Explicit,
     "enchant" or "ench" => ModSection.Enchant,
-    "s10" => ModSection.Section10,
-    "s11" => ModSection.Section11,
+    "scourge" or "s10" => ModSection.Scourge,
+    "hidden" or "s11" => ModSection.Hidden,
     _ => null,
 };
 

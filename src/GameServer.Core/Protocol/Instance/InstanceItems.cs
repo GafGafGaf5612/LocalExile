@@ -14,8 +14,10 @@ public enum ItemRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
 /// <summary>
 /// The mod lists of ObjectMagicProperties (0x142201d70), by the flag bit that announces each one. Every list is u8 count +
 /// entries; <see cref="Explicit"/> is only read for identified items. The other lists are read whether identified or not.
+/// Seen in the tooltip (2026-10-20): implicit under the item's properties, enchant above the implicits, explicit below,
+/// scourge as orange lines among the explicits (Hellscape), hidden not shown at all.
 /// </summary>
-public enum ModSection : byte { Implicit = 4, Explicit = 5, Enchant = 6, Section10 = 10, Section11 = 11 }
+public enum ModSection : byte { Implicit = 4, Explicit = 5, Enchant = 6, Scourge = 10, Hidden = 11 }
 
 /// <summary>A mod on an item: a Mods.dat row by its HASH16 and one value per stat of that row (StatsKey1..8 in order,
 /// as many as the row has). The client counts the row's stats itself, so the count must match.</summary>
@@ -141,7 +143,7 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
         ushort flags = (ushort)((byte)Rarity & 7 | (Identified ? 0x8 : 0));
         foreach (var s in sections.Keys) flags |= (ushort)(1 << (byte)s);
         w.U16(flags).U8(0);
-        foreach (var s in new[] { ModSection.Implicit, ModSection.Enchant, ModSection.Section10, ModSection.Section11, ModSection.Explicit })
+        foreach (var s in new[] { ModSection.Implicit, ModSection.Enchant, ModSection.Scourge, ModSection.Hidden, ModSection.Explicit })
         {
             if (!sections.TryGetValue(s, out var mods)) continue;
             w.U8((byte)Math.Min(mods.Count, 255));
