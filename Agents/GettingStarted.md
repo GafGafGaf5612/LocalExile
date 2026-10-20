@@ -29,7 +29,8 @@ what success looks like and what to do when it fails. It is written to be follow
 | [.NET 10 SDK](https://dotnet.microsoft.com/download) | builds and runs the servers | `dotnet --version` prints `10.x` |
 | PowerShell 5.1+ | runs `live.ps1` | `$PSVersionTable.PSVersion` |
 | Path of Exile **3.29.3b**, standalone install | the client you play with | a folder with `PathOfExile.exe` and `Content.ggpk` |
-| Python 3.9+ and `pip install frida` | optional: captures walk maps (step 8) | `python -c "import frida"` |
+| [Node.js](https://nodejs.org) (Node 24) + `npm install` in `Tools\ooz` (npm package `ooz-wasm` 2.x) | decompresses the game's bundles for the data extraction (step 7) | `node --version`; `Tools\ooz\node_modules\ooz-wasm` exists |
+| Python 3.9+ | the data extraction (step 7); with `pip install frida`, walk maps (step 9, optional) | `python --version`; `python -c "import frida"` |
 | ~same free space as the client | you work on a copy of it | |
 
 **Steam installs do not work as is.** The Steam layout has no `Content.ggpk`, and its executables have other names.
@@ -40,7 +41,7 @@ version, so you need a copy that is still at 3.29.3b. Never let a newer launcher
 
 ### Third-party tools (only to extend the server)
 
-Playing needs nothing beyond the table above. To work out more of the protocol, as
+Playing needs nothing beyond the table above (step 7 extracts the game data with Node and Python). To work out more of the protocol, as
 [docs/re/tooling.md](docs/re/tooling.md) describes, you also need these. Apart from the dat-schema file, none of them are in the repository; install
 them yourself. Programs go under `Tools\` at the repository root (git-ignored), where the scripts look for them.
 
@@ -48,11 +49,11 @@ them yourself. Programs go under `Tools\` at the repository root (git-ignored), 
 |---|---|---|---|
 | [Ghidra](https://github.com/NationalSecurityAgency/ghidra/releases) | 12.1.4 (`ghidra_12.1.4_PUBLIC_20260921`) | `Tools\ghidra_12.1.4_PUBLIC_20260921\ghidra_12.1.4_PUBLIC\` | static analysis: decompiling, references, the Java scripts in `scripts/re/ghidra/` |
 | [Microsoft Build of OpenJDK](https://learn.microsoft.com/java/openjdk/download) | 21 (21.0.12.1) | `Tools\jdk-21\` (so `Tools\jdk-21\bin\java.exe` exists) | runs Ghidra |
-| [Frida](https://frida.re) | Python package `frida` | `pip install frida` (or `.venv`, step 8) | live tracing of the client: `scripts/re/frida/*.js`, walk maps |
+| [Frida](https://frida.re) | Python package `frida` | `pip install frida` (or `.venv`, step 9) | live tracing of the client: `scripts/re/frida/*.js`, walk maps |
 | REA (reverse-engineering MCP server), npm package `rea-agents` | 6.5.0 | `npm install -g rea-agents` (needs Node.js, below); check with `rea --version` | lets an AI agent drive Ghidra and Frida; see `.mcp.json` below |
 | [Git for Windows](https://git-scm.com/download/win) (Git Bash) | any | `bash` on PATH | `scripts/re/ghidra/g.sh`. Without it, use the PowerShell runner `scripts/re/ghidra/run.ps1` |
 | Python packages `pefile`, `capstone` | 2024.8.26, 5.0.7 | `pip install pefile capstone` | the helpers in `scripts/re/*.py` (disassembly, string and vtable search) |
-| [Node.js](https://nodejs.org) + npm package `ooz-wasm` | Node 24, ooz-wasm 2.x | Node on PATH; then `cd Tools\ooz; npm install` | Oodle decompression of the game's bundles, for `scripts/re/ggdump` and `Tools/PoEDataExtractor` |
+| [Node.js](https://nodejs.org) + npm package `ooz-wasm` | Node 24, ooz-wasm 2.x | Node on PATH; then `cd Tools\ooz; npm install` (also needed to play, see What you need) | Oodle decompression of the game's bundles, for `scripts/re/ggdump`, `scripts/re/atlas` and `Tools/PoEDataExtractor` |
 | [dat-schema](https://github.com/poe-tool-dev/dat-schema) `schema.min.json` | release matching 3.29 | already in the repository: `data\schema\schema.min.json` (MIT, see `data\schema\LICENSE`) | column layouts of the game's `.datc64` tables, for `Tools/PoEDataExtractor` |
 | LibGGPK3 (NuGet) | 2.7.5 | restored by `dotnet build` | reads `Content.ggpk` and its bundles |
 
@@ -64,46 +65,6 @@ executable is large):
 ```
 
 It creates `Tools\ghidra-projects\poe3293`, which `scripts/re/ghidra/g.sh` and `run.ps1` open read-only.
-
-Extracting the game's data tables (needs Node.js and `npm install` in `Tools\ooz`; about 20 seconds):
-
-```powershell
-dotnet run --project Tools/PoEDataExtractor -- decode Client/Content.ggpk
-```
-
-Success: the summary ends with `schema mismatch: 0`, and `data\tables\` holds about 940 `<Table>.json` files
-(git-ignored: they are game data), with the full report in `data\extract-report.json`. Code that needs game data (stats, levels, areas) reads these
-files; `ot_components.py --all` reads them too. `--out <dir>` writes elsewhere, and `--schema <file>` uses another schema.
-
-Then the component lists the Gateway needs for monsters and items (a few minutes the first time; both files are game
-data and git-ignored):
-
-```powershell
-python -I scripts/re/ot_components.py --all --json data/object-types.json
-python -I scripts/re/ot_components.py --items --json data/item-types.json
-```
-
-Without `data/item-types.json` characters start with no items and `/item` answers that the file is missing. Regenerate it after pulling 2026-10-20 or later: the file now carries
-each item type's tags, and without them no magic or rare item can roll affixes.
-
-The hideouts' decorations (Agents/docs/protocol/21-hideouts.md §2; game data, git-ignored; without it there are no hideouts):
-```powershell
-dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts
-```
-
-The rooms with monster points (the unique boss's `mapboss`, named packs), used to place an area's unique boss
-(Agents/docs/protocol/14-monster-packs.md §3; game data, git-ignored):
-
-```powershell
-dotnet run --project scripts/re/atlas -- Client/Content.ggpk room-points
-```
-
-The classes' animation keyframes, used to release spells at the right moment of the cast
-(Agents/docs/protocol/11-skills.md §9; game data, git-ignored; without it every class uses the Witch's timing):
-
-```powershell
-python -I scripts/re/anim_contacts.py
-```
 
 For an AI agent, register REA as an MCP server in `.mcp.json` at the repository root (git-ignored, because the paths are
 specific to your PC):
@@ -209,7 +170,45 @@ The lines printed after it all contain `127.0.0.1:20493`.
 - To undo: `dotnet run --project src/GameServer.Patch -- gateway --restore`.
 - `no gateway_list.txt in the GGPK` means `Client\Content.ggpk` is missing or not a standalone client's.
 
-## 7. Create an account and a character
+## 7. Extract the game data
+
+The Gateway reads the game's tables, object types, hideouts and more from files extracted from `Client\Content.ggpk`
+into `data\` (all git-ignored: they are game data). One script makes all of them:
+
+```powershell
+.\scripts\dev\extract-data.ps1
+```
+
+`live.ps1` (step 10) runs it on every start, so you may skip this and let `live.ps1` do it. The first run takes a few
+minutes; later runs only check stamps and finish at once. It reads the GGPK and never writes it, and does not need the
+client closed.
+
+Success: one `extracting <name> ...` and `done in N s` per file, then `game data extracted: tables, object-types, ...`.
+A second run prints `game data up to date`.
+
+| File | Feature without it |
+|---|---|
+| `data\tables\*.json` (about 940, report in `data\extract-report.json`) | almost everything: stats, areas, waypoints, items, monsters, NPCs |
+| `data\object-types.json` | monsters, NPCs, area transitions |
+| `data\item-types.json` | items (characters start with none, `/item` is off) |
+| `data\area-transitions.json` | the area transitions of fixed layouts |
+| `data\room-points.json` | unique bosses |
+| `data\hideouts.json` | hideouts |
+| `data\animation-contacts.json` | each class's spell timing (the Witch's is used) |
+
+How it decides: the manifest at the top of `scripts\dev\extract-data.ps1` gives each file its command and a version
+number. The script runs every entry whose file is missing or whose stamp (`data\extract-stamps.json`) has another
+version, and the entries that need one that ran (everything needs the tables). A pull that changes a file's format
+bumps its version, and your next run regenerates it. Options: `-Force` (everything), `-Only hideouts,room-points`
+(just these), `-List` (each entry's state; runs nothing). Each run's output is in `logs\extract-<name>.log`.
+
+| Problem | Meaning |
+|---|---|
+| `setup incomplete: Node.js not found` / `Tools\ooz\node_modules missing` | install Node, then `cd Tools\ooz; npm install` |
+| `setup incomplete: Python 3.9+ ...` | install Python from python.org (see step 9 for the Store alias) |
+| `extract-data: <name> failed` | read `logs\extract-<name>.log`; the tables report `schema mismatch: 0` when the client is 3.29.3b |
+
+## 8. Create an account and a character
 
 Start the dev account service in one terminal:
 
@@ -247,7 +246,7 @@ Every reply should contain `"ok":true`; the last one lists your character.
 - Then close both: an empty line quits the dev client, and Ctrl+C stops the host. Do not keep `GameServer.Host`
   running while you play, because it and the login server would both write `data/accounts.json`.
 
-## 8. (Optional) Walk maps
+## 9. (Optional) Walk maps
 
 The Gateway estimates where your character is so it can answer the client's moves. For that it needs each area's walk
 map: which cells are walkable. Walk maps are not shipped. You capture them from your own client.
@@ -278,10 +277,10 @@ the alias off under Settings → Apps → App execution aliases.
 
 Captured maps are saved as `data/walkability/<area>_seed<seed>.bin` and `.json` (git-ignored).
 
-## 9. Play
+## 10. Play
 
 ```powershell
-.\scripts\dev\live.ps1            # add -Walkmaps if you did step 8
+.\scripts\dev\live.ps1            # add -Walkmaps if you did step 9
 ```
 
 Success, in order:
@@ -323,24 +322,27 @@ Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and 
   other servers keep running. After a Gateway change this is all you need: the client drops to the login screen, log in
   and Play again.
 - `-NoBuild` skips the builds.
+- `-NoExtract` skips the game-data check (step 7).
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `setup incomplete: ...` from `live.ps1` | a one-time step is missing | do the step named in the message |
+| A feature is off (no hideouts, no items, no unique boss); the Gateway log starts with `WARNING: ... game data file(s) missing` | a game data file was not extracted, or `live.ps1 -NoExtract` skipped it | run `.\scripts\dev\extract-data.ps1` (or `-List` to see what is stale), then `live.ps1 -Only Gateway` |
 | `port 8080 is used by <program>` | another program (often a web server) holds a dev port | close it, or set `Game_PATCH_URL=http://127.0.0.1:<port>/` |
 | `patch server did not start` | `Client\Content.ggpk` missing, locked or unreadable | close every client, check the path |
 | Client shows a patching/update screen or downloads | started without `live.ps1`, or the patch server is not running | close it immediately; start only through `live.ps1` |
 | "The password is not correct for this account" | wrong password, or an account created after the login server started | check the password; restart with `live.ps1` (it reloads accounts) |
 | "Account does not exist" | the name in the Email field does not match `register name=` | use the registered name |
 | Login hangs, no "Connected to login server" | gateway list not patched (step 6), or the login server is not running | redo step 6; check `logs\live-auth.log` |
+| A new character has no items, no weapon on the ground (`start kit is empty` in `live-gateway.log`) | it first logged in before `data/tables` and `data/item-types.json` existed, and that empty kit was saved | extract them (see "Third-party tools"), stop the Gateway, move `data\saves\<character>.json` away, run `live.ps1` again |
 | Character select shows no characters | the character was created after the login server started | run `live.ps1` again |
 | `dotnet build` / `dotnet test` fails with `MSB3027` ... `locked by: ".NET Host"` | the servers `live.ps1` started are running from the same `bin\` folders | let `live.ps1` rebuild them (`-Only Gateway` …), or build and test elsewhere with a short path: `dotnet test tests/GameServer.Gateway.Tests --artifacts-path C:\Temp\lx` |
 | In town, but your character is invisible and clicks do nothing | Network Mode is lockstep ("auto" picks it on localhost); the Gateway log says `lockstep movement` | Options → Game → Network Mode → Predictive, then log out to the character screen and Play again |
 | Stuck after Play (no area) | `Game_GATEWAY_ENTER` was set to something other than `1` | unset it; `live.ps1` sets it to `1` |
 | `HNC mask not found` in `live-gateway.err` | `Client\Game.exe` is not 3.29.3b | use the right client version |
-| Spawn on The Coast is in the sea | no walk map for that area yet | use `-Walkmaps` (step 8) and enter the area again |
+| Spawn on The Coast is in the sea | no walk map for that area yet | use `-Walkmaps` (step 9) and enter the area again |
 | `walkmaps: permission denied` | client and Python run at different privilege levels | run both as the same user, not one as administrator |
 | Esc → "Exit to character selection" hangs | not implemented yet | run `.\scripts\dev\live.ps1 -NoClient` (the client drops to the login screen) |
 | Windows Firewall prompt | should not happen (servers bind to 127.0.0.1) | if it does, deny: nothing needs outside access |
@@ -360,6 +362,9 @@ Environment variables, read when each server starts:
 | `Game_CLIENT_EXE` | `Client/Game.exe` | client executable the Gateway reads protocol constants from |
 | `Game_RANDOM_SEEDS` | unset | `1` = random seeds for new non-town instances (each needs its own walk map) |
 | `Game_LEAGUE` | `standard` | `hardcore` shows the hardcore death screen (a single Exit button) |
+| `Game_START_WEAPON` | unset | `equipped` = a new character's class weapon starts equipped instead of on the ground near the spawn |
+| `Game_FLASK_BUFFS` | unset | `0` = flasks recover without putting their flask_effect buff on the player |
+| `Game_FLASK_KILL_CHARGES` | unset | unset = every kill fills all flasks; `rarity` = a few charges per kill, more for rarer monsters |
 | `Game_PLAYER_ATTACK` | `PlayerMelee` | GrantedEffects `Id` of the player's default attack (level 1) |
 | `Game_MOVE_MODE` | `echo` | `echo`, `move` or `teleport` |
 | `Game_WALK_SPEED` | 37 | walk speed in cells per second, used for position estimates |
@@ -376,6 +381,7 @@ Environment variables, read when each server starts:
 | `data\instance-secret.bin` | instance key secret | never |
 | `data\accounts.json` | accounts and characters | never |
 | `data\gateway_list.original.txt` | backup for `gateway --restore` | no need |
+| `data\tables\`, `data\*-types.json`, `data\hideouts.json` … | extracted game data (step 7) and their stamps, `data\extract-stamps.json` | no (game data) |
 | `data\walkability\` | captured walk maps | no (derived from game data) |
 | `logs\` | server logs | only when reporting a bug, and read them first |
 

@@ -70,6 +70,55 @@ public class InstanceStoreTests
     }
 
     [Fact]
+    public void A_start_weapon_is_put_on_an_instance_s_ground_once_per_character()
+    {
+        var store = NewStore();
+        var weapon = Sword();   // the character's StartWeapon: the same item on every entry
+        var first = store.Enter(4, Created);
+        uint? id = first.PlaceStartWeapon("Witch", weapon);
+        store.Leave(first);
+
+        var again = store.Enter(4, Created);
+        Assert.NotNull(id);
+        Assert.Null(again.PlaceStartWeapon("witch", new WorldItemObject(11, 20, weapon.Item)));
+        Assert.Equal(id, Assert.Single(again.Ground.All()).Id);
+        Assert.True(again.IsStartWeapon("Witch", id.Value));
+        Assert.False(again.IsStartWeapon("Other", id.Value));
+        // Picked up: it is not put back while the instance lasts.
+        Assert.NotNull(again.Ground.Take(id.Value));
+        Assert.Null(again.PlaceStartWeapon("Witch", weapon));
+        Assert.Empty(again.Ground.All());
+        // Another character in the same instance gets its own.
+        Assert.NotNull(again.PlaceStartWeapon("Other", Sword()));
+    }
+
+    [Fact]
+    public void A_new_character_with_a_deleted_one_s_name_gets_its_own_start_weapon()
+    {
+        var state = NewStore().Enter(4, Created);
+        uint old = state.PlaceStartWeapon("Witch", Sword())!.Value;
+        state.Ground.Take(old);
+
+        // Deleted and created again: a new start weapon item.
+        uint? fresh = state.PlaceStartWeapon("Witch", Sword());
+
+        Assert.NotNull(fresh);
+        Assert.True(state.IsStartWeapon("Witch", fresh.Value));
+        Assert.False(state.IsStartWeapon("Witch", old));
+    }
+
+    [Fact]
+    public void A_dropped_item_is_not_the_start_weapon()
+    {
+        var state = NewStore().Enter(4, Created);
+        uint dropped = state.Ground.Add(Sword());
+        uint weapon = state.PlaceStartWeapon("Witch", Sword())!.Value;
+
+        Assert.False(state.IsStartWeapon("Witch", dropped));
+        Assert.True(state.IsStartWeapon("Witch", weapon));
+    }
+
+    [Fact]
     public void An_instance_id_reused_after_an_Auth_restart_starts_empty()
     {
         var store = NewStore();

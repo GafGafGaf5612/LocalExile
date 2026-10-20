@@ -18,6 +18,7 @@ sealed class ItemCatalog
         _shieldBlocks = new(() => LoadShieldBlocks(folder));
         _weaponCrits = new(() => LoadWeaponCrits(folder));
         _defences = new(() => LoadDefences(folder));
+        _flasks = new(() => LoadFlasks(folder, _rows.Value.Rows));
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
@@ -141,6 +142,31 @@ sealed class ItemCatalog
         return result;
     }
 
+    private Lazy<Dictionary<int, Flasks.Flask>> _flasks = null!;
+
+    /// <summary>A life or mana flask's use (Flasks.dat and ComponentCharges), or null for other types, utility flasks
+    /// included.</summary>
+    public Flasks.Flask? FlaskOf(BaseType t) => _flasks.Value.GetValueOrDefault(t.Row);
+
+    private static Dictionary<int, Flasks.Flask> LoadFlasks(string folder, IReadOnlyList<BaseType> rows)
+    {
+        string flasks = Path.Combine(folder, "tables", "Flasks.json"), charges = Path.Combine(folder, "tables", "ComponentCharges.json");
+        var result = new Dictionary<int, Flasks.Flask>();
+        if (!File.Exists(flasks) || !File.Exists(charges)) return result;
+        var perUse = new Dictionary<string, (int Max, int PerCharge)>();
+        using (var c = JsonDocument.Parse(File.ReadAllBytes(charges)))
+            foreach (var r in c.RootElement.EnumerateArray())
+                perUse.TryAdd(r.GetProperty("BaseItemTypesKey").GetString() ?? "", (r.GetProperty("MaxCharges").GetInt32(), r.GetProperty("PerCharge").GetInt32()));
+        using var f = JsonDocument.Parse(File.ReadAllBytes(flasks));
+        foreach (var r in f.RootElement.EnumerateArray())
+            if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b && b.GetInt32() < rows.Count &&
+                perUse.TryGetValue(rows[b.GetInt32()].Id, out var use) &&
+                (r.GetProperty("LifePerUse").GetInt32(), r.GetProperty("ManaPerUse").GetInt32()) is var (life, mana) && life + mana > 0)
+                // RecoveryTime is in tenths of a second (Small Life Flask: 30, 3 s).
+                result.TryAdd(b.GetInt32(), new(life, mana, r.GetProperty("RecoveryTime").GetInt32() / 10.0, use.PerCharge, use.Max));
+        return result;
+    }
+
     private Lazy<Dictionary<int, int>> _gemEffects = null!;
 
     private static Dictionary<int, int> LoadGemEffects(string folder)
@@ -203,7 +229,7 @@ sealed class ItemCatalog
         var components = new Dictionary<string, IReadOnlyList<string>>();
         var itemTags = new Dictionary<string, IReadOnlyList<string>>();
         string types = Path.Combine(folder, "item-types.json");
-        if (!File.Exists(types)) return ([], $"{types} is missing: python -I scripts/re/ot_components.py --items --json {types}");
+        if (!File.Exists(types)) return ([], $"{types} is missing: run scripts/dev/extract-data.ps1");
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(types)))
             foreach (var t in doc.RootElement.GetProperty("types").EnumerateArray())
             {

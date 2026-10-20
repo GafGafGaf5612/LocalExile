@@ -348,6 +348,16 @@ public static class InstanceItems
         return new(r.U32(), r.U32());
     }
 
+    public const ushort UseFlaskId = 0x70;
+    public const int UseFlaskLength = 6;
+
+    /// <summary>
+    /// C→S 0x70 (6 bytes, live 2026-10-20): a flask key was pressed. u32 big-endian, the flask slot (0 for key 1, 1 for
+    /// key 2, …: the x cell in the flask bar, Inventories row 11). Inferred from presses of the start kit's two flasks, not
+    /// read from the client's serializer. The client changes nothing itself: the server spends the charges and recovers.
+    /// </summary>
+    public static uint ReadUseFlask(ReadOnlySpan<byte> m) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]);
+
     public const ushort UseItemOnId = 0x71;
     public const int UseItemOnLength = 18;
 

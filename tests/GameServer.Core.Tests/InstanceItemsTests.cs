@@ -79,6 +79,17 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Use_flask_reads_the_flask_bar_slot()
+    {
+        // Live 2026-10-20: flask keys 1 and 2 of the start kit.
+        byte[] key1 = Convert.FromHexString("007000000000"), key2 = Convert.FromHexString("007000000001");
+        Assert.Equal(InstanceItems.UseFlaskLength, key2.Length);
+        Assert.Equal(InstanceItems.UseFlaskLength, InstanceProtocol.KnownClientLength(InstanceItems.UseFlaskId));
+        Assert.Equal(0u, InstanceItems.ReadUseFlask(key1));
+        Assert.Equal(1u, InstanceItems.ReadUseFlask(key2));
+    }
+
+    [Fact]
     public void Unidentified_items_send_no_explicit_mods()
     {
         var item = new Item(1, ["Mods"], 0)

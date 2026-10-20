@@ -1,0 +1,99 @@
+using GameServer.Core.Protocol.Instance;
+
+namespace GameServer.Gateway.Tests;
+
+public class FlasksTests
+{
+    // Small Life Flask (Flasks.dat, ComponentCharges): 70 life over 3 s, 7 of 21 charges per use.
+    static readonly Flasks.Flask SmallLife = new(70, 0, 3.0, 7, 21);
+    static Item LifeFlask(int charges) => new(0x1111, ["Base", "Charges", "Flask"], 0x2222) { Charges = charges };
+
+    static string Data()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "data", "tables"))) return Path.Combine(dir.FullName, "data");
+        throw new DirectoryNotFoundException("data/tables");
+    }
+
+    [Fact]
+    public void The_small_flasks_come_from_Flasks_dat_and_ComponentCharges()
+    {
+        var catalog = new ItemCatalog(Data());
+
+        Assert.Equal(SmallLife, catalog.FlaskOf(catalog.Find("Metadata/Items/Flasks/FlaskLife1")!));
+        Assert.Equal(new Flasks.Flask(0, 50, 3.0, 6, 24), catalog.FlaskOf(catalog.Find("Metadata/Items/Flasks/FlaskMana1")!));
+        Assert.Null(catalog.FlaskOf(catalog.Row(384)!));   // Driftwood Wand
+    }
+
+    [Fact]
+    public void A_use_spends_its_charges_and_needs_enough_of_them()
+    {
+        Assert.Equal(14, Flasks.Spend(LifeFlask(21), SmallLife)!.Charges);
+        Assert.Equal(0, Flasks.Spend(LifeFlask(7), SmallLife)!.Charges);
+        Assert.Null(Flasks.Spend(LifeFlask(6), SmallLife));
+    }
+
+    [Fact]
+    public void Charges_come_back_up_to_the_maximum()
+    {
+        // Any kill fills every flask.
+        Assert.Equal(21, Flasks.Gain(LifeFlask(0), SmallLife, Flasks.KillCharges(MonsterRarity.Normal)).Charges);
+        Assert.Equal(21, Flasks.Gain(LifeFlask(3), SmallLife, int.MaxValue).Charges);
+        // Game_FLASK_KILL_CHARGES=rarity: a few, more for rarer monsters.
+        Assert.Equal(1, Flasks.Gain(LifeFlask(0), SmallLife, Flasks.KillCharges(MonsterRarity.Normal, "rarity")).Charges);
+        Assert.Equal(21, Flasks.Gain(LifeFlask(20), SmallLife, Flasks.KillCharges(MonsterRarity.Rare, "rarity")).Charges);
+        Assert.True(Flasks.KillCharges(MonsterRarity.Unique, "rarity") > Flasks.KillCharges(MonsterRarity.Rare, "rarity"));
+        Assert.True(Flasks.KillCharges(MonsterRarity.Magic, "rarity") > Flasks.KillCharges(MonsterRarity.Normal, "rarity"));
+    }
+
+    static Flasks.Effect Life(byte slot, double started, ushort buff = 1) =>
+        new(slot, buff, 5, SmallLife.LifePerUse / SmallLife.Seconds, 0, started, started + SmallLife.Seconds);
+
+    [Fact]
+    public void A_flask_recovers_evenly_over_its_time_and_then_ends()
+    {
+        var effects = new Flasks.Effects();
+        effects.Start(Life(0, started: 10));
+
+        var (life, mana, ended) = effects.Advance(10, 11.5);
+        Assert.Equal(35, life, 6);
+        Assert.Equal(0, mana);
+        Assert.Empty(ended);
+
+        // A late tick past the end only counts up to the end.
+        (life, _, ended) = effects.Advance(11.5, 14);
+        Assert.Equal(35, life, 6);
+        Assert.Equal(0, Assert.Single(ended).Slot);
+        Assert.Equal(0, effects.Advance(14, 15).Life);
+    }
+
+    [Fact]
+    public void Two_flasks_recover_together_and_a_second_use_of_one_replaces_it()
+    {
+        var effects = new Flasks.Effects();
+        Assert.Null(effects.Start(Life(0, started: 0, buff: 1)));
+        Assert.Null(effects.Start(Life(1, started: 0, buff: 2)));
+        Assert.Equal(140.0 / 3, effects.Advance(0, 1).Life, 6);
+
+        var replaced = effects.Start(Life(0, started: 1, buff: 3));
+
+        Assert.Equal(1, replaced!.Buff);
+        // Slot 1 has 2 s left, the new slot 0 effect 3 s.
+        Assert.Equal(70.0 / 3 * 2 + 70.0 / 3 * 3, effects.Advance(1, 10).Life, 6);
+    }
+
+    [Fact]
+    public void Effects_can_be_ended_early()
+    {
+        var effects = new Flasks.Effects();
+        effects.Start(Life(0, started: 0));
+        effects.Start(new Flasks.Effect(4, 2, 9, 0, 50 / 3.0, 0, 3));
+
+        var full = effects.End(e => e.LifePerSecond > 0);
+
+        Assert.Equal(0, Assert.Single(full).Slot);
+        var (life, mana, _) = effects.Advance(0, 3);
+        Assert.Equal(0, life);
+        Assert.Equal(50, mana, 6);
+    }
+}

@@ -65,6 +65,38 @@ public class PlayerInventoriesTests : IDisposable
     }
 
     [Fact]
+    public void The_start_weapon_waits_in_the_save_until_its_pickup_is_saved()
+    {
+        var items = NewInventories();
+        Assert.Null(items.StartWeapon);
+
+        items.SetStartWeapon(Wand());
+        Assert.Equal(0xd9b1a12fu, CharacterSaves.Load(_character)!.StartWeapon?.Type);
+
+        // The pickup: claimed once, and the save changes with the item's Put, never in between.
+        Assert.True(items.ClaimStartWeapon());
+        Assert.False(items.ClaimStartWeapon());
+        Assert.Null(items.StartWeapon);
+        Assert.NotNull(CharacterSaves.Load(_character)!.StartWeapon);
+        var placed = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), 0, 0, Wand()));
+
+        var save = CharacterSaves.Load(_character)!;
+        Assert.Null(save.StartWeapon);
+        Assert.Equal([placed.Id], save.Inventories[PlayerInventories.MainInventory].Select(p => p.Id));
+    }
+
+    [Fact]
+    public void Saving_items_keeps_the_waiting_start_weapon()
+    {
+        var items = NewInventories();
+        items.SetStartWeapon(Wand());
+
+        items.Add(PlayerInventories.MainInventory, 0, 0, Wand());
+
+        Assert.NotNull(CharacterSaves.Load(_character)!.StartWeapon);
+    }
+
+    [Fact]
     public void Gold_an_older_save_kept_is_taken_once_and_the_rest_stays()
     {
         CharacterSaves.Write(_character, new CharacterSaves.Save([], Experience: 42, Gold: 750));

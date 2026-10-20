@@ -20,17 +20,49 @@ sealed class PlayerInventories
     private readonly Lock _lock = new();
     private string? _owner;   // the character whose save this is; null while the start kit is being built
     private ModCatalog? _mods;  // to save mods by their Mods.dat Id
+    private Item? _startWeapon;
 
-    /// <summary>Writes the character's save (every inventory, with item ids and cells).</summary>
+    /// <summary>The class's start weapon while it waits on the ground for the character (as on the real game's Twilight
+    /// Strand: the Gateway puts it near the spawn of each instance the character enters outside towns); null once picked
+    /// up, or with <c>Game_START_WEAPON=equipped</c>, which equips it in the start kit instead.</summary>
+    public Item? StartWeapon
+    {
+        get { lock (_lock) return _startWeapon; }
+    }
+
+    /// <summary>Makes <paramref name="weapon"/> the start weapon waiting on the ground, and saves it.</summary>
+    public void SetStartWeapon(Item weapon)
+    {
+        lock (_lock) _startWeapon = weapon;
+        Persist();
+    }
+
+    /// <summary>The start weapon was picked up: true the first time. It leaves the save with the pickup's own change (the
+    /// <see cref="Put"/> that follows), so a crash never keeps it both waiting and in an inventory.</summary>
+    public bool ClaimStartWeapon()
+    {
+        lock (_lock)
+        {
+            if (_startWeapon is null) return false;
+            _startWeapon = null;
+            return true;
+        }
+    }
+
+    /// <summary>Writes the character's save (every inventory, with item ids and cells, and the start weapon).</summary>
     void Persist()
     {
         if (_owner is null) return;
         Dictionary<byte, List<CharacterSaves.SavedPlacement>> items;
+        CharacterSaves.SavedItem? startWeapon;
         lock (_lock)
+        {
             items = _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
                 kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList());
+            startWeapon = _startWeapon is null ? null : CharacterSaves.ToSaved(_startWeapon, _mods);
+        }
         // The rest of the save (skill bar, experience, passives) stays as it is.
-        CharacterSaves.SetInventories(_owner, items);
+        CharacterSaves.SetInventories(_owner, items, startWeapon);
     }
 
     public static uint InventoryId(byte row) => (uint)row + 1;
@@ -638,14 +670,16 @@ sealed class PlayerInventories
                     if (p.Id < AccountStash.FirstItemId) inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
                 }
                 else Console.WriteLine($"[gateway] {character}: saved item type 0x{p.Item.Type:x8} is unknown, dropped");
+        if (save.StartWeapon is { } weapon) inv._startWeapon = CharacterSaves.FromSaved(weapon, catalog);
         return inv;
     }
 
     /// <summary>
-    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) in Weapon1, the
+    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) as the
+    /// <see cref="StartWeapon"/> waiting on the ground (Game_START_WEAPON=equipped: in Weapon1), the
     /// StartSkillGem and StartSupportGem (SkillGems rows → their BaseItemTypes: Fireball, Arcane Surge Support) in the main
-    /// inventory, and a
-    /// Small Life Flask and Small Mana Flask in the flask slots. Missing tables or unsupported types are skipped;
+    /// inventory, and
+    /// two Small Life Flasks (flask keys 1 and 2) and a Small Mana Flask (key 5). Missing tables or unsupported types are skipped;
     /// Game_START_ITEMS=0 starts empty.
     /// </summary>
     static PlayerInventories StartKit(ItemCatalog catalog, string folder, int characterRow = 1)
@@ -653,7 +687,12 @@ sealed class PlayerInventories
         var inv = new PlayerInventories();
         if (Environment.GetEnvironmentVariable("Game_START_ITEMS") == "0") return inv;
         string chars = Path.Combine(folder, "tables", "Characters.json"), gems = Path.Combine(folder, "tables", "SkillGems.json");
-        if (catalog.Error is not null || !File.Exists(chars) || !File.Exists(gems)) return inv;
+        if (catalog.Error is not null || !File.Exists(chars) || !File.Exists(gems))
+        {
+            // The empty kit is saved like any other, so this character stays empty: say why.
+            Console.WriteLine($"[gateway] start kit is empty: {catalog.Error ?? $"no {chars} or {gems}"} (extract the tables and data/item-types.json first, Agents/GettingStarted.md)");
+            return inv;
+        }
         using var c = JsonDocument.Parse(File.ReadAllBytes(chars));
         using var g = JsonDocument.Parse(File.ReadAllBytes(gems));
         var row = c.RootElement[characterRow];
@@ -676,11 +715,17 @@ sealed class PlayerInventories
         // The start weapon with two linked sockets in the start gems' colours (the Witch: blue, blue), empty, for its gems.
         if (row.GetProperty("StartWeapons").EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Number } w &&
             catalog.Row(w.GetInt32()) is { Supported: true } weapon)
-            inv.Add(Weapon1, 0, 0, ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]));
+        {
+            var item = ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]);
+            if (Environment.GetEnvironmentVariable("Game_START_WEAPON") == "equipped") inv.Add(Weapon1, 0, 0, item);
+            else inv._startWeapon = item;
+        }
         Put(MainInventory, 0, 0, Gem("StartSkillGem"));
         Put(MainInventory, 1, 0, Gem("StartSupportGem"));
+        // Keys 1 and 2: life; key 5: mana, as players set the bar up.
         Put(Flask, 0, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));
-        Put(Flask, 1, 0, catalog.Find("Metadata/Items/Flasks/FlaskMana1"));
+        Put(Flask, 1, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));
+        Put(Flask, 4, 0, catalog.Find("Metadata/Items/Flasks/FlaskMana1"));
         return inv;
     }
 }

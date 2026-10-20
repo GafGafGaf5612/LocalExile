@@ -60,13 +60,20 @@ public static class InstanceEntities
     /// u32 +0x64 (the source object), u16 +0x60 (the source skill), u8 flags (bit0 u8 u32 u8 u16, bit1 u32 +0x68, bit2
     /// u16 stacks +0x70 (default 1), bit3 u16 u16, bit4 u16 BuffVisuals override (default the row's), bit5 u8 +0x80
     /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32
-    /// per GrantedStats value when its IsRecovery (+0x7c) is set, and a u32-counted list of u32. The buff's visual
-    /// (BuffVisuals) plays while it lasts.
+    /// per GrantedStats value when its IsRecovery (+0x7c) is set (<paramref name="values"/>: the caller must give exactly
+    /// that many, or the client misreads the message), and a u32-counted list of u32. The buff's visual (BuffVisuals)
+    /// plays while it lasts.
     /// </summary>
     public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
-        IReadOnlyList<uint>? values = null) =>
-        new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(0)
-            .Bytes([.. (values ?? []).SelectMany(v => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v })]).U32(0).ToArray();
+        IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null)
+    {
+        // flags bit1: u32 +0x68; bit7: f32 +0x6c (read right after bit1's field).
+        byte flags = (byte)((u68 is null ? 0 : 0x02) | (f6c is null ? 0 : 0x80));
+        var w = new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(flags);
+        if (u68 is { } a) w.U32(a);
+        if (f6c is { } f) w.U32(BitConverter.SingleToUInt32Bits(f));
+        return w.Bytes([.. (values ?? []).SelectMany(v => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v })]).U32(0).ToArray();
+    }
 
     /// <summary>S→C 0x1c2 (class 0x1435dd918, read 0x141fdfdd0): object header, u16 buff instance: the buff ends.</summary>
     public static byte[] RemoveBuff(uint objectId, ushort buffInstance) =>

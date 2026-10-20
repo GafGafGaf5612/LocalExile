@@ -212,6 +212,18 @@ stats for attacks, and `spell_critical_strike_chance_+%` / `base_spell_critical_
 client, so the Offence panel shows them. Timed, charge, enemy-state and similar conditional crit stats are not modelled;
 `/crit` prints both final values.
 
+**Impale.** A hit that rolls `impale_on_hit_%_chance` stores 10% of the swing's physical damage on the monster as a
+stack: five at most, each lasting five physical hits. The stored amount is taken from the packet's physical **maximum**,
+not the rolled damage, so it is steady for a given weapon. Every later physical hit on that monster first takes the
+stored total as extra physical (a `DamageRange(stored, stored)` added to the packet before `RollTotal`, so it converts and
+mitigates with the hit) and then spends one hit of every stack. Order, in `Gateway.Attack`: add the bonus, `AfterHit()`,
+then roll `Apply(physical)` — a new stack applied first would lose one of its five hits on the swing that made it. The
+stack count and stored total are read before the hit applies because a killing blow clears them, which is why the log
+reports the real stacks on the killing 0x1b1. Only physical is stored. Live 2026-10-20, `/set_stat
+attacks_impale_on_hit_%_chance 100` on one monster: `hit for 5, impaled (1 stack(s), 0.5 stored)`, then `impale +0.5 (2
+stack(s))`, `impale +1 (3)`, `impale +1.5 (4)`, `impale +2 (5 stack(s), 2.6 stored)` on the killing critical, and the next
+monster reopened at one stack.
+
 Exits use the same approach (`ExitReach` = 6 cells) before the area change or the instance list.
 
 **Life bar on death:** when life reaches 0 the client's Life tick (`0x141e6a190`) stops notifying its listeners, so the
@@ -440,8 +452,10 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   `0x141e11720`): object header (u32 id, u32, u16), u16 buff instance (+0x20), u16 BuffDefinitions row, u32 +0x64 (the
   source object), u16 +0x60 (the source skill), u8 flags (bit0: u8 u32 u8 u16; bit1: u32 +0x68; bit2: u16 stacks,
   default 1; bit3: u16 u16; bit4: u16 BuffVisuals override, default the row's; bit5: u8 +0x80, default 2; bit6 → +0x81;
-  bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set, one u32 per GrantedStats entry when the row's
-  `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. The client reads the BuffDefinitions row in memory as the
+  bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set (`__col44` in the vendored schema), one u32
+  per GrantedStats entry when the row's `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. A row with either
+  flag needs those fields, or the client misreads the message and the ones after it (the flask buffs, rows 5 and 9:
+  [13](13-items.md) §8). The client reads the BuffDefinitions row in memory as the
   .dat row (BuffVisualsKey at +0x55). **S→C 0x1c2** (class `0x1435dd918`): object header, u16 buff instance: removes it.
   The Buffs component has no 0x2ba update reader; its creation blob holds the same entries ([04](04-player-entity.md)).
 - **Righteous Fire** (`ActivateRighteousFire`, `RunPlayerTick`, `BurnAround`): cast on the player itself (§9), it puts
@@ -585,6 +599,7 @@ it:
 | `virtual_trap/mine_throwing_speed_+%` | `trap_and_mine_throwing_speed_+%` (mine: `mine_laying_speed_+%`) |
 | `minimum/maximum_*_damage_to_return_to_melee_attacker` | `*_damage_to_return_to_melee_attacker` (both ends) |
 | `extra_damage_taken_from_crit_+%` | − `base_self_critical_strike_multiplier_-%` |
+| `impale_on_hit_%_chance` | `attacks_impale_on_hit_%_chance` (the attack reads this row's name) |
 | `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
 
 **Main hand / off hand rows** (`main_hand_…` / `off_hand_…`, `virtual_total_main_hand_…`) add the global stats and that
@@ -594,6 +609,13 @@ hand's item's own local stats (`HandLocalStats`: the active item in the first we
 `local_stun_threshold_reduction_+%`, `local_life/mana_gain_per_target`, `local_life/mana_leech_from_physical_damage_permyriad`
 and `local_double_damage_to_chilled_enemies`. Spell and secondary rows use the global stats only (`spells_…` where the
 game has a spell form).
+
+**Damage rows from the hit the server swings with** (`PanelStats.HandDamage`, issue #75):
+`main_hand_minimum_total_damage`, `main_hand_maximum_total_damage` and the per-type
+`main_hand_minimum/maximum_{physical,fire,cold,lightning,chaos}_damage` are computed from
+`Skills.UnarmedFor(ClassRow).HitDamage(stats)` after conversion, rounded down because the client shows whole numbers, and
+sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
+the main hand is filled, since the server attacks with it; an empty packet adds no rows.
 
 **Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
 `additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`

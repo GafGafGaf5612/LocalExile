@@ -68,6 +68,7 @@ static class PanelStats
         new("virtual_total_spell_chance_to_poison_on_hit_%", ["base_chance_to_poison_on_hit_%", "spells_chance_to_poison_on_hit_%"]),
         new("virtual_total_secondary_chance_to_poison_on_hit_%", ["base_chance_to_poison_on_hit_%"]),
         new("virtual_total_spell_impale_on_hit_%_chance", ["spells_impale_on_hit_%_chance", "impale_on_hit_%_chance"]),
+        new("impale_on_hit_%_chance", ["attacks_impale_on_hit_%_chance"]),
         new("reduce_enemy_fire_resistance_%", ["base_reduce_enemy_fire_resistance_%", ElementalPenetration, PenetrateElemental]),
         new("reduce_enemy_cold_resistance_%", ["base_reduce_enemy_cold_resistance_%", ElementalPenetration, PenetrateElemental]),
         new("reduce_enemy_lightning_resistance_%", ["base_reduce_enemy_lightning_resistance_%", ElementalPenetration, PenetrateElemental]),
@@ -197,6 +198,36 @@ static class PanelStats
             long value = get(sum.Display) + Total(sum.Sources, get) + Total(sum.Local, local);
             if (sum.Flag) value = value > 0 ? 1 : 0;
             if (value != 0) result.Add((sum.Display, (int)Math.Clamp(value, int.MinValue, int.MaxValue)));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The Offence tab's per-hand damage rows (issue #75): the hit the server actually swings with, per damage type and
+    /// in total. The client shows whole numbers, so each range is rounded down. An empty packet adds no rows, which
+    /// leaves those rows blank, as the game does for an attack that cannot happen.
+    /// </summary>
+    public static List<(string Stat, int Value)> HandDamage(DamagePacket packet, string hand)
+    {
+        var result = new List<(string, int)>();
+        if (packet.IsZero) return result;
+        static int Whole(double value) => (int)Math.Floor(Math.Max(0, value));
+        result.Add(($"{hand}_minimum_total_damage", Whole(packet.MinTotal)));
+        result.Add(($"{hand}_maximum_total_damage", Whole(packet.MaxTotal)));
+        foreach (var (type, range) in packet.Components)
+        {
+            string? slug = type switch
+            {
+                DamageType.Physical => "physical",
+                DamageType.Fire => "fire",
+                DamageType.Cold => "cold",
+                DamageType.Lightning => "lightning",
+                DamageType.Chaos => "chaos",
+                _ => null,
+            };
+            if (slug is null) continue;
+            result.Add(($"{hand}_minimum_{slug}_damage", Whole(range.Min)));
+            result.Add(($"{hand}_maximum_{slug}_damage", Whole(range.Max)));
         }
         return result;
     }
