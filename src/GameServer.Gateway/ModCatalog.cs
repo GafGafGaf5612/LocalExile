@@ -8,8 +8,9 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class ModCatalog(string folder = "data")
 {
-    /// <summary>A stat of a mod: its Stats.dat Id and the Stat{n}Min / Stat{n}Max roll range.</summary>
-    public sealed record ModStat(string Id, int Min, int Max);
+    /// <summary>A stat of a mod: its Stats.dat Id, the Stat{n}Min / Stat{n}Max roll range, and Stats.dat IsLocal (the
+    /// stat changes the item it is on, not the character).</summary>
+    public sealed record ModStat(string Id, int Min, int Max, bool Local = false);
 
     /// <summary>A Mods.dat row. GenerationType 1 prefix, 2 suffix, 3 unique / base implicit, 10 enchantment …;
     /// Domain 1 items.</summary>
@@ -81,9 +82,9 @@ sealed class ModCatalog(string folder = "data")
             tagsPath = Path.Combine(folder, "tables", "Tags.json");
         var rows = new List<Mod>();
         if (!File.Exists(path) || !File.Exists(statsPath)) return (rows, [], []);
-        List<string> stats;
+        List<(string Id, bool Local)> stats;
         using (var s = JsonDocument.Parse(File.ReadAllBytes(statsPath)))
-            stats = [.. s.RootElement.EnumerateArray().Select(r => r.GetProperty("Id").GetString() ?? "")];
+            stats = [.. s.RootElement.EnumerateArray().Select(r => (r.GetProperty("Id").GetString() ?? "", r.GetProperty("IsLocal").GetBoolean()))];
         List<string> tags = [];
         if (File.Exists(tagsPath))
             using (var t = JsonDocument.Parse(File.ReadAllBytes(tagsPath)))
@@ -100,7 +101,8 @@ sealed class ModCatalog(string folder = "data")
             {
                 if (r.GetProperty($"StatsKey{i}") is not { ValueKind: JsonValueKind.Number } k) break;
                 int key = k.GetInt32();
-                modStats.Add(new(key < stats.Count ? stats[key] : $"#{key}", r.GetProperty($"Stat{i}Min").GetInt32(), r.GetProperty($"Stat{i}Max").GetInt32()));
+                var (statId, local) = key < stats.Count ? stats[key] : ($"#{key}", false);
+                modStats.Add(new(statId, r.GetProperty($"Stat{i}Min").GetInt32(), r.GetProperty($"Stat{i}Max").GetInt32(), local));
             }
             rows.Add(new Mod(rows.Count, r.GetProperty("Id").GetString() ?? "", (ushort)r.GetProperty("HASH16").GetInt32(),
                 r.GetProperty("Name").GetString() ?? "", r.GetProperty("Domain").GetInt32(), r.GetProperty("GenerationType").GetInt32(),
