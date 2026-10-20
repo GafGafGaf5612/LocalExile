@@ -8,7 +8,25 @@ namespace GameServer.Core.Protocol.Instance;
 /// </summary>
 public static class InstanceWaypoints
 {
-    public const ushort WaypointsId = 0x4c, OpenUiId = 0x7b, TravelId = 0x4d;
+    public const ushort WaypointsId = 0x4c, OpenUiId = 0x7b, TravelId = 0x4d, VisitHideoutId = 0x17a;
+
+    /// <summary>
+    /// C→S 0x17a: the World panel's Hideout button, opened from a waypoint (live 2026-10-20). u16 n + n bytes UTF-8: the
+    /// character whose hideout to go to (the player's own name for its own), u32 BE: the waypoint object the panel was
+    /// opened from, u8 (0 seen). 21-hideouts.md §3.
+    /// </summary>
+    public sealed record VisitHideout(string Character, uint Waypoint, byte Flag);
+
+    /// <summary>The length of a 0x17a at the start of <paramref name="data"/>, or null until its header has arrived.</summary>
+    public static int? VisitHideoutLength(ReadOnlySpan<byte> data) =>
+        data.Length < 4 ? null : 9 + System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data[2..]);
+
+    public static VisitHideout ReadVisitHideout(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        string name = System.Text.Encoding.UTF8.GetString(r.Blob());
+        return new(name, r.U32(), r.U8());
+    }
 
     /// <summary>Bytes of the unlocked-waypoint bitset (152 bits; the client reads at most 150 waypoint areas).</summary>
     public const int BitsetLength = 19;

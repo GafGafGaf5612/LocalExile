@@ -41,3 +41,19 @@ public class HideoutTests
         return null;
     }
 }
+
+public class VisitHideoutTests
+{
+    [Fact]
+    public void The_Hideout_button_names_the_character_and_the_waypoint()
+    {
+        // Live 2026-10-20: the World panel opened from Lioneye's Watch's waypoint (0x2f00), DevWitch's own hideout.
+        byte[] m = Convert.FromHexString("017A0008446576576974636800002F0000");
+        Assert.Equal(m.Length, InstanceWaypoints.VisitHideoutLength(m));
+        Assert.Equal(new InstanceWaypoints.VisitHideout("DevWitch", 0x2f00, 0), InstanceWaypoints.ReadVisitHideout(m));
+        var split = InstanceProtocol.SplitClientMessages(m, out var partial, out var unknown);
+        Assert.Equal((ushort)0x17a, Assert.Single(split).Id);
+        Assert.Empty(partial);
+        Assert.Empty(unknown);
+    }
+}

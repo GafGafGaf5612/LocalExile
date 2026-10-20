@@ -326,7 +326,15 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         {
             var command = InstanceItems.ReadCommand(bytes);
             if (command.Id == InstanceItems.DestroyCursorItemCommand) await DestroyHeldItem(remote, stream, ciphers, conn);
+            else if (command.Id == InstanceItems.WarpToHideoutCommand) await WarpToHideout(remote, stream, ciphers, conn, "/hideout");
             else Console.WriteLine($"[gateway] {remote} <= 0x0016 command {command} (not handled)");
+        }
+        else if (id == InstanceWaypoints.VisitHideoutId)
+        {
+            var visit = InstanceWaypoints.ReadVisitHideout(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x017a visit the hideout of {visit.Character} (from object 0x{visit.Waypoint:x}, u8 {visit.Flag})");
+            // Only the player's own hideout exists (no parties or other players' hideouts yet).
+            await WarpToHideout(remote, stream, ciphers, conn, "World panel Hideout button");
         }
         else if (id == InstanceItems.UnsocketGemId)
             await UnsocketGem(remote, stream, ciphers, conn, InstanceItems.ReadUnsocketGem(bytes));
@@ -2477,9 +2485,18 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
     }
 }
 
-// The character's hideout (21-hideouts.md): its own instance (Auth keeps re-entering the live one), next to its waypoint.
-static Task GoToHideout(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, HideoutCatalog.Hideout hideout, string why) =>
-    ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hideout.AreaHash16, 0, false, AtWaypoint: true), $"{why}: {hideout.Name}");
+// To the character's hideout (21-hideouts.md §3): "/hideout" (C→S 0x16 command 45) or the World panel's Hideout button
+// (C→S 0x17a). Its own instance (Auth re-enters the live one), arriving next to its waypoint.
+static async Task WarpToHideout(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
+{
+    if (HideoutCatalog.Default is not { } hideout)
+    {
+        Console.WriteLine($"[gateway] {remote} {why}: no data/hideouts.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts)");
+        return;
+    }
+    if (conn.Layout.Hash == hideout.AreaHash16) { Console.WriteLine($"[gateway] {remote} {why}: already in the {hideout.Name}"); return; }
+    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hideout.AreaHash16, 0, false, AtWaypoint: true), $"{why}: {hideout.Name}");
+}
 
 // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
 static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
@@ -3104,12 +3121,6 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         string target = string.Join(' ', args);
         if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
         await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
-    })
-    .Add("hideout", "/hideout (go to your hideout)", async _ =>
-    {
-        if (HideoutCatalog.Default is not { } hideout) { await conn.Commands!.Reply("No hideouts (needs data/hideouts.json: dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts)."); return; }
-        if (conn.Layout.Hash == hideout.AreaHash16) { await conn.Commands!.Reply($"You are in your hideout, the {hideout.Name}."); return; }
-        await GoToHideout(remote, stream, ciphers, conn, hideout, "/hideout");
     })
     .Add("hideout_keys", "/hideout_keys <a> <b> (dev: the Player component's two Hideouts.dat keys, HASH16 hex or a hideout area id)", async args =>
     {

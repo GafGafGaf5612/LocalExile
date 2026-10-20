@@ -256,6 +256,9 @@ public static class InstanceItems
     /// <summary>Commands.dat row 8 (DestroyCursorItem, "/destroy") + 1: what the Keep / Destroy popup's Destroy sends.</summary>
     public const byte DestroyCursorItemCommand = 9;
 
+    /// <summary>Commands.dat row 44 (WarpToHideout, "/hideout") + 1: the chat command that goes to the hideout.</summary>
+    public const byte WarpToHideoutCommand = 45;
+
     /// <summary>
     /// C→S 0x16 (class 0x1435bff00, write 0x141f91480, sender 0x14215c3b0): a chat command from Commands.dat with
     /// SendsGenericCommandPacket. u8 command (row + 1), then the argument: u16 byte count + UTF-8 (0x140e0c9b0; at most

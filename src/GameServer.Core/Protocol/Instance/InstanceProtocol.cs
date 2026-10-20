@@ -252,7 +252,8 @@ public static class InstanceProtocol
             int? known = id == InstanceChat.ChatId ? InstanceChat.Length(data[pos..]) ?? int.MaxValue
                 : id == InstanceItems.CommandId ? InstanceItems.CommandLength(data[pos..]) ?? int.MaxValue
                 : id == InstanceNpcs.BuyId ? InstanceNpcs.BuyLength(data[pos..]) ?? int.MaxValue
-                : id == InstanceStash.ReorderTabsId ? InstanceStash.ReorderTabsLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
+                : id == InstanceStash.ReorderTabsId ? InstanceStash.ReorderTabsLength(data[pos..]) ?? int.MaxValue
+                : id == InstanceWaypoints.VisitHideoutId ? InstanceWaypoints.VisitHideoutLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
             if (known is not int len) { unknown = data[pos..].ToArray(); break; }
             if (data.Length - pos < len) { partial = data[pos..].ToArray(); break; }
             result.Add((id, data.Slice(pos, len).ToArray()));
