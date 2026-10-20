@@ -1356,9 +1356,10 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     if (hitId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(hitId);
     if (m is not null && m.Life > 0)
     {
-        var stats = Skills.EffectStats(gem.Effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int min = Stats.Key("spell_minimum_base_fire_damage") is uint kmin ? stats.GetValueOrDefault(kmin) : 0;
-        int max = Stats.Key("spell_maximum_base_fire_damage") is uint kmax ? stats.GetValueOrDefault(kmax) : 0;
+        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them.
+        var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        foreach (var (k, v) in Skills.EffectStats(gem.Effect, 1)) stats[k] = v;
+        var (min, max) = SpellDamage.Hit(name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0);
         int damage = Random.Shared.Next(min, Math.Max(min, max) + 1);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
@@ -1543,6 +1544,15 @@ static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint,
             int ms = (int)Math.Round(castMs / (1 + castSpeed / 100.0));
             if (Stats.Key("virtual_base_spell_cast_time_ms") is uint vk) stats[vk] = ms;
             if (Stats.Key("hundred_times_casts_per_second") is uint hk) stats[hk] = (int)Math.Round(100_000.0 / Math.Max(1, ms));
+        }
+        // A spell's tooltip DPS is its own hit (SpellDamage) × casts per second, not the default attack's values that
+        // came with the player's stats.
+        int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        if (SpellDamage.Hit(Get) is { Max: > 0 } hit && Get("hundred_times_casts_per_second") is int cps and > 0)
+        {
+            var (perUse, perSecond) = SpellDamage.Display(hit, cps / 100.0);
+            stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = perUse;
+            stats[StatKeys.HundredTimesDamagePerSecond] = perSecond;
         }
         if (Skills.FindByRow(id, effect, 1, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
         {
