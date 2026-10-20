@@ -180,11 +180,11 @@ data is in [19](docs/protocol/19-gems.md).
   "[UNUSED] …" or "WIP …" are never created.
 
 ### Gems 1: gem levels, stable skill ids and requirements (#62)
-- **Known:** every socketed skill gem grants its level-1 skill, with ids in socket order. The client derives a gem's
+- **Known:** every socketed skill gem grants its level-1 skill; each keeps its skill id while it stays socketed, and an
+  aura or Righteous Fire ends with its gem (part (a), [19](docs/protocol/19-gems.md) §3). The client derives a gem's
   level from its experience ([19](docs/protocol/19-gems.md) §1). GrantedEffectsPerLevel, GrantedEffectStatSetsPerLevel
   and GrantedEffectQualityStats hold each level's numbers and the quality stats.
-- **Start:** three PRs. (a) One skill id per gem, kept while it stays socketed, and auras that end with their gem.
-  (b) Gem levels: the level from experience, each level's stats, cost, cooldown and reservation, quality stats (rounded
+- **Start:** two more PRs. (b) Gem levels: the level from experience, each level's stats, cost, cooldown and reservation, quality stats (rounded
   down), transfigured and Trarthan variants, the Vaal gem's base skill, and `/gem <name> [level] [quality]`. One PR if
   it holds together, with extra live testing; first find where the variant sits in the gem's item data. (c) Requirements:
   the level and attribute requirements, refusing to socket, and the disabled state.

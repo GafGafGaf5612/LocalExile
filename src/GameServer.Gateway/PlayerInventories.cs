@@ -313,11 +313,14 @@ sealed class PlayerInventories
     public IReadOnlyList<Item> SocketedGems() => [.. SocketedGemsByItem().Select(g => g.Gem)];
 
     /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
-    public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem()
+    public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem() => [.. SocketedGemPlaces().Select(g => (g.ItemId, g.Gem))];
+
+    /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in and its socket.</summary>
+    public IReadOnlyList<(uint ItemId, int Socket, Item Gem)> SocketedGemPlaces()
     {
         lock (_lock)
             return [.. VisibleSlots.Keys.Order().SelectMany(r => _items.TryGetValue(r, out var l) ? l : [])
-                .SelectMany(i => i.Item.Sockets.Select(s => s.Gem).OfType<Item>().Select(g => (i.Id, g)))];
+                .SelectMany(i => i.Item.Sockets.Select((s, socket) => (i.Id, socket, s.Gem)).Where(g => g.Gem is not null).Select(g => (g.Id, g.socket, g.Gem!)))];
     }
 
     static readonly string[] OneHand = ["Claw", "Dagger", "Wand", "One Hand Sword", "Thrusting One Hand Sword", "One Hand Axe", "One Hand Mace", "Sceptre", "Rune Dagger"];

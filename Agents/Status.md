@@ -63,6 +63,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Partly working
 
+- **Stable gem skill ids (tested, not yet checked with the real client).** Each gem keeps its skill id while it stays
+  socketed (a moved gem keeps its own), so skill bar keys no longer move when other gems come or go; a skill that goes
+  away ends its aura or Righteous Fire; one aura of a kind runs at a time (`GemSkillIds.cs`; [19](docs/protocol/19-gems.md) §3).
+
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel
   (`ManaReservationFlat` / `ManaReservationPercent`), reduced by the passive/mastery reservation efficiency and sent as
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
@@ -149,8 +153,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (302 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (179: inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`dotnet test tests/GameServer.Core.Tests` (306 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (196: stable gem skill ids, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.

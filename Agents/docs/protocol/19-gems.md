@@ -70,8 +70,13 @@ The server writes the component as `i32 experience, u32 0, u8 0, u16 0` (`Item.P
 
 ## 3. Skills from gems today
 
-- Each socketed skill gem's GrantedEffect at level 1, sent in the Actor skill list (`GemSkills`, `GemSkillEffects`),
-  with ids in socket order.
+- Each socketed skill gem's GrantedEffect at level 1, sent in the Actor skill list (`GemSkills`, `GemSkillEffects`).
+- **Skill ids stay with their gem** (`GemSkillIds`): a gem keeps its skill id while it stays socketed, a gem moved to
+  another socket keeps it too (matched by its skill), and a new gem takes the lowest free one of the 64 gem skill ids. The
+  client binds skill bar keys by skill id: with ids given in socket order, taking Haste out of a wand gave Righteous Fire
+  Haste's id, and Haste's keys then cast Righteous Fire (live 2026-10-20).
+- A skill that goes away (its gem left the equipment) ends its aura or Righteous Fire, and the reserved mana comes back.
+  One aura of a kind runs at a time: a second gem of the same aura can't start it.
 - Support gems are not granted: one as a skill crashed the client ([13](13-items.md) §6). The skill record has a
   support list ([11](11-skills.md) §3), not used yet.
 - Skill changes after login (equipment, levels, passives, auras) go out as the 0x20 update, which removes skills and
