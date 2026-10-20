@@ -3,11 +3,13 @@
 #   starts all three (logs in logs/live-*.log) and launches Client/Game.patched.exe through the local patching server.
 #   -NoClient   keep a running client (it drops to the login screen; log in again)
 #   -NoBuild    skip the builds
+#   -NoExtract  skip scripts/dev/extract-data.ps1, which otherwise first extracts any missing or outdated game data into
+#               data/ (a quick check when nothing is missing)
 #   -Walkmaps   also run scripts/walkmaps/walkmaps.py (needs Python + `pip install frida`): captures the walk map of every
 #               area the client generates into data/walkability/
 #   -Only Gateway[,Auth,Patch]   rebuild and restart only these servers; the others and the client keep running (implies
 #               -NoClient). Restarting the Gateway drops the client to the login screen, but Auth keeps the login session.
-param([switch]$NoClient, [switch]$NoBuild, [switch]$Walkmaps, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
+param([switch]$NoClient, [switch]$NoBuild, [switch]$NoExtract, [switch]$Walkmaps, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -31,6 +33,9 @@ if ($Walkmaps) {
     & $python -c 'import frida' 2>$null
     Need ($LASTEXITCODE -eq 0) 'the frida Python package is missing: python -m pip install frida'
 }
+
+# Game data from the GGPK (data/tables, object-types.json, ...): before the servers start, since they read it once.
+if (-not $NoExtract) { & (Join-Path $PSScriptRoot 'extract-data.ps1') }
 
 # Without this the Gateway stops after creating the player and the client never enters the area.
 if (-not $env:Game_GATEWAY_ENTER) { $env:Game_GATEWAY_ENTER = '1' }

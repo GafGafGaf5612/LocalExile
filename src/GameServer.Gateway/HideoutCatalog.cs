@@ -25,7 +25,7 @@ static class HideoutCatalog
     {
         var list = Load("data/hideouts.json", "data/tables");
         Console.WriteLine(list.Count == 0
-            ? "[gateway] hideouts: no data/hideouts.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts), hideouts are off"
+            ? "[gateway] hideouts: no data/hideouts.json (run scripts/dev/extract-data.ps1), hideouts are off"
             : $"[gateway] hideouts: {list.Count}, default {DefaultOf(list)?.Name ?? "none"}");
         return list;
     });

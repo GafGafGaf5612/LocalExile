@@ -32,6 +32,7 @@ if (!File.Exists(clientExe))
     return 1;
 }
 HncSender.LoadMask(File.ReadAllBytes(clientExe));
+if (GameDataFiles.Warning() is { } missingData) Console.WriteLine(missingData);
 
 // Every item sent carries its level requirement (13-items.md §2d): the client shows and checks the byte it receives.
 // Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead.
@@ -2530,7 +2531,7 @@ static async Task WarpToHideout(string remote, NetworkStream stream, ConnectionC
 {
     if (HideoutCatalog.Default is not { } hideout)
     {
-        Console.WriteLine($"[gateway] {remote} {why}: no data/hideouts.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk hideouts)");
+        Console.WriteLine($"[gateway] {remote} {why}: no data/hideouts.json (run scripts/dev/extract-data.ps1)");
         return;
     }
     if (conn.Layout.Hash == hideout.AreaHash16) { Console.WriteLine($"[gateway] {remote} {why}: already in the {hideout.Name}"); return; }
