@@ -4,7 +4,9 @@ State of 2026-10-20: every character has its hideout unlocked and owns the Lush 
 panel's Hideout button takes the player there, next to its waypoint. The hideout has its Waypoint (travel back), its
 Stash, Nessa and a map device that opens the map device window. The HUD shows the hideout Edit button. Verified live
 (2026-10-20): travel, arrival, the stash, Nessa, the Edit button showing, the map device hovered, clicked and its window
-opened. Not done yet: the decorations, editing, the map device's slots and activation, logging in to the hideout.
+opened. The map device runs maps (§5, live 2026-10-20): a map goes into its slots, Activate opens the map's area and
+six portals appear around the device, each taking the player into that map once. Not done yet: the decorations,
+editing, logging in to the hideout, where the player arrives in a map.
 
 ```mermaid
 sequenceDiagram
@@ -105,12 +107,91 @@ which opens the **map device window** (case 5 → listeners at instance +0x1778 
 (`0x140dce290`, mode 0x56). The window's slots are Inventories row 13 `Map1` (3 × 2), already registered on login.
 The client sent C→S `0x00d8 000000` once while the window was open (not decoded).
 
+## 5. The map device: slots, Activate, portals
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Gateway
+    C->>G: 0x28 / 0x2a a map into inventory 14 (row 13 Map1)
+    C->>G: 0x00d8 Activate
+    G->>C: 0xbf inventory 14: the slots consumed
+    G->>C: 0x2b9 x 6 MultiplexPortal, 0x1a9
+    G->>C: 0x008f the device's portals and their area (1 s later)
+    C->>G: 0x24 on a portal
+    G->>C: 0x008f that portal with area 0, 0x2bb, 0x2b2 / 0x27 into the map
+```
+
+**Slots.** Inventories row 13 `Map1` (3 × 2, inventory id 14) is an ordinary grid: items go in and out with the usual
+item messages (13-items.md). The server takes only the ItemClasses `Map` and `MapFragment` there
+(`PlayerInventories.Accepts`). Maps need the item **Map** component (read `0x1423f3f10`, write `0x1423f3e60`: u8 +0x19,
+u8 +0x18, u8 flag, then a u32 HASH32 when the flag is set; the server sends three zeros). `/item Beach Map` makes one
+(`MapAtlasBeach`, tier 2).
+
+**Activate** is **C→S 0x00d8** (5 bytes): u16 BE, u8. The window's button handler `0x140c2a1c0` (window mode 0xd)
+calls `0x142166480`, which writes a u16 from the target its slots name (+0x7b; 0 seen with a map in the slots) and a
+u8 (0 seen); the writer class is `0x1435bff20`, as C→S 0xc7. Mode 0x5e (another device) sends C→S 0x296 instead.
+The server checks the slots itself (`MapDevice.Check`): only maps and map fragments, and exactly one map. Otherwise
+nothing is consumed and a chat line (S→C 0x17) gives the reason. Then the slots are emptied (0xbf), the map's area
+opens (Maps.dat `BaseItemTypesKey` → `Regular_WorldAreasKey`), and six portals appear on a ring of 16 cells around
+the device. Fragments are consumed with the map but add nothing yet.
+
+**Portals** are `Metadata/MiscellaneousObjects/MultiplexPortal` (`MapPortalObject`): Positioned, BaseEvents, StateMachine,
+Animated, Portal, Transitionable, MinimapIcon, InteractionAction, all read except BaseEvents (Frida
+`check-components.js`: 36 bytes, nothing left). StateMachine holds PortalBase.ot's shared states (standard_portal 1,
+portal, map_device_index, map_device_large). The Portal component (`0x141e2cee0`) reads one u8, the multiplex portal
+type (`0x141e2cf40` stores it in the "portal" state; MultiplexPortal.ot: 1 player, 2 town, 3 map device, 4 map return).
+
+**A portal object alone is never drawn.** **S→C 0x008f** (class `0x1435dcc00`, read `0x1421a0a00`; dispatcher case
+0x21 → `0x142186070`) lists the device's portals:
+
+| Field | Meaning |
+|---|---|
+| u8 | flags: bit0 → +0x32, bit1 → +0x33, bit2: a u64 follows at the end |
+| u8, u8 | +0x2e, +0x31 (0) |
+| u32 BE | the map device object (looked up; its Functions get `on_map_portal_opened` / `on_map_portal_closed`) |
+| u16 BE, u8, u8 | +0x2c, +0x2f, +0x30 (0) |
+| u8 n, n × entry | `0x1421b9af0`: u32 BE portal object, u16 BE area HASH16; when the area is not 0: u16 BE portal variation (MicrotransactionPortalVariations; 0 the default), u8, u8, u8 model (`0x141e2d240`: 0, 1, 2 pick three built-in models), wstr (the owner's name) |
+
+For each listed portal object the client already has, PortalClient vtable +0xb8 (`0x14161a020`) gives it its area, its
+model and rendering, and the device runs `on_map_portal_opened` (index, object). A portal that was listed before and
+is now missing or has area 0 closes (+0xc0) and runs `on_map_portal_closed`. Seen live:
+- 0x008f in the same burst as the portals' 0x2b9 reaches none of them (they are not created yet); on entering an area
+  the objects also wait for the world to activate. The Gateway sends it 1 s after creating them (2 s on entry).
+- Type 3 (map device) gets its nametag but no model: MultiplexPortal.ot enables its rendering only `on_transition`.
+  Created untransitioned and opened with S→C 0x2ba to Transitionable (component 5, u8 1), the client hung, or
+  crashed with the update 2 s later; that was before 0x008f had given the portal its area. **Type 1 (player) renders**,
+  so the Gateway uses it (`Game_MAP_PORTAL_TYPE` overrides).
+
+**Taking a portal** (C→S 0x24): the player walks there, the portal is sent with area 0 in 0x008f and removed (0x2bb),
+and the player changes area into the map: the first portal makes a new instance (Auth "transfer" New), the others enter
+that one (`MapDevice.Entered`). The open map is kept per character in the Gateway (`MapDevice.OpenOf`; lost on a Gateway
+restart), so the portals left stand at the device again when the player comes back. A new Activate replaces them.
+`/map_portal [type] [created] [open ms] [model]` (dev) places one test portal.
+
+**Timing and order.** The portals left come up one after another, `Game_MAP_PORTAL_GAP_MS` (150) apart; each is listed
+in 0x008f `Game_MAP_PORTAL_LIST_MS` (100) after its create; on entering the hideout the first waits
+`Game_MAP_PORTAL_ENTRY_MS` (1500). With a list delay of 0 each portal is drawn only by the next one's list, so the last
+never is (live). The open map keeps the places left (0–5 on the ring), so the portal taken is the one missing later.
+
+**In the map.** Every area a map opens (`MapDevice.IsMapArea`) gets a portal back next to the arrival point, listed in
+0x008f with device 0 (the handler then skips the device's events but still sets the portal's area): it leads to the
+hideout and is not used up. The map's monster packs are its Maps.dat `MonsterPacksKeys` (Beach: `atlas-crab1`, level
+69), which no MonsterPacks row lists by area (14-monster-packs.md). Beach's boss room (`MapBeach2/Rooms/boss_1.arm`,
+points `teleport1-%areaname%`, `telepad1`, `teleport2-Arena`, `telepad2`) has two `grovewall_entrance` gates that no
+topology transition names: two such captured gates are paired, each teleporting the player (0x1b7) next to the other
+(`AreaTransitionObject.TeleportTo`); the telepads' own cells are not in `data/room-points.json`. Nessa sells 10 Beach
+Maps. Beach's walk map is a `-Walkmaps` capture (2484 × 1656; spawn the deepest cell, (459, 884)).
+
 ## Open
 
 - The decorations (trees, tents …): `Metadata/MiscellaneousObjects/HideoutDoodad` and other types, each with its own
   component list; `HideoutObject` writes the supported ones.
 - Editing: the Edit button shows; moving, placing and saving doodads (the client's messages) are not served.
-- The map device: putting maps in its slots, Activate, portals; C→S 0x00d8.
+- The map device: the arrival in a map without a walk map (the player can stand in the sea; `live.ps1 -Walkmaps` per
+  map), the telepads' exact cells, fragments and device recipes (MapDeviceRecipes), the map's mods and area level, the map
+  device type (3) portal's own model and "Map Portal" text (needs its open transition, which crashed), the window's
+  u16 target and the 0x008f fields left at 0.
 - Logging in to the hideout after logging out there (the real game does); Resurrect in a map → the hideout.
 - Choosing another hideout (the Hideout selection window), visiting other players' hideouts (0x17a names them).
 - Which UI reads the second Hideouts key.

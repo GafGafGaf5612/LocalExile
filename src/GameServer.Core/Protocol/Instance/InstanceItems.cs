@@ -64,7 +64,7 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     public static readonly HashSet<string> NoData = ["LocalStats", "AttributeRequirements", "Weapon", "Usable", "Flask", "Quest", "Shield", "RenderItem"];
 
     /// <summary>Components <see cref="Payload"/> can write.</summary>
-    public static readonly HashSet<string> Supported = [.. NoData, "Base", "Mods", "Armour", "Quality", "Sockets", "Charges", "Stack", "SkillGem"];
+    public static readonly HashSet<string> Supported = [.. NoData, "Base", "Mods", "Armour", "Quality", "Sockets", "Charges", "Stack", "SkillGem", "Map"];
 
     /// <summary>The character level the item requires, sent in the Mods component (+0x2bc). The client keeps the byte
     /// it receives (it only recomputes it, 0x1421e03d0, when an item's mods change on its side) and shows it in the
@@ -124,6 +124,9 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 case "Quality": w.U8(Quality); break;                 // 0x1424aec50
                 case "Charges": w.CompactI(Charges); break;           // 0x14249d4b0: signed compact (0x141e490e0)
                 case "Stack": w.U16(StackSize); break;                // 0x1423f4b30
+                // 0x1423f3f10 (write 0x1423f3e60): u8 +0x19, u8 +0x18, u8 flag (1: a u32 HASH32 follows, looked up in a
+                // table; stored at +0x20). Zeros: the map's tier and area come from Maps.dat by its type.
+                case "Map": w.U8(0).U8(0).U8(0); break;
                 // 0x14246eb00: i32 experience (-1: none), u32 +0x3c, u8 +0x10, u16 +0x40.
                 case "SkillGem": w.I32(GemExperience).U32(0).U8(0).U16(0); break;
                 // 0x1421e2e20: u8 = bit0/bit1 (special, nothing more) | socket count << 2 | link group count << 5; per socket

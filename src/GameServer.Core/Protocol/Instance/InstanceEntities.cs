@@ -363,6 +363,10 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 {
     public const string MetadataPath = "Metadata/MiscellaneousObjects/AreaTransition";
 
+    /// <summary>Set for a transition that leads within its own area (a map's boss arena gate): where it takes the player.
+    /// Server side only; the blob names the area itself as the destination.</summary>
+    public (int X, int Y)? TeleportTo { get; init; }
+
     /// <summary>Components that read data, in the order the client deserializes them for this type (traced live
     /// 2026-10-16: Positioned, BaseEvents (no data), Animated, AreaTransition (live vtable 0x14346de00), Stats,
     /// ObjectMagicProperties, MinimapIcon, InteractionAction, then two components the loop does not reach).</summary>

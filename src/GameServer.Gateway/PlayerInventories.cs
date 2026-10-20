@@ -10,7 +10,7 @@ using GameServer.Core.Protocol.Instance;
 sealed class PlayerInventories
 {
     public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
-        Boots = 9, Flask = 11, Cursor = InstanceInventories.CursorRow;
+        Boots = 9, Flask = 11, MapDevice = 13, Cursor = InstanceInventories.CursorRow;
 
     private static readonly ConcurrentDictionary<string, PlayerInventories> ByCharacter = new(StringComparer.OrdinalIgnoreCase);
 
@@ -148,6 +148,7 @@ sealed class PlayerInventories
             {
                 if (x < 0 || y < 0 || x + shape.Width > slot.Width || y + shape.Height > slot.Height) { why = "outside the grid"; return null; }
                 if (row == Flask && !Accepts(row, shape.Class)) { why = $"{shape.Class} does not go in the flask slots"; return null; }
+                if (row == MapDevice && !Accepts(row, shape.Class)) { why = $"{shape.Class} does not go in the map device"; return null; }
                 inTheWay = [.. ItemsIn(row).Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height)];
             }
             if (inTheWay.Count > 1) { why = $"{inTheWay.Count} items in the way"; return null; }
@@ -322,7 +323,8 @@ sealed class PlayerInventories
     static readonly string[] OneHand = ["Claw", "Dagger", "Wand", "One Hand Sword", "Thrusting One Hand Sword", "One Hand Axe", "One Hand Mace", "Sceptre", "Rune Dagger"];
     static readonly string[] TwoHand = ["Bow", "Staff", "Two Hand Sword", "Two Hand Axe", "Two Hand Mace", "Warstaff", "FishingRod"];
 
-    /// <summary>Whether an item class goes into an equipment row (Inventories.dat rows 1-11, 14, 15, 102). Other single-item
+    /// <summary>Whether an item class goes into an equipment row (Inventories.dat rows 1-11, 14, 15, 102) or the map device's
+    /// slots (row 13: maps and map fragments). Other single-item
     /// rows (crafting benches …) take anything.</summary>
     public static bool Accepts(byte row, string itemClass) => row switch
     {
@@ -335,6 +337,7 @@ sealed class PlayerInventories
         8 => itemClass == "Gloves",
         9 => itemClass == "Boots",
         10 => itemClass == "Belt",
+        MapDevice => itemClass is global::MapDevice.MapClass or global::MapDevice.FragmentClass,
         Flask => itemClass is "LifeFlask" or "ManaFlask" or "HybridFlask" or "UtilityFlask" or "UtilityFlaskCritical",
         _ => true,
     };

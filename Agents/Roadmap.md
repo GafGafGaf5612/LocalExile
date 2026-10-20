@@ -73,11 +73,11 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** monsters in areas match the official game's (mods, rarity bonuses, emerge, boss bar).
 
 ### Hideouts: decorations, editing and the map device
-- **Known:** the Lush Hideout works: travel, waypoint, stash, Nessa, the Edit button and the map device window
-  ([21](docs/protocol/21-hideouts.md)). Its decoration (`data/hideouts.json`) lists every doodad with its type and model.
+- **Known:** the Lush Hideout works: travel, waypoint, stash, Nessa, the Edit button and the map device: slots, Activate
+  and six portals into the map ([21](docs/protocol/21-hideouts.md) §5). Its decoration (`data/hideouts.json`) lists every doodad with its type and model.
 - **Start:** create the decorations (`HideoutObject`, each type's components from data/object-types.json); the Edit
-  mode's client messages (move, place, remove, save); the map device's slots (Inventories row 13 `Map1`), Activate and
-  portals (C→S 0x00d8 seen); log in to the hideout after logging out there; the hideout selection window.
+  mode's client messages (move, place, remove, save); maps: the arrival point, a return portal, fragments and device
+  recipes, map mods; log in to the hideout after logging out there; the hideout selection window.
 - **Done when:** the hideout looks like the real one, can be edited and saved, and maps can be run from its device.
 
 ### NPCs: dialogue options, shops and the other towns
