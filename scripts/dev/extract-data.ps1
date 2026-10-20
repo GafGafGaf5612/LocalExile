@@ -98,23 +98,52 @@ if ($todo | Where-Object { $_.Runner -eq 'python' }) {
 
 $logs = Join-Path $repo 'logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
-foreach ($e in $todo) {
-    $log = Join-Path $logs "extract-$($e.Name).log"
-    Write-Output "extracting $($e.Name) ($($reason[$e.Name])) ..."
-    $started = Get-Date
-    $exe = 'dotnet'; $exeArgs = $e.Args
-    if ($e.Runner -eq 'python') { $exe = $python; $exeArgs = @('-I') + $e.Args }
-    # Output goes to a file: a pipe would keep PowerShell 5.1 from seeing the exit code, and the logs stay readable.
+
+# Runs $exe with its output in $log and $log.err and returns its exit code. Output goes to files: a pipe would keep
+# PowerShell 5.1 from seeing the exit code, and the logs stay readable.
+# It waits for the process itself, not with Start-Process -Wait: in Windows PowerShell 5.1 -Wait also waits for every
+# process the child started, and dotnet build/run leaves an MSBuild worker node (MSBuild.dll /nodeReuse:true) running
+# for minutes, so -Wait never returned (live.ps1 sat at "extracting tables ..." with the entry long done). The env vars
+# set below keep those nodes from being left at all.
+function Invoke-Logged($exe, $exeArgs, $log) {
     $p = Start-Process $exe -ArgumentList ($exeArgs | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) `
-        -WorkingDirectory $repo -NoNewWindow -Wait -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
-    $output = Join-Path $repo $e.Outputs[0]
-    $fresh = (Test-Path $output) -and (Get-Item $output).LastWriteTime -ge $started.AddSeconds(-2)
-    if ($p.ExitCode -ne 0 -or -not $fresh) {
-        $tail = (Get-Content $log, "$log.err" -Tail 15 -ErrorAction SilentlyContinue) -join "`n"
-        throw "extract-data: $($e.Name) failed (exit $($p.ExitCode)$(if (-not $fresh) { ", $($e.Outputs[0]) not written" }); logs\extract-$($e.Name).log):`n$tail"
-    }
-    $stamps[$e.Name] = [pscustomobject]@{ version = $e.Version; at = (Get-Date).ToString('s') }
-    $stamps | ConvertTo-Json | Set-Content $stampFile -Encoding utf8
-    Write-Output "  done in $([int]((Get-Date) - $started).TotalSeconds) s"
+        -WorkingDirectory $repo -NoNewWindow -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+    $null = $p.Handle  # keeps the handle open, or ExitCode reads as empty after the wait in PowerShell 5.1
+    $p.WaitForExit()
+    return $p.ExitCode
 }
+function Tail($log) { (Get-Content $log, "$log.err" -Tail 15 -ErrorAction SilentlyContinue) -join "`n" }
+
+$savedEnv = @{}
+foreach ($kv in @{ MSBUILDDISABLENODEREUSE = '1'; DOTNET_CLI_USE_MSBUILD_SERVER = '0' }.GetEnumerator()) {
+    $savedEnv[$kv.Key] = [Environment]::GetEnvironmentVariable($kv.Key)
+    [Environment]::SetEnvironmentVariable($kv.Key, $kv.Value)
+}
+try {
+    # Build each dotnet project once, then run it with --no-build: the atlas entries share one project.
+    $projects = @($todo | Where-Object { $_.Runner -eq 'dotnet' } | ForEach-Object { $_.Args[2] } | Select-Object -Unique)
+    foreach ($proj in $projects) {
+        $log = Join-Path $logs "extract-build-$(Split-Path $proj -Leaf).log"
+        Write-Output "building $proj ..."
+        $code = Invoke-Logged 'dotnet' @('build', $proj) $log
+        if ($code -ne 0) { throw "extract-data: building $proj failed (exit $code; logs\$(Split-Path $log -Leaf)):`n$(Tail $log)" }
+    }
+    foreach ($e in $todo) {
+        $log = Join-Path $logs "extract-$($e.Name).log"
+        Write-Output "extracting $($e.Name) ($($reason[$e.Name])) ..."
+        $started = Get-Date
+        $exe = 'dotnet'; $exeArgs = @('run', '--no-build') + $e.Args[1..($e.Args.Count - 1)]
+        if ($e.Runner -eq 'python') { $exe = $python; $exeArgs = @('-I') + $e.Args }
+        $code = Invoke-Logged $exe $exeArgs $log
+        $output = Join-Path $repo $e.Outputs[0]
+        $fresh = (Test-Path $output) -and (Get-Item $output).LastWriteTime -ge $started.AddSeconds(-2)
+        if ($code -ne 0 -or -not $fresh) {
+            throw "extract-data: $($e.Name) failed (exit $code$(if (-not $fresh) { ", $($e.Outputs[0]) not written" }); logs\extract-$($e.Name).log):`n$(Tail $log)"
+        }
+        $stamps[$e.Name] = [pscustomobject]@{ version = $e.Version; at = (Get-Date).ToString('s') }
+        $stamps | ConvertTo-Json | Set-Content $stampFile -Encoding utf8
+        Write-Output "  done in $([int]((Get-Date) - $started).TotalSeconds) s"
+    }
+}
+finally { foreach ($k in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($k, $savedEnv[$k]) } }
 Write-Output "game data extracted: $(($todo | ForEach-Object { $_.Name }) -join ', ')"
