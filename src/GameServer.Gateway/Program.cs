@@ -33,6 +33,10 @@ HncSender.LoadMask(File.ReadAllBytes(clientExe));
 // Local play only by default; Game_BIND=0.0.0.0 to accept other machines (then also set Game_GATEWAY_HOST).
 var bind = IPAddress.Parse(Environment.GetEnvironmentVariable("Game_BIND") ?? "127.0.0.1");
 var listener = new TcpListener(bind, port);
+// Before any client connects: Auth forgets the players of this Gateway's last run, which may have stopped without
+// sending "leave" for them (their instances would never expire).
+var started = await InstanceControl.CallAsync(new ControlRequest { Op = "gateway_started" });
+if (!started.Ok) Console.WriteLine($"[gateway] Auth did not take gateway_started: {started.Error}");
 listener.Start();
 Console.WriteLine($"[gateway] listening on {bind}:{port}");
 

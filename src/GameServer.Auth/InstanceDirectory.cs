@@ -102,6 +102,14 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
 
     private ControlResponse Handle(ControlRequest req)
     {
+        // A Gateway starting has no connections: whoever its last run had in an instance is gone, and a run that stopped
+        // without closing them never sent "leave" (no ticket needed).
+        if (req.Op == "gateway_started")
+        {
+            int removed = registry.LeaveAll();
+            Console.WriteLine($"[auth] gateway started: {removed} player(s) left their instances");
+            return new ControlResponse { Ok = true };
+        }
         if (!_tickets.TryGetValue(req.Ticket, out var info))
             return new ControlResponse { Ok = false, Error = $"unknown ticket 0x{req.Ticket:x8}" };
         switch (req.Op)
