@@ -112,11 +112,11 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ### Items: mods, rarity, using flasks and currency
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); rarity, implicits and every mod
-  list are sent and saved (13 §2a). Open issues: rolling magic / rare items and rare names (#58), mod stats on the
-  character (#59), enchants / crafted / corrupted / influences / uniques (#60), area and monster mods (#61).
+  list are sent and saved (13 §2a); magic and rare items roll, drop unidentified and a Scroll of Wisdom identifies
+  them (13 §2b). Open issues: mod stats on the character (#59), enchants / crafted / corrupted / influences / uniques (#60), area and monster mods (#61).
   The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`, [12](docs/protocol/12-quests.md)).
-- **Start:** Mods.dat spawn weights by the base's tags and ModFamily for rolling; the Words.dat key in
-  ObjectMagicProperties bit 8; C→S 0x4a for currency on an item (13 §4), flask charges after use.
+- **Start:** other currency through C→S 0x71 (13 §4: Orb of Transmutation, Alteration, Augmentation, Regal, Alchemy,
+  Chaos, Scouring can reuse `ItemRolls`), mod stats into `CharacterStats` (#59), flask charges after use.
 - **Socket colours (3.29 rules):** any gem goes into any socket, whatever the colours, and a gem in a red, green or blue
   socket of its own colour gets +10% quality. Sockets are white by default; each has a small chance to be red, green or
   blue instead, in proportion to the item's attribute requirements, and that chance rises with item level. Chromatic Orbs
@@ -124,8 +124,7 @@ Items are in rough priority order within each section. "Known" says what is alre
   of Binding and the Crafting Bench add white sockets. Vaal Orb corruption turns a white socket coloured, and the Locus
   of Corruption turns all white sockets coloured. Today `ItemCatalog.DefaultSockets` makes every socket the item's main
   attribute colour, which is the pre-3.29 look.
-- **Done when:** items drop magic and rare with rolled affixes that count on the character, and flasks and currency
-  can be used.
+- **Done when:** item mods count on the character, and flasks and currency can be used.
 
 ### A damage model (next)
 - **Known:** both sides hit with flat damage ranges ([11](docs/protocol/11-skills.md) §5, §6); the player's life is a

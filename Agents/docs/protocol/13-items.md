@@ -68,7 +68,7 @@ u8           (+0x7a, unknown; 0)
 bit 9:  u8 AlternateQualityTypes row, u8
 bit 4:  implicit list      bit 6: enchant list      bit 10: scourge list      bit 11: hidden list
 identified only:
-  bit 7: u32 length + UTF-16 name, else bit 8: u8 n × u32 Words.dat key (rare names; key not mapped yet)
+  bit 7: u32 length + UTF-16 name, else bit 8: u8 n × u32 Words.dat HASH32 (a rare name: prefix, suffix)
   bit 5: explicit list
 ```
 
@@ -80,14 +80,39 @@ kind (implicit 1, explicit 2, enchant 3, scourge and hidden without one).
 
 What the tooltip shows (live, 2026-10-20, an Iron Ring with `/mod <list> IncreasedLife1`): implicit under the
 properties, enchant above the implicits, explicit below a separator, scourge as orange lines among the explicits
-(Hellscape), hidden not at all. Magic items get their name from the affixes (Healthy Iron Ring); a rare item without a
-Words.dat name shows the base name. Unidentified items show "Unidentified" and their implicits only.
+(Hellscape), hidden not at all. Magic items get their name from the affixes (Healthy Iron Ring); a rare item shows its
+two Words.dat words above the base name (Corruption Gyre / Iron Ring; verified 2026-10-20 that the key is HASH32), or the
+base name without them. Unidentified items show "Unidentified" and their implicits only.
 
 New items roll their BaseItemTypes `Implicit_ModsKeys` (Driftwood Wand: `SpellDamageOnWeaponImplicitWand1`, 8-12%).
 Saves keep rarity, identified and each mod by Mods.dat Id, list and values; an item saved before mods gets its type's
 implicits again. Dev commands on the held item: `/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part>
 [values…]` (missing values rolled, the list defaults from GenerationType), `/mod clear [list]`, `/mods`,
 `/rarity <normal|magic|rare|unique> [unid]`.
+
+## 2b. Rolling magic and rare items
+
+`ItemRolls.cs`. An affix can roll when its Mods.dat row has the base's BaseItemTypes **ModDomain** (1 items, flasks
+their own), GenerationType 1 (prefix) or 2 (suffix), Level at most the item level, is not essence-only, and has a
+weight above 0 for the item's **tags**: the first of its SpawnWeight tags the item has gives the weight, the first
+matching GenerationWeight tag multiplies it by weight / 100. An item's tags are the `tag = "…"` lines of the Base
+sections along its `.it` chain (`ot_components.py --items` writes them to `data/item-types.json` as `tags`; regenerate
+an older file) plus the row's own TagsKeys: Driftwood Wand → default, weapon, onehand, wand, ranged, one_hand_weapon,
+wand_can_roll_caster_modifiers.
+
+Each affix is drawn by weight from all allowed mods (prefixes and suffixes compete), skipping mods that share a
+ModFamily with one already chosen. Magic: 1-2 affixes, at most one prefix and one suffix. Rare: 4 (7/12), 5 (4/12) or
+6 (1/12) affixes, at most three of each, and a name: one word from Words.dat list 1 (prefixes) and one from list 2
+(suffixes, with a leading space), drawn by the same tag weights. Values are rolled uniformly in each stat's range.
+These counts and chances are our own; the game's are not known.
+
+Drops: equipment from a normal / magic / rare / unique monster is magic 25 / 35 / 40 / 30% and rare 5 / 10 / 25 / 50%
+of the time, at the monster's level as item level, and drops **unidentified**. Dev: `/item <type> [count] magic|rare`
+(at the character's level), `/roll <magic|rare> [item level]` on the held item.
+
+**Identifying** (C→S 0x71, §4): right-click a Scroll of Wisdom, then click an unidentified item. The server marks it
+identified, sends it again (its explicit list and name) and takes one scroll from the stack; an identified target
+changes nothing.
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 
@@ -130,6 +155,7 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` / `0x141f90340`, senders `0x14215f520` / `0x14215f570` | inventory request, not mapped: u8, u32, u8 flag (0 / 1 by sender) | not handled |
 | 0x58 | 10 | `0x1435bf8a8` / `0x141f926a0` | use an item that needs no target (right-click): u32 inventory id, u32 item id, both big-endian | an Orb of Regret loses one item and adds one refund point (0xbf the stack, 0x33 the tree) |
+| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20) | a Scroll of Wisdom identifies the target (§2b): 0xbf with the stack and the target |
 | 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | the held item clicked **on an item** (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 the clicked item's id, u8 flags (bit 2 = Shift; HNC bits 3-7), u8 (3), u16 (low byte first, differs every click, unknown) | a merge (0xbf the stack, 0xbf cursor), else a swap as 0x2a |
 | 0x7c | 17 | `0x1435bfdd8` / `0x141f90870`, sender `0x142165640` | split a stack (§4a): u32 inventory id, u32 item id, u32 amount, u8 (3), u16 (unknown); no HNC bits | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
 
@@ -248,7 +274,7 @@ linked sockets in the colour of their highest attribute requirement (ComponentAt
 ## Open
 
 - Gem levels and experience, support gems and links.
-- Rare names (bit 8: which Words.dat key the u32 is), rolling magic / rare items (#58), mod stats on the character
+- The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); mod stats on the character
   (#59), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
   effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
 - C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
