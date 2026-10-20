@@ -51,6 +51,8 @@ public class HideoutCatalogTests
         Assert.Equal((218, 335), (waypoint.X, waypoint.Y));
         Assert.Equal("Metadata/Terrain/Missions/Hideouts/Objects/WaypointVariants/waypointcore_forest.ao", waypoint.Model);
         Assert.Equal((230, 364), (lush.First(StashObject.MetadataPath)!.X, lush.First(StashObject.MetadataPath)!.Y));
+        var device = lush.Doodads.Single(HideoutCatalog.IsPlaced);
+        Assert.Equal(("Map Device", 257, 283), (device.Name, device.X, device.Y));   // moved from the decoration's (449, 460)
     }
 
     static string? FindUp(string relative)

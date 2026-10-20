@@ -63,9 +63,9 @@ sealed class NpcCatalog
     public Talk? TalkOf(Npc npc, int index) => _talk.GetValueOrDefault((npc.Row, index));
 
     /// <summary>The town's NPCs, or none.</summary>
-    // Hideouts: Nessa where the decoration puts the hideout NPCs (decoration.hideout's masters stand at (218..223, 325)),
-    // asked for by the user (2026-10-20); the real game has no town NPCs in hideouts.
-    static readonly Placement[] Hideout = [new("Metadata/NPC/Act1/Nessa", 223, 326, 4.0f)];
+    // Hideouts: Nessa, at the cell the user picked in the Lush Hideout (2026-10-20); the real game has no town NPCs in
+    // hideouts.
+    static readonly Placement[] Hideout = [new("Metadata/NPC/Act1/Nessa", 256, 351, 4.0f)];
 
     public static IReadOnlyList<Placement> In(ushort areaHash) =>
         Towns.GetValueOrDefault(areaHash) ?? (HideoutCatalog.ByArea(areaHash) is not null ? Hideout : []);

@@ -48,6 +48,13 @@ static class HideoutCatalog
     /// §2). Decorations are not created yet.</summary>
     public static bool IsPlaced(Doodad d) => d.Type?.EndsWith("MappingDevice", StringComparison.Ordinal) == true;
 
+    // Our own cells for some doodads, replacing the decoration's: (hideout area, doodad name) → cell. The Lush Hideout's
+    // map device stands far out at (449, 460) in its decoration; the user picked (257, 283), near the waypoint (2026-10-20).
+    static readonly Dictionary<(string Area, string Name), (int X, int Y)> Moved = new()
+    {
+        [(DefaultArea, "Map Device")] = (257, 283),
+    };
+
     /// <summary>An object type's deserialized components and shared-state count (data/object-types.json), or null.</summary>
     public static (IReadOnlyList<string> Components, int SharedStates)? TypeOf(string type) =>
         ObjectTypes.Value.TryGetValue(type, out var t) ? t : null;
@@ -86,6 +93,9 @@ static class HideoutCatalog
                 doodads.Add(new Doodad(d.GetProperty("name").GetString() ?? "", hash, type, model, d.GetProperty("x").GetInt32(), d.GetProperty("y").GetInt32(),
                     d.GetProperty("r").GetInt32() / 65536f * 2 * MathF.PI, fv));
             }
+            string area = h.GetProperty("area").GetString() ?? "";
+            for (int i = 0; i < doodads.Count; i++)
+                if (Moved.TryGetValue((area, doodads[i].Name), out var cell)) doodads[i] = doodads[i] with { X = cell.X, Y = cell.Y };
             result.Add(new Hideout(h.GetProperty("row").GetInt32(), (ushort)h.GetProperty("hash16").GetInt32(), h.GetProperty("area").GetString() ?? "",
                 (ushort)h.GetProperty("areaHash16").GetInt32(), h.GetProperty("name").GetString() ?? "", doodads));
         }
