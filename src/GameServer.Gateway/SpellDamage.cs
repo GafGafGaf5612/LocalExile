@@ -27,6 +27,30 @@ static class SpellDamage
         return (min, Math.Max(min, max));
     }
 
+    /// <summary>The same increases applied to a per-type packet, keeping each type separate for conversion and
+    /// mitigation.</summary>
+    public static GameServer.Core.World.DamagePacket Packet(GameServer.Core.World.DamagePacket hit, Func<string, int> get)
+    {
+        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
+        return hit.Select((type, range) =>
+        {
+            string slug = type switch
+            {
+                GameServer.Core.World.DamageType.Physical => "physical",
+                GameServer.Core.World.DamageType.Lightning => "lightning",
+                GameServer.Core.World.DamageType.Cold => "cold",
+                GameServer.Core.World.DamageType.Fire => "fire",
+                GameServer.Core.World.DamageType.Chaos => "chaos",
+                _ => throw new ArgumentOutOfRangeException(nameof(type)),
+            };
+            bool elemental = type is GameServer.Core.World.DamageType.Fire
+                or GameServer.Core.World.DamageType.Cold
+                or GameServer.Core.World.DamageType.Lightning;
+            double factor = Math.Max(0, 1 + (common + (elemental ? get("elemental_damage_+%") : 0) + get($"{slug}_damage_+%")) / 100.0);
+            return range.Scale(factor);
+        });
+    }
+
     /// <summary>One hit: uniform between the minimum and the maximum, fraction dropped.</summary>
     public static int Roll((double Min, double Max) hit, Random rng) => (int)Math.Floor(hit.Min + rng.NextDouble() * (hit.Max - hit.Min));
 

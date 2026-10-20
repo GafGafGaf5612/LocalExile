@@ -1,7 +1,8 @@
 namespace GameServer.Core.World;
 
-/// <summary>The damage types the server can mitigate.</summary>
-public enum DamageType { Physical, Fire, Cold, Lightning, Chaos }
+/// <summary>The damage types the server can mitigate, numbered in the game's conversion order:
+/// physical, lightning, cold, fire, chaos.</summary>
+public enum DamageType { Physical, Lightning, Cold, Fire, Chaos }
 
 /// <summary>
 /// Path of Exile's resistance rule for the simple cases. The floor and absolute cap are taken from Path of Building
@@ -89,6 +90,19 @@ public static class DamageModel
         if (damage <= 0) return 0;
         return damage * (100.0 - Capped(resistance, maxResistance)) / 100.0;
     }
+
+    /// <summary>The resistance and maximum resistance for one damage type.</summary>
+    public readonly record struct ResistanceValue(int Value, int Maximum = DefaultMaxResistance);
+
+    /// <summary>Mitigate every damage type in a hit separately. The game applies each type's own resistance and maximum
+    /// resistance; fractions stay fractional until the final roll.</summary>
+    public static DamagePacket Mitigate(DamagePacket damage, Func<DamageType, ResistanceValue> resistance) =>
+        damage.Select((type, range) =>
+        {
+            var r = resistance(type);
+            return new DamageRange(Mitigate(range.Min, r.Value, r.Maximum),
+                Mitigate(range.Max, r.Value, r.Maximum));
+        });
 
     /// <summary>Path of Building's <c>BlockChanceCap</c>: block chance cannot exceed 90%.</summary>
     public const int BlockChanceCap = 90;

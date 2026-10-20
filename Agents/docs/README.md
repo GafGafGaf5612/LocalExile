@@ -25,6 +25,7 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 | [protocol/17-npcs.md](protocol/17-npcs.md) | NPCs: the object, town placements, talking (0x24 → 0x84), dialogue closed (0x85) |
 | [protocol/18-stash.md](protocol/18-stash.md) | the stash: the object, tab lists (0x21, 0x136), opening (0x7b kind 1), tab contents (0xc7 → 0xc0 + 0xc8), the account's stash |
 | [protocol/19-gems.md](protocol/19-gems.md) | gems: the SkillGem item data, levels from experience, the game data for levels, variants, Vaal gems, requirements, quality and supports |
+| [protocol/20-damage.md](protocol/20-damage.md) | damage packets: types and conversion order, gain as extra, per-type mitigation, damage over time and ailments |
 | [protocol/12-quests.md](protocol/12-quests.md) | quests (research): the data tables, a1q4 "Breaking Some Eggs" and the Submerged Passage blocker |
 | [protocol/06-debugging-log.md](protocol/06-debugging-log.md) | every live run, crash and fix, and lessons |
 | [protocol/address-index.md](protocol/address-index.md) | all client addresses by subsystem |

@@ -127,11 +127,18 @@ Items are in rough priority order within each section. "Known" says what is alre
   attribute colour, which is the pre-3.29 look.
 - **Done when:** items' damage and defences count, and flasks and currency can be used.
 
-### A damage model (next)
-- **Known:** both sides hit with flat damage ranges ([11](docs/protocol/11-skills.md) §5, §6); the player's real life,
-  resistances, armour and evasion are computed from level, passives and base equipment (Status: Armour and Evasion).
-- **Start:** energy shield, penetration/exposure, remaining conditional critical strike stats from the stats both sides
-  already carry; monster skills beyond the first granted effect (ranged, spells).
+### Damage model (foundation done, deeper defence next)
+- **Done:** hits are per-type `DamagePacket`s; conversion follows physical, lightning, cold, fire, chaos, including
+  chained conversion, the 100% cap and gain-as-extra. DoT/ailment formulas and fractional ticks are in the same model,
+  and per-type resistance mitigation works on packets. The default attack, Fireball and monster melee use packets and
+  read the player's/skill's conversion stats ([20](docs/protocol/20-damage.md)). The player's real life, resistances,
+  armour and evasion are computed from level, passives and base equipment, and armour/evasion mitigate monster hits
+  (Status: Armour and Evasion).
+- **Known:** both sides still have flat damage ranges ([11](docs/protocol/11-skills.md) 5, 6); energy shield,
+  penetration, exposure, ailment application, added damage and support modifiers are not modelled.
+- **Start:** energy shield, penetration/exposure, the remaining conditional critical strike stats from the stats both
+  sides already carry; monster skills beyond the first granted effect (ranged, spells). Add support effects through
+  `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
 ### Death screen variants

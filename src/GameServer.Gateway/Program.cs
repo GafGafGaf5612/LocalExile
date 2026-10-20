@@ -8,6 +8,9 @@ using WalkEstimator = GameServer.Core.World.WalkEstimator;
 using Progression = GameServer.Core.World.Progression;
 using DamageModel = GameServer.Core.World.DamageModel;
 using DamageType = GameServer.Core.World.DamageType;
+using DamagePacket = GameServer.Core.World.DamagePacket;
+using DamageRange = GameServer.Core.World.DamageRange;
+using DamageOverTime = GameServer.Core.World.DamageOverTime;
 
 // GameServer.Gateway — the instance (game) server the client connects to after login 0x14, or after 0x27 on an area
 // change (Agents/docs/protocol/02, 09).
@@ -500,7 +503,8 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
     // Its attack: the variety's first granted effect (Hungry Corpse: Melee) at its level, with the variety's attack time,
     // reach and the level's damage as the skill's final stats (11-skills.md §7).
     var damage = Monsters.BaseDamage(variety, level) ?? (1, 1);
-    var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange, damage.Min, damage.Max);
+    var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange,
+        DamagePacket.Of(DamageType.Physical, damage.Min, damage.Max));
     var skill = variety.GrantedEffects is [int effect, ..]
         ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
     var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
@@ -1141,8 +1145,9 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
             $"{hitChance}% chance");
         return;
     }
-    var (minDamage, maxDamage) = weapon.Damage(CharacterPlayerStats(conn));
-    int damage = Random.Shared.Next(minDamage, maxDamage + 1);
+    var hit = weapon.HitDamage(CharacterPlayerStats(conn))
+        .Convert(ConversionFor(conn, -1, attack: true));
+    int damage = hit.RollTotal(Random.Shared);
     bool critical = conn.Pools.AttackCriticalStrikeChance > 0
         && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
     if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
@@ -1170,8 +1175,8 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
 }
 
 // A gem skill used on a monster (C→S 0x24 with a skill id other than the default attack's): echo the action from where the
-// player stands, aimed at the monster, so the client plays the cast. No damage yet: what the client expects after it
-// (projectiles, hits) is still being found, so this logs what it sends.
+// player stands, aimed at the monster, so the client plays the cast. CastGemSkill then pays the cost and runs the
+// skill's effect (projectile, aura or self-cast).
 static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
 {
@@ -1270,8 +1275,8 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
 // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
 // aimed point and on to its range with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid
-// cell), stopping at the first wall or monster on its path; a monster takes the skill's fire damage
-// (spell_minimum/maximum_base_fire_damage; no damage model yet). It explodes there; then the object is removed.
+// cell), stopping at the first wall or monster on its path; a monster takes the skill's damage packet
+// (SkillCatalog.HitDamage, after conversion). It explodes there; then the object is removed.
 static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
@@ -1356,10 +1361,14 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     if (hitId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(hitId);
     if (m is not null && m.Life > 0)
     {
-        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them.
+        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
+        // types separate so conversion and per-type mitigation apply.
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         foreach (var (k, v) in Skills.EffectStats(gem.Effect, 1)) stats[k] = v;
-        int damage = SpellDamage.Roll(SpellDamage.Hit(name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0), Random.Shared);
+        var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, 1),
+                name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
+            .Convert(ConversionFor(conn, gem.Effect, attack: false));
+        int damage = hit.RollTotal(Random.Shared);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
@@ -1426,6 +1435,16 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     int suppression = Suppression(conn).Chance;
     foreach (uint key in SuppressionChanceKeys) stats[key] = suppression;
     return stats;
+}
+
+// Conversion for one hit: the player's stats plus the skill's own stats (base/skill conversion). Player stats win on
+// a key collision; the normal case is that the skill adds stats the player does not have.
+static GameServer.Core.World.DamageConversion ConversionFor(ClientState conn, int effectRow, bool attack)
+{
+    var stats = CharacterPlayerStats(conn);
+    if (effectRow >= 0)
+        foreach (var (key, value) in Skills.EffectStats(effectRow, 1)) stats.TryAdd(key, value);
+    return DamageStats.Conversion(stats, Stats, attack);
 }
 
 // The character's own stats: the class's attributes and the pools (ClassAttributes), then every other stat of the
@@ -2299,7 +2318,9 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         {
             before = conn.PlayerLife;
             dead = before == 0;
-            double burn = rf is null ? 0 : DamageModel.Mitigate(conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0 * seconds,
+            double burnPerSecond = rf is null ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0;
+            var burnDot = new DamageOverTime(DamageType.Fire, burnPerSecond, seconds);
+            double burn = DamageModel.Mitigate(burnDot.TotalRemainingDamage,
                 Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
             double change = carry + regen - burn;
             int whole = (int)Math.Truncate(change);
@@ -2349,7 +2370,8 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
 static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, RighteousFireState rf, double seconds)
 {
     double now = conn.Clock.Elapsed.TotalSeconds;
-    double perTick = conn.PlayerMaxLife * rf.DamagePctPerMinute / 6000.0 * seconds;
+    double perSecond = conn.PlayerMaxLife * rf.DamagePctPerMinute / 6000.0;
+    var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
     var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
     var entered = new List<(uint Id, ushort Buff)>();
     var left = new List<(uint Id, ushort Buff)>();
@@ -2365,10 +2387,9 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
                 continue;
             }
             if (!rf.Auras.ContainsKey(id)) { rf.Auras[id] = conn.NextBuff; entered.Add((id, conn.NextBuff++)); }
-            m.Burn += perTick;
-            int damage = (int)Math.Truncate(m.Burn);
+            var (damage, carry) = damageOverTime.Tick(seconds, m.Burn);
+            m.Burn = carry;
             if (damage == 0) continue;
-            m.Burn -= damage;
             m.Life = (uint)Math.Max(0, (long)m.Life - damage);
             m.Aggro = m.Life > 0;
             if (m.Life == 0) { m.Dead = true; if (rf.Auras.Remove(id, out ushort b)) left.Add((id, b)); }
@@ -3231,7 +3252,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
     await Task.Delay(TimeSpan.FromSeconds(a.Seconds / 2));
     double now = conn.Clock.Elapsed.TotalSeconds;
     uint life, mana, manaBefore;
-    int rawDamage, damage;
+    int rawDamage = 0, damage = 0;
     bool blocked;
     lock (conn.Monsters)
     {
@@ -3253,8 +3274,20 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
                 $"vs evasion {conn.Pools.Evasion}, {hitChance}% chance to hit, entropy {conn.EvasionEntropy:0}");
             return;
         }
-        rawDamage = Random.Shared.Next(a.MinDamage, a.MaxDamage + 1);
-        damage = DamageModel.MitigatePhysical(rawDamage, conn.Pools.Armour);
+        // Roll each damage type separately, apply its resistance, then armour to the physical part. The attack is
+        // currently physical only (MonsterAttack), but the packet path keeps future monster skills correct.
+        var rolled = a.Damage.Roll(Random.Shared);
+        var mitigated = DamageModel.Mitigate(rolled, type =>
+            new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)));
+        rawDamage = (int)Math.Round(rolled[DamageType.Physical].Min);
+        damage = 0;
+        foreach (var (type, range) in mitigated.Components)
+        {
+            int value = (int)Math.Round(range.Min);
+            damage += type == DamageType.Physical
+                ? DamageModel.MitigatePhysical(value, conn.Pools.Armour)
+                : value;
+        }
         blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
         if (blocked) damage = 0;
         manaBefore = conn.PlayerMana;
@@ -3271,7 +3304,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
             "0x01b3 player hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
         $"0x01b1 player hit by monster 0x{id:x} for {damage}" +
-        $"{(rawDamage != damage ? $" ({rawDamage} before {DamageModel.ArmourReduction(conn.Pools.Armour, rawDamage)}% armour)" : "")}" +
+        $"{(rawDamage != damage ? $" ({rawDamage} physical before {DamageModel.ArmourReduction(conn.Pools.Armour, rawDamage)}% armour)" : "")}" +
         $"{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
     if (mana != manaBefore)
         await SendPlayerMana(remote, stream, ciphers, conn,
@@ -4498,17 +4531,19 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
-sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, int MinDamage, int MaxDamage)
+sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, DamagePacket Damage)
 {
     /// <summary>The attack's final stats (the client derives none, 11-skills.md §4): the swing time, reach and damage.
     /// These also go on the monster's Stats component.</summary>
     public IReadOnlyList<(uint, int)> Stats()
     {
         int ms = (int)Math.Round(Seconds * 1000);
+        var physical = Damage[DamageType.Physical];
+        int min = (int)Math.Floor(physical.Min), max = (int)Math.Floor(physical.Max);
         return
         [
-            (StatKeys.MainHandMinPhysical, MinDamage), (StatKeys.MainHandMaxPhysical, MaxDamage),
-            (StatKeys.MainHandMinTotal, MinDamage), (StatKeys.MainHandMaxTotal, MaxDamage),
+            (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
+            (StatKeys.MainHandMinTotal, min), (StatKeys.MainHandMaxTotal, max),
             (StatKeys.MainHandAttackDurationMs, ms), (StatKeys.MainHandTotalAttackDurationMs, ms),
             (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 / Seconds)),
             (StatKeys.MainHandBaseMaxAttackDistance, (int)Range), (StatKeys.MainHandMaxAttackDistance, (int)Range),
