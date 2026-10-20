@@ -1457,9 +1457,10 @@ static IEnumerable<(uint, int)> BaseStats(ClientState conn)
 // checked against (0x1402ce5f0 via the Player cache 0x141e80340, keys 0x3d1b-0x3d1d; global_no_attribute_requirements
 // skips the check, global_item_attribute_requirements_+% scales it).
 // With the level-based pools (CharacterStats): level, maximum_life / maximum_mana (and their base_ forms),
-// accuracy_rating and evasion_rating (base_evasion_rating 15), as final values, and the attributes' increases:
-// evasion_rating_+% (dexterity), maximum_energy_shield_+% (intelligence) and melee_physical_damage_+% (strength).
-// The Offence panel's accuracy row reads main_hand_accuracy_rating (CharacterPanelStats MH_Accuracy); its Chance to
+// accuracy_rating, physical_damage_reduction_rating (armour) and evasion_rating (base_evasion_rating 15), as final
+// values, and the attributes' increases: armour/evasion_rating_+%, maximum_energy_shield_+% (intelligence) and
+// melee_physical_damage_+% (strength). The Offence panel's accuracy row reads main_hand_accuracy_rating
+// (CharacterPanelStats MH_Accuracy); its Chance to
 // Hit rows read main_hand_chance_to_hit_% and main_hand_chance_to_hit_evasive_monsters_% directly. The reference is a
 // monster of the character's level (the normal and high-dexterity evasion rows of DefaultMonsterStats).
 static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Pools pools)
@@ -1476,6 +1477,7 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
         ("off_hand_chance_to_hit_evasive_monsters_%", evasiveChanceToHit),
         ("character_sheet_reference_evasion", referenceEvasion),
         ("character_sheet_reference_high_dex_evasion", referenceEvasiveEvasion),
+        ("physical_damage_reduction_rating", pools.Armour), ("physical_damage_reduction_rating_+%", pools.ArmourPct),
         ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
         ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
         ("movement_velocity_+%", pools.MovementVelocityPct),
@@ -1701,6 +1703,8 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 {
     var weapons = WeaponProfileFor(conn);
     var bonus = PassiveBonus(CharacterStatSources(conn), weapons);
+    var gear = EquippedBaseDefences(conn);
+    bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion };
     List<AuraCatalog.Aura> auras;
     lock (conn.Monsters) auras = [.. conn.Auras.Values];
     var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
@@ -1771,9 +1775,10 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 }
 
 // What the allocated passives add to the pools: attributes (base_* and additional_*, all attributes and the pairs),
-// flat and increased life, mana and accuracy, increased evasion, energy shield and melee physical damage, the base
-// resistances (base_resist_all_elements_% applies to fire, cold and lightning), the shield-specific block nodes when a
-// shield is equipped, critical strike chance and multiplier, and reservation efficiency and aura effect.
+// flat and increased life, mana and accuracy, flat and increased armour and evasion, energy shield and melee physical
+// damage, the base resistances (base_resist_all_elements_% applies to fire, cold and lightning), the shield-specific
+// block nodes when a shield is equipped, critical strike chance and multiplier, and reservation efficiency and aura
+// effect.
 static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons)
 {
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
@@ -1884,11 +1889,19 @@ static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProf
     int auraEffect = Get("non_curse_aura_effect_+%") + Get("aura_effect_+%")
         + Get("aura_effect_on_self_from_your_skills_+%");
     int auraArea = Get("base_aura_area_of_effect_+%");
+    // Defences: the tree's flat armour/evasion and their increased modifiers. "Defences" and the combined armour and
+    // evasion increase apply to both ratings, as in PoB's calcLib.mod.
+    int defencesPct = Get("global_defences_+%") + Get("combined_global_defences_+%")
+        + Get("combined_armour_and_evasion_rating_+%");
+    int armourPct = Get("physical_damage_reduction_rating_+%") + defencesPct;
+    int evasionPct = Get("evasion_rating_+%") + defencesPct;
     var (strength, dexterity, intelligence) = CharacterStats.Attributes(Get);
     return new CharacterStats.Bonus(
         Strength: strength, Dexterity: dexterity, Intelligence: intelligence,
         Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
-        EvasionPct: Get("evasion_rating_+%"), EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
+        Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
+        Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
+        EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
         FireResistance: allRes + Get("base_fire_damage_resistance_%"),
         ColdResistance: allRes + Get("base_cold_damage_resistance_%"),
         LightningResistance: allRes + Get("base_lightning_damage_resistance_%"),
@@ -2692,14 +2705,19 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             $"Lightning {lightning}% (passives {p.LightningResistance}%, max {p.LightningMaxResistance}%, capped {DamageModel.Capped(lightning, p.LightningMaxResistance)}%), " +
             $"Chaos {chaos}% (passives {p.ChaosResistance}%, max {p.ChaosMaxResistance}%, capped {DamageModel.Capped(chaos, p.ChaosMaxResistance)}%).");
     })
-    .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: damage yourself through your resistances)", async args =>
+    .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: damage yourself through resistances or armour)", async args =>
     {
         if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
         if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
         if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
         int resistance = Resistance(conn, type);
         int maxResistance = MaxResistance(conn, type);
-        int dealt = DamageModel.Mitigate(amount, resistance, maxResistance);
+        int dealt = type == DamageType.Physical
+            ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
+            : DamageModel.Mitigate(amount, resistance, maxResistance);
+        string mitigation = type == DamageType.Physical
+            ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
+            : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
         uint life;
         bool wasDead;
         lock (conn.Monsters)
@@ -2721,10 +2739,10 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
                 "0x01b3 player hide_mini_life_bar = 1 (dev hit)");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-            $"0x01b1 player dev {type} hit for {dealt} ({amount} before {DamageModel.Capped(resistance, maxResistance)}% resistance), life {life}/{conn.PlayerMaxLife}");
+            $"0x01b1 player dev {type} hit for {dealt} ({amount} before {mitigation}), life {life}/{conn.PlayerMaxLife}");
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
-        await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {DamageModel.Capped(resistance, maxResistance)}% resistance; life {life}/{conn.PlayerMaxLife}.");
+        await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {mitigation}; life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("suppression", "/suppression (Spell Suppression chance, roll and damage reduction)", async _ =>
     {
@@ -2763,6 +2781,24 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await conn.Commands!.Reply($"Accuracy {conn.Pools.Accuracy} ({conn.Pools.AccuracyPct}% increased): " +
             $"{chance}% chance to hit a level {level} monster (evasion {evasion}), " +
             $"{evasiveChance}% against evasive monsters (evasion {evasiveEvasion}). Spells always hit.");
+    })
+    .Add("defences", "/defences [monster level] (armour, evasion and avoidance; default: your level)", async args =>
+    {
+        int level = conn.Pools.Level;
+        if (args.Length > 0)
+        {
+            if (!int.TryParse(args[0], out int requested) || requested is < 1 or > Progression.MaxLevel)
+                throw new ArgumentException($"monster level 1 to {Progression.MaxLevel}");
+            level = requested;
+        }
+        int monsterAccuracy = Monsters.BaseAccuracy(level) ?? 0;
+        int monsterDamage = Monsters.BaseDamage(level) ?? 0;
+        int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
+        int reduction = DamageModel.ArmourReduction(conn.Pools.Armour, monsterDamage);
+        await conn.Commands!.Reply($"Armour {conn.Pools.Armour} ({conn.Pools.ArmourPct}% increased): " +
+            $"{reduction}% physical reduction against a level {level} monster hit ({monsterDamage}), " +
+            $"evasion {conn.Pools.Evasion} ({conn.Pools.EvasionPct}% increased): {100 - hitChance}% chance to evade " +
+            $"(monster accuracy {monsterAccuracy}, {hitChance}% chance to be hit).");
     })
     .Add("auras", "/auras (active auras, their reservation and the character's efficiency)", async _ =>
     {
@@ -3169,8 +3205,19 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         $"0x01ab monster 0x{id:x} ({m.Label}) attacks the player, attack time {a.Seconds:0.00} s");
     await Task.Delay(TimeSpan.FromSeconds(a.Seconds / 2));
     double now = conn.Clock.Elapsed.TotalSeconds;
+    // The monster's accuracy comes from DefaultMonsterStats at its level; evasion is rolled before the hit, then
+    // physical damage goes through armour and block.
+    int monsterAccuracy = Monsters.BaseAccuracy(m.Level) ?? 0;
+    int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
+    if (!DamageModel.Hits(hitChance, Random.Shared.Next(100)))
+    {
+        Console.WriteLine($"[gateway] {remote} monster 0x{id:x} ({m.Label}) evaded: accuracy {monsterAccuracy} " +
+            $"vs evasion {conn.Pools.Evasion}, {hitChance}% chance to hit");
+        return;
+    }
     uint life, mana, manaBefore;
-    int damage = Random.Shared.Next(a.MinDamage, a.MaxDamage + 1);
+    int rawDamage = Random.Shared.Next(a.MinDamage, a.MaxDamage + 1);
+    int damage = DamageModel.MitigatePhysical(rawDamage, conn.Pools.Armour);
     bool blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
     if (blocked) damage = 0;
     lock (conn.Monsters)
@@ -3195,7 +3242,9 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
             "0x01b3 player hide_mini_life_bar = 1");
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-        $"0x01b1 player hit by monster 0x{id:x} for {damage}{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
+        $"0x01b1 player hit by monster 0x{id:x} for {damage}" +
+        $"{(rawDamage != damage ? $" ({rawDamage} before {DamageModel.ArmourReduction(conn.Pools.Armour, rawDamage)}% armour)" : "")}" +
+        $"{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
     if (mana != manaBefore)
         await SendPlayerMana(remote, stream, ciphers, conn,
             $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
@@ -3306,6 +3355,23 @@ static async Task PickUpItem(string remote, NetworkStream stream, ConnectionCiph
 }
 
 static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
+
+// The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
+// row is used (its minimum roll, matching the item's default base percentile); local/global mods and quality are not
+// modelled. Shields are excluded for now.
+static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
+{
+    var items = ItemsOf(conn);
+    int armour = 0, evasion = 0;
+    foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots })
+        if (items.Items(row) is [var equipped, ..] && Items.ByHash(equipped.Item.TypeHash) is { } type
+            && Items.Defences(type) is { } d)
+        {
+            armour += d.ArmourMin;
+            evasion += d.EvasionMin;
+        }
+    return (armour, evasion);
+}
 
 // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
 static WeaponProfile WeaponProfileFor(ClientState conn)

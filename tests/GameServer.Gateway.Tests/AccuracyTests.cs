@@ -62,5 +62,7 @@ public class AccuracyTests
         Assert.Equal(13445, monsters.BaseEvasion(100));
         Assert.Equal(76, monsters.BaseEvasiveEvasion(1));
         Assert.Equal(19964, monsters.BaseEvasiveEvasion(100));
+        Assert.Equal(14, monsters.BaseAccuracy(1));
+        Assert.Equal(980, monsters.BaseAccuracy(100));
     }
 }

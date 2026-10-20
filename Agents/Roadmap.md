@@ -128,11 +128,10 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** items' damage and defences count, and flasks and currency can be used.
 
 ### A damage model (next)
-- **Known:** both sides hit with flat damage ranges ([11](docs/protocol/11-skills.md) §5, §6); the player's life is a
-  fixed 50.
-- **Start:** the player's real stats (below), then armour / evasion / resistances and the remaining conditional
-  critical strike stats from the stats both sides already carry; monster skills beyond the first granted effect
-  (ranged, spells).
+- **Known:** both sides hit with flat damage ranges ([11](docs/protocol/11-skills.md) §5, §6); the player's real life,
+  resistances, armour and evasion are computed from level, passives and base equipment (Status: Armour and Evasion).
+- **Start:** energy shield, penetration/exposure, remaining conditional critical strike stats from the stats both sides
+  already carry; monster skills beyond the first granted effect (ranged, spells).
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
 ### Death screen variants
