@@ -64,6 +64,7 @@ sealed class AccountStash
     int _lastTab;
     uint _nextItemId = FirstItemId;
     uint _gold;
+    ModCatalog? _mods;  // to save mods by their Mods.dat Id
 
     AccountStash(string account) => _account = account;
 
@@ -71,7 +72,7 @@ sealed class AccountStash
     public static AccountStash For(string account, ItemCatalog catalog) =>
         ByAccount.GetOrAdd(account, name =>
         {
-            var stash = new AccountStash(name);
+            var stash = new AccountStash(name) { _mods = catalog.Mods };
             var save = Load(name);
             foreach (var t in save?.Tabs ?? [.. StarterTabs])
             {
@@ -111,7 +112,7 @@ sealed class AccountStash
         lock (_lock)
             save = new([.. _tabs.Select(t => t.Saved with
             {
-                Items = [.. t.Items.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item)))],
+                Items = [.. t.Items.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods)))],
             })], _lastTab, _nextItemId, _gold);
         string path = PathOf(_account);
         Directory.CreateDirectory(Folder);

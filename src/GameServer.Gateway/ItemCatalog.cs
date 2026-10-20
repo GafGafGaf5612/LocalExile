@@ -10,7 +10,8 @@ sealed class ItemCatalog
 {
     public ItemCatalog(string folder)
     {
-        _rows = new(() => Load(folder));
+        Mods = new ModCatalog(folder);
+        _rows = new(() => Load(folder, Mods));
         _byHash = new(() => _rows.Value.Rows.GroupBy(t => t.Hash).ToDictionary(g => g.Key, g => g.First()));
         _gemEffects = new(() => LoadGemEffects(folder));
         _requirements = new(() => LoadRequirements(folder));
@@ -20,7 +21,7 @@ sealed class ItemCatalog
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,
         IReadOnlyList<string> Components, int MaxCharges, string Class = "", byte Stance = 0xff, int DropLevel = 0, ushort MaxStack = 1,
-        int FullStackRow = -1)
+        int FullStackRow = -1, IReadOnlyList<ModCatalog.Mod>? Implicits = null)
     {
         public bool Supported => Components.Count > 0 && Item.CanSerialize(Components);
         /// <summary>Several of the type share one cell (a Stack component and a CurrencyItems StackSize above 1).</summary>
@@ -32,6 +33,9 @@ sealed class ItemCatalog
     }
 
     private readonly Lazy<(List<BaseType> Rows, string? Error)> _rows;
+
+    /// <summary>Mods.dat, for the implicits of new items and the mods of saved ones.</summary>
+    public ModCatalog Mods { get; }
 
     public string? Error => _rows.Value.Error;
 
@@ -149,11 +153,15 @@ sealed class ItemCatalog
         return result;
     }
 
-    /// <summary>A new item of this type: item level 1, normal, flasks full.</summary>
+    /// <summary>A new item of this type: item level 1, normal, flasks full, its BaseItemTypes implicits rolled.</summary>
     public static Item Create(BaseType t, IReadOnlyList<ItemSocket>? sockets = null, IReadOnlyList<byte>? links = null) =>
-        new(t.Hash, t.Components, t.VisualIdentity) { Charges = t.MaxCharges, Sockets = sockets ?? [], Links = links };
+        new(t.Hash, t.Components, t.VisualIdentity)
+        {
+            Charges = t.MaxCharges, Sockets = sockets ?? [], Links = links,
+            Mods = t.Components.Contains("Mods") ? [.. (t.Implicits ?? []).Select(m => m.Roll(ModSection.Implicit, Random.Shared))] : [],
+        };
 
-    private static (List<BaseType>, string?) Load(string folder)
+    private static (List<BaseType>, string?) Load(string folder, ModCatalog mods)
     {
         string bases = Path.Combine(folder, "tables", "BaseItemTypes.json"), visuals = Path.Combine(folder, "tables", "ItemVisualIdentity.json");
         if (!File.Exists(bases) || !File.Exists(visuals)) return ([], $"{bases} is missing: extract the game tables (Tools/PoEDataExtractor)");
@@ -217,7 +225,9 @@ sealed class ItemCatalog
                         : r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } c2 && c2.GetInt32() < stances.Count ? stances[c2.GetInt32()] : (byte)0xff,
                     r.GetProperty("DropLevel").GetInt32(),
                     itemComponents.Contains("Stack") ? stackSizes.GetValueOrDefault(rows.Count, (ushort)1) : (ushort)1,
-                    fullStacks.GetValueOrDefault(rows.Count, -1)));
+                    fullStacks.GetValueOrDefault(rows.Count, -1),
+                    // Implicit_ModsKeys: Mods.dat rows every item of the type has (Driftwood Wand: 8-12% increased Spell Damage)
+                    [.. r.GetProperty("Implicit_ModsKeys").EnumerateArray().Select(k => mods.Row(k.GetInt32())).OfType<ModCatalog.Mod>()]));
             }
         }
         return (rows, null);

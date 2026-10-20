@@ -1,0 +1,88 @@
+using System.Text.Json;
+using GameServer.Core.Protocol.Instance;
+
+/// <summary>
+/// Mods.dat (data/tables/Mods.json, loaded on first use): what the server needs to put mods on items
+/// (Agents/docs/protocol/13-items.md §2a). The client identifies a mod by its HASH16 and counts its stats itself
+/// (StatsKey1..8 up to the first empty one), so every <see cref="ItemMod"/> is built here with exactly that many values.
+/// </summary>
+sealed class ModCatalog(string folder = "data")
+{
+    /// <summary>A stat of a mod: its Stats.dat Id and the Stat{n}Min / Stat{n}Max roll range.</summary>
+    public sealed record ModStat(string Id, int Min, int Max);
+
+    /// <summary>A Mods.dat row. GenerationType 1 prefix, 2 suffix, 3 unique / base implicit, 10 enchantment …;
+    /// Domain 1 items.</summary>
+    public sealed record Mod(int Row, string Id, ushort Hash, string Name, int Domain, int GenerationType, int Level,
+        IReadOnlyList<ModStat> Stats)
+    {
+        /// <summary>The list a mod goes into when nothing else says so: prefixes and suffixes are explicit,
+        /// enchantments enchants, everything else (base implicits, corruptions …) implicit.</summary>
+        public ModSection DefaultSection => GenerationType switch { 1 or 2 => ModSection.Explicit, 10 => ModSection.Enchant, _ => ModSection.Implicit };
+
+        /// <summary>The mod with a value per stat rolled in its range.</summary>
+        public ItemMod Roll(ModSection section, Random random) =>
+            new(section, Hash, [.. Stats.Select(s => random.Next(Math.Min(s.Min, s.Max), Math.Max(s.Min, s.Max) + 1))]);
+
+        /// <summary>The mod with these values: missing ones are rolled, extra ones dropped (the client reads exactly one
+        /// per stat).</summary>
+        public ItemMod With(ModSection section, IReadOnlyList<int> values, Random random)
+        {
+            var rolled = Roll(section, random).Values;
+            return new(section, Hash, [.. rolled.Select((v, i) => i < values.Count ? values[i] : v)]);
+        }
+
+        public override string ToString() => $"{Id} (row {Row})";
+    }
+
+    private readonly Lazy<(List<Mod> Rows, Dictionary<ushort, Mod> ByHash, Dictionary<string, Mod> ById)> _mods = new(() => Load(folder));
+
+    public bool Loaded => _mods.Value.Rows.Count > 0;
+
+    public Mod? Row(int row) => row >= 0 && row < _mods.Value.Rows.Count ? _mods.Value.Rows[row] : null;
+
+    public Mod? ByHash(ushort hash) => _mods.Value.ByHash.GetValueOrDefault(hash);
+
+    public Mod? ById(string id) => _mods.Value.ById.GetValueOrDefault(id);
+
+    /// <summary>A mod by row number, exact Id (any case), then the first Id that contains the text.</summary>
+    public Mod? Find(string query)
+    {
+        if (int.TryParse(query, out int row)) return Row(row);
+        return ById(query) ?? _mods.Value.Rows.FirstOrDefault(m => m.Id.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>"SpellDamageOnWeaponImplicitWand1 implicit: spell_damage_+% 10" for logs and /mods.</summary>
+    public string Describe(ItemMod m) => ByHash(m.Hash) is { } mod
+        ? $"{mod.Id} {m.Section.ToString().ToLowerInvariant()}: " + string.Join(", ", mod.Stats.Select((s, i) => $"{s.Id} {(i < m.Values.Count ? m.Values[i] : 0)}"))
+        : $"0x{m.Hash:x4} {m.Section.ToString().ToLowerInvariant()}: {string.Join(", ", m.Values)}";
+
+    private static (List<Mod>, Dictionary<ushort, Mod>, Dictionary<string, Mod>) Load(string folder)
+    {
+        string path = Path.Combine(folder, "tables", "Mods.json"), statsPath = Path.Combine(folder, "tables", "Stats.json");
+        var rows = new List<Mod>();
+        if (!File.Exists(path) || !File.Exists(statsPath)) return (rows, [], []);
+        List<string> stats;
+        using (var s = JsonDocument.Parse(File.ReadAllBytes(statsPath)))
+            stats = [.. s.RootElement.EnumerateArray().Select(r => r.GetProperty("Id").GetString() ?? "")];
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+        {
+            // The client's stat iterator (0x142430710) stops at the first empty key, so the count does too.
+            var modStats = new List<ModStat>();
+            for (int i = 1; i <= 8; i++)
+            {
+                if (r.GetProperty($"StatsKey{i}") is not { ValueKind: JsonValueKind.Number } k) break;
+                int key = k.GetInt32();
+                modStats.Add(new(key < stats.Count ? stats[key] : $"#{key}", r.GetProperty($"Stat{i}Min").GetInt32(), r.GetProperty($"Stat{i}Max").GetInt32()));
+            }
+            rows.Add(new Mod(rows.Count, r.GetProperty("Id").GetString() ?? "", (ushort)r.GetProperty("HASH16").GetInt32(),
+                r.GetProperty("Name").GetString() ?? "", r.GetProperty("Domain").GetInt32(), r.GetProperty("GenerationType").GetInt32(),
+                r.GetProperty("Level").GetInt32(), modStats));
+        }
+        var byHash = new Dictionary<ushort, Mod>();
+        var byId = new Dictionary<string, Mod>(StringComparer.OrdinalIgnoreCase);
+        foreach (var m in rows) { byHash.TryAdd(m.Hash, m); byId.TryAdd(m.Id, m); }
+        return (rows, byHash, byId);
+    }
+}

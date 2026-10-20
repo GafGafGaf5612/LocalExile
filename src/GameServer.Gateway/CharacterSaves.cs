@@ -10,8 +10,14 @@ static class CharacterSaves
 {
     public sealed record SavedSocket(SocketColour Colour, SavedItem? Gem = null);
 
+    /// <summary>A mod by its Mods.dat Id (hashes are the client's lookup key, Ids are what people read), the list it is
+    /// in and its stat values.</summary>
+    public sealed record SavedMod(string Id, ModSection Section, List<int> Values);
+
+    /// <summary>Mods: null in saves from before mods (the item gets its type's implicits again), else every mod.</summary>
     public sealed record SavedItem(uint Type, byte ItemLevel = 1, byte Quality = 0, int Charges = 0, ushort StackSize = 1,
-        List<SavedSocket>? Sockets = null, List<byte>? Links = null, int GemExperience = 0);
+        List<SavedSocket>? Sockets = null, List<byte>? Links = null, int GemExperience = 0,
+        ItemRarity Rarity = ItemRarity.Normal, bool Identified = true, List<SavedMod>? Mods = null);
 
     public sealed record SavedPlacement(uint Id, byte X, byte Y, SavedItem Item);
 
@@ -121,9 +127,10 @@ static class CharacterSaves
         lock (Gate) Write(character, change(Load(character) ?? new Save([])));
     }
 
-    public static SavedItem ToSaved(Item i) => new(i.TypeHash, i.ItemLevel, i.Quality, i.Charges, i.StackSize,
-        i.Sockets.Count == 0 ? null : [.. i.Sockets.Select(s => new SavedSocket(s.Colour, s.Gem is null ? null : ToSaved(s.Gem)))],
-        i.Links is null ? null : [.. i.Links], i.GemExperience);
+    public static SavedItem ToSaved(Item i, ModCatalog? mods = null) => new(i.TypeHash, i.ItemLevel, i.Quality, i.Charges, i.StackSize,
+        i.Sockets.Count == 0 ? null : [.. i.Sockets.Select(s => new SavedSocket(s.Colour, s.Gem is null ? null : ToSaved(s.Gem, mods)))],
+        i.Links is null ? null : [.. i.Links], i.GemExperience, i.Rarity, i.Identified,
+        [.. i.Mods.Select(m => new SavedMod(mods?.ByHash(m.Hash)?.Id ?? $"0x{m.Hash:x4}", m.Section, [.. m.Values]))]);
 
     /// <summary>The item again, or null when its type is no longer known.</summary>
     public static Item? FromSaved(SavedItem s, ItemCatalog catalog)
@@ -133,7 +140,16 @@ static class CharacterSaves
         {
             ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience,
             Sockets = [.. (s.Sockets ?? []).Select(k => new ItemSocket(k.Colour, k.Gem is null ? null : FromSaved(k.Gem, catalog)))],
-            Links = s.Links,
-        };
+            Links = s.Links, Rarity = s.Rarity, Identified = s.Identified,
+        } is var item && s.Mods is null ? item : item with { Mods = [.. s.Mods.Select(m => FromSaved(m, catalog.Mods)).OfType<ItemMod>()] };
+    }
+
+    /// <summary>The mod again (by Id, or by an "0x…" hash when Mods.dat was not loaded at save time), or null when
+    /// Mods.dat no longer has it: an unknown hash would stop the client.</summary>
+    static ItemMod? FromSaved(SavedMod m, ModCatalog mods)
+    {
+        var mod = m.Id.StartsWith("0x") && ushort.TryParse(m.Id[2..], System.Globalization.NumberStyles.HexNumber, null, out ushort h)
+            ? mods.ByHash(h) : mods.ById(m.Id);
+        return mod?.With(m.Section, m.Values, Random.Shared);
     }
 }
