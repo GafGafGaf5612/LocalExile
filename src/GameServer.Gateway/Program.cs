@@ -2550,6 +2550,37 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
             items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
     })
+    .Add("mod", "/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("which mod?");
+        ModSection? section = null;
+        if (args.Length > 1 && ParseSection(args[0]) is { } s) { section = s; args = args[1..]; }
+        if (args[0].Equals("clear", StringComparison.OrdinalIgnoreCase))
+        {
+            var only = args.Length > 1 ? ParseSection(args[1]) : section;
+            await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Mods = [.. i.Mods.Where(m => only is { } o && m.Section != o)] },
+                $"mods cleared{(only is { } o ? $" ({o})" : "")}");
+            return;
+        }
+        if (Items.Mods.Find(args[0]) is not { } mod) { await conn.Commands!.Reply($"No mod \"{args[0]}\" in Mods.dat"); return; }
+        var values = args[1..].Select(int.Parse).ToList();
+        var added = mod.With(section ?? mod.DefaultSection, values, Random.Shared);
+        await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Mods = [.. i.Mods, added] }, $"+ {Items.Mods.Describe(added)}");
+    })
+    .Add("mods", "/mods (the held item's rarity and mods)", async args =>
+    {
+        if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
+        await conn.Commands!.Reply($"{Items.ByHash(held.Item.TypeHash)?.Name} ilvl {held.Item.ItemLevel}, {held.Item.Rarity}" +
+            $"{(held.Item.Identified ? "" : ", unidentified")}: " +
+            (held.Item.Mods.Count == 0 ? "no mods" : string.Join("; ", held.Item.Mods.Select(Items.Mods.Describe))));
+    })
+    .Add("rarity", "/rarity <normal|magic|rare|unique> [unid] (the held item)", async args =>
+    {
+        if (args.Length == 0 || !Enum.TryParse<ItemRarity>(args[0], true, out var rarity)) throw new ArgumentException("normal, magic, rare or unique");
+        bool identified = !args.Skip(1).Any(a => a.StartsWith("unid", StringComparison.OrdinalIgnoreCase));
+        await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Rarity = rarity, Identified = identified },
+            $"{rarity}{(identified ? "" : ", unidentified")}");
+    })
     .Add("set_level", "/set_level <1 to 100> (saved to the account; the level's experience and stats are sent at once)", async args =>
     {
         if (args.Length == 0 || !int.TryParse(args[0], out int level) || level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
@@ -3318,6 +3349,28 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
         "0x01b3 player stats (equipment)");
     await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
 }
+
+// Dev commands (/mod, /rarity): changes the held item and replaces it on the cursor (0xbf removing and adding its id).
+static async Task ChangeHeldItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Func<Item, Item> change, string what)
+{
+    var items = ItemsOf(conn);
+    if (items.Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
+    if (!held.Item.Components.Contains("Mods")) { await conn.Commands!.Reply($"{Items.ByHash(held.Item.TypeHash)?.Name} has no Mods component"); return; }
+    if (items.Change(PlayerInventories.Cursor, held.Id, change) is not { } changed) return;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+        items.NextRevision(PlayerInventories.Cursor), [held.Id], [changed]), $"0x00bf cursor: item {held.Id} {what}");
+    await conn.Commands!.Reply(what);
+}
+
+static ModSection? ParseSection(string text) => text.ToLowerInvariant() switch
+{
+    "implicit" or "imp" => ModSection.Implicit,
+    "explicit" or "exp" => ModSection.Explicit,
+    "enchant" or "ench" => ModSection.Enchant,
+    "scourge" or "s10" => ModSection.Scourge,
+    "hidden" or "s11" => ModSection.Hidden,
+    _ => null,
+};
 
 // Takes the held item off the cursor (0xbf); null when nothing is held.
 static async Task<InventoryItem?> TakeHeld(string remote, NetworkStream stream, ConnectionCiphers ciphers, PlayerInventories items, string why)

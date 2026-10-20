@@ -29,6 +29,36 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Mods_component_carries_rarity_and_mod_lists_in_the_readers_order()
+    {
+        var item = new Item(1, ["Mods"], 0)
+        {
+            ItemLevel = 40, Rarity = ItemRarity.Rare,
+            Mods = [new(ModSection.Explicit, 0x1234, [3, 5]), new(ModSection.Implicit, 0x5654, [10]), new(ModSection.Enchant, 0x0102, [])],
+        };
+        Assert.Equal(
+            "01000000" + "0000" + "28" + "00" + "0000" +
+            "7A00" + "00" +          // magic properties: rare | identified | bits 4, 5, 6; u8
+            "01" + "5456" + "0A" +   // bit 4 (implicit): count, HASH16, a value per stat
+            "01" + "0201" +          // bit 6 (enchant)
+            "01" + "3412" + "03" + "05" + // bit 5 (explicit), last: only read for identified items
+            "00" + "00",
+            Convert.ToHexString(item.Payload()));
+    }
+
+    [Fact]
+    public void Unidentified_items_send_no_explicit_mods()
+    {
+        var item = new Item(1, ["Mods"], 0)
+        {
+            Rarity = ItemRarity.Magic, Identified = false,
+            Mods = [new(ModSection.Explicit, 0x1234, [3]), new(ModSection.Implicit, 0x5654, [10])],
+        };
+        Assert.Equal("01000000" + "0000" + "01" + "00" + "0000" + "1100" + "00" + "01" + "5456" + "0A" + "00" + "00",
+            Convert.ToHexString(item.Payload()));
+    }
+
+    [Fact]
     public void Flask_writes_charges_as_a_signed_compact_int()
     {
         var flask = new Item(1, Flask, 2) { Charges = 21 };

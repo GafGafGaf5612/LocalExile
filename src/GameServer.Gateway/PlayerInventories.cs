@@ -18,6 +18,7 @@ sealed class PlayerInventories
     private uint _nextItemId = 1;
     private readonly Lock _lock = new();
     private string? _owner;   // the character whose save this is; null while the start kit is being built
+    private ModCatalog? _mods;  // to save mods by their Mods.dat Id
 
     /// <summary>Writes the character's save (every inventory, with item ids and cells).</summary>
     void Persist()
@@ -26,7 +27,7 @@ sealed class PlayerInventories
         Dictionary<byte, List<CharacterSaves.SavedPlacement>> items;
         lock (_lock)
             items = _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
-                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item))).ToList());
+                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList());
         // The rest of the save (skill bar, experience, passives) stays as it is.
         CharacterSaves.SetInventories(_owner, items);
     }
@@ -370,6 +371,21 @@ sealed class PlayerInventories
         }
     }
 
+    /// <summary>Replaces an item with a changed copy (same id and cell) in one save; null when it is not there.</summary>
+    public InventoryItem? Change(byte row, uint itemId, Func<Item, Item> change)
+    {
+        InventoryItem result;
+        lock (_lock)
+        {
+            var items = ItemsIn(row);
+            int at = items.FindIndex(i => i.Id == itemId);
+            if (at < 0) return null;
+            result = items[at] = items[at] with { Item = change(items[at].Item) };
+        }
+        Persist();
+        return result;
+    }
+
     /// <summary>Sets the size of a stack (same id), or removes it at 0, in one save. Returns it as it is now (null when
     /// removed or not there).</summary>
     public InventoryItem? SetStackSize(byte row, uint itemId, int size)
@@ -580,6 +596,7 @@ sealed class PlayerInventories
         {
             var inv = FromSave(name, catalog) ?? StartKit(catalog, folder, ClassRows.GetValueOrDefault(name, 1));
             inv._owner = name;
+            inv._mods = catalog.Mods;
             inv.Persist();
             return inv;
         });

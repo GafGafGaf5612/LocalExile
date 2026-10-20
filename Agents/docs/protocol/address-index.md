@@ -168,6 +168,9 @@ G = global / static data.
 | `0x141fa5290` | Fn | ItemTypeRegister lookup by HASH32 |
 | `0x1421ebe90` | Fn | the four type hashes with a trailing u16 |
 | `0x1421e69c0`, `0x1421df6e0`, `0x1421e2e20`, `0x1424aec50`, `0x14249d4b0`, `0x1423f4b30`, `0x14246eb00` | Fn | item component reads: Base, Mods, Sockets, Quality, Charges, Stack, SkillGem |
+| `0x142201d70` | Fn | ObjectMagicProperties read: rarity, identified, mod lists, name ([13](13-items.md) §2a) |
+| `0x142430380` / `0x142430710` | Fn | one mod read (u16 Mods.dat HASH16 + a compact per stat) / the mod's n-th stat |
+| `0x1421ff3c0` → `0x1421ff8f0` | Fn | after the read: rarity tag, apply each mod list with its kind |
 | `0x1421f5680` | Fn | inventory item entry read (u32 id, u8 x, u8 y, item) |
 | `0x1435dbd28` (ctor `0x1421a37b0`, write `0x1421a37f0`, read `0x1421a3880`) | Cls | S→C 0xbf inventory change (`0x1425079a0` / `0x142507bf0`) |
 | `0x141d62550` → `0x1421f5160` | Fn | 0xbf handler → apply removals, additions, revision |

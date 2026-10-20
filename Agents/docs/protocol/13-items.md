@@ -45,7 +45,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Component | Vtable | Read | Data |
 |---|---|---|---|
 | Base | `0x1435e0168` | `0x1421e69c0` | u16 ItemVisualIdentity **HASH16** (unknown → "Attempt to set visual identity to NULL"), u8 +0xc0, u8 +0xc7 flags, u16 flags (low bit0 → u8, bit1 flavour text u16, bit2 wide string, bit3 u32, bit4 wide string, bit5 u8 n × (u32, i32), bit6 nested item, bit7 u8 n × (u32 item type, compact); high bits 0-2 → +0xc4, bit4 → 2 × u32), u8 +0xc6 |
-| Mods | `0x1435df838` | `0x1421df6e0` | u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit6 incubator u16 u16 u8, bit4 → u8, bit15 → 0x1c8 record `0x1424b70c0`), base magic properties `0x142201d70` (as ObjectMagicProperties: u16 flags, rarity bits 0-2, identified bit 3; u8), u8, u8 |
+| Mods | `0x1435df838` | `0x1421df6e0` | u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit6 incubator u16 u16 u8, bit4 → u8, bit15 → 0x1c8 record `0x1424b70c0`), base magic properties `0x142201d70` (rarity, identified, mod lists: §2a), u8, u8 |
 | Quality | `0x14363acd8` | `0x1424aec50` | u8 |
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
@@ -55,6 +55,39 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
 
 Minimal item the server sends: flags 0, Base with only the visual identity, Mods identified and normal with no mods.
+
+## 2a. Mods: rarity and mod lists
+
+The Mods component's base magic properties are ObjectMagicProperties, read by `0x142201d70` (decompiled:
+`Tools/re/out/omp.c`). Code: `Item.MagicProperties` (`InstanceItems.cs`), Mods.dat in the Gateway's `ModCatalog.cs`.
+
+```
+u16  flags   bits 0-2 rarity (0 normal, 1 magic, 2 rare, 3 unique), bit 3 identified,
+             one bit per mod list (below), bit 7 custom name, bit 8 Words.dat name, bit 9 alternate quality
+u8           (+0x7a, unknown; 0)
+bit 9:  u8 AlternateQualityTypes row, u8
+bit 4:  implicit list      bit 6: enchant list      bit 10: scourge list      bit 11: hidden list
+identified only:
+  bit 7: u32 length + UTF-16 name, else bit 8: u8 n × u32 Words.dat key (rare names; key not mapped yet)
+  bit 5: explicit list
+```
+
+A list is u8 count + mods. A mod (`0x142430380`): **u16 Mods.dat HASH16**, then one signed compact value
+(`0x141e490e0`) per stat of the row. The client counts the stats itself (`0x142430710`, StatsKey1..8 up to the first
+empty one; no Mods.dat row has a gap), so the count must match. An unknown hash throws "Deserialised a mod that we don't
+recognise". After reading, `0x1421ff3c0` adds the "magic" / "rare" tag and gives each list to `0x1421ff8f0` with its
+kind (implicit 1, explicit 2, enchant 3, scourge and hidden without one).
+
+What the tooltip shows (live, 2026-10-20, an Iron Ring with `/mod <list> IncreasedLife1`): implicit under the
+properties, enchant above the implicits, explicit below a separator, scourge as orange lines among the explicits
+(Hellscape), hidden not at all. Magic items get their name from the affixes (Healthy Iron Ring); a rare item without a
+Words.dat name shows the base name. Unidentified items show "Unidentified" and their implicits only.
+
+New items roll their BaseItemTypes `Implicit_ModsKeys` (Driftwood Wand: `SpellDamageOnWeaponImplicitWand1`, 8-12%).
+Saves keep rarity, identified and each mod by Mods.dat Id, list and values; an item saved before mods gets its type's
+implicits again. Dev commands on the held item: `/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part>
+[values…]` (missing values rolled, the list defaults from GenerationType), `/mod clear [list]`, `/mods`,
+`/rarity <normal|magic|rare|unique> [unid]`.
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 
@@ -215,7 +248,9 @@ linked sockets in the colour of their highest attribute requirement (ComponentAt
 ## Open
 
 - Gem levels and experience, support gems and links.
-- Mods (implicit, explicit), rarity, names, quality effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
+- Rare names (bit 8: which Words.dat key the u32 is), rolling magic / rare items (#58), mod stats on the character
+  (#59), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
+  effects; the meaning of Base +0xc0 / +0xc6 / +0xc7 and Mods +0x2bc.
 - C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
   `0x14031c0a0`: probably currency use on an item).
 - Flask use and currency use other than the Orb of Regret. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays

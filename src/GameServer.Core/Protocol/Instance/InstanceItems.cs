@@ -8,6 +8,21 @@ public enum SocketColour : byte { Red = 1, Green = 2, Blue = 3, White = 4 }
 /// <summary>A socket of an item, with the gem in it (if any).</summary>
 public sealed record ItemSocket(SocketColour Colour, Item? Gem = null);
 
+/// <summary>An item's rarity: bits 0-2 of the ObjectMagicProperties flags (0x142201d70 → +0x7c).</summary>
+public enum ItemRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
+
+/// <summary>
+/// The mod lists of ObjectMagicProperties (0x142201d70), by the flag bit that announces each one. Every list is u8 count +
+/// entries; <see cref="Explicit"/> is only read for identified items. The other lists are read whether identified or not.
+/// Seen in the tooltip (2026-10-20): implicit under the item's properties, enchant above the implicits, explicit below,
+/// scourge as orange lines among the explicits (Hellscape), hidden not shown at all.
+/// </summary>
+public enum ModSection : byte { Implicit = 4, Explicit = 5, Enchant = 6, Scourge = 10, Hidden = 11 }
+
+/// <summary>A mod on an item: a Mods.dat row by its HASH16 and one value per stat of that row (StatsKey1..8 in order,
+/// as many as the row has). The client counts the row's stats itself, so the count must match.</summary>
+public sealed record ItemMod(ModSection Section, ushort Hash, IReadOnlyList<int> Values);
+
 /// <summary>
 /// An item as the client deserializes it (Agents/docs/protocol/05-inventories-and-ui.md §6). The type is a BaseItemTypes
 /// row: <see cref="TypeHash"/> is its HASH32 (MurmurHash2 of the Id, <see cref="InstanceEntities.ObjectTypeHash"/>),
@@ -25,6 +40,14 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// <summary>Link groups: the number of sockets in each, in socket order (null: every socket alone).</summary>
     public IReadOnlyList<byte>? Links { get; init; }
     public int GemExperience { get; init; }
+
+    public ItemRarity Rarity { get; init; }
+
+    /// <summary>Unidentified items carry no <see cref="ModSection.Explicit"/> list (the client does not read it).</summary>
+    public bool Identified { get; init; } = true;
+
+    /// <summary>Implicit, explicit and other mods, written into the Mods component per <see cref="ModSection"/>.</summary>
+    public IReadOnlyList<ItemMod> Mods { get; init; } = [];
 
     /// <summary>A vendor price: (item type hash, amount) entries, Base flag bit 7 (17-npcs.md §5). Empty for items not
     /// in a shop.</summary>
@@ -80,8 +103,8 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                     w.U8(0);
                     break;
                 // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit 6 incubator, bit 4 → u8, bit 15 a 0x1c8
-                // record), the base magic properties 0x142201d70 (u16 flags: bits 0-2 rarity, bit 3 identified; u8), u8, u8.
-                case "Mods": w.U8(ItemLevel).U8(0).U16(0).U16(0x0008).U8(0).U8(0).U8(0); break;
+                // record), the base magic properties 0x142201d70 (MagicProperties), u8, u8.
+                case "Mods": w.U8(ItemLevel).U8(0).U16(0); MagicProperties(w); w.U8(0).U8(0); break;
                 case "Quality": w.U8(Quality); break;                 // 0x1424aec50
                 case "Charges": w.CompactI(Charges); break;           // 0x14249d4b0: signed compact (0x141e490e0)
                 case "Stack": w.U16(StackSize); break;                // 0x1423f4b30
@@ -105,6 +128,31 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
         }
         if (Array.IndexOf(TrailingU16, TypeHash) >= 0) w.U16(1);
         return w.ToArray();
+    }
+
+    /// <summary>
+    /// ObjectMagicProperties as 0x142201d70 reads it: u16 flags (bits 0-2 rarity, bit 3 identified, bit 9 an
+    /// AlternateQualityTypes row u8 + u8, bit 7 a custom name / bit 8 Words.dat name parts, one bit per mod list), u8
+    /// (+0x7a), then the lists in the reader's order: bit 4, 6, 10, 11 and, for identified items only, the name and
+    /// bit 5. A mod (0x142430380): u16 Mods.dat HASH16 (unknown → "Deserialised a mod that we don't recognise"), then a
+    /// signed compact (0x141e490e0) per stat of the row.
+    /// </summary>
+    void MagicProperties(BlobWriter w)
+    {
+        var sections = Mods.Where(m => Identified || m.Section != ModSection.Explicit).GroupBy(m => m.Section).ToDictionary(g => g.Key, g => g.ToList());
+        ushort flags = (ushort)((byte)Rarity & 7 | (Identified ? 0x8 : 0));
+        foreach (var s in sections.Keys) flags |= (ushort)(1 << (byte)s);
+        w.U16(flags).U8(0);
+        foreach (var s in new[] { ModSection.Implicit, ModSection.Enchant, ModSection.Scourge, ModSection.Hidden, ModSection.Explicit })
+        {
+            if (!sections.TryGetValue(s, out var mods)) continue;
+            w.U8((byte)Math.Min(mods.Count, 255));
+            foreach (var m in mods.Take(255))
+            {
+                w.U16(m.Hash);
+                foreach (int v in m.Values) w.CompactI(v);
+            }
+        }
     }
 
     /// <summary>The item as inventories and other messages carry it (0x1421ec1d0 / 0x1421ec2c0): u16 big-endian length,
