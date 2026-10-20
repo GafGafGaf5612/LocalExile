@@ -33,6 +33,11 @@ if (!File.Exists(clientExe))
 }
 HncSender.LoadMask(File.ReadAllBytes(clientExe));
 
+// Every item sent carries its level requirement (13-items.md §2d): the client shows and checks the byte it receives.
+// Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead.
+Item.LevelRequirementOf = item => !item.Components.Contains("SkillGem") && Items.ByHash(item.TypeHash) is { } t
+    ? ItemModStats.LevelRequirement(item, t.DropLevel, Items.Mods) : 0;
+
 // Local play only by default; Game_BIND=0.0.0.0 to accept other machines (then also set Game_GATEWAY_HOST).
 var bind = IPAddress.Parse(Environment.GetEnvironmentVariable("Game_BIND") ?? "127.0.0.1");
 var listener = new TcpListener(bind, port);
@@ -1412,6 +1417,20 @@ static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
 
 // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
 // (the client derives nothing itself: 11-skills.md §4).
+// FinalPlayerStats as a full 0x1b3, which only sets the stats it lists: every stat sent before that is gone now (a
+// stat only an unequipped item or a refunded passive gave) goes with 0, so the client does not keep its old value.
+static List<(uint, int)> PlayerStatsWithCleared(ClientState conn)
+{
+    var stats = FinalPlayerStats(conn).ToList();
+    var now = stats.Select(s => s.Item1).ToHashSet();
+    lock (conn.Monsters)
+    {
+        stats.AddRange(conn.SentStatKeys.Where(k => !now.Contains(k)).Select(k => (k, 0)));
+        conn.SentStatKeys = now;
+    }
+    return stats;
+}
+
 static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
@@ -1616,14 +1635,31 @@ static string? SkillEffectId(ClientState conn, ushort skillId) =>
     skillId == SkillCatalog.FirstSkillId ? Environment.GetEnvironmentVariable("Game_PLAYER_ATTACK") ?? "PlayerMelee"
     : GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId) is { Name: not null } g ? Skills.EffectId(g.Effect) : null;
 
+// Why the held item may not go into an equipment row: the character is below its level requirement
+// (ItemModStats.LevelRequirement). The client also checks it (0x1421eca50) against the level we send in the item data,
+// but the server does not trust that.
+static string? LevelTooLow(ClientState conn, byte row, Item? held)
+{
+    if (held is null || !(ItemModStats.EquipmentRows.Contains(row) || row is 14 or 15)) return null;
+    if (Items.ByHash(held.TypeHash) is not { } t) return null;
+    int needs = ItemModStats.LevelRequirement(held, t.DropLevel, Items.Mods);
+    return conn.Pools.Level < needs ? $"{t.Name} requires level {needs} (character is {conn.Pools.Level})" : null;
+}
+
+// A worn item whose requirements are not met (CharacterStatSources): its mods and gems do nothing.
+static bool IsInactive(ClientState conn, uint itemId) => InactiveItems.GetValueOrDefault(CharacterName(conn))?.Contains(itemId) == true;
+
 static string CharacterName(ClientState conn) => string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character;
 
 // The active gems socketed in the equipped items in skill-list order: skill id, GrantedEffects row, gem name.
 static IEnumerable<(ushort Id, int Effect, string Name)> GemSkillEffects(string? character)
 {
     using var ids = Skills.SkillIds().Skip(1).GetEnumerator();
-    foreach (var gem in PlayerInventories.For(string.IsNullOrEmpty(character) ? "Exile" : character, Items).SocketedGems())
-        if (Items.ByHash(gem.TypeHash) is { } t && Items.GemEffect(t) is int effect and >= 0 && ids.MoveNext())
+    string name = string.IsNullOrEmpty(character) ? "Exile" : character;
+    var inactive = InactiveItems.GetValueOrDefault(name);
+    // Gems in an inactive item grant nothing, but still take their id, so the other skills keep theirs.
+    foreach (var (host, gem) in PlayerInventories.For(name, Items).SocketedGemsByItem())
+        if (Items.ByHash(gem.TypeHash) is { } t && Items.GemEffect(t) is int effect and >= 0 && ids.MoveNext() && inactive?.Contains(host) != true)
             yield return (ids.Current, effect, t.Name);
 }
 
@@ -1665,7 +1701,7 @@ static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiph
 // The player's stats (0x1b3) and the skills computed with them (0x2ba Actor), after the level or the passives changed.
 static async Task SendCharacterStats(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
 {
-    await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]), $"0x01b3 player stats ({why})");
+    await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
     await SendSkills(remote, stream, ciphers, conn);
 }
 
@@ -1710,19 +1746,40 @@ static void LoadProgress(ClientState conn, int level)
 }
 
 // The pools of the character's class at this level with its passives (call under the Monsters lock).
-// The character's stats from its allocated passives and the global mods of its equipped items (ItemModStats), by
-// client stat key.
-static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<ushort>? nodes = null)
+// The character's stats from its allocated passives and the global mods of its active equipped items (ItemModStats),
+// by client stat key. Worn items whose requirements the class, the passives and the other active items do not meet are
+// inactive (ItemModStats.Inactive): remembered per character for the weapon profile and the gem skills.
+static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<ushort>? nodes = null, int? level = null)
 {
     var items = ItemsOf(conn);
-    var equipped = ItemModStats.EquipmentRows.SelectMany(items.Items).Select(i => i.Item);
-    return ItemModStats.Plus(Passives.Stats(nodes ?? conn.Passives, conn.MasteryEffects), ItemModStats.Global(equipped, Items.Mods, Stats));
+    var passives = Passives.Stats(nodes ?? conn.Passives, conn.MasteryEffects);
+    int Get(string name) => Stats.Key(name) is uint k ? passives.GetValueOrDefault(k) : 0;
+    var c = Skills.ClassFor(conn.ClassRow);
+    var (ps, pd, pi) = CharacterStats.Attributes(Get);
+    int god = conn.God ? 1000 : 0;
+    var worn = ItemModStats.EquipmentRows.SelectMany(items.Items)
+        .Select(i => (i, t: Items.ByHash(i.Item.TypeHash)))
+        .Select(x => x.t is { } t
+            ? new ItemModStats.Worn(x.i.Id, x.i.Item, Items.Requirements(t).Str, Items.Requirements(t).Dex, Items.Requirements(t).Int,
+                ItemModStats.LevelRequirement(x.i.Item, t.DropLevel, Items.Mods))
+            : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0)).ToList();
+    var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
+    var inactive = ItemModStats.Inactive(worn, (c.Strength + ps + god, c.Dexterity + pd + god, c.Intelligence + pi + god),
+        level ?? conn.Pools.Level, i => ItemModStats.Attributes(i, Items.Mods), before);
+    InactiveItems[CharacterName(conn)] = inactive;
+    if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
+        Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
+            string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w => $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+    var active = worn.Where(w => !inactive.Contains(w.Id)).Select(w => w.Item);
+    return ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
 }
 
 static CharacterStats.Pools PoolsFor(ClientState conn, int level)
 {
+    // The stat sources first: they decide which worn items are inactive, which the weapon profile reads.
+    var sources = CharacterStatSources(conn, level: level);
     var weapons = WeaponProfileFor(conn);
-    var bonus = PassiveBonus(CharacterStatSources(conn), weapons);
+    var bonus = PassiveBonus(sources, weapons);
     var gear = EquippedBaseDefences(conn);
     bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion };
     List<AuraCatalog.Aura> auras;
@@ -2537,7 +2594,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
         int value = int.Parse(args[1]);
         lock (conn.Monsters) conn.PlayerStats[stat] = value;
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
             $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
         // Skills compute with their own stats (the attack and the character panel read those), so send them again.
         await SendSkills(remote, stream, ciphers, conn);
@@ -3420,14 +3477,14 @@ static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(stri
 
 // The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
 // row is used (its minimum roll, matching the item's default base percentile); local/global mods and quality are not
-// modelled. Shields are excluded for now.
+// modelled. Shields are excluded for now. Inactive items (requirements not met) give none.
 static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
 {
     var items = ItemsOf(conn);
     int armour = 0, evasion = 0;
     foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots })
-        if (items.Items(row) is [var equipped, ..] && Items.ByHash(equipped.Item.TypeHash) is { } type
-            && Items.Defences(type) is { } d)
+        if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
+            && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
         {
             armour += d.ArmourMin;
             evasion += d.EvasionMin;
@@ -3455,7 +3512,7 @@ static WeaponProfile WeaponProfileFor(ClientState conn)
     var dual = Pair(main1, off1) || Pair(main2, off2);
     var claws = (main1?.Class == "Claw" && off1?.Class == "Claw") || (main2?.Class == "Claw" && off2?.Class == "Claw");
     var unarmed = main1 is null && main2 is null;
-    var mainItem = items.Items(2).Concat(items.Items(14)).Select(i => i.Item).FirstOrDefault();
+    var mainItem = items.Items(2).Concat(items.Items(14)).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
     var local = mainItem is null ? [] : ItemModStats.Local(mainItem, Items.Mods);
     return new WeaponProfile(
         Shield: HasShield(conn),
@@ -3513,7 +3570,7 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
     conn.Pools = PoolsFor(conn, conn.Pools.Level);
     lock (conn.Monsters) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
     await SendSkills(remote, stream, ciphers, conn);
-    await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. FinalPlayerStats(conn)]),
+    await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
         "0x01b3 player stats (equipment)");
     await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
 }
@@ -3847,7 +3904,10 @@ static async Task HeldOntoItem(string remote, NetworkStream stream, ConnectionCi
         return;
     }
     string why = "unknown inventory";
-    var done = PlayerInventories.Row(a.InventoryId) is byte row ? items.MergeOnto(row, a.ItemId, ShapeOf, out why, OneOf(a)) : null;
+    var done = PlayerInventories.Row(a.InventoryId) is byte row
+        ? LevelTooLow(conn, row, items.Items(PlayerInventories.Cursor).FirstOrDefault()?.Item) is { } low ? null : items.MergeOnto(row, a.ItemId, ShapeOf, out why, OneOf(a))
+        : null;
+    if (done is null && PlayerInventories.Row(a.InventoryId) is byte lr && LevelTooLow(conn, lr, items.Items(PlayerInventories.Cursor).FirstOrDefault()?.Item) is { } tooLow) why = tooLow;
     if (done is null)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x004a held item onto {a}: refused ({why}): {hex}");
@@ -3897,8 +3957,10 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
     if (place.A != 0) Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: one of the held stack (Shift)");
     PlayerInventories.Placement? done = null;
     string why = "unknown inventory";
-    if (PlayerInventories.Row(place.InventoryId) is byte row)
-        done = items.Place(row, (int)place.X, (int)place.Y, ShapeOf, out why, one: place.A != 0);
+    if (PlayerInventories.Row(place.InventoryId) is byte row && LevelTooLow(conn, row, items.Items(PlayerInventories.Cursor).FirstOrDefault()?.Item) is { } low)
+        why = low;
+    else if (PlayerInventories.Row(place.InventoryId) is byte r)
+        done = items.Place(r, (int)place.X, (int)place.Y, ShapeOf, out why, one: place.A != 0);
     if (done is null)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: refused ({why})");
@@ -4128,6 +4190,8 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var stats = CharacterPlayerStats(conn);
     var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
     var weaponStats = weapon.Stats(stats).ToList();
+    // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
+    lock (conn.Monsters) conn.SentStatKeys = [.. statList.Select(s => s.Item1), .. weaponStats.Select(s => s.Item1)];
     int reservedMana = ReservedMana(conn);
     var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: pools.Life,
         Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
@@ -4237,6 +4301,8 @@ sealed partial class Program
     internal static readonly SkillCatalog Skills = new();
     // Stat names ↔ client keys (Stats.dat row + 1).
     internal static readonly StatCatalog Stats = new();
+    // Per character: the ids of worn items whose requirements are not met (CharacterStatSources).
+    internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<uint>> InactiveItems = new(StringComparer.OrdinalIgnoreCase);
     // The character panel's Spell Suppression chance stats (the client reads the final value).
     internal static readonly uint[] SuppressionChanceKeys = [.. new[] { "spell_suppression_chance_%",
         "base_spell_suppression_chance_%", "combined_spell_suppression_chance_%" }.Select(n => Stats.Key(n)).OfType<uint>()];
@@ -4676,6 +4742,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public HashSet<ushort> ClientSkillIds = [];
     // The character's level and the pools that follow from it and the class (CharacterStats).
     public CharacterStats.Pools Pools { get; set; } = new(1, 50, 40, 2, 0);
+    // The player stat keys the client holds (PlayerStatsWithCleared). Guarded by the Monsters lock.
+    public HashSet<uint> SentStatKeys = [];
     // Dev-only forced lucky block, on top of the stats (Svalinn's "Chance to Block is Lucky").
     public bool ForceAttackBlockLucky, ForceSpellBlockLucky;
     // When the player last hit an enemy (attack or spell hit; Clock seconds), for "if you've hit an enemy recently".

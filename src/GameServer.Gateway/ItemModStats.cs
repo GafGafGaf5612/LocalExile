@@ -40,6 +40,69 @@ static class ItemModStats
     /// <summary>One item's local stats by Stats.dat Id (local_critical_strike_chance_+% …).</summary>
     public static Dictionary<string, int> Local(Item item, ModCatalog mods) => Sum([item], mods, local: true);
 
+    /// <summary>A worn item with what it needs: strength, dexterity, intelligence and character level.</summary>
+    public sealed record Worn(uint Id, Item Item, int Strength, int Dexterity, int Intelligence, int Level);
+
+    /// <summary>
+    /// The worn items that are inactive (their requirements are not met), as in the game: an item stays equipped but its
+    /// mods and socketed gems do nothing. It works step by step from <paramref name="previous"/> (the inactive items
+    /// before this change; ids no longer worn are dropped):
+    /// <list type="number">
+    /// <item>An inactive item comes back when the character (<paramref name="baseAttributes"/>: class and passives), the
+    /// active items and the level meet its requirement; its own attributes do not count while it is off.</item>
+    /// <item>Then, with the attributes of every active item counted (its own too: the client only lets an item be put
+    /// on when its requirements are met without it, so a worn active item has qualified), one item that falls short is
+    /// switched off, the totals are counted again, and so on until every active item is satisfied.</item>
+    /// </list>
+    /// Taking off a +30 strength ring that another +30 strength item needed leaves that item on if the rest still
+    /// reaches its requirement; an item it switches off can switch off more.
+    /// </summary>
+    public static HashSet<uint> Inactive(IReadOnlyList<Worn> worn, (int Str, int Dex, int Int) baseAttributes, int level,
+        Func<Item, (int Str, int Dex, int Int)> attributesOf, IReadOnlySet<uint>? previous = null)
+    {
+        var own = worn.ToDictionary(w => w.Id, w => attributesOf(w.Item));
+        var inactive = worn.Where(w => previous?.Contains(w.Id) == true).Select(w => w.Id).ToHashSet();
+        (int, int, int) Totals() => (baseAttributes.Str + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Str),
+            baseAttributes.Dex + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Dex),
+            baseAttributes.Int + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Int));
+        bool Meets(Worn w, (int Str, int Dex, int Int) t) => level >= w.Level && t.Str >= w.Strength && t.Dex >= w.Dexterity && t.Int >= w.Intelligence;
+        // 1. Back on: met by the others (an inactive item is not in the totals).
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            if (worn.FirstOrDefault(w => inactive.Contains(w.Id) && Meets(w, Totals())) is { } back) { inactive.Remove(back.Id); changed = true; }
+        }
+        // 2. Off, one at a time, in equipment order, recounting after each.
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            var totals = Totals();
+            if (worn.FirstOrDefault(w => !inactive.Contains(w.Id) && !Meets(w, totals)) is { } off) { inactive.Add(off.Id); changed = true; }
+        }
+        return inactive;
+    }
+
+    /// <summary>The attributes an item's global mods give (additional_strength, all attributes, the pairs …).</summary>
+    public static (int Str, int Dex, int Int) Attributes(Item item, ModCatalog mods)
+    {
+        var stats = Sum([item], mods);
+        return CharacterStats.Attributes(name => stats.GetValueOrDefault(name));
+    }
+
+    /// <summary>
+    /// An item's character level requirement, as the client computes it (0x1421e03d0, stored in the Mods component
+    /// +0x2bc; nothing is sent): a local_level_requirement_override wins outright; otherwise the item type's level, raised
+    /// to Mods.dat Level × 4 / 5 of every mod in all five lists, plus local_level_requirement_+, at least 0. The client
+    /// shows it in the tooltip but does not refuse an equip below it, so the server does.
+    /// </summary>
+    public static int LevelRequirement(Item item, int dropLevel, ModCatalog mods)
+    {
+        var local = Sum([item], mods, local: true);
+        if (local.GetValueOrDefault("local_level_requirement_override") is int over and not 0) return Math.Max(0, over);
+        int required = Math.Max(dropLevel, item.Mods.Select(m => (mods.ByHash(m.Hash)?.Level ?? 0) * 4 / 5).DefaultIfEmpty(0).Max());
+        return Math.Max(0, required + local.GetValueOrDefault("local_level_requirement_+"));
+    }
+
     /// <summary>Two stat dictionaries added together (passives + items).</summary>
     public static Dictionary<uint, int> Plus(Dictionary<uint, int> a, Dictionary<uint, int> b)
     {

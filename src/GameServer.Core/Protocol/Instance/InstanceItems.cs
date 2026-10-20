@@ -66,6 +66,15 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// <summary>Components <see cref="Payload"/> can write.</summary>
     public static readonly HashSet<string> Supported = [.. NoData, "Base", "Mods", "Armour", "Quality", "Sockets", "Charges", "Stack", "SkillGem"];
 
+    /// <summary>The character level the item requires, sent in the Mods component (+0x2bc). The client keeps the byte
+    /// it receives (it only recomputes it, 0x1421e03d0, when an item's mods change on its side) and shows it in the
+    /// tooltip and checks it before equipping, so the server must send it. The Gateway sets this from the type and the
+    /// mods; without it 0 is sent. <see cref="RequiredLevel"/> overrides it for one item.</summary>
+    public static Func<Item, int>? LevelRequirementOf { get; set; }
+
+    /// <summary>This item's level requirement, instead of <see cref="LevelRequirementOf"/>.</summary>
+    public int? RequiredLevel { get; init; }
+
     public static bool CanSerialize(IEnumerable<string> components) => components.All(Supported.Contains);
 
     /// <summary>
@@ -106,9 +115,12 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 case "Armour":
                     w.U8(0);
                     break;
-                // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc, u16 flags (bit 6 incubator, bit 4 → u8, bit 15 a 0x1c8
-                // record), the base magic properties 0x142201d70 (MagicProperties), u8, u8.
-                case "Mods": w.U8(ItemLevel).U8(0).U16(0); MagicProperties(w); w.U8(0).U8(0); break;
+                // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc (level requirement, kept as sent), u16 flags (bit 6
+                // incubator, bit 4 → u8, bit 15 a 0x1c8 record), the base magic properties 0x142201d70 (MagicProperties), u8, u8.
+                case "Mods":
+                    w.U8(ItemLevel).U8((byte)Math.Clamp(RequiredLevel ?? LevelRequirementOf?.Invoke(this) ?? 0, 0, 255)).U16(0);
+                    MagicProperties(w); w.U8(0).U8(0);
+                    break;
                 case "Quality": w.U8(Quality); break;                 // 0x1424aec50
                 case "Charges": w.CompactI(Charges); break;           // 0x14249d4b0: signed compact (0x141e490e0)
                 case "Stack": w.U16(StackSize); break;                // 0x1423f4b30
