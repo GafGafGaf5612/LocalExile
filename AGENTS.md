@@ -18,6 +18,9 @@ All agent and contributor documentation is in [Agents/](Agents/). Read these fir
   `Tools/ghidra-projects`, `Tools/re/out` (decompiled client code). `.gitignore` keeps them out; do not force-add.
 - **Never commit secrets:** generated keys (`data/login-keys.json`, `data/instance-secret.bin`), accounts, or
   credentials of the official services.
+- **Game data comes from `scripts/dev/extract-data.ps1`** (`live.ps1` runs it). A change that adds a game-data file
+  under `data/`, or changes what a generator writes, adds or bumps that file's entry in the script's manifest (and in
+  the Gateway's `GameDataFiles.cs`) in the same PR, instead of a "regenerate after pulling" note.
 - **Keep the docs current:** when you find or build something, update `Agents/docs/` and move the item from
   `Roadmap.md` to `Status.md` in the same change.
 - **Verify with the real client and the logs** (`logs\`), and keep `dotnet test tests/GameServer.Core.Tests`,

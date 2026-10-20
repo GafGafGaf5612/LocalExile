@@ -29,7 +29,7 @@ static class AreaTransitionCatalog
         var area = Atlas.Value?.GetValueOrDefault(hash);
         if (area is null)
         {
-            notes.Add(Atlas.Value is null ? $"no {AtlasFile} (run scripts/re/atlas)" : $"area 0x{hash:x4} is not in the atlas");
+            notes.Add(Atlas.Value is null ? $"no {AtlasFile} (run scripts/dev/extract-data.ps1)" : $"area 0x{hash:x4} is not in the atlas");
             return [];
         }
         var topologies = area.Topologies ?? [];
