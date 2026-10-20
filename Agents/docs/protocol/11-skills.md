@@ -238,8 +238,10 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
   the player is still within reach + 2: 0x1b1 on the player.
 - **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level; the server rolls the player's
-  evasion with the same `AccuracyHitChance` formula and sends no life update on a miss. A hit then goes through the
-  player's armour (`MitigatePhysical`) and block. `/defences` prints the reference values.
+  evasion with the same `AccuracyHitChance` formula and sends no life update on a miss. The roll uses PoE's shared
+  entropy counter (0–99): each attack adds its hit chance, 100 or more means a hit and subtracts 100, and the counter is
+  randomized after 3.33 s without an attack. A hit then goes through the player's armour (`MitigatePhysical`) and
+  block. `/defences` prints the reference values.
 - **Player life** (`ClientState.PlayerLife`, from the level/class/passive pools). At 0 the client plays the death
   animation and blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is
   hidden at 0 (`hide_mini_life_bar`, as for monsters) and shown again on revive.
