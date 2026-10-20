@@ -116,6 +116,8 @@ keeps the ids of the last list it sent (`ChooserList`).
   `resolve`, `list`, `transfer` (returns the new `Ticket`), `leave`, `set_level` (`Level`: saved to the account store and
   carried by the character's next tickets). A `leave` from an older ticket of a character whose latest ticket is in the
   same instance is ignored, so re-entering the instance one is in (Instance Manager) keeps the character in it.
+  `gateway_started` (no ticket) is the Gateway's first call: every player leaves every instance (`InstanceRegistry.LeaveAll`),
+  so a Gateway that stopped without sending `leave` (a restart, a crash) does not keep its players' instances alive.
 - **Gateway**:
   - Ctrl+click → `list` → 0xae.
   - 0xaf or a plain click → 0x2b2.

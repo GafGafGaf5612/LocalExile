@@ -80,4 +80,22 @@ public class InstanceRegistryTests
         clock.Now += TimeSpan.FromMinutes(2);
         Assert.Equal(TimeSpan.FromMinutes(4), reg.TimeLeft(coast));
     }
+
+    [Fact]
+    public void A_restarted_gateway_empties_every_instance_and_starts_their_expiry()
+    {
+        // A Gateway that stopped mid-connection never sent "leave": its players stayed in their instances for good.
+        var clock = new FakeClock();
+        var reg = new InstanceRegistry(clock) { Lifetime = TimeSpan.FromMinutes(6) };
+        var coast = reg.Enter(Coast, "A");
+        var emptied = reg.Enter(Coast, "B");
+        reg.Leave(emptied.Id, "B");
+        clock.Now += TimeSpan.FromMinutes(1);
+        Assert.Equal(1, reg.LeaveAll());                      // only A was still inside
+        Assert.Empty(coast.Players);
+        Assert.Equal(TimeSpan.FromMinutes(6), reg.TimeLeft(coast));
+        Assert.Equal(TimeSpan.FromMinutes(5), reg.TimeLeft(emptied)); // an empty one keeps its own expiry
+        clock.Now += TimeSpan.FromMinutes(6);
+        Assert.Empty(reg.List(Coast));
+    }
 }
