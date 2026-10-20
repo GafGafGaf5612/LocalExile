@@ -155,13 +155,15 @@ Items are in rough priority order within each section. "Known" says what is alre
   into them. New characters start on The Twilight Strand and log in there until they enter a town; Hillock's death
   (quest a1q1) opens the gate into Lioneye's Watch ([12](docs/protocol/12-quests.md) §6). The death
   screen's "Resurrect in Town" goes to the last town, with a loading screen, and is not offered before the character
-  has one; "Resurrect at Checkpoint" goes to the area's arrival point ([09](docs/protocol/09-area-change.md) §7).
+  has one; "Resurrect at Checkpoint" goes next to the area's activated waypoint, else to the area's arrival point
+  ([09](docs/protocol/09-area-change.md) §7).
 - **Done when** (low priority: the start and the gate work, these are visual): the Strand's gate plays its opening when
   Hillock dies, the force wall blocks the way while he lives and the Doorman opens the door
   ([12](docs/protocol/12-quests.md) §6, "The gate's animation");
   "Resurrect at Checkpoint" goes to
-  the last activated checkpoint of the area, with no loading screen (checkpoint objects are not implemented yet).
-  Without an activated checkpoint it revives where the player entered the area, which the Gateway already does. Dying
+  the last activated checkpoint of the area, with no loading screen. Waypoints are checkpoints, and the activated
+  waypoint is done; the separate `Metadata/MiscellaneousObjects/Checkpoint` objects are not placed yet, so "last
+  activated" across several checkpoints is open. Dying
   in a boss arena revives just outside the arena's door, even with a checkpoint activated; dying in a map revives in
   the hideout (no hideouts yet).
 - **One-way entries:** the arrival next to the exit back needs an exit back. Lioneye's Watch from The Twilight Strand
