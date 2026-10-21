@@ -49,6 +49,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [dev/live-testing.md](dev/live-testing.md) | the older live-testing notes (GettingStarted supersedes them) |
 | [dev-server.md](dev-server.md) | the JSON-lines dev server, `GameServer.Auth` and `GameServer.Patch` usage |
 | [saves.md](saves.md) | how player progress is saved: the SQLite save database, transactions, what a failed save does |
+| [survivors.md](survivors.md) | the Survivors game mode: the league, the hideout start, one-portal maps, waves, auto-cast skills and picks |
 | [game/maps.md](game/maps.md) | 3.29 maps and the Atlas: the 20 generic map bases, tiers, drops, Voidstones (rules to build to) |
 
 ## Working notes (history)

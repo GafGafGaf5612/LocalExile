@@ -14,6 +14,22 @@ public class SkillBarLayoutTests
     }
 
     [Fact]
+    public void A_new_survivors_bar_gets_move_on_the_left_mouse_button_the_gem_skill_on_the_right_and_the_attack_next()
+    {
+        var added = SkillBarLayout.Fill(new Dictionary<int, string>(), Attack, ["HolyStrike"], Having("HolyStrike"), moveOnLeft: true);
+
+        Assert.Equal([(0, SkillBarLayout.Move), (2, "HolyStrike"), (3, Attack)], added);
+    }
+
+    [Fact]
+    public void A_new_survivors_bar_without_gems_gets_the_attack_on_the_right_mouse_button()
+    {
+        var added = SkillBarLayout.Fill(new Dictionary<int, string>(), Attack, [], Having(), moveOnLeft: true);
+
+        Assert.Equal([(0, SkillBarLayout.Move), (2, Attack)], added);
+    }
+
+    [Fact]
     public void Slots_the_player_set_stay_and_new_skills_take_the_next_empty_ones()
     {
         // Fireball was moved to Q; "Move only" is on the left mouse button.

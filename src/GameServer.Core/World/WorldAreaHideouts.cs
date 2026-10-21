@@ -17,4 +17,13 @@ public static class WorldAreaHideouts
             .Where(r => r.TryGetProperty("IsHideout", out var h) && h.ValueKind == JsonValueKind.True)
             .Select(r => (ushort)r.GetProperty("HASH16").GetInt32()).ToHashSet();
     }
+
+    /// <summary>The HASH16 of the WorldAreas row with this Id (a hideout's area), or 0 when the file or row is missing.</summary>
+    public static ushort HashOf(string worldAreasJson, string id)
+    {
+        if (!File.Exists(worldAreasJson)) return 0;
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(worldAreasJson));
+        return doc.RootElement.EnumerateArray().FirstOrDefault(r => r.GetProperty("Id").GetString() == id) is { ValueKind: JsonValueKind.Object } row
+            ? (ushort)row.GetProperty("HASH16").GetInt32() : (ushort)0;
+    }
 }

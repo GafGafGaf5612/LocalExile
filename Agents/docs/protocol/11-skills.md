@@ -475,10 +475,11 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
 - **The Gateway** saves each 0x4e (`CharacterSaves`, `data/saves.db`) as slot → a GrantedEffects Id for gems and the default
   attack (skill ids change with the socketed gems), `Action/<ActionTypes Id>` for a basic action (Move 0x2909 =
   "Move only"), or "" for a cleared slot. It sends 0x53 right after the player and area messages, no delay needed,
-  with the default attack on slot 0 only when nothing was saved there. Live 2026-10-18: Fireball on the right mouse
+  with the default attack (a Survivors character: Move) on slot 0 only when nothing was saved there. Live 2026-10-18: Fireball on the right mouse
   button and "Move only" on the left one came back after login and area changes, with the bar there at once.
 - **New skills go into empty slots only** (`SkillBarLayout`, `FillSkillBar`). A new character's bar gets the default
-  attack on the left mouse button (slot 0) and its gem skill on the right one (slot 2). `SendSkills` runs it before it sends the saved bar
+  attack on the left mouse button (slot 0) and its gem skill on the right one (slot 2); a Survivors character's gets Move
+  there (`Action/Move`) and the default attack on the next empty slot (Q; the right mouse button without gems). `SendSkills` runs it before it sends the saved bar
   again (#108), so a gem skill that is nowhere on the bar takes the first empty slot in this order: the right mouse button, Q W E R T (3–7), the
   middle button, then the rest. An empty slot is one never set, cleared, or holding a skill whose gem left. Slots the
   player set stay as they are, and a cleared left button stays cleared. Live 2026-10-20: a new Templar got the sword on

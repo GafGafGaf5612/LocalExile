@@ -87,9 +87,10 @@ sealed class MapDevice
     /// <summary>The character's open map, or null.</summary>
     public static OpenMap? OpenOf(string character) => Open.GetValueOrDefault(character);
 
-    /// <summary>Opens a map for the character with a portal at every place, replacing the one open before.</summary>
-    public static OpenMap Activate(string character, MapArea area) =>
-        Open[character] = new OpenMap(area, 0, [.. Enumerable.Range(0, PortalCount)]);
+    /// <summary>Opens a map for the character with a portal at the first <paramref name="portals"/> places (every place by
+    /// default; the Survivors league: one), replacing the one open before.</summary>
+    public static OpenMap Activate(string character, MapArea area, int portals = PortalCount) =>
+        Open[character] = new OpenMap(area, 0, [.. Enumerable.Range(0, Math.Clamp(portals, 1, PortalCount))]);
 
     /// <summary>Takes the portal at place <paramref name="index"/> of the character's open map, so it does not come back.
     /// Returns the map as it was (its instance to enter, 0 for a new one) and how many portals are left, or null when no

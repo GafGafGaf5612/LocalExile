@@ -12,7 +12,10 @@ public sealed record League(string Name, string Base, bool Hardcore, bool Ssf, b
     /// <summary>The card text. It must not be empty: the create screen's card (0x140cc8820) throws "invalid string
     /// position" on an empty one and the client crashes (live 2026-10-18). A leading '#' makes it a lookup key.</summary>
     public string Description =>
-        (string.Equals(Base, LeagueCatalog.Standard, StringComparison.OrdinalIgnoreCase) ? "The permanent league." : $"The {Base} challenge league.")
+        (string.Equals(Base, LeagueCatalog.Standard, StringComparison.OrdinalIgnoreCase) ? "The permanent league."
+            : string.Equals(Base, LeagueCatalog.Survivors, StringComparison.OrdinalIgnoreCase)
+                ? "Start in your hideout with a Beach Map. Your skills fire on their own: survive the waves for 15 minutes and kill the boss."
+                : $"The {Base} challenge league.")
         + (Hardcore ? " Characters that die move to the parent league." : "")
         + (Ssf ? " Solo Self-Found: no trading or parties." : "")
         + (Ruthless ? " Ruthless: extreme item scarcity." : "");
@@ -29,12 +32,19 @@ public sealed record League(string Name, string Base, bool Hardcore, bool Ssf, b
 /// The server's leagues: each base league with its seven variants, named as the official servers name them
 /// (Standard: Hardcore, SSF Standard, SSF Hardcore, Ruthless, Hardcore Ruthless, SSF Ruthless, SSF Hardcore Ruthless;
 /// a challenge league L: Hardcore L, SSF L, HC SSF L, Ruthless L, HC Ruthless L, SSF Ruthless L, HC SSF R L).
-/// Base leagues come from <c>Game_LEAGUES</c> (comma-separated), default Standard and Allflame (3.29, "Curse of the
-/// Allflame"; LeagueNames.dat row Deepwater). Any name works: the client has no league list of its own.
+/// Base leagues come from <c>Game_LEAGUES</c> (comma-separated), default Standard, Allflame (3.29, "Curse of the
+/// Allflame"; LeagueNames.dat row Deepwater) and Survivors (the game mode). Any name works: the client has no league list
+/// of its own.
 /// </summary>
 public sealed class LeagueCatalog
 {
     public const string Standard = "Standard";
+
+    /// <summary>The Survivors game mode's league (Agents/docs/survivors.md): its characters start in their hideout.</summary>
+    public const string Survivors = "Survivors";
+
+    /// <summary>Whether the league is Survivors or one of its Hardcore / SSF / Ruthless forms.</summary>
+    public static bool IsSurvivors(League? league) => string.Equals(league?.Base, Survivors, StringComparison.OrdinalIgnoreCase);
 
     public IReadOnlyList<League> All { get; }
 
@@ -47,7 +57,7 @@ public sealed class LeagueCatalog
         All = all;
     }
 
-    public static LeagueCatalog Default { get; } = new([Standard, "Allflame"]);
+    public static LeagueCatalog Default { get; } = new([Standard, "Allflame", Survivors]);
 
     public static LeagueCatalog FromEnvironment() =>
         Environment.GetEnvironmentVariable("Game_LEAGUES") is { Length: > 0 } list ? new(list.Split(',')) : Default;

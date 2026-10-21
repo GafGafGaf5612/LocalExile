@@ -14,7 +14,7 @@ using GameServer.Core.World;
 /// (<see cref="InstanceControl"/>). Docs: Agents/docs/protocol/09-area-change.md.
 /// </summary>
 sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accounts = null,
-    IReadOnlyList<(string Id, ushort Hash16)>? towns = null)
+    IReadOnlyList<(string Id, ushort Hash16)>? towns = null, ushort hideout = 0)
 {
     private readonly IReadOnlyList<(string Id, ushort Hash16)> _towns = towns ?? WorldAreaTowns.Default;
 
@@ -55,8 +55,11 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
     {
         string character = session.CharacterName ?? "?";
         _links[character] = link;
-        // Every login starts at the character's last town, as in the real game (#4).
-        var inst = registry.Enter(WorldAreaTowns.LoginArea(session.CharacterLastTown, _towns), character);
+        // Every login starts at the character's last town, as in the real game (#4); a Survivors character's in its
+        // hideout (Agents/docs/survivors.md).
+        ushort start = LeagueCatalog.IsSurvivors(session.CharacterLeague) && hideout != 0
+            ? hideout : WorldAreaTowns.LoginArea(session.CharacterLastTown, _towns);
+        var inst = registry.Enter(start, character);
         return (inst.AreaHash, NewTicket(session, character, inst));
     }
 

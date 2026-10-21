@@ -95,10 +95,12 @@ static async Task Serve(LoginServerKeys keys)
         Towns = towns.Select(t => t.Hash16).ToHashSet(),
     };
     Console.WriteLine($"[auth] towns: {towns.Count} ({string.Join(", ", towns.Select(t => t.Id))})");
-    var directory = new InstanceDirectory(registry, accounts, towns);
+    // Survivors characters log in to their hideout: every character's, HideoutForest (the Gateway's HideoutCatalog.DefaultArea).
+    ushort hideout = GameServer.Core.World.WorldAreaHideouts.HashOf(Path.Combine("data", "tables", "WorldAreas.json"), "HideoutForest");
+    var directory = new InstanceDirectory(registry, accounts, towns, hideout);
     _ = directory.ServeControlAsync(InstanceControl.Port);
     Console.WriteLine($"[auth] login server on tcp/{port}");
-    // Game_LEAGUES: comma-separated base leagues (default Standard, Allflame), each with its Hardcore / SSF / Ruthless variants.
+    // Game_LEAGUES: comma-separated base leagues (default Standard, Allflame, Survivors), each with its Hardcore / SSF / Ruthless variants.
     Console.WriteLine($"[auth] leagues: {string.Join(", ", LeagueCatalog.FromEnvironment().All.Select(l => l.Name))}");
     while (true)
     {

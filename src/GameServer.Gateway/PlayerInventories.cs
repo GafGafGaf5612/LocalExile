@@ -702,13 +702,15 @@ sealed class PlayerInventories
     }
 
     private static readonly ConcurrentDictionary<string, int> ClassRows = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, string> Leagues = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The character's class (Characters.dat row), for its start kit: set when it connects, before its items
     /// are first used. Items kept in memory without a save file belonged to a deleted character of the same name (Auth
     /// sets the save aside, and every character's items are saved as soon as they exist), so they are dropped.</summary>
-    public static void SetClass(string character, int characterRow)
+    public static void SetClass(string character, int characterRow, string? league = null)
     {
         ClassRows[character] = characterRow;
+        if (league is not null) Leagues[character] = league;
         if (CharacterSaves.Load(character) is not null) return;
         CharacterSaves.ForgetExperience(character);   // a deleted character's, if any
         if (ByCharacter.TryRemove(character, out var gone))
@@ -727,7 +729,7 @@ sealed class PlayerInventories
         ByCharacter.GetOrAdd(character, name =>
         {
             var saved = FromSave(name, catalog);
-            var inv = saved ?? StartKit(catalog, folder, ClassRows.GetValueOrDefault(name, 1));
+            var inv = saved ?? StartKit(catalog, folder, ClassRows.GetValueOrDefault(name, 1), Leagues.GetValueOrDefault(name));
             inv._owner = name;
             inv._mods = catalog.Mods;
             if (saved is null) inv.Persist();
@@ -849,10 +851,11 @@ sealed class PlayerInventories
     /// Weapon1 (Game_START_WEAPON=ground: the <see cref="StartWeapon"/> waiting on the ground), the
     /// StartSkillGem and StartSupportGem (SkillGems rows → their BaseItemTypes: Fireball, Arcane Surge Support) in the main
     /// inventory, and
-    /// two Small Life Flasks (flask keys 1 and 2) and a Small Mana Flask (key 5). Missing tables or unsupported types are skipped;
+    /// two Small Life Flasks (flask keys 1 and 2) and a Small Mana Flask (key 5); in the Survivors league no gems but a
+    /// Beach Map and 40 Scrolls of Wisdom. Missing tables or unsupported types are skipped;
     /// Game_START_ITEMS=0 starts empty.
     /// </summary>
-    static PlayerInventories StartKit(ItemCatalog catalog, string folder, int characterRow = 1)
+    static PlayerInventories StartKit(ItemCatalog catalog, string folder, int characterRow = 1, string? league = null)
     {
         var inv = new PlayerInventories();
         if (Environment.GetEnvironmentVariable("Game_START_ITEMS") == "0") return inv;
@@ -891,12 +894,23 @@ sealed class PlayerInventories
             if (Environment.GetEnvironmentVariable("Game_START_WEAPON") == "ground") inv._startWeapon = item;
             else inv.Add(Weapon1, 0, 0, item);
         }
-        Put(MainInventory, 0, 0, Gem("StartSkillGem"));
-        Put(MainInventory, 1, 0, Gem("StartSupportGem"));
+        // Survivors characters fight with the run's own skills: no skill or support gem.
+        if (!Survivors.IsLeague(league))
+        {
+            Put(MainInventory, 0, 0, Gem("StartSkillGem"));
+            Put(MainInventory, 1, 0, Gem("StartSupportGem"));
+        }
         // Keys 1 and 2: life; key 5: mana, as players set the bar up.
         Put(Flask, 0, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));
         Put(Flask, 1, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));
         Put(Flask, 4, 0, catalog.Find("Metadata/Items/Flasks/FlaskMana1"));
+        // Survivors (Agents/docs/survivors.md): a Beach Map for the hideout's map device and a stack of Scrolls of Wisdom.
+        if (Survivors.IsLeague(league))
+        {
+            Put(MainInventory, 2, 0, catalog.Find(Survivors.MapItem));
+            if (catalog.Find(Survivors.Wisdom) is { Supported: true } wisdom)
+                inv.Add(MainInventory, 3, 0, ItemCatalog.Create(wisdom) with { StackSize = Survivors.WisdomCount });
+        }
         return inv;
     }
 }

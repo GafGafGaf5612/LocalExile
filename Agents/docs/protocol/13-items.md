@@ -424,7 +424,7 @@ and instance (`InstanceState.PlaceStartWeapon`) on the first walkable cell 6 to 
 (`AreaLayout.Near`), as a WorldItem like loot. Picking it up (C→S 0x24) clears it in the same save as the item's new cell,
 so a crash never keeps it both waiting and in the inventory. A new instance or a Gateway restart before the pickup puts
 it there again; so does a new character with a deleted one's name in the same instance (its weapon is another item).
-`Game_START_ITEMS=0` starts empty.
+A Survivors character gets no gems ([survivors](../survivors.md)); `Game_START_ITEMS=0` starts empty.
 
 The kit is built once, when the character has no save, and saved at once. Without `data/tables` (`Characters.json`,
 `SkillGems.json`) and `data/item-types.json` it is empty, the Gateway logs `start kit is empty`, and the character keeps

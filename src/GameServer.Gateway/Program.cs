@@ -182,8 +182,9 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             left = conn;
             conn.Commands = Commands(remote, stream, ciphers, conn);
-            conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
-            PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
+            // Waypoint travel arrives next to the waypoint; so does a login into a hideout (a Survivors character's start).
+            conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _) || (conn.CameFrom is null && HideoutCatalog.ByArea(layout.Hash) is not null);
+            PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow, conn.League);   // before its items are first used (start kit)
             // Load the items now: a new character's start kit is built only while it has no save, and the save is written
             // at 0x7d by the area visit (RecordVisit), before the player object first needs the items.
             var startItems = ItemsOf(conn);
@@ -351,7 +352,17 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             await Send(remote, stream, ciphers, InstanceChat.MessageBox(LockstepWarning), "0x000d message box: lockstep warning");
         }
         else if (id == InstancePause.RequestId)
-            await SetPaused(remote, stream, ciphers, conn, InstancePause.ReadRequest(bytes));
+        {
+            bool pause = InstancePause.ReadRequest(bytes);
+            // Survivors: closing the Escape menu while an upgrade waits keeps the area paused until it is picked.
+            if (!pause && conn.Run?.Offer is not null && SurvivorsPauses)
+            {
+                Console.WriteLine($"[gateway] {remote} <= 0x01d4 resume: a Survivors pick is open, the area stays paused");
+                await Send(remote, stream, ciphers, InstancePause.State(true), "0x01d3 paused (a Survivors pick is open)");
+                await conn.Commands!.Reply("Survivors: choose an upgrade first (/1, /2 or /3).");
+            }
+            else await SetPaused(remote, stream, ciphers, conn, pause);
+        }
         else if (id == InstanceProtocol.UseInstantSkillId)
         {
             // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,
@@ -588,13 +599,17 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
-                await PopulateArea(remote, stream, ciphers, conn);
+                // A Survivors character's map is a run (RunSurvivors) instead of the area's packs.
+                bool survivorsRun = IsSurvivorsRun(conn);
+                if (survivorsRun) _ = RunSurvivors(remote, stream, ciphers, conn);
+                else await PopulateArea(remote, stream, ciphers, conn);
                 await SendGroundItems(remote, stream, ciphers, conn);
                 await PlaceStartWeapon(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 await SpawnTownStash(remote, stream, ciphers, conn);
                 await SpawnHideoutDoodads(remote, stream, ciphers, conn);
-                await SpawnMapReturnPortal(remote, stream, ciphers, conn);
+                if (!survivorsRun) await SpawnMapReturnPortal(remote, stream, ciphers, conn);
+                await GiveSurvivorsMap(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
                 _ = RunFlaskRecovery(remote, stream, ciphers, conn);
@@ -619,8 +634,9 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
 
 // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
 // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
-static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
-    byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null)
+static async Task<uint> SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
+    byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null,
+    bool hunt = false)
 {
     uint id = conn.NextObjectId++;
     // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
@@ -652,11 +668,12 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
             variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
         {
             Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
-            Life = Math.Min(damagedLife ?? life, life),
+            Life = Math.Min(damagedLife ?? life, life), Hunts = hunt, Aggro = hunt,
         };
     // A kept monster that was hit: its life as a hit sets it (0x1b1).
     if (damagedLife < life)
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, damagedLife.Value), !log ? null : $"0x01b1 monster 0x{id:x} life {damagedLife}/{life}");
+    return id;
 }
 
 // The area's monsters, once the player is in (Agents/docs/protocol/14-monster-packs.md): MonsterPacks scattered over the
@@ -1925,9 +1942,9 @@ static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint,
 static string? SkillBarEntry(ClientState conn, ushort skillId) =>
     skillId == 0 ? "" : SkillEffectId(conn, skillId) ?? (Skills.ActionName(skillId) is { } a ? "Action/" + a : null);
 
-// The saved skill bar as the player's current skill ids, sent with S→C 0x53. The default attack goes on slot 0 (left
-// mouse button) only when nothing at all was saved for that slot; nothing is sent without a saved bar, so the client
-// keeps its own default.
+// The saved skill bar as the player's current skill ids, sent with S→C 0x53. The default attack (a Survivors character:
+// Move) goes on slot 0 (left mouse button) only when nothing at all was saved for that slot; nothing is sent without a saved bar, so the client keeps its own
+// default.
 static async Task SendSkillBar(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     FillSkillBar(conn);
@@ -1942,21 +1959,23 @@ static async Task SendSkillBar(string remote, NetworkStream stream, ConnectionCi
         if (entry.StartsWith("Action/") && Skills.ActionSkillId(entry["Action/".Length..]) is ushort action) ids[slot] = action;
         else if (byEffect.TryGetValue(entry, out ushort id)) ids[slot] = id;
     }
-    if (!bar.ContainsKey(0)) ids[0] = SkillCatalog.FirstSkillId;
+    if (!bar.ContainsKey(SkillBarLayout.LeftButton))
+        ids[SkillBarLayout.LeftButton] = Survivors.IsLeague(conn.League) && Skills.ActionSkillId("Move") is ushort move ? move : SkillCatalog.FirstSkillId;
     await Send(remote, stream, ciphers, InstanceProtocol.SkillBar(ids),
         $"0x0053 skill bar: {string.Join(", ", ids.Select((id, i) => id == 0 ? null : $"slot {i} 0x{id:x4}").OfType<string>())}");
 }
 
 // Puts the skills that are nowhere on the saved bar into its empty slots (SkillBarLayout), leaving every other slot as
-// it is: the default attack on the left mouse button of a new bar, each gem skill of the equipment on the right mouse
-// button or the next empty slot. True when the bar changed (saved).
+// it is: on a new bar the default attack on the left mouse button (a Survivors character: Move there and the default
+// attack after the gem skills), each gem skill of the equipment on the right mouse button or the next empty slot. True when the bar changed (saved).
 static bool FillSkillBar(ClientState conn)
 {
     string character = CharacterName(conn);
     var bar = CharacterSaves.Load(character)?.SkillBar ?? [];
     string attack = SkillEffectId(conn, SkillCatalog.FirstSkillId)!;
     var gems = GemSkillEffects(conn.Character).Select(g => Skills.EffectId(g.Effect)).OfType<string>().ToList();
-    var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry));
+    var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry),
+        moveOnLeft: Survivors.IsLeague(conn.League));
     foreach (var (slot, entry) in added) CharacterSaves.SetSkillBar(character, (byte)slot, entry);
     if (added.Count > 0)
         Console.WriteLine($"[gateway] {character} skill bar: {string.Join(", ", added.Select(a => $"{a.Entry} on slot {a.Slot}"))}");
@@ -2193,7 +2212,8 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
         CriticalStrikeChancePct = bonus.CriticalStrikeChancePct + aura.CriticalStrikeChancePct,
         SpellCriticalStrikeChancePct = bonus.SpellCriticalStrikeChancePct + aura.SpellCriticalStrikeChancePct,
         AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
-        MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
+        // Survivors: Swiftness, for the run.
+        MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct + (conn.Run?.MovementSpeedPct ?? 0)
     };
     if (conn.God)
         bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
@@ -2569,6 +2589,13 @@ static async Task GainExperience(string remote, NetworkStream stream, Connection
     var r = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level });
     if (!r.Ok) Console.WriteLine($"[gateway] {remote} level {level} not saved to the account: {r.Error}");
     await ApplyLevel(remote, stream, ciphers, conn, level);
+    // Survivors: every level gained in a run is a pick.
+    if (conn.Run is { Over: false } run)
+    {
+        lock (conn.Monsters) run.LevelledUp(level, level - oldLevel);
+        await conn.Commands!.Reply($"Survivors: level {level}!");
+        await OpenSurvivorsPick(remote, stream, ciphers, conn);
+    }
 }
 
 // A monster died (its life reached 0 from the player's attack or skill): the player gains its experience when near
@@ -2587,23 +2614,32 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove dead monster 0x{id:x}");
     });
     if (m.Variety is not { } variety || !m.Hostile) return;
+    if (conn.Run is not null) await SurvivorsKill(remote, stream, ciphers, conn, id, m, at);
     await SetQuestFlags(remote, stream, ciphers, conn, Quests.OnMonsterKilled(conn.Layout.Id, variety.Id));
     if (alive && Dist(at, player) <= ExperienceRange && Monsters.BaseExperience(variety, m.Level) is int baseXp)
     {
         uint xp = Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, m.Rarity, conn.Pools.Level, m.Level);
+        // Survivors: the league's curve (Survivors.ExperienceMultiplier), rares 10 times a normal monster, and Wisdom.
+        if (conn.Run is { } run && Monsters.BaseExperience(variety, (byte)Math.Clamp(conn.Pools.Level, 1, 100)) is int levelXp)
+            xp = (uint)Math.Round(xp * Survivors.ExperienceMultiplier(conn.Pools.Level, CharacterStats.LevelStarts, levelXp)
+                * Survivors.RarityExperience(m.Rarity) / Progression.RarityMultiplier(m.Rarity) * run.ExperienceMultiplier);
         await GainExperience(remote, stream, ciphers, conn, xp, $"{m.Rarity} {m.Label} 0x{id:x}");
     }
     await GainFlaskCharges(remote, stream, ciphers, conn, Flasks.KillCharges(m.Rarity, Environment.GetEnvironmentVariable("Game_FLASK_KILL_CHARGES")),
         $"{m.Rarity} {m.Label} 0x{id:x} killed");
-    await DropLoot(remote, stream, ciphers, conn, m, at);
+    // A Survivors run kills hundreds: normal monsters drop their items a quarter as often there (Survivors.NormalLootOneIn);
+    // gold drops as anywhere.
+    await DropLoot(remote, stream, ciphers, conn, m, at,
+        items: conn.Run is null || m.Rarity != MonsterRarity.Normal || Random.Shared.Next(Survivors.NormalLootOneIn) == 0);
 }
 
 // The monster's items (ItemDrops.Roll) as WorldItem objects scattered around where it died, on walkable cells when the
 // area's walk map is known. Like dropped items they lie in the instance (InstanceStore).
-static async Task DropLoot(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedMonster m, (int X, int Y) at)
+static async Task DropLoot(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedMonster m, (int X, int Y) at,
+    bool items = true)
 {
     if (Environment.GetEnvironmentVariable("Game_DROPS") == "0") return;
-    List<ItemDrops.Drop> drops = [.. Drops.Roll(m.Level, m.Rarity, Random.Shared)];
+    List<ItemDrops.Drop> drops = items ? [.. Drops.Roll(m.Level, m.Rarity, Random.Shared)] : [];
     // And a pile of gold (ItemDrops.Gold), picked up into the stash's gold.
     if (Drops.Gold(m.Level, m.Rarity, Random.Shared) is { } gold) drops.Add(gold);
     foreach (var drop in drops)
@@ -2618,6 +2654,410 @@ static async Task DropLoot(string remote, NetworkStream stream, ConnectionCipher
             $"0x02b9 create world item 0x{id:x} {drop.Type.Name} (item level {drop.Item.ItemLevel}) dropped by {m.Label} at ({x}, {y})");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
     }
+}
+
+// Survivors (Survivors.cs, Agents/docs/survivors.md): a Survivors character in a map's area plays a run there.
+static bool IsSurvivorsRun(ClientState conn) => Survivors.IsLeague(conn.League) && MapDevices.Value.IsMapArea(conn.Layout.Hash);
+
+// The run: the chat counts down from 5, then every Survivors.StepMs the waves come around the player, its skills fire,
+// it regenerates and the picks open; the boss comes after Survivors.RunSeconds. It ends with the player's death
+// (Resurrect takes it home), the boss's (SurvivorsWon) or the connection's: the map is spent either way.
+static async Task RunSurvivors(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    var run = new Survivors.Run(conn.Pools.Level, Random.Shared);
+    conn.Run = run;
+    Task Say(string text) => conn.Commands!.Reply(text);
+    try
+    {
+        if (conn.Layout.Walkable is null || Monsters.Error is not null || Packs.For(conn.Layout.Id) is not { } area)
+        {
+            Console.WriteLine($"[gateway] {remote} Survivors: {conn.Layout.Id} has no walk map or monster packs ({Monsters.Error ?? "run live.ps1 -Walkmaps"}): no run");
+            await Say("Survivors: this map has no walk map or monsters yet, so there is no run here.");
+            run.State = Survivors.Run.Phase.Lost;
+            return;
+        }
+        // Emerge monsters stay hidden without their action (PopulateArea).
+        MonsterCatalog.Variety? Spawnable(int row) =>
+            Monsters.Find(row.ToString()) is { Supported: true } v && !v.Id.Contains("Emerge", StringComparison.OrdinalIgnoreCase) ? v : null;
+        foreach (var (pack, weight) in area.Scattered)
+            foreach (var (row, w) in pack.Entries)
+                if (Spawnable(row) is { } v) run.Pool.Add((v, Math.Max(1, weight * w)));
+        run.BossVariety = area.Bosses.Select(Spawnable).FirstOrDefault(v => v is not null);
+        if (run.Pool.Count == 0)
+        {
+            await Say("Survivors: none of this map's monsters can be created yet, so there is no run here.");
+            run.State = Survivors.Run.Phase.Lost;
+            return;
+        }
+        Console.WriteLine($"[gateway] {remote} Survivors run in {conn.Layout.Id}: {run.Pool.Count} monster kinds " +
+            $"({string.Join(", ", run.Pool.Select(p => p.Variety.Name).Distinct())}), boss {run.BossVariety?.Name ?? "a rare of them"}");
+        await Say("Survivors: one life, no portals. Your skills fire on their own; every level gives an upgrade, picked with /1, /2 or /3.");
+        for (int n = Survivors.CountdownSeconds; n >= 0; n--)
+        {
+            await Say(n == 0 ? "Survivors: 0 - survive!" : $"Survivors: {n}");
+            // The countdown holds while the area is paused, as the run's own clock does.
+            if (n > 0) { await Task.Delay(1000); await WhilePaused(conn); }
+            if (conn.Closed) return;
+        }
+        lock (conn.Monsters)
+        {
+            run.State = Survivors.Run.Phase.Waves;
+            run.CharacterLevel = conn.Pools.Level;
+        }
+        double last = conn.Clock.Elapsed.TotalSeconds;
+        while (!conn.Closed && !run.Over)
+        {
+            await Task.Delay(Survivors.StepMs);
+            // The Clock stands still while paused (the Escape menu, an open pick): so does the run's survival time.
+            if (conn.Paused) continue;
+            double now = conn.Clock.Elapsed.TotalSeconds, dt = now - last;
+            last = now;
+            double t = run.Elapsed += dt;
+            if (conn.PlayerLife == 0)
+            {
+                run.State = Survivors.Run.Phase.Lost;
+                Console.WriteLine($"[gateway] {remote} Survivors run lost at {Survivors.Time(t)}: {run.Kills} kills, {run.Describe()}");
+                await Say($"Survivors: you fell after {Survivors.Time(t)} with {run.Kills} kills. The map is spent; resurrect to go home.");
+                break;
+            }
+            await SurvivorsClock(remote, stream, ciphers, conn, run, t);
+            await SurvivorsWaves(remote, stream, ciphers, conn, run, t);
+            await SurvivorsSkills(remote, stream, ciphers, conn, run, now, t, dt);
+            await SurvivorsRegen(remote, stream, ciphers, conn, run, dt);
+        }
+    }
+    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+    {
+        // The connection closed while sending.
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[gateway] {remote} Survivors run stopped: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+    }
+    if (run.Ring != 0 && !conn.Closed)
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(run.Ring), $"0x02bb remove effect 0x{run.Ring:x} (Flame Ring, the run is over)");
+    run.Ring = 0;
+}
+
+// Every minute the chat tells the time and a rare joins the waves; at Survivors.RunSeconds the boss comes.
+static async Task SurvivorsClock(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Survivors.Run run, double t)
+{
+    if (run.State != Survivors.Run.Phase.Waves) return;
+    if (t >= Survivors.RunSeconds)
+    {
+        run.State = Survivors.Run.Phase.Boss;
+        byte bossLevel = (byte)Math.Min(100, Survivors.MonsterLevel(run.CharacterLevel, t) + 2);
+        run.Boss = await SpawnWaveMonster(remote, stream, ciphers, conn, run.BossVariety ?? run.PickMonster(),
+            run.BossVariety is null ? MonsterRarity.Rare : MonsterRarity.Unique, bossLevel, 20, 28);
+        Console.WriteLine($"[gateway] {remote} Survivors: the boss 0x{run.Boss:x} ({run.BossVariety?.Name ?? "a rare"}) at level {bossLevel}");
+        await conn.Commands!.Reply($"Survivors: {Survivors.Time(t)}! The boss comes: kill it to win.");
+        return;
+    }
+    int minutes = (int)(t / 60);
+    if (minutes <= run.Minutes) return;
+    run.Minutes = minutes;
+    await conn.Commands!.Reply($"Survivors: {Survivors.Time(t)} survived, {run.Kills} kills. A rare monster joins the hunt.");
+    await SpawnWaveMonster(remote, stream, ciphers, conn, run.PickMonster(), MonsterRarity.Rare, Survivors.MonsterLevel(run.CharacterLevel, t));
+}
+
+// The waves: the hunting monsters left far behind go, and new ones come on a ring around the player (a few per step)
+// until there are Survivors.Crowd of them (half as many while the boss lives).
+static async Task SurvivorsWaves(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Survivors.Run run, double t)
+{
+    if (run.State is not (Survivors.Run.Phase.Waves or Survivors.Run.Phase.Boss)) return;
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    int alive = 0;
+    var behind = new List<uint>();
+    lock (conn.Monsters)
+    {
+        var here = conn.Walk.Position(now);
+        foreach (var (id, m) in conn.Monsters)
+        {
+            if (!m.Hunts || m.Dead) continue;
+            if (id != run.Boss && Dist(here, m.Walk.Position(now)) > Survivors.LeftBehind) behind.Add(id);
+            else alive++;
+        }
+        foreach (uint id in behind) conn.Monsters.Remove(id);
+    }
+    foreach (uint id in behind) await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), null);
+    int crowd = Survivors.Crowd(t) / (run.State == Survivors.Run.Phase.Boss ? 2 : 1);
+    byte level = Survivors.MonsterLevel(run.CharacterLevel, t);
+    for (int i = 0; i < Math.Min(Survivors.SpawnsPerStep, crowd - alive); i++)
+        await SpawnWaveMonster(remote, stream, ciphers, conn, run.PickMonster(), Survivors.RollRarity(t, Random.Shared), level);
+}
+
+// A hunting monster on a walkable cell of a ring around the player. Returns its object id, 0 when no cell was found.
+static async Task<uint> SpawnWaveMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    MonsterCatalog.Variety variety, MonsterRarity rarity, byte level, int minRadius = Survivors.SpawnMinRadius, int maxRadius = Survivors.SpawnMaxRadius)
+{
+    var (px, py) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+    for (int i = 0; i < 24; i++)
+    {
+        double angle = Random.Shared.NextDouble() * Math.Tau, r = minRadius + Random.Shared.NextDouble() * (maxRadius - minRadius);
+        int x = px + (int)Math.Round(Math.Cos(angle) * r), y = py + (int)Math.Round(Math.Sin(angle) * r);
+        if (x < 0 || y < 0 || (conn.Layout.GridW > 0 && x >= conn.Layout.GridW) || (conn.Layout.GridH > 0 && y >= conn.Layout.GridH)) continue;
+        if (conn.Layout.Walkable is { } w && !w(x, y)) continue;
+        return await SpawnMonster(remote, stream, ciphers, conn, variety, level, rarity, x, y, log: rarity != MonsterRarity.Normal, hunt: true);
+    }
+    return 0;
+}
+
+// The Fireball projectile (Metadata/Projectiles/Fireball) the run's Fireball flies with, null without the tables.
+static (string Id, int Speed)? SurvivorsFireball() => Skills.ProjectileFor(Skills.EffectRow("Fireball"));
+
+// A skill hit's damage: a share of a normal monster's life at the character's level (the pool's first monster with its
+// life multiplier taken out), with the run's Might, ±10%, doubled at Precision's chance.
+static int SurvivorsDamage(Survivors.Run run, double share)
+{
+    var v = run.Pool[0].Variety;
+    double life = (Monsters.BaseLife(v, (byte)Math.Clamp(run.CharacterLevel, 1, 100)) ?? 20) * 100.0 / Math.Max(1, v.LifeMultiplier);
+    return run.Precise((int)Math.Max(1, Math.Round(life * share * run.DamageMultiplier * (0.9 + 0.2 * Random.Shared.NextDouble()))));
+}
+
+// The living enemies within range of a cell, nearest first: (id, monster, where it is).
+static List<(uint Id, SpawnedMonster M, (int X, int Y) At)> EnemiesNear(ClientState conn, (int X, int Y) at, double range, double now)
+{
+    lock (conn.Monsters)
+        return [.. conn.Monsters.Where(kv => kv.Value is { Dead: false, Hostile: true, Life: > 0 })
+            .Select(kv => (kv.Key, kv.Value, At: kv.Value.Walk.Position(now)))
+            .Where(e => Dist(e.At, at) <= range).OrderBy(e => Dist(e.At, at))];
+}
+
+// The run's skills, each when it is ready: Fireball at the nearest enemies, the Flame Ring burning around the player
+// (Righteous Fire's circle, following it), Fire Burst exploding among the enemies.
+static async Task SurvivorsSkills(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Survivors.Run run,
+    double now, double t, double dt)
+{
+    if (conn.PlayerLife == 0) return;
+    var here = conn.Walk.Position(now);
+    if (run.Level(Survivors.Upgrade.Fireball) is int fireball and > 0 && t >= run.ReadyAt.GetValueOrDefault(Survivors.Upgrade.Fireball)
+        && SurvivorsFireball() is { } projectile)
+    {
+        var targets = EnemiesNear(conn, here, Survivors.FireballRange * run.Reach, now)
+            .Take(Survivors.FireballProjectiles(fireball) + run.ExtraProjectiles).ToList();
+        if (targets.Count > 0)
+        {
+            run.ReadyAt[Survivors.Upgrade.Fireball] = t + Survivors.FireballSeconds(fireball, run.Haste);
+            foreach (var (_, _, at) in targets)
+                _ = FlyProjectile(remote, stream, ciphers, conn, projectile, here, at,
+                    _ => (SurvivorsDamage(run, Survivors.FireballDamage(fireball)), false), log: false);
+        }
+    }
+    if (run.Level(Survivors.Upgrade.FlameRing) is int ring and > 0)
+    {
+        if (run.Ring == 0)
+        {
+            run.Ring = conn.NextObjectId++;
+            var ringObject = new EffectObject(here.X, here.Y, RighteousFireRingAo) { Flags0 = EffectObject.FixedRotation };
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(run.Ring, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), ringObject.Blob()),
+                $"0x02b9 create effect 0x{run.Ring:x} {RighteousFireRingAo} at ({here.X}, {here.Y}) (Survivors Flame Ring)");
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(run.Ring), null);
+            await FollowRighteousFire(remote, stream, ciphers, conn);
+        }
+        double perSecond = SurvivorsDamage(run, Survivors.FlameRingDamage(ring));
+        var burnt = new List<(uint Id, SpawnedMonster M, int Damage)>();
+        foreach (var (id, m, _) in EnemiesNear(conn, here, Survivors.FlameRingRadius(ring, run.Reach), now))
+            lock (conn.Monsters)
+            {
+                m.Burn += perSecond * dt;
+                if (m.Burn < 1) continue;
+                int damage = (int)m.Burn;
+                m.Burn -= damage;
+                burnt.Add((id, m, damage));
+            }
+        foreach (var (id, m, damage) in burnt) await HitMonster(remote, stream, ciphers, conn, id, m, damage, "the Flame Ring", log: false);
+    }
+    if (run.Level(Survivors.Upgrade.FireBurst) is int burst and > 0 && t >= run.ReadyAt.GetValueOrDefault(Survivors.Upgrade.FireBurst))
+    {
+        var near = EnemiesNear(conn, here, Survivors.FireBurstRange * run.Reach, now);
+        if (near.Count > 0)
+        {
+            run.ReadyAt[Survivors.Upgrade.FireBurst] = t + Survivors.FireBurstSeconds(burst, run.Haste);
+            var at = near[Random.Shared.Next(near.Count)].At;
+            await SurvivorsExplosion(remote, stream, ciphers, conn, at);
+            foreach (var (id, m, _) in EnemiesNear(conn, at, Survivors.FireBurstRadius(burst, run.Reach), now))
+                await HitMonster(remote, stream, ciphers, conn, id, m, SurvivorsDamage(run, Survivors.FireBurstDamage(burst)), "Fire Burst", log: false);
+        }
+    }
+    // Fire Nova: Fireballs out on every side, evenly spaced, from where the player stands.
+    if (run.Level(Survivors.Upgrade.FireNova) is int nova and > 0 && t >= run.ReadyAt.GetValueOrDefault(Survivors.Upgrade.FireNova)
+        && SurvivorsFireball() is { } novaball)
+    {
+        run.ReadyAt[Survivors.Upgrade.FireNova] = t + Survivors.FireNovaSeconds(nova, run.Haste);
+        int count = Survivors.FireNovaProjectiles(nova) + 2 * run.ExtraProjectiles;
+        double turn = Random.Shared.NextDouble() * Math.Tau;
+        for (int i = 0; i < count; i++)
+        {
+            double angle = turn + Math.Tau * i / count;
+            var to = (here.X + (int)Math.Round(Math.Cos(angle) * Survivors.FireNovaAim), here.Y + (int)Math.Round(Math.Sin(angle) * Survivors.FireNovaAim));
+            _ = FlyProjectile(remote, stream, ciphers, conn, novaball, here, to,
+                _ => (SurvivorsDamage(run, Survivors.FireNovaDamage(nova)), false), log: false);
+        }
+    }
+    // Meteor: the enemy with the most life near the player takes a heavy hit, and those right around it too.
+    if (run.Level(Survivors.Upgrade.Meteor) is int meteor and > 0 && t >= run.ReadyAt.GetValueOrDefault(Survivors.Upgrade.Meteor))
+    {
+        var near = EnemiesNear(conn, here, Survivors.MeteorRange * run.Reach, now);
+        if (near.Count > 0)
+        {
+            run.ReadyAt[Survivors.Upgrade.Meteor] = t + Survivors.MeteorSeconds(meteor, run.Haste);
+            var at = near.MaxBy(e => e.M.Life).At;
+            await SurvivorsExplosion(remote, stream, ciphers, conn, at);
+            foreach (var (id, m, _) in EnemiesNear(conn, at, Survivors.MeteorRadius(meteor, run.Reach), now))
+                await HitMonster(remote, stream, ciphers, conn, id, m, SurvivorsDamage(run, Survivors.MeteorDamage(meteor)), "Meteor", log: false);
+        }
+    }
+}
+
+// Fire Burst's explosion: the Fireball's impact model as an effect object at the cell, gone 1.5 s later.
+static async Task SurvivorsExplosion(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int X, int Y) at)
+{
+    const string Explosion = "Metadata/Effects/Spells/fireball/explode_new2.ao";
+    uint id = conn.NextObjectId++;
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(EffectObject.TypePath),
+        new EffectObject(at.X, at.Y, Explosion).Blob()), null);
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+    _ = Task.Delay(1500).ContinueWith(async _ => { if (!conn.Closed) await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), null); });
+}
+
+// Regeneration's life per second (a share of maximum life), sent when it adds a whole point.
+static async Task SurvivorsRegen(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Survivors.Run run, double dt)
+{
+    if (run.Level(Survivors.Upgrade.Regeneration) is not (int regen and > 0)) return;
+    uint life;
+    lock (conn.Monsters)
+    {
+        if (conn.PlayerLife == 0 || conn.PlayerLife >= conn.PlayerMaxLife) { run.RegenCarry = 0; return; }
+        run.RegenCarry += conn.PlayerMaxLife * regen / 100.0 * dt;
+        if (run.RegenCarry < 1) return;
+        int add = (int)run.RegenCarry;
+        run.RegenCarry -= add;
+        conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, conn.PlayerLife + add);
+        life = conn.PlayerLife;
+    }
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life), null);
+}
+
+// Heals the player by a share of its maximum life (Vampirism, Mending).
+static async Task SurvivorsHeal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, double share, string why)
+{
+    uint life;
+    lock (conn.Monsters)
+    {
+        if (conn.PlayerLife == 0 || conn.PlayerLife >= conn.PlayerMaxLife) return;
+        conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, conn.PlayerLife + Math.Max(1, (long)Math.Round(conn.PlayerMaxLife * share)));
+        life = conn.PlayerLife;
+    }
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life), $"0x01b1 player life {life}/{conn.PlayerMaxLife} ({why})");
+}
+
+// A monster of the run died: the kill counts, Vampirism heals, now and then a Beach Map drops, and the boss's death wins
+// the run.
+static async Task SurvivorsKill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m, (int X, int Y) at)
+{
+    if (conn.Run is not { } run || run.State is not (Survivors.Run.Phase.Waves or Survivors.Run.Phase.Boss)) return;
+    lock (conn.Monsters) run.Kills++;
+    if (run.Level(Survivors.Upgrade.Vampirism) is int vampirism and > 0)
+        await SurvivorsHeal(remote, stream, ciphers, conn, vampirism / 100.0, "Vampirism");
+    if (Survivors.DropsMap(m.Rarity, Random.Shared)) await DropSurvivorsMaps(remote, stream, ciphers, conn, at, 1, $"{m.Label}'s drop");
+    if (id == run.Boss) await SurvivorsWon(remote, stream, ciphers, conn, run, at);
+}
+
+// Beach Maps on the ground around a cell.
+static async Task DropSurvivorsMaps(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int X, int Y) at, int count, string why)
+{
+    if (Items.Find(Survivors.MapItem) is not { Supported: true } type) return;
+    for (int i = 0; i < count; i++)
+    {
+        double angle = Random.Shared.NextDouble() * Math.Tau;
+        int x = at.X + (int)Math.Round(Math.Cos(angle) * 4), y = at.Y + (int)Math.Round(Math.Sin(angle) * 4);
+        if (conn.Layout.Walkable is { } walks && !walks(x, y)) (x, y) = at;
+        var ground = new WorldItemObject(x, y, ItemCatalog.Create(type));
+        uint id = conn.Instance.Ground.Add(ground);
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), ground.Blob()),
+            $"0x02b9 create world item 0x{id:x} {type.Name} at ({x}, {y}) (Survivors: {why})");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+    }
+}
+
+// The boss is dead: the run is won. The waves go, two Beach Maps drop where the boss fell and a portal home opens next
+// to the player.
+static async Task SurvivorsWon(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Survivors.Run run, (int X, int Y) at)
+{
+    run.State = Survivors.Run.Phase.Won;
+    double t = run.Elapsed;
+    List<uint> gone;
+    lock (conn.Monsters)
+    {
+        gone = [.. conn.Monsters.Where(kv => kv.Value is { Hunts: true, Dead: false }).Select(kv => kv.Key)];
+        foreach (uint id in gone) conn.Monsters.Remove(id);
+    }
+    foreach (uint id in gone) await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), null);
+    Console.WriteLine($"[gateway] {remote} Survivors run won at {Survivors.Time(t)}: {run.Kills} kills, {run.Describe()}");
+    await conn.Commands!.Reply($"Survivors: victory at {Survivors.Time(t)} with {run.Kills} kills! Take your maps and go home through the portal.");
+    await DropSurvivorsMaps(remote, stream, ciphers, conn, at, Survivors.BossMaps, "the boss's reward");
+    await SpawnMapReturnPortal(remote, stream, ciphers, conn, NextToPlayer(conn));
+}
+
+// Opens the next pick if one waits and none is open: the three choices in chat, and the area pauses until one is taken
+// (Game_SURVIVORS_PAUSE=0 keeps it running).
+static async Task OpenSurvivorsPick(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (conn.Run is not { } run) return;
+    IReadOnlyList<Survivors.Upgrade>? offer;
+    int waiting;
+    lock (conn.Monsters) { offer = run.OpenPick(); waiting = run.PendingPicks; }
+    if (offer is null) return;
+    Console.WriteLine($"[gateway] {remote} Survivors pick: {string.Join(", ", offer)} ({waiting} more waiting)");
+    await conn.Commands!.Reply(string.Join('\n', offer.Select((u, i) => Survivors.ChoiceLine(i + 1, u, run))
+        .Prepend($"Survivors: choose an upgrade with /1, /2 or /3{(waiting > 0 ? $" ({waiting} more after this one)" : "")}")));
+    if (!conn.Paused && SurvivorsPauses)
+        await SetPaused(remote, stream, ciphers, conn, true);
+}
+
+// /1, /2, /3 (/pick n): takes that choice of the open pick, then opens the next one or resumes the area.
+static async Task ChooseSurvivorsPick(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int choice)
+{
+    if (conn.Run is not { } run) { await conn.Commands!.Reply("Survivors: there is no run here."); return; }
+    Survivors.Upgrade? taken;
+    lock (conn.Monsters) taken = run.Choose(choice);
+    if (taken is not { } u) { await conn.Commands!.Reply(run.Offer is null ? "Survivors: no upgrade to choose now." : "Survivors: choose 1, 2 or 3."); return; }
+    Console.WriteLine($"[gateway] {remote} Survivors pick {choice}: {u} → {run.Describe()}");
+    if (u == Survivors.Upgrade.Mending) await SurvivorsHeal(remote, stream, ciphers, conn, 0.3, "Mending");
+    if (u == Survivors.Upgrade.Swiftness)
+    {
+        // The movement speed is a pool stat (PoolsFor): the client and the walk estimate take it now.
+        var pools = PoolsFor(conn, conn.Pools.Level);
+        lock (conn.Monsters)
+        {
+            conn.Pools = pools;
+            conn.ApplyMovementSpeed();
+        }
+        await SendCharacterStats(remote, stream, ciphers, conn, $"Survivors Swiftness {run.Level(u)}");
+    }
+    await conn.Commands!.Reply($"Survivors: {Survivors.Info(u).Name}{(u == Survivors.Upgrade.Mending ? "" : $" {run.Level(u)}")}. Now: {run.Describe()}.");
+    if (run.PendingPicks > 0) await OpenSurvivorsPick(remote, stream, ciphers, conn);
+    else if (conn.Paused) await SetPaused(remote, stream, ciphers, conn, false);
+}
+
+// In the hideout, a Survivors character without a map (none in the main inventory or the map device, and no map open)
+// gets a Beach Map, so it can never be stuck.
+static async Task GiveSurvivorsMap(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (!Survivors.IsLeague(conn.League) || HideoutCatalog.ByArea(conn.Layout.Hash) is null) return;
+    if (MapDevice.OpenOf(CharacterName(conn)) is not null || Items.Find(Survivors.MapItem) is not { Supported: true } type) return;
+    var items = ItemsOf(conn);
+    bool IsMap(InventoryItem i) => Items.ByHash(i.Item.TypeHash)?.Class == MapDevice.MapClass;
+    if (items.Items(PlayerInventories.MainInventory).Any(IsMap) || items.Items(PlayerInventories.MapDevice).Any(IsMap)) return;
+    if (items.FreeCell(PlayerInventories.MainInventory, type.Width, type.Height, ShapeOf) is not { } cell)
+    {
+        await conn.Commands!.Reply("Survivors: make room in your inventory for a new Beach Map.");
+        return;
+    }
+    var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ItemCatalog.Create(type)));
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+        items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: Survivors gives {type.Name} (no map left)");
+    await conn.Commands!.Reply("Survivors: you had no map left, so here is a Beach Map.");
 }
 
 // /god: what it adds on top of the character's stats (GodStats) and pools (PoolsFor): 1000% increased attack and cast
@@ -2708,10 +3148,13 @@ static bool IsRighteousFire(int effect) => Skills.EffectId(effect) == "Righteous
 // the player.
 static async Task FollowRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    if (conn.RighteousFire is not { } rf) return;
-    double now = conn.Clock.Elapsed.TotalSeconds, arrives = conn.Walk.ArrivesAt;
-    var to = conn.Walk.Position(Math.Max(now, arrives));
-    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(rf.Ring, to.X, to.Y, (float)Math.Max(0.05, arrives - now), u28: TerrainHeight), null);
+    // The Survivors' Flame Ring is the same circle and follows the same way.
+    foreach (uint ring in new[] { conn.RighteousFire?.Ring ?? 0, conn.Run?.Ring ?? 0 }.Where(r => r != 0))
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds, arrives = conn.Walk.ArrivesAt;
+        var to = conn.Walk.Position(Math.Max(now, arrives));
+        await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(ring, to.X, to.Y, (float)Math.Max(0.05, arrives - now), u28: TerrainHeight), null);
+    }
 }
 
 static async Task ActivateRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, ushort skillId,
@@ -3071,6 +3514,17 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     {
         byte[] m = ChatCommands.ParseHex(args);
         await Send(remote, stream, ciphers, m, $"0x{m[0] << 8 | m[1]:x4} raw ({m.Length} bytes)");
+    })
+    // Survivors (Agents/docs/survivors.md): the open pick's choices, and the run's state.
+    .Add("1", "/1 (Survivors: take the first upgrade offered)", _ => ChooseSurvivorsPick(remote, stream, ciphers, conn, 1))
+    .Add("2", "/2 (Survivors: take the second upgrade offered)", _ => ChooseSurvivorsPick(remote, stream, ciphers, conn, 2))
+    .Add("3", "/3 (Survivors: take the third upgrade offered)", _ => ChooseSurvivorsPick(remote, stream, ciphers, conn, 3))
+    .Add("pick", "/pick <1 to 3> (Survivors: take that upgrade)", args => ChooseSurvivorsPick(remote, stream, ciphers, conn, int.Parse(args[0])))
+    .Add("run", "/run (Survivors: the run's time, kills and upgrades)", async _ =>
+    {
+        if (conn.Run is not { } run) { await conn.Commands!.Reply("Survivors: there is no run here."); return; }
+        await conn.Commands!.Reply($"Survivors: {run.State} at {Survivors.Time(run.Elapsed)}, {run.Kills} kills, level {run.CharacterLevel}. " +
+            $"Upgrades: {run.Describe()}{(run.Offer is null ? "" : " (a pick is open: /1, /2 or /3)")}");
     })
     .Add("set_speed", "/set_speed <percent> (100 = normal)", async args =>
     {
@@ -3875,7 +4329,7 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
                     var (mx, my) = m.Walk.Position(now);
                     double d = Math.Sqrt((double)(mx - px) * (mx - px) + (double)(my - py) * (my - py));
                     if (!m.Aggro && d <= m.AggroRange) { m.Aggro = true; m.LastTarget = null; }
-                    else if (m.Aggro && d > 2 * m.AggroRange)
+                    else if (m.Aggro && d > 2 * m.AggroRange && !m.Hunts)
                     {
                         m.Aggro = false;
                         orders.Add((id, m.Walk.Order(mx, my, now), (mx, my), "gives up"));
@@ -3997,6 +4451,8 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
                 ? DamageModel.MitigatePhysical(value, conn.Pools.Armour)
                 : value;
         }
+        // Survivors: Toughness takes its share off the hit.
+        if (conn.Run is { } run) damage = (int)Math.Round(damage * run.DamageTaken);
         blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
         if (blocked) damage = 0;
         manaBefore = conn.PlayerMana;
@@ -4037,6 +4493,13 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0054 resurrect {(inTown ? "in town" : "at checkpoint")}");
     await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(0x02), "0x0055 hide the death screen");
+    // A Survivors run ends with the death: either button takes the player home (the map's one life is spent).
+    if (conn.Run is not null && HideoutCatalog.Default is { } home)
+    {
+        await GainFlaskCharges(remote, stream, ciphers, conn, int.MaxValue, "resurrected");
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(home.AreaHash16, 0, false, AtWaypoint: true), "Survivors run lost: to the hideout");
+        return;
+    }
     // The flasks are full again after a death.
     await GainFlaskCharges(remote, stream, ciphers, conn, int.MaxValue, "resurrected");
     if (inTown && conn.LastTown != 0 && conn.Layout.Hash != conn.LastTown)
@@ -4935,7 +5398,8 @@ static async Task ActivateMapDevice(string remote, NetworkStream stream, Connect
         items.NextRevision(PlayerInventories.MapDevice), consumed, []),
         $"0x00bf inventory {PlayerInventories.InventoryId(PlayerInventories.MapDevice)}: the map device consumed {consumed.Count} item(s)");
     await RemoveMapPortals(remote, stream, ciphers, conn);
-    var open = MapDevice.Activate(CharacterName(conn), area);
+    // Survivors: one portal, one life (Agents/docs/survivors.md).
+    var open = MapDevice.Activate(CharacterName(conn), area, Survivors.IsLeague(conn.League) ? 1 : MapDevice.PortalCount);
     Console.WriteLine($"[gateway] {remote} map device opened {area.Name} ({area.Id}, 0x{area.Hash16:x4}, tier {area.Tier}): {open.PortalsLeft} portals");
     await SpawnMapPortals(remote, stream, ciphers, conn, open);
 }
@@ -5102,10 +5566,10 @@ static async Task UseMapPortal(string remote, NetworkStream stream, ConnectionCi
 
 // In a map's area (one a map item opens): a portal back to the hideout next to the arrival point, listed in 0x8f without
 // a device once the world is active (21-hideouts.md §5). It is not used up.
-static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int X, int Y)? near = null)
 {
     if (!MapDevices.Value.IsMapArea(conn.Layout.Hash) || HideoutCatalog.Default is not { } hideout) return;
-    var (x, y) = conn.Layout.Near((conn.Layout.SpawnX, conn.Layout.SpawnY));
+    var (x, y) = conn.Layout.Near(near ?? (conn.Layout.SpawnX, conn.Layout.SpawnY));
     uint id = conn.NextObjectId++;
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
         new MapPortalObject(x, y, -1, MapPortalType, Open: 1, Rotation: conn.PortalRotationRadians).Blob()),
@@ -5151,6 +5615,12 @@ static async Task UsePortalScroll(string remote, NetworkStream stream, Connectio
     if (WaypointCatalog.Areas.Find(here) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == here))
     {
         Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: in a town or hideout, nothing happens");
+        return;
+    }
+    if (conn.Run is not null)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: a Survivors run has no portals, nothing happens");
+        await conn.Commands!.Reply("Survivors: no portals during a run. Survive!");
         return;
     }
     bool toHideout = MapDevices.Value.IsMapArea(here) && HideoutCatalog.Default is not null;
@@ -5544,6 +6014,8 @@ sealed partial class Program
     /// <summary>The quest books that give two passive refund points (BaseItemTypes Name; Acts 1, 6, 9 and 10).</summary>
     internal const string RegretBook = "Book of Regrets";
     internal const string PortalScroll = "Metadata/Items/Currency/CurrencyPortal";
+    // Survivors: an open pick pauses the area (Game_SURVIVORS_PAUSE=0 keeps it running).
+    internal static readonly bool SurvivorsPauses = Environment.GetEnvironmentVariable("Game_SURVIVORS_PAUSE") != "0";
     /// <summary>The flask recovery's step (RunFlaskRecovery): short enough for one update per point of life.</summary>
     internal const int FlaskStepMs = 20;
     internal static bool FlaskBuffs => Environment.GetEnvironmentVariable("Game_FLASK_BUFFS") != "0";
@@ -5877,6 +6349,8 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public MonsterCatalog.Variety? Variety { get; init; }
     public byte Level { get; init; } = 1;
     public MonsterRarity Rarity { get; init; }
+    // A Survivors wave monster: it hunts the player wherever it is and never gives up (RunMonsterAi).
+    public bool Hunts { get; init; }
     // Damage over time not yet applied (fractions of a point between ticks).
     public double Burn;
     // The impales the player's attacks have left on it (Impale.cs); cleared when it dies.
@@ -6062,6 +6536,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     /// <summary>The 0x8f entries' model byte (/map_portal sets it for experiments).</summary>
     public byte MapPortalStyle;
+    /// <summary>The Survivors run in this map (Survivors.cs), or null.</summary>
+    public Survivors.Run? Run;
     // Spawned monsters by object id, in spawn order (for /mobs and /despawn).
     public readonly SortedDictionary<uint, SpawnedMonster> Monsters = [];
     // Items on the ground by object id (dropped with C→S 0x29).
