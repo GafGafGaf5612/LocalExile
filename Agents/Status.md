@@ -76,10 +76,17 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   doesn't know stops the login. JSON saves and accounts.json are imported once (`Saves.cs`, `ItemMoves.cs`,
   `GameServer.Storage/SaveDatabase.cs`, `SqliteAccountStore.cs`; [saves](docs/saves.md)).
 
+- **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
+  `skill_is_instant`, so the client sends them as C→S 0x191 and keeps walking; the server applies them and answers
+  S→C 0x1ce, which starts the skill bar's cooldown. Skill records carry the GEPL Cooldown and the stats the cooldown
+  count, and the server refuses a skill until its cooldown is over. The skill bar keeps its slots when skills are
+  re-sent or a gem is socketed again (the saved bar goes out as 0x53) ([11](docs/protocol/11-skills.md) §9, §11).
+
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel
   (`ManaReservationFlat` / `ManaReservationPercent`), reduced by the passive/mastery reservation efficiency and sent as
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
-  Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their level-1 effects and buff visuals.
+  Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their level-1 effects and buff icons; their
+  3D effects (`affected_player.epk`, `faster_attack.epk` …) do not render yet.
   The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
   sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
   curse auras, Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield
@@ -162,8 +169,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (325 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (273: stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`dotnet test tests/GameServer.Core.Tests` (328 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (275: stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.

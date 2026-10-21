@@ -349,6 +349,15 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 "only Predictive is supported, the player stays hidden and cannot move");
             await Send(remote, stream, ciphers, InstanceChat.MessageBox(LockstepWarning), "0x000d message box: lockstep warning");
         }
+        else if (id == InstanceProtocol.UseInstantSkillId)
+        {
+            // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,
+            // and the client waits for no echo.
+            var (target, skill) = InstanceProtocol.ReadUseInstantSkill(bytes);
+            var spot = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+            Console.WriteLine($"[gateway] {remote} <= 0x0191 instant skill 0x{skill:x4} on 0x{target:x} at ({spot.X}, {spot.Y})");
+            if (Skills.IsGemSkill(skill)) _ = UseInstantSkill(remote, stream, ciphers, conn, skill, target, spot);
+        }
         else if (id == InstanceTransfer.UseSkillOnObjectId)
         {
             var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
@@ -1408,22 +1417,38 @@ static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers 
     _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, here, target, use.TargetId);
 }
 
-// A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one).
-static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+// A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one). False when
+// it was refused (cooldown, mana), so its use is not confirmed to the client.
+static async Task<bool> CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+    // A skill with a cooldown (GEPL Cooldown: auras 1200 ms) is refused until it is over: spamming Haste toggled it.
+    if (gem.Name is not null && Skills.CooldownMs(gem.Effect, 1) is int cooldown and > 0)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds, readyAt;
+        lock (conn.Monsters)
+        {
+            readyAt = conn.SkillReadyAt.GetValueOrDefault(gem.Effect);
+            if (now >= readyAt) conn.SkillReadyAt[gem.Effect] = now + cooldown / 1000.0;
+        }
+        if (now < readyAt)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: on cooldown for {(readyAt - now) * 1000:0} ms more");
+            return false;
+        }
+    }
     if (gem.Name is not null && Skills.Reservation(gem.Effect, 1) is { } reservation)
     {
         await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation);
-        return;
+        return true;
     }
     if (gem.Name is not null)
     {
         if (!PayMana(conn, gem.Effect, out uint cost))
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: not enough mana ({conn.PlayerMana} < {cost})");
-            return;
+            return false;
         }
         if (cost > 0)
             await SendPlayerMana(remote, stream, ciphers, conn,
@@ -1433,6 +1458,17 @@ static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCi
         await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect);
     else
         await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId);
+    return true;
+}
+
+// An instant skill (C→S 0x191): its effect, then S→C 0x1ce, which has the client run the skill's action without animation
+// and consume a use of it: the skill bar's cooldown starts (the tooltip showed the cooldown, the bar did not run it).
+static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    ushort skillId, uint targetId, (int X, int Y) at)
+{
+    if (await CastGemSkill(remote, stream, ciphers, conn, skillId, at, at, targetId))
+        await Send(remote, stream, ciphers, InstanceProtocol.InstantAction(PlayerId, skillId, at.X, at.Y, targetId),
+            $"0x01ce player skill 0x{skillId:x4}: instant action (its use and cooldown)");
 }
 
 // Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them
@@ -1954,11 +1990,19 @@ static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiph
 {
     var skills = PlayerSkills(conn);
     var gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
+    var added = skills.Select(s => s.Id).Where(id => !conn.ClientSkillIds.Contains(id)).ToList();
     conn.ClientSkillIds = [.. skills.Select(s => s.Id)];
     await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone),
         $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats" +
         (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
     if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
+    // The update can take a bound skill off the skill bar (live 2026-10-21: Haste's slot emptied when its aura went on,
+    // and came back with the area change's 0x53), and a gem socketed again does not get its slot back by itself, so the
+    // saved bar goes out again. Not when a skill the saved bar never had was added: the client binds a new skill to a free
+    // slot itself (C→S 0x4e), and the bar sent now would clear it there.
+    var saved = CharacterSaves.Load(CharacterName(conn))?.SkillBar?.Values;
+    if (added.All(id => SkillEffectId(conn, id) is { } effect && saved?.Contains(effect) == true))
+        await SendSkillBar(remote, stream, ciphers, conn);
 }
 
 // Skills the player no longer has (their gems left the equipment): their auras and Righteous Fire end with them, and the
@@ -5498,6 +5542,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, int> PlayerStats = [];
     // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
+    // When each skill with a cooldown (GrantedEffects row) may be used again, in Clock seconds. Guarded by the Monsters lock.
+    public readonly Dictionary<int, double> SkillReadyAt = [];
     // The skill ids the client has on this connection's player (SendPlayer, SendSkills): the 0x40 skill list only adds,
     // so the ones that leave are removed by id.
     public HashSet<ushort> ClientSkillIds = [];

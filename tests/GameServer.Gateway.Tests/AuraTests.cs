@@ -26,6 +26,37 @@ public class AuraTests
     }
 
     [Fact]
+    public void Instant_skills_come_from_the_ActiveSkillType_Instant()
+    {
+        var skills = new SkillCatalog(Data());
+
+        Assert.True(skills.IsInstant(skills.EffectRow("Haste")));
+        Assert.True(skills.IsInstant(skills.EffectRow("RighteousFire")));
+        Assert.False(skills.IsInstant(skills.EffectRow("Fireball")));
+        Assert.False(skills.IsInstant(-1));
+
+        uint instant = new StatCatalog(Data()).Key("skill_is_instant")!.Value;
+        Assert.Contains((instant, 1), skills.EffectStats(skills.EffectRow("Haste"), 1));
+        Assert.DoesNotContain(skills.EffectStats(skills.EffectRow("Fireball"), 1), s => s.Item1 == instant);
+    }
+
+    [Fact]
+    public void A_skill_with_a_cooldown_carries_its_uses()
+    {
+        var skills = new SkillCatalog(Data());
+        var stats = new StatCatalog(Data());
+        uint uses = stats.Key("virtual_total_cooldown_count")!.Value;
+
+        Assert.Contains((uses, 1), skills.EffectStats(skills.EffectRow("Haste"), 1));
+        Assert.Contains((uses, 1), skills.EffectStats(skills.EffectRow("PurityOfElements"), 1));
+        Assert.DoesNotContain(skills.EffectStats(skills.EffectRow("Fireball"), 1), s => s.Item1 == uses);
+
+        Assert.Equal(1200, skills.CooldownMs(skills.EffectRow("Haste"), 1));
+        Assert.Equal(300, skills.CooldownMs(skills.EffectRow("RighteousFire"), 1));
+        Assert.Equal(0, skills.CooldownMs(skills.EffectRow("Fireball"), 1));
+    }
+
+    [Fact]
     public void Reservation_efficiency_divides_percent_and_flat_reservations()
     {
         var pools = new CharacterStats.Pools(1, 50, 100, 2, 0, ManaReservationEfficiencyPct: 50);
