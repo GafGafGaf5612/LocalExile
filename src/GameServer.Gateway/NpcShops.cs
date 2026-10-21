@@ -33,8 +33,15 @@ static class NpcShops
         [
             ("Small Life Flask", 3), ("Small Mana Flask", 3), ("Medium Life Flask", 1), ("Scroll of Wisdom", 5),
             ("Portal Scroll", 5), ("Orb of Transmutation", 1), ("Fireball", 1), ("Frostblink", 1),
-            // Maps for the hideout's map device (21-hideouts.md §5).
-            ("Beach Map", 10),
+            // Maps for the hideout's map device (21-hideouts.md §5): one Beach Map, then one of every map by tier (MapTiers),
+            // spilling over into Goods2 ….
+            ("Beach Map", 1),
+        ],
+        // Kirac in the hideout sells maps for the map device (2026-10-21); names the game data lacks are skipped.
+        ["Metadata/NPC/Epilogue/KiracHideout"] =
+        [
+            ("Beach Map", 5), ("Lookout Map", 3), ("Alleyways Map", 3), ("Arid Lake Map", 3), ("Glacier Map", 3),
+            ("Strand Map", 3), ("Dunes Map", 3), ("Cemetery Map", 3), ("Jungle Valley Map", 3), ("Toxic Sewer Map", 3),
         ],
         ["Metadata/NPC/Act1/Bestel"] =
         [
@@ -49,32 +56,102 @@ static class NpcShops
     /// <summary>What the NPC gives for any sold item, for now: one Scroll Fragment.</summary>
     public const string SellReward = "Scroll Fragment";
 
-    /// <summary>The NPC's stock laid out in one tab (first free cell, column by column), with item ids from
-    /// <paramref name="nextId"/>. Unknown or unwritable item types are skipped and named in <paramref name="notes"/>.</summary>
-    public static List<InventoryItem> Fill(string npcId, ItemCatalog items, Func<uint> nextId, List<string> notes)
+    /// <summary>A shop tab: its name in the buy window (S→C 0x8c) and its items.</summary>
+    public sealed record ShopTab(string Name, List<InventoryItem> Items);
+
+    /// <summary>Nessa's gem tabs (2026-10-21): every shop gem (<see cref="ItemCatalog.ShopGems"/>) by colour, actives and
+    /// supports apart, one of each.</summary>
+    static readonly (string Name, int Colour, bool Support)[] GemTabs =
+    [
+        ("Red Skills", 1, false), ("Red Support", 1, true), ("Green Skills", 2, false), ("Green Support", 2, true),
+        ("Blue Skills", 3, false), ("Blue Support", 3, true), ("White Skills", 4, false),
+    ];
+
+    static readonly HashSet<string> SellsGems = new(StringComparer.OrdinalIgnoreCase) { "Metadata/NPC/Act1/Nessa" };
+
+    static readonly HashSet<string> SellsMaps = new(StringComparer.OrdinalIgnoreCase) { "Metadata/NPC/Act1/Nessa" };
+
+    /// <summary>Every map of tiers 1-16 once (Maps.dat Tier; a name in several rows at its lowest tier), by tier then
+    /// name.</summary>
+    static readonly Lazy<List<(string Name, int Tier)>> MapTiers = new(() =>
+    {
+        try
+        {
+            using var maps = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes("data/tables/Maps.json"));
+            using var bases = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes("data/tables/BaseItemTypes.json"));
+            var best = new Dictionary<string, int>();
+            foreach (var m in maps.RootElement.EnumerateArray())
+            {
+                if (!m.TryGetProperty("Tier", out var t) || t.ValueKind != System.Text.Json.JsonValueKind.Number) continue;
+                int tier = t.GetInt32();
+                if (tier is < 1 or > 16) continue;
+                string name = bases.RootElement[m.GetProperty("BaseItemTypesKey").GetInt32()].GetProperty("Name").GetString() ?? "";
+                if (name.Length == 0 || name.StartsWith('[')) continue;
+                if (!best.TryGetValue(name, out int had) || tier < had) best[name] = tier;
+            }
+            return [.. best.OrderBy(p => p.Value).ThenBy(p => p.Key).Select(p => (p.Key, p.Value))];
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or InvalidOperationException) { return []; }
+    });
+
+    /// <summary>The NPC's tabs: its stock (<see cref="Stock"/>) in the first, then Nessa's gem tabs, each laid out from the
+    /// first free cell row by row, with item ids from <paramref name="nextId"/>. Unknown or unwritable item types
+    /// and items without room are skipped and named in <paramref name="notes"/>.</summary>
+    public static List<ShopTab> Tabs(string npcId, ItemCatalog items, Func<uint> nextId, List<string> notes)
     {
         var currency = items.Find(Currency);
         if (currency is null) notes.Add($"no item type {Currency}: the stock has no prices");
-        var placed = new List<(InventoryItem Item, byte W, byte H)>();
-        foreach (var (name, count) in Stock.GetValueOrDefault(npcId) ?? [])
+        Item Priced(Item item) => currency is null ? item : item with { Price = [(currency.Hash, (uint)PriceInCurrency)] };
+        var tabs = new List<ShopTab>();
+        var stock = new List<(ItemCatalog.BaseType Type, int Count)>();
+        var wanted = (Stock.GetValueOrDefault(npcId) ?? []).ToList();
+        if (SellsMaps.Contains(npcId))
+            wanted.AddRange(MapTiers.Value.Where(m => !wanted.Any(w => w.Name == m.Name)).Select(m => (m.Name, 1)));
+        foreach (var (name, count) in wanted)
         {
-            if (items.Find(name) is not { Supported: true } type) { notes.Add($"no writable item type {name}"); continue; }
-            var (sockets, links) = items.DefaultSockets(type);
-            for (int i = 0; i < count; i++)
-            {
-                if (FreeCell(placed, type.Width, type.Height) is not { } cell) { notes.Add($"no room for {name}"); break; }
-                var item = ItemCatalog.Create(type, sockets, links);
-                if (currency is not null) item = item with { Price = [(currency.Hash, (uint)PriceInCurrency)] };
-                placed.Add((new InventoryItem(nextId(), cell.X, cell.Y, item), type.Width, type.Height));
-            }
+            if (items.Find(name) is { Supported: true } type && type.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) stock.Add((type, count));
+            else notes.Add($"no writable item type {name}");
         }
+        // Goods, then Goods2, Goods3 … for what does not fit.
+        for (int page = 1; stock.Count > 0 || page == 1; page++)
+            tabs.Add(new(page == 1 ? "Goods" : $"Goods{page}", Lay(stock, items, Priced, nextId, notes)));
+        if (SellsGems.Contains(npcId))
+            foreach (var (name, colour, support) in GemTabs)
+            {
+                var gems = items.ShopGems(colour, support).Select(t => (t, 1)).ToList();
+                tabs.Add(new(name, Lay(gems, items, Priced, nextId, notes)));
+                notes.AddRange(gems.Select(g => $"no room in {name} for {g.t.Name}"));
+            }
+        return tabs;
+    }
+
+    /// <summary>Lays <paramref name="stock"/> out in one tab and takes what it placed out of the list: what is left did not
+    /// fit (the caller puts it in the next tab).</summary>
+    static List<InventoryItem> Lay(List<(ItemCatalog.BaseType Type, int Count)> stock, ItemCatalog items, Func<Item, Item> priced,
+        Func<uint> nextId, List<string> notes)
+    {
+        var placed = new List<(InventoryItem Item, byte W, byte H)>();
+        var left = new List<(ItemCatalog.BaseType Type, int Count)>();
+        foreach (var (type, count) in stock)
+        {
+            var (sockets, links) = items.DefaultSockets(type);
+            int i = 0;
+            for (; i < count && FreeCell(placed, type.Width, type.Height) is { } cell; i++)
+                placed.Add((new InventoryItem(nextId(), cell.X, cell.Y, priced(ItemCatalog.Create(type, sockets, links))), type.Width, type.Height));
+            if (i < count) left.Add((type, count - i));
+        }
+        // An item bigger than a whole tab would never fit: drop it rather than loop.
+        if (placed.Count == 0 && left.Count > 0) { notes.AddRange(left.Select(l => $"no room for {l.Type.Name}")); left.Clear(); }
+        stock.Clear();
+        stock.AddRange(left);
         return [.. placed.Select(p => p.Item)];
     }
 
     static (byte X, byte Y)? FreeCell(List<(InventoryItem Item, byte W, byte H)> placed, byte width, byte height)
     {
-        for (int x = 0; x + width <= Tab.Width; x++)
-            for (int y = 0; y + height <= Tab.Height; y++)
+        // Row by row: the first row fills left to right, then the next.
+        for (int y = 0; y + height <= Tab.Height; y++)
+            for (int x = 0; x + width <= Tab.Width; x++)
                 if (!placed.Any(p => p.Item.X < x + width && x < p.Item.X + p.W && p.Item.Y < y + height && y < p.Item.Y + p.H))
                     return ((byte)x, (byte)y);
         return null;
