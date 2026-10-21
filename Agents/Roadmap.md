@@ -283,8 +283,7 @@ data is in [19](docs/protocol/19-gems.md).
   ([07](docs/protocol/07-latency-visibility-movement.md) §6).
 - **HNC packets from the client** (type 0xDD): what the server should do with them
   ([07](docs/protocol/07-latency-visibility-movement.md)).
-- **`GameServer.Sim`** is an empty placeholder: a home for a server-side world simulation (monsters, combat) when it is
-  needed.
+- **Server-side world simulation** (monsters, combat): no project for it yet; add one when it is needed.
 - **Several players** in one instance: the instance registry already supports it; the Gateway sends only the local player.
 
 ## 5. Project

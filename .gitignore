@@ -12,13 +12,8 @@ PathOfExile*.exe
 # Not ours: Ghidra, JDK, ooz's npm packages, the client backup, the Ghidra project (built from the client binary)
 # and Tools/re/out (decompiled client code). See Agents/docs/re/tooling.md for how to set them up.
 /Tools/*
-!/Tools/PoEClientRecon/
 !/Tools/PoEDataExtractor/
-!/Tools/PoEMitmProxy/
-!/Tools/redirect/
 !/Tools/ooz/
-!/Tools/re/
-/Tools/re/out/
 
 # --- Data extracted from the client, and local secrets ---
 # data/tables (extracted game tables), data/walkability (Frida dumps), data/login-keys.json (server signing key),

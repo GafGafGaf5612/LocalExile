@@ -16,16 +16,13 @@ dotnet build GameServer.slnx
 ./tools/run-servers.ps1            # removed; add -NoTls for plain HTTP testing
 ```
 
-## Redirecting the client
+## Redirecting the client (historical)
 
-```powershell
-# elevated: edits hosts + machine trust store; generates server/Game-dev.pfx
-./tools/redirect/setup-redirect.ps1 -Action install
-# ... later ...
-./tools/redirect/setup-redirect.ps1 -Action remove
-```
+This early setup used an elevated script (`tools/redirect/setup-redirect.ps1`, since removed) that edited the hosts
+file and the machine trust store. Today the client is pointed at us without either: `Game.patched.exe` trusts our login
+keys and the GGPK's `gateway_list.txt` names our login server ([GettingStarted](../../GettingStarted.md) steps 5 and 6).
 
-How redirection works (from `001-client-endpoints.md` + the live CDN):
+How the redirection worked:
 
 1. `patch.Gamecdn.com` is redirected to us. The client fetches `gateway_list.txt`
    from the CDN root; we serve a list whose **login host:port** is `127.0.0.1:20484`.

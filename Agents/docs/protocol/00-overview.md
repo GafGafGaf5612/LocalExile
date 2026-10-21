@@ -79,7 +79,7 @@ sequenceDiagram
 | [../re/tooling.md](../re/tooling.md) | Ghidra headless scripts, Python helpers, Frida via REA, GGPK dump tool |
 | [../dev/live-testing.md](../dev/live-testing.md) | running a live test safely, env vars, what to expect, troubleshooting |
 
-Older notes: `Agents/docs/re/001`–`006` predate the login work and contain errors (for example "login is HTTPS"). `Agents/docs/re/007`–`010`
+Older notes: `Agents/docs/re/003`–`004` predate the login work and contain errors (for example "login is HTTPS"). `Agents/docs/re/007`–`010`
 are the working notes these documents were consolidated from. When they disagree, these documents are newer.
 
 ## Conventions

@@ -237,7 +237,6 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent; an
   effect object follows the player only by 0x1ba glides. Combat auras, Heralds and banners are not implemented; only the
   simple auras above use buffs. Ruthless and SSF change nothing in game; towns are shared across leagues.
-- `GameServer.Sim` is an empty placeholder project.
 
 ## Tests
 
@@ -256,7 +255,7 @@ guide.
 
 ## Doc caveats
 
-`docs/re/001`–`006` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`). Treat them as history, not reference.
+`docs/re/003`–`004` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`). Treat them as history, not reference.
 
 ## Jeweller's Orb (2026-10-21)
 

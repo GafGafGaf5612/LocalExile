@@ -7,7 +7,6 @@
     <Project Path="src/GameServer.Host/GameServer.Host.csproj" />
     <Project Path="src/GameServer.DevClient/GameServer.DevClient.csproj" />
     <Project Path="src/GameServer.Patch/GameServer.Patch.csproj" />
-    <Project Path="src/GameServer.Sim/GameServer.Sim.csproj" />
     <Project Path="src/GameServer.Storage/GameServer.Storage.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -16,8 +15,6 @@
     <Project Path="tests/GameServer.Gateway.Tests/GameServer.Gateway.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
-    <Project Path="Tools/PoEClientRecon/PoEClientRecon.csproj" />
     <Project Path="Tools/PoEDataExtractor/PoEDataExtractor.csproj" />
-    <Project Path="Tools/PoEMitmProxy/PoEMitmProxy.csproj" />
   </Folder>
 </Solution>

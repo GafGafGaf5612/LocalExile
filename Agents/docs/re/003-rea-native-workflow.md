@@ -41,7 +41,7 @@ The main client is too large for the default cold-import window. Recommended app
 2. **Focus the target**: analyze extracted regions or the launcher/aux DLLs first; for whole-program work prefer the snapshot workflow so a single long import amortizes across many queries.
 3. **Start with a focused query**: `rea function <path> <address|name>` still requires the import, so the snapshot route matters most.
 
-Windows Ghidra P0 is read-only, x86/x86-64 PE only, and does not expose annotations — sufficient for endpoint/host-synthesis RE, which pairs with the string evidence in `001-client-endpoints.md`.
+Windows Ghidra P0 is read-only, x86/x86-64 PE only, and does not expose annotations — sufficient for endpoint/host-synthesis RE.
 
 ## What to look for next (feeds H4.1/H4.2)
 
