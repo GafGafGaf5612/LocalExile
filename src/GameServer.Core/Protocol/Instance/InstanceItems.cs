@@ -58,6 +58,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// the magic properties' u8 +0x7a, right after their flags; the client shows those mods fractured.</summary>
     public byte FracturedCount { get; init; }
 
+    /// <summary>Mirrored (a Mirror of Kalandra copy): no currency changes it and it cannot be mirrored again. Sent as the
+    /// Mods component's flag bit 1 (+0x2df, a plain bool: the client refuses crafting on it, 0x141d68f9b).</summary>
+    public bool Mirrored { get; init; }
+
     /// <summary>The indexes in <see cref="Mods"/> of the fractured explicit mods.</summary>
     public IReadOnlySet<int> FracturedIndexes() => Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit)
         .Take(FracturedCount).Select(p => p.i).ToHashSet();
@@ -134,7 +138,7 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 // 0x1421df6e0: u8 +0x2b8 (item level), u8 +0x2bc (level requirement, kept as sent), u16 flags (bit 6
                 // incubator, bit 4 → u8, bit 15 a 0x1c8 record), the base magic properties 0x142201d70 (MagicProperties), u8, u8.
                 case "Mods":
-                    w.U8(ItemLevel).U8((byte)Math.Clamp(RequiredLevel ?? LevelRequirementOf?.Invoke(this) ?? 0, 0, 255)).U16(0);
+                    w.U8(ItemLevel).U8((byte)Math.Clamp(RequiredLevel ?? LevelRequirementOf?.Invoke(this) ?? 0, 0, 255)).U16((ushort)(Mirrored ? 0x2 : 0));
                     MagicProperties(w); w.U8(0).U8(0);
                     break;
                 case "Quality": w.U8(Quality); break;                 // 0x1424aec50

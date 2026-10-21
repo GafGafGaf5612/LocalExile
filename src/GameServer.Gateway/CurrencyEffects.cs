@@ -119,6 +119,14 @@ static class CurrencyEffects
         return item with { Mods = mods, FracturedCount = 1 };
     }
 
+    public const string MirrorOfKalandra = "Metadata/Items/Currency/CurrencyDuplicate";
+
+    /// <summary>Mirror of Kalandra (as the official one): a mirrored copy of an item that is neither corrupted nor
+    /// mirrored, with every property kept (mods and their values, fractured mods, quality, sockets, links, socketed gems,
+    /// name). The original stays as it was. Null when the item cannot be mirrored.</summary>
+    public static Item? Mirror(Item item) =>
+        item.Corrupted || item.Mirrored || !item.Components.Contains("Mods") ? null : item with { Mirrored = true };
+
     public const string OrbOfChance = "Metadata/Items/Currency/CurrencyUpgradeRandomly";
 
     /// <summary>Orb of Chance (this server's rule, not the official one): a normal weapon or armour piece becomes rare
