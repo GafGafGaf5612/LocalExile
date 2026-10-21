@@ -6,10 +6,11 @@ and the S→C factories `0x1421b5c40` (instance) and `0x1421c6150` (world).
 
 ## How to read this
 
-Each summary keeps the decompiled C lines that read (as a trailing `//` comment) and the `if`/loop/`switch`
-lines around them; everything else is dropped. Callee parameters were committed before decompiling, so
-readers passed in a register that a stored prototype left out (ObjectMagicProperties' base part, the entity
-header of messages) are visible.
+Each summary keeps the reads and the conditions and loops around them, in the notation below; everything else is
+dropped. The decompiled C itself is not published (it stays in `Tools/re/out/readschema.json`): a condition shows
+only the flag bits or string keys it tests, `…` for anything else. Callee parameters were committed before
+decompiling, so readers passed in a register that a stored prototype left out (ObjectMagicProperties' base part,
+the entity header of messages) are visible.
 
 | Notation | Meaning |
 |---|---|
@@ -22,6 +23,9 @@ header of messages) are visible.
 | `wstr` | `0x140e0cbe0` wide string; `str` = `0x1408402a0` narrow string; `blob16` = `0x141fa4610` u16 BE length + bytes |
 | `sub 0x…` | a call that passes the reader on (its own summary below; "reader arg k" when it is not the 2nd argument) |
 | `vcall [vt+0xNN]` | an indirect call with the reader (slot 20 is `[vt+0xa0]`) |
+| `if bit 0x4 set {`, `if key "name" {`, `if … {` | a condition: the flag bit tested (of the last flags read), the string key compared, or something else |
+| `loop {` | a `for`/`while`/`do` loop (its count is usually the last value read) |
+| `(when …)` | the read happens inside a condition expression |
 | bounds checks | `if (size < pos + N) throw` blocks are flattened away |
 
 **min** is the byte count of the reads outside every condition and loop, callees included; `+` means a
@@ -61,9 +65,9 @@ their component order: [../re/object-types.md](../re/object-types.md).
 **`0x141e39990` — ClientSector 0x1434675d0 slot17; Sector 0x1434675d0 slot17; Sector 0x1435a01a0 slot17** — min 4 bytes
 
 ```text
-u32    // param_2[2] = uVar1;
-if (uVar7 != 0) {
-  bytes[var]    // param_2[2] = param_2[2] + (ulonglong)uVar7;
+u32
+if … {
+  bytes[var]
 }
 ```
 
@@ -72,38 +76,38 @@ if (uVar7 != 0) {
 **`0x141e56a80` — Animated 0x1435a5030 slot17** — min 1 bytes
 
 ```text
-raw1    // FUN_140e28cf0(param_2,local_res18,1);
-if ((local_res18[0] & 1) != 0) {
-  if ((local_res18[0] & 2) != 0) {
-    u32    // param_2[2] = uVar19;
-    // goto LAB_141e56f45;
+raw1
+if bit 0x1 set {
+  if bit 0x2 set {
+    u32
+    goto
   }
-  u32    // param_2[2] = uVar19;
-  if (uVar2 != 0) {
-    bytes[var]    // param_2[2] = param_2[2] + uVar17;
-  }
-}
-if ((local_res18[0] & 4) != 0) {
-  sub 0x141e5adb0 [min 12]    // FUN_141e5adb0((longlong)param_1,(longlong *)param_2);
-}
-if ((local_res18[0] & 8) != 0) {
-  u32    // param_2[2] = uVar19;
-  u32    // param_2[2] = uVar21;
-  u32    // param_2[2] = uVar17 + 0xc;
-  if ((local_res18[0] & 0x20) != 0) {
-    u32    // param_2[2] = uVar19;
-    u32    // param_2[2] = uVar17 + 8;
+  u32
+  if … {
+    bytes[var]
   }
 }
-if ((local_res18[0] & 0x10) != 0) {
-  u32    // param_2[2] = uVar19 + 4;
+if bit 0x4 set {
+  sub 0x141e5adb0 [min 12]
 }
-if ((char)local_res18[0] < '\0') {
-  u32    // param_2[2] = uVar17;
-  u32    // param_2[2] = uVar17;
-  u32    // param_2[2] = uVar17;
-  u32    // param_2[2] = uVar17;
-  u32    // param_2[2] = param_2[2] + 4;
+if bit 0x8 set {
+  u32
+  u32
+  u32
+  if bit 0x20 set {
+    u32
+    u32
+  }
+}
+if bit 0x10 set {
+  u32
+}
+if bit 0x80 set {
+  u32
+  u32
+  u32
+  u32
+  u32
 }
 ```
 
@@ -114,16 +118,16 @@ Calls: [`0x141e5adb0`](#f-0x141e5adb0)
 **`0x1415d88d0` — ClientDelveLight 0x1434665d8 slot17; DelveLight 0x1434665d8 slot17** — min 10 bytes
 
 ```text
-u32    // param_2[2] = lVar6;
-u32    // param_2[2] = uVar10;
-u8    // param_2[2] = lVar6;
-u8    // param_2[2] = lVar6;
-if (*(char *)(param_1[0x11] + 0xa7) != '\0') {
-  u32    // param_2[2] = param_2[2] + 4;
+u32
+u32
+u8
+u8
+if … {
+  u32
 }
-if (uVar2 != 0) {
-  do ... while (uVar9 < uVar2) {
-    u32    // param_2[2] = lVar8 + 4U;
+if … {
+  loop {
+    u32
   }
 }
 ```
@@ -133,7 +137,7 @@ if (uVar2 != 0) {
 **`0x14166bb80` — AreaTransition 0x14346de00 slot17; ClientAreaTransition 0x14346de00 slot17** — min 2 bytes
 
 ```text
-sub 0x141e5b870 [min 2]    // FUN_141e5b870(param_1,param_2,param_3,param_4);
+sub 0x141e5b870 [min 2]
 ```
 
 Calls: [`0x141e5b870`](#f-0x141e5b870)
@@ -143,13 +147,13 @@ Calls: [`0x141e5b870`](#f-0x141e5b870)
 **`0x141e5b870` — AreaTransition 0x1435a57a8 slot17; ClientAreaTransition 0x1435a57a8 slot17** — min 2 bytes
 
 ```text
-u8 (flags)    // param_2[2] = lVar2 + 1U;
-sub 0x141e62490(reader arg 0) [min 1]    // FUN_141e62490(param_2,(undefined8 *)(param_1 + 0xa8));
-if ((char)bVar1 < '\0') {
-  sub 0x1424d3070(reader arg 0) [min 21]    // FUN_1424d3070(param_2,(longlong *)(param_1 + 0xb8),param_3,param_4);
+u8 (flags)
+sub 0x141e62490(reader arg 0) [min 1]
+if bit 0x80 set {
+  sub 0x1424d3070(reader arg 0) [min 21]
 }
-if (((lVar2 != 0) && (*(char *)(lVar2 + 0x14) != '\0')) && (*(char *)(param_1 + 0xb2) == '\0')) {
-  cint → +0xa4    // uVar3 = FUN_141e61010(param_2);
+if … {
+  cint → +0xa4
 }
 ```
 
@@ -160,9 +164,9 @@ Calls: [`0x141e62490@0`](#f-0x141e62490-0), [`0x1424d3070@0`](#f-0x1424d3070-0)
 **`0x141e138b0` — Chest 0x143465ec0 slot17; Chest 0x14359fa68 slot17; ClientChest 0x143465ec0 slot17** — min 3 bytes
 
 ```text
-u8 (flags)    // param_2[2] = uVar1;
-u8    // param_2[2] = lVar5;
-u8    // param_2[2] = param_2[2] + 1;
+u8 (flags)
+u8
+u8
 ```
 
 <a id="f-0x141e1ee30"></a>
@@ -170,16 +174,16 @@ u8    // param_2[2] = param_2[2] + 1;
 **`0x141e1ee30` — Inventories 0x14359e078 slot20 (via slot17 0x1415d8cb0)** — min 2 bytes
 
 ```text
-u8    // param_2[2] = lVar11 + 1U;
-for (; pbVar8 = pbStack_110, pbVar7 = local_118, local_118 = pbVar12, pbVar9 != pbStack_110; pbVar9 = pbVar9 + 0x88) {
-  u8    // param_2[2] = lVar11 + 1U;
-  sub 0x1424f44e0(reader arg 0) [min 1]    // FUN_1424f44e0(param_2,(uint *)(pbVar9 + 8));
+u8
+loop {
+  u8
+  sub 0x1424f44e0(reader arg 0) [min 1]
 }
-u8    // param_2[2] = lVar11 + 1U;
-if (bVar1 != 0) {
-  if (bVar1 != 0) {
-    do ... while (iVar14 < (int)(uint)bVar1) {
-      u16    // param_2[2] = lVar5 + 2U;
+u8
+if … {
+  if … {
+    loop {
+      u16
     }
   }
 }
@@ -192,10 +196,10 @@ Calls: [`0x1424f44e0@0`](#f-0x1424f44e0-0)
 **`0x141e6c2f0` — Life 0x1435a7340 slot17** — min 55 bytes
 
 ```text
-sub 0x141e6be70 [min 18]    // FUN_141e6be70(param_1 + 0x178,param_2);
-sub 0x141e6be70 [min 18]    // FUN_141e6be70(param_1 + 0x1c8,param_2);
-sub 0x141e6be70 [min 18]    // FUN_141e6be70(param_1 + 0x210,param_2);
-sub 0x141e6c270 [min 1]    // FUN_141e6c270(param_1,param_2);
+sub 0x141e6be70 [min 18]
+sub 0x141e6be70 [min 18]
+sub 0x141e6be70 [min 18]
+sub 0x141e6c270 [min 1]
 ```
 
 Calls: [`0x141e6be70`](#f-0x141e6be70), [`0x141e6c270`](#f-0x141e6c270)
@@ -205,13 +209,12 @@ Calls: [`0x141e6be70`](#f-0x141e6be70), [`0x141e6c270`](#f-0x141e6c270)
 **`0x141e114d0` — Buffs 0x14359f5f8 slot17** — min 2 bytes
 
 ```text
-u16    // param_2[2] = lVar4 + 2U;
-if (uVar2 != 0) {
-  do ... while (uVar8 != uVar2) {
-    u16    // param_2[2] = uVar9;
-    u8    // param_2[2] = lVar4 + 3U;
-    sub 0x141e06bb0(reader arg 0) [min 33]    // FUN_141e06bb0(param_2,&local_168,uVar9,param_4);
-    // FUN_141e11dc0(param_1,uVar3,plVar7,bVar1,(longlong)param_2);
+u16
+if … {
+  loop {
+    u16
+    u8
+    sub 0x141e06bb0(reader arg 0) [min 33]
   }
 }
 ```
@@ -223,17 +226,17 @@ Calls: [`0x141e06bb0@0`](#f-0x141e06bb0-0)
 **`0x141e77990` — ObjectMagicProperties 0x1435a6ae0 slot20 (via slot17 0x1415d8cb0)** — min 4 bytes
 
 ```text
-sub 0x142201d70 [min 3]    // FUN_142201d70((undefined8 **)(param_1 + 0x19),param_2,param_3,param_4);
-raw1    // FUN_140e28cf0(param_2,local_res8,1);
-if (((ulonglong)local_res8[0] & 2) == 0) { }
+sub 0x142201d70 [min 3]
+raw1
+if bit 0x2 clear {
 else {
-  u16    // param_2[2] = (ulonglong ***)((longlong)pppuVar5 + 2U);
+  u16
 }
-if (((ulonglong)local_res8[0] & 4) == 0) { }
+if bit 0x4 clear {
 else {
-  u32    // param_2[2] = pppuVar5;
-  if (uVar10 != 0) {
-    bytes[var]    // param_2[2] = (ulonglong ***)((longlong)param_2[2] + (ulonglong)uVar10);
+  u32
+  if … {
+    bytes[var]
   }
 }
 ```
@@ -245,15 +248,15 @@ Calls: [`0x142201d70`](#f-0x142201d70)
 **`0x141e741e0` — Movement 0x1435a5e18 slot17** — min 27 bytes
 
 ```text
-u8 → +0x30    // param_2[2] = uVar1;
-u32    // param_2[2] = uVar2;
-u32    // param_2[2] = uVar3;
-u32    // param_2[2] = lVar7;
-u32    // param_2[2] = lVar7;
-u32    // param_2[2] = lVar7;
-u32    // param_2[2] = lVar7;
-u8    // param_2[2] = lVar7;
-u8    // param_2[2] = param_2[2] + 1;
+u8 → +0x30
+u32
+u32
+u32
+u32
+u32
+u32
+u8
+u8
 ```
 
 <a id="f-0x141e7dc10"></a>
@@ -261,30 +264,30 @@ u8    // param_2[2] = param_2[2] + 1;
 **`0x141e7dc10` — ClientPlayer 0x143466450 slot17; Player 0x143466450 slot17; Player 0x1435a64e8 slot17** — min 45 bytes
 
 ```text
-sub 0x140e28d60(reader arg 0) [min 4]    // plVar10 = FUN_140e28d60(param_2,param_1 + 0x2d);
-u8    // plVar10[2] = uVar1;
-u32    // plVar10[2] = uVar2;
-u32    // plVar10[2] = lVar14;
-u16    // plVar10[2] = lVar14;
-u16    // plVar10[2] = plVar10[2] + 2;
-sub 0x141e83340(reader arg 0) [min 2]    // plVar11 = FUN_141e83340(param_2,param_1 + 0x37);
-sub 0x141e83340(reader arg 0) [min 2]    // plVar11 = FUN_141e83340(plVar11,param_1 + 0x3a);
-raw9 → +0x1e8    // FUN_140e28cf0(plVar11,param_1 + 0x3d,9);
-u16    // param_2[2] = uVar1;
-u16    // param_2[2] = lVar12 + 4U;
-u8    // param_2[2] = param_2[2] + 1;
-u8    // param_2[2] = lVar14;
-u8    // param_2[2] = lVar14;
-u8    // param_2[2] = lVar14;
-u8    // param_2[2] = lVar14;
-u8    // param_2[2] = lVar14;
-u32    // param_2[2] = uVar1;
-if (uVar7 != 0) {
-  do ... while (uVar16 < uVar7) {
-    u32    // param_2[2] = lVar12 + 4U;
+sub 0x140e28d60(reader arg 0) [min 4]
+u8
+u32
+u32
+u16
+u16
+sub 0x141e83340(reader arg 0) [min 2]
+sub 0x141e83340(reader arg 0) [min 2]
+raw9 → +0x1e8
+u16
+u16
+u8
+u8
+u8
+u8
+u8
+u8
+u32
+if … {
+  loop {
+    u32
   }
 }
-sub 0x141e83470(reader arg 0) [min 1]    // FUN_141e83470(param_2,(longlong *)&local_d8);
+sub 0x141e83470(reader arg 0) [min 1]
 ```
 
 Calls: [`0x140e28d60@0`](#f-0x140e28d60-0), [`0x141e83340@0`](#f-0x141e83340-0), [`0x141e83470@0`](#f-0x141e83470-0)
@@ -294,7 +297,7 @@ Calls: [`0x140e28d60@0`](#f-0x140e28d60-0), [`0x141e83340@0`](#f-0x141e83340-0),
 **`0x141e40a80` — DiesAfterTime 0x14359fd00 slot17** — min 0+ bytes
 
 ```text
-vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
+vcall [?](reader arg 0)
 ```
 
 <a id="f-0x141e2f0b0"></a>
@@ -302,52 +305,52 @@ vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
 **`0x141e2f0b0` — Positioned 0x1435a0f18 slot17** — min 16 bytes
 
 ```text
-if (*(char *)(param_1[0x2b] + 0x21) != '\0') {
-  u32 (flags)    // *puVar21 = uVar1;
-  u32    // *puVar21 = uVar18 + 8;
+if … {
+  u32 (flags)
+  u32
 }
-u32    // *puVar21 = uVar18;
-u32    // *puVar21 = uVar16;
-u32 → +0x29c    // *puVar21 = uVar1;
-u16    // *puVar21 = *puVar21 + 2;
-raw2    // FUN_140e28cf0(param_2,&local_res8,2);
-if ((local_res8 & 0x20) != 0) {
-  u32    // *puVar21 = uVar18;
-  u32    // param_2[2] = lVar19;
-  u32    // param_2[2] = param_2[2] + 4;
+u32
+u32
+u32 → +0x29c
+u16
+raw2
+if bit 0x20 set {
+  u32
+  u32
+  u32
 }
-if ((bStackX_9 & 4) != 0) {
-  u32    // *plVar15 = lVar19;
-  u32    // *plVar15 = lVar19;
-  u32    // *plVar15 = lVar19;
-  u32    // *plVar15 = *plVar15 + 4;
+if bit 0x4 set {
+  u32
+  u32
+  u32
+  u32
 }
-if ((local_res8 & 4) != 0) {
-  u32 → +0x290    // *puVar21 = uVar1;
-  u32 → +0x2b4    // *puVar21 = uVar18 + 8;
+if bit 0x4 set {
+  u32 → +0x290
+  u32 → +0x2b4
 }
-if ((local_res8 & 0x40) == 0) { }
+if bit 0x40 clear {
 else {
-  u32    // param_2[2] = lVar19;
-  u32    // param_2[2] = param_2[2] + 4;
+  u32
+  u32
 }
-if ((bVar12 & 1) != 0) {
-  u32    // param_2[2] = uVar1;
-  u32    // param_2[2] = uVar10;
-  u32    // param_2[2] = lVar17 + 0xcU;
-  raw1    // FUN_140e28cf0(param_2,&local_res8,1);
-  u32    // param_2[2] = uVar1;
-  u8    // param_2[2] = lVar17 + 5U;
+if bit 0x1 set {
+  u32
+  u32
+  u32
+  raw1
+  u32
+  u8
 }
-if ((bVar12 & 2) != 0) {
-  u8    // param_2[2] = uVar1;
-  u8    // param_2[2] = lVar17 + 2U;
+if bit 0x2 set {
+  u8
+  u8
 }
-if ((bVar12 & 8) != 0) {
-  u8    // param_2[2] = lVar17 + 1U;
+if bit 0x8 set {
+  u8
 }
-if ((bVar12 & 0x10) != 0) {
-  u32    // param_2[2] = param_2[2] + 4;
+if bit 0x10 set {
+  u32
 }
 ```
 
@@ -356,16 +359,16 @@ if ((bVar12 & 0x10) != 0) {
 **`0x1421c2f40` — ClientInternalStats 0x1435dd4e8 slot17; Stats 0x1435dd4e8 slot17** — min 10 bytes
 
 ```text
-cint    // uVar2 = FUN_141e61010(param_2);
-if (uVar2 != 0) {
-  do ... while (uVar6 < uVar2) {
-    cint    // iVar3 = FUN_141e61010(param_2);
-    sub 0x141e490e0(reader arg 0) [min 1]    // uVar4 = FUN_141e490e0(param_2);
+cint
+if … {
+  loop {
+    cint
+    sub 0x141e490e0(reader arg 0) [min 1]
   }
 }
-u32    // param_2[2] = lVar5;
-u32    // param_2[2] = lVar5;
-u8    // param_2[2] = param_2[2] + 1;
+u32
+u32
+u8
 ```
 
 Calls: [`0x141e490e0@0`](#f-0x141e490e0-0)
@@ -375,13 +378,13 @@ Calls: [`0x141e490e0@0`](#f-0x141e490e0-0)
 **`0x141ea10a0` — ClientWorldItem 0x143465da8 slot17; WorldItem 0x143465da8 slot17; WorldItem 0x1435aac48 slot17** — min 13 bytes
 
 ```text
-u32    // param_2[2] = uVar1;
-if (iVar4 != 0) {
-  u32    // param_2[2] = uVar7;
+u32
+if … {
+  u32
 }
-u8 → +0x50    // param_2[2] = uVar7 + 1;
-u32    // param_2[2] = (longlong)pbVar12;
-sub 0x1421ec390 [min 4]    // FUN_1421ec390(&local_res10,param_2,pbVar12,param_4);
+u8 → +0x50
+u32
+sub 0x1421ec390 [min 4]
 ```
 
 Calls: [`0x1421ec390`](#f-0x1421ec390)
@@ -391,8 +394,8 @@ Calls: [`0x1421ec390`](#f-0x1421ec390)
 **`0x141e75050` — ClientNPC 0x143467218 slot17; ClientNPC 0x1435a6970 slot17; NPC 0x143467218 slot17; NPC 0x1435a6970 slot17** — min 2 bytes
 
 ```text
-u8    // param_2[2] = lVar2;
-u8    // param_2[2] = param_2[2] + 1;
+u8
+u8
 ```
 
 <a id="f-0x1421c24b0"></a>
@@ -400,7 +403,7 @@ u8    // param_2[2] = param_2[2] + 1;
 **`0x1421c24b0` — ClientInternalTransitionable 0x1435dd290 slot17; Transitionable 0x1435dd290 slot17** — min 1 bytes
 
 ```text
-u8 (flags)    // param_2[2] = lVar3 + 1U;
+u8 (flags)
 ```
 
 <a id="f-0x141e44290"></a>
@@ -408,12 +411,12 @@ u8 (flags)    // param_2[2] = lVar3 + 1U;
 **`0x141e44290` — ClientInternalTriggerableBlockage 0x1435a0710 slot17; ClientInternalTriggerableBlockage 0x1435dcfe0 slot17; TriggerableBlockage 0x1435a0710 slot17; TriggerableBlockage 0x1435dcfe0 slot17** — min 1 bytes
 
 ```text
-u8    // param_2[2] = lVar5;
-if (*(char *)(param_1 + 0x30) != '\0') {
-  u8    // param_2[2] = uVar8;
-  if (bVar1 != 0) {
-    do ... while ((int)uVar7 < (int)(uint)bVar1) {
-      u8    // param_2[2] = lVar3 + 1U;
+u8
+if … {
+  u8
+  if … {
+    loop {
+      u8
     }
   }
 }
@@ -424,7 +427,7 @@ if (*(char *)(param_1 + 0x30) != '\0') {
 **`0x141e2cee0` — ClientInternalPortal 0x1435db808 slot17; Portal 0x14359ffb8 slot17; PortalClient 0x14346c740 slot17** — min 1 bytes
 
 ```text
-u8    // param_2[2] = lVar2 + 1U;
+u8
 ```
 
 <a id="f-0x141e3aad0"></a>
@@ -432,14 +435,14 @@ u8    // param_2[2] = lVar2 + 1U;
 **`0x141e3aad0` — Shrine 0x14359fe40 slot17** — min 2 bytes
 
 ```text
-u8 (flags)    // param_2[2] = uVar1;
-u8    // param_2[2] = param_2[2] + 1;
-if (bVar4 == 0xff) { }
+u8 (flags)
+u8
+if … {
 else {
-  u8    // param_2[2] = lVar9 + 1U;
-  if (bVar4 != 0) {
-    do ... while (iVar10 < (int)(uint)bVar4) {
-      u8    // param_2[2] = lVar9 + 1U;
+  u8
+  if … {
+    loop {
+      u8
     }
   }
 }
@@ -450,12 +453,12 @@ else {
 **`0x141e6f5d0` — MinimapIcon 0x1435a7018 slot20 (via slot17 0x1415d8cb0)** — min 1 bytes
 
 ```text
-u8 (flags)    // param_2[2] = uVar1;
-if ((bVar3 & 1) != 0) {
-  u16    // param_2[2] = lVar5 + 2U;
+u8 (flags)
+if bit 0x1 set {
+  u16
 }
-if ((bVar3 & 8) != 0) {
-  sub 0x141e62490(reader arg 0) [min 1]    // FUN_141e62490(param_2,(undefined8 *)(param_1 + 0x30));
+if bit 0x8 set {
+  sub 0x141e62490(reader arg 0) [min 1]
 }
 ```
 
@@ -466,14 +469,14 @@ Calls: [`0x141e62490@0`](#f-0x141e62490-0)
 **`0x141e2c6c0` — ClientPointer 0x1434656b8 slot20 (via slot17 0x1415d8cb0); ClientPointer 0x1435a02d0 slot20 (via slot17 0x1415d8cb0); Pointer 0x1434656b8 slot20 (via slot17 0x1415d8cb0); Pointer 0x1435a02d0 slot20 (via slot17 0x1415d8cb0)** — min 4 bytes
 
 ```text
-u32    // param_2[2] = uVar1;
-if (*(char *)(param_1[4] + 0x40) == '\0') {
-  u8    // param_2[2] = uVar2;
-  u32    // param_2[2] = lVar5 + 9U;
-  if (uVar4 != 0) {
-    do ... while (uVar10 < uVar4) {
-      u32    // param_2[2] = uVar1;
-      u32    // param_2[2] = lVar5 + 8U;
+u32
+if … {
+  u8
+  u32
+  if … {
+    loop {
+      u32
+      u32
     }
   }
 }
@@ -484,52 +487,52 @@ if (*(char *)(param_1[4] + 0x40) == '\0') {
 **`0x14166e9c0` — Beam 0x14346ebf0 slot20 (via slot17 0x1415d8cb0); ClientBeam 0x14346ebf0 slot20 (via slot17 0x1415d8cb0)** — min 5 bytes
 
 ```text
-u16    // param_2[2] = lVar6 + 2U;
-raw3    // FUN_140e28cf0(param_2,&local_res20,3);
-if (((byte)local_res20 >> 2 & 1) != 0) {
-  u32    // param_2[2] = uVar9;
-  u32    // param_2[2] = uVar10;
-  if ((local_res20 & 8) != 0) {
-    u32    // param_2[2] = uVar9;
+u16
+raw3
+if bit 0x1 set {
+  u32
+  u32
+  if bit 0x8 set {
+    u32
   }
-  if ((local_res20 & 0x10) != 0) {
-    u32    // param_2[2] = uVar10;
-    if ((local_res20 & 0x40) == 0) {
-      u32    // param_2[2] = uVar9 + 8;
+  if bit 0x10 set {
+    u32
+    if bit 0x40 clear {
+      u32
     }
     else {
-      sub 0x140e28e20(reader arg 0) [min 4+]    // FUN_140e28e20(param_2,(longlong *)&local_150);
+      sub 0x140e28e20(reader arg 0) [min 4+]
     }
-    if ((uVar2 & 0x2000) != 0) {
-      u32    // param_2[2] = lVar6 + 4U;
+    if bit 0x2000 set {
+      u32
     }
   }
 }
-if ((char)bVar5 < '\0') {
-  u32    // param_2[2] = uVar9;
-  u32    // param_2[2] = uVar10;
-  if ((uVar2 & 0x100) != 0) {
-    u32    // param_2[2] = uVar9;
+if bit 0x80 set {
+  u32
+  u32
+  if bit 0x100 set {
+    u32
   }
-  if ((uVar2 & 0x200) != 0) {
-    u32    // param_2[2] = uVar10;
+  if bit 0x200 set {
+    u32
   }
-  if ((uVar2 & 0x400) != 0) {
-    u32    // param_2[2] = uVar9;
-    if ((uVar2 & 0x1000) == 0) {
-      u32    // param_2[2] = uVar10 + 8;
+  if bit 0x400 set {
+    u32
+    if bit 0x1000 clear {
+      u32
     }
     else {
-      sub 0x140e28e20(reader arg 0) [min 4+]    // FUN_140e28e20(param_2,(longlong *)&local_170);
+      sub 0x140e28e20(reader arg 0) [min 4+]
     }
-    if ((uVar2 & 0x4000) != 0) {
-      u32    // param_2[2] = lVar6 + 4U;
+    if bit 0x4000 set {
+      u32
     }
   }
 }
-if (bVar16 != 0) {
-  u32    // param_2[2] = lVar11;
-  u32    // param_2[2] = param_2[2] + 4;
+if … {
+  u32
+  u32
 }
 ```
 
@@ -540,8 +543,8 @@ Calls: [`0x140e28e20@0`](#f-0x140e28e20-0)
 **`0x141e1b500` — ClientInternalGroundEffect 0x1435dd640 slot17; GroundEffect 0x14359e268 slot17** — min 7 bytes
 
 ```text
-u16    // param_2[2] = lVar5 + 2U;
-sub 0x141e1b470 [min 5]    // FUN_141e1b470(param_1,param_2);
+u16
+sub 0x141e1b470 [min 5]
 ```
 
 Calls: [`0x141e1b470`](#f-0x141e1b470)
@@ -551,20 +554,20 @@ Calls: [`0x141e1b470`](#f-0x141e1b470)
 **`0x142192a80` — Actor 0x14346e558 slot17; Actor 0x1435daa70 slot17; ClientActor 0x14346e558 slot17; ClientInternalActor 0x14346e558 slot17; ClientInternalActor 0x1435daa70 slot17** — min 15+ bytes
 
 ```text
-u32    // param_2[2] = uVar15;
-if (uVar9 != 0) {
-  bytes[var]    // param_2[2] = param_2[2] + (ulonglong)uVar9;
+u32
+if … {
+  bytes[var]
 }
-u16    // param_2[2] = uVar16;
-u8    // param_2[2] = uVar15;
-if (*(int *)(*(longlong *) (*(longlong *)(param_1[1] + 0x10) + (longlong)*(int *)(param_1[0xb2] + 0xbc) * 8) + 0x1a8) < 1) {
-  u8 → +0x230    // param_2[2] = uVar15;
-  u8    // param_2[2] = param_2[2] + 1;
-  // if (plVar14 == (longlong *)0x0) goto LAB_142193143;
+u16
+u8
+if … {
+  u8 → +0x230
+  u8
+  goto
 }
-u32    // param_2[2] = uVar16;
-u32 → +0x274    // param_2[2] = uVar15;
-vcall [vt+0xa0](reader arg 1)    // (**(code **)(*param_1 + 0xa0))(param_1,param_2);
+u32
+u32 → +0x274
+vcall [vt+0xa0](reader arg 1)
 ```
 
 <a id="f-0x141e7d410"></a>
@@ -572,7 +575,7 @@ vcall [vt+0xa0](reader arg 1)    // (**(code **)(*param_1 + 0xa0))(param_1,param
 **`0x141e7d410` — PetAi 0x1435a6398 slot20 (via slot17 0x1415d8cb0)** — min 4 bytes
 
 ```text
-u32    // param_2[2] = param_2[2] + 4;
+u32
 ```
 
 <a id="f-0x141eaa400"></a>
@@ -580,11 +583,11 @@ u32    // param_2[2] = param_2[2] + 4;
 **`0x141eaa400` — HarvestWorldObject 0x1435aaad0 slot17** — min 1 bytes
 
 ```text
-u8    // param_2[2] = lVar8 + 1U;
-if (bVar3 != 0) {
-  do ... while (iVar10 < (int)(uint)bVar3) {
-    u8    // param_2[2] = uVar1;
-    u8    // param_2[2] = lVar8 + 2U;
+u8
+if … {
+  loop {
+    u8
+    u8
   }
 }
 ```
@@ -594,15 +597,15 @@ if (bVar3 != 0) {
 **`0x141ead870` — ClientHeistRewardDisplay 0x14346cb18 slot20 (via slot17 0x1415d8cb0); ClientHeistRewardDisplay 0x1435aab80 slot20 (via slot17 0x1415d8cb0); HeistRewardDisplay 0x14346cb18 slot20 (via slot17 0x1415d8cb0); HeistRewardDisplay 0x1435aab80 slot20 (via slot17 0x1415d8cb0)** — min 6 bytes
 
 ```text
-u8    // param_2[2] = uVar1;
-u8    // param_2[2] = lVar4 + 2U;
-if (bVar2 != 0) {
-  sub 0x1421ec390 [min 4]    // plVar7 = FUN_1421ec390(&local_res18,param_2,lVar11,uVar12);
+u8
+u8
+if … {
+  sub 0x1421ec390 [min 4]
 }
-if (cVar3 != '\0') {
-  sub 0x1421ec390 [min 4]    // plVar7 = FUN_1421ec390(&local_res20,param_2,lVar11,uVar12);
+if … {
+  sub 0x1421ec390 [min 4]
 }
-u32 → +0x30    // param_2[2] = lVar4 + 4U;
+u32 → +0x30
 ```
 
 Calls: [`0x1421ec390`](#f-0x1421ec390)
@@ -612,7 +615,7 @@ Calls: [`0x1421ec390`](#f-0x1421ec390)
 **`0x141e6e540` — ClientMercenary 0x143465a78 slot17; Mercenary 0x1435a6168 slot17** — min 2 bytes
 
 ```text
-sub 0x141e82d00(reader arg 0) [min 2]    // FUN_141e82d00(param_2,(undefined8 *)(param_1 + 0x20),&local_res8);
+sub 0x141e82d00(reader arg 0) [min 2]
 ```
 
 Calls: [`0x141e82d00@0`](#f-0x141e82d00-0)
@@ -622,7 +625,7 @@ Calls: [`0x141e82d00@0`](#f-0x141e82d00-0)
 **`0x14161fa40` — Wheels 0x14346c540 slot17** — min 0+ bytes
 
 ```text
-vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
+vcall [?](reader arg 0)
 ```
 
 <a id="f-0x1415e24e0"></a>
@@ -630,7 +633,7 @@ vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
 **`0x1415e24e0` — ClientPlayer 0x143465ff8 slot17** — min 0+ bytes
 
 ```text
-vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
+vcall [?](reader arg 0)
 ```
 
 <a id="f-0x1415d8cc0"></a>
@@ -638,12 +641,12 @@ vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
 **`0x1415d8cc0` — ClientDelveNode 0x143467058 slot20 (via slot17 0x1415d8cb0)** — min 23 bytes
 
 ```text
-sub 0x140df8ab0(reader arg 0) [min 8]    // plVar5 = FUN_140df8ab0(param_2,(undefined4 *)(param_1 + 0x20));
-sub 0x140df8ab0(reader arg 0) [min 8]    // FUN_140df8ab0(plVar5,(undefined4 *)(param_1 + 0x28));
-u8 → +0x30    // param_2[2] = uVar1;
-u8    // param_2[2] = lVar6;
-u8    // param_2[2] = lVar6;
-u32    // param_2[2] = param_2[2] + 4;
+sub 0x140df8ab0(reader arg 0) [min 8]
+sub 0x140df8ab0(reader arg 0) [min 8]
+u8 → +0x30
+u8
+u8
+u32
 ```
 
 Calls: [`0x140df8ab0@0`](#f-0x140df8ab0-0)
@@ -653,7 +656,7 @@ Calls: [`0x140df8ab0@0`](#f-0x140df8ab0-0)
 **`0x1415e2c10` — ClientShrine 0x143466e18 slot17** — min 2 bytes
 
 ```text
-sub 0x141e3aad0 [min 2]    // FUN_141e3aad0(param_1,param_2,param_3,param_4);
+sub 0x141e3aad0 [min 2]
 ```
 
 Calls: [`0x141e3aad0`](#f-0x141e3aad0)
@@ -663,7 +666,7 @@ Calls: [`0x141e3aad0`](#f-0x141e3aad0)
 **`0x141619b30` — ScaleParent 0x14346ca38 slot17** — min 0+ bytes
 
 ```text
-vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
+vcall [?](reader arg 0)
 ```
 
 <a id="f-0x1415dd0b0"></a>
@@ -671,15 +674,15 @@ vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
 **`0x1415dd0b0` — ClientMonolith 0x1434674f8 slot17** — min 8 bytes
 
 ```text
-u8    // param_2[2] = lVar12;
-u16    // param_2[2] = uVar1;
-u8    // param_2[2] = lVar6 + 1U;
-if (bVar4 != 0) {
-  do ... while (bVar13 < bVar4) {
-    u32    // param_2[2] = lVar6 + 4U;
+u8
+u16
+u8
+if … {
+  loop {
+    u32
   }
 }
-u32    // param_2[2] = param_2[2] + 4;
+u32
 ```
 
 <a id="f-0x141622fa0"></a>
@@ -687,7 +690,7 @@ u32    // param_2[2] = param_2[2] + 4;
 **`0x141622fa0` — WorldDescription 0x14346c840 slot17** — min 0+ bytes
 
 ```text
-vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
+vcall [?](reader arg 0)
 ```
 
 <a id="f-0x141e1e240"></a>
@@ -695,11 +698,11 @@ vcall [?](reader arg 0)    // (**(code **)*param_2)(param_2,0);
 **`0x141e1e240` — InteractionAction 0x14359f7d0 slot17** — min 1 bytes
 
 ```text
-u8 (flags)    // param_2[2] = lVar5 + 1U;
-if ((bVar2 & 4) == 0) { }
+u8 (flags)
+if bit 0x4 clear {
 else {
-  u8    // param_2[2] = uVar1;
-  u16 (flags)    // param_2[2] = lVar5 + 3U;
+  u8
+  u16 (flags)
 }
 ```
 
@@ -708,7 +711,7 @@ else {
 **`0x142191f10` — ClientInternalStateMachine 0x1435da8b8 slot17** — min 2 bytes
 
 ```text
-sub 0x141e3ee40 [min 2]    // FUN_141e3ee40(param_1,param_2,param_3,param_4);
+sub 0x141e3ee40 [min 2]
 ```
 
 Calls: [`0x141e3ee40`](#f-0x141e3ee40)
@@ -718,21 +721,21 @@ Calls: [`0x141e3ee40`](#f-0x141e3ee40)
 **`0x141e3ee40` — StateMachine 0x1435a14e0 slot17** — min 2 bytes
 
 ```text
-u8    // param_2[2] = uVar10;
-u8    // param_2[2] = lVar11 + 2U;
-if (*(longlong *)(param_1 + 0x168) - *(longlong *)(param_1 + 0x160) >> 3 != 0) {
-  do ... while (uVar10 < (ulonglong) (*(longlong *)(param_1 + 0x168) - *(longlong *)(param_1 + 0x160) >> 3)) {
-    if (*(char *)(lVar11 + 0x2c + *(longlong *)(*(longlong *)(param_1 + 0x158) + 0x10)) != '\0') {
-      sub 0x141e490e0(reader arg 0) [min 1]    // uVar3 = FUN_141e490e0(param_2);
-      raw    // FUN_140e28cf0(param_2,*(longlong *)(param_1 + 0x160) + 4 + uVar10 * 8);
+u8
+u8
+if … {
+  loop {
+    if … {
+      sub 0x141e490e0(reader arg 0) [min 1]
+      raw
     }
   }
 }
-if (*(longlong *)(param_1 + 0x180) - lVar11 >> 3 != 0) {
-  do ... while (uVar7 < (ulonglong)(*(longlong *)(param_1 + 0x180) - lVar11 >> 3)) {
-    if (*(char *)(*(longlong *)(*(longlong *)(param_1 + 0x158) + 0x28) + 0x38 + uVar7 * 0x48) != '\0') {
-      u32    // param_2[2] = (longlong)param_3;
-      u8    // param_2[2] = param_2[2] + 1;
+if … {
+  loop {
+    if … {
+      u32
+      u8
     }
   }
 }
@@ -754,8 +757,8 @@ Class `0x1435bf650` (ctor 0x14219cc70, dispatcher case 0x0), read `0x141f918b0`,
 <details><summary>write <code>0x141f91850</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -769,16 +772,16 @@ Class `0x1435dc8e0` (case), read `0x14219cd20`, write `0x14219cca0`.
 **read `0x14219cd20`** — min 4+ bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-wstr → +0x18    // FUN_140e0cbe0(param_2,param_1 + 0x18);
+raw4 → +0x10
+wstr → +0x18
 ```
 
 <details><summary>write <code>0x14219cca0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar2,*(ushort *)(param_1 + 0x28));
+raw.w2
+raw.w4
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -794,7 +797,7 @@ Class `0x14316c930` (case, dispatcher case 0x1), read `0x1400f0f00`, write `0x14
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -806,8 +809,8 @@ Class `0x1435dcec0` (case, dispatcher case 0x2), read `0x14219ce40`, write `0x14
 <details><summary>write <code>0x14219cdf0</code> (min 15)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c510 [min 13]    // FUN_140e0c510((undefined8 *)(param_1 + 0x10),param_2);
+raw.w2
+sub 0x140e0c510 [min 13]
 ```
 
 </details>
@@ -821,12 +824,12 @@ Class `0x1435dbc68` (ctor 0x14219cfb0, dispatcher case 0x3), read `0x14219d140`,
 **read `0x14219d140`** — min 16 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
-raw2 → +0x1a    // FUN_140dfb630(param_2,param_1 + 0x1a,2);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-sub 0x14299cd70 [min 2]    // FUN_14299cd70((longlong *)(param_1 + 0x28),param_2);
+raw2
+raw2 → +0x18
+raw2 → +0x1a
+raw4 → +0x1c
+raw4 → +0x20
+sub 0x14299cd70 [min 2]
 ```
 
 Calls: [`0x14299cd70`](#f-0x14299cd70)
@@ -834,13 +837,13 @@ Calls: [`0x14299cd70`](#f-0x14299cd70)
 <details><summary>write <code>0x14219d010</code> (min 16)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2 ← +0x1a    // FUN_140dfb760(param_2,param_1 + 0x1a,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x14299cbf0 [min 0]    // FUN_14299cbf0((longlong *)(param_1 + 0x28),param_2);
+raw.w2
+raw.w2
+raw.w2
+raw.w2 ← +0x1a
+raw.w4
+raw.w4
+sub 0x14299cbf0 [min 0]
 ```
 
 </details>
@@ -852,8 +855,8 @@ Class `0x1435dbf60` (case, dispatcher case 0x4), read `0x14219d3d0`, write `0x14
 <details><summary>write <code>0x14219d370</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x30));
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -867,18 +870,18 @@ Class `0x1435dc8c0` (case, dispatcher case 0x5), read `0x141fa0720`, write `0x14
 **read `0x141fa0720`** — min 8 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
-raw4 → +0x14    // FUN_140dfb630(param_2,puVar1,4);
+raw2 → +0x10
+raw2 → +0x12
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141fa0510</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w2
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -892,64 +895,64 @@ Class `0x1435da180` (ctor 0x14219d940, dispatcher case 0x6), read `0x142141ef0`,
 **read `0x142141ef0`** — min 27+ bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
-wstr → +0x30    // FUN_140e0cbe0(param_2,param_1 + 0x30);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw3 → +0x21    // FUN_140dfb630(param_2,param_1 + 0x21,3);
-raw1 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,1);
-raw1 → +0x1d    // FUN_140dfb630(param_2,param_1 + 0x1d,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-if ((*(byte *)(param_1 + 0x21) & 8) != 0) {
-  raw2 → +0x16    // FUN_140dfb630(param_2,param_1 + 0x16,2);
+raw4 → +0x10
+raw2 → +0x14
+wstr → +0x30
+raw4 → +0x18
+raw1
+raw1
+raw1
+raw1
+raw3 → +0x21
+raw1 → +0x1c
+raw1 → +0x1d
+raw1
+if bit 0x8 set {
+  raw2 → +0x16
 }
-raw2    // FUN_140dfb630(param_2,&local_res8,2);
-for (puVar10 = *(u_long **)(param_1 + 0x68); puVar10 != puVar2; puVar10 = puVar10 + 1) {
-  raw4    // FUN_140dfb630(param_2,puVar10,4);
+raw2
+loop {
+  raw4
 }
-raw2    // FUN_140dfb630(param_2,&local_res8,2);
-for (puVar12 = (uint *)*plVar1; puVar12 != puVar4; puVar12 = puVar12 + 1) {
-  raw1    // FUN_140dfb630(param_2,&local_res8,1);
+raw2
+loop {
+  raw1
 }
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-for (puVar12 = *(uint **)(param_1 + 0x50); puVar12 != puVar4; puVar12 = puVar12 + 1) {
-  raw1    // FUN_140dfb630(param_2,&local_res8,1);
+raw1
+loop {
+  raw1
 }
-raw2    // FUN_140dfb630(param_2,&local_res8,2);
-for (puVar13 = *(u_short **)(param_1 + 0xe0); puVar13 != puVar5; puVar13 = puVar13 + 1) {
-  raw2    // FUN_140dfb630(param_2,puVar13,2);
+raw2
+loop {
+  raw2
 }
-if (*(char *)(param_1 + 0x21) < '\0') {
-  raw1    // FUN_140dfb630(param_2,&local_res8,1);
-  for (lVar14 = *(longlong *)(param_1 + 0x98); lVar14 != lVar8; lVar14 = lVar14 + 1) {
-    raw1    // FUN_140dfb630(param_2,lVar14,1);
+if … {
+  raw1
+  loop {
+    raw1
   }
 }
-if ((*(byte *)(param_1 + 0x22) & 1) != 0) {
-  raw1    // FUN_140dfb630(param_2,&local_res8,1);
-  for (puVar12 = (uint *)*plVar1; puVar12 != puVar4; puVar12 = puVar12 + 1) {
-    raw1    // FUN_140dfb630(param_2,&local_res8,1);
+if bit 0x1 set {
+  raw1
+  loop {
+    raw1
   }
 }
-if ((*(byte *)(param_1 + 0x22) & 2) != 0) {
-  sub 0x142173450(reader arg 0) [min 1]    // FUN_142173450(param_2,(longlong *)(param_1 + 200));
+if bit 0x2 set {
+  sub 0x142173450(reader arg 0) [min 1]
 }
-if ((*(byte *)(param_1 + 0x21) & 0x40) != 0) {
-  sub 0x142427e70(reader arg 0) [min 0]    // lVar8 = FUN_142427e70(param_2,param_1 + 0xf8);
-  sub 0x142427e70(reader arg 0) [min 0]    // FUN_142427e70(lVar8,param_1 + 0x118);
-  raw1    // FUN_140dfb630(param_2,&local_res8,1);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    for (lVar14 = *plVar1; lVar14 != lVar8; lVar14 = lVar14 + 0x20) {
-      sub 0x142427e70(reader arg 0) [min 0]    // FUN_142427e70(param_2,lVar14);
+if bit 0x40 set {
+  sub 0x142427e70(reader arg 0) [min 0]
+  sub 0x142427e70(reader arg 0) [min 0]
+  raw1
+  if … {
+    loop {
+      sub 0x142427e70(reader arg 0) [min 0]
     }
   }
 }
-if ((*(byte *)(param_1 + 0x22) & 4) != 0) {
-  sub 0x140e2be30(reader arg 0) [min 2]    // FUN_140e2be30(param_2,(longlong *)(param_1 + 0x150));
+if bit 0x4 set {
+  sub 0x140e2be30(reader arg 0) [min 2]
 }
 ```
 
@@ -958,81 +961,81 @@ Calls: [`0x142427e70@0`](#f-0x142427e70-0), [`0x140e2be30@0`](#f-0x140e2be30-0),
 <details><summary>write <code>0x1421415c0</code> (min 25)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar10,*(ushort *)(param_1 + 0x40));
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w3 ← +0x21    // FUN_140dfb760(param_2,param_1 + 0x21,3);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if ((*(byte *)(param_1 + 0x21) & 8) != 0) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w4
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+raw.w3 ← +0x21
+raw.w1
+raw.w1
+raw.w1
+if bit 0x8 set {
+  raw.w2
 }
-sub 0x141fa3a70(reader arg 0) [min 0]    // FUN_141fa3a70(param_2,(longlong *)(param_1 + 0x68));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar11 = *(undefined1 **)(param_1 + 0x80); local_res8[0]._1_3_ = (undefined3)(uVar3 >> 8), puVar11 != puVar1; puVar11 = puVar11 + 4) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141fa3a70(reader arg 0) [min 0]
+raw.w2
+loop {
+  raw.w1
 }
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-for (puVar11 = *(undefined1 **)(param_1 + 0x50); puVar11 != puVar1; puVar11 = puVar11 + 4) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w1
+loop {
+  raw.w1
 }
-if ((uVar9 & 0xffff) == uVar9) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-  for (puVar12 = *(u_short **)(param_1 + 0xe0); puVar12 != puVar2; puVar12 = puVar12 + 1) {
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+if … {
+  raw.w2
+  loop {
+    raw.w2
   }
-  if (*(char *)(param_1 + 0x21) < '\0') {
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-    for (puVar11 = (undefined1 *)*plVar5; puVar11 != puVar1; puVar11 = puVar11 + 1) {
-      raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+  if … {
+    raw.w1
+    loop {
+      raw.w1
     }
   }
-  if ((*(byte *)(param_1 + 0x22) & 1) != 0) {
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-    for (puVar11 = *(undefined1 **)(param_1 + 0xb0); puVar11 != puVar1; puVar11 = puVar11 + 4) {
-      raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+  if bit 0x1 set {
+    raw.w1
+    loop {
+      raw.w1
     }
   }
-  if ((*(byte *)(param_1 + 0x22) & 2) != 0) {
-    sub 0x1421732e0(reader arg 0) [min 1]    // FUN_1421732e0(param_2,(longlong *)(param_1 + 200));
+  if bit 0x2 set {
+    sub 0x1421732e0(reader arg 0) [min 1]
   }
-  if ((*(byte *)(param_1 + 0x21) & 0x40) != 0) {
-    sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x108) - *(longlong *)(param_1 + 0x100) >> 3), param_2);
-    if (puVar13 != *(uint **)(param_1 + 0x108)) {
-      do ... while (puVar13 != *(uint **)(param_1 + 0x108)) {
-        sub 0x14089e520 [min 0]    // FUN_14089e520(*puVar13,param_2);
-        cint.w    // FUN_141fa3c50(puVar13[1],param_2);
+  if bit 0x40 set {
+    sub 0x14089e520 [min 0]
+    if … {
+      loop {
+        sub 0x14089e520 [min 0]
+        cint.w
       }
     }
-    sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x128) - *(longlong *)(param_1 + 0x120) >> 3), param_2);
-    if (puVar13 != *(uint **)(param_1 + 0x128)) {
-      do ... while (puVar13 != *(uint **)(param_1 + 0x128)) {
-        sub 0x14089e520 [min 0]    // FUN_14089e520(*puVar13,param_2);
-        cint.w    // FUN_141fa3c50(puVar13[1],param_2);
+    sub 0x14089e520 [min 0]
+    if … {
+      loop {
+        sub 0x14089e520 [min 0]
+        cint.w
       }
     }
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-    for (lVar14 = *(longlong *)(param_1 + 0x138); lVar14 != lVar6; lVar14 = lVar14 + 0x20) {
-      sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(lVar14 + 0x10) - *(longlong *)(lVar14 + 8) >> 3),param_2) ;
-      if (puVar13 != *(uint **)(lVar14 + 0x10)) {
-        do ... while (puVar13 != *(uint **)(lVar14 + 0x10)) {
-          sub 0x14089e520 [min 0]    // FUN_14089e520(*puVar13,param_2);
-          cint.w    // FUN_141fa3c50(puVar13[1],param_2);
+    raw.w1
+    loop {
+      sub 0x14089e520 [min 0]
+      if … {
+        loop {
+          sub 0x14089e520 [min 0]
+          cint.w
         }
       }
     }
   }
-  if ((*(byte *)(param_1 + 0x22) & 4) != 0) {
-    sub 0x140e2bec0(reader arg 0) [min 2]    // FUN_140e2bec0(param_2,(longlong *)(param_1 + 0x150));
+  if bit 0x4 set {
+    sub 0x140e2bec0(reader arg 0) [min 2]
   }
-  // return;
+  return
 }
 ```
 
@@ -1047,17 +1050,17 @@ Class `0x1435dc8a0` (case, dispatcher case 0x7), read `0x14219db30`, write `0x14
 **read `0x14219db30`** — min 4+ bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-str → +0x18    // FUN_1408402a0(param_2,param_1 + 0x18);
+raw4 → +0x10
+str → +0x18
 ```
 
 <details><summary>write <code>0x14219da80</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,puVar3,uVar1);
+raw.w2
+raw.w4
+raw.w2
+raw.w[var]
 ```
 
 </details>
@@ -1071,16 +1074,16 @@ Class `0x1435bfe38` (case, dispatcher case 0x8), read `0x141f9fd90`, write `0x14
 **read `0x141f9fd90`** — min 5 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f92c90</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -1094,22 +1097,22 @@ Class `0x1435dc320` (ctor 0x1421a4e30, dispatcher case 0x9), read `0x1421a4f30`,
 **read `0x1421a4f30`** — min 4 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x18),uVar3 * 2);
-  raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x30),uVar3);
+raw2
+raw2 → +0x10
+if … {
+  raw[var]
+  raw[var]
 }
 ```
 
 <details><summary>write <code>0x1421a4e70</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,*(undefined8 *)(param_1 + 0x18),uVar1 * 2);
-raw.w[var]    // FUN_140dfb760(param_2,*(undefined8 *)(param_1 + 0x30),uVar1);
+raw.w2
+raw.w2
+raw.w2
+raw.w[var]
+raw.w[var]
 ```
 
 </details>
@@ -1123,19 +1126,19 @@ Class `0x1435dcb80` (ctor 0x1421a2d40, dispatcher case 0xa), read `0x1421a2fe0`,
 **read `0x1421a2fe0`** — min 11+ bytes
 
 ```text
-sub 0x1421ba150(reader arg 0) [min 2]    // FUN_1421ba150(param_2,(longlong *)(param_1 + 0x10));
-sub 0x1421ba150(reader arg 0) [min 2]    // FUN_1421ba150(param_2,(longlong *)(param_1 + 0x28));
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (!(*(char *)(param_2 + 0x252) != '\0')) {
-  for (puVar7 = *(u_long **)(param_1 + 0x40); puVar7 != puVar1; puVar7 = puVar7 + 2) {
-    raw4    // FUN_140dfb630(param_2,puVar7,4);
-    raw4    // FUN_140dfb630(param_2,puVar7 + 1,4);
+sub 0x1421ba150(reader arg 0) [min 2]
+sub 0x1421ba150(reader arg 0) [min 2]
+raw2
+if … {
+  loop {
+    raw4
+    raw4
   }
 }
-wstr → +0x58    // FUN_140e0cbe0(param_2,param_1 + 0x58);
-raw3 → +0x78    // FUN_140dfb630(param_2,param_1 + 0x78,3);
-raw1 → +0x7e    // FUN_140dfb630(param_2,param_1 + 0x7e,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+wstr → +0x58
+raw3 → +0x78
+raw1 → +0x7e
+raw1
 ```
 
 Calls: [`0x1421ba150@0`](#f-0x1421ba150-0)
@@ -1143,18 +1146,18 @@ Calls: [`0x1421ba150@0`](#f-0x1421ba150-0)
 <details><summary>write <code>0x1421a2da0</code> (min 13)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421ba020(reader arg 0) [min 2]    // FUN_1421ba020(param_2,(longlong *)(param_1 + 0x10));
-sub 0x1421ba020(reader arg 0) [min 2]    // FUN_1421ba020(param_2,(longlong *)(param_1 + 0x28));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar7 = *(u_long **)(param_1 + 0x40); puVar7 != puVar1; puVar7 = puVar7 + 2) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+sub 0x1421ba020(reader arg 0) [min 2]
+sub 0x1421ba020(reader arg 0) [min 2]
+raw.w2
+loop {
+  raw.w4
+  raw.w4
 }
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar6,*(ushort *)(param_1 + 0x68));
-raw.w3 ← +0x78    // FUN_140dfb760(param_2,param_1 + 0x78,3);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w3 ← +0x78
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -1168,14 +1171,14 @@ Class `0x14316c420` (case, dispatcher case 0xb), read `0x140913050`, write `0x14
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -1189,14 +1192,14 @@ Class `0x14316c420` (ctor 0x1421a50d0, dispatcher case 0xc), read `0x140913050`,
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -1210,16 +1213,16 @@ Class `0x1435dc920` (case, dispatcher case 0xd), read `0x14219dd40`, write `0x14
 **read `0x14219dd40`** — min 2+ bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-wstr → +0x18    // FUN_140e0cbe0(param_2,param_1 + 0x18);
+raw2 → +0x10
+wstr → +0x18
 ```
 
 <details><summary>write <code>0x14219dcc0</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x28));
+raw.w2
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -1233,24 +1236,24 @@ Class `0x1435dc280` (ctor 0x14219dd90, dispatcher case 0xe), read `0x14219df90`,
 **read `0x14219df90`** — min 0+ bytes
 
 ```text
-str → +0x10    // uVar3 = FUN_1408402a0(param_2,param_1 + 0x10);
+str → +0x10
 ```
 
 <details><summary>write <code>0x14219ddf0</code> (min 94)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar2,uVar1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w64 ← +0x3c    // FUN_140dfb760(param_2,param_1 + 0x3c,0x40);
-raw.w8 ← +0x7c    // FUN_140dfb760(param_2,param_1 + 0x7c,8);
+raw.w2
+raw.w2
+raw.w[var]
+raw.w2
+raw.w4
+raw.w4
+raw.w2
+raw.w4
+raw.w1
+raw.w1
+raw.w64 ← +0x3c
+raw.w8 ← +0x7c
 ```
 
 </details>
@@ -1264,42 +1267,42 @@ Class `0x1435dca60` (ctor 0x14219e1f0, dispatcher case 0xf), read `0x14219e3f0`,
 **read `0x14219e3f0`** — min 10 bytes
 
 ```text
-raw2 → +0x88    // FUN_140dfb630(param_2,param_1 + 0x88,2);
-raw2 → +0x8a    // FUN_140dfb630(param_2,param_1 + 0x8a,2);
-raw2 → +0x8c    // FUN_140dfb630(param_2,param_1 + 0x8c,2);
-raw1 → +0x90    // FUN_140dfb630(param_2,param_1 + 0x90,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw1 → +0x8e    // FUN_140dfb630(param_2,param_1 + 0x8e,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-if ((bVar2 == 0) && (*(char *)(param_2 + 0x252) == '\0')) {
-  raw2    // FUN_140dfb630(param_2,&local_res8,2);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    if (uVar1 != 0) {
-      raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x10),(ulonglong)uVar1 * 2);
+raw2 → +0x88
+raw2 → +0x8a
+raw2 → +0x8c
+raw1 → +0x90
+raw1
+raw1 → +0x8e
+raw1
+if … {
+  raw2
+  if … {
+    if … {
+      raw[var]
     }
   }
-  raw2    // FUN_140dfb630(param_2,&local_res8,2);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    if (uVar1 != 0) {
-      raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x28),(ulonglong)uVar1 * 2);
+  raw2
+  if … {
+    if … {
+      raw[var]
     }
   }
-  raw2    // FUN_140dfb630(param_2,&local_res8,2);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    if (uVar1 != 0) {
-      raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x40),(ulonglong)uVar1 * 2);
+  raw2
+  if … {
+    if … {
+      raw[var]
     }
   }
-  raw2    // FUN_140dfb630(param_2,&local_res8,2);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    if (uVar1 != 0) {
-      raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x58),(ulonglong)uVar1 << 2);
+  raw2
+  if … {
+    if … {
+      raw[var]
     }
   }
-  raw2    // FUN_140dfb630(param_2,&local_res8,2);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    if (uVar1 != 0) {
-      raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x70),(ulonglong)uVar1 << 2);
+  raw2
+  if … {
+    if … {
+      raw[var]
     }
   }
 }
@@ -1308,20 +1311,20 @@ if ((bVar2 == 0) && (*(char *)(param_2 + 0x252) == '\0')) {
 <details><summary>write <code>0x14219e270</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x92) == '\0') {
-  sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x10));
-  sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x28));
-  sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x40));
-  sub 0x1421b9100(reader arg 0) [min 0]    // FUN_1421b9100(param_2,(longlong *)(param_1 + 0x58));
-  sub 0x1421b9100(reader arg 0) [min 0]    // FUN_1421b9100(param_2,(longlong *)(param_1 + 0x70));
+raw.w2
+raw.w2
+raw.w2
+raw.w2
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+if … {
+  sub 0x1421b8fe0(reader arg 0) [min 0]
+  sub 0x1421b8fe0(reader arg 0) [min 0]
+  sub 0x1421b8fe0(reader arg 0) [min 0]
+  sub 0x1421b9100(reader arg 0) [min 0]
+  sub 0x1421b9100(reader arg 0) [min 0]
 }
 ```
 
@@ -1336,19 +1339,19 @@ Class `0x1435dc480` (ctor 0x14219e850, dispatcher case 0x10), read `0x14219ea70`
 **read `0x14219ea70`** — min 0+ bytes
 
 ```text
-str → +0x10    // uVar1 = FUN_1408402a0(param_2,param_1 + 0x10);
+str → +0x10
 ```
 
 <details><summary>write <code>0x14219e950</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar2,uVar1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar2,uVar1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar2,uVar1);
+raw.w2
+raw.w2
+raw.w[var]
+raw.w2
+raw.w[var]
+raw.w2
+raw.w[var]
 ```
 
 </details>
@@ -1362,14 +1365,14 @@ Class `0x1435dcd00` (ctor 0x14219eb10, dispatcher case 0x11), read `0x14219ec30`
 **read `0x14219ec30`** — min 5 bytes
 
 ```text
-raw2 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,2);
-raw2 → +0x2a    // FUN_140dfb630(param_2,param_1 + 0x2a,2);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-if ((*(char *)(param_2 + 0x252) == '\0') && (bVar2 == 0)) {
-  raw2    // FUN_140dfb630(param_2,&local_res8,2);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    if (uVar1 != 0) {
-      raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x10),(ulonglong)uVar1 * 2);
+raw2 → +0x28
+raw2 → +0x2a
+raw1
+if … {
+  raw2
+  if … {
+    if … {
+      raw[var]
     }
   }
 }
@@ -1378,12 +1381,12 @@ if ((*(char *)(param_2 + 0x252) == '\0') && (bVar2 == 0)) {
 <details><summary>write <code>0x14219eb40</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x2d) == '\0') {
-  sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+raw.w2
+raw.w2
+raw.w1
+if … {
+  sub 0x1421b8fe0(reader arg 0) [min 0]
 }
 ```
 
@@ -1398,19 +1401,19 @@ Class `0x1435dc140` (case), read `0x14219f000`, write `0x14219ee40`.
 **read `0x14219f000`** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res10,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar5 = *(longlong *)(param_1 + 0x18); lVar5 != lVar1; lVar5 = lVar5 + 0x30) {
-    raw4    // FUN_140dfb630(param_2,lVar5 + 0x20,4);
-    raw4    // FUN_140dfb630(param_2,lVar5 + 0x24,4);
-    raw1    // FUN_140dfb630(param_2,local_res8,1);
-    raw1    // FUN_140dfb630(param_2,lVar5 + 0x29,1);
-    raw1    // FUN_140dfb630(param_2,lVar5 + 0x2b,1);
-    if (*(char *)(param_1 + 0x10) == '\0') {
-      wstr    // FUN_140e0cbe0(param_2,lVar5);
-      raw1    // FUN_140dfb630(param_2,lVar5 + 0x28,1);
-      raw2    // FUN_140dfb630(param_2,lVar5 + 0x2c,2);
+raw1
+raw1
+if … {
+  loop {
+    raw4
+    raw4
+    raw1
+    raw1
+    raw1
+    if … {
+      wstr
+      raw1
+      raw2
     }
   }
 }
@@ -1419,19 +1422,19 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x14219ee40</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-for (puVar4 = *(undefined8 **)(param_1 + 0x18); puVar4 != puVar1; puVar4 = puVar4 + 6) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  if (*(char *)(param_1 + 0x10) == '\0') {
-    sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar3,*(ushort *)(puVar4 + 2));
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w1
+raw.w1
+loop {
+  raw.w4
+  raw.w4
+  raw.w1
+  raw.w1
+  raw.w1
+  if … {
+    sub 0x140e0c9b0(reader arg 0) [min 0]
+    raw.w1
+    raw.w2
   }
 }
 ```
@@ -1447,16 +1450,16 @@ Class `0x1435dc7e0` (case, dispatcher case 0x12), read `0x14219f460`, write `0x1
 **read `0x14219f460`** — min 23 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw19 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,0x13);
+raw4 → +0x10
+raw19 → +0x14
 ```
 
 <details><summary>write <code>0x14219f3f0</code> (min 25)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w19 ← +0x14    // FUN_140dfb760(param_2,param_1 + 0x14,0x13);
+raw.w2
+raw.w4
+raw.w19 ← +0x14
 ```
 
 </details>
@@ -1470,18 +1473,18 @@ Class `0x1435dc4c0` (ctor 0x14219f550, dispatcher case 0x13), read `0x14219f600`
 **read `0x14219f600`** — min 30 bytes
 
 ```text
-raw26 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,0x1a);
-raw2 → +0x2a    // FUN_140dfb630(param_2,param_1 + 0x2a,2);
-raw2 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,2);
+raw26 → +0x10
+raw2 → +0x2a
+raw2 → +0x2c
 ```
 
 <details><summary>write <code>0x14219f580</code> (min 32)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w26 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x1a);
-raw.w2 ← +0x2a    // FUN_140dfb760(param_2,param_1 + 0x2a,2);
-raw.w2 ← +0x2c    // FUN_140dfb760(param_2,param_1 + 0x2c,2);
+raw.w2
+raw.w26 ← +0x10
+raw.w2 ← +0x2a
+raw.w2 ← +0x2c
 ```
 
 </details>
@@ -1495,27 +1498,27 @@ Class `0x1435dce40` (ctor 0x14219f6f0, dispatcher case 0x14), read `0x14219f820`
 **read `0x14219f820`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if ((bVar3 == 0) && (*(char *)(param_2 + 0x252) == '\0')) {
-  raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-  if ((uVar2 != 0) && (*(char *)(param_2 + 0x252) == '\0')) {
-    raw1 → +0x15    // FUN_140dfb630(param_2,param_1 + 0x15,1);
+raw1
+if … {
+  raw4 → +0x18
+  if … {
+    raw1 → +0x15
   }
-  raw2 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,2);
+  raw2 → +0x1c
 }
 ```
 
 <details><summary>write <code>0x14219f720</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x11) == '\0') {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  if (*(int *)(param_1 + 0x18) != 0) {
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+if … {
+  raw.w4
+  if … {
+    raw.w1
   }
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+  raw.w2
 }
 ```
 
@@ -1530,9 +1533,9 @@ Class `0x1435dc880` (ctor 0x1421aa3b0), read `0x1421aa470`, write `0x1421aa3e0`.
 **read `0x1421aa470`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
-sub 0x1421baa00(reader arg 0) [min 1]    // FUN_1421baa00(param_2,(longlong *)(param_1 + 0x18));
+raw2 → +0x10
+raw1 → +0x12
+sub 0x1421baa00(reader arg 0) [min 1]
 ```
 
 Calls: [`0x1421baa00@0`](#f-0x1421baa00-0)
@@ -1540,10 +1543,10 @@ Calls: [`0x1421baa00@0`](#f-0x1421baa00-0)
 <details><summary>write <code>0x1421aa3e0</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x1421ba8d0(reader arg 0) [min 0]    // FUN_1421ba8d0(param_2,(longlong *)(param_1 + 0x18));
+raw.w2
+raw.w2
+raw.w1
+sub 0x1421ba8d0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -1557,11 +1560,11 @@ Class `0x1435dc500` (ctor 0x14219f9c0, dispatcher case 0x15), read `0x14219fb80`
 **read `0x14219fb80`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-sub 0x1421b9630(reader arg 0) [min 1]    // FUN_1421b9630(param_2,(longlong *)(param_1 + 0x18));
-sub 0x1421b96b0(reader arg 0) [min 1]    // FUN_1421b96b0(param_2,(longlong *)(param_1 + 0x30));
-sub 0x1421b97c0(reader arg 0) [min 1]    // FUN_1421b97c0(param_2,(longlong *)(param_1 + 0x48));
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw4 → +0x10
+sub 0x1421b9630(reader arg 0) [min 1]
+sub 0x1421b96b0(reader arg 0) [min 1]
+sub 0x1421b97c0(reader arg 0) [min 1]
+raw1
 ```
 
 Calls: [`0x1421b97c0@0`](#f-0x1421b97c0-0), [`0x1421b96b0@0`](#f-0x1421b96b0-0), [`0x1421b9630@0`](#f-0x1421b9630-0)
@@ -1569,12 +1572,12 @@ Calls: [`0x1421b97c0@0`](#f-0x1421b97c0-0), [`0x1421b96b0@0`](#f-0x1421b96b0-0),
 <details><summary>write <code>0x14219fac0</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x1421b92a0(reader arg 0) [min 1]    // FUN_1421b92a0(param_2,(longlong *)(param_1 + 0x18));
-sub 0x1421b93d0(reader arg 0) [min 0]    // FUN_1421b93d0(param_2,(longlong *)(param_1 + 0x30));
-sub 0x1421b9500(reader arg 0) [min 0]    // FUN_1421b9500(param_2,(longlong *)(param_1 + 0x48));
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+sub 0x1421b92a0(reader arg 0) [min 1]
+sub 0x1421b93d0(reader arg 0) [min 0]
+sub 0x1421b9500(reader arg 0) [min 0]
+raw.w1
 ```
 
 </details>
@@ -1588,9 +1591,9 @@ Class `0x1435dc600` (ctor 0x14219fc70, dispatcher case 0x16), read `0x14219fdc0`
 **read `0x14219fdc0`** — min 22 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
-sub 0x1424ac160(reader arg 0) [min 17]    // FUN_1424ac160(param_2,(u_long *)(param_1 + 0x18));
+raw4 → +0x10
+raw1 → +0x14
+sub 0x1424ac160(reader arg 0) [min 17]
 ```
 
 Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
@@ -1598,10 +1601,10 @@ Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
 <details><summary>write <code>0x14219fd30</code> (min 24)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x1424ac0c0(reader arg 0) [min 17]    // FUN_1424ac0c0(param_2,(u_long *)(param_1 + 0x18));
+raw.w2
+raw.w4
+raw.w1
+sub 0x1424ac0c0(reader arg 0) [min 17]
 ```
 
 </details>
@@ -1615,9 +1618,9 @@ Class `0x1435dcdc0` (ctor 0x14219fe20, dispatcher case 0x17), read `0x14219ff70`
 **read `0x14219ff70`** — min 25 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-sub 0x1424ac160(reader arg 0) [min 17]    // FUN_1424ac160(param_2,(u_long *)(param_1 + 0x18));
+raw4 → +0x10
+raw4 → +0x14
+sub 0x1424ac160(reader arg 0) [min 17]
 ```
 
 Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
@@ -1625,10 +1628,10 @@ Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
 <details><summary>write <code>0x14219fee0</code> (min 27)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x1424ac0c0(reader arg 0) [min 17]    // FUN_1424ac0c0(param_2,(u_long *)(param_1 + 0x18));
+raw.w2
+raw.w4
+raw.w4
+sub 0x1424ac0c0(reader arg 0) [min 17]
 ```
 
 </details>
@@ -1642,16 +1645,16 @@ Class `0x1435c03f8` (ctor 0x14219ffd0, dispatcher case 0x18), read `0x141f93d60`
 **read `0x141f93d60`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f93ce0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -1665,16 +1668,16 @@ Class `0x1435dcf60` (ctor 0x14219fff0, dispatcher case 0x19), read `0x1421a0140`
 **read `0x1421a0140`** — min 5 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw4 → +0x10
+raw1
 ```
 
 <details><summary>write <code>0x1421a00a0</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -1688,18 +1691,18 @@ Class `0x1435dc1c0` (ctor 0x1421a01c0, dispatcher case 0x1a), read `0x1421a0300`
 **read `0x1421a0300`** — min 12 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
 ```
 
 <details><summary>write <code>0x1421a0260</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -1713,14 +1716,14 @@ Class `0x1435bf670` (case, dispatcher case 0x1b), read `0x141f91970`, write `0x1
 **read `0x141f91970`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -1734,22 +1737,22 @@ Class `0x1435dc2a0` (case, dispatcher case 0x1c), read `0x1421a0450`, write `0x1
 **read `0x1421a0450`** — min 17 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
+raw1
+raw4 → +0x14
+raw4 → +0x18
+raw4 → +0x1c
+raw4 → +0x20
 ```
 
 <details><summary>write <code>0x1421a0370</code> (min 19)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -1763,20 +1766,20 @@ Class `0x1435dc120` (case, dispatcher case 0x1d), read `0x14219d560`, write `0x1
 **read `0x14219d560`** — min 10 bytes
 
 ```text
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
+raw2 → +0x12
+raw2 → +0x10
+raw2 → +0x14
+raw4 → +0x18
 ```
 
 <details><summary>write <code>0x14219d490</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w2
+raw.w2
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -1790,16 +1793,16 @@ Class `0x1435dc220` (case, dispatcher case 0x1e), read `0x1421a1c00`, write `0x1
 **read `0x1421a1c00`** — min 6 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
+raw4 → +0x10
+raw2 → +0x14
 ```
 
 <details><summary>write <code>0x1421a1b60</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -1813,11 +1816,11 @@ Class `0x1435dc720` (ctor 0x1421a1d00, dispatcher case 0x1f), read `0x1421a1f60`
 **read `0x1421a1f60`** — min 11 bytes
 
 ```text
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw2 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-sub 0x141fa3bb0(reader arg 0) [min 2]    // FUN_141fa3bb0(param_2,(longlong *)(param_1 + 0x10));
-sub 0x1421b9eb0(reader arg 0) [min 2]    // FUN_1421b9eb0(param_2,(longlong *)(param_1 + 0x30));
+raw4 → +0x28
+raw2 → +0x2c
+raw1
+sub 0x141fa3bb0(reader arg 0) [min 2]
+sub 0x1421b9eb0(reader arg 0) [min 2]
 ```
 
 Calls: [`0x141fa3bb0@0`](#f-0x141fa3bb0-0), [`0x1421b9eb0@0`](#f-0x1421b9eb0-0)
@@ -1825,16 +1828,16 @@ Calls: [`0x141fa3bb0@0`](#f-0x141fa3bb0-0), [`0x1421b9eb0@0`](#f-0x1421b9eb0-0)
 <details><summary>write <code>0x1421a1d40</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x141fa3a70(reader arg 0) [min 0]    // FUN_141fa3a70(param_2,(longlong *)(param_1 + 0x10));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar7 = *(undefined8 **)(param_1 + 0x30); puVar7 != puVar1; puVar7 = puVar7 + 5) {
-  sub 0x14089e520 [min 0]    // FUN_14089e520(*(uint *)((longlong)puVar7 + 0x24),param_2);
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar6,*(ushort *)(puVar7 + 2));
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w2
+raw.w1
+sub 0x141fa3a70(reader arg 0) [min 0]
+raw.w2
+loop {
+  sub 0x14089e520 [min 0]
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w1
 }
 ```
 
@@ -1849,16 +1852,16 @@ Class `0x1435bf570` (case), read `0x141f9c0b0`, write `0x141f90560`.
 **read `0x141f9c0b0`** — min 5 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
+raw4 → +0x10
+raw1 → +0x14
 ```
 
 <details><summary>write <code>0x141f90560</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -1872,15 +1875,15 @@ Class `0x1435dc780` (ctor 0x1421a21c0, dispatcher case 0x20), read `0x141fa24c0`
 **read `0x141fa24c0`** — min 15 bytes
 
 ```text
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-if (uVar7 != 0) {
-  do ... while (uVar6 < uVar7) {
-    raw4    // FUN_140dfb630(param_2,&local_res8,4);
-    cint    // uVar4 = FUN_14089cad0(param_2);
+raw2 → +0x38
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
+raw1
+if … {
+  loop {
+    raw4
+    cint
   }
 }
 ```
@@ -1888,16 +1891,16 @@ if (uVar7 != 0) {
 <details><summary>write <code>0x141fa2380</code> (min 17)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (uVar3 != 0) {
-  do ... while (uVar4 < uVar3) {
-    raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-    sub 0x14089e520 [min 0]    // FUN_14089e520(*(uint *)(plVar5 + 1),param_2);
+raw.w2
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w1
+if … {
+  loop {
+    raw.w4
+    sub 0x14089e520 [min 0]
   }
 }
 ```
@@ -1913,16 +1916,16 @@ Class `0x1435dcc00` (ctor 0x1421a0870, dispatcher case 0x21), read `0x1421a0a00`
 **read `0x1421a0a00`** — min 12 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1 → +0x2e    // FUN_140dfb630(param_2,param_1 + 0x2e,1);
-raw1 → +0x31    // FUN_140dfb630(param_2,param_1 + 0x31,1);
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw2 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,2);
-raw1 → +0x2f    // FUN_140dfb630(param_2,param_1 + 0x2f,1);
-raw1 → +0x30    // FUN_140dfb630(param_2,param_1 + 0x30,1);
-sub 0x1421b9af0(reader arg 0) [min 1]    // FUN_1421b9af0(param_2,(longlong *)(param_1 + 0x10));
-if ((bVar3 & 1) != 0) {
-  raw8 → +0x34    // FUN_140dfb630(param_2,(undefined8 *)(param_1 + 0x34),8);
+raw1
+raw1 → +0x2e
+raw1 → +0x31
+raw4 → +0x28
+raw2 → +0x2c
+raw1 → +0x2f
+raw1 → +0x30
+sub 0x1421b9af0(reader arg 0) [min 1]
+if bit 0x1 set {
+  raw8 → +0x34
 }
 ```
 
@@ -1931,17 +1934,17 @@ Calls: [`0x1421b9af0@0`](#f-0x1421b9af0-0)
 <details><summary>write <code>0x1421a08a0</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x1421b98c0(reader arg 0) [min 1]    // FUN_1421b98c0(param_2,(longlong *)(param_1 + 0x10));
-if (cVar1 != '\0') {
-  raw.w8 ← +0x34    // FUN_140dfb760(param_2,param_1 + 0x34,8);
+raw.w2
+raw.w1
+raw.w1
+raw.w1
+raw.w4
+raw.w2
+raw.w1
+raw.w1
+sub 0x1421b98c0(reader arg 0) [min 1]
+if … {
+  raw.w8 ← +0x34
 }
 ```
 
@@ -1956,19 +1959,19 @@ Class `0x1435dcde0` (case, dispatcher case 0x22), read `0x141fa21d0`, write `0x1
 **read `0x141fa21d0`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-if ((char)local_res8.QuadPart._0_1_ < '\0') {
-  raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1
+if … {
+  raw4 → +0x14
 }
 ```
 
 <details><summary>write <code>0x141fa20e0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res18,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res18,1);
-if (bVar1) {
-  raw.w4    // FUN_140dfb760(param_2,&local_res18,4);
+raw.w2
+raw.w1
+if … {
+  raw.w4
 }
 ```
 
@@ -1983,11 +1986,11 @@ Class `0x1435dcbc0` (case, dispatcher case 0x23), read `0x1421a0e40`, write `0x1
 **read `0x1421a0e40`** — min 1 bytes
 
 ```text
-cint    // uVar4 = FUN_14089cad0(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar6 = *plVar1; lVar6 != lVar9; lVar6 = lVar6 + 0x28) {
-    wstr    // FUN_140e0cbe0(param_2,lVar6);
-    raw8    // FUN_140dfb630(param_2,lVar6 + 0x20,8);
+cint
+if … {
+  loop {
+    wstr
+    raw8
   }
 }
 ```
@@ -1995,11 +1998,11 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421a0d80</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)((*(longlong *)(param_1 + 0x18) - *(longlong *)(param_1 + 0x10)) / 0x28), param_2);
-for (puVar3 = *(undefined8 **)(param_1 + 0x10); puVar3 != puVar1; puVar3 = puVar3 + 5) {
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar2,*(ushort *)(puVar3 + 2));
-  raw.w8    // FUN_140dfb760(param_2,puVar3 + 4,8);
+raw.w2
+sub 0x14089e520 [min 0]
+loop {
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w8
 }
 ```
 
@@ -2012,8 +2015,8 @@ Class `0x1435dbda8` (ctor 0x1421a1050, dispatcher case 0x24), read `0x1421a11f0`
 <details><summary>write <code>0x1421a11a0</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141f8f580(reader arg 0) [min 9]    // FUN_141f8f580(param_2,(undefined8 *)(param_1 + 0x10));
+raw.w2
+sub 0x141f8f580(reader arg 0) [min 9]
 ```
 
 </details>
@@ -2027,8 +2030,8 @@ Class `0x1435dc9a0` (ctor 0x1421a1270, dispatcher case 0x25), read `0x1421a1440`
 **read `0x1421a1440`** — min 10+ bytes
 
 ```text
-sub 0x141f8f850(reader arg 0) [min 9+]    // lVar1 = FUN_141f8f850(param_2,param_1 + 0x10);
-raw1    // FUN_140dfb630(lVar1,local_res8,1);
+sub 0x141f8f850(reader arg 0) [min 9+]
+raw1
 ```
 
 Calls: [`0x141f8f850@0`](#f-0x141f8f850-0)
@@ -2036,9 +2039,9 @@ Calls: [`0x141f8f850@0`](#f-0x141f8f850-0)
 <details><summary>write <code>0x1421a13d0</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141f8f580(reader arg 0) [min 9]    // lVar1 = FUN_141f8f580(param_2,(undefined8 *)(param_1 + 0x10));
-raw.w1    // FUN_140dfb760(lVar1,local_res8,1);
+raw.w2
+sub 0x141f8f580(reader arg 0) [min 9]
+raw.w1
 ```
 
 </details>
@@ -2052,16 +2055,16 @@ Class `0x1435c0078` (case, dispatcher case 0x26), read `0x141f9b4a0`, write `0x1
 **read `0x141f9b4a0`** — min 1+ bytes
 
 ```text
-wstr → +0x10    // FUN_140e0cbe0(param_2,param_1 + 0x10);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+wstr → +0x10
+raw1
 ```
 
 <details><summary>write <code>0x141f950c0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
 ```
 
 </details>
@@ -2073,8 +2076,8 @@ Class `0x1435bf650` (case, dispatcher case 0x27), read `0x141f918b0`, write `0x1
 <details><summary>write <code>0x141f91850</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -2086,8 +2089,8 @@ Class `0x1435dbda8` (ctor 0x1421a14f0, dispatcher case 0x28), read `0x1421a11f0`
 <details><summary>write <code>0x1421a11a0</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141f8f580(reader arg 0) [min 9]    // FUN_141f8f580(param_2,(undefined8 *)(param_1 + 0x10));
+raw.w2
+sub 0x141f8f580(reader arg 0) [min 9]
 ```
 
 </details>
@@ -2099,8 +2102,8 @@ Class `0x1435bf650` (case, dispatcher case 0x29), read `0x141f918b0`, write `0x1
 <details><summary>write <code>0x141f91850</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -2114,19 +2117,19 @@ Class `0x1435dc860` (ctor 0x1421a15c0, dispatcher case 0x2a), read `0x1421a18b0`
 **read `0x1421a18b0`** — min 13+ bytes
 
 ```text
-raw4 → +0x68    // FUN_140dfb630(param_2,param_1 + 0x68,4);
-wstr → +0x28    // FUN_140e0cbe0(param_2,param_1 + 0x28);
-wstr → +0x48    // FUN_140e0cbe0(param_2,param_1 + 0x48);
-raw4 → +0x68    // FUN_140dfb630(param_2,param_1 + 0x68,4);
-raw1 → +0x6e    // FUN_140dfb630(param_2,param_1 + 0x6e,1);
-raw1 → +0x6c    // FUN_140dfb630(param_2,param_1 + 0x6c,1);
-raw1 → +0x6d    // FUN_140dfb630(param_2,param_1 + 0x6d,1);
-raw1 → +0x6f    // FUN_140dfb630(param_2,param_1 + 0x6f,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar6 = *plVar1; lVar6 != lVar9; lVar6 = lVar6 + 0x28) {
-    wstr    // FUN_140e0cbe0(param_2,lVar6);
-    raw1    // FUN_140dfb630(param_2,lVar6 + 0x20,1);
+raw4 → +0x68
+wstr → +0x28
+wstr → +0x48
+raw4 → +0x68
+raw1 → +0x6e
+raw1 → +0x6c
+raw1 → +0x6d
+raw1 → +0x6f
+raw1
+if … {
+  loop {
+    wstr
+    raw1
   }
 }
 ```
@@ -2134,19 +2137,19 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421a1620</code> (min 15)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar5,*(ushort *)(param_1 + 0x38));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar5,*(ushort *)(param_1 + 0x58));
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-for (puVar7 = *(undefined8 **)(param_1 + 0x10); puVar7 != puVar5; puVar7 = puVar7 + 5) {
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar6,*(ushort *)(puVar7 + 2));
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w4
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+loop {
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w1
 }
 ```
 
@@ -2161,16 +2164,16 @@ Class `0x1435bf570` (case, dispatcher case 0x2b), read `0x141f9c0b0`, write `0x1
 **read `0x141f9c0b0`** — min 5 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
+raw4 → +0x10
+raw1 → +0x14
 ```
 
 <details><summary>write <code>0x141f90560</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -2184,14 +2187,14 @@ Class `0x14316c420` (ctor 0x1421a1b40, dispatcher case 0x2c), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -2203,8 +2206,8 @@ Class `0x1435dbd88` (case, dispatcher case 0x2d), read `0x1421a4c70`, write `0x1
 <details><summary>write <code>0x1421a4c20</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421ba280(reader arg 0) [min 2]    // FUN_1421ba280(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1421ba280(reader arg 0) [min 2]
 ```
 
 </details>
@@ -2218,19 +2221,19 @@ Class `0x1435dca40` (ctor 0x1421a22d0, dispatcher case 0x2e), read `0x1421a2570`
 **read `0x1421a2570`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (puVar7 != *(ulonglong **)(param_1 + 0x20)) {
-    do ... while (puVar7 != *(ulonglong **)(param_1 + 0x20)) {
-      raw8    // FUN_140dfb630(param_2,&local_res8,8);
-      raw4    // FUN_140dfb630(param_2,puVar7 + 1,4);
-      raw1    // FUN_140dfb630(param_2,&local_res8,1);
-      raw1    // FUN_140dfb630(param_2,&local_res8,1);
-      if (*(char *)(param_2 + 0x252) == '\0') {
-        for (uVar6 = puVar7[2]; uVar6 != uVar2; uVar6 = uVar6 + 0x20) {
-          wstr    // FUN_140e0cbe0(param_2,uVar6);
+raw2 → +0x10
+raw1
+raw1
+if … {
+  if … {
+    loop {
+      raw8
+      raw4
+      raw1
+      raw1
+      if … {
+        loop {
+          wstr
         }
       }
     }
@@ -2241,18 +2244,18 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421a2300</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-if (puVar9 != *(undefined8 **)(param_1 + 0x20)) {
-  do ... while (puVar9 != *(undefined8 **)(param_1 + 0x20)) {
-    raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-    raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    for (puVar8 = (undefined8 *)puVar9[2]; puVar8 != puVar1; puVar8 = puVar8 + 4) {
-      sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar7,*(ushort *)(puVar8 + 2));
+raw.w2
+raw.w2
+raw.w1
+raw.w1
+if … {
+  loop {
+    raw.w8
+    raw.w4
+    raw.w1
+    raw.w1
+    loop {
+      sub 0x140e0c9b0(reader arg 0) [min 0]
     }
   }
 }
@@ -2267,8 +2270,8 @@ Class `0x1435dbf00` (case, dispatcher case 0x2f), read `0x1421a29b0`, write `0x1
 <details><summary>write <code>0x1421a2960</code> (min 29)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141d6acc0(reader arg 0) [min 27]    // FUN_141d6acc0(param_2,(u_long *)(param_1 + 0x10));
+raw.w2
+sub 0x141d6acc0(reader arg 0) [min 27]
 ```
 
 </details>
@@ -2282,16 +2285,16 @@ Class `0x1435bf6f0` (case, dispatcher case 0x30), read `0x141f905e0`, write `0x1
 **read `0x141f905e0`** — min 5 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw4 → +0x10
+raw1
 ```
 
 <details><summary>write <code>0x141f90560</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -2305,14 +2308,14 @@ Class `0x1435dce00` (case, dispatcher case 0x31), read `0x1421a2b10`, write `0x1
 **read `0x1421a2b10`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 <details><summary>write <code>0x1421a2aa0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -2326,19 +2329,19 @@ Class `0x1435dc4a0` (case, dispatcher case 0x32), read `0x1421a2c60`, write `0x1
 **read `0x1421a2c60`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (local_res8[0] != '\0') {
-  raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
+raw1
+if … {
+  raw1 → +0x10
 }
 ```
 
 <details><summary>write <code>0x1421a2be0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x11) != '\0') {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+if … {
+  raw.w1
 }
 ```
 
@@ -2357,9 +2360,9 @@ Class `0x1435dbd28` (ctor 0x1421a37b0, dispatcher case 0x34), read `0x1421a3880`
 **read `0x1421a3880`** — min 9 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw    // FUN_140dfb630(param_2,param_1 + 0x14);
-sub 0x142507bf0(reader arg 0) [min 8]    // FUN_142507bf0(param_2,(longlong *)(param_1 + 0x18),uVar2,param_4);
+raw1 → +0x10
+raw
+sub 0x142507bf0(reader arg 0) [min 8]
 ```
 
 Calls: [`0x142507bf0@0`](#f-0x142507bf0-0)
@@ -2367,10 +2370,10 @@ Calls: [`0x142507bf0@0`](#f-0x142507bf0-0)
 <details><summary>write <code>0x1421a37f0</code> (min 16)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x1425079a0(reader arg 0) [min 9]    // FUN_1425079a0(param_2,(longlong *)(param_1 + 0x18));
+raw.w2
+raw.w1
+raw.w4
+sub 0x1425079a0(reader arg 0) [min 9]
 ```
 
 </details>
@@ -2384,11 +2387,11 @@ Class `0x1431ab2f0` (ctor 0x140b18270, dispatcher case 0x35), read `0x140b18360`
 **read `0x140b18360`** — min 8 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw    // FUN_140dfb630(param_2,param_1 + 0x14);
-sub 0x1421f4cc0 [min 5]    // puVar6 = FUN_1421f4cc0(&local_18,param_2,uVar7,param_4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1 → +0x10
+raw
+sub 0x1421f4cc0 [min 5]
+raw1
+raw1
 ```
 
 Calls: [`0x1421f4cc0`](#f-0x1421f4cc0)
@@ -2396,12 +2399,12 @@ Calls: [`0x1421f4cc0`](#f-0x1421f4cc0)
 <details><summary>write <code>0x140b182a0</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x1421f4a40 [min 5]    // FUN_1421f4a40(*(longlong *)(param_1 + 0x18),param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w4
+sub 0x1421f4a40 [min 5]
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -2415,16 +2418,16 @@ Class `0x1435c0898` (ctor 0x1421a3a90, dispatcher case 0x36), read `0x141f92d10`
 **read `0x141f92d10`** — min 5 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f92c90</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -2438,20 +2441,20 @@ Class `0x1435dc660` (ctor 0x1421a3ab0, dispatcher case 0x37), read `0x1421a3b90`
 **read `0x1421a3b90`** — min 7 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1 → +0x10
+raw4 → +0x14
+raw1
+raw1
 ```
 
 <details><summary>write <code>0x1421a3ae0</code> (min 9)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w4
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -2465,14 +2468,14 @@ Class `0x14316c420` (ctor 0x1421a3cc0, dispatcher case 0x38), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -2486,11 +2489,11 @@ Class `0x1435dbde8` (ctor 0x1421a3ce0, dispatcher case 0x39), read `0x1421a3ea0`
 **read `0x1421a3ea0`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar6 = *plVar1; lVar6 != lVar5; lVar6 = lVar6 + 4) {
-    raw1    // FUN_140dfb630(param_2,lVar6,1);
-    raw2    // FUN_140dfb630(param_2,lVar6 + 2,2);
+raw1
+if … {
+  loop {
+    raw1
+    raw2
   }
 }
 ```
@@ -2498,14 +2501,14 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421a3d10</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-  for (puVar5 = *(undefined1 **)(param_1 + 0x10); puVar5 != puVar1; puVar5 = puVar5 + 4) {
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
+raw.w2
+if … {
+  raw.w1
+  loop {
+    raw.w1
+    raw.w2
   }
-  // return;
+  return
 }
 ```
 
@@ -2522,7 +2525,7 @@ Class `0x14316c930` (ctor 0x1421ae0a0), read `0x1400f0f00`, write `0x140912f40`.
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -2536,16 +2539,16 @@ Class `0x1435bf8a8` (ctor 0x1421a40e0, dispatcher case 0x3a), read `0x141f92720`
 **read `0x141f92720`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f926a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -2559,18 +2562,18 @@ Class `0x1435dc680` (ctor 0x1421a44e0, dispatcher case 0x3b), read `0x1421a45b0`
 **read `0x1421a45b0`** — min 7 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
+raw2 → +0x10
+raw4 → +0x14
+raw1 → +0x12
 ```
 
 <details><summary>write <code>0x1421a4510</code> (min 9)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w2
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -2584,18 +2587,18 @@ Class `0x1435dcf00` (ctor 0x1421a46b0, dispatcher case 0x3c), read `0x1421a4790`
 **read `0x1421a4790`** — min 1+ bytes
 
 ```text
-raw1 → +0x50    // FUN_140dfb630(param_2,param_1 + 0x50,1);
-wstr → +0x10    // FUN_140e0cbe0(param_2,param_1 + 0x10);
-wstr → +0x30    // FUN_140e0cbe0(param_2,param_1 + 0x30);
+raw1 → +0x50
+wstr → +0x10
+wstr → +0x30
 ```
 
 <details><summary>write <code>0x1421a4700</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1 ← +0x50    // FUN_140dfb760(param_2,param_1 + 0x50,1);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x40));
+raw.w2
+raw.w1 ← +0x50
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -2609,33 +2612,33 @@ Class `0x1435dc9c0` (ctor 0x1421a4870, dispatcher case 0x3d), read `0x1421a4a00`
 **read `0x1421a4a00`** — min 29 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1 → +0x30    // FUN_140dfb630(param_2,param_1 + 0x30,1);
-if ((*(char *)(param_2 + 0x252) == '\0') && ((*(byte *)(param_1 + 0x30) & 4) != 0)) {
-  raw1 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,1);
+raw4 → +0x10
+raw4 → +0x1c
+raw4 → +0x20
+raw4
+raw4
+raw4
+raw4
+raw1 → +0x30
+if bit 0x4 set {
+  raw1 → +0x24
 }
 ```
 
 <details><summary>write <code>0x1421a48a0</code> (min 31)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1 ← +0x30    // FUN_140dfb760(param_2,param_1 + 0x30,1);
-if ((*(byte *)(param_1 + 0x30) & 4) != 0) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w1 ← +0x30
+if bit 0x4 set {
+  raw.w1
 }
 ```
 
@@ -2650,8 +2653,8 @@ Class `0x1435c0438` (ctor 0x141f96100, dispatcher case 0x3e), read `0x141f961a0`
 **read `0x141f961a0`** — min 2 bytes
 
 ```text
-raw1 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,1);
-sub 0x141fa4050(reader arg 0) [min 1]    // FUN_141fa4050(param_2,(longlong *)(param_1 + 0x10));
+raw1 → +0x28
+sub 0x141fa4050(reader arg 0) [min 1]
 ```
 
 Calls: [`0x141fa4050@0`](#f-0x141fa4050-0)
@@ -2659,9 +2662,9 @@ Calls: [`0x141fa4050@0`](#f-0x141fa4050-0)
 <details><summary>write <code>0x141f96130</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x141fa3f00(reader arg 0) [min 1]    // FUN_141fa3f00(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+raw.w1
+sub 0x141fa3f00(reader arg 0) [min 1]
 ```
 
 </details>
@@ -2675,28 +2678,28 @@ Class `0x1435c0338` (ctor 0x141f96d70, dispatcher case 0x3f), read `0x141f96f70`
 **read `0x141f96f70`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-for (lVar6 = *plVar1; lVar6 != lVar5; lVar6 = lVar6 + 2) {
-  raw1    // FUN_140dfb630(param_2,lVar6,1);
-  raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw2 → +0x10
+raw1 → +0x12
+raw1
+loop {
+  raw1
+  raw1
 }
 ```
 
 <details><summary>write <code>0x141f96da0</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-if ((uVar3 & 0xff) == uVar3) {
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-  for (puVar6 = *(undefined1 **)(param_1 + 0x18); puVar6 != puVar1; puVar6 = puVar6 + 2) {
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w2
+raw.w2
+raw.w1
+if … {
+  raw.w1
+  loop {
+    raw.w1
+    raw.w1
   }
-  // return;
+  return
 }
 ```
 
@@ -2711,22 +2714,22 @@ Class `0x1435dc100` (ctor 0x1421a4100, dispatcher case 0x40), read `0x1421a4200`
 **read `0x1421a4200`** — min 6 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
-raw1 → +0x15    // FUN_140dfb630(param_2,param_1 + 0x15,1);
-raw1 → +0x16    // FUN_140dfb630(param_2,param_1 + 0x16,1);
+raw1
+raw2 → +0x12
+raw1 → +0x14
+raw1 → +0x15
+raw1 → +0x16
 ```
 
 <details><summary>write <code>0x1421a4130</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w2
+raw.w1
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -2740,17 +2743,17 @@ Class `0x1435dbea0` (ctor 0x1421a4330, dispatcher case 0x41), read `0x1421a4490`
 **read `0x1421a4490`** — min 2+ bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-str → +0x18    // FUN_1408402a0(param_2,param_1 + 0x18);
+raw2 → +0x10
+str → +0x18
 ```
 
 <details><summary>write <code>0x1421a43e0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,puVar1,hostshort);
+raw.w2
+raw.w2
+raw.w2
+raw.w[var]
 ```
 
 </details>
@@ -2762,8 +2765,8 @@ Class `0x14345ef10` (ctor 0x1421a50f0, dispatcher case 0x42), read `0x140e290e0`
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -2775,8 +2778,8 @@ Class `0x1435dca00` (ctor 0x1421a5130, dispatcher case 0x43), read `0x1421a51b0`
 <details><summary>write <code>0x1421a5160</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421732e0(reader arg 0) [min 1]    // FUN_1421732e0(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1421732e0(reader arg 0) [min 1]
 ```
 
 </details>
@@ -2792,7 +2795,7 @@ Class `0x14316c930` (ctor 0x1421a5870, dispatcher case 0x44), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -2806,22 +2809,22 @@ Class `0x1435dc260` (ctor 0x1421a5890, dispatcher case 0x45), read `0x1421a59b0`
 **read `0x1421a59b0`** — min 11+ bytes
 
 ```text
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
-wstr    // FUN_140e0cbe0(param_2,&local_48);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw1    // FUN_140dfb630(param_2,&local_res8,1);
-raw8    // FUN_140dfb630(param_2,&local_res8,8);
+raw1 → +0x12
+wstr
+raw1
+raw1
+raw8
 ```
 
 <details><summary>write <code>0x1421a58e0</code> (min 13)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar2,*(ushort *)(param_1 + 0x38));
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
+raw.w2
+raw.w1
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
+raw.w1
+raw.w8
 ```
 
 </details>
@@ -2837,7 +2840,7 @@ Class `0x14316c930` (ctor 0x1421a5bb0, dispatcher case 0x46), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -2849,8 +2852,8 @@ Class `0x1435dc180` (ctor 0x1421a5bd0, dispatcher case 0x47), read `0x1421a5c50`
 <details><summary>write <code>0x1421a5c00</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421ba670(reader arg 0) [min 2]    // FUN_1421ba670(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1421ba670(reader arg 0) [min 2]
 ```
 
 </details>
@@ -2862,8 +2865,8 @@ Class `0x1435dc180` (ctor 0x1421a5d20, dispatcher case 0x48), read `0x1421a5c50`
 <details><summary>write <code>0x1421a5c00</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421ba670(reader arg 0) [min 2]    // FUN_1421ba670(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1421ba670(reader arg 0) [min 2]
 ```
 
 </details>
@@ -2877,10 +2880,10 @@ Class `0x1435dce60` (ctor 0x1421a5d50, dispatcher case 0x49), read `0x1421a5e30`
 **read `0x1421a5e30`** — min 8 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
-sub 0x1421baa00(reader arg 0) [min 1]    // FUN_1421baa00(param_2,(longlong *)(param_1 + 0x20));
+raw1
+raw4
+raw2 → +0x18
+sub 0x1421baa00(reader arg 0) [min 1]
 ```
 
 Calls: [`0x1421baa00@0`](#f-0x1421baa00-0)
@@ -2888,11 +2891,11 @@ Calls: [`0x1421baa00@0`](#f-0x1421baa00-0)
 <details><summary>write <code>0x1421a5d80</code> (min 9)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421ba8d0(reader arg 0) [min 0]    // FUN_1421ba8d0(param_2,(longlong *)(param_1 + 0x20));
+raw.w2
+raw.w1
+raw.w4
+raw.w2
+sub 0x1421ba8d0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -2906,16 +2909,16 @@ Class `0x1435dc5e0` (ctor 0x1421a5f90, dispatcher case 0x4a), read `0x1421a5fb0`
 **read `0x1421a5fb0`** — min 5 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f92c90</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -2929,16 +2932,16 @@ Class `0x1435bfc38` (ctor 0x1421a6090, dispatcher case 0x4b), read `0x141f9cf40`
 **read `0x141f9cf40`** — min 5 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f92c90</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -2952,14 +2955,14 @@ Class `0x1435bf7e8` (ctor 0x1421a60b0, dispatcher case 0x4c), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -2973,14 +2976,14 @@ Class `0x1435bf7e8` (ctor 0x1421a60d0, dispatcher case 0x4d), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -2994,20 +2997,20 @@ Class `0x1435dcee0` (ctor 0x1421a6110, dispatcher case 0x4e), read `0x1421a6200`
 **read `0x1421a6200`** — min 3 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res10,1);
-raw2    // FUN_140dfb630(param_2,local_res18,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  raw[var] → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,uVar1);
+raw1
+raw2
+if … {
+  raw[var] → +0x14
 }
 ```
 
 <details><summary>write <code>0x1421a6150</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var] ← +0x14    // FUN_140dfb760(param_2,param_1 + 0x14,hostshort);
+raw.w2
+raw.w1
+raw.w2
+raw.w[var] ← +0x14
 ```
 
 </details>
@@ -3021,14 +3024,14 @@ Class `0x1435bf7e8` (ctor 0x1421a60f0, dispatcher case 0x4f), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -3042,23 +3045,23 @@ Class `0x1435dc7c0` (ctor 0x1421a6390, dispatcher case 0x50), read `0x1421a64b0`
 **read `0x1421a64b0`** — min 1 bytes
 
 ```text
-cint    // uVar2 = FUN_14089cad0(param_2);
-for (puVar6 = *(u_long **)(param_1 + 0x10); puVar6 != puVar1; puVar6 = puVar6 + 3) {
-  raw4    // FUN_140dfb630(param_2,puVar6,4);
-  raw4    // FUN_140dfb630(param_2,puVar6 + 1,4);
-  raw4    // FUN_140dfb630(param_2,puVar6 + 2,4);
+cint
+loop {
+  raw4
+  raw4
+  raw4
 }
 ```
 
 <details><summary>write <code>0x1421a63c0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520((int)(lVar3 >> 1) - (int)(lVar3 >> 0x3f),param_2);
-for (puVar4 = *(u_long **)(param_1 + 0x10); puVar4 != puVar1; puVar4 = puVar4 + 3) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+sub 0x14089e520 [min 0]
+loop {
+  raw.w4
+  raw.w4
+  raw.w4
 }
 ```
 
@@ -3073,28 +3076,28 @@ Class `0x1435dcf20` (ctor 0x1421a6750, dispatcher case 0x51), read `0x1421a68b0`
 **read `0x1421a68b0`** — min 22+ bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-wstr → +0x18    // FUN_140e0cbe0(param_2,param_1 + 0x18);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1 → +0x3a    // FUN_140dfb630(param_2,param_1 + 0x3a,1);
-raw8 → +0x3b    // FUN_140dfb630(param_2,param_1 + 0x3b,8);
-raw8 → +0x43    // FUN_140dfb630(param_2,param_1 + 0x43,8);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw2 → +0x10
+wstr → +0x18
+raw1
+raw1
+raw1 → +0x3a
+raw8 → +0x3b
+raw8 → +0x43
+raw1
 ```
 
 <details><summary>write <code>0x1421a67a0</code> (min 24)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x28));
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w8 ← +0x3b    // FUN_140dfb760(param_2,param_1 + 0x3b,8);
-raw.w8 ← +0x43    // FUN_140dfb760(param_2,param_1 + 0x43,8);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
+raw.w1
+raw.w1
+raw.w8 ← +0x3b
+raw.w8 ← +0x43
+raw.w1
 ```
 
 </details>
@@ -3108,16 +3111,16 @@ Class `0x1435dc920` (ctor 0x1421a6710, dispatcher case 0x52), read `0x14219dd40`
 **read `0x14219dd40`** — min 2+ bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-wstr → +0x18    // FUN_140e0cbe0(param_2,param_1 + 0x18);
+raw2 → +0x10
+wstr → +0x18
 ```
 
 <details><summary>write <code>0x14219dcc0</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x28));
+raw.w2
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -3131,20 +3134,20 @@ Class `0x1435bf5b0` (ctor 0x1421a66f0, dispatcher case 0x53), read `0x141f9da70`
 **read `0x141f9da70`** — min 16 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
+raw4 → +0x1c
 ```
 
 <details><summary>write <code>0x141f9d9b0</code> (min 18)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -3158,16 +3161,16 @@ Class `0x1435dc6e0` (ctor 0x1421a6a90, dispatcher case 0x54), read `0x1421a6b30`
 **read `0x1421a6b30`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-blob16 → +0x18    // FUN_141fa4610(param_2,param_1 + 0x18);
+raw2 → +0x10
+blob16 → +0x18
 ```
 
 <details><summary>write <code>0x1421a6ac0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x18);
+raw.w2
+raw.w2
+blob16.w
 ```
 
 </details>
@@ -3181,17 +3184,17 @@ Class `0x1435dbea0` (ctor 0x1421a66c0, dispatcher case 0x55), read `0x1421a4490`
 **read `0x1421a4490`** — min 2+ bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-str → +0x18    // FUN_1408402a0(param_2,param_1 + 0x18);
+raw2 → +0x10
+str → +0x18
 ```
 
 <details><summary>write <code>0x1421a43e0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,puVar1,hostshort);
+raw.w2
+raw.w2
+raw.w2
+raw.w[var]
 ```
 
 </details>
@@ -3205,18 +3208,18 @@ Class `0x1435dc240` (ctor 0x1421a6c00, dispatcher case 0x56), read `0x1421a6cd0`
 **read `0x1421a6cd0`** — min 4 bytes
 
 ```text
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
+raw2 → +0x12
+raw1
+raw1 → +0x14
 ```
 
 <details><summary>write <code>0x1421a6c30</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w2
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -3230,9 +3233,9 @@ Class `0x1435dc7a0` (ctor 0x1421a32a0, dispatcher case 0x57), read `0x1421a3350`
 **read `0x1421a3350`** — min 4 bytes
 
 ```text
-raw1 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-sub 0x1421ba150(reader arg 0) [min 2]    // FUN_1421ba150(param_2,(longlong *)(param_1 + 0x10));
+raw1 → +0x28
+raw1
+sub 0x1421ba150(reader arg 0) [min 2]
 ```
 
 Calls: [`0x1421ba150@0`](#f-0x1421ba150-0)
@@ -3240,10 +3243,10 @@ Calls: [`0x1421ba150@0`](#f-0x1421ba150-0)
 <details><summary>write <code>0x1421a32d0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x1421ba020(reader arg 0) [min 2]    // FUN_1421ba020(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+raw.w1
+raw.w1
+sub 0x1421ba020(reader arg 0) [min 2]
 ```
 
 </details>
@@ -3257,14 +3260,14 @@ Class `0x1435bf7e8` (ctor 0x1421a7060, dispatcher case 0x58), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -3278,14 +3281,14 @@ Class `0x1435bf7e8` (ctor 0x1421a70b0, dispatcher case 0x59), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -3297,8 +3300,8 @@ Class `0x1435bf650` (ctor 0x1421a7080, dispatcher case 0x5a), read `0x141f918b0`
 <details><summary>write <code>0x141f91850</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -3312,19 +3315,19 @@ Class `0x1435dc460` (ctor 0x1421a6dd0, dispatcher case 0x5b), read `0x1421a6fb0`
 **read `0x1421a6fb0`** — min 2+ bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-str → +0x18    // uVar1 = FUN_1408402a0(param_2,param_1 + 0x18);
+raw2 → +0x10
+str → +0x18
 ```
 
 <details><summary>write <code>0x1421a6eb0</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar2,uVar1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar2,uVar1);
+raw.w2
+raw.w2
+raw.w2
+raw.w[var]
+raw.w2
+raw.w[var]
 ```
 
 </details>
@@ -3338,21 +3341,21 @@ Class `0x1435dbe60` (ctor 0x1421a70d0, dispatcher case 0x5c), read `0x1421a7270`
 **read `0x1421a7270`** — min 10+ bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
-wstr → +0x18    // FUN_140e0cbe0(param_2,param_1 + 0x18);
-wstr → +0x38    // FUN_140e0cbe0(param_2,param_1 + 0x38);
-wstr → +0x58    // FUN_140e0cbe0(param_2,param_1 + 0x58);
-raw8    // FUN_140dfb630(param_2,&local_res8,8);
-wstr → +0x80    // FUN_140e0cbe0(param_2,param_1 + 0x80);
+raw2 → +0x10
+wstr → +0x18
+wstr → +0x38
+wstr → +0x58
+raw8
+wstr → +0x80
 ```
 
 <details><summary>write <code>0x1421a71d0</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141f8fac0(reader arg 0) [min 8]    // lVar1 = FUN_141f8fac0(param_2,(undefined8 *)(param_1 + 0x18));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(lVar1,(longlong)puVar2,*(ushort *)(param_1 + 0x90));
+raw.w2
+raw.w2
+sub 0x141f8fac0(reader arg 0) [min 8]
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -3366,14 +3369,14 @@ Class `0x1435bf7e8` (ctor 0x1421a7360, dispatcher case 0x5d), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -3387,11 +3390,11 @@ Class `0x1435dbce8` (ctor 0x1421a7380, dispatcher case 0x5e), read `0x1421a75c0`
 **read `0x1421a75c0`** — min 10+ bytes
 
 ```text
-wstr → +0x10    // FUN_140e0cbe0(param_2,param_1 + 0x10);
-wstr → +0x30    // FUN_140e0cbe0(param_2,param_1 + 0x30);
-wstr → +0x50    // FUN_140e0cbe0(param_2,param_1 + 0x50);
-raw8    // FUN_140dfb630(param_2,&local_res8,8);
-sub 0x1421baa90(reader arg 0) [min 2]    // FUN_1421baa90(param_2,(longlong *)(param_1 + 0x78));
+wstr → +0x10
+wstr → +0x30
+wstr → +0x50
+raw8
+sub 0x1421baa90(reader arg 0) [min 2]
 ```
 
 Calls: [`0x1421baa90@0`](#f-0x1421baa90-0)
@@ -3399,13 +3402,13 @@ Calls: [`0x1421baa90@0`](#f-0x1421baa90-0)
 <details><summary>write <code>0x1421a73f0</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-sub 0x141f8fac0(reader arg 0) [min 8]    // FUN_141f8fac0(param_2,(undefined8 *)(param_1 + 0x10));
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-for (puVar7 = *(undefined8 **)(param_1 + 0x78); puVar7 != puVar1; puVar7 = puVar7 + 6) {
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar6,*(ushort *)(puVar7 + 2));
-  raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w2
+sub 0x141f8fac0(reader arg 0) [min 8]
+raw.w2
+loop {
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w8
+  raw.w1
 }
 ```
 
@@ -3422,7 +3425,7 @@ Class `0x14316c930` (ctor 0x1421a7920, dispatcher case 0x5f), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -3436,18 +3439,18 @@ Class `0x1435dc440` (ctor 0x1421a76f0, dispatcher case 0x60), read `0x1421a7850`
 **read `0x1421a7850`** — min 9+ bytes
 
 ```text
-wstr → +0x10    // FUN_140e0cbe0(param_2,param_1 + 0x10);
-raw8    // FUN_140dfb630(param_2,&local_res8,8);
-raw1 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,1);
+wstr → +0x10
+raw8
+raw1 → +0x38
 ```
 
 <details><summary>write <code>0x1421a77c0</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,lVar2,*(ushort *)(param_1 + 0x20));
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w8
+raw.w1
 ```
 
 </details>
@@ -3459,8 +3462,8 @@ Class `0x1435bf650` (ctor 0x1421a78f0, dispatcher case 0x61), read `0x141f918b0`
 <details><summary>write <code>0x141f91850</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -3474,17 +3477,17 @@ Class `0x1435dc520` (ctor 0x1421a7940, dispatcher case 0x62), read `0x1421a7a90`
 **read `0x1421a7a90`** — min 8+ bytes
 
 ```text
-wstr → +0x10    // FUN_140e0cbe0(param_2,param_1 + 0x10);
-wstr → +0x30    // FUN_140e0cbe0(param_2,param_1 + 0x30);
-wstr → +0x50    // FUN_140e0cbe0(param_2,param_1 + 0x50);
-raw8    // FUN_140dfb630(param_2,&local_res8,8);
+wstr → +0x10
+wstr → +0x30
+wstr → +0x50
+raw8
 ```
 
 <details><summary>write <code>0x1421a7a40</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141f8fac0(reader arg 0) [min 8]    // FUN_141f8fac0(param_2,(undefined8 *)(param_1 + 0x10));
+raw.w2
+sub 0x141f8fac0(reader arg 0) [min 8]
 ```
 
 </details>
@@ -3498,16 +3501,16 @@ Class `0x1435dbcc8` (ctor 0x1421a7b50, dispatcher case 0x63), read `0x1421a7bf0`
 **read `0x1421a7bf0`** — min 12 bytes
 
 ```text
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw8    // FUN_140dfb630(param_2,&local_res8,8);
+raw4 → +0x18
+raw8
 ```
 
 <details><summary>write <code>0x1421a7b70</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
+raw.w2
+raw.w4
+raw.w8
 ```
 
 </details>
@@ -3521,16 +3524,16 @@ Class `0x1435bfcd8` (ctor 0x1421a7ce0, dispatcher case 0x64), read `0x141f95140`
 **read `0x141f95140`** — min 1+ bytes
 
 ```text
-wstr → +0x10    // FUN_140e0cbe0(param_2,param_1 + 0x10);
-raw1 → +0x30    // FUN_140dfb630(param_2,param_1 + 0x30,1);
+wstr → +0x10
+raw1 → +0x30
 ```
 
 <details><summary>write <code>0x141f950c0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
 ```
 
 </details>
@@ -3542,8 +3545,8 @@ Class `0x14345ef10` (ctor 0x1421a7d10, dispatcher case 0x65), read `0x140e290e0`
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -3557,14 +3560,14 @@ Class `0x14316c420` (ctor 0x1421a7d30, dispatcher case 0x66), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -3576,16 +3579,16 @@ Class `0x1435dc760` (ctor 0x1421a7d50, dispatcher case 0x67), read `0x1421a7fa0`
 <details><summary>write <code>0x1421a7e00</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (puVar1 != *(u_short **)(param_1 + 0x20)) {
-  do ... while (puVar1 != *(u_short **)(param_1 + 0x20)) {
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-    sub 0x14299cbf0 [min 0]    // FUN_14299cbf0((longlong *)(puVar1 + 0x10),param_2);
+raw.w2
+raw.w2
+raw.w1
+raw.w1
+if … {
+  loop {
+    raw.w2
+    raw.w2
+    raw.w2
+    sub 0x14299cbf0 [min 0]
   }
 }
 ```
@@ -3601,16 +3604,16 @@ Class `0x1435dcc40` (ctor 0x1421a7ff0, dispatcher case 0x68), read `0x1421a8110`
 **read `0x1421a8110`** — min 3 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
+raw1 → +0x10
+raw2 → +0x12
 ```
 
 <details><summary>write <code>0x1421a8090</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w1
+raw.w2
 ```
 
 </details>
@@ -3624,16 +3627,16 @@ Class `0x1435c03f8` (ctor 0x1421a8160, dispatcher case 0x69), read `0x141f93d60`
 **read `0x141f93d60`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f93ce0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -3647,16 +3650,16 @@ Class `0x1435bfe38` (ctor 0x1421a8180, dispatcher case 0x6a), read `0x141f9fd90`
 **read `0x141f9fd90`** — min 5 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f92c90</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -3670,16 +3673,16 @@ Class `0x1435dc040` (ctor 0x1421a81a0, dispatcher case 0x6b), read `0x1421a81c0`
 **read `0x1421a81c0`** — min 5 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
+raw4
+raw1 → +0x14
 ```
 
 <details><summary>write <code>0x141f90560</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -3693,20 +3696,20 @@ Class `0x1435dcca0` (ctor 0x1421aee70, dispatcher case 0x6c), read `0x1421aef10`
 **read `0x1421aef10`** — min 13 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
+raw1
 ```
 
 <details><summary>write <code>0x141f971d0</code> (min 15)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -3720,9 +3723,9 @@ Class `0x1435dc0e0` (ctor 0x1421aefb0, dispatcher case 0x6d), read `0x1421af130`
 **read `0x1421af130`** — min 8 bytes
 
 ```text
-sub 0x142508560(reader arg 0) [min 6]    // lVar1 = FUN_142508560(param_2,(uint **)(param_1 + 0x10));
-raw1 → +0x38    // FUN_140dfb630(lVar1,param_1 + 0x38,1);
-raw1 → +0x39    // FUN_140dfb630(lVar1,param_1 + 0x39,1);
+sub 0x142508560(reader arg 0) [min 6]
+raw1 → +0x38
+raw1 → +0x39
 ```
 
 Calls: [`0x142508560@0`](#f-0x142508560-0)
@@ -3730,10 +3733,10 @@ Calls: [`0x142508560@0`](#f-0x142508560-0)
 <details><summary>write <code>0x1421af0a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x142508350(reader arg 0) [min 6]    // uVar1 = FUN_142508350(param_2,(longlong *)(param_1 + 0x10));
-raw.w1    // FUN_140dfb760(uVar1,local_res8,1);
-raw.w1    // FUN_140dfb760(uVar1,local_res8,1);
+raw.w2
+sub 0x142508350(reader arg 0) [min 6]
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -3747,14 +3750,14 @@ Class `0x14316c420` (ctor 0x1421aee50, dispatcher case 0x6e), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -3768,16 +3771,16 @@ Class `0x1435bf8a8` (ctor 0x1421af1c0), read `0x141f92720`, write `0x141f926a0`.
 **read `0x141f92720`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f926a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -3789,8 +3792,8 @@ Class `0x14345ef10` (ctor 0x1421af1e0), read `0x140e290e0`, write `0x140e29080`.
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -3804,15 +3807,15 @@ Class `0x1435dc400` (ctor 0x1421af200), read `0x1421af420`, write `0x1421af300`.
 **read `0x1421af420`** — min 17 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1 → +0x4c    // FUN_140dfb630(param_2,param_1 + 0x4c,1);
-raw1 → +0x4d    // FUN_140dfb630(param_2,param_1 + 0x4d,1);
-raw1 → +0x4e    // FUN_140dfb630(param_2,param_1 + 0x4e,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1 → +0x4f    // FUN_140dfb630(param_2,param_1 + 0x4f,1);
-sub 0x1421b9220(reader arg 0) [min 2]    // FUN_1421b9220(param_2,(longlong *)(param_1 + 0x18));
-sub 0x1421b9220(reader arg 0) [min 2]    // FUN_1421b9220(param_2,(longlong *)(param_1 + 0x30));
+raw4
+raw4
+raw1 → +0x4c
+raw1 → +0x4d
+raw1 → +0x4e
+raw1
+raw1 → +0x4f
+sub 0x1421b9220(reader arg 0) [min 2]
+sub 0x1421b9220(reader arg 0) [min 2]
 ```
 
 Calls: [`0x1421b9220@0`](#f-0x1421b9220-0)
@@ -3820,16 +3823,16 @@ Calls: [`0x1421b9220@0`](#f-0x1421b9220-0)
 <details><summary>write <code>0x1421af300</code> (min 15)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x18));
-sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x30));
+raw.w2
+raw.w4
+raw.w4
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+sub 0x1421b8fe0(reader arg 0) [min 0]
+sub 0x1421b8fe0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -3843,10 +3846,10 @@ Class `0x1435dbd68` (ctor 0x1421af560), read `0x1421af680`, write `0x1421a05a0`.
 **read `0x1421af680`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (local_res8[0] != 0) {
-    raw[var]    // FUN_140dfb630(param_2,*plVar1,uVar5 * 8);
+raw1
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -3854,13 +3857,13 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421a05a0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if (uVar5 == uVar4) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  if ((char)uVar4 != '\0') {
-    raw.w[var]    // FUN_140dfb760(param_2,*plVar3,uVar5 * 8);
+raw.w2
+if … {
+  raw.w1
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -3875,20 +3878,20 @@ Class `0x1435dcae0` (ctor 0x1421afba0, dispatcher case 0x6f), read `0x1421afcc0`
 **read `0x1421afcc0`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
-raw1 → +0x16    // FUN_140dfb630(param_2,param_1 + 0x16,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw4 → +0x10
+raw2 → +0x14
+raw1 → +0x16
+raw1
 ```
 
 <details><summary>write <code>0x1421afbd0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w2
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -3902,10 +3905,10 @@ Class `0x1435dbfc0` (ctor 0x1421afe20, dispatcher case 0x70), read `0x1421afe50`
 **read `0x1421afe50`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (local_res8[0] != 0) {
-    raw[var]    // FUN_140dfb630(param_2,*plVar1,uVar5 * 8);
+raw1
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -3913,13 +3916,13 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421a05a0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if (uVar5 == uVar4) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  if ((char)uVar4 != '\0') {
-    raw.w[var]    // FUN_140dfb760(param_2,*plVar3,uVar5 * 8);
+raw.w2
+if … {
+  raw.w1
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -3934,18 +3937,18 @@ Class `0x1435c0458` (ctor 0x1421af750, dispatcher case 0x71), read `0x141f93520`
 **read `0x141f93520`** — min 9 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw1 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,1);
+raw4 → +0x10
+raw4 → +0x14
+raw1 → +0x18
 ```
 
 <details><summary>write <code>0x141f93480</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -3957,8 +3960,8 @@ Class `0x1435c07d8` (ctor 0x1421af770, dispatcher case 0x72), read `0x141f9c1e0`
 <details><summary>write <code>0x141f9c180</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -3972,16 +3975,16 @@ Class `0x1435dc6c0` (ctor 0x1421af790, dispatcher case 0x73), read `0x1421af8b0`
 **read `0x1421af8b0`** — min 9 bytes
 
 ```text
-raw8 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,8);
-raw1 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,1);
+raw8 → +0x10
+raw1 → +0x18
 ```
 
 <details><summary>write <code>0x1421af830</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w2
+raw.w8
+raw.w1
 ```
 
 </details>
@@ -3995,28 +3998,28 @@ Class `0x1435dc9e0` (ctor 0x1421af8f0, dispatcher case 0x74), read `0x1421afa20`
 **read `0x1421afa20`** — min 6 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
-raw1 → +0x1a    // FUN_140dfb630(param_2,param_1 + 0x1a,1);
-raw1 → +0x1b    // FUN_140dfb630(param_2,param_1 + 0x1b,1);
-raw1 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,1);
-if ((*(char *)(param_2 + 0x252) == '\0') && (*(char *)(param_1 + 0x10) == '\x02')) {
-  raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-  // return;
+raw1
+raw2 → +0x18
+raw1 → +0x1a
+raw1 → +0x1b
+raw1 → +0x1c
+if … {
+  raw4 → +0x14
+  return
 }
 ```
 
 <details><summary>write <code>0x1421af920</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x10) == '\x02') {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w2
+raw.w1
+raw.w1
+raw.w1
+if … {
+  raw.w4
 }
 ```
 
@@ -4031,16 +4034,16 @@ Class `0x1435dc5a0` (ctor 0x1421a8280, dispatcher case 0x75), read `0x1421a8340`
 **read `0x1421a8340`** — min 2+ bytes
 
 ```text
-wstr → +0x10    // FUN_140e0cbe0(param_2,param_1 + 0x10);
-raw2 → +0x30    // FUN_140dfb630(param_2,param_1 + 0x30,2);
+wstr → +0x10
+raw2 → +0x30
 ```
 
 <details><summary>write <code>0x1421a82c0</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w2
 ```
 
 </details>
@@ -4052,8 +4055,8 @@ Class `0x1435bf650` (ctor 0x1421a8410, dispatcher case 0x76), read `0x141f918b0`
 <details><summary>write <code>0x141f91850</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x20));
+raw.w2
+sub 0x140e0c9b0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -4067,14 +4070,14 @@ Class `0x1435dbd48` (ctor 0x1421a8440, dispatcher case 0x77), read `0x1421a86e0`
 **read `0x1421a86e0`** — min 21+ bytes
 
 ```text
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw4 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,4);
-raw1 → +0x31    // FUN_140dfb630(param_2,param_1 + 0x31,1);
-raw1 → +0x32    // FUN_140dfb630(param_2,param_1 + 0x32,1);
-raw8    // FUN_140dfb630(param_2,&local_res10,8);
-wstr    // FUN_140e0cbe0(param_2,&local_58);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-sub 0x1421bac10(reader arg 0) [min 2]    // FUN_1421bac10(param_2,(longlong *)(param_1 + 0x10));
+raw4 → +0x28
+raw4 → +0x2c
+raw1 → +0x31
+raw1 → +0x32
+raw8
+wstr
+raw1
+sub 0x1421bac10(reader arg 0) [min 2]
 ```
 
 Calls: [`0x1421bac10@0`](#f-0x1421bac10-0)
@@ -4082,20 +4085,20 @@ Calls: [`0x1421bac10@0`](#f-0x1421bac10-0)
 <details><summary>write <code>0x1421a8490</code> (min 21)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar6,*(ushort *)(param_1 + 0x60));
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-if ((uVar1 & 0xffff) == uVar1) {
-  raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-  for (plVar7 = *(longlong **)(param_1 + 0x10); plVar7 != plVar4; plVar7 = plVar7 + 5) {
-    sub 0x141fa26a0(reader arg 0) [min 7]    // FUN_141fa26a0(param_2,plVar7);
+raw.w2
+raw.w4
+raw.w4
+raw.w1
+raw.w1
+raw.w8
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
+if … {
+  raw.w2
+  loop {
+    sub 0x141fa26a0(reader arg 0) [min 7]
   }
-  // return;
+  return
 }
 ```
 
@@ -4108,8 +4111,8 @@ Class `0x1435dbf20` (ctor 0x1421a88e0, dispatcher case 0x78), read `0x1421a89e0`
 <details><summary>write <code>0x1421a8990</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1424ed0d0(reader arg 0) [min 4]    // FUN_1424ed0d0(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1424ed0d0(reader arg 0) [min 4]
 ```
 
 </details>
@@ -4125,7 +4128,7 @@ Class `0x14316c930` (ctor 0x1421a8a30, dispatcher case 0x79), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -4137,8 +4140,8 @@ Class `0x1435dcda0` (ctor 0x1421a8a50, dispatcher case 0x7a), read `0x1421a8b90`
 <details><summary>write <code>0x1421a8b40</code> (min 92)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w90 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x5a);
+raw.w2
+raw.w90 ← +0x10
 ```
 
 </details>
@@ -4152,8 +4155,8 @@ Class `0x1435dc380` (ctor 0x1421a8be0, dispatcher case 0x7b), read `0x1421a8d90`
 **read `0x1421a8d90`** — min 0 bytes
 
 ```text
-sub 0x142427e70(reader arg 0) [min 0]    // lVar1 = FUN_142427e70(param_2,param_1 + 0x10);
-sub 0x142427e70(reader arg 0) [min 0]    // FUN_142427e70(lVar1,param_1 + 0x30);
+sub 0x142427e70(reader arg 0) [min 0]
+sub 0x142427e70(reader arg 0) [min 0]
 ```
 
 Calls: [`0x142427e70@0`](#f-0x142427e70-0)
@@ -4161,19 +4164,19 @@ Calls: [`0x142427e70@0`](#f-0x142427e70-0)
 <details><summary>write <code>0x1421a8cc0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x20) - *(longlong *)(param_1 + 0x18) >> 3),param_2);
-if (puVar1 != *(uint **)(param_1 + 0x20)) {
-  do ... while (puVar1 != *(uint **)(param_1 + 0x20)) {
-    sub 0x14089e520 [min 0]    // FUN_14089e520(*puVar1,param_2);
-    cint.w    // FUN_141fa3c50(puVar1[1],param_2);
+raw.w2
+sub 0x14089e520 [min 0]
+if … {
+  loop {
+    sub 0x14089e520 [min 0]
+    cint.w
   }
 }
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x40) - *(longlong *)(param_1 + 0x38) >> 3),param_2);
-if (puVar1 != *(uint **)(param_1 + 0x40)) {
-  do ... while (puVar1 != *(uint **)(param_1 + 0x40)) {
-    sub 0x14089e520 [min 0]    // FUN_14089e520(*puVar1,param_2);
-    cint.w    // FUN_141fa3c50(puVar1[1],param_2);
+sub 0x14089e520 [min 0]
+if … {
+  loop {
+    sub 0x14089e520 [min 0]
+    cint.w
   }
 }
 ```
@@ -4189,16 +4192,16 @@ Class `0x1435dcbe0` (ctor 0x1421a8e20, dispatcher case 0x7c), read `0x1421a8ec0`
 **read `0x1421a8ec0`** — min 6 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw2
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x1421a8e40</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -4212,16 +4215,16 @@ Class `0x1435dcbe0` (ctor 0x1421a8fa0, dispatcher case 0x7d), read `0x1421a8ec0`
 **read `0x1421a8ec0`** — min 6 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw2
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x1421a8e40</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -4233,8 +4236,8 @@ Class `0x14345ef10` (ctor 0x1421a9540, dispatcher case 0x7e), read `0x140e290e0`
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -4248,35 +4251,35 @@ Class `0x1435dc1a0` (ctor 0x1421a96d0, dispatcher case 0x7f), read `0x1421a9970`
 **read `0x1421a9970`** — min 5 bytes
 
 ```text
-raw1 → +0x71    // FUN_140dfb630(param_2,param_1 + 0x71,1);
-raw1 → +0x72    // FUN_140dfb630(param_2,param_1 + 0x72,1);
-raw1 → +0x70    // FUN_140dfb630(param_2,param_1 + 0x70,1);
-raw1 → +0xa8    // FUN_140dfb630(param_2,pbVar3,1);
-sub 0x141fa4050(reader arg 0) [min 1]    // FUN_141fa4050(param_2,(longlong *)(param_1 + 0x58));
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if ((*pbVar3 & 1) != 0) {
-    raw22 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,0x16);
+raw1 → +0x71
+raw1 → +0x72
+raw1 → +0x70
+raw1 → +0xa8
+sub 0x141fa4050(reader arg 0) [min 1]
+if … {
+  if bit 0x1 set {
+    raw22 → +0x10
   }
-  if ((*pbVar3 & 2) != 0) {
-    raw22 → +0x26    // FUN_140dfb630(param_2,param_1 + 0x26,0x16);
+  if bit 0x2 set {
+    raw22 → +0x26
   }
-  if ((*pbVar3 & 4) != 0) {
-    sub 0x141fa4780(reader arg 0) [min 1]    // FUN_141fa4780(param_2,(longlong *)(param_1 + 0x40));
+  if bit 0x4 set {
+    sub 0x141fa4780(reader arg 0) [min 1]
   }
-  if ((*pbVar3 & 8) != 0) {
-    raw1    // FUN_140dfb630(param_2,local_res8,1);
-    if (local_res20 != 0) {
-      do ... while (uVar14 < local_res20) {
-        raw4    // FUN_140dfb630(param_2,local_res8,4);
-        raw2    // FUN_140dfb630(param_2,local_res8,2);
-        raw2    // FUN_140dfb630(param_2,local_res8,2);
-        raw1    // FUN_140dfb630(param_2,local_res8,1);
-        raw1    // FUN_140dfb630(param_2,local_res8,1);
+  if bit 0x8 set {
+    raw1
+    if … {
+      loop {
+        raw4
+        raw2
+        raw2
+        raw1
+        raw1
       }
     }
   }
-  if ((*(byte *)(param_1 + 0xa8) & 0x10) != 0) {
-    sub 0x1421bb1f0(reader arg 0) [min 1]    // FUN_1421bb1f0(param_2,(longlong *)(param_1 + 0x90));
+  if bit 0x10 set {
+    sub 0x1421bb1f0(reader arg 0) [min 1]
   }
 }
 ```
@@ -4286,33 +4289,33 @@ Calls: [`0x1421bb1f0@0`](#f-0x1421bb1f0-0), [`0x141fa4050@0`](#f-0x141fa4050-0),
 <details><summary>write <code>0x1421a9750</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1 ← +0x70    // FUN_140dfb760(param_2,param_1 + 0x70,1);
-raw.w1 ← +0xa8    // FUN_140dfb760(param_2,pbVar1,1);
-sub 0x141fa3f00(reader arg 0) [min 1]    // FUN_141fa3f00(param_2,(longlong *)(param_1 + 0x58));
-if ((*pbVar1 & 1) != 0) {
-  raw.w22 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x16);
+raw.w2
+raw.w1
+raw.w1
+raw.w1 ← +0x70
+raw.w1 ← +0xa8
+sub 0x141fa3f00(reader arg 0) [min 1]
+if bit 0x1 set {
+  raw.w22 ← +0x10
 }
-if ((*pbVar1 & 2) != 0) {
-  raw.w22 ← +0x26    // FUN_140dfb760(param_2,param_1 + 0x26,0x16);
+if bit 0x2 set {
+  raw.w22 ← +0x26
 }
-if ((*pbVar1 & 4) != 0) {
-  sub 0x141fa4680(reader arg 0) [min 0]    // FUN_141fa4680(param_2,(longlong *)(param_1 + 0x40));
+if bit 0x4 set {
+  sub 0x141fa4680(reader arg 0) [min 0]
 }
-if ((*pbVar1 & 8) != 0) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  for (puVar4 = *(u_long **)(param_1 + 0x78); puVar4 != puVar2; puVar4 = puVar4 + 0x12) {
-    raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+if bit 0x8 set {
+  raw.w1
+  loop {
+    raw.w4
+    raw.w2
+    raw.w2
+    raw.w1
+    raw.w1
   }
 }
-if ((*pbVar1 & 0x10) != 0) {
-  sub 0x1421bafa0(reader arg 0) [min 0]    // FUN_1421bafa0(param_2,(longlong *)(param_1 + 0x90));
+if bit 0x10 set {
+  sub 0x1421bafa0(reader arg 0) [min 0]
 }
 ```
 
@@ -4327,20 +4330,20 @@ Class `0x1435dbc28` (ctor 0x1421a9e10, dispatcher case 0x80), read `0x141f96560`
 **read `0x141f96560`** — min 5 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
-raw1 → +0x13    // FUN_140dfb630(param_2,param_1 + 0x13,1);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
+raw2 → +0x10
+raw1 → +0x12
+raw1 → +0x13
+raw1 → +0x14
 ```
 
 <details><summary>write <code>0x1421a9e30</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1 ← +0x14    // FUN_140dfb760(param_2,param_1 + 0x14,1);
+raw.w2
+raw.w2
+raw.w1
+raw.w1
+raw.w1 ← +0x14
 ```
 
 </details>
@@ -4354,16 +4357,16 @@ Class `0x1435dca80` (ctor 0x1421a9f70, dispatcher case 0x81), read `0x1421aa080`
 **read `0x1421aa080`** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
+raw1
 ```
 
 <details><summary>write <code>0x1421aa000</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -4377,14 +4380,14 @@ Class `0x14316c420` (ctor 0x1421aa0e0), read `0x140913050`, write `0x140912ff0`.
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -4398,18 +4401,18 @@ Class `0x1435dcd40` (ctor 0x1421a8fc0, dispatcher case 0x82), read `0x1421a9090`
 **read `0x1421a9090`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x16    // FUN_140dfb630(param_2,param_1 + 0x16,2);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
+raw4 → +0x10
+raw2 → +0x16
+raw2 → +0x14
 ```
 
 <details><summary>write <code>0x1421a8fe0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -4423,51 +4426,51 @@ Class `0x1435dcba0` (ctor 0x1421a91a0, dispatcher case 0x83), read `0x1421a9350`
 **read `0x1421a9350`** — min 3 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw2 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,2);
-if ((*(byte *)(param_1 + 0x10) & 2) == 0) {
-  if ((*(byte *)(param_1 + 0x10) & 8) == 0) {
-    raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1 → +0x10
+raw2 → +0x1c
+if bit 0x2 clear {
+  if bit 0x8 clear {
+    raw4 → +0x14
   }
-  if ((*(byte *)(param_1 + 0x10) & 4) != 0) {
-    raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
-    raw2 → +0x1a    // FUN_140dfb630(param_2,param_1 + 0x1a,2);
+  if bit 0x4 set {
+    raw2 → +0x18
+    raw2 → +0x1a
   }
 }
 else {
-  raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-  raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
+  raw4 → +0x14
+  raw4 → +0x18
 }
-if ((*(byte *)(param_1 + 0x10) & 0x20) != 0) {
-  raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
+if bit 0x20 set {
+  raw4 → +0x20
 }
-if ((*(byte *)(param_1 + 0x10) & 0x40) != 0) {
-  raw4    // FUN_140dfb630(param_2,local_res8,4);
+if bit 0x40 set {
+  raw4
 }
 ```
 
 <details><summary>write <code>0x1421a91d0</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if ((*(byte *)(param_1 + 0x10) & 2) == 0) {
-  if ((*(byte *)(param_1 + 0x10) & 8) == 0) {
-    raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1 ← +0x10
+raw.w2
+if bit 0x2 clear {
+  if bit 0x8 clear {
+    raw.w4
   }
-  // if ((*(byte *)(param_1 + 0x10) & 4) == 0) goto LAB_1421a92eb;
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+  goto
+  raw.w2
 }
 else {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+  raw.w4
 }
-raw.w[var]    // FUN_140dfb760(param_2,local_res8,uVar2);
-if ((*(byte *)(param_1 + 0x10) & 0x20) != 0) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w[var]
+if bit 0x20 set {
+  raw.w4
 }
-if ((*(byte *)(param_1 + 0x10) & 0x40) != 0) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+if bit 0x40 set {
+  raw.w4
 }
 ```
 
@@ -4480,8 +4483,8 @@ Class `0x1435dc000` (ctor 0x1421a9560, dispatcher case 0x84), read `0x1421a9650`
 <details><summary>write <code>0x1421a9600</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w12 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0xc);
+raw.w2
+raw.w12 ← +0x10
 ```
 
 </details>
@@ -4495,16 +4498,16 @@ Class `0x1435c08d8` (ctor 0x1421a96b0, dispatcher case 0x85), read `0x141f92190`
 **read `0x141f92190`** — min 6 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
+raw4 → +0x10
+raw2 → +0x14
 ```
 
 <details><summary>write <code>0x141f92110</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -4516,8 +4519,8 @@ Class `0x14345ef10` (ctor 0x1421a9670, dispatcher case 0x86), read `0x140e290e0`
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -4531,14 +4534,14 @@ Class `0x14316c420` (ctor 0x1421a9690, dispatcher case 0x87), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -4552,8 +4555,8 @@ Class `0x143156aa0` (ctor 0x14085e740, dispatcher case 0x88), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4561,10 +4564,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4578,8 +4581,8 @@ Class `0x143156aa0` (ctor 0x14085e7d0, dispatcher case 0x89), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4587,10 +4590,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4604,8 +4607,8 @@ Class `0x143156aa0` (ctor 0x1421aa570, dispatcher case 0x8a), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4613,10 +4616,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4630,8 +4633,8 @@ Class `0x143156aa0` (ctor 0x14085e800, dispatcher case 0x8b), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4639,10 +4642,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4656,8 +4659,8 @@ Class `0x143156aa0` (ctor 0x14085e830, dispatcher case 0x8c), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4665,10 +4668,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4682,13 +4685,13 @@ Class `0x143157e68` (ctor 0x14085e860, dispatcher case 0x8d), read `0x141fa1780`
 **read `0x141fa1780`** — min 8+ bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
-str → +0x40    // FUN_1408402a0(param_2,param_1 + 0x40);
-raw    // FUN_140dfb630(param_2,&local_res8);
-do ... while( true ) {
-  str    // FUN_1408402a0(param_2,&local_78);
-  sub 0x1421ec2c0 [min 2]    // puVar7 = FUN_1421ec2c0((undefined8 *)&local_res8,param_2,puVar9,param_4);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
+str → +0x40
+raw
+loop {
+  str
+  sub 0x1421ec2c0 [min 2]
 }
 ```
 
@@ -4697,14 +4700,14 @@ Calls: [`0x14085e000`](#f-0x14085e000), [`0x1421ec2c0`](#f-0x1421ec2c0)
 <details><summary>write <code>0x141fa1680</code> (min 12)</summary>
 
 ```text
-sub 0x14085e650 [min 9+]    // FUN_14085e650(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar4,uVar1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-for (puVar5 = *(undefined8 **)(param_1 + 0x60); puVar5 != puVar2; puVar5 = puVar5 + 5) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-  raw.w[var]    // FUN_140dfb760(param_2,puVar3,uVar1);
-  sub 0x1421ec1d0 [min 2+]    // FUN_1421ec1d0(puVar5[4],param_2);
+sub 0x14085e650 [min 9+]
+raw.w2
+raw.w[var]
+raw.w1
+loop {
+  raw.w2
+  raw.w[var]
+  sub 0x1421ec1d0 [min 2+]
 }
 ```
 
@@ -4719,8 +4722,8 @@ Class `0x143156aa0` (ctor 0x14085e930, dispatcher case 0x8e), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4728,10 +4731,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4745,8 +4748,8 @@ Class `0x143156aa0` (ctor 0x14085e960, dispatcher case 0x8f), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4754,10 +4757,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4771,9 +4774,9 @@ Class `0x14315b138` (ctor 0x14085e990, dispatcher case 0x90), read `0x14085ea70`
 **read `0x14085ea70`** — min 8+ bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
-str → +0x40    // FUN_1408402a0(param_2,param_1 + 0x40);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
+str → +0x40
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4781,10 +4784,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e9e0</code> (min 12)</summary>
 
 ```text
-sub 0x14085e650 [min 9+]    // FUN_14085e650(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,plVar1,hostshort);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x14085e650 [min 9+]
+raw.w2
+raw.w[var]
+raw.w1
 ```
 
 </details>
@@ -4798,8 +4801,8 @@ Class `0x143156aa0` (ctor 0x14085ebe0, dispatcher case 0x91), read `0x14085e6c0`
 **read `0x14085e6c0`** — min 8 bytes
 
 ```text
-sub 0x14085e000 [min 6]    // FUN_14085e000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
+sub 0x14085e000 [min 6]
+raw2 → +0x38
 ```
 
 Calls: [`0x14085e000`](#f-0x14085e000)
@@ -4807,10 +4810,10 @@ Calls: [`0x14085e000`](#f-0x14085e000)
 <details><summary>write <code>0x14085e650</code> (min 9)</summary>
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 </details>
@@ -4824,17 +4827,17 @@ Class `0x1435dc3e0` (ctor 0x1421aa5a0, dispatcher case 0x92), read `0x1421aa830`
 **read `0x1421aa830`** — min 5 bytes
 
 ```text
-sub 0x1421b9630(reader arg 0) [min 1]    // FUN_1421b9630(param_2,(longlong *)(param_1 + 0x10));
-sub 0x1421b96b0(reader arg 0) [min 1]    // FUN_1421b96b0(param_2,(longlong *)(param_1 + 0x28));
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar2 = *(longlong *)(param_1 + 0x40); lVar2 != lVar5; lVar2 = lVar2 + 0x28) {
-    raw4    // FUN_140dfb630(param_2,lVar2,4);
-    sub 0x1424aca00(reader arg 0) [min 17]    // FUN_1424aca00(param_2,(undefined4 *)(lVar2 + 8));
+sub 0x1421b9630(reader arg 0) [min 1]
+sub 0x1421b96b0(reader arg 0) [min 1]
+raw1
+if … {
+  loop {
+    raw4
+    sub 0x1424aca00(reader arg 0) [min 17]
   }
 }
-sub 0x1421b97c0(reader arg 0) [min 1]    // FUN_1421b97c0(param_2,(longlong *)(param_1 + 0x58));
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x1421b97c0(reader arg 0) [min 1]
+raw1
 ```
 
 Calls: [`0x1421b97c0@0`](#f-0x1421b97c0-0), [`0x1421b9630@0`](#f-0x1421b9630-0), [`0x1421b96b0@0`](#f-0x1421b96b0-0), [`0x1424aca00@0`](#f-0x1424aca00-0)
@@ -4842,18 +4845,18 @@ Calls: [`0x1421b97c0@0`](#f-0x1421b97c0-0), [`0x1421b9630@0`](#f-0x1421b9630-0),
 <details><summary>write <code>0x1421aa640</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421b92a0(reader arg 0) [min 1]    // FUN_1421b92a0(param_2,(longlong *)(param_1 + 0x10));
-sub 0x1421b93d0(reader arg 0) [min 0]    // FUN_1421b93d0(param_2,(longlong *)(param_1 + 0x28));
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  for (puVar6 = *(undefined4 **)(param_1 + 0x40); puVar6 != puVar1; puVar6 = puVar6 + 10) {
-    raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-    sub 0x1424ac820(reader arg 0) [min 1]    // FUN_1424ac820(param_2,puVar6 + 2);
+raw.w2
+sub 0x1421b92a0(reader arg 0) [min 1]
+sub 0x1421b93d0(reader arg 0) [min 0]
+if … {
+  raw.w1
+  loop {
+    raw.w4
+    sub 0x1424ac820(reader arg 0) [min 1]
   }
-  sub 0x1421b9500(reader arg 0) [min 0]    // FUN_1421b9500(param_2,(longlong *)(param_1 + 0x58));
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  // return;
+  sub 0x1421b9500(reader arg 0) [min 0]
+  raw.w1
+  return
 }
 ```
 
@@ -4868,13 +4871,13 @@ Class `0x1435dc580` (ctor 0x1421aaa20, dispatcher case 0x93), read `0x1421aac00`
 **read `0x1421aac00`** — min 5 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (puVar3 = *(u_long **)(param_1 + 0x10); puVar3 != puVar1; puVar3 = puVar3 + 100) {
-    sub 0x141f8bac0(reader arg 0) [min 20+]    // FUN_141f8bac0(param_2,puVar3);
+raw4
+if … {
+  loop {
+    sub 0x141f8bac0(reader arg 0) [min 20+]
   }
 }
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 Calls: [`0x141f8bac0@0`](#f-0x141f8bac0-0)
@@ -4882,14 +4885,14 @@ Calls: [`0x141f8bac0@0`](#f-0x141f8bac0-0)
 <details><summary>write <code>0x1421aaa50</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if ((uVar5 & 0xffffffff) == uVar5) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  for (puVar6 = *(u_long **)(param_1 + 0x10); puVar6 != puVar1; puVar6 = puVar6 + 100) {
-    sub 0x141f8b8b0(reader arg 0) [min 20]    // FUN_141f8b8b0(param_2,puVar6);
+raw.w2
+if … {
+  raw.w4
+  loop {
+    sub 0x141f8b8b0(reader arg 0) [min 20]
   }
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  // return;
+  raw.w1
+  return
 }
 ```
 
@@ -4904,20 +4907,20 @@ Class `0x1435dc740` (ctor 0x1421aad90, dispatcher case 0x94), read `0x1421aaee0`
 **read `0x1421aaee0`** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-cint    // uVar1 = FUN_14089cad0(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x18),uVar1);
+raw1
+cint
+if … {
+  raw[var]
 }
 ```
 
 <details><summary>write <code>0x1421aae50</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x20) - *(int *)(param_1 + 0x18),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x18), *(longlong *)(param_1 + 0x20) - *(longlong *)(param_1 + 0x18));
+raw.w2
+raw.w1
+sub 0x14089e520 [min 0]
+raw.w[var]
 ```
 
 </details>
@@ -4929,8 +4932,8 @@ Class `0x1435c0758` (ctor 0x1421aaf80, dispatcher case 0x95), read `0x141f9e610`
 <details><summary>write <code>0x141f9e5c0</code> (min 18)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w16 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x10);
+raw.w2
+raw.w16 ← +0x10
 ```
 
 </details>
@@ -4944,8 +4947,8 @@ Class `0x1435dc5c0` (ctor 0x1421aafa0, dispatcher case 0x96), read `0x1421ab0c0`
 **read `0x1421ab0c0`** — min 18 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-sub 0x1424ac160(reader arg 0) [min 17]    // FUN_1424ac160(param_2,(u_long *)(param_1 + 0x18));
+raw1 → +0x10
+sub 0x1424ac160(reader arg 0) [min 17]
 ```
 
 Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
@@ -4953,9 +4956,9 @@ Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
 <details><summary>write <code>0x1421ab050</code> (min 20)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x1424ac0c0(reader arg 0) [min 17]    // FUN_1424ac0c0(param_2,(u_long *)(param_1 + 0x18));
+raw.w2
+raw.w1
+sub 0x1424ac0c0(reader arg 0) [min 17]
 ```
 
 </details>
@@ -4969,8 +4972,8 @@ Class `0x1435dbee0` (ctor 0x1421ab100, dispatcher case 0x97), read `0x1421ab220`
 **read `0x1421ab220`** — min 21 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-sub 0x1424aca00(reader arg 0) [min 17]    // FUN_1424aca00(param_2,(undefined4 *)(param_1 + 0x18));
+raw4 → +0x10
+sub 0x1424aca00(reader arg 0) [min 17]
 ```
 
 Calls: [`0x1424aca00@0`](#f-0x1424aca00-0)
@@ -4978,9 +4981,9 @@ Calls: [`0x1424aca00@0`](#f-0x1424aca00-0)
 <details><summary>write <code>0x1421ab1b0</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x1424ac820(reader arg 0) [min 1]    // FUN_1424ac820(param_2,(u_long *)(param_1 + 0x18));
+raw.w2
+raw.w4
+sub 0x1424ac820(reader arg 0) [min 1]
 ```
 
 </details>
@@ -4992,8 +4995,8 @@ Class `0x1435c07d8` (ctor 0x1421ab260, dispatcher case 0x98), read `0x141f9c1e0`
 <details><summary>write <code>0x141f9c180</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -5007,8 +5010,8 @@ Class `0x1435dbd08` (ctor 0x1421ab280, dispatcher case 0x99), read `0x1421ab3a0`
 **read `0x1421ab3a0`** — min 21 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-sub 0x1424ac160(reader arg 0) [min 17]    // FUN_1424ac160(param_2,(u_long *)(param_1 + 0x18));
+raw4 → +0x10
+sub 0x1424ac160(reader arg 0) [min 17]
 ```
 
 Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
@@ -5016,9 +5019,9 @@ Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
 <details><summary>write <code>0x1421ab330</code> (min 23)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x1424ac0c0(reader arg 0) [min 17]    // FUN_1424ac0c0(param_2,(u_long *)(param_1 + 0x18));
+raw.w2
+raw.w4
+sub 0x1424ac0c0(reader arg 0) [min 17]
 ```
 
 </details>
@@ -5030,8 +5033,8 @@ Class `0x1435c07d8` (ctor 0x1421ab3e0, dispatcher case 0x9a), read `0x141f9c1e0`
 <details><summary>write <code>0x141f9c180</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -5045,10 +5048,10 @@ Class `0x1435dc900` (ctor 0x1421ab400, dispatcher case 0x9b), read `0x1421ab5a0`
 **read `0x1421ab5a0`** — min 23+ bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-sub 0x141f8bac0(reader arg 0) [min 20+]    // lVar1 = FUN_141f8bac0(param_2,(u_long *)(param_1 + 0x18));
-raw1    // FUN_140dfb630(lVar1,local_res8,1);
+raw1
+raw1
+sub 0x141f8bac0(reader arg 0) [min 20+]
+raw1
 ```
 
 Calls: [`0x141f8bac0@0`](#f-0x141f8bac0-0)
@@ -5056,11 +5059,11 @@ Calls: [`0x141f8bac0@0`](#f-0x141f8bac0-0)
 <details><summary>write <code>0x1421ab500</code> (min 25)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x141f8b8b0(reader arg 0) [min 20]    // lVar1 = FUN_141f8b8b0(param_2,(u_long *)(param_1 + 0x18));
-raw.w1    // FUN_140dfb760(lVar1,local_res8,1);
+raw.w2
+raw.w1
+raw.w1
+sub 0x141f8b8b0(reader arg 0) [min 20]
+raw.w1
 ```
 
 </details>
@@ -5074,18 +5077,18 @@ Class `0x1435dcf40` (ctor 0x1421ab670, dispatcher case 0x9c), read `0x1421ab7c0`
 **read `0x1421ab7c0`** — min 6 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw1
+raw1
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x1421ab720</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -5099,19 +5102,19 @@ Class `0x1435dcb60` (ctor 0x1421ab840, dispatcher case 0x9d), read `0x1421abc70`
 **read `0x1421abc70`** — min 6 bytes
 
 ```text
-sub 0x1421bb670(reader arg 0) [min 2]    // FUN_1421bb670(param_2,(longlong *)(param_1 + 0x10));
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (puVar9 = *(u_long **)(param_1 + 0x28); puVar9 != puVar2; puVar9 = puVar9 + 2) {
-    raw4    // FUN_140dfb630(param_2,puVar9,4);
-    raw2    // FUN_140dfb630(param_2,puVar9 + 1,2);
+sub 0x1421bb670(reader arg 0) [min 2]
+raw2
+if … {
+  loop {
+    raw4
+    raw2
   }
 }
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (puVar9 = (u_long *)*plVar1; puVar9 != puVar2; puVar9 = puVar9 + 2) {
-    raw4    // FUN_140dfb630(param_2,puVar9,4);
-    raw2    // FUN_140dfb630(param_2,puVar9 + 1,2);
+raw2
+if … {
+  loop {
+    raw4
+    raw2
   }
 }
 ```
@@ -5121,22 +5124,22 @@ Calls: [`0x1421bb670@0`](#f-0x1421bb670-0)
 <details><summary>write <code>0x1421ab880</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar7 = *(u_long **)(param_1 + 0x10); puVar7 != puVar1; puVar7 = puVar7 + 10) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar6,(ushort)puVar7[6]);
+raw.w2
+raw.w2
+loop {
+  raw.w4
+  raw.w4
+  sub 0x140e0c9b0(reader arg 0) [min 0]
 }
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar7 = *(u_long **)(param_1 + 0x28); puVar7 != puVar1; puVar7 = puVar7 + 2) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+loop {
+  raw.w4
+  raw.w2
 }
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar7 = *(u_long **)(param_1 + 0x40); puVar7 != puVar1; puVar7 = puVar7 + 2) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+loop {
+  raw.w4
+  raw.w2
 }
 ```
 
@@ -5151,16 +5154,16 @@ Class `0x1435dbe08` (ctor 0x1421abf30, dispatcher case 0x9e), read `0x1421ac050`
 **read `0x1421ac050`** — min 12 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw8 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,8);
+raw4 → +0x10
+raw8 → +0x18
 ```
 
 <details><summary>write <code>0x1421abfd0</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
+raw.w2
+raw.w4
+raw.w8
 ```
 
 </details>
@@ -5174,14 +5177,14 @@ Class `0x14316c420` (ctor 0x1421ac0b0, dispatcher case 0x9f), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -5195,10 +5198,10 @@ Class `0x1435bfd38` (ctor 0x141f9cbd0, dispatcher case 0xa0), read `0x141f9ccb0`
 **read `0x141f9ccb0`** — min 7 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
-raw1 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,1);
-sub 0x141fa4bc0(reader arg 0) [min 2]    // FUN_141fa4bc0(param_2,(longlong *)(param_1 + 0x18));
+raw2 → +0x10
+raw2 → +0x12
+raw1 → +0x14
+sub 0x141fa4bc0(reader arg 0) [min 2]
 ```
 
 Calls: [`0x141fa4bc0@0`](#f-0x141fa4bc0-0)
@@ -5206,11 +5209,11 @@ Calls: [`0x141fa4bc0@0`](#f-0x141fa4bc0-0)
 <details><summary>write <code>0x141f9cc00</code> (min 9)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x141fa49c0(reader arg 0) [min 2]    // FUN_141fa49c0(param_2,(longlong *)(param_1 + 0x18));
+raw.w2
+raw.w2
+raw.w2
+raw.w1
+sub 0x141fa49c0(reader arg 0) [min 2]
 ```
 
 </details>
@@ -5224,9 +5227,9 @@ Class `0x1435dbf80` (ctor 0x1421ac0d0, dispatcher case 0xa1), read `0x1421ac190`
 **read `0x1421ac190`** — min 5 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-sub 0x141fa3bb0(reader arg 0) [min 2]    // FUN_141fa3bb0(param_2,(longlong *)(param_1 + 0x18));
+raw2 → +0x10
+raw1
+sub 0x141fa3bb0(reader arg 0) [min 2]
 ```
 
 Calls: [`0x141fa3bb0@0`](#f-0x141fa3bb0-0)
@@ -5234,10 +5237,10 @@ Calls: [`0x141fa3bb0@0`](#f-0x141fa3bb0-0)
 <details><summary>write <code>0x1421ac100</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x141fa3a70(reader arg 0) [min 0]    // FUN_141fa3a70(param_2,(longlong *)(param_1 + 0x18));
+raw.w2
+raw.w2
+raw.w1
+sub 0x141fa3a70(reader arg 0) [min 0]
 ```
 
 </details>
@@ -5251,16 +5254,16 @@ Class `0x1435dcf80` (ctor 0x1421ac2d0, dispatcher case 0x68), read `0x1421ac2f0`
 **read `0x1421ac2f0`** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
+raw1
 ```
 
 <details><summary>write <code>0x141f9c280</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -5276,7 +5279,7 @@ Class `0x14316c930` (ctor 0x1421ac3d0), read `0x1400f0f00`, write `0x140912f40`.
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -5290,8 +5293,8 @@ Class `0x1435dbc48` (ctor 0x14219d6a0), read `0x14219d760`, write `0x14219d6f0`.
 **read `0x14219d760`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-sub 0x14299cd70 [min 2]    // FUN_14299cd70((longlong *)(param_1 + 0x18),param_2);
+raw2 → +0x10
+sub 0x14299cd70 [min 2]
 ```
 
 Calls: [`0x14299cd70`](#f-0x14299cd70)
@@ -5299,9 +5302,9 @@ Calls: [`0x14299cd70`](#f-0x14299cd70)
 <details><summary>write <code>0x14219d6f0</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14299cbf0 [min 0]    // FUN_14299cbf0((longlong *)(param_1 + 0x18),param_2);
+raw.w2
+raw.w2
+sub 0x14299cbf0 [min 0]
 ```
 
 </details>
@@ -5315,12 +5318,12 @@ Class `0x1435dc1e0` (ctor 0x1421b35b0, dispatcher case 0xa2), read `0x1421b3780`
 **read `0x1421b3780`** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar5 = *plVar1; lVar5 != lVar7; lVar5 = lVar5 + 0xe0) {
-    raw1    // FUN_140dfb630(param_2,local_res8,1);
-    if ((*(char *)(param_2 + 0x252) == '\0') && ((byte)local_res8[0] < 0xe1)) {
-      raw[var]    // FUN_140dfb630(param_2,lVar5,(byte)local_res8[0]);
+raw2
+if … {
+  loop {
+    raw1
+    if … {
+      raw[var]
     }
   }
 }
@@ -5329,14 +5332,14 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421b35e0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-if ((uVar1 & 0xffff) == uVar1) {
-  raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-  for (lVar5 = *(longlong *)(param_1 + 0x10); lVar5 != lVar4; lVar5 = lVar5 + 0xe0) {
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    raw.w[var]    // FUN_140dfb760(param_2,lVar5,cVar6);
+raw.w2
+if … {
+  raw.w2
+  loop {
+    raw.w1
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -5349,8 +5352,8 @@ Class `0x1435dcce0` (ctor 0x1421b39b0, dispatcher case 0xa3), read `0x1421b3a30`
 <details><summary>write <code>0x1421b39e0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1421b8fe0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -5362,8 +5365,8 @@ Class `0x1435dcd60` (ctor 0x1421b3ac0, dispatcher case 0xa4), read `0x1421b3b50`
 <details><summary>write <code>0x1421b3b00</code> (min 114)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w112 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x70);
+raw.w2
+raw.w112 ← +0x10
 ```
 
 </details>
@@ -5377,20 +5380,20 @@ Class `0x1435dcaa0` (ctor 0x1421ac3f0, dispatcher case 0xa5), read `0x1421ac4e0`
 **read `0x1421ac4e0`** — min 44 bytes
 
 ```text
-raw36 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,0x24);
-raw2 → +0x34    // FUN_140dfb630(param_2,param_1 + 0x34,2);
-raw2 → +0x36    // FUN_140dfb630(param_2,param_1 + 0x36,2);
-raw4 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,4);
+raw36 → +0x10
+raw2 → +0x34
+raw2 → +0x36
+raw4 → +0x38
 ```
 
 <details><summary>write <code>0x1421ac420</code> (min 46)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w36 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x24);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w36 ← +0x10
+raw.w2
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -5404,28 +5407,28 @@ Class `0x1435dc0c0` (ctor 0x1421ac620, dispatcher case 0xa6), read `0x1421ac790`
 **read `0x1421ac790`** — min 32 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw4 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,4);
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
+raw4 → +0x1c
+raw4 → +0x20
+raw4 → +0x24
+raw4 → +0x28
+raw4 → +0x2c
 ```
 
 <details><summary>write <code>0x1421ac650</code> (min 34)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -5439,16 +5442,16 @@ Class `0x1435bfee0` (ctor 0x1421ad560, dispatcher case 0xa7), read `0x141f92a10`
 **read `0x141f92a10`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
+raw2 → +0x10
+raw2 → +0x12
 ```
 
 <details><summary>write <code>0x141f92980</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -5462,14 +5465,14 @@ Class `0x14316c420` (ctor 0x1421ad580, dispatcher case 0xa8), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -5483,18 +5486,18 @@ Class `0x1435dc940` (ctor 0x1421ad5c0, dispatcher case 0xa9), read `0x1421ad670`
 **read `0x1421ad670`** — min 35 bytes
 
 ```text
-raw1 → +0x32    // FUN_140dfb630(param_2,param_1 + 0x32,1);
-raw20 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,0x14);
-raw14 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,0xe);
+raw1 → +0x32
+raw20 → +0x10
+raw14 → +0x24
 ```
 
 <details><summary>write <code>0x1421ad5f0</code> (min 37)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w20 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x14);
-raw.w14 ← +0x24    // FUN_140dfb760(param_2,param_1 + 0x24,0xe);
+raw.w2
+raw.w1
+raw.w20 ← +0x10
+raw.w14 ← +0x24
 ```
 
 </details>
@@ -5508,14 +5511,14 @@ Class `0x1435bf670` (ctor 0x1421ad5a0, dispatcher case 0xaa), read `0x141f91970`
 **read `0x141f91970`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -5529,10 +5532,10 @@ Class `0x1435dbc88` (ctor 0x1421b4050, dispatcher case 0xab), read `0x1421b41d0`
 **read `0x1421b41d0`** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (puVar3 = *(u_long **)(param_1 + 0x10); puVar3 != puVar1; puVar3 = puVar3 + 4) {
-    sub 0x141fa5e60(reader arg 0) [min 16]    // FUN_141fa5e60(param_2,puVar3);
+raw2
+if … {
+  loop {
+    sub 0x141fa5e60(reader arg 0) [min 16]
   }
 }
 ```
@@ -5542,10 +5545,10 @@ Calls: [`0x141fa5e60@0`](#f-0x141fa5e60-0)
 <details><summary>write <code>0x1421b4080</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar5 = *(u_long **)(param_1 + 0x10); puVar5 != puVar1; puVar5 = puVar5 + 4) {
-  sub 0x141fa5dc0(reader arg 0) [min 16]    // FUN_141fa5dc0(param_2,puVar5);
+raw.w2
+raw.w2
+loop {
+  sub 0x141fa5dc0(reader arg 0) [min 16]
 }
 ```
 
@@ -5560,14 +5563,14 @@ Class `0x14316c420` (ctor 0x1421b4010, dispatcher case 0xac), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -5583,7 +5586,7 @@ Class `0x14316c930` (ctor 0x1421b4030, dispatcher case 0xad), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -5597,18 +5600,18 @@ Class `0x1435bf6b0` (ctor 0x1421ad760, dispatcher case 0xae), read `0x141f96ae0`
 **read `0x141f96ae0`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
-raw1 → +0x13    // FUN_140dfb630(param_2,param_1 + 0x13,1);
+raw2 → +0x10
+raw1 → +0x12
+raw1 → +0x13
 ```
 
 <details><summary>write <code>0x141f96a40</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w2
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -5622,14 +5625,14 @@ Class `0x1435dbbe8` (ctor 0x1421ac960, dispatcher case 0xaf), read `0x1421acb20`
 **read `0x1421acb20`** — min 3 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar3 = *(longlong *)(param_1 + 0x10); lVar3 != lVar6; lVar3 = lVar3 + 0x28) {
-    sub 0x1424da820(reader arg 0) [min 12]    // FUN_1424da820(param_2,lVar3,uVar5,uVar7);
+raw1
+if … {
+  loop {
+    sub 0x1424da820(reader arg 0) [min 12]
   }
 }
-sub 0x1421bb900(reader arg 0) [min 1]    // FUN_1421bb900(param_2,(longlong *)(param_1 + 0x28));
-sub 0x1421bb900(reader arg 0) [min 1]    // FUN_1421bb900(param_2,(longlong *)(param_1 + 0x28));
+sub 0x1421bb900(reader arg 0) [min 1]
+sub 0x1421bb900(reader arg 0) [min 1]
 ```
 
 Calls: [`0x1424da820@0`](#f-0x1424da820-0), [`0x1421bb900@0`](#f-0x1421bb900-0)
@@ -5637,14 +5640,14 @@ Calls: [`0x1424da820@0`](#f-0x1424da820-0), [`0x1421bb900@0`](#f-0x1421bb900-0)
 <details><summary>write <code>0x1421ac990</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-for (lVar4 = *(longlong *)(param_1 + 0x10); lVar4 != lVar3; lVar4 = lVar4 + 0x28) {
-  raw.w12    // FUN_140dfb760(param_2,lVar4,0xc);
-  sub 0x141eae9a0(reader arg 0) [min 0]    // FUN_141eae9a0(param_2,(longlong *)(lVar4 + 0x10));
+raw.w2
+raw.w1
+loop {
+  raw.w12
+  sub 0x141eae9a0(reader arg 0) [min 0]
 }
-sub 0x1421bb7e0(reader arg 0) [min 0]    // FUN_1421bb7e0(param_2,(longlong *)(param_1 + 0x28));
-sub 0x1421bb7e0(reader arg 0) [min 0]    // FUN_1421bb7e0(param_2,(longlong *)(param_1 + 0x28));
+sub 0x1421bb7e0(reader arg 0) [min 0]
+sub 0x1421bb7e0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -5656,9 +5659,9 @@ Class `0x1435dc3a0` (ctor 0x1421ad3e0, dispatcher case 0xb0), read `0x1421ad510`
 <details><summary>write <code>0x1421ad4b0</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w12 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0xc);
-sub 0x141eae9a0(reader arg 0) [min 0]    // FUN_141eae9a0(param_2,(longlong *)(param_1 + 0x20));
+raw.w2
+raw.w12 ← +0x10
+sub 0x141eae9a0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -5672,14 +5675,14 @@ Class `0x1435bf7e8` (ctor 0x1421ac940, dispatcher case 0xb1), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -5693,18 +5696,18 @@ Class `0x1435bfe18` (ctor 0x1421acd60, dispatcher case 0xb2), read `0x141f9d540`
 **read `0x141f9d540`** — min 3 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw1 → +0x11    // FUN_140dfb630(param_2,param_1 + 0x11,1);
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
+raw1 → +0x10
+raw1 → +0x11
+raw1 → +0x12
 ```
 
 <details><summary>write <code>0x141f9d4b0</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -5718,11 +5721,11 @@ Class `0x1435dc4e0` (ctor 0x1421acd80, dispatcher case 0xb3), read `0x1421ace90`
 **read `0x1421ace90`** — min 15 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw    // FUN_140dfb630(param_2,local_res8);
-sub 0x1424da820(reader arg 0) [min 12]    // lVar1 = FUN_1424da820(param_2,param_1 + 0x18,uVar2,param_4);
-raw1    // FUN_140dfb630(lVar1,local_res8,1);
-raw1    // FUN_140dfb630(lVar1,local_res8,1);
+raw1
+raw
+sub 0x1424da820(reader arg 0) [min 12]
+raw1
+raw1
 ```
 
 Calls: [`0x1424da820@0`](#f-0x1424da820-0)
@@ -5730,13 +5733,13 @@ Calls: [`0x1424da820@0`](#f-0x1424da820-0)
 <details><summary>write <code>0x1421acdb0</code> (min 18)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w12 ← +0x18    // FUN_140dfb760(param_2,param_1 + 0x18,0xc);
-sub 0x141eae9a0(reader arg 0) [min 0]    // FUN_141eae9a0(param_2,(longlong *)(param_1 + 0x28));
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w1
+raw.w12 ← +0x18
+sub 0x141eae9a0(reader arg 0) [min 0]
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -5750,26 +5753,26 @@ Class `0x1435dc800` (ctor 0x1421ad020, dispatcher case 0xb4), read `0x1421ad200`
 **read `0x1421ad200`** — min 3 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (!(*(char *)(param_2 + 0x252) != '\0')) {
-  for (puVar7 = *(u_long **)(param_1 + 0x10); puVar7 != puVar1; puVar7 = puVar7 + 2) {
-    raw4    // FUN_140dfb630(param_2,puVar7,4);
-    raw4    // FUN_140dfb630(param_2,puVar7 + 1,4);
+raw1
+if … {
+  loop {
+    raw4
+    raw4
   }
 }
-raw2 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,2);
+raw2 → +0x28
 ```
 
 <details><summary>write <code>0x1421ad050</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-for (puVar6 = *(u_long **)(param_1 + 0x10); puVar6 != puVar1; puVar6 = puVar6 + 2) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+loop {
+  raw.w4
+  raw.w4
 }
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -5783,16 +5786,16 @@ Class `0x1435dbfa0` (ctor 0x1421b3c40, dispatcher case 0xb5), read `0x1421b3d00`
 **read `0x1421b3d00`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (puVar4 = *(u_short **)(param_1 + 0x18); puVar4 != puVar1; puVar4 = puVar4 + 10) {
-    raw2    // FUN_140dfb630(param_2,puVar4,2);
-    raw2    // FUN_140dfb630(param_2,puVar4 + 1,2);
-    raw8    // FUN_140dfb630(param_2,(longlong)puVar4 + 5,8);
-    raw1    // FUN_140dfb630(param_2,puVar4 + 2,1);
-    raw4    // FUN_140dfb630(param_2,puVar4 + 8,4);
+raw4 → +0x10
+raw2 → +0x14
+raw2
+if … {
+  loop {
+    raw2
+    raw2
+    raw8
+    raw1
+    raw4
   }
 }
 ```
@@ -5800,10 +5803,10 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421b3c70</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421bc0f0(reader arg 0) [min 2]    // FUN_1421bc0f0(param_2,(longlong *)(param_1 + 0x18));
+raw.w2
+raw.w4
+raw.w2
+sub 0x1421bc0f0(reader arg 0) [min 2]
 ```
 
 </details>
@@ -5815,8 +5818,8 @@ Class `0x1435c07f8` (ctor 0x1421b3fe0, dispatcher case 0xb6), read `0x141f9ffe0`
 <details><summary>write <code>0x141f9ff90</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141fa5100(reader arg 0) [min 0]    // FUN_141fa5100(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x141fa5100(reader arg 0) [min 0]
 ```
 
 </details>
@@ -5830,10 +5833,10 @@ Class `0x1435dc540` (ctor 0x1421ad780, dispatcher case 0xb7), read `0x1421ad800`
 **read `0x1421ad800`** — min 0 bytes
 
 ```text
-raw    // FUN_140dfb630(param_2,local_res8);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (plVar2 = *(longlong **)(param_1 + 0x10); plVar2 != plVar1; plVar2 = plVar2 + 7) {
-    sub 0x1424300f0 [min 0]    // FUN_1424300f0(plVar2,param_2,uVar3,param_4);
+raw
+if … {
+  loop {
+    sub 0x1424300f0 [min 0]
   }
 }
 ```
@@ -5843,8 +5846,8 @@ Calls: [`0x1424300f0`](#f-0x1424300f0)
 <details><summary>write <code>0x1421ad7b0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x141eae9a0(reader arg 0) [min 0]    // FUN_141eae9a0(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x141eae9a0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -5858,24 +5861,24 @@ Class `0x1435dcc80` (ctor 0x1421ad940, dispatcher case 0xb8), read `0x1421ada40`
 **read `0x1421ada40`** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if ((byte)local_res8[0] != 0) {
-  do ... while (iVar8 < (int)(uint)bVar2) {
-    raw2    // FUN_140dfb630(param_2,local_res8,2);
+raw1
+if … {
+  loop {
+    raw2
   }
 }
-raw1 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,1);
+raw1 → +0x28
 ```
 
 <details><summary>write <code>0x1421ad970</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-for (plVar2 = *(longlong **)(param_1 + 0x10); plVar2 != plVar1; plVar2 = plVar2 + 2) {
-  raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
+raw.w2
+raw.w1
+loop {
+  raw.w2
 }
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w1
 ```
 
 </details>
@@ -5889,20 +5892,20 @@ Class `0x1435dc060` (ctor 0x1421b46e0, dispatcher case 0xb9), read `0x1421b47b0`
 **read `0x1421b47b0`** — min 4 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw1 → +0x11    // FUN_140dfb630(param_2,param_1 + 0x11,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,1);
+raw1 → +0x10
+raw1 → +0x11
+raw1
+raw1 → +0x12
 ```
 
 <details><summary>write <code>0x1421b4700</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
+raw.w1
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -5914,8 +5917,8 @@ Class `0x1435dc820` (ctor 0x1421b4510, dispatcher case 0xba), read `0x1421b45a0`
 <details><summary>write <code>0x1421b4550</code> (min 189)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w187 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0xbb);
+raw.w2
+raw.w187 ← +0x10
 ```
 
 </details>
@@ -5929,19 +5932,19 @@ Class `0x1435dbec0` (ctor 0x1421b42e0, dispatcher case 0xbb), read `0x1421b43a0`
 **read `0x1421b43a0`** — min 8 bytes
 
 ```text
-raw8    // FUN_140dfb630(param_2,puVar2,8);
-while (puVar2 = puVar2 + 1, puVar2 != puVar1) {
-  raw8    // FUN_140dfb630(param_2,puVar2,8);
+raw8
+loop {
+  raw8
 }
 ```
 
 <details><summary>write <code>0x1421b4310</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w8    // FUN_140dfb760(param_2,lVar2,8);
-while (lVar2 = lVar2 + 8, lVar2 != lVar1) {
-  raw.w8    // FUN_140dfb760(param_2,lVar2,8);
+raw.w2
+raw.w8
+loop {
+  raw.w8
 }
 ```
 
@@ -5956,11 +5959,11 @@ Class `0x1435dcb20` (ctor 0x1421b4b70, dispatcher case 0xbc), read `0x1421b4d20`
 **read `0x1421b4d20`** — min 3 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (puVar3 = *(u_long **)(param_1 + 0x10); puVar3 != puVar1; puVar3 = puVar3 + 1) {
-    raw4    // FUN_140dfb630(param_2,local_res8,4);
+raw1
+raw2
+if … {
+  loop {
+    raw4
   }
 }
 ```
@@ -5968,11 +5971,11 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421b4ba0</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-for (puVar6 = *(u_long **)(param_1 + 0x10); puVar6 != puVar1; puVar6 = puVar6 + 1) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w2
+loop {
+  raw.w4
 }
 ```
 
@@ -5987,11 +5990,11 @@ Class `0x1435dc300` (ctor 0x1421b48b0, dispatcher case 0xbd), read `0x1421b4a50`
 **read `0x1421b4a50`** — min 8 bytes
 
 ```text
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (uVar1 != 0) {
-    raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x10),(ulonglong)uVar1 << 2);
+raw4 → +0x28
+raw4
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -5999,14 +6002,14 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421b48e0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-if (uVar6 == uVar5) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  if ((u_long)uVar5 != 0) {
-    raw.w[var]    // FUN_140dfb760(param_2,*plVar4,uVar6 * 4);
+raw.w2
+raw.w4
+if … {
+  raw.w4
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -6021,14 +6024,14 @@ Class `0x1435dc2c0` (ctor 0x1421b4e60, dispatcher case 0xbe), read `0x1421b4e80`
 **read `0x1421b4e80`** — min 4 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+raw4
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6042,14 +6045,14 @@ Class `0x1435dc2c0` (ctor 0x1421b4f30, dispatcher case 0xbf), read `0x1421b4e80`
 **read `0x1421b4e80`** — min 4 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+raw4
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6063,20 +6066,20 @@ Class `0x1435dbdc8` (ctor 0x1421b4f50, dispatcher case 0xc0), read `0x1421b5030`
 **read `0x1421b5030`** — min 0 bytes
 
 ```text
-do ... while ((int)uVar1 < 5) {
-  raw4    // FUN_140dfb630(param_2,param_1 + (uVar2 + 4) * 4,4);
+loop {
+  raw4
 }
 ```
 
 <details><summary>write <code>0x1421b4f70</code> (min 22)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -6088,8 +6091,8 @@ Class `0x14345ef10` (ctor 0x1421b5100, dispatcher case 0xc1), read `0x140e290e0`
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -6103,14 +6106,14 @@ Class `0x1435bf670` (ctor 0x1421add70, dispatcher case 0xc2), read `0x141f91970`
 **read `0x141f91970`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -6126,7 +6129,7 @@ Class `0x14316c930` (ctor 0x1421b5120, dispatcher case 0xc3), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -6140,16 +6143,16 @@ Class `0x1435bf8a8` (ctor 0x1421add90, dispatcher case 0xc4), read `0x141f92720`
 **read `0x141f92720`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f926a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -6163,16 +6166,16 @@ Class `0x1435c08d8` (ctor 0x1421b20c0, dispatcher case 0xc5), read `0x141f92190`
 **read `0x141f92190`** — min 6 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
+raw4 → +0x10
+raw2 → +0x14
 ```
 
 <details><summary>write <code>0x141f92110</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -6186,22 +6189,22 @@ Class `0x1435dca20` (ctor 0x1421addb0, dispatcher case 0xc6), read `0x1421aded0`
 **read `0x1421aded0`** — min 16+ bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-wstr → +0x20    // FUN_140e0cbe0(param_2,param_1 + 0x20);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
+wstr → +0x20
+raw4
 ```
 
 <details><summary>write <code>0x1421addf0</code> (min 18)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar2,*(ushort *)(param_1 + 0x30));
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w4
 ```
 
 </details>
@@ -6213,8 +6216,8 @@ Class `0x14345ef10` (ctor 0x1421b5140, dispatcher case 0xc7), read `0x140e290e0`
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -6228,14 +6231,14 @@ Class `0x1435dbfe0` (ctor 0x1421b5160, dispatcher case 0xc8), read `0x1421b5180`
 **read `0x1421b5180`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -6247,8 +6250,8 @@ Class `0x1435dcac0` (ctor 0x1421b5220, dispatcher case 0xc9), read `0x1421b5750`
 <details><summary>write <code>0x1421b53f0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421b5250(reader arg 0) [min 1]    // FUN_1421b5250(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1421b5250(reader arg 0) [min 1]
 ```
 
 </details>
@@ -6262,16 +6265,16 @@ Class `0x1435dbf40` (ctor 0x1421b5820, dispatcher case 0xca), read `0x1421b59d0`
 **read `0x1421b59d0`** — min 34 bytes
 
 ```text
-sub 0x1421b5440(reader arg 0) [min 1]    // FUN_1421b5440(param_2,(longlong *)(param_1 + 0x30),param_3,param_4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw4    // FUN_140dfb630(param_2,&local_res18,4);
-raw4    // FUN_140dfb630(param_2,(longlong)&local_res18 + 4,4);
-raw4    // FUN_140dfb630(param_2,&local_res20,4);
-raw4    // FUN_140dfb630(param_2,(longlong)&local_res20 + 4,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4    // FUN_140dfb630(param_2,local_res10,4);
+sub 0x1421b5440(reader arg 0) [min 1]
+raw4 → +0x14
+raw4 → +0x18
+raw4
+raw4
+raw4
+raw4
+raw4 → +0x1c
+raw1
+raw4
 ```
 
 Calls: [`0x1421b5440@0`](#f-0x1421b5440-0)
@@ -6279,17 +6282,17 @@ Calls: [`0x1421b5440@0`](#f-0x1421b5440-0)
 <details><summary>write <code>0x1421b5860</code> (min 36)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1421b5250(reader arg 0) [min 1]    // FUN_1421b5250(param_2,(longlong *)(param_1 + 0x30));
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+sub 0x1421b5250(reader arg 0) [min 1]
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -6303,14 +6306,14 @@ Class `0x14316c420` (ctor 0x1421b5c20, dispatcher case 0xcb), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6324,16 +6327,16 @@ Class `0x1435bf8a8` (ctor 0x1421ae060, dispatcher case 0xcc), read `0x141f92720`
 **read `0x141f92720`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f926a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -6347,16 +6350,16 @@ Class `0x1435c08d8` (ctor 0x1421ae080, dispatcher case 0xcd), read `0x141f92190`
 **read `0x141f92190`** — min 6 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
+raw4 → +0x10
+raw2 → +0x14
 ```
 
 <details><summary>write <code>0x141f92110</code> (min 8)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -6370,14 +6373,14 @@ Class `0x1435dc640` (ctor 0x1421ae0c0, dispatcher case 0xce), read `0x1421ae140`
 **read `0x1421ae140`** — min 4 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+raw4
 ```
 
 <details><summary>write <code>0x1421ae0e0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6391,13 +6394,13 @@ Class `0x1435dc980` (ctor 0x1421ae640, dispatcher case 0xcf), read `0x1421ae850`
 **read `0x1421ae850`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (; pbVar5 = pbStack_50, pbVar8 = local_58, pbVar2 != pbStack_50; pbVar2 = pbVar2 + 6) {
-    raw1    // FUN_140dfb630(param_2,pbVar2,1);
-    raw1    // FUN_140dfb630(param_2,pbVar2 + 1,1);
-    raw2    // FUN_140dfb630(param_2,pbVar2 + 2,2);
-    raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
+if … {
+  loop {
+    raw1
+    raw1
+    raw2
+    raw1
   }
 }
 ```
@@ -6405,13 +6408,13 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421ae670</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-for (puVar6 = *(undefined1 **)(param_1 + 0x10); puVar6 != puVar1; puVar6 = puVar6 + 6) {
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-  raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w2
+raw.w1
+loop {
+  raw.w1
+  raw.w1
+  raw.w2
+  raw.w1
 }
 ```
 
@@ -6426,22 +6429,22 @@ Class `0x1435dc080` (ctor 0x1421aebc0, dispatcher case 0xd0), read `0x1421aecd0`
 **read `0x1421aecd0`** — min 17 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
+raw1
+raw4 → +0x20
 ```
 
 <details><summary>write <code>0x1421aebf0</code> (min 19)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -6455,32 +6458,32 @@ Class `0x1435dcb40` (ctor 0x1421ae1f0, dispatcher case 0xd1), read `0x1421ae4b0`
 **read `0x1421ae4b0`** — min 4 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-do ... while (uVar3 < 9) {
-  raw4    // FUN_140dfb630(param_2,local_res8,4);
-  raw4    // FUN_140dfb630(param_2,local_res8,4);
-  raw4    // FUN_140dfb630(param_2,local_res8,4);
-  raw4    // FUN_140dfb630(param_2,local_res8,4);
+raw1 → +0x10
+loop {
+  raw4
+  raw4
+  raw4
+  raw4
 }
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
+raw1
+raw1
 ```
 
 <details><summary>write <code>0x1421ae350</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,1);
-do ... while (uVar2 < 9) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1 ← +0x10
+loop {
+  raw.w4
+  raw.w4
+  raw.w4
+  raw.w4
 }
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w1
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -6494,15 +6497,15 @@ Class `0x1435c01b8` (ctor 0x1421aee20, dispatcher case 0xd2), read `0x141f9f920`
 **read `0x141f9f920`** — min 0+ bytes
 
 ```text
-str → +0x10    // FUN_1408402a0(param_2,param_1 + 0x10);
+str → +0x10
 ```
 
 <details><summary>write <code>0x141f9f890</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_2,puVar1,hostshort);
+raw.w2
+raw.w2
+raw.w[var]
 ```
 
 </details>
@@ -6516,16 +6519,16 @@ Class `0x1435bf8a8` (ctor 0x1421b0010, dispatcher case 0xd3), read `0x141f92720`
 **read `0x141f92720`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f926a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -6539,14 +6542,14 @@ Class `0x14316c420` (ctor 0x1421b0030, dispatcher case 0xd4), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6558,8 +6561,8 @@ Class `0x1435dc620` (ctor 0x1421b0050, dispatcher case 0xd5), read `0x1421b0150`
 <details><summary>write <code>0x1421b0100</code> (min 34)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w32 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x20);
+raw.w2
+raw.w32 ← +0x10
 ```
 
 </details>
@@ -6573,28 +6576,28 @@ Class `0x1435dcd80` (ctor 0x1421b0170, dispatcher case 0xd6), read `0x1421b0340`
 **read `0x1421b0340`** — min 10 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (uVar1 != 0) {
-    raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x10),uVar5 * 4);
+raw2
+if … {
+  if … {
+    raw[var]
   }
 }
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw4 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,4);
+raw4 → +0x28
+raw4 → +0x2c
 ```
 
 <details><summary>write <code>0x1421b01a0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if (uVar5 == uVar4) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-  if ((u_short)uVar4 != 0) {
-    raw.w[var]    // FUN_140dfb760(param_2,*(undefined8 *)(param_1 + 0x10),uVar5 * 4);
+raw.w2
+if … {
+  raw.w2
+  if … {
+    raw.w[var]
   }
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  // return;
+  raw.w4
+  raw.w4
+  return
 }
 ```
 
@@ -6609,10 +6612,10 @@ Class `0x1435dc3c0` (ctor 0x1421b0550, dispatcher case 0xd7), read `0x1421b06d0`
 **read `0x1421b06d0`** — min 0 bytes
 
 ```text
-do ... while( true ) {
-  raw1    // FUN_140dfb630(param_2,local_res8,1);
-  if (local_res8[0] != 0xff) {
-    raw1    // FUN_140dfb630(param_2,local_res8,1);
+loop {
+  raw1
+  if … {
+    raw1
   }
 }
 ```
@@ -6620,11 +6623,11 @@ do ... while( true ) {
 <details><summary>write <code>0x1421b05c0</code> (min 0)</summary>
 
 ```text
-raw.w    // FUN_140dfb760(param_2);
-for (plVar3 = (longlong *)(param_1 + 0x10); plVar3 != (longlong *)(param_1 + 0x610); plVar3 = plVar3 + 3) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  if (*plVar3 != 0) {
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w
+loop {
+  raw.w1
+  if … {
+    raw.w1
   }
 }
 ```
@@ -6640,16 +6643,16 @@ Class `0x1435dcb00` (ctor 0x1421b08c0, dispatcher case 0xd8), read `0x1421b0960`
 **read `0x1421b0960`** — min 3 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
+raw1
+raw2 → +0x12
 ```
 
 <details><summary>write <code>0x1421b08e0</code> (min 5)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w1
+raw.w2
 ```
 
 </details>
@@ -6661,8 +6664,8 @@ Class `0x1435dc960` (ctor 0x1421b0af0, dispatcher case 0xd9), read `0x1421b0be0`
 <details><summary>write <code>0x1421b0b80</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -6676,16 +6679,16 @@ Class `0x1435dc2e0` (ctor 0x1421b0a30, dispatcher case 0xda), read `0x14085df70`
 **read `0x14085df70`** — min 5 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
+raw1 → +0x10
+raw4 → +0x18
 ```
 
 <details><summary>write <code>0x14085def0</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -6697,8 +6700,8 @@ Class `0x1435c0758` (ctor 0x141f9e530, dispatcher case 0xdb), read `0x141f9e610`
 <details><summary>write <code>0x141f9e5c0</code> (min 18)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w16 ← +0x10    // FUN_140dfb760(param_2,param_1 + 0x10,0x10);
+raw.w2
+raw.w16 ← +0x10
 ```
 
 </details>
@@ -6712,14 +6715,14 @@ Class `0x14316c420` (ctor 0x1421b0ad0, dispatcher case 0xdc), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6731,10 +6734,10 @@ Class `0x1435dc360` (ctor 0x1421b0c00, dispatcher case 0xdd), read `0x1421b0e20`
 <details><summary>write <code>0x1421b0d90</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w    // FUN_140dfb760(param_2,local_res8);
-sub 0x1425038d0(reader arg 0) [min 0]    // FUN_1425038d0(param_2,param_1 + 0x18,uVar2,param_4);
+raw.w2
+raw.w4
+raw.w
+sub 0x1425038d0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -6748,16 +6751,16 @@ Class `0x1435c0670` (ctor 0x1421b0e80, dispatcher case 0xde), read `0x141f9e7b0`
 **read `0x141f9e7b0`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f926a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -6771,11 +6774,11 @@ Class `0x1435bfcf8` (ctor 0x141f9f010, dispatcher case 0xdf), read `0x141fa1c50`
 **read `0x141fa1c50`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
-raw    // FUN_140dfb630(param_2,&local_res8);
-for (; puVar3 != (undefined8 *)0x0; puVar3 = (undefined8 *)((longlong)puVar3 + -1)) {
-  sub 0x1421ec2c0 [min 2]    // FUN_1421ec2c0(&local_res8,param_2,ppuVar8,param_4);
+raw2 → +0x10
+raw2 → +0x12
+raw
+loop {
+  sub 0x1421ec2c0 [min 2]
 }
 ```
 
@@ -6784,13 +6787,13 @@ Calls: [`0x1421ec2c0`](#f-0x1421ec2c0)
 <details><summary>write <code>0x141fa1b50</code> (min 14)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-for (plVar4 = *(longlong **)(param_1 + 0x18); plVar4 != plVar3; plVar4 = plVar4 + 1) {
-  if (*plVar4 != 0) {
-    sub 0x1421ec1d0 [min 2+]    // FUN_1421ec1d0(*plVar4,param_2);
+raw.w2
+raw.w2
+raw.w2
+raw.w8
+loop {
+  if … {
+    sub 0x1421ec1d0 [min 2+]
   }
 }
 ```
@@ -6806,9 +6809,9 @@ Class `0x1435bfd18` (ctor 0x141f9f080, dispatcher case 0xe0), read `0x141fa1e30`
 **read `0x141fa1e30`** — min 0 bytes
 
 ```text
-raw    // FUN_140dfb630(param_2,&local_res8);
-for (; puVar2 != (undefined8 *)0x0; puVar2 = (undefined8 *)((longlong)puVar2 + -1)) {
-  sub 0x1421ec2c0 [min 2]    // FUN_1421ec2c0(&local_res8,param_2,ppuVar6,param_4);
+raw
+loop {
+  sub 0x1421ec2c0 [min 2]
 }
 ```
 
@@ -6817,11 +6820,11 @@ Calls: [`0x1421ec2c0`](#f-0x1421ec2c0)
 <details><summary>write <code>0x141fa1d70</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-for (plVar4 = *(longlong **)(param_1 + 0x10); plVar4 != plVar3; plVar4 = plVar4 + 1) {
-  if (*plVar4 != 0) {
-    sub 0x1421ec1d0 [min 2+]    // FUN_1421ec1d0(*plVar4,param_2);
+raw.w2
+raw.w8
+loop {
+  if … {
+    sub 0x1421ec1d0 [min 2+]
   }
 }
 ```
@@ -6835,8 +6838,8 @@ Class `0x1435dc6a0` (ctor 0x1421b0ec0, dispatcher case 0xe1), read `0x1421b1000`
 <details><summary>write <code>0x1421b0fb0</code> (min 23)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1424d2610(reader arg 0) [min 21]    // FUN_1424d2610(param_2,(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x1424d2610(reader arg 0) [min 21]
 ```
 
 </details>
@@ -6850,14 +6853,14 @@ Class `0x14316c420` (ctor 0x1421b20e0, dispatcher case 0xe2), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6871,18 +6874,18 @@ Class `0x1435dc200` (ctor 0x1421b1070, dispatcher case 0xe3), read `0x1421b1130`
 **read `0x1421b1130`** — min 9 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
+raw1 → +0x10
+raw4 → +0x18
+raw4 → +0x1c
 ```
 
 <details><summary>write <code>0x1421b1090</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -6896,8 +6899,8 @@ Class `0x1435dce80` (ctor 0x1421b2a50, dispatcher case 0xe4), read `0x1421b2cd0`
 **read `0x1421b2cd0`** — min 1 bytes
 
 ```text
-sub 0x1421bbd60(reader arg 0) [min 0]    // lVar1 = FUN_1421bbd60(param_2,(longlong *)(param_1 + 0x10),param_3,param_4);
-raw1    // FUN_140dfb630(lVar1,local_res8,1);
+sub 0x1421bbd60(reader arg 0) [min 0]
+raw1
 ```
 
 Calls: [`0x1421bbd60@0`](#f-0x1421bbd60-0)
@@ -6905,16 +6908,16 @@ Calls: [`0x1421bbd60@0`](#f-0x1421bbd60-0)
 <details><summary>write <code>0x1421b2bb0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x18) - *(longlong *)(param_1 + 0x10) >> 5),param_2);
-for (puVar4 = *(undefined8 **)(param_1 + 0x10); puVar4 != puVar1; puVar4 = puVar4 + 4) {
-  raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-  raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-  sub 0x1421ec1d0 [min 2+]    // FUN_1421ec1d0(puVar4[1],param_2);
+raw.w2
+sub 0x14089e520 [min 0]
+loop {
+  raw.w8
+  raw.w4
+  raw.w4
+  raw.w1
+  sub 0x1421ec1d0 [min 2+]
 }
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w1
 ```
 
 </details>
@@ -6928,21 +6931,21 @@ Class `0x1435dc160` (ctor 0x1421b2d50, dispatcher case 0xe5), read `0x1421b2eb0`
 **read `0x1421b2eb0`** — min 1 bytes
 
 ```text
-cint    // uVar3 = FUN_14089cad0(param_2);
-for (puVar8 = (u_long *)*plVar1; puVar8 != puVar2; puVar8 = puVar8 + 2) {
-  raw4    // FUN_140dfb630(param_2,puVar8,4);
-  raw4    // FUN_140dfb630(param_2,puVar8 + 1,4);
+cint
+loop {
+  raw4
+  raw4
 }
 ```
 
 <details><summary>write <code>0x1421b2e00</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x18) - *(longlong *)(param_1 + 0x10) >> 3),param_2);
-for (puVar3 = *(u_long **)(param_1 + 0x10); puVar3 != puVar1; puVar3 = puVar3 + 2) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+sub 0x14089e520 [min 0]
+loop {
+  raw.w4
+  raw.w4
 }
 ```
 
@@ -6957,14 +6960,14 @@ Class `0x1435bf670` (ctor 0x1421b2fa0, dispatcher case 0xe6), read `0x141f91970`
 **read `0x141f91970`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -6978,14 +6981,14 @@ Class `0x14316c420` (case, dispatcher case 0xe7), read `0x140913050`, write `0x1
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -6999,16 +7002,16 @@ Class `0x1435bfee0` (case, dispatcher case 0xe8), read `0x141f92a10`, write `0x1
 **read `0x141f92a10`** — min 4 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,2);
-raw2 → +0x12    // FUN_140dfb630(param_2,param_1 + 0x12,2);
+raw2 → +0x10
+raw2 → +0x12
 ```
 
 <details><summary>write <code>0x141f92980</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -7024,7 +7027,7 @@ Class `0x14316c930` (case, dispatcher case 0xe9), read `0x1400f0f00`, write `0x1
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -7040,7 +7043,7 @@ Class `0x14316c930` (case), read `0x1400f0f00`, write `0x140912f40`.
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -7054,10 +7057,10 @@ Class `0x1435dc700` (case), read `0x1421a06e0`, write `0x1421a05a0`.
 **read `0x1421a06e0`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (local_res8[0] != 0) {
-    raw[var]    // FUN_140dfb630(param_2,*plVar1,uVar5 * 8);
+raw1
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -7065,13 +7068,13 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421a05a0</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if (uVar5 == uVar4) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  if ((char)uVar4 != '\0') {
-    raw.w[var]    // FUN_140dfb760(param_2,*plVar3,uVar5 * 8);
+raw.w2
+if … {
+  raw.w1
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -7086,26 +7089,26 @@ Class `0x1435dc0a0` (ctor 0x1421a5240), read `0x1421a5390`, write `0x1421a5270`.
 **read `0x1421a5390`** — min 28 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+raw4 → +0x10
+raw4 → +0x14
+raw4 → +0x18
+raw4 → +0x1c
+raw4 → +0x20
+raw4
+raw4
 ```
 
 <details><summary>write <code>0x1421a5270</code> (min 30)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -7119,10 +7122,10 @@ Class `0x1435dcc20` (ctor 0x1421a5520), read `0x1421a5650`, write `0x1421a55b0`.
 **read `0x1421a5650`** — min 9 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-sub 0x14299cd70 [min 2]    // FUN_14299cd70((longlong *)(param_1 + 0x18),param_2);
-sub 0x14299cd70 [min 2]    // FUN_14299cd70((longlong *)(param_1 + 0x80),param_2);
+raw4 → +0x10
+raw1
+sub 0x14299cd70 [min 2]
+sub 0x14299cd70 [min 2]
 ```
 
 Calls: [`0x14299cd70`](#f-0x14299cd70)
@@ -7130,11 +7133,11 @@ Calls: [`0x14299cd70`](#f-0x14299cd70)
 <details><summary>write <code>0x1421a55b0</code> (min 7)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-sub 0x14299cbf0 [min 0]    // FUN_14299cbf0((longlong *)(param_1 + 0x18),param_2);
-sub 0x14299cbf0 [min 0]    // FUN_14299cbf0((longlong *)(param_1 + 0x80),param_2);
+raw.w2
+raw.w4
+raw.w1
+sub 0x14299cbf0 [min 0]
+sub 0x14299cbf0 [min 0]
 ```
 
 </details>
@@ -7148,11 +7151,11 @@ Class `0x1435bf948` (ctor 0x141fa1320), read `0x141fa1270`, write `0x141fa11e0`.
 **read `0x141fa1270`** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-cint    // uVar1 = FUN_14089cad0(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (uVar1 != 0) {
-    raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x10),uVar1);
+raw1
+cint
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -7160,11 +7163,11 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x141fa11e0</code> (min 0)</summary>
 
 ```text
-if (*(longlong *)(param_1 + 0x80) != 0) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  sub 0x14089e520 [min 0]    // FUN_14089e520(*(uint *)(param_1 + 0x80),param_2);
-  raw.w[var]    // FUN_140dfb760(param_2,*(undefined8 *)(param_1 + 0x70),*(undefined8 *)(param_1 + 0x80));
+if … {
+  raw.w2
+  raw.w1
+  sub 0x14089e520 [min 0]
+  raw.w[var]
 }
 ```
 
@@ -7179,16 +7182,16 @@ Class `0x1435bf8a8` (ctor 0x1421a5110), read `0x141f92720`, write `0x141f926a0`.
 **read `0x141f92720`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
+raw4 → +0x10
+raw4 → +0x14
 ```
 
 <details><summary>write <code>0x141f926a0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -7200,8 +7203,8 @@ Class `0x1435dc960` (ctor 0x1421b0ea0, dispatcher case 0xea), read `0x1421b0be0`
 <details><summary>write <code>0x1421b0b80</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -7215,14 +7218,14 @@ Class `0x1435dc560` (ctor 0x1421b27d0, dispatcher case 0xeb), read `0x1421b28b0`
 **read `0x1421b28b0`** — min 1 bytes
 
 ```text
-for (puVar3 = (undefined4 *)(param_1 + 0x28); puVar3 != (undefined4 *)(param_1 + 0x38); puVar3 = puVar3 + 1) {
-  cint    // uVar2 = FUN_14089cad0(param_2);
+loop {
+  cint
 }
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if ((*(char *)(param_2 + 0x252) == '\0') && ((char)local_res8[0] == '\0')) {
-  raw2    // FUN_140dfb630(param_2,local_res8,2);
-  if ((*(char *)(param_2 + 0x252) == '\0') && (FUN_141e49d20((longlong *)(param_1 + 0x10),(ulonglong)uVar1), uVar1 != 0)) {
-    raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x10),(ulonglong)uVar1 * 2);
+raw1
+if … {
+  raw2
+  if … {
+    raw[var]
   }
 }
 ```
@@ -7230,13 +7233,13 @@ if ((*(char *)(param_2 + 0x252) == '\0') && ((char)local_res8[0] == '\0')) {
 <details><summary>write <code>0x1421b2800</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-for (puVar2 = (uint *)(param_1 + 0x28); puVar2 != (uint *)(param_1 + 0x38); puVar2 = puVar2 + 1) {
-  sub 0x14089e520 [min 0]    // FUN_14089e520(*puVar2,param_2);
+raw.w2
+loop {
+  sub 0x14089e520 [min 0]
 }
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-if (*(char *)(param_1 + 0x38) == '\0') {
-  sub 0x1421b8fe0(reader arg 0) [min 0]    // FUN_1421b8fe0(param_2,(longlong *)(param_1 + 0x10));
+raw.w1
+if … {
+  sub 0x1421b8fe0(reader arg 0) [min 0]
 }
 ```
 
@@ -7251,14 +7254,14 @@ Class `0x1435dcd20` (ctor 0x1421b2fc0, dispatcher case 0xec), read `0x1421b30a0`
 **read `0x1421b30a0`** — min 1 bytes
 
 ```text
-cint → +0x10    // uVar1 = FUN_14089cad0(param_2);
+cint → +0x10
 ```
 
 <details><summary>write <code>0x1421b3050</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(uint *)(param_1 + 0x10),param_2);
+raw.w2
+sub 0x14089e520 [min 0]
 ```
 
 </details>
@@ -7272,14 +7275,14 @@ Class `0x14316c420` (ctor 0x1421b30c0, dispatcher case 0xed), read `0x140913050`
 **read `0x140913050`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,puVar1,4);
+raw4 → +0x10
 ```
 
 <details><summary>write <code>0x140912ff0</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -7293,18 +7296,18 @@ Class `0x1435dc840` (ctor 0x1421b30e0, dispatcher case 0xee), read `0x1421b31b0`
 **read `0x1421b31b0`** — min 7 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
+raw1 → +0x10
+raw2 → +0x18
+raw4 → +0x1c
 ```
 
 <details><summary>write <code>0x1421b3110</code> (min 9)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w2
+raw.w4
 ```
 
 </details>
@@ -7318,8 +7321,8 @@ Class `0x1435dbe80` (ctor 0x1421b32c0, dispatcher case 0xef), read `0x1421b33d0`
 **read `0x1421b33d0`** — min 4 bytes
 
 ```text
-sub 0x1421bbf20(reader arg 0) [min 2]    // FUN_1421bbf20(param_2,(longlong *)(param_1 + 0x10),&local_res8,param_4);
-sub 0x14299cd70 [min 2]    // FUN_14299cd70((longlong *)(param_1 + 0x20),param_2);
+sub 0x1421bbf20(reader arg 0) [min 2]
+sub 0x14299cd70 [min 2]
 ```
 
 Calls: [`0x1421bbf20@0`](#f-0x1421bbf20-0), [`0x14299cd70`](#f-0x14299cd70)
@@ -7327,9 +7330,9 @@ Calls: [`0x1421bbf20@0`](#f-0x1421bbf20-0), [`0x14299cd70`](#f-0x14299cd70)
 <details><summary>write <code>0x1421b3310</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14299cbf0 [min 0]    // FUN_14299cbf0((longlong *)(param_1 + 0x20),param_2);
+raw.w2
+raw.w2
+sub 0x14299cbf0 [min 0]
 ```
 
 </details>
@@ -7343,20 +7346,20 @@ Class `0x1435dcea0` (ctor 0x1421b2100, dispatcher case 0xf0), read `0x1421b23c0`
 **read `0x1421b23c0`** — min 2 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-cint    // uVar6 = FUN_14089cad0(param_2);
-while( true ) {
-  raw4    // FUN_140dfb630(param_2,puVar11,4);
-  raw2    // FUN_140dfb630(param_2,local_res10,2);
-  // if (*(char *)(param_2 + 0x252) != '\0') break;
-  if ((short)*puVar1 != 0) {
-    raw4    // FUN_140dfb630(param_2,puVar11 + 2,4);
-    raw4    // FUN_140dfb630(param_2,puVar11 + 3,4);
+raw1 → +0x10
+cint
+loop {
+  raw4
+  raw2
+  break
+  if … {
+    raw4
+    raw4
   }
-  if ((short)uVar5 < 0) {
-    raw1    // FUN_140dfb630(param_2,local_res10,1);
-    if (*(char *)(param_2 + 0x252) == '\0') {
-      vcall [?](reader arg 1)    // puVar8 = (undefined8 *) (*(code *)(&PTR_FUN_1435dbe28)[(byte)local_res10[0]])(local_res18,param_2);
+  if … {
+    raw1
+    if … {
+      vcall [?](reader arg 1)
     }
   }
 }
@@ -7365,19 +7368,19 @@ while( true ) {
 <details><summary>write <code>0x1421b2130</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-sub 0x14089e520 [min 0]    // FUN_14089e520((int)(lVar6 >> 2) - (int)(lVar6 >> 0x3f),param_2);
-do ... while( true ) {
-  raw.w4    // FUN_140dfb760(param_2,local_res18,4);
-  raw.w2    // FUN_140dfb760(param_2,local_res18,2);
-  if ((ushort)*puVar1 != 0) {
-    raw.w4    // FUN_140dfb760(param_2,local_res18,4);
-    raw.w4    // FUN_140dfb760(param_2,local_res18,4);
+raw.w2
+raw.w1
+sub 0x14089e520 [min 0]
+loop {
+  raw.w4
+  raw.w2
+  if … {
+    raw.w4
+    raw.w4
   }
-  if ((char)local_res8 != '\0') {
-    raw.w1    // FUN_140dfb760(param_2,local_res18,1);
-    raw.w[var]    // FUN_140dfb760(param_2,local_res18,uVar8);
+  if … {
+    raw.w1
+    raw.w[var]
   }
 }
 ```
@@ -7393,10 +7396,10 @@ Class `0x1435dcc60` (ctor 0x1421aa100, dispatcher case 0xf1), read `0x1421aa270`
 **read `0x1421aa270`** — min 4 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (uVar1 != 0) {
-    raw[var]    // FUN_140dfb630(param_2,*(longlong *)(param_1 + 0x10),uVar1);
+raw4
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -7404,13 +7407,13 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 <details><summary>write <code>0x1421aa130</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if ((ulonglong)hostlong == *(longlong *)(param_1 + 0x18) - *plVar4) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  if (hostlong != 0) {
-    raw.w[var]    // FUN_140dfb760(param_2,*plVar4,hostlong);
+raw.w2
+if … {
+  raw.w4
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -7425,13 +7428,13 @@ Class `0x1435dbc08` (ctor 0x1421b1240, dispatcher case 0xf2), read `0x1421b1480`
 **read `0x1421b1480`** — min 2 bytes
 
 ```text
-cint    // uVar3 = FUN_14089cad0(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  for (lVar6 = *(longlong *)(param_1 + 0x10); lVar6 != lVar1; lVar6 = lVar6 + 0x58) {
-    sub 0x1429a4790(reader arg 0) [min 50+]    // FUN_1429a4790(param_2,lVar6);
+cint
+if … {
+  loop {
+    sub 0x1429a4790(reader arg 0) [min 50+]
   }
 }
-raw1 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,1);
+raw1 → +0x28
 ```
 
 Calls: [`0x1429a4790@0`](#f-0x1429a4790-0)
@@ -7439,12 +7442,12 @@ Calls: [`0x1429a4790@0`](#f-0x1429a4790-0)
 <details><summary>write <code>0x1421b13b0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)((*(longlong *)(param_1 + 0x18) - *(longlong *)(param_1 + 0x10)) / 0x58), param_2);
-for (puVar3 = *(undefined8 **)(param_1 + 0x10); puVar3 != puVar1; puVar3 = puVar3 + 0xb) {
-  sub 0x1429a4590(reader arg 0) [min 50]    // FUN_1429a4590(param_2,puVar3);
+raw.w2
+sub 0x14089e520 [min 0]
+loop {
+  sub 0x1429a4590(reader arg 0) [min 50]
 }
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+raw.w1
 ```
 
 </details>
@@ -7458,20 +7461,20 @@ Class `0x1435dce20` (ctor 0x1421b15f0, dispatcher case 0xf3), read `0x1421b1770`
 **read `0x1421b1770`** — min 14 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw2 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,2);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-raw4 → +0x1c    // FUN_140dfb630(param_2,param_1 + 0x1c,4);
+raw4 → +0x10
+raw2 → +0x14
+raw4 → +0x18
+raw4 → +0x1c
 ```
 
 <details><summary>write <code>0x1421b16b0</code> (min 16)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w4
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -7485,8 +7488,8 @@ Class `0x1435dc420` (ctor 0x1421b1bd0, dispatcher case 0xf4), read `0x1421b1d10`
 **read `0x1421b1d10`** — min 4 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-sub 0x1421bbb70(reader arg 0) [min 0]    // FUN_1421bbb70(param_2,(longlong *)(param_1 + 0x18));
+raw4 → +0x10
+sub 0x1421bbb70(reader arg 0) [min 0]
 ```
 
 Calls: [`0x1421bbb70@0`](#f-0x1421bbb70-0)
@@ -7494,10 +7497,10 @@ Calls: [`0x1421bbb70@0`](#f-0x1421bbb70-0)
 <details><summary>write <code>0x1421b1c80</code> (min 6)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x20) - *(longlong *)(param_1 + 0x18) >> 2),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x18), *(longlong *)(param_1 + 0x20) - *(longlong *)(param_1 + 0x18) & 0xfffffffffffffffc);
+raw.w2
+raw.w4
+sub 0x14089e520 [min 0]
+raw.w[var]
 ```
 
 </details>
@@ -7511,8 +7514,8 @@ Class `0x1435dbca8` (ctor 0x1421b1d60, dispatcher case 0xf5), read `0x1421b1eb0`
 **read `0x1421b1eb0`** — min 51+ bytes
 
 ```text
-sub 0x1429a4790(reader arg 0) [min 50+]    // uVar1 = FUN_1429a4790(param_2,param_1 + 0x10);
-raw1    // FUN_140dfb630(uVar1,local_res8,1);
+sub 0x1429a4790(reader arg 0) [min 50+]
+raw1
 ```
 
 Calls: [`0x1429a4790@0`](#f-0x1429a4790-0)
@@ -7520,9 +7523,9 @@ Calls: [`0x1429a4790@0`](#f-0x1429a4790-0)
 <details><summary>write <code>0x1421b1e40</code> (min 53)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x1429a4590(reader arg 0) [min 50]    // lVar1 = FUN_1429a4590(param_2,(undefined8 *)(param_1 + 0x10));
-raw.w1    // FUN_140dfb760(lVar1,local_res8,1);
+raw.w2
+sub 0x1429a4590(reader arg 0) [min 50]
+raw.w1
 ```
 
 </details>
@@ -7536,10 +7539,10 @@ Class `0x1435dc340` (ctor 0x1421b1990, dispatcher case 0xf6), read `0x1421b1a70`
 **read `0x1421b1a70`** — min 8 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-sub 0x1421bba50(reader arg 0) [min 0]    // lVar2 = FUN_1421bba50(param_2,(longlong *)(param_1 + 0x18));
-sub 0x1421bba50(reader arg 0) [min 0]    // FUN_1421bba50(lVar2,(longlong *)(param_1 + 0x30));
+raw4 → +0x10
+raw4 → +0x14
+sub 0x1421bba50(reader arg 0) [min 0]
+sub 0x1421bba50(reader arg 0) [min 0]
 ```
 
 Calls: [`0x1421bba50@0`](#f-0x1421bba50-0)
@@ -7547,11 +7550,11 @@ Calls: [`0x1421bba50@0`](#f-0x1421bba50-0)
 <details><summary>write <code>0x1421b19d0</code> (min 10)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-sub 0x1421bb9d0(reader arg 0) [min 0]    // uVar2 = FUN_1421bb9d0(param_2,(longlong *)(param_1 + 0x18));
-sub 0x1421bb9d0(reader arg 0) [min 0]    // FUN_1421bb9d0(uVar2,(longlong *)(param_1 + 0x30));
+raw.w2
+raw.w4
+raw.w4
+sub 0x1421bb9d0(reader arg 0) [min 0]
+sub 0x1421bb9d0(reader arg 0) [min 0]
 ```
 
 </details>
@@ -7563,8 +7566,8 @@ Class `0x14345ef10` (ctor 0x1421b1810, dispatcher case 0xf7), read `0x140e290e0`
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -7578,18 +7581,18 @@ Class `0x1435dc020` (ctor 0x1421b1830, dispatcher case 0xf8), read `0x1421b18d0`
 **read `0x1421b18d0`** — min 9 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw4 → +0x10
+raw4 → +0x14
+raw1
 ```
 
 <details><summary>write <code>0x141f93480</code> (min 11)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w4
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -7605,7 +7608,7 @@ Class `0x14316c930` (ctor 0x1421b1950, dispatcher case 0xf9), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -7619,14 +7622,14 @@ Class `0x1435bf7e8` (ctor 0x1421b1970, dispatcher case 0xfa), read `0x141f928d0`
 **read `0x141f928d0`** — min 2 bytes
 
 ```text
-raw2 → +0x10    // FUN_140dfb630(param_2,puVar1,2);
+raw2 → +0x10
 ```
 
 <details><summary>write <code>0x141f92870</code> (min 4)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -7642,7 +7645,7 @@ Class `0x14316c930` (ctor 0x1421b1f30, dispatcher case 0xfb), read `0x1400f0f00`
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -7656,25 +7659,25 @@ Class `0x1435dccc0` (ctor 0x1421b1f50, dispatcher case 0xfc), read `0x1421b2060`
 **read `0x1421b2060`** — min 1 bytes
 
 ```text
-cint    // uVar2 = FUN_14089cad0(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  raw[var]    // FUN_140dfb630(param_2,*plVar1,uVar2);
+cint
+if … {
+  raw[var]
 }
 ```
 
 <details><summary>write <code>0x1421b2000</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x18) - *(int *)(param_1 + 0x10),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x10), *(longlong *)(param_1 + 0x18) - *(longlong *)(param_1 + 0x10));
+raw.w2
+sub 0x14089e520 [min 0]
+raw.w[var]
 ```
 
 </details>
 
 ## S→C messages: world group (factory `0x1421c6150`)
 
-61 ids with a message class. 179 switch labels create nothing (the default case), or a class this script could not resolve: 0x270 (no vtable (calls [FUN_142c835e0])), 0x2c1 (no vtable (calls [FUN_142c835e0])).
+61 ids with a message class. 179 switch labels create nothing (the default case), or a class this script could not resolve: 0x270 (no vtable (calls [0x142c835e0])), 0x2c1 (no vtable (calls [0x142c835e0])).
 Read = vtable slot 2 (what the client does on receive), write = slot 1.
 
 ### 0x1a8
@@ -7686,18 +7689,18 @@ Class `0x1435dd838` (case), read `0x141f92000`, write `0x141f91f60`.
 **read `0x141f92000`** — min 10 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
+raw4 → +0x10
+raw4 → +0x14
+raw2 → +0x18
 ```
 
 <details><summary>write <code>0x141f91f60</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -7711,18 +7714,18 @@ Class `0x1435dd838` (case), read `0x141f92000`, write `0x141f91f60`.
 **read `0x141f92000`** — min 10 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
+raw4 → +0x10
+raw4 → +0x14
+raw2 → +0x18
 ```
 
 <details><summary>write <code>0x141f91f60</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -7736,18 +7739,18 @@ Class `0x1435dd838` (case), read `0x141f92000`, write `0x141f91f60`.
 **read `0x141f92000`** — min 10 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
+raw4 → +0x10
+raw4 → +0x14
+raw2 → +0x18
 ```
 
 <details><summary>write <code>0x141f91f60</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -7761,17 +7764,17 @@ Class `0x1435c2340` (case), read `0x141fdda70`, write `0x141fdd990`.
 **read `0x141fdda70`** — min 20 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
-if ((char)uVar1 < '\0') {
-  raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
+sub 0x141f92000 [min 10]
+raw2 → +0x38
+if bit 0x80 set {
+  raw4 → +0x20
 }
-cint → +0x2c    // uVar3 = FUN_141fa3d60(param_2);
-cint → +0x30    // uVar3 = FUN_141fa3d60(param_2);
-cint → +0x24    // uVar3 = FUN_141fa3d60(param_2);
-cint → +0x28    // uVar3 = FUN_141fa3d60(param_2);
-raw2 → +0x34    // FUN_140dfb630(param_2,param_1 + 0x34,2);
-raw2 → +0x36    // FUN_140dfb630(param_2,param_1 + 0x36,2);
+cint → +0x2c
+cint → +0x30
+cint → +0x24
+cint → +0x28
+raw2 → +0x34
+raw2 → +0x36
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -7779,17 +7782,17 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdd990</code> (min 22)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if ((*(byte *)(param_1 + 0x38) & 0x80) != 0) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w2
+if bit 0x80 set {
+  raw.w4
 }
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x2c),param_2);
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x30),param_2);
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x24),param_2);
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x28),param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+cint.w
+cint.w
+cint.w
+cint.w
+raw.w2
+raw.w2
 ```
 
 </details>
@@ -7803,18 +7806,18 @@ Class `0x1435dd838` (case), read `0x141f92000`, write `0x141f91f60`.
 **read `0x141f92000`** — min 10 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
+raw4 → +0x10
+raw4 → +0x14
+raw2 → +0x18
 ```
 
 <details><summary>write <code>0x141f91f60</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -7828,10 +7831,10 @@ Class `0x1435c22a8` (case), read `0x141fdde20`, write `0x141fddd90`.
 **read `0x141fdde20`** — min 20 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw4
+raw4
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -7839,10 +7842,10 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddd90</code> (min 22)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -7856,9 +7859,9 @@ Class `0x1435c2220` (case), read `0x141fddf20`, write `0x141fddec0`.
 **read `0x141fddf20`** — min 13 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -7866,9 +7869,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddec0</code> (min 15)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -7882,8 +7885,8 @@ Class `0x1435ddb38` (case), read `0x141fddba0`, write `0x141fddb70`.
 **read `0x141fddba0`** — min 21 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-sub 0x1419bd6f0 [min 11]    // FUN_1419bd6f0(param_1 + 0x20,param_2);
+sub 0x141f92000 [min 10]
+sub 0x1419bd6f0 [min 11]
 ```
 
 Calls: [`0x1419bd6f0`](#f-0x1419bd6f0), [`0x141f92000`](#f-0x141f92000)
@@ -7891,8 +7894,8 @@ Calls: [`0x1419bd6f0`](#f-0x1419bd6f0), [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddb70</code> (min 23)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-sub 0x1419bdb80 [min 11]    // FUN_1419bdb80(param_1 + 0x20,param_2);
+sub 0x141f91f60 [min 12]
+sub 0x1419bdb80 [min 11]
 ```
 
 </details>
@@ -7906,9 +7909,9 @@ Class `0x1435dda58` (case), read `0x141fddc20`, write `0x141fddbd0`.
 **read `0x141fddc20`** — min 19 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-sub 0x14195dde0 [min 8]    // FUN_14195dde0((u_short *)(param_1 + 0x20),param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+sub 0x14195dde0 [min 8]
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000), [`0x14195dde0`](#f-0x14195dde0)
@@ -7916,9 +7919,9 @@ Calls: [`0x141f92000`](#f-0x141f92000), [`0x14195dde0`](#f-0x14195dde0)
 <details><summary>write <code>0x141fddbd0</code> (min 21)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-sub 0x14195dd40 [min 8]    // FUN_14195dd40((u_short *)(param_1 + 0x20),param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+sub 0x14195dd40 [min 8]
+raw.w1
 ```
 
 </details>
@@ -7932,12 +7935,12 @@ Class `0x1435dd878` (case), read `0x141fe0790`, write `0x141fe06d0`.
 **read `0x141fe0790`** — min 22 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw1 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,1);
-raw2 → +0x2a    // FUN_140dfb630(param_2,param_1 + 0x2a,2);
-raw1 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,1);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4 → +0x24
+raw1 → +0x28
+raw2 → +0x2a
+raw1 → +0x2c
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -7945,12 +7948,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe06d0</code> (min 24)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w1
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -7964,19 +7967,19 @@ Class `0x1435dd9f8` (case), read `0x141fdf080`, write `0x141fdefb0`.
 **read `0x141fdf080`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if ((cVar1 == '\0') || (cVar1 == '\x01')) {
-    raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
+sub 0x141f92000 [min 10]
+raw1 → +0x20
+if … {
+  if … {
+    raw4 → +0x24
   }
   else {
-    if (cVar1 == '\x02') {
-      raw4    // FUN_140dfb630(param_2,local_res8,4);
-      // return;
+    if … {
+      raw4
+      return
     }
   }
-  raw4    // FUN_140dfb630(param_2,local_res8,4);
+  raw4
 }
 ```
 
@@ -7985,12 +7988,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdefb0</code> (min 17)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if ((cVar1 == '\0') || (cVar1 == '\x01')) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w1
+if … {
+  raw.w4
 }
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w4
 ```
 
 </details>
@@ -8004,12 +8007,12 @@ Class `0x1435dda98` (case), read `0x141fe1350`, write `0x141fe12d0`.
 **read `0x141fe1350`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-cint    // uVar2 = FUN_14089cad0(param_2);
-if (uVar2 != 0) {
-  do ... while (uVar5 < uVar2) {
-    cint    // uVar3 = FUN_14089cad0(param_2);
-    cint    // uVar4 = FUN_141fa3d60(param_2);
+sub 0x141f92000 [min 10]
+cint
+if … {
+  loop {
+    cint
+    cint
   }
 }
 ```
@@ -8019,11 +8022,11 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe12d0</code> (min 12)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20) >> 3),param_2);
-for (puVar3 = *(undefined8 **)(param_1 + 0x20); puVar3 != puVar1; puVar3 = puVar3 + 1) {
-  sub 0x14089e520 [min 0]    // FUN_14089e520((uint)uVar2,param_2);
-  cint.w    // FUN_141fa3c50(uStackX_c,param_2);
+sub 0x141f91f60 [min 12]
+sub 0x14089e520 [min 0]
+loop {
+  sub 0x14089e520 [min 0]
+  cint.w
 }
 ```
 
@@ -8038,14 +8041,14 @@ Class `0x1435c21c0` (case), read `0x141fdeb10`, write `0x141fdea50`.
 **read `0x141fdeb10`** — min 14 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw1 → +0x22    // FUN_140dfb630(param_2,param_1 + 0x22,1);
-cint    // uVar4 = FUN_14089cad0(param_2);
-if (uVar4 != 0) {
-  do ... while (uVar7 < uVar4) {
-    cint    // uVar5 = FUN_14089cad0(param_2);
-    cint    // uVar6 = FUN_141fa3d60(param_2);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw1 → +0x22
+cint
+if … {
+  loop {
+    cint
+    cint
   }
 }
 ```
@@ -8055,13 +8058,13 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdea50</code> (min 15)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_1 + 0x30) - *(longlong *)(param_1 + 0x28) >> 3),param_2);
-for (puVar3 = *(undefined8 **)(param_1 + 0x28); puVar3 != puVar1; puVar3 = puVar3 + 1) {
-  sub 0x14089e520 [min 0]    // FUN_14089e520((uint)local_res8,param_2);
-  cint.w    // FUN_141fa3c50(local_res8._4_4_,param_2);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w1
+sub 0x14089e520 [min 0]
+loop {
+  sub 0x14089e520 [min 0]
+  cint.w
 }
 ```
 
@@ -8076,8 +8079,8 @@ Class `0x1435dd7d8` (case), read `0x141fddcb0`, write `0x141fddc70`.
 **read `0x141fddcb0`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,1);
+sub 0x141f92000 [min 10]
+raw1 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8085,8 +8088,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddc70</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
 ```
 
 </details>
@@ -8100,9 +8103,9 @@ Class `0x1435dd8b8` (case), read `0x141fddd50`, write `0x141fddcf0`.
 **read `0x141fddd50`** — min 11+ bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-wstr → +0x20    // FUN_140e0cbe0(param_2,param_1 + 0x20);
-raw1 → +0x40    // FUN_140dfb630(param_2,param_1 + 0x40,1);
+sub 0x141f92000 [min 10]
+wstr → +0x20
+raw1 → +0x40
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8110,9 +8113,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddcf0</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar1,*(ushort *)(param_1 + 0x30));
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
 ```
 
 </details>
@@ -8126,11 +8129,11 @@ Class `0x1435dd738` (case), read `0x141fe0cb0`, write `0x141fe0c10`.
 **read `0x141fe0cb0`** — min 26 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4 → +0x24
+raw4 → +0x28
+raw4
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8138,11 +8141,11 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0c10</code> (min 28)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -8156,13 +8159,13 @@ Class `0x1435dd958` (case), read `0x141fe0e40`, write `0x141fe0d60`.
 **read `0x141fe0e40`** — min 34 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw4 → +0x30    // FUN_140dfb630(param_2,param_1 + 0x30,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4 → +0x24
+raw4 → +0x30
+raw4
+raw4
+raw4
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8170,13 +8173,13 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0d60</code> (min 36)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -8190,9 +8193,9 @@ Class `0x1435dd938` (case), read `0x141fdf3d0`, write `0x141fdf370`.
 **read `0x141fdf3d0`** — min 15 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw4
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8200,9 +8203,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdf370</code> (min 17)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -8216,12 +8219,12 @@ Class `0x1435dd7b8` (case), read `0x141fe0ff0`, write `0x141fe0f30`.
 **read `0x141fe0ff0`** — min 27 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1 → +0x30    // FUN_140dfb630(param_2,param_1 + 0x30,1);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4 → +0x24
+raw4 → +0x28
+raw4
+raw1 → +0x30
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8229,12 +8232,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0f30</code> (min 29)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -8248,8 +8251,8 @@ Class `0x1435dd818` (case), read `0x141fe05e0`, write `0x141fddc70`.
 **read `0x141fe05e0`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8257,8 +8260,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddc70</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
 ```
 
 </details>
@@ -8272,10 +8275,10 @@ Class `0x1435ddab8` (case), read `0x141fe1130`, write `0x141fe10b0`.
 **read `0x141fe1130`** — min 22 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4 → +0x24
+raw4 → +0x28
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8283,10 +8286,10 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe10b0</code> (min 24)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -8300,11 +8303,11 @@ Class `0x1435dd9d8` (case), read `0x141fdfeb0`, write `0x141fdfe10`.
 **read `0x141fdfeb0`** — min 17 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1 → +0x22    // FUN_140dfb630(param_2,param_1 + 0x22,1);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
+sub 0x141f92000 [min 10]
+raw1
+raw1
+raw1 → +0x22
+raw4 → +0x24
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8312,11 +8315,11 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdfe10</code> (min 19)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w1
+raw.w1
+raw.w1
+raw.w4
 ```
 
 </details>
@@ -8330,8 +8333,8 @@ Class `0x1435dd918` (case), read `0x141fdfdd0`, write `0x141fdfd80`.
 **read `0x141fdfdd0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8339,8 +8342,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdfd80</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x141f91f60 [min 12]
+raw.w2
 ```
 
 </details>
@@ -8354,8 +8357,8 @@ Class `0x1435dd818` (case), read `0x141fe05e0`, write `0x141fddc70`.
 **read `0x141fe05e0`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8363,8 +8366,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddc70</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
 ```
 
 </details>
@@ -8378,10 +8381,10 @@ Class `0x1435dd9b8` (case), read `0x141fe1240`, write `0x141fe11c0`.
 **read `0x141fe1240`** — min 19 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8389,10 +8392,10 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe11c0</code> (min 21)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -8406,56 +8409,56 @@ Class `0x1435ddb78` (case), read `0x141fdf870`, write `0x141fdf430`.
 **read `0x141fdf870`** — min 20 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw2    // FUN_140dfb630(param_2,local_res8,2);
-raw4 → +0x64    // FUN_140dfb630(param_2,param_1 + 100,4);
-raw2 → +0x60    // FUN_140dfb630(param_2,param_1 + 0x60,2);
-raw    // FUN_140dfb630(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if ((local_res8[0] & 1) == 0) { }
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw2
+raw4 → +0x64
+raw2 → +0x60
+raw
+if … {
+  if bit 0x1 clear {
   else {
-    raw1 → +0x76    // FUN_140dfb630(param_2,param_1 + 0x76,1);
-    raw4 → +0x7c    // FUN_140dfb630(param_2,param_1 + 0x7c,4);
-    raw1 → +0x77    // FUN_140dfb630(param_2,param_1 + 0x77,1);
-    raw2 → +0x78    // FUN_140dfb630(param_2,param_1 + 0x78,2);
+    raw1 → +0x76
+    raw4 → +0x7c
+    raw1 → +0x77
+    raw2 → +0x78
   }
-  if ((uVar5 & 2) == 0) { }
+  if bit 0x2 clear {
   else {
-    raw4    // FUN_140dfb630(param_2,&local_res10,4);
+    raw4
   }
-  if ((char)bVar15 < '\0') {
-    raw4    // FUN_140dfb630(param_2,&local_res10,4);
+  if bit 0x80 set {
+    raw4
   }
-  if ((uVar5 & 4) == 0) { }
+  if bit 0x4 clear {
   else {
-    raw2 → +0x70    // FUN_140dfb630(param_2,param_1 + 0x70,2);
+    raw2 → +0x70
   }
-  if ((uVar5 & 8) == 0) { }
+  if bit 0x8 clear {
   else {
-    raw2 → +0x74    // FUN_140dfb630(param_2,param_1 + 0x74,2);
-    raw2 → +0x72    // FUN_140dfb630(param_2,param_1 + 0x72,2);
+    raw2 → +0x74
+    raw2 → +0x72
   }
-  if ((uVar5 & 0x10) == 0) { }
+  if bit 0x10 clear {
   else {
-    raw    // FUN_140dfb630(param_2);
+    raw
   }
-  if ((bVar15 & 0x20) == 0) { }
+  if bit 0x20 clear {
   else {
-    raw1 → +0x80    // FUN_140dfb630(param_2,param_1 + 0x80,1);
+    raw1 → +0x80
   }
-  if (*(char *)(*(longlong *)(param_1 + 0x28) + 0xff) != '\0') {
-    raw2 → +0x82    // FUN_140dfb630(param_2,param_1 + 0x82,2);
+  if … {
+    raw2 → +0x82
   }
-  if ((*(char *)(*(longlong *)(param_1 + 0x28) + 0x7c) != '\0') && (puVar8 = *(u_long **)(param_1 + 0x48), puVar8 != *(u_long **)(param_1 +... {
-    do ... while (puVar8 != *(u_long **)(param_1 + 0x50)) {
-      raw4    // FUN_140dfb630(param_2,puVar8,4);
+  if … {
+    loop {
+      raw4
     }
   }
-  raw4    // FUN_140dfb630(param_2,local_res8,4);
-  if (puVar8 != *(u_long **)(param_1 + 0x90)) {
-    do ... while (puVar8 != *(u_long **)(param_1 + 0x90)) {
-      raw4    // FUN_140dfb630(param_2,puVar8,4);
+  raw4
+  if … {
+    loop {
+      raw4
     }
   }
 }
@@ -8466,49 +8469,49 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdf430</code> (min 27)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x76) != '\0') {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w2
+raw.w4
+raw.w2
+raw.w1
+if … {
+  raw.w1
+  raw.w4
+  raw.w1
+  raw.w2
 }
-if (*(float *)(param_1 + 0x68) != (float)uVar2) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+if … {
+  raw.w4
 }
-if (*(float *)(param_1 + 0x6c) != 1.0) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+if … {
+  raw.w4
 }
-if (*(u_short *)(param_1 + 0x70) != 1) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+if … {
+  raw.w2
 }
-if ((*(short *)(param_1 + 0x72) != 0) || (*(short *)(param_1 + 0x74) != 0)) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+if … {
+  raw.w2
+  raw.w2
 }
-if (*(longlong *)(*(longlong *)(param_1 + 0x28) + 0x55) != *(longlong *)(param_1 + 0x38)) {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+if … {
+  raw.w2
 }
-if (*(char *)(param_1 + 0x80) != '\x02') {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+if … {
+  raw.w1
 }
-if (*(char *)(*(longlong *)(param_1 + 0x28) + 0xff) != '\0') {
-  raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+if … {
+  raw.w2
 }
-if ((*(char *)(*(longlong *)(param_1 + 0x28) + 0x7c) != '\0') && (puVar8 = *(u_long **)(param_1 + 0x48), puVar8 != *(u_long **)(param_1 +... {
-  do ... while (puVar8 != *(u_long **)(param_1 + 0x50)) {
-    raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+if … {
+  loop {
+    raw.w4
   }
 }
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-if (puVar8 != *(u_long **)(param_1 + 0x90)) {
-  do ... while (puVar8 != *(u_long **)(param_1 + 0x90)) {
-    raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w4
+if … {
+  loop {
+    raw.w4
   }
 }
 ```
@@ -8524,8 +8527,8 @@ Class `0x1435dd918` (case), read `0x141fdfdd0`, write `0x141fdfd80`.
 **read `0x141fdfdd0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8533,8 +8536,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdfd80</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x141f91f60 [min 12]
+raw.w2
 ```
 
 </details>
@@ -8548,13 +8551,13 @@ Class `0x1435dd998` (case), read `0x141fe0b10`, write `0x141fe0a30`.
 **read `0x141fe0b10`** — min 28 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw4 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,4);
-raw4 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4 → +0x24
+raw4 → +0x28
+raw4 → +0x2c
+raw1
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8562,13 +8565,13 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0a30</code> (min 30)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -8582,8 +8585,8 @@ Class `0x1435dd818` (case), read `0x141fe05e0`, write `0x141fddc70`.
 **read `0x141fe05e0`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8591,8 +8594,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddc70</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
 ```
 
 </details>
@@ -8610,11 +8613,11 @@ Class `0x1435dda78` (case), read `0x141fe14b0`, write `0x141fe1400`.
 **read `0x141fe14b0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1 in: if (((local_res8[0] != 0) && (FUN_140dfb630(param_2,local_res8,1), *(char *)(param_2 + 0x252) == '\0')) && (iVar1 = 0, local_res... {
-  do ... while (iVar1 < (int)(uint)local_res8[0]) {
-    raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw1
+raw1 (when …)
+  loop {
+    raw1
   }
 }
 ```
@@ -8624,12 +8627,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe1400</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x20) != '\0') {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  for (pcVar2 = *(char **)(param_1 + 0x28); pcVar2 != pcVar1; pcVar2 = pcVar2 + 1) {
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
+if … {
+  raw.w1
+  loop {
+    raw.w1
   }
 }
 ```
@@ -8645,12 +8648,12 @@ Class `0x1435dd898` (case), read `0x1421c55b0`, write `0x1421c54f0`.
 **read `0x1421c55b0`** — min 20 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw2 → +0x22    // FUN_140dfb630(param_2,param_1 + 0x22,2);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw2 → +0x22
+raw4 → +0x24
+raw1
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8658,12 +8661,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x1421c54f0</code> (min 22)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w2
+raw.w4
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -8677,10 +8680,10 @@ Class `0x1435dd858` (case), read `0x1421c57a0`, write `0x1421c5730`.
 **read `0x1421c57a0`** — min 15 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-sub 0x141fa3bb0(reader arg 0) [min 2]    // FUN_141fa3bb0(param_2,(longlong *)(param_1 + 0x20));
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+sub 0x141fa3bb0(reader arg 0) [min 2]
+raw2 → +0x38
+raw1
 ```
 
 Calls: [`0x141fa3bb0@0`](#f-0x141fa3bb0-0), [`0x141f92000`](#f-0x141f92000)
@@ -8688,10 +8691,10 @@ Calls: [`0x141fa3bb0@0`](#f-0x141fa3bb0-0), [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x1421c5730</code> (min 15)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-sub 0x141fa3a70(reader arg 0) [min 0]    // FUN_141fa3a70(param_2,(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+sub 0x141fa3a70(reader arg 0) [min 0]
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -8705,12 +8708,12 @@ Class `0x1435dd758` (case), read `0x141fe0960`, write `0x141fe08c0`.
 **read `0x141fe0960`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res10,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (local_res10[0] != 0) {
-  do ... while (bVar2 < local_res10[0]) {
-    raw4    // FUN_140dfb630(param_2,local_res8,4);
+sub 0x141f92000 [min 10]
+raw1
+raw1
+if … {
+  loop {
+    raw4
   }
 }
 ```
@@ -8720,12 +8723,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe08c0</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (puVar1 != *(u_long **)(param_1 + 0x28)) {
-  do ... while (puVar1 != *(u_long **)(param_1 + 0x28)) {
-    raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w1
+raw.w1
+if … {
+  loop {
+    raw.w4
   }
 }
 ```
@@ -8741,24 +8744,24 @@ Class `0x1435c2360` (case), read `0x141fde150`, write `0x141fde050`.
 **read `0x141fde150`** — min 18 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw2 → +0x22    // FUN_140dfb630(param_2,param_1 + 0x22,2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
-if ((uVar2 & 0x20) == 0) { }
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw2 → +0x22
+raw2 → +0x38
+if bit 0x20 clear {
 else {
-  raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
+  raw4 → +0x24
 }
-if ((uVar2 >> 0xd & 1) != 0) {
-  cint → +0x30    // uVar4 = FUN_141fa3d60(param_2);
-  cint → +0x34    // uVar4 = FUN_141fa3d60(param_2);
+if bit 0x1 set {
+  cint → +0x30
+  cint → +0x34
 }
-if ((*(byte *)(param_1 + 0x38) & 0x10) == 0) { }
+if bit 0x10 clear {
 else {
-  sub 0x1419e54d0(reader arg 0) [min 1]    // FUN_1419e54d0(param_2,param_1 + 0x40);
+  sub 0x1419e54d0(reader arg 0) [min 1]
 }
-cint → +0x28    // uVar4 = FUN_141fa3d60(param_2);
-cint → +0x2c    // uVar4 = FUN_141fa3d60(param_2);
+cint → +0x28
+cint → +0x2c
 ```
 
 Calls: [`0x1419e54d0@0`](#f-0x1419e54d0-0), [`0x141f92000`](#f-0x141f92000)
@@ -8766,22 +8769,22 @@ Calls: [`0x1419e54d0@0`](#f-0x1419e54d0-0), [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fde050</code> (min 20)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if ((*(byte *)(param_1 + 0x38) & 0x20) != 0) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w2
+raw.w2
+if bit 0x20 set {
+  raw.w4
 }
-if ((*(ushort *)(param_1 + 0x38) & 0x2000) != 0) {
-  cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x30),param_2);
-  cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x34),param_2);
+if bit 0x2000 set {
+  cint.w
+  cint.w
 }
-if ((*(byte *)(param_1 + 0x38) & 0x10) != 0) {
-  sub 0x1419e5300(reader arg 0) [min 1]    // FUN_1419e5300(param_2,param_1 + 0x40);
+if bit 0x10 set {
+  sub 0x1419e5300(reader arg 0) [min 1]
 }
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x28),param_2);
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x2c),param_2);
+cint.w
+cint.w
 ```
 
 </details>
@@ -8795,30 +8798,30 @@ Class `0x1435c20e8` (case), read `0x141fde530`, write `0x141fde370`.
 **read `0x141fde530`** — min 40 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x2a    // FUN_140dfb630(param_2,param_1 + 0x2a,2);
-raw2 → +0x2c    // FUN_140dfb630(param_2,param_1 + 0x2c,2);
-raw2 → +0x50    // FUN_140dfb630(param_2,param_1 + 0x50,2);
-if ((uVar1 & 0x20) == 0) { }
+sub 0x141f92000 [min 10]
+raw2 → +0x2a
+raw2 → +0x2c
+raw2 → +0x50
+if bit 0x20 clear {
 else {
-  raw4 → +0x30    // FUN_140dfb630(param_2,param_1 + 0x30,4);
+  raw4 → +0x30
 }
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw2 → +0x28    // FUN_140dfb630(param_2,param_1 + 0x28,2);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-if ((*(ushort *)(param_1 + 0x50) & 0x2000) != 0) {
-  cint → +0x3c    // uVar3 = FUN_141fa3d60(param_2);
-  cint → +0x40    // uVar3 = FUN_141fa3d60(param_2);
+raw4 → +0x20
+raw4
+raw2 → +0x28
+raw4
+raw4
+raw4
+if bit 0x2000 set {
+  cint → +0x3c
+  cint → +0x40
 }
-if ((*(byte *)(param_1 + 0x50) & 0x10) == 0) { }
+if bit 0x10 clear {
 else {
-  sub 0x1419e54d0(reader arg 0) [min 1]    // FUN_1419e54d0(param_2,param_1 + 0x58);
+  sub 0x1419e54d0(reader arg 0) [min 1]
 }
-cint → +0x34    // uVar3 = FUN_141fa3d60(param_2);
-cint → +0x38    // uVar3 = FUN_141fa3d60(param_2);
+cint → +0x34
+cint → +0x38
 ```
 
 Calls: [`0x1419e54d0@0`](#f-0x1419e54d0-0), [`0x141f92000`](#f-0x141f92000)
@@ -8826,28 +8829,28 @@ Calls: [`0x1419e54d0@0`](#f-0x1419e54d0-0), [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fde370</code> (min 42)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-if ((*(byte *)(param_1 + 0x50) & 0x20) != 0) {
-  raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w2
+raw.w2
+if bit 0x20 set {
+  raw.w4
 }
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-if ((*(ushort *)(param_1 + 0x50) & 0x2000) != 0) {
-  cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x3c),param_2);
-  cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x40),param_2);
+raw.w4
+raw.w4
+raw.w2
+raw.w4
+raw.w4
+raw.w4
+if bit 0x2000 set {
+  cint.w
+  cint.w
 }
-if ((*(byte *)(param_1 + 0x50) & 0x10) != 0) {
-  sub 0x1419e5300(reader arg 0) [min 1]    // FUN_1419e5300(param_2,param_1 + 0x58);
+if bit 0x10 set {
+  sub 0x1419e5300(reader arg 0) [min 1]
 }
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x34),param_2);
-cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1 + 0x38),param_2);
+cint.w
+cint.w
 ```
 
 </details>
@@ -8861,12 +8864,12 @@ Class `0x1435c20c8` (case), read `0x141fde8a0`, write `0x141fde7f0`.
 **read `0x141fde8a0`** — min 19 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw2 → +0x22    // FUN_140dfb630(param_2,param_1 + 0x22,2);
-raw2 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,2);
-raw1 → +0x26    // FUN_140dfb630(param_2,param_1 + 0x26,1);
-blob16 → +0x28    // FUN_141fa4610(param_2,param_1 + 0x28);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw2 → +0x22
+raw2 → +0x24
+raw1 → +0x26
+blob16 → +0x28
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8874,12 +8877,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fde7f0</code> (min 21)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x28);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w2
+raw.w2
+raw.w1
+blob16.w
 ```
 
 </details>
@@ -8893,10 +8896,10 @@ Class `0x1435c2200` (case), read `0x141fde9d0`, write `0x141fde950`.
 **read `0x141fde9d0`** — min 16 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1    // FUN_140dfb630(param_2,local_res10,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw4
+raw1
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8904,10 +8907,10 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fde950</code> (min 18)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -8921,10 +8924,10 @@ Class `0x1435c2200` (case), read `0x141fde9d0`, write `0x141fde950`.
 **read `0x141fde9d0`** — min 16 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1    // FUN_140dfb630(param_2,local_res10,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw4
+raw1
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -8932,10 +8935,10 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fde950</code> (min 18)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -8949,14 +8952,14 @@ Class `0x1435ddb98` (case), read `0x1421c4350`, write `0x1421c42e0`.
 **read `0x1421c4350`** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+raw1
 ```
 
 <details><summary>write <code>0x1421c42e0</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -8970,18 +8973,18 @@ Class `0x1435dd838` (case), read `0x141f92000`, write `0x141f91f60`.
 **read `0x141f92000`** — min 10 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
+raw4 → +0x10
+raw4 → +0x14
+raw2 → +0x18
 ```
 
 <details><summary>write <code>0x141f91f60</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -8995,9 +8998,9 @@ Class `0x1435dda18` (case), read `0x141fdedc0`, write `0x141fded60`.
 **read `0x141fdedc0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw1
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9005,9 +9008,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fded60</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
+raw.w1
 ```
 
 </details>
@@ -9021,8 +9024,8 @@ Class `0x1435dd7d8` (case), read `0x141fddcb0`, write `0x141fddc70`.
 **read `0x141fddcb0`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,1);
+sub 0x141f92000 [min 10]
+raw1 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9030,8 +9033,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddc70</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
 ```
 
 </details>
@@ -9045,9 +9048,9 @@ Class `0x1435dd8d8` (case), read `0x1421c5f70`, write `0x1421c5f10`.
 **read `0x1421c5f70`** — min 18 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+raw4 → +0x24
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9055,9 +9058,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x1421c5f10</code> (min 20)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
 ```
 
 </details>
@@ -9071,10 +9074,10 @@ Class `0x1435ddb58` (case), read `0x141fdeea0`, write `0x141fdee20`.
 **read `0x141fdeea0`** — min 19 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x24    // FUN_140dfb630(param_2,param_1 + 0x24,4);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw4 → +0x24
+raw4 → +0x20
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9082,10 +9085,10 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdee20</code> (min 21)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -9099,8 +9102,8 @@ Class `0x1435ddb18` (case), read `0x141fe0880`, write `0x141fe0840`.
 **read `0x141fe0880`** — min 14 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9108,8 +9111,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0840</code> (min 16)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w4
 ```
 
 </details>
@@ -9123,8 +9126,8 @@ Class `0x1435ddaf8` (case), read `0x141fdf200`, write `0x141fdf180`.
 **read `0x141fdf200`** — min 10 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw    // FUN_140dfb630(param_2);
+sub 0x141f92000 [min 10]
+raw
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9132,8 +9135,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdf180</code> (min 16)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+sub 0x141f91f60 [min 12]
+raw.w4
 ```
 
 </details>
@@ -9147,9 +9150,9 @@ Class `0x1435dd938` (case), read `0x141fdf3d0`, write `0x141fdf370`.
 **read `0x141fdf3d0`** — min 15 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4    // FUN_140dfb630(param_2,local_res8,4);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw4
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9157,9 +9160,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdf370</code> (min 17)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w4
+raw.w1
 ```
 
 </details>
@@ -9173,24 +9176,24 @@ Class `0x1435dd778` (case), read `0x141fe01d0`, write `0x141fdff40`.
 **read `0x141fe01d0`** — min 13 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (uVar12 != 0) {
-  do ... while (local_48[0] < uVar12) {
-    if ((local_res8[local_48[0] >> 3] & (byte)(1L << ((byte)local_48[0] & 7))) != 0) {
-      raw1    // FUN_140dfb630(param_2,local_res18,1);
-      if ((byte)local_res18[0] != '\0') {
-        raw1    // FUN_140dfb630(param_2,local_res18,1);
-        if ((byte)local_res18[0] == 1) {
-          if (cVar3 != '\0') {
-            do ... while (uVar8 < (uVar4 & 0xff)) {
-              raw4    // FUN_140dfb630(param_2,local_res18,4);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+raw1
+if … {
+  loop {
+    if … {
+      raw1
+      if … {
+        raw1
+        if … {
+          if … {
+            loop {
+              raw4
             }
           }
         }
-        else if (((byte)local_res18[0] < 0xd) && ((code *)(&PTR__guard_check_icall_1435c2240)[(byte)local_res18[0]] != _guard_check_icall)) {
-          vcall [?](reader arg 0)    // (*(code *)(&PTR__guard_check_icall_1435c2240)[(byte)local_res18[0]]) (param_2,lVar7 + lVar6,cVar3);
+        else if … {
+          vcall [?](reader arg 0)
         }
       }
     }
@@ -9203,14 +9206,14 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdff40</code> (min 15)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-for (; puVar11 != puVar10; puVar11 = puVar11 + 2) {
-  if (((local_res18[0] <= (ulonglong)((lVar12 - lVar3) / 0x28)) && (local_res18[0] < 0x100)) && ((lVar3 == lVar12 || ((&DAT_142fbfba3)[(lon... {
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    if (local_res18[0] != 0) {
-      raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w1
+loop {
+  if … {
+    raw.w1
+    if … {
+      raw.w1
     }
   }
 }
@@ -9229,7 +9232,7 @@ Class `0x14316c930` (case), read `0x1400f0f00`, write `0x140912f40`.
 <details><summary>write <code>0x140912f40</code> (min 2)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
 ```
 
 </details>
@@ -9241,8 +9244,8 @@ Class `0x14345ef10` (case), read `0x140e290e0`, write `0x140e29080`.
 <details><summary>write <code>0x140e29080</code> (min 3)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+raw.w2
+raw.w1
 ```
 
 </details>
@@ -9256,9 +9259,9 @@ Class `0x1435dd8f8` (case), read `0x141fe0520`, write `0x141fe04d0`.
 **read `0x141fe0520`** — min 16 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw4 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,4);
-blob16 → +0x28    // FUN_141fa4610(param_2,param_1 + 0x28);
+sub 0x141f92000 [min 10]
+raw4 → +0x20
+blob16 → +0x28
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9266,9 +9269,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe04d0</code> (min 18)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x28);
+sub 0x141f91f60 [min 12]
+raw.w4
+blob16.w
 ```
 
 </details>
@@ -9282,8 +9285,8 @@ Class `0x1435dd7f8` (case), read `0x141fe05b0`, write `0x141fe0580`.
 **read `0x141fe05b0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-blob16 → +0x20    // FUN_141fa4610(param_2,param_1 + 0x20);
+sub 0x141f92000 [min 10]
+blob16 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9291,8 +9294,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0580</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x20);
+sub 0x141f91f60 [min 12]
+blob16.w
 ```
 
 </details>
@@ -9306,18 +9309,18 @@ Class `0x1435dd838` (case), read `0x141f92000`, write `0x141f91f60`.
 **read `0x141f92000`** — min 10 bytes
 
 ```text
-raw4 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,4);
-raw4 → +0x14    // FUN_140dfb630(param_2,param_1 + 0x14,4);
-raw2 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,2);
+raw4 → +0x10
+raw4 → +0x14
+raw2 → +0x18
 ```
 
 <details><summary>write <code>0x141f91f60</code> (min 12)</summary>
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w4
+raw.w2
 ```
 
 </details>
@@ -9331,8 +9334,8 @@ Class `0x1435dd818` (case), read `0x141fe05e0`, write `0x141fddc70`.
 **read `0x141fe05e0`** — min 11 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
+sub 0x141f92000 [min 10]
+raw1
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9340,8 +9343,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fddc70</code> (min 13)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+sub 0x141f91f60 [min 12]
+raw.w1
 ```
 
 </details>
@@ -9355,8 +9358,8 @@ Class `0x1435dd7f8` (case), read `0x141fe05b0`, write `0x141fe0580`.
 **read `0x141fe05b0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-blob16 → +0x20    // FUN_141fa4610(param_2,param_1 + 0x20);
+sub 0x141f92000 [min 10]
+blob16 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9364,8 +9367,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0580</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x20);
+sub 0x141f91f60 [min 12]
+blob16.w
 ```
 
 </details>
@@ -9379,8 +9382,8 @@ Class `0x1435dd7f8` (case), read `0x141fe05b0`, write `0x141fe0580`.
 **read `0x141fe05b0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-blob16 → +0x20    // FUN_141fa4610(param_2,param_1 + 0x20);
+sub 0x141f92000 [min 10]
+blob16 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9388,8 +9391,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0580</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x20);
+sub 0x141f91f60 [min 12]
+blob16.w
 ```
 
 </details>
@@ -9403,8 +9406,8 @@ Class `0x1435dd7f8` (case), read `0x141fe05b0`, write `0x141fe0580`.
 **read `0x141fe05b0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-blob16 → +0x20    // FUN_141fa4610(param_2,param_1 + 0x20);
+sub 0x141f92000 [min 10]
+blob16 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9412,8 +9415,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0580</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x20);
+sub 0x141f91f60 [min 12]
+blob16.w
 ```
 
 </details>
@@ -9427,9 +9430,9 @@ Class `0x1435ddad8` (case), read `0x141fe0670`, write `0x141fe0620`.
 **read `0x141fe0670`** — min 14 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
-blob16 → +0x28    // FUN_141fa4610(param_2,param_1 + 0x28);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
+blob16 → +0x28
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9437,9 +9440,9 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fe0620</code> (min 16)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x28);
+sub 0x141f91f60 [min 12]
+raw.w2
+blob16.w
 ```
 
 </details>
@@ -9453,8 +9456,8 @@ Class `0x1435dd918` (case), read `0x141fdfdd0`, write `0x141fdfd80`.
 **read `0x141fdfdd0`** — min 12 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x20    // FUN_140dfb630(param_2,param_1 + 0x20,2);
+sub 0x141f92000 [min 10]
+raw2 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9462,8 +9465,8 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdfd80</code> (min 14)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x141f91f60 [min 12]
+raw.w2
 ```
 
 </details>
@@ -9477,12 +9480,12 @@ Class `0x1435c21a0` (case), read `0x141fdecb0`, write `0x141fdec00`.
 **read `0x141fdecb0`** — min 19 bytes
 
 ```text
-sub 0x141f92000 [min 10]    // FUN_141f92000(param_1,param_2);
-raw2 → +0x38    // FUN_140dfb630(param_2,param_1 + 0x38,2);
-raw2 → +0x3a    // FUN_140dfb630(param_2,param_1 + 0x3a,2);
-raw2 → +0x3c    // FUN_140dfb630(param_2,param_1 + 0x3c,2);
-raw1 → +0x3e    // FUN_140dfb630(param_2,param_1 + 0x3e,1);
-blob16 → +0x20    // FUN_141fa4610(param_2,param_1 + 0x20);
+sub 0x141f92000 [min 10]
+raw2 → +0x38
+raw2 → +0x3a
+raw2 → +0x3c
+raw1 → +0x3e
+blob16 → +0x20
 ```
 
 Calls: [`0x141f92000`](#f-0x141f92000)
@@ -9490,12 +9493,12 @@ Calls: [`0x141f92000`](#f-0x141f92000)
 <details><summary>write <code>0x141fdec00</code> (min 21)</summary>
 
 ```text
-sub 0x141f91f60 [min 12]    // FUN_141f91f60(param_1,param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x20);
+sub 0x141f91f60 [min 12]
+raw.w2
+raw.w2
+raw.w2
+raw.w1
+blob16.w
 ```
 
 </details>
@@ -9507,17 +9510,17 @@ blob16.w    // FUN_141fa44f0(param_2,param_1 + 0x20);
 **`0x141e5adb0`** — min 12 bytes
 
 ```text
-u32    // param_2[2] = uVar1;
-u32    // param_2[2] = uVar2;
-u32 → +0x1b4    // param_2[2] = lVar11 + 0xcU;
-if (uVar4 == 0) { }
+u32
+u32
+u32 → +0x1b4
+if … {
 else {
-  sub 0x140e28e20(reader arg 0) [min 4+]    // plVar10 = FUN_140e28e20(param_2,(longlong *)&local_88);
-  u8    // plVar10[2] = lVar11 + 1U;
-  raw1    // FUN_140e28cf0(plVar10,local_res10,1);
-  u32    // plVar10[2] = uVar1;
-  u32    // plVar10[2] = uVar2;
-  u32    // plVar10[2] = lVar11 + 0xcU;
+  sub 0x140e28e20(reader arg 0) [min 4+]
+  u8
+  raw1
+  u32
+  u32
+  u32
 }
 ```
 
@@ -9528,10 +9531,10 @@ Calls: [`0x140e28e20@0`](#f-0x140e28e20-0)
 **`0x141e62490` (reader = arg 0)** — min 1 bytes
 
 ```text
-u8    // param_1[2] = lVar2 + 1U;
-if (bVar1 < 3) {
-  vcall [?](reader arg 1)    // puVar3 = (undefined8 *)(*(code *)(&PTR_FUN_1435a5598)[bVar1])(local_res8,param_1);
-  // return param_1;
+u8
+if … {
+  vcall [?](reader arg 1)
+  return
 }
 ```
 
@@ -9540,26 +9543,26 @@ if (bVar1 < 3) {
 **`0x1424d3070` (reader = arg 0)** — min 21 bytes
 
 ```text
-u16    // param_1[2] = lVar7 + 2U;
-u32    // param_1[2] = lVar12;
-u8    // param_1[2] = lVar12;
-u32    // param_1[2] = lVar12;
-u32    // param_1[2] = lVar12;
-u32    // param_1[2] = lVar12;
-u8    // param_1[2] = uVar18;
-u8    // param_1[2] = lVar7 + 6U;
-while( true ) {
-  if (plVar9 == plVar5) {
-    while( true ) {
-      // if (uVar18 < lVar7 + 2U) break;
-      u16    // param_1[2] = lVar7 + 2U;
+u16
+u32
+u8
+u32
+u32
+u32
+u8
+u8
+loop {
+  if … {
+    loop {
+      break
+      u16
     }
   }
-  u16    // param_1[2] = uVar18;
-  // if (uVar4 < lVar7 + 4U) break;
-  u16    // param_1[2] = lVar7 + 4U;
-  raw1    // FUN_140e28cf0(param_1,plVar9 + 4,1);
-  u16    // param_1[2] = param_1[2] + 2;
+  u16
+  break
+  u16
+  raw1
+  u16
 }
 ```
 
@@ -9568,14 +9571,14 @@ while( true ) {
 **`0x1424f44e0` (reader = arg 0)** — min 1 bytes
 
 ```text
-u8    // param_1[2] = uVar3;
-if (bVar1 == 0) { }
+u8
+if … {
 else {
-  sub 0x1424f3fc0(reader arg 0) [min 7]    // FUN_1424f3fc0(param_1,(undefined8 *)(param_2 + 6),uVar3,0);
-  sub 0x1424f4250(reader arg 0) [min 7]    // FUN_1424f4250(param_1,(undefined8 *)(param_2 + 0x10),uVar3,uVar4);
-  sub 0x1424f4b10(reader arg 0) [min 1]    // FUN_1424f4b10(param_1,(longlong *)(param_2 + 2),&local_res8);
-  sub 0x1424f4730(reader arg 0) [min 2]    // FUN_1424f4730(param_1,(undefined8 *)(param_2 + 0x1a),&local_res8);
-  raw1    // FUN_140e28cf0(param_1,param_2 + 0x1e,1);
+  sub 0x1424f3fc0(reader arg 0) [min 7]
+  sub 0x1424f4250(reader arg 0) [min 7]
+  sub 0x1424f4b10(reader arg 0) [min 1]
+  sub 0x1424f4730(reader arg 0) [min 2]
+  raw1
 }
 ```
 
@@ -9586,11 +9589,11 @@ Calls: [`0x1424f3fc0@0`](#f-0x1424f3fc0-0), [`0x1424f4b10@0`](#f-0x1424f4b10-0),
 **`0x141e6be70`** — min 18 bytes
 
 ```text
-u32    // param_2[2] = lVar4;
-u32    // param_2[2] = lVar4;
-u16 → +0x14    // param_2[2] = uVar1;
-u32    // param_2[2] = lVar4;
-u32    // param_2[2] = param_2[2] + 4;
+u32
+u32
+u16 → +0x14
+u32
+u32
 ```
 
 <a id="f-0x141e6c270"></a>
@@ -9598,7 +9601,7 @@ u32    // param_2[2] = param_2[2] + 4;
 **`0x141e6c270`** — min 1 bytes
 
 ```text
-u8 (flags)    // param_2[2] = lVar2 + 1U;
+u8 (flags)
 ```
 
 <a id="f-0x141e06bb0-0"></a>
@@ -9606,30 +9609,30 @@ u8 (flags)    // param_2[2] = lVar2 + 1U;
 **`0x141e06bb0` (reader = arg 0)** — min 33 bytes
 
 ```text
-u16    // param_1[2] = uVar18;
-u16    // param_1[2] = uVar1;
-u32    // param_1[2] = lVar13;
-u32    // param_1[2] = lVar13;
-u16    // param_1[2] = lVar13;
-u32    // param_1[2] = lVar13;
-u16    // param_1[2] = lVar13;
-u16    // param_1[2] = lVar13;
-u16    // param_1[2] = lVar13;
-u32    // param_1[2] = lVar13;
-u8    // param_1[2] = param_1[2] + 1;
-if (*(char *)(*param_2 + 0xff) != '\0') {
-  u16    // param_1[2] = param_1[2] + 2;
+u16
+u16
+u32
+u32
+u16
+u32
+u16
+u16
+u16
+u32
+u8
+if … {
+  u16
 }
-if ((*(char *)(*param_2 + 0x7c) != '\0') && (puVar12 = (undefined4 *)param_2[2], puVar12 != (undefined4 *)param_2[3])) {
-  do ... while (puVar12 != (undefined4 *)param_2[3]) {
-    u32    // param_1[2] = param_1[2] + 4;
+if … {
+  loop {
+    u32
   }
 }
-u32    // param_1[2] = lVar15 + 4U;
-if (iVar7 != 0) {
-  if (0 < iVar7) {
-    do ... while ((int)uVar16 < iVar7) {
-      u32    // param_1[2] = param_1[2] + 4;
+u32
+if … {
+  if … {
+    loop {
+      u32
     }
   }
 }
@@ -9640,61 +9643,61 @@ if (iVar7 != 0) {
 **`0x142201d70`** — min 3 bytes
 
 ```text
-u16 (flags)    // param_2[2] = (ulonglong ***)pppppppuVar18;
-u8    // param_2[2] = (ulonglong ***)((longlong)param_2[2] + 1);
-if ((uVar4 >> 9 & 1) != 0) {
-  u8    // param_2[2] = pppuVar6;
-  u8 → +0x1d0    // param_2[2] = (ulonglong ***)((longlong)pppuVar7 + 2U);
+u16 (flags)
+u8
+if bit 0x1 set {
+  u8
+  u8 → +0x1d0
 }
-if ((uVar4 & 0x10) == 0) { }
+if bit 0x10 clear {
 else {
-  u8    // param_2[2] = (ulonglong ***)pppppppuVar19;
-  for (plVar17 = param_1[0x11]; plVar17 != plVar11; plVar17 = plVar17 + 7) {
-    sub 0x142430380 [min 2]    // FUN_142430380(plVar17,(longlong *)param_2,pppppppuVar19,(ulonglong)param_4);
+  u8
+  loop {
+    sub 0x142430380 [min 2]
   }
 }
-if ((uVar4 & 0x40) == 0) { }
+if bit 0x40 clear {
 else {
-  u8    // param_2[2] = (ulonglong ***)pppppppuVar19;
-  for (plVar17 = param_1[0x17]; plVar17 != plVar11; plVar17 = plVar17 + 7) {
-    sub 0x142430380 [min 2]    // FUN_142430380(plVar17,(longlong *)param_2,pppppppuVar19,(ulonglong)param_4);
+  u8
+  loop {
+    sub 0x142430380 [min 2]
   }
 }
-if ((uVar4 >> 10 & 1) == 0) { }
+if bit 0x1 clear {
 else {
-  u8    // param_2[2] = (ulonglong ***)pppppppuVar19;
-  for (plVar17 = param_1[0x1a]; plVar17 != plVar11; plVar17 = plVar17 + 7) {
-    sub 0x142430380 [min 2]    // FUN_142430380(plVar17,(longlong *)param_2,pppppppuVar19,(ulonglong)param_4);
+  u8
+  loop {
+    sub 0x142430380 [min 2]
   }
 }
-if ((uVar4 >> 0xb & 1) == 0) { }
+if bit 0x1 clear {
 else {
-  u8    // param_2[2] = (ulonglong ***)pppppppuVar19;
-  for (plVar17 = param_1[0x1d]; plVar17 != plVar11; plVar17 = plVar17 + 7) {
-    sub 0x142430380 [min 2]    // FUN_142430380(plVar17,(longlong *)param_2,pppppppuVar19,(ulonglong)param_4);
+  u8
+  loop {
+    sub 0x142430380 [min 2]
   }
 }
-if (*(char *)(param_1 + 0xf) != '\0') {
-  if ((char)(byte)uVar4 < '\0') {
-    u32    // param_2[2] = pppuVar6;
-    if (uVar13 != 0) {
-      bytes[var]    // param_2[2] = (ulonglong ***)((longlong)param_2[2] + (longlong)pppppppuVar18);
+if … {
+  if … {
+    u32
+    if … {
+      bytes[var]
     }
   }
   else {
-    if ((uVar4 >> 8 & 1) == 0) { }
+    if bit 0x1 clear {
     else {
-      u8    // param_2[2] = (ulonglong ***)pppppppuVar19;
-      for (; puVar10 != puVar12; puVar10 = puVar10 + 2) {
-        u32    // param_2[2] = (ulonglong ***)((longlong)pppuVar6 + 4U);
+      u8
+      loop {
+        u32
       }
     }
   }
-  if ((uVar4 & 0x20) == 0) { }
+  if bit 0x20 clear {
   else {
-    u8    // param_2[2] = (ulonglong ***)pppppppuVar19;
-    for (plVar17 = param_1[0x14]; plVar17 != plVar11; plVar17 = plVar17 + 7) {
-      sub 0x142430380 [min 2]    // FUN_142430380(plVar17,(longlong *)param_2,pppppppuVar19,(ulonglong)param_4);
+    u8
+    loop {
+      sub 0x142430380 [min 2]
     }
   }
 }
@@ -9707,9 +9710,9 @@ Calls: [`0x142430380`](#f-0x142430380)
 **`0x140e28d60` (reader = arg 0)** — min 4 bytes
 
 ```text
-u32    // param_1[2] = uVar1;
-if (uVar6 != 0) {
-  bytes[var]    // param_1[2] = param_1[2] + uVar7;
+u32
+if … {
+  bytes[var]
 }
 ```
 
@@ -9718,10 +9721,10 @@ if (uVar6 != 0) {
 **`0x141e83340` (reader = arg 0)** — min 2 bytes
 
 ```text
-u16    // param_1[2] = lVar5 + 2U;
-for (lVar2 = *param_2; lVar2 != lVar5; lVar2 = lVar2 + 9) {
-  raw1    // FUN_140e28cf0(param_1,lVar2,1);
-  raw8    // FUN_140e28cf0(param_1,lVar2 + 1,8);
+u16
+loop {
+  raw1
+  raw8
 }
 ```
 
@@ -9730,11 +9733,11 @@ for (lVar2 = *param_2; lVar2 != lVar5; lVar2 = lVar2 + 9) {
 **`0x141e83470` (reader = arg 0)** — min 1 bytes
 
 ```text
-u8    // param_1[2] = lVar3 + 1U;
-while( true ) {
-  sub 0x141e840c0(reader arg 0) [min 4]    // FUN_141e840c0(param_1,puVar6,&local_res8);
-  // if ((ulonglong)param_1[1] < lVar3 + 4U) break;
-  u32    // param_1[2] = param_1[2] + 4;
+u8
+loop {
+  sub 0x141e840c0(reader arg 0) [min 4]
+  break
+  u32
 }
 ```
 
@@ -9745,24 +9748,24 @@ Calls: [`0x141e840c0@0`](#f-0x141e840c0-0)
 **`0x141e490e0` (reader = arg 0)** — min 1 bytes
 
 ```text
-u8 (flags)    // param_1[2] = uVar12;
-if ((bVar2 & 0xc0) == 0x80) {
-  u8    // param_1[2] = uVar1;
-  // return uVar14;
+u8 (flags)
+if bit 0xc0 clear {
+  u8
+  return
 }
-if ((bVar2 & 0xe0) == 0xc0) {
-  u8    // param_1[2] = uVar1;
+if bit 0xe0 clear {
+  u8
 }
 else {
-  if ((bVar2 & 0xf0) == 0xe0) {
-    u8    // param_1[2] = uVar1;
-    u8    // param_1[2] = uVar12;
-    u8    // param_1[2] = lVar9 + 4U;
-    // return uVar14;
+  if bit 0xf0 clear {
+    u8
+    u8
+    u8
+    return
   }
-  u8    // param_1[2] = uVar1;
-  u8    // param_1[2] = uVar12;
-  u8    // param_1[2] = uVar1;
+  u8
+  u8
+  u8
 }
 ```
 
@@ -9771,20 +9774,20 @@ else {
 **`0x1421ec390`** — min 4 bytes
 
 ```text
-u32    // param_2[2] = lVar6 + 4U;
-if (local_a8[0] == 0) { }
+u32
+if … {
 else {
-  u16 (flags)    // param_2[2] = uVar11;
-  if ((uVar1 >> 9 & 1) != 0) {
-    u64    // param_2[2] = lVar6 + 10U;
+  u16 (flags)
+  if bit 0x1 set {
+    u64
   }
-  if (*(longlong *)(lVar6 + 0x80) != 0) {
-    do ... while (pwVar9 < *(wchar_t **)(lVar6 + 0x80)) {
-      vcall [vt+0x28](reader arg 1)    // (**(code **)(*plVar4 + 0x28))(plVar4,param_2);
+  if … {
+    loop {
+      vcall [vt+0x28](reader arg 1)
     }
   }
-  if ((char)lVar6 != '\0') {
-    u16    // param_2[2] = uVar11;
+  if … {
+    u16
   }
 }
 ```
@@ -9794,8 +9797,8 @@ else {
 **`0x140e28e20` (reader = arg 0)** — min 4+ bytes
 
 ```text
-u32    // param_1[2] = uVar1;
-bytes[var]    // param_1[2] = param_1[2] + (ulonglong)uVar2;
+u32
+bytes[var]
 ```
 
 <a id="f-0x141e1b470"></a>
@@ -9803,8 +9806,8 @@ bytes[var]    // param_1[2] = param_1[2] + (ulonglong)uVar2;
 **`0x141e1b470`** — min 5 bytes
 
 ```text
-u8 → +0x38    // param_2[2] = uVar1;
-u32    // param_2[2] = param_2[2] + 4;
+u8 → +0x38
+u32
 ```
 
 <a id="f-0x141e82d00-0"></a>
@@ -9812,7 +9815,7 @@ u32    // param_2[2] = param_2[2] + 4;
 **`0x141e82d00` (reader = arg 0)** — min 2 bytes
 
 ```text
-u16    // param_1[2] = uVar12;
+u16
 ```
 
 <a id="f-0x140df8ab0-0"></a>
@@ -9820,8 +9823,8 @@ u16    // param_1[2] = uVar12;
 **`0x140df8ab0` (reader = arg 0)** — min 8 bytes
 
 ```text
-u32    // param_1[2] = lVar2;
-u32    // param_1[2] = param_1[2] + 4;
+u32
+u32
 ```
 
 <a id="f-0x140e0c9b0-0"></a>
@@ -9829,36 +9832,35 @@ u32    // param_1[2] = param_1[2] + 4;
 **`0x140e0c9b0` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (*(char *)(param_1 + 0x254) == '\0') {
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  if ((uVar3 & 0xffff) != 0) {
-    do ... while (uVar6 < (uVar3 & 0xffff)) {
-      if (uVar1 < 0x80) {
-        // LAB_140e0cb6a:
-        raw.w[var]    // FUN_140dfb760(param_1,piVar5,uVar8);
+if … {
+  raw.w2
+  if bit 0xffff set {
+    loop {
+      if … {
+        raw.w[var]
       }
       else {
-        if (0x7ff < (ushort)(uVar1 + 0x2800)) {
-          raw.w1    // FUN_140dfb760(param_1,&DAT_1431f8948,1);
-          // goto LAB_140e0cb6a;
+        if … {
+          raw.w1
+          goto
         }
-        if (((uVar9 * 2 <= uVar7 + 2) || (0x3ff < (ushort)(uVar1 + 0x2800))) || (0x3ff < (ushort)(*(ushort *)((longlong)piVar5 + 2) + 0x2400))) {
-          raw.w1    // FUN_140dfb760(param_1,&DAT_1431f8948,1);
-          // goto LAB_140e0cb6a;
+        if … {
+          raw.w1
+          goto
         }
-        raw.w1    // FUN_140dfb760(param_1,&DAT_1431f894c,1);
-        raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+        raw.w1
+        raw.w4
       }
     }
   }
 }
 else {
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  if (uVar9 != 0) {
-    do ... while (uVar6 < uVar9) {
-      raw.w2    // FUN_140dfb760(param_1,param_2 + uVar6 * 2,2);
+  raw.w2
+  if … {
+    loop {
+      raw.w2
     }
-    // return;
+    return
   }
 }
 ```
@@ -9868,27 +9870,27 @@ else {
 **`0x140e0c510`** — min 13 bytes
 
 ```text
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar4,*(ushort *)(param_1 + 2));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar4,*(ushort *)(param_1 + 6));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar4,*(ushort *)(param_1 + 10));
-raw.w2 ← +0xa3    // FUN_140dfb760(param_2,(longlong)param_1 + 0xa3,2);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-if ((*(byte *)((longlong)param_1 + 0xa4) & 8) != 0) {
-  raw.w2    // FUN_140dfb760(param_2,&local_res8,2);
-  raw.w[var]    // FUN_140dfb760(param_2,plVar5,hostshort);
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w2 ← +0xa3
+raw.w1
+raw.w1
+if bit 0x8 set {
+  raw.w2
+  raw.w[var]
 }
-raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-if (uVar1 < 0x100) {
-  raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-  if (puVar6 != (u_long *)param_1[0xd]) {
-    do ... while (puVar6 != (u_long *)param_1[0xd]) {
-      raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-      sub 0x1421ec1d0 [min 2+]    // FUN_1421ec1d0(*(longlong *)(puVar6 + 2),param_2);
+raw.w8
+raw.w1
+if … {
+  raw.w1
+  if … {
+    loop {
+      raw.w4
+      sub 0x1421ec1d0 [min 2+]
     }
   }
-  // return;
+  return
 }
 ```
 
@@ -9899,18 +9901,18 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0), [`0x1421ec1d0`](#f-0x1421ec1d0)
 **`0x14299cd70`** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res18,1);
-raw1    // FUN_140dfb630(param_2,local_res10,1);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (bVar1 != 0) {
-    do ... while (uVar5 < uVar3) {
-      raw1    // FUN_140dfb630(param_2,param_1[8] + (ulonglong)uVar5 * 8,1);
-      cint    // uVar2 = FUN_141fa3d60(param_2);
+raw1
+raw1
+if … {
+  if … {
+    loop {
+      raw1
+      cint
     }
   }
-  if (local_res10[0] != 0) {
-    do ... while (uVar4 < bVar1) {
-      wstr    // FUN_140e0cbe0(param_2,(ulonglong)uVar4 * 0x20 + *param_1);
+  if … {
+    loop {
+      wstr
     }
   }
 }
@@ -9921,21 +9923,21 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 **`0x14299cbf0`** — min 0 bytes
 
 ```text
-if ((uVar2 < 0x100) && ((ulonglong)(param_1[1] - *param_1 >> 5) < 0x100)) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  if (param_1[9] - lVar3 >> 3 != 0) {
-    do ... while ((ulonglong)uVar6 < (ulonglong)(param_1[9] - lVar3 >> 3)) {
-      raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-      cint.w    // FUN_141fa3c50(*(undefined4 *)(param_1[8] + 4 + (ulonglong)uVar6 * 8),param_2);
+if … {
+  raw.w1
+  raw.w1
+  if … {
+    loop {
+      raw.w1
+      cint.w
     }
   }
-  if (param_1[1] - lVar3 >> 5 != 0) {
-    do ... while ((ulonglong)uVar5 < (ulonglong)(param_1[1] - lVar3 >> 5)) {
-      sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_2,(longlong)puVar4,*puVar1);
+  if … {
+    loop {
+      sub 0x140e0c9b0(reader arg 0) [min 0]
     }
   }
-  // return;
+  return
 }
 ```
 
@@ -9946,14 +9948,14 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x142427e70` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (*(char *)(param_1 + 0x252) == '\0') {
-  if (puVar6 != *(undefined4 **)(param_2 + 0x10)) {
-    do ... while (puVar6 != *(undefined4 **)(param_2 + 0x10)) {
-      cint    // uVar2 = FUN_14089cad0(param_1);
-      cint    // uVar2 = FUN_141fa3d60(param_1);
+if … {
+  if … {
+    loop {
+      cint
+      cint
     }
   }
-  // return param_1;
+  return
 }
 ```
 
@@ -9962,10 +9964,10 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x140e2be30` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar3 = *param_2; lVar3 != lVar1; lVar3 = lVar3 + 1) {
-    raw1    // FUN_140dfb630(param_1,lVar3,1);
+raw2
+if … {
+  loop {
+    raw1
   }
 }
 ```
@@ -9975,12 +9977,12 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x142173450` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar6 = (u_short *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 4) {
-    raw2    // FUN_140dfb630(param_1,puVar6,2);
-    raw1    // FUN_140dfb630(param_1,puVar6 + 1,1);
-    raw4    // FUN_140dfb630(param_1,local_res8,4);
+raw1
+if … {
+  loop {
+    raw2
+    raw1
+    raw4
   }
 }
 ```
@@ -9990,29 +9992,29 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x14089e520`** — min 0 bytes
 
 ```text
-if (param_1 < 0x80) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  // return;
+if … {
+  raw.w1
+  return
 }
-if (param_1 < 0x4000) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  // return;
+if … {
+  raw.w1
+  raw.w1
+  return
 }
-if (param_1 < 0x200000) {
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+if … {
+  raw.w1
+  raw.w1
+  raw.w1
 }
 else {
-  if (param_1 < 0x8000000) { }
+  if … {
   else {
-    raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+    raw.w1
   }
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res8,1);
+  raw.w1
+  raw.w1
+  raw.w1
+  raw.w1
 }
 ```
 
@@ -10021,12 +10023,12 @@ else {
 **`0x141fa3a70` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar5 & 0xffff) == uVar5) {
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 1) {
-    raw.w4    // FUN_140dfb760(param_1,local_res10,4);
+if … {
+  raw.w2
+  loop {
+    raw.w4
   }
-  // return;
+  return
 }
 ```
 
@@ -10035,9 +10037,9 @@ if ((uVar5 & 0xffff) == uVar5) {
 **`0x140e2bec0` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,&local_res10,2);
-for (puVar5 = (undefined1 *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 1) {
-  raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
+raw.w2
+loop {
+  raw.w1
 }
 ```
 
@@ -10046,11 +10048,11 @@ for (puVar5 = (undefined1 *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 1) {
 **`0x1421732e0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-for (puVar6 = (u_short *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 4) {
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
+raw.w1
+loop {
+  raw.w2
+  raw.w1
+  raw.w4
 }
 ```
 
@@ -10059,10 +10061,10 @@ for (puVar6 = (u_short *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 4) {
 **`0x1421ba150` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar5 = (undefined8 *)*param_2; puVar5 != puVar4; puVar5 = puVar5 + 0xd) {
-    sub 0x141d4d1f0(reader arg 0) [min 8+]    // FUN_141d4d1f0(param_1,puVar5);
+raw2
+if … {
+  loop {
+    sub 0x141d4d1f0(reader arg 0) [min 8+]
   }
 }
 ```
@@ -10074,9 +10076,9 @@ Calls: [`0x141d4d1f0@0`](#f-0x141d4d1f0-0)
 **`0x1421ba020` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-for (puVar5 = (undefined8 *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 0xd) {
-  sub 0x141d4d020(reader arg 0) [min 20+]    // FUN_141d4d020(param_1,puVar5);
+raw.w2
+loop {
+  sub 0x141d4d020(reader arg 0) [min 20+]
 }
 ```
 
@@ -10087,12 +10089,12 @@ Calls: [`0x141d4d020@0`](#f-0x141d4d020-0)
 **`0x1421b8fe0` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (uVar4 == uVar3) {
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  if ((u_short)uVar3 != 0) {
-    raw.w[var]    // FUN_140dfb760(param_1,*param_2,uVar4 * 2);
+if … {
+  raw.w2
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -10101,12 +10103,12 @@ if (uVar4 == uVar3) {
 **`0x1421b9100` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (uVar4 == uVar3) {
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  if ((u_short)uVar3 != 0) {
-    raw.w[var]    // FUN_140dfb760(param_1,*param_2,uVar4 * 4);
+if … {
+  raw.w2
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -10115,10 +10117,10 @@ if (uVar4 == uVar3) {
 **`0x1421baa00` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar3 = (u_short *)*param_2; puVar3 != puVar1; puVar3 = puVar3 + 1) {
-    raw2    // FUN_140dfb630(param_1,puVar3,2);
+raw1
+if … {
+  loop {
+    raw2
   }
 }
 ```
@@ -10128,12 +10130,12 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421ba8d0` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  for (puVar5 = (u_short *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 1) {
-    raw.w2    // FUN_140dfb760(param_1,local_res10,2);
+if … {
+  raw.w1
+  loop {
+    raw.w2
   }
-  // return;
+  return
 }
 ```
 
@@ -10142,11 +10144,11 @@ if ((uVar2 & 0xff) == uVar2) {
 **`0x1421b97c0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar3 = *param_2; lVar3 != lVar5; lVar3 = lVar3 + 0x20) {
-    raw4    // FUN_140dfb630(param_1,lVar3,4);
-    sub 0x1424ac160(reader arg 0) [min 17]    // FUN_1424ac160(param_1,(u_long *)(lVar3 + 8));
+raw1
+if … {
+  loop {
+    raw4
+    sub 0x1424ac160(reader arg 0) [min 17]
   }
 }
 ```
@@ -10158,11 +10160,11 @@ Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
 **`0x1421b96b0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar4 = *param_2; lVar4 != lVar3; lVar4 = lVar4 + 0x20) {
-    raw1    // FUN_140dfb630(param_1,lVar4,1);
-    sub 0x1424ac160(reader arg 0) [min 17]    // FUN_1424ac160(param_1,(u_long *)(lVar4 + 8));
+raw1
+if … {
+  loop {
+    raw1
+    sub 0x1424ac160(reader arg 0) [min 17]
   }
 }
 ```
@@ -10174,10 +10176,10 @@ Calls: [`0x1424ac160@0`](#f-0x1424ac160-0)
 **`0x1421b9630` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar2 = (u_long *)*param_2; puVar2 != puVar1; puVar2 = puVar2 + 100) {
-    sub 0x141f8bac0(reader arg 0) [min 20+]    // FUN_141f8bac0(param_1,puVar2);
+raw1
+if … {
+  loop {
+    sub 0x141f8bac0(reader arg 0) [min 20+]
   }
 }
 ```
@@ -10189,13 +10191,13 @@ Calls: [`0x141f8bac0@0`](#f-0x141f8bac0-0)
 **`0x1421b9500` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  for (puVar5 = (undefined4 *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 8) {
-    raw.w4    // FUN_140dfb760(param_1,local_res10,4);
-    sub 0x1424ac0c0(reader arg 0) [min 17]    // FUN_1424ac0c0(param_1,puVar5 + 2);
+if … {
+  raw.w1
+  loop {
+    raw.w4
+    sub 0x1424ac0c0(reader arg 0) [min 17]
   }
-  // return;
+  return
 }
 ```
 
@@ -10206,13 +10208,13 @@ Calls: [`0x1424ac0c0@0`](#f-0x1424ac0c0-0)
 **`0x1421b93d0` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  for (puVar5 = (undefined1 *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 0x20) {
-    raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-    sub 0x1424ac0c0(reader arg 0) [min 17]    // FUN_1424ac0c0(param_1,(u_long *)(puVar5 + 8));
+if … {
+  raw.w1
+  loop {
+    raw.w1
+    sub 0x1424ac0c0(reader arg 0) [min 17]
   }
-  // return;
+  return
 }
 ```
 
@@ -10223,9 +10225,9 @@ Calls: [`0x1424ac0c0@0`](#f-0x1424ac0c0-0)
 **`0x1421b92a0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-for (puVar5 = (u_long *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 100) {
-  sub 0x141f8b8b0(reader arg 0) [min 20]    // FUN_141f8b8b0(param_1,puVar5);
+raw.w1
+loop {
+  sub 0x141f8b8b0(reader arg 0) [min 20]
 }
 ```
 
@@ -10236,10 +10238,10 @@ Calls: [`0x141f8b8b0@0`](#f-0x141f8b8b0-0)
 **`0x1424ac160` (reader = arg 0)** — min 17 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_1,param_2,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 1,4);
-raw8    // FUN_140dfb630(param_1,param_2 + 2,8);
-raw1    // FUN_140dfb630(param_1,param_2 + 4,1);
+raw4
+raw4
+raw8
+raw1
 ```
 
 <a id="f-0x1424ac0c0-0"></a>
@@ -10247,10 +10249,10 @@ raw1    // FUN_140dfb630(param_1,param_2 + 4,1);
 **`0x1424ac0c0` (reader = arg 0)** — min 17 bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
+raw.w4
+raw.w4
+raw.w8
+raw.w1
 ```
 
 <a id="f-0x141fa3bb0-0"></a>
@@ -10258,10 +10260,10 @@ raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
 **`0x141fa3bb0` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar4 = (u_long *)*param_2; puVar4 != puVar1; puVar4 = puVar4 + 1) {
-    raw4    // FUN_140dfb630(param_1,puVar4,4);
+raw2
+if … {
+  loop {
+    raw4
   }
 }
 ```
@@ -10271,12 +10273,12 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421b9eb0` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar6 = *param_2; lVar6 != lVar9; lVar6 = lVar6 + 0x28) {
-    cint    // uVar4 = FUN_14089cad0(param_1);
-    wstr    // FUN_140e0cbe0(param_1,lVar6);
-    raw1    // FUN_140dfb630(param_1,local_res8,1);
+raw2
+if … {
+  loop {
+    cint
+    wstr
+    raw1
   }
 }
 ```
@@ -10286,19 +10288,19 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421b9af0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar7 = (undefined8 *)*param_2; puVar7 != puVar1; puVar7 = puVar7 + 6) {
-    raw4    // FUN_140dfb630(param_1,puVar7 + 4,4);
-    raw2    // FUN_140dfb630(param_1,(undefined2 *)((longlong)puVar7 + 0x24),2);
-    if (*(char *)(param_1 + 0x252) == '\0') {
-      if (uVar2 == 0) { }
+raw1
+if … {
+  loop {
+    raw4
+    raw2
+    if … {
+      if … {
       else {
-        raw2    // FUN_140dfb630(param_1,(undefined2 *)((longlong)puVar7 + 0x26),2);
-        raw1    // FUN_140dfb630(param_1,puVar7 + 5,1);
-        raw1    // FUN_140dfb630(param_1,(undefined2 *)((longlong)puVar7 + 0x2a),1);
-        raw1    // FUN_140dfb630(param_1,(longlong)puVar7 + 0x2b,1);
-        wstr    // FUN_140e0cbe0(param_1,puVar7);
+        raw2
+        raw1
+        raw1
+        raw1
+        wstr
       }
     }
   }
@@ -10310,16 +10312,16 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421b98c0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-for (puVar7 = (undefined8 *)*param_2; puVar7 != puVar1; puVar7 = puVar7 + 6) {
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  if (*(short *)((longlong)puVar7 + 0x24) != 0) {
-    raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-    raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-    raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-    raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-    sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar6,*(ushort *)(puVar7 + 2));
+raw.w1
+loop {
+  raw.w4
+  raw.w2
+  if … {
+    raw.w2
+    raw.w1
+    raw.w1
+    raw.w1
+    sub 0x140e0c9b0(reader arg 0) [min 0]
   }
 }
 ```
@@ -10331,28 +10333,28 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x141f8f580` (reader = arg 0)** — min 9 bytes
 
 ```text
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar2,*(ushort *)(param_2 + 2));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar2,*(ushort *)(param_2 + 6));
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-if ((*(char *)((longlong)param_2 + 0xba) != '\0') || (*(char *)((longlong)param_2 + 0xbd) != '\0') ) {
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar2,*(ushort *)(param_2 + 10));
-  raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-  // if (*(char *)((longlong)param_2 + 0xba) == '\0') goto LAB_141f8f812;
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar2,*(ushort *)(param_2 + 0xe));
-  raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-  if (bVar3 != 0) {
-    raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-    raw.w2    // FUN_140dfb760(param_1,local_res8,2);
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
+if … {
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w1
+  raw.w1
+  goto
+  raw.w2
+  raw.w2
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w1
+  if … {
+    raw.w2
+    raw.w2
   }
-  if (cVar4 != '\0') {
-    raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-    raw.w2    // FUN_140dfb760(param_1,local_res8,2);
+  if … {
+    raw.w2
+    raw.w2
   }
 }
-raw.w8    // FUN_140dfb760(param_1,local_res8,8);
+raw.w8
 ```
 
 Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
@@ -10362,27 +10364,27 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x141f8f850` (reader = arg 0)** — min 9+ bytes
 
 ```text
-wstr    // FUN_140e0cbe0(param_1,param_2 + 0x20);
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if ((bVar3 != 0) || (bVar1 != 0)) {
-  wstr    // FUN_140e0cbe0(param_1,param_2 + 0x40);
-  raw1    // FUN_140dfb630(param_1,param_2 + 0xb9,1);
-  raw1    // FUN_140dfb630(param_1,local_res8,1);
-  // if (*(char *)(param_2 + 0xba) == '\0') goto LAB_141f8fa94;
-  raw2    // FUN_140dfb630(param_1,param_2 + 0xa8,2);
-  raw2    // FUN_140dfb630(param_1,param_2 + 0xac,2);
-  wstr    // FUN_140e0cbe0(param_1,param_2 + 0x60);
-  raw1    // FUN_140dfb630(param_1,local_res8,1);
-  if (bVar5 != 0) {
-    raw2    // FUN_140dfb630(param_1,param_2 + 0xaa,2);
-    raw2    // FUN_140dfb630(param_1,param_2 + 0xae,2);
+wstr
+raw1
+if … {
+  wstr
+  raw1
+  raw1
+  goto
+  raw2
+  raw2
+  wstr
+  raw1
+  if … {
+    raw2
+    raw2
   }
-  if ((bVar4 & 1) != 0) {
-    raw2    // FUN_140dfb630(param_1,param_2 + 0xb0,2);
-    raw2    // FUN_140dfb630(param_1,param_2 + 0xb2,2);
+  if bit 0x1 set {
+    raw2
+    raw2
   }
 }
-raw8    // FUN_140dfb630(param_1,param_2 + 0xa0,8);
+raw8
 ```
 
 <a id="f-0x1421ba280-0"></a>
@@ -10390,15 +10392,15 @@ raw8    // FUN_140dfb630(param_1,param_2 + 0xa0,8);
 **`0x1421ba280` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-for (puVar7 = (undefined8 *)*param_2; puVar7 != puVar1; puVar7 = puVar7 + 6) {
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar6,*(ushort *)(puVar7 + 2));
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
+raw.w2
+loop {
+  raw.w4
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w1
+  raw.w1
+  raw.w1
+  raw.w1
+  raw.w1
 }
 ```
 
@@ -10409,16 +10411,16 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x141d6acc0` (reader = arg 0)** — min 27 bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w1    // FUN_140dfb760(param_1,param_2 + 0x14,1);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,(ushort)param_2[8]);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,local_res8,2);
+raw.w4
+raw.w4
+raw.w4
+raw.w1
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w4
+raw.w2
+raw.w4
+raw.w2
+raw.w2
 ```
 
 Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
@@ -10428,29 +10430,29 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x142507bf0` (reader = arg 0)** — min 8 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_1,param_2 + 7,4);
-raw4    // FUN_140dfb630(param_1,local_res8,4);
-if (uVar6 == 0xffffffff) { }
+raw4
+raw4
+if … {
 else {
-  if (uVar6 != 0) {
-    do ... while (uVar11 < uVar6) {
-      raw4    // FUN_140dfb630(param_1,puVar4,4);
+  if … {
+    loop {
+      raw4
     }
   }
 }
-raw    // FUN_140dfb630(param_1,local_res8);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  if (local_res8[0] != 0) {
-    do ... while (uVar11 < local_res8[0]) {
-      sub 0x1421f5680 [min 0]    // puVar8 = FUN_1421f5680(&local_38,param_1,uVar15,param_4);
+raw
+if … {
+  if … {
+    loop {
+      sub 0x1421f5680 [min 0]
     }
   }
-  raw1    // FUN_140dfb630(param_1,local_res8,1);
-  if ((*(char *)(param_1 + 0x252) == '\0') && ((char)local_res8[0] != '\0')) {
-    raw4    // FUN_140dfb630(param_1,puVar4,4);
-    raw4    // FUN_140dfb630(param_1,lVar13 + 4,4);
-    raw4    // FUN_140dfb630(param_1,lVar13 + 8,4);
-    raw4    // FUN_140dfb630(param_1,lVar13 + 0xc,4);
+  raw1
+  if … {
+    raw4
+    raw4
+    raw4
+    raw4
   }
 }
 ```
@@ -10462,33 +10464,33 @@ Calls: [`0x1421f5680`](#f-0x1421f5680)
 **`0x1425079a0` (reader = arg 0)** — min 9 bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-if (*(char *)((longlong)param_2 + 0x3c) == '\0') {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-  if (param_2[5] - lVar2 >> 2 != 0) {
-    do ... while (uVar3 < (ulonglong)(param_2[5] - lVar2 >> 2)) {
-      raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+raw.w4
+if … {
+  raw.w4
+  if … {
+    loop {
+      raw.w4
     }
   }
 }
 else {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+  raw.w4
 }
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-if (param_2[2] - lVar2 >> 4 != 0) {
-  do ... while (uVar4 < (ulonglong)(param_2[2] - lVar2 >> 4)) {
-    raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-    raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-    raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-    sub 0x1421ec1d0 [min 2+]    // FUN_1421ec1d0(*plVar1,param_1);
+raw.w4
+if … {
+  loop {
+    raw.w4
+    raw.w1
+    raw.w1
+    sub 0x1421ec1d0 [min 2+]
   }
 }
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-if ((u_long *)*param_2 != (u_long *)0x0) {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+raw.w1
+if … {
+  raw.w4
+  raw.w4
+  raw.w4
+  raw.w4
 }
 ```
 
@@ -10499,22 +10501,22 @@ Calls: [`0x1421ec1d0`](#f-0x1421ec1d0)
 **`0x1421f4cc0`** — min 5 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_2,local_res18,1);
-raw1    // FUN_140dfb630(param_2,local_res10,1);
-raw1    // FUN_140dfb630(param_2,local_77,1);
-raw1    // FUN_140dfb630(param_2,&local_78,1);
-raw    // FUN_140dfb630(param_2,local_res20);
-if ((local_res20[0] & 8) != 0) {
-  raw    // FUN_140dfb630(param_2,&local_70);
+raw1
+raw1
+raw1
+raw1
+raw
+if bit 0x8 set {
+  raw
 }
-if ((bVar5 & 0x10) != 0) {
-  raw4    // FUN_140dfb630(param_2,&local_70,4);
-  raw4    // FUN_140dfb630(param_2,(longlong)&local_70 + 4,4);
-  raw4    // FUN_140dfb630(param_2,&local_68,4);
-  raw    // FUN_140dfb630(param_2,(longlong)&local_68 + 4);
-  // if (*(char *)(param_2 + 0x252) != '\0') goto LAB_1421f4f17;
+if bit 0x10 set {
+  raw4
+  raw4
+  raw4
+  raw
+  goto
 }
-sub 0x1421f4f80 [min 1]    // FUN_1421f4f80((longlong)plVar1,param_2,uVar9,param_4);
+sub 0x1421f4f80 [min 1]
 ```
 
 Calls: [`0x1421f4f80`](#f-0x1421f4f80)
@@ -10524,27 +10526,27 @@ Calls: [`0x1421f4f80`](#f-0x1421f4f80)
 **`0x1421f4a40`** — min 5 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,&local_res10,1);
-if (*(longlong *)(param_1 + 0x158) != 0) {
-  raw.w8    // FUN_140dfb760(param_2,&local_res8,8);
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+if … {
+  raw.w8
 }
-if (*(longlong *)(param_1 + 0x1f0) != 0) {
-  raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-  raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
+if … {
+  raw.w4
+  raw.w4
+  raw.w4
+  raw.w4
 }
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(uint *)(param_1 + 400),param_2);
-if ((longlong *)local_res10 != *(longlong **)(param_1 + 0x188)) {
-  do ... while (local_res10 != *(longlong *)(param_1 + 0x188)) {
-    raw.w4    // FUN_140dfb760(param_2,&local_res8,4);
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    raw.w1    // FUN_140dfb760(param_2,&local_res8,1);
-    sub 0x1421ec1d0 [min 2+]    // FUN_1421ec1d0(*plVar1,param_2);
+sub 0x14089e520 [min 0]
+if … {
+  loop {
+    raw.w4
+    raw.w1
+    raw.w1
+    sub 0x1421ec1d0 [min 2+]
   }
 }
 ```
@@ -10556,10 +10558,10 @@ Calls: [`0x1421ec1d0`](#f-0x1421ec1d0), [`0x14089e520`](#f-0x14089e520)
 **`0x141fa4050` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-for (puVar6 = (u_short *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 2) {
-  raw2    // FUN_140dfb630(param_1,puVar6,2);
-  raw2    // FUN_140dfb630(param_1,puVar6 + 1,2);
+raw1
+loop {
+  raw2
+  raw2
 }
 ```
 
@@ -10568,10 +10570,10 @@ for (puVar6 = (u_short *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 2) {
 **`0x141fa3f00` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-for (puVar5 = (u_short *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 2) {
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
+raw.w1
+loop {
+  raw.w2
+  raw.w2
 }
 ```
 
@@ -10580,9 +10582,9 @@ for (puVar5 = (u_short *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 2) {
 **`0x1421ba670` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-for (lVar4 = *param_2; lVar4 != lVar3; lVar4 = lVar4 + 0xd0) {
-  sub 0x141fa28f0(reader arg 0) [min 37]    // FUN_141fa28f0(param_1,lVar4);
+raw.w2
+loop {
+  sub 0x141fa28f0(reader arg 0) [min 37]
 }
 ```
 
@@ -10593,10 +10595,10 @@ Calls: [`0x141fa28f0@0`](#f-0x141fa28f0-0)
 **`0x141f8fac0` (reader = arg 0)** — min 8 bytes
 
 ```text
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar1,*(ushort *)(param_2 + 2));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar1,*(ushort *)(param_2 + 6));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar1,*(ushort *)(param_2 + 10));
-raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w8
 ```
 
 Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
@@ -10606,12 +10608,12 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x1421baa90` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,&local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar2 = *param_2; lVar2 != lVar7; lVar2 = lVar2 + 0x30) {
-    wstr    // FUN_140e0cbe0(param_1,lVar2);
-    raw8    // FUN_140dfb630(param_1,&local_res8,8);
-    raw1    // FUN_140dfb630(param_1,lVar2 + 0x28,1);
+raw2
+if … {
+  loop {
+    wstr
+    raw8
+    raw1
   }
 }
 ```
@@ -10621,9 +10623,9 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x142508560` (reader = arg 0)** — min 6 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_1,param_2 + 3,4);
-raw1    // FUN_140dfb630(param_1,param_2 + 4,1);
-sub 0x1425086d0(reader arg 0) [min 1]    // FUN_1425086d0(param_1,(longlong *)&local_58);
+raw4
+raw1
+sub 0x1425086d0(reader arg 0) [min 1]
 ```
 
 Calls: [`0x1425086d0@0`](#f-0x1425086d0-0)
@@ -10633,14 +10635,14 @@ Calls: [`0x1425086d0@0`](#f-0x1425086d0-0)
 **`0x142508350` (reader = arg 0)** — min 6 bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  raw.w1    // FUN_140dfb760(param_1,local_res8,1);
+raw.w4
+raw.w1
+raw.w1
+loop {
+  raw.w4
+  raw.w2
+  raw.w2
+  raw.w1
 }
 ```
 
@@ -10649,10 +10651,10 @@ for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
 **`0x1421b9220` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  if (uVar1 != 0) {
-    raw[var]    // FUN_140dfb630(param_1,*param_2,(ulonglong)uVar1 * 2);
+raw2
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -10662,21 +10664,21 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421bac10` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (plVar5 = (longlong *)*param_2; plVar5 != plVar4; plVar5 = plVar5 + 5) {
-    raw4    // FUN_140dfb630(param_1,plVar5 + 3,4);
-    raw1    // FUN_140dfb630(param_1,local_res8,1);
-    if (*(char *)(param_1 + 0x252) == '\0') {
-      if ((char)local_res8[0] != '\0') {
-        raw2    // FUN_140dfb630(param_1,(longlong)plVar5 + 0x1e,2);
+raw2
+if … {
+  loop {
+    raw4
+    raw1
+    if … {
+      if … {
+        raw2
       }
       else {
-        raw2    // FUN_140dfb630(param_1,(longlong)plVar5 + 0x1e,2);
-        raw2    // FUN_140dfb630(param_1,plVar5 + 4,2);
-        raw2    // FUN_140dfb630(param_1,(longlong)plVar5 + 0x22,2);
+        raw2
+        raw2
+        raw2
       }
-      sub 0x141fa5380(reader arg 0) [min 1]    // FUN_141fa5380(param_1,plVar5);
+      sub 0x141fa5380(reader arg 0) [min 1]
     }
   }
 }
@@ -10689,21 +10691,21 @@ Calls: [`0x141fa5380@0`](#f-0x141fa5380-0)
 **`0x141fa26a0` (reader = arg 0)** — min 7 bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-if (*(char *)((longlong)param_2 + 0x1c) == '\0') {
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
+raw.w4
+raw.w1
+if … {
+  raw.w2
+  raw.w2
 }
-raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-  for (puVar8 = (undefined8 *)*param_2; puVar8 != puVar1; puVar8 = puVar8 + 5) {
-    raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-    raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-    sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar7,*(ushort *)(puVar8 + 2));
+raw.w2
+if … {
+  raw.w1
+  loop {
+    raw.w1
+    raw.w1
+    sub 0x140e0c9b0(reader arg 0) [min 0]
   }
-  // return param_1;
+  return
 }
 ```
 
@@ -10714,20 +10716,20 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x1424ed0d0` (reader = arg 0)** — min 4 bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-for (lVar4 = *param_2; lVar4 != lVar1; lVar4 = lVar4 + 0xe8) {
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(lVar4 + 0x20));
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(lVar4 + 0x50));
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(lVar4 + 0x70));
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(lVar4 + 0x90));
-  sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(lVar4 + 0xb0));
-  raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-  raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-  raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-  raw.w3    // FUN_140dfb760(param_1,lVar4 + 0xe0,3);
-  raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-  raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-  raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
+raw.w4
+loop {
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  sub 0x140e0c9b0(reader arg 0) [min 0]
+  raw.w8
+  raw.w8
+  raw.w8
+  raw.w3
+  raw.w1
+  raw.w1
+  raw.w4
 }
 ```
 
@@ -10738,10 +10740,10 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x1421bb1f0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar4 = (uint *)*param_2; puVar4 != puVar2; puVar4 = puVar4 + 0xe) {
-    sub 0x1424dec50(reader arg 0) [min 2]    // FUN_1424dec50(param_1,puVar4,uVar6,uVar8);
+raw1
+if … {
+  loop {
+    sub 0x1424dec50(reader arg 0) [min 2]
   }
 }
 ```
@@ -10753,10 +10755,10 @@ Calls: [`0x1424dec50@0`](#f-0x1424dec50-0)
 **`0x141fa4780` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  if (local_res8[0] != 0) {
-    raw[var]    // FUN_140dfb630(param_1,*param_2,uVar1 * 2);
+raw1
+if … {
+  if … {
+    raw[var]
   }
 }
 ```
@@ -10766,18 +10768,18 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421bafa0` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
-  for (puVar6 = (undefined1 *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 0x38) {
-    raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
-    raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
-    raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
-    for (plVar7 = *(longlong **)(puVar6 + 0x18); plVar7 != plVar3; plVar7 = plVar7 + 6) {
-      raw.w2    // FUN_140dfb760(param_1,&local_res10,2);
-      sub 0x141eae9a0(reader arg 0) [min 0]    // FUN_141eae9a0(param_1,plVar7 + 2);
+if … {
+  raw.w1
+  loop {
+    raw.w1
+    raw.w1
+    raw.w1
+    loop {
+      raw.w2
+      sub 0x141eae9a0(reader arg 0) [min 0]
     }
   }
-  // return;
+  return
 }
 ```
 
@@ -10788,12 +10790,12 @@ Calls: [`0x141eae9a0@0`](#f-0x141eae9a0-0)
 **`0x141fa4680` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (uVar4 == uVar3) {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  if ((char)uVar3 != '\0') {
-    raw.w[var]    // FUN_140dfb760(param_1,*param_2,uVar4 * 2);
+if … {
+  raw.w1
+  if … {
+    raw.w[var]
   }
-  // return;
+  return
 }
 ```
 
@@ -10802,11 +10804,11 @@ if (uVar4 == uVar3) {
 **`0x14085e000`** — min 6 bytes
 
 ```text
-raw1 → +0x10    // FUN_140dfb630(param_2,param_1 + 0x10,1);
-raw4 → +0x18    // FUN_140dfb630(param_2,param_1 + 0x18,4);
-cint    // uVar2 = FUN_14089cad0(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  raw[var]    // FUN_140dfb630(param_2,*(undefined8 *)(param_1 + 0x20),uVar2);
+raw1 → +0x10
+raw4 → +0x18
+cint
+if … {
+  raw[var]
 }
 ```
 
@@ -10815,9 +10817,9 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 **`0x14085def0`** — min 7 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w4
 ```
 
 <a id="f-0x1421ec2c0"></a>
@@ -10825,9 +10827,9 @@ raw.w4    // FUN_140dfb760(param_2,local_res8,4);
 **`0x1421ec2c0`** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_2,local_res10,2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  raw    // FUN_140dfb630(param_2,local_38 + lVar1);
+raw2
+if … {
+  raw
 }
 ```
 
@@ -10836,8 +10838,8 @@ if (*(char *)(param_2 + 0x252) == '\0') {
 **`0x1421ec1d0`** — min 2+ bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res18,2);
-raw.w[var]    // FUN_140dfb760(param_2,local_408,local_418);
+raw.w2
+raw.w[var]
 ```
 
 <a id="f-0x14085e650"></a>
@@ -10845,10 +10847,10 @@ raw.w[var]    // FUN_140dfb760(param_2,local_408,local_418);
 **`0x14085e650`** — min 9+ bytes
 
 ```text
-sub 0x14085def0 [min 7]    // FUN_14085def0(param_1,param_2);
-sub 0x14089e520 [min 0]    // FUN_14089e520(*(int *)(param_1 + 0x28) - *(int *)(param_1 + 0x20),param_2);
-raw.w[var]    // FUN_140dfb760(param_2,*(longlong *)(param_1 + 0x20), *(longlong *)(param_1 + 0x28) - *(longlong *)(param_1 + 0x20));
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+sub 0x14085def0 [min 7]
+sub 0x14089e520 [min 0]
+raw.w[var]
+raw.w2
 ```
 
 Calls: [`0x14085def0`](#f-0x14085def0), [`0x14089e520`](#f-0x14089e520)
@@ -10858,13 +10860,13 @@ Calls: [`0x14085def0`](#f-0x14085def0), [`0x14089e520`](#f-0x14089e520)
 **`0x1424aca00` (reader = arg 0)** — min 17 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  vcall [?](reader arg 1)    // puVar6 = (undefined4 *)(*(code *)(&PTR_FUN_14363abb8)[local_res8[0]])(local_158,param_1);
+raw1
+if … {
+  vcall [?](reader arg 1)
 }
-raw4    // FUN_140dfb630(param_1,param_2 + 4,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 5,4);
-raw8    // FUN_140dfb630(param_1,param_2 + 6,8);
+raw4
+raw4
+raw8
 ```
 
 <a id="f-0x1424ac820-0"></a>
@@ -10872,23 +10874,23 @@ raw8    // FUN_140dfb630(param_1,param_2 + 6,8);
 **`0x1424ac820` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
-if (cVar1 != -1) {
-  if (cVar1 != '\0') {
-    if (cVar1 == '\x01') {
-      raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
-      raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
-      raw.w1    // FUN_140dfb760(param_1,&local_res10,1);
+raw.w1
+if … {
+  if … {
+    if … {
+      raw.w1
+      raw.w1
+      raw.w1
     }
     else {
-      raw.w4    // FUN_140dfb760(param_1,&local_res10,4);
+      raw.w4
     }
-    raw.w4    // FUN_140dfb760(param_1,&local_res10,4);
+    raw.w4
   }
-  raw.w4    // FUN_140dfb760(param_1,&local_res10,4);
-  raw.w4    // FUN_140dfb760(param_1,&local_res10,4);
-  raw.w8    // FUN_140dfb760(param_1,&local_res10,8);
-  // return param_1;
+  raw.w4
+  raw.w4
+  raw.w8
+  return
 }
 ```
 
@@ -10897,22 +10899,22 @@ if (cVar1 != -1) {
 **`0x141f8bac0` (reader = arg 0)** — min 20+ bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,param_2 + 2,1);
-raw4    // FUN_140dfb630(param_1,param_2 + 1,4);
-raw4    // FUN_140dfb630(param_1,param_2,4);
-raw8    // FUN_140dfb630(param_1,param_2 + 4,8);
-wstr    // FUN_140e0cbe0(param_1,param_2 + 6);
-wstr    // FUN_140e0cbe0(param_1,param_2 + 0xe);
-raw1    // FUN_140dfb630(param_1,(longlong)param_2 + 9,1);
-raw1    // FUN_140dfb630(param_1,&local_res8,1);
-if ((byte)local_res8 == '\0') { }
+raw1
+raw4
+raw4
+raw8
+wstr
+wstr
+raw1
+raw1
+if … {
 else {
-  raw1    // FUN_140dfb630(param_1,&local_res8,1);
-  if (*(char *)(param_1 + 0x252) == '\0') {
-    vcall [?](reader arg 1)    // lVar2 = (*(code *)(&PTR_FUN_1435bfb08)[(ulonglong)local_res8 & 0xff])(local_f8,param_1);
+  raw1
+  if … {
+    vcall [?](reader arg 1)
   }
 }
-sub 0x141fa33b0(reader arg 0) [min 1]    // FUN_141fa33b0(param_1,(undefined8 *)(param_2 + 0x48));
+sub 0x141fa33b0(reader arg 0) [min 1]
 ```
 
 Calls: [`0x141fa33b0@0`](#f-0x141fa33b0-0)
@@ -10922,20 +10924,20 @@ Calls: [`0x141fa33b0@0`](#f-0x141fa33b0-0)
 **`0x141f8b8b0` (reader = arg 0)** — min 20 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,param_2 + 2,1);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,(ushort)param_2[10]);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,(ushort)param_2[0x12]);
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-if ((char)param_2[0x46] != '\0') {
-  raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
+raw.w1
+raw.w4
+raw.w4
+raw.w8
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w1
+raw.w1
+if … {
+  raw.w1
 }
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-if ((char)param_2[0x62] != '\0') {
-  sub 0x141fa5a00(reader arg 0) [min 1+]    // FUN_141fa5a00(param_1,(char *)(param_2 + 0x48));
+raw.w1
+if … {
+  sub 0x141fa5a00(reader arg 0) [min 1+]
 }
 ```
 
@@ -10946,12 +10948,12 @@ Calls: [`0x141fa5a00@0`](#f-0x141fa5a00-0), [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x1421bb670` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar7 = (u_long *)*param_2; puVar7 != puVar2; puVar7 = puVar7 + 10) {
-    raw4    // FUN_140dfb630(param_1,puVar7,4);
-    raw4    // FUN_140dfb630(param_1,puVar7 + 1,4);
-    wstr    // FUN_140e0cbe0(param_1,puVar7 + 2);
+raw2
+if … {
+  loop {
+    raw4
+    raw4
+    wstr
   }
 }
 ```
@@ -10961,13 +10963,13 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x141fa4bc0` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res8,2);
-for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
-  raw4    // FUN_140dfb630(param_1,puVar6,4);
-  raw2    // FUN_140dfb630(param_1,puVar6 + 1,2);
-  raw2    // FUN_140dfb630(param_1,(longlong)puVar6 + 6,2);
-  raw2    // FUN_140dfb630(param_1,puVar6 + 2,2);
-  raw1    // FUN_140dfb630(param_1,(longlong)puVar6 + 10,1);
+raw2
+loop {
+  raw4
+  raw2
+  raw2
+  raw2
+  raw1
 }
 ```
 
@@ -10976,13 +10978,13 @@ for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
 **`0x141fa49c0` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
+raw.w2
+loop {
+  raw.w4
+  raw.w2
+  raw.w2
+  raw.w2
+  raw.w1
 }
 ```
 
@@ -10991,10 +10993,10 @@ for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
 **`0x141fa5e60` (reader = arg 0)** — min 16 bytes
 
 ```text
-raw4    // FUN_140dfb630(param_1,param_2,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 1,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 2,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 3,4);
+raw4
+raw4
+raw4
+raw4
 ```
 
 <a id="f-0x141fa5dc0-0"></a>
@@ -11002,10 +11004,10 @@ raw4    // FUN_140dfb630(param_1,param_2 + 3,4);
 **`0x141fa5dc0` (reader = arg 0)** — min 16 bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+raw.w4
+raw.w4
+raw.w4
+raw.w4
 ```
 
 <a id="f-0x1424da820-0"></a>
@@ -11013,10 +11015,10 @@ raw.w4    // FUN_140dfb760(param_1,local_res8,4);
 **`0x1424da820` (reader = arg 0)** — min 12 bytes
 
 ```text
-raw12    // FUN_140dfb630(param_1,param_2,0xc);
-raw    // FUN_140dfb630(param_1,local_res8);
-for (plVar2 = *(longlong **)(param_2 + 0x10); plVar2 != plVar1; plVar2 = plVar2 + 7) {
-  sub 0x1424300f0 [min 0]    // FUN_1424300f0(plVar2,param_1,uVar3,param_4);
+raw12
+raw
+loop {
+  sub 0x1424300f0 [min 0]
 }
 ```
 
@@ -11027,10 +11029,10 @@ Calls: [`0x1424300f0`](#f-0x1424300f0)
 **`0x1421bb900` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar4 = *param_2; lVar4 != lVar3; lVar4 = lVar4 + 4) {
-    raw4    // FUN_140dfb630(param_1,lVar4,4);
+raw1
+if … {
+  loop {
+    raw4
   }
 }
 ```
@@ -11040,12 +11042,12 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421bb7e0` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar1 & 0xff) == uVar1) {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  for (lVar4 = *param_2; lVar4 != lVar3; lVar4 = lVar4 + 4) {
-    raw.w4    // FUN_140dfb760(param_1,lVar4,4);
+if … {
+  raw.w1
+  loop {
+    raw.w4
   }
-  // return;
+  return
 }
 ```
 
@@ -11054,17 +11056,17 @@ if ((uVar1 & 0xff) == uVar1) {
 **`0x141eae9a0` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar4 & 0xff) == uVar4) {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  for (plVar3 = (longlong *)*param_2; plVar3 != plVar1; plVar3 = plVar3 + 7) {
-    raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-    if (plVar3[1] - lVar2 >> 2 != 0) {
-      do ... while (uVar4 < (ulonglong)(plVar3[1] - lVar2 >> 2)) {
-        cint.w    // FUN_141fa3c50(*(undefined4 *)(lVar2 + uVar4 * 4),param_1);
+if … {
+  raw.w1
+  loop {
+    raw.w2
+    if … {
+      loop {
+        cint.w
       }
     }
   }
-  // return;
+  return
 }
 ```
 
@@ -11073,13 +11075,13 @@ if ((uVar4 & 0xff) == uVar4) {
 **`0x1421bc0f0` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-for (puVar6 = (u_short *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 10) {
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res10,2);
-  raw.w8    // FUN_140dfb760(param_1,(longlong)puVar6 + 5,8);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
+raw.w2
+loop {
+  raw.w2
+  raw.w2
+  raw.w8
+  raw.w1
+  raw.w4
 }
 ```
 
@@ -11088,12 +11090,12 @@ for (puVar6 = (u_short *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 10) {
 **`0x141fa5100` (reader = arg 0)** — min 0 bytes
 
 ```text
-if ((uVar2 & 0xff) == uVar2) {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  for (puVar5 = (u_long *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 4) {
-    sub 0x141fa5dc0(reader arg 0) [min 16]    // FUN_141fa5dc0(param_1,puVar5);
+if … {
+  raw.w1
+  loop {
+    sub 0x141fa5dc0(reader arg 0) [min 16]
   }
-  // return;
+  return
 }
 ```
 
@@ -11104,7 +11106,7 @@ Calls: [`0x141fa5dc0@0`](#f-0x141fa5dc0-0)
 **`0x1424300f0`** — min 0 bytes
 
 ```text
-raw    // FUN_140dfb630(param_2);
+raw
 ```
 
 <a id="f-0x1421b5250-0"></a>
@@ -11112,15 +11114,15 @@ raw    // FUN_140dfb630(param_2);
 **`0x1421b5250` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-for (puVar5 = (u_long *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 0xc) {
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
+raw.w1
+loop {
+  raw.w4
+  raw.w1
+  raw.w1
+  raw.w1
+  raw.w1
+  raw.w1
+  raw.w1
 }
 ```
 
@@ -11129,16 +11131,16 @@ for (puVar5 = (u_long *)*param_2; puVar5 != puVar1; puVar5 = puVar5 + 0xc) {
 **`0x1421b5440` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res18,1);
-if (local_res18[0] != 0) {
-  do ... while (uVar7 < bVar2) {
-    raw4    // FUN_140dfb630(param_1,&local_70,4);
-    raw1    // FUN_140dfb630(param_1,&local_88,1);
-    raw1    // FUN_140dfb630(param_1,&local_87,1);
-    raw1    // FUN_140dfb630(param_1,local_res18,1);
-    raw1    // FUN_140dfb630(param_1,local_res20,1);
-    raw1    // FUN_140dfb630(param_1,&local_86,1);
-    raw    // FUN_140dfb630(param_1);
+raw1
+if … {
+  loop {
+    raw4
+    raw1
+    raw1
+    raw1
+    raw1
+    raw1
+    raw
   }
 }
 ```
@@ -11148,11 +11150,11 @@ if (local_res18[0] != 0) {
 **`0x1425038d0` (reader = arg 0)** — min 0 bytes
 
 ```text
-sub 0x14089e520 [min 0]    // FUN_14089e520((int)(lVar5 >> 1) - (int)(lVar5 >> 0x3f),param_1);
-for (puVar7 = puVar3; puVar7 != puVar4; puVar7 = puVar7 + 3) {
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
-  raw.w4    // FUN_140dfb760(param_1,local_res10,4);
-  raw.w1    // FUN_140dfb760(param_1,puVar7 + 2,1);
+sub 0x14089e520 [min 0]
+loop {
+  raw.w4
+  raw.w4
+  raw.w1
 }
 ```
 
@@ -11163,22 +11165,22 @@ Calls: [`0x14089e520`](#f-0x14089e520)
 **`0x1424d2610` (reader = arg 0)** — min 21 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,local_res8,4);
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-for (plVar4 = (longlong *)param_2[2]; plVar4 != plVar1; plVar4 = plVar4 + 5) {
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-  raw.w1    // FUN_140dfb760(param_1,plVar4 + 4,1);
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
+raw.w2
+raw.w4
+raw.w1
+raw.w4
+raw.w4
+raw.w4
+raw.w1
+raw.w1
+loop {
+  raw.w2
+  raw.w2
+  raw.w1
+  raw.w2
 }
-for (plVar4 = (longlong *)param_2[5]; plVar4 != plVar1; plVar4 = plVar4 + 2) {
-  raw.w2    // FUN_140dfb760(param_1,local_res8,2);
+loop {
+  raw.w2
 }
 ```
 
@@ -11187,15 +11189,15 @@ for (plVar4 = (longlong *)param_2[5]; plVar4 != plVar1; plVar4 = plVar4 + 2) {
 **`0x1421bbd60` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar7 = *param_2; lVar7 != lVar10; lVar7 = lVar7 + 0x20) {
-    raw8    // FUN_140dfb630(param_1,lVar7,8);
-    raw4    // FUN_140dfb630(param_1,lVar7 + 0x10,4);
-    raw4    // FUN_140dfb630(param_1,lVar7 + 0x14,4);
-    raw    // FUN_140dfb630(param_1,local_res8);
-    sub 0x1421ec2c0 [min 2]    // puVar4 = FUN_1421ec2c0(local_res18,param_1,uVar11,param_4);
+if … {
+  loop {
+    raw8
+    raw4
+    raw4
+    raw
+    sub 0x1421ec2c0 [min 2]
   }
-  // return param_1;
+  return
 }
 ```
 
@@ -11206,7 +11208,7 @@ Calls: [`0x1421ec2c0`](#f-0x1421ec2c0)
 **`0x1421bbf20` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw2    // FUN_140dfb630(param_1,local_res10,2);
+raw2
 ```
 
 <a id="f-0x1429a4790-0"></a>
@@ -11214,22 +11216,22 @@ raw2    // FUN_140dfb630(param_1,local_res10,2);
 **`0x1429a4790` (reader = arg 0)** — min 50+ bytes
 
 ```text
-raw8    // FUN_140dfb630(param_1,param_2,8);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x28,4);
-wstr    // FUN_140e0cbe0(param_1,param_2 + 8);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x44,4);
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x2c,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x30,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x34,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x38,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x3c,4);
-raw4    // FUN_140dfb630(param_1,param_2 + 0x40,4);
-raw2    // FUN_140dfb630(param_1,param_2 + 0x48,2);
-raw2    // FUN_140dfb630(param_1,param_2 + 0x4a,2);
-raw2    // FUN_140dfb630(param_1,param_2 + 0x4c,2);
-raw2    // FUN_140dfb630(param_1,param_2 + 0x4e,2);
-raw1    // FUN_140dfb630(param_1,param_2 + 0x50,1);
+raw8
+raw4
+wstr
+raw4
+raw1
+raw4
+raw4
+raw4
+raw4
+raw4
+raw4
+raw2
+raw2
+raw2
+raw2
+raw1
 ```
 
 <a id="f-0x1429a4590-0"></a>
@@ -11237,22 +11239,22 @@ raw1    // FUN_140dfb630(param_1,param_2 + 0x50,1);
 **`0x1429a4590` (reader = arg 0)** — min 50 bytes
 
 ```text
-raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(param_2 + 3));
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
+raw.w8
+raw.w4
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w4
+raw.w1
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w4
+raw.w2
+raw.w2
+raw.w2
+raw.w2
+raw.w1
 ```
 
 Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
@@ -11262,8 +11264,8 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x1421bbb70` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (*(char *)(param_1 + 0x252) == '\0') {
-  raw[var]    // FUN_140dfb630(param_1,*param_2,(ulonglong)uVar1 * 4);
+if … {
+  raw[var]
 }
 ```
 
@@ -11272,13 +11274,13 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421bba50` (reader = arg 0)** — min 0 bytes
 
 ```text
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (puVar7 = (u_short *)*param_2; puVar7 != puVar1; puVar7 = puVar7 + 8) {
-    raw2    // FUN_140dfb630(param_1,puVar7,2);
-    raw2    // FUN_140dfb630(param_1,puVar7 + 1,2);
-    raw8    // FUN_140dfb630(param_1,puVar7 + 4,8);
+if … {
+  loop {
+    raw2
+    raw2
+    raw8
   }
-  // return param_1;
+  return
 }
 ```
 
@@ -11287,10 +11289,10 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1421bb9d0` (reader = arg 0)** — min 0 bytes
 
 ```text
-sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(param_2[1] - *param_2 >> 4),param_1);
-for (puVar3 = (u_short *)*param_2; puVar3 != puVar1; puVar3 = puVar3 + 8) {
-  sub 0x140e0d750(reader arg 0) [min 4]    // uVar2 = FUN_140e0d750(param_1,puVar3);
-  raw.w8    // FUN_140dfb760(uVar2,&local_res8,8);
+sub 0x14089e520 [min 0]
+loop {
+  sub 0x140e0d750(reader arg 0) [min 4]
+  raw.w8
 }
 ```
 
@@ -11301,10 +11303,10 @@ Calls: [`0x140e0d750@0`](#f-0x140e0d750-0), [`0x14089e520`](#f-0x14089e520)
 **`0x141f91f60`** — min 12 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+raw.w2
+raw.w4
+raw.w4
+raw.w2
 ```
 
 <a id="f-0x1419bd6f0"></a>
@@ -11312,20 +11314,20 @@ raw.w2    // FUN_140dfb760(param_2,local_res8,2);
 **`0x1419bd6f0`** — min 11 bytes
 
 ```text
-sub 0x14195dde0 [min 8]    // FUN_14195dde0((u_short *)(param_1 + 0x40),param_2);
-raw2 → +0x36    // FUN_140dfb630(param_2,param_1 + 0x36,2);
-raw1    // FUN_140dfb630(param_2,local_res8,1);
-if (bVar2 != 0) {
-  if ((*(ushort *)(param_1 + 0x36) >> 10 & 1) != 0) {
-    raw2 → +0x34    // FUN_140dfb630(param_2,param_1 + 0x34,2);
+sub 0x14195dde0 [min 8]
+raw2 → +0x36
+raw1
+if … {
+  if bit 0x1 set {
+    raw2 → +0x34
   }
-  raw1 → +0x39    // FUN_140dfb630(param_2,param_1 + 0x39,1);
-  raw1 → +0x3a    // FUN_140dfb630(param_2,param_1 + 0x3a,1);
-  if ((bVar1 & 4) != 0) {
-    raw2 → +0x3c    // FUN_140dfb630(param_2,param_1 + 0x3c,2);
+  raw1 → +0x39
+  raw1 → +0x3a
+  if bit 0x4 set {
+    raw2 → +0x3c
   }
-  if ((bVar1 & 8) != 0) {
-    raw2 → +0x3e    // FUN_140dfb630(param_2,param_1 + 0x3e,2);
+  if bit 0x8 set {
+    raw2 → +0x3e
   }
 }
 ```
@@ -11337,20 +11339,20 @@ Calls: [`0x14195dde0`](#f-0x14195dde0)
 **`0x1419bdb80`** — min 11 bytes
 
 ```text
-sub 0x14195dd40 [min 8]    // FUN_14195dd40((u_short *)(param_1 + 0x40),param_2);
-raw.w2    // FUN_140dfb760(param_2,local_res10,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-if (*(char *)(param_1 + 0x49) != '\0') {
-  if ((*(ushort *)(param_1 + 0x36) >> 10 & 1) != 0) {
-    raw.w2    // FUN_140dfb760(param_2,local_res10,2);
+sub 0x14195dd40 [min 8]
+raw.w2
+raw.w1
+if … {
+  if bit 0x1 set {
+    raw.w2
   }
-  raw.w1    // FUN_140dfb760(param_2,local_res10,1);
-  raw.w1    // FUN_140dfb760(param_2,local_res10,1);
-  if ((local_res8[0] & 4) != 0) {
-    raw.w2    // FUN_140dfb760(param_2,local_res10,2);
+  raw.w1
+  raw.w1
+  if bit 0x4 set {
+    raw.w2
   }
-  if ((local_res8[0] & 8) != 0) {
-    raw.w2    // FUN_140dfb760(param_2,local_res8,2);
+  if bit 0x8 set {
+    raw.w2
   }
 }
 ```
@@ -11362,10 +11364,10 @@ Calls: [`0x14195dd40`](#f-0x14195dd40)
 **`0x14195dde0`** — min 8 bytes
 
 ```text
-raw2 → +0x0    // FUN_140dfb630(param_2,param_1,2);
-raw1 → +0x3    // FUN_140dfb630(param_2,(longlong)param_1 + 3,1);
-raw1 → +0x2    // FUN_140dfb630(param_2,param_1 + 1,1);
-raw4 → +0x4    // FUN_140dfb630(param_2,param_1 + 2,4);
+raw2 → +0x0
+raw1 → +0x3
+raw1 → +0x2
+raw4 → +0x4
 ```
 
 <a id="f-0x14195dd40"></a>
@@ -11373,10 +11375,10 @@ raw4 → +0x4    // FUN_140dfb630(param_2,param_1 + 2,4);
 **`0x14195dd40`** — min 8 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_2,local_res8,2);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w1    // FUN_140dfb760(param_2,local_res8,1);
-raw.w4    // FUN_140dfb760(param_2,local_res8,4);
+raw.w2
+raw.w1
+raw.w1
+raw.w4
 ```
 
 <a id="f-0x1419e54d0-0"></a>
@@ -11384,26 +11386,26 @@ raw.w4    // FUN_140dfb760(param_2,local_res8,4);
 **`0x1419e54d0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if ((local_res8[0] & 4) != 0) {
-  raw4    // FUN_140dfb630(param_1,param_2 + 8,4);
+raw1
+if bit 0x4 set {
+  raw4
 }
-if ((bVar1 & 8) != 0) {
-  raw4    // FUN_140dfb630(param_1,param_2 + 0x18,4);
+if bit 0x8 set {
+  raw4
 }
-if ((bVar1 & 0x10) != 0) {
-  raw4    // FUN_140dfb630(param_1,param_2 + 0x1c,4);
+if bit 0x10 set {
+  raw4
 }
-if ((bVar1 & 0x20) != 0) {
-  raw4    // FUN_140dfb630(param_1,param_2 + 0x20,4);
+if bit 0x20 set {
+  raw4
 }
-if ((bVar1 & 0x40) != 0) {
-  raw4    // FUN_140dfb630(param_1,param_2 + 0x28,4);
+if bit 0x40 set {
+  raw4
 }
-if ((char)bVar1 < '\0') {
-  cint    // uVar3 = FUN_14089cad0(param_1);
-  if (*(char *)(param_1 + 0x252) == '\0') {
-    raw[var]    // FUN_140dfb630(param_1,*(undefined8 *)(param_2 + 0x30),(ulonglong)uVar3 * 4);
+if bit 0x80 set {
+  cint
+  if … {
+    raw[var]
   }
 }
 ```
@@ -11413,25 +11415,25 @@ if ((char)bVar1 < '\0') {
 **`0x1419e5300` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,local_res8,1);
-if ((local_res8[0] & 4) != 0) {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+raw.w1
+if bit 0x4 set {
+  raw.w4
 }
-if ((uVar2 & 8) != 0) {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+if bit 0x8 set {
+  raw.w4
 }
-if ((uVar2 & 0x10) != 0) {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+if bit 0x10 set {
+  raw.w4
 }
-if ((uVar2 & 0x20) != 0) {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+if bit 0x20 set {
+  raw.w4
 }
-if ((uVar2 & 0x40) != 0) {
-  raw.w4    // FUN_140dfb760(param_1,local_res8,4);
+if bit 0x40 set {
+  raw.w4
 }
-if (cVar1 < '\0') {
-  sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_2 + 0x38) - *(longlong *)(param_2 + 0x30) >> 2),param_1 );
-  raw.w[var]    // FUN_140dfb760(param_1,*(longlong *)(param_2 + 0x30), *(longlong *)(param_2 + 0x38) - *(longlong *)(param_2 + 0x30) & 0xfffffffffffffffc );
+if … {
+  sub 0x14089e520 [min 0]
+  raw.w[var]
 }
 ```
 
@@ -11442,9 +11444,9 @@ Calls: [`0x14089e520`](#f-0x14089e520)
 **`0x1424f3fc0` (reader = arg 0)** — min 7 bytes
 
 ```text
-sub 0x1424f4730(reader arg 0) [min 2]    // FUN_1424f4730(param_1,param_2,&local_res8);
-u32    // param_1[2] = lVar4 + 4U;
-u8    // param_1[2] = lVar4 + 1U;
+sub 0x1424f4730(reader arg 0) [min 2]
+u32
+u8
 ```
 
 Calls: [`0x1424f4730@0`](#f-0x1424f4730-0)
@@ -11454,7 +11456,7 @@ Calls: [`0x1424f4730@0`](#f-0x1424f4730-0)
 **`0x1424f4b10` (reader = arg 0)** — min 1 bytes
 
 ```text
-u8    // param_1[2] = uVar10;
+u8
 ```
 
 <a id="f-0x1424f4250-0"></a>
@@ -11462,9 +11464,9 @@ u8    // param_1[2] = uVar10;
 **`0x1424f4250` (reader = arg 0)** — min 7 bytes
 
 ```text
-sub 0x1424f4920(reader arg 0) [min 2]    // FUN_1424f4920(param_1,param_2,&local_res8);
-u32    // param_1[2] = lVar4 + 4U;
-u8    // param_1[2] = lVar4 + 1U;
+sub 0x1424f4920(reader arg 0) [min 2]
+u32
+u8
 ```
 
 Calls: [`0x1424f4920@0`](#f-0x1424f4920-0)
@@ -11474,7 +11476,7 @@ Calls: [`0x1424f4920@0`](#f-0x1424f4920-0)
 **`0x1424f4730` (reader = arg 0)** — min 2 bytes
 
 ```text
-u16    // param_1[2] = uVar11;
+u16
 ```
 
 <a id="f-0x142430380"></a>
@@ -11482,14 +11484,14 @@ u16    // param_1[2] = uVar11;
 **`0x142430380`** — min 2 bytes
 
 ```text
-u16    // param_2[2] = lVar4 + 2U;
-if (param_1[5] != 0) {
-  if (param_1[1] - *param_1 >> 2 != 0) {
-    do ... while (uVar10 < (ulonglong)(param_1[1] - *param_1 >> 2)) {
-      sub 0x141e490e0(reader arg 0) [min 1]    // uVar5 = FUN_141e490e0(param_2);
+u16
+if … {
+  if … {
+    loop {
+      sub 0x141e490e0(reader arg 0) [min 1]
     }
   }
-  // return;
+  return
 }
 ```
 
@@ -11500,7 +11502,7 @@ Calls: [`0x141e490e0@0`](#f-0x141e490e0-0)
 **`0x141e840c0` (reader = arg 0)** — min 4 bytes
 
 ```text
-u32    // param_1[2] = uVar12;
+u32
 ```
 
 <a id="f-0x141d4d1f0-0"></a>
@@ -11508,21 +11510,21 @@ u32    // param_1[2] = uVar12;
 **`0x141d4d1f0` (reader = arg 0)** — min 8+ bytes
 
 ```text
-raw4    // FUN_140dfb630(param_1,param_2 + 5,4);
-raw4    // FUN_140dfb630(param_1,(longlong)param_2 + 0x2c,4);
-wstr    // FUN_140e0cbe0(param_1,param_2 + 1);
-str    // uVar3 = FUN_1408402a0(param_1,param_2 + 9);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  if ((*(byte *)((longlong)param_2 + 0x3d) & 0x20) == 0) { }
+raw4
+raw4
+wstr
+str
+if … {
+  if bit 0x20 clear {
   else {
-    raw8    // FUN_140dfb630(param_1,param_2,8);
+    raw8
   }
-  if ((*(byte *)((longlong)param_2 + 0x3d) & 0x10) == 0) { }
+  if bit 0x10 clear {
   else {
-    raw1    // FUN_140dfb630(param_1,(longlong)param_2 + 0x3c,1);
+    raw1
   }
-  if ((*(byte *)((longlong)param_2 + 0x3d) & 0x40) != 0) {
-    raw4    // FUN_140dfb630(param_1,(longlong)param_2 + 0x3f,4);
+  if bit 0x40 set {
+    raw4
   }
 }
 ```
@@ -11532,26 +11534,26 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x141d4d020` (reader = arg 0)** — min 20+ bytes
 
 ```text
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar4,*(ushort *)(param_2 + 3));
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w[var]    // FUN_140dfb760(param_1,plVar5,uVar2);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,(longlong)param_2 + 0x3d,2);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_1,param_2 + 6,1);
-raw.w1    // FUN_140dfb760(param_1,(longlong)param_2 + 0x31,1);
-raw.w1    // FUN_140dfb760(param_1,(longlong)param_2 + 0x32,1);
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-if ((*(byte *)((longlong)param_2 + 0x3d) & 0x20) != 0) {
-  raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
+raw.w4
+raw.w4
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w2
+raw.w[var]
+raw.w2
+raw.w2
+raw.w2
+raw.w1
+raw.w1
+raw.w1
+raw.w1
+if bit 0x20 set {
+  raw.w8
 }
-if ((*(byte *)((longlong)param_2 + 0x3d) & 0x10) != 0) {
-  raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
+if bit 0x10 set {
+  raw.w1
 }
-if ((*(byte *)((longlong)param_2 + 0x3d) & 0x40) != 0) {
-  raw.w4    // FUN_140dfb760(param_1,(longlong)param_2 + 0x3f,4);
+if bit 0x40 set {
+  raw.w4
 }
 ```
 
@@ -11562,12 +11564,12 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x1421f5680`** — min 0 bytes
 
 ```text
-if (extraout_RAX != (undefined8 *)0x0) {
-  raw4    // FUN_140dfb630(param_2,extraout_RAX + 5,4);
-  raw1    // FUN_140dfb630(param_2,local_res18,1);
-  raw    // FUN_140dfb630(param_2,&local_res8);
-  if (*(char *)(param_2 + 0x252) == '\0') {
-    sub 0x1421ec2c0 [min 2]    // plVar5 = FUN_1421ec2c0(&local_res20,param_2,uVar10,param_4);
+if … {
+  raw4
+  raw1
+  raw
+  if … {
+    sub 0x1421ec2c0 [min 2]
   }
 }
 ```
@@ -11579,15 +11581,14 @@ Calls: [`0x1421ec2c0`](#f-0x1421ec2c0)
 **`0x1421f4f80`** — min 1 bytes
 
 ```text
-cint    // uVar7 = FUN_14089cad0(param_2);
-if (*(char *)(param_2 + 0x252) == '\0') {
-  if (uVar7 != 0) {
-    do ... while (uVar14 < uVar7) {
-      sub 0x1421f5680 [min 0]    // puVar8 = FUN_1421f5680(&local_58,param_2,param_3,param_4);
-      // if (*(char *)(param_2 + 0x252) != '\0') goto LAB_1421f5134;
+cint
+if … {
+  if … {
+    loop {
+      sub 0x1421f5680 [min 0]
+      goto
     }
   }
-  // LAB_1421f5134:
 }
 ```
 
@@ -11598,19 +11599,19 @@ Calls: [`0x1421f5680`](#f-0x1421f5680)
 **`0x141fa28f0` (reader = arg 0)** — min 37 bytes
 
 ```text
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(param_2 + 0x20));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(param_2 + 0x50));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(param_2 + 0x70));
-sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)puVar3,*(ushort *)(param_2 + 0x90));
-raw.w4    // FUN_140dfb760(param_1,&local_res8,4);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w1    // FUN_140dfb760(param_1,&local_res8,1);
-raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-raw.w8    // FUN_140dfb760(param_1,&local_res8,8);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,&local_res8,2);
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+sub 0x140e0c9b0(reader arg 0) [min 0]
+raw.w4
+raw.w2
+raw.w2
+raw.w1
+raw.w8
+raw.w8
+raw.w8
+raw.w2
+raw.w2
 ```
 
 Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
@@ -11620,12 +11621,12 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0)
 **`0x1425086d0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
-  raw4    // FUN_140dfb630(param_1,puVar6,4);
-  raw2    // FUN_140dfb630(param_1,puVar6 + 1,2);
-  raw2    // FUN_140dfb630(param_1,(longlong)puVar6 + 6,2);
-  raw1    // FUN_140dfb630(param_1,local_res8,1);
+raw1
+loop {
+  raw4
+  raw2
+  raw2
+  raw1
 }
 ```
 
@@ -11634,12 +11635,12 @@ for (puVar6 = (u_long *)*param_2; puVar6 != puVar1; puVar6 = puVar6 + 3) {
 **`0x141fa5380` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res8,1);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  for (lVar4 = *param_2; lVar4 != lVar7; lVar4 = lVar4 + 0x28) {
-    raw1    // FUN_140dfb630(param_1,local_res8,1);
-    raw1    // FUN_140dfb630(param_1,lVar4 + 0x20,1);
-    wstr    // FUN_140e0cbe0(param_1,lVar4);
+raw1
+if … {
+  loop {
+    raw1
+    raw1
+    wstr
   }
 }
 ```
@@ -11649,18 +11650,18 @@ if (*(char *)(param_1 + 0x252) == '\0') {
 **`0x1424dec50` (reader = arg 0)** — min 2 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,&local_res8,1);
-sub 0x1424def10(reader arg 0) [min 1]    // FUN_1424def10(param_1,(longlong *)(param_2 + 2),(longlong *)&local_res8,param_4);
-if (*(char *)(param_1 + 0x252) == '\0') {
-  raw    // FUN_140dfb630(param_1);
-  if (*(char *)(param_1 + 0x252) == '\0') {
-    for (puVar7 = *(undefined8 **)(param_2 + 6); puVar7 != puVar9; puVar7 = puVar7 + 6) {
-      raw2    // FUN_140dfb630(param_1,local_res10,2);
-      // if (*(char *)(param_1 + 0x252) != '\0') break;
-      raw    // FUN_140dfb630(param_1,&local_res8);
-      if (*(char *)(param_1 + 0x252) == '\0') {
-        for (plVar8 = (longlong *)puVar7[2]; plVar8 != plVar2; plVar8 = plVar8 + 7) {
-          sub 0x1424300f0 [min 0]    // FUN_1424300f0(plVar8,param_1,uVar10,uVar4);
+raw1
+sub 0x1424def10(reader arg 0) [min 1]
+if … {
+  raw
+  if … {
+    loop {
+      raw2
+      break
+      raw
+      if … {
+        loop {
+          sub 0x1424300f0 [min 0]
         }
       }
     }
@@ -11675,12 +11676,12 @@ Calls: [`0x1424def10@0`](#f-0x1424def10-0), [`0x1424300f0`](#f-0x1424300f0)
 **`0x141fa33b0` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res18,1);
-if ((byte)local_res18[0] == '\0') { }
+raw1
+if … {
 else {
-  raw1    // FUN_140dfb630(param_1,local_res18,1);
-  if (*(char *)(param_1 + 0x252) == '\0') {
-    vcall [?](reader arg 1)    // puVar1 = (undefined8 *) (*(code *)(&PTR_FUN_1435c05e0)[(ulonglong)local_res18[0] & 0xff])(local_188,param_1);
+  raw1
+  if … {
+    vcall [?](reader arg 1)
   }
 }
 ```
@@ -11690,20 +11691,20 @@ else {
 **`0x141fa5a00` (reader = arg 0)** — min 1+ bytes
 
 ```text
-raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-if (param_2[0x60] == '\0') {
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
-  if (param_2[0x38] != '\0') {
-    sub 0x140e0c9b0(reader arg 0) [min 0]    // FUN_140e0c9b0(param_1,(longlong)pcVar3,*(ushort *)(param_2 + 0x28));
+raw.w1
+if … {
+  raw.w1
+  if … {
+    sub 0x140e0c9b0(reader arg 0) [min 0]
   }
-  sub 0x14089e520 [min 0]    // FUN_14089e520((uint)(*(longlong *)(param_2 + 0x48) - *(longlong *)(param_2 + 0x40) >> 2),param_1 );
-  raw.w[var]    // FUN_140dfb760(param_1,*(longlong *)(param_2 + 0x40), *(longlong *)(param_2 + 0x48) - *(longlong *)(param_2 + 0x40) & 0xfffffffffffffffc );
-  raw.w1    // FUN_140dfb760(param_1,local_res10,1);
+  sub 0x14089e520 [min 0]
+  raw.w[var]
+  raw.w1
 }
 else {
-  raw.w4    // FUN_140dfb760(param_1,param_2,4);
+  raw.w4
 }
-raw.w[var]    // FUN_140dfb760(param_1,pcVar3,lVar4);
+raw.w[var]
 ```
 
 Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0), [`0x14089e520`](#f-0x14089e520)
@@ -11713,8 +11714,8 @@ Calls: [`0x140e0c9b0@0`](#f-0x140e0c9b0-0), [`0x14089e520`](#f-0x14089e520)
 **`0x140e0d750` (reader = arg 0)** — min 4 bytes
 
 ```text
-raw.w2    // FUN_140dfb760(param_1,local_res8,2);
-raw.w2    // FUN_140dfb760(param_1,local_res8,2);
+raw.w2
+raw.w2
 ```
 
 <a id="f-0x1424f4920-0"></a>
@@ -11722,7 +11723,7 @@ raw.w2    // FUN_140dfb760(param_1,local_res8,2);
 **`0x1424f4920` (reader = arg 0)** — min 2 bytes
 
 ```text
-u16    // param_1[2] = uVar12;
+u16
 ```
 
 <a id="f-0x1424def10-0"></a>
@@ -11730,5 +11731,5 @@ u16    // param_1[2] = uVar12;
 **`0x1424def10` (reader = arg 0)** — min 1 bytes
 
 ```text
-raw1    // FUN_140dfb630(param_1,local_res10,1);
+raw1
 ```

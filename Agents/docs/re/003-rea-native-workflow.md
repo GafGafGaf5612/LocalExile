@@ -24,8 +24,6 @@ REA_GHIDRA_STARTUP_TIMEOUT_MS=<ms>   # raise for large targets
 | `Client/PackCheck.exe` | 1.29 MB | **OK** — 8 segments, 3,286 procedures, 2,712 strings (~110 s) |
 | `Client/Game.exe` | 73.7 MB | `provider_timeout` at 1,200,000 ms (`list_documents`) |
 
-PackCheck result (Evidence): `Agents/docs/re/evidence/rea-packcheck-analyze.json`.
-
 Command that worked:
 
 ```powershell
