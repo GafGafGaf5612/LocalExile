@@ -104,9 +104,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   See [13](docs/protocol/13-items.md), "Orb of Scouring".
 - **Orb of Transmutation (verified live, 2026-10-21):** a normal item becomes magic with 1-2 random affixes.
   See [13](docs/protocol/13-items.md), "Orb of Transmutation".
-- **Orb of Alteration (verified live, 2026-10-21):** a magic item gets 1-4 new affixes (server choice; official 1-2).
+- **Orb of Alteration (verified live, 2026-10-21):** a magic item gets 1-2 new affixes (one prefix, one suffix at most).
   See [13](docs/protocol/13-items.md), "Orb of Alteration".
-- **Orb of Augmentation (verified live, 2026-10-21):** +1 affix on a magic item, up to 4 (two of each kind).
+- **Orb of Augmentation (verified live, 2026-10-21):** +1 affix on a magic item, up to one prefix and one suffix.
   See [13](docs/protocol/13-items.md), "Orb of Augmentation".
 - **Regal Orb (verified live, 2026-10-21):** magic → rare, affixes kept, +1 affix, rare name.
   See [13](docs/protocol/13-items.md), "Regal Orb".
@@ -123,6 +123,11 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Vaal Orb and corruption (verified live, 2026-10-21):** weapons, armour and jewellery are always corrupted
   (Base +0xc7 bit 0, saved); normal / magic → rare with 4-6 affixes, a rare item gets 1-5 or all affixes rerolled; a
   corrupted item takes no currency but Wisdom. See [13](docs/protocol/13-items.md), "Vaal Orb and corruption".
+- **Glassblower's Bauble (verified live, 2026-10-21):** +1% flask quality up to 20%; Scouring resets it.
+  See [13](docs/protocol/13-items.md), "Glassblower's Bauble".
+- **Fracturing Orb (verified live, 2026-10-21):** one random mod of a rare item with 4+ mods is fractured and kept by
+  every other currency, Scouring included; shown fractured (magic properties u8 +0x7a). See
+  [13](docs/protocol/13-items.md), "Fracturing Orb".
 - **Orb of Fusing: verified live (2026-10-21).** Captured 0x71/0x72 packets feed the same
   handler. Only links change; sockets, colours, gems and item properties stay intact. Refuses fewer than two sockets
   and protects fully linked 5/6-socket items; 2-4 sockets remain rerollable. Quality favours longer groups without
@@ -196,7 +201,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate appears without
   its animation; the Doorman and the opening tutorial's wall are not created ([12](docs/protocol/12-quests.md) §6).
   Only quest a1q1 is scripted; no quest log.
-- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb, Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb, Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb and Orb of Regret; utility flasks; support gems and links
+- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb, Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb, Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble, Fracturing Orb and Orb of Regret; utility flasks; support gems and links
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
   Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).
