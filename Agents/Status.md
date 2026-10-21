@@ -171,7 +171,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Tests
 
 `dotnet test tests/GameServer.Core.Tests` (329 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (278: currency on items, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`tests/GameServer.Gateway.Tests` (298: currency on items, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
@@ -187,3 +187,13 @@ guide.
 
 `docs/re/001`–`006` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`).
 `docs/superpowers/` and `docs/history/` are the original plans. Treat all of these as history, not reference.
+
+## Jeweller's Orb (2026-10-21)
+
+Initial implementation verified live: normal and Shift use rerolls empty sockets, colours and links, consumes one
+orb, updates inventory and saves the result. Class, dimensions and item level limit socket rolls; only base
+capacity blocks further use. Local counts are 1/2/3/4/6. Probabilities are approximate; quality, white-socket
+3.29 rules and special item overrides remain open. See protocol/13-items.md, Jeweller's Orb.
+
+PR branch validation: build succeeded with zero warnings/errors; Core 307, Data 15, Gateway 210 tests passed.
+Gateway test artifacts were placed in the local workspace so the existing extracted data could be read.
