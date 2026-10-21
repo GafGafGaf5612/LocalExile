@@ -23,6 +23,19 @@ sealed class AccountStash
 
     public static uint InventoryId(int tab) => FirstInventoryId + (uint)tab;
 
+    /// <summary>The guild stash's tabs and items (S→C 0x7b kind 2, 0x136 kind 1) take ranges of their own, so the client
+    /// never mixes them up with the personal stash's: inventory ids from 0x900, item ids from 0x50000000.</summary>
+    public const uint GuildFirstInventoryId = 0x900, GuildFirstItemId = 0x50000000;
+
+    /// <summary>The size of each stash's item id range (personal 0x40000000…, guild 0x50000000…).</summary>
+    const uint ItemIdRange = 0x10000000;
+
+    /// <summary>This stash's tab i inventory id.</summary>
+    public uint InventoryOf(int tab) => _firstInventoryId + (uint)tab;
+
+    /// <summary>Whether this is the guild stash.</summary>
+    public bool IsGuild => _firstInventoryId == GuildFirstInventoryId;
+
     /// <summary>A tab: name, StashType row, colour, items, and its affinities (a bitset of StashTabAffinityId rows, set in the
     /// tab settings, C→S 0xd3).</summary>
     public sealed record SavedTab(string Name, byte Type, byte R, byte G, byte B, List<CharacterSaves.SavedPlacement> Items, uint Affinities = 0);
@@ -70,6 +83,8 @@ sealed class AccountStash
     readonly Lock _lock = new();
     int _lastTab;
     uint _nextItemId = FirstItemId;
+    uint _firstItemId = FirstItemId, _firstInventoryId = FirstInventoryId;
+    bool OwnId(uint id) => id >= _firstItemId && id < _firstItemId + ItemIdRange;
     uint _gold;
     ModCatalog? _mods;  // to save mods by their Mods.dat Id
     Dictionary<string, JsonElement>? _unknown;  // fields of a newer build's save, written back as they are
@@ -81,12 +96,25 @@ sealed class AccountStash
 
     /// <summary>The account's stash, loaded from the save database or made with the starter tabs. A saved item the game
     /// data doesn't know stops the load (<see cref="UnknownSavedItemException"/>) and the save stays as it is.</summary>
-    public static AccountStash For(string account, ItemCatalog catalog) =>
+    public static AccountStash For(string account, ItemCatalog catalog) => Create(account, catalog, FirstInventoryId, FirstItemId, StarterTabs);
+
+    /// <summary>The guild stash of the account (no guilds yet: each account is its own guild), saved as "guild:&lt;account&gt;"
+    /// and made with <see cref="GuildStarterTabs"/>.</summary>
+    public static AccountStash ForGuild(string account, ItemCatalog catalog) =>
+        Create("guild:" + account, catalog, GuildFirstInventoryId, GuildFirstItemId, GuildStarterTabs);
+
+    /// <summary>The tabs a guild stash starts with.</summary>
+    static readonly SavedTab[] GuildStarterTabs =
+    [
+        new("Guild 1", 1, 0x1e, 0x8c, 0x3c, []), new("Guild 2", 1, 0x1e, 0x8c, 0x3c, []), new("Guild Quad", 7, 0x8a, 0x2b, 0xe2, []),
+    ];
+
+    static AccountStash Create(string account, ItemCatalog catalog, uint firstInventoryId, uint firstItemId, SavedTab[] starter) =>
         ByAccount.GetOrAdd(account, name =>
         {
-            var stash = new AccountStash(name) { _mods = catalog.Mods, _rules = catalog.Stash };
+            var stash = new AccountStash(name) { _mods = catalog.Mods, _rules = catalog.Stash, _firstInventoryId = firstInventoryId, _firstItemId = firstItemId };
             var save = Load(name);
-            var headers = save?.Tabs ?? [.. StarterTabs];
+            var headers = save?.Tabs ?? [.. starter];
             for (int i = 0; i < headers.Count; i++)
             {
                 var tab = new TabState(headers[i] with { Items = [] });
@@ -100,8 +128,8 @@ sealed class AccountStash
             }
             stash._lastTab = Math.Clamp(save?.LastTab ?? 0, 0, Math.Max(0, stash._tabs.Count - 1));
             // Never below an id handed out before (an item that left for a character keeps its stash id).
-            uint used = stash._tabs.SelectMany(t => t.Items).Select(i => i.Id).Where(i => i >= FirstItemId).DefaultIfEmpty(FirstItemId - 1).Max();
-            stash._nextItemId = Math.Max(save?.NextItemId ?? FirstItemId, used + 1);
+            uint used = stash._tabs.SelectMany(t => t.Items).Select(i => i.Id).Where(stash.OwnId).DefaultIfEmpty(firstItemId - 1).Max();
+            stash._nextItemId = Math.Max(save?.NextItemId is uint next && stash.OwnId(next) ? next : firstItemId, used + 1);
             stash._gold = save?.Gold ?? 0;
             stash._unknown = save?.Unknown;
             if (save is null) stash.Persist([.. Enumerable.Range(0, stash._tabs.Count)]);
@@ -203,7 +231,7 @@ sealed class AccountStash
     public int? TabOf(uint inventoryId)
     {
         lock (_lock)
-            return inventoryId >= FirstInventoryId && inventoryId < FirstInventoryId + _tabs.Count ? (int)(inventoryId - FirstInventoryId) : null;
+            return inventoryId >= _firstInventoryId && inventoryId < _firstInventoryId + _tabs.Count ? (int)(inventoryId - _firstInventoryId) : null;
     }
 
     /// <summary>The tab list for S→C 0x21 / 0x136. The last tab carries affinity bit <paramref name="selectBit"/> (if
@@ -212,7 +240,7 @@ sealed class AccountStash
     public List<InstanceStash.Tab> Records(int? selectBit, ISet<int>? loaded = null)
     {
         lock (_lock)
-            return [.. _tabs.Select((t, i) => new InstanceStash.Tab((ushort)i, t.Saved.Name, InventoryId(i), t.Saved.Type,
+            return [.. _tabs.Select((t, i) => new InstanceStash.Tab((ushort)i, t.Saved.Name, InventoryOf(i), t.Saved.Type,
                 t.Saved.R, t.Saved.G, t.Saved.B,
                 Flags: t.Saved.Type is 1 or 7 ? InstanceStash.TabFlags.Premium : InstanceStash.TabFlags.None,
                 Position: (ushort)i, Affinities: t.Saved.Affinities | (selectBit is int b && i == _lastTab ? 1u << b : 0),
@@ -305,7 +333,8 @@ sealed class AccountStash
                 displaced = inTheWay[0] with { X = 0, Y = 0 };
             }
             // A character's id (counted from 1 per character) becomes a stash id: two characters' items never share one.
-            var placed = held with { Id = held.Id >= FirstItemId ? held.Id : _nextItemId++, X = (byte)x, Y = (byte)y };
+            // An item keeps the id this stash gave it; one from a character or the other stash gets one of this stash's.
+            var placed = held with { Id = OwnId(held.Id) ? held.Id : _nextItemId++, X = (byte)x, Y = (byte)y };
             t.Items.Add(placed);
             result = (placed, displaced);
         }

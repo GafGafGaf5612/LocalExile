@@ -94,6 +94,13 @@ yet confirmed on screen).
   refused.
 - `/passives` lists the passive and refund points, `/reset_passives` refunds all (free).
 
+**Book of Skill** (`UseSkillBook`). Right-clicking one (C→S 0x58, as an Orb of Regret) uses it up and adds one extra
+passive skill point (`ExtraPassivePoints`, as `/add_passive_points 1`); the book and the point are saved in one
+transaction (`ItemMoves.UseForPassivePoint`), then S→C 0xbf removes the book and 0x33 shows the new point. Every
+BaseItemTypes row named "Book of Skill" counts (`Metadata/Items/QuestItems/SkillBooks/Book-a1q6` … one per quest); they
+are `Usable` quest items, so the client sends 0x58 for them. A **Book of Regrets** (Acts 1, 6, 9, 10) goes the Orb of
+Regret's way but gives two refund points (ClientStrings `ItemFunction2RespecPoints`, "Grants two Passive Respec Points").
+
 ## 3. Loot
 
 `ItemDrops.Roll` (our own table): normal monsters drop 1 item at 35%, magic 1–2, rare 2–4, unique 4–6. Each item is

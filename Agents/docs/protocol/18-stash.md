@@ -164,6 +164,19 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
 - **Repair.** Items a special tab can't show (an earlier build let any item into any tab) move at load into their slot,
   else into the first normal tab with room, and are saved there. One that finds no room stays where it is, saved.
 
+## Guild stash (verified live 2026-10-21)
+
+Every hideout also gets `Metadata/MiscellaneousObjects/GuildStash` (the Stash's components, the same blob) on the first
+walkable cell 6 to 20 cells from its Stash. A click (C→S 0x24) sends S→C 0x136 kind 1 with the guild tab list, then 0x7b
+kind 2 (`InstanceStash.OpenGuildStashUi`). No guilds yet: each account has its own guild stash
+(`AccountStash.ForGuild`, saved as `guild:<account>`, starting with two premium tabs and a quad tab). Its tabs take
+inventory ids from 0x900 and its items ids from 0x50000000, so they never meet the personal stash's (0x800…,
+0x40000000…); an item keeps its id only inside the stash that gave it. While the guild panel is open the stash messages
+(0xc7 kind 1 → 0xc0 + 0xc8 kind 1, 0x28, 0x2a, Ctrl + click) act on it (`StashOf`); opening the personal stash switches back.
+Its tab inventories and their 0xbf changes go to **inventory manager 2** (`InstanceStash.GuildManager`, instance
+`+0xcb90`): sent under manager 0 the panel shows no grid and the client hangs.
+Gold stays with the personal stash.
+
 ## Open
 
 - **Last tab:** switching to an already loaded tab sends nothing, so a switch followed by a logout without reopening
@@ -171,4 +184,4 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
 - Not checked live yet: currency into its slot from Ctrl + click (0xe1), the affinity window closing on S→C 0x136, and
   the special tabs other than currency and map.
 - Tab rename / colour / order / folders (0xcc, 0xd1 are logged), 0xe2, the unique, divination and other special tabs, the
-  guild stash, stashes per league, and stashes in the other towns.
+  real guilds (shared guild stash, members, rights), stashes per league, and stashes in the other towns.

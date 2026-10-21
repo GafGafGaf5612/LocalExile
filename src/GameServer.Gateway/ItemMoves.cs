@@ -214,6 +214,16 @@ static class ItemMoves
             return taken;
         });
 
+    /// <summary>A Book of Skill used (C→S 0x58): the book is gone and the character has <paramref name="extraPoints"/>
+    /// extra passive skill points, together. Null when the item is gone (nothing changes).</summary>
+    public static PlayerInventories.Consumption? UseForPassivePoint(PlayerInventories items, string character, byte row, uint itemId, ushort extraPoints) =>
+        Saves.Atomically(() =>
+        {
+            if (items.ConsumeOne(row, itemId) is not { } taken) return null;
+            CharacterSaves.SetExtraPassivePoints(character, extraPoints);
+            return taken;
+        });
+
     /// <summary>A currency item used on an item (C→S 0x71): one leaves its stack and the target becomes
     /// <paramref name="change"/>(target), together. Null when either is gone (nothing changes).</summary>
     public static (PlayerInventories.Consumption Used, InventoryItem Changed)? UseOn(PlayerInventories items, byte usedRow, uint usedId,
