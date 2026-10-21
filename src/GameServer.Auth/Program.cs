@@ -11,9 +11,9 @@ using GameServer.Storage;
 //   passwd <account> <password>            set a dev account's password (any length; restart Auth afterwards)
 //   [serve] [keys.json]                    accept logins: 0x0002 key exchange, then answer account login 0x03 with 0x04
 //                                          and log every decoded message (Agents/docs/re/009)
-// Port: Game_LOGIN_PORT (default 20493). Keys default to data/login-keys.json. Accounts: Game_DEV_DB (default
-// data/accounts.json, shared with GameServer.Host; register there). Each process keeps its own copy of that file in
-// memory, so do not change accounts in both at once. Instance keys: data/instance-secret.bin (Game_INSTANCE_SECRET),
+// Port: Game_LOGIN_PORT (default 20493). Keys default to data/login-keys.json. Accounts: the save database
+// (Game_SAVES_DB, default data/saves.db, shared with GameServer.Host and the Gateway; register through the Host), with an
+// older data/accounts.json (Game_DEV_DB) imported once. Instance keys: data/instance-secret.bin (Game_INSTANCE_SECRET),
 // shared with GameServer.Gateway. Instance control for the Gateway: 127.0.0.1:Game_AUTH_CONTROL_PORT (20495).
 
 const string DefaultKeys = "data/login-keys.json";
@@ -25,7 +25,7 @@ switch (cmd)
 {
     case "passwd" when args.Length >= 3:
     {
-        var service = new AccountService(new JsonAccountStore(Environment.GetEnvironmentVariable("Game_DEV_DB") ?? Path.Combine("data", "accounts.json")));
+        var service = new AccountService(SqliteAccountStore.Open());
         var r = service.SetPassword(args[1], args[2]);
         Console.WriteLine(r.Ok ? $"[auth] password of {args[1]} changed; restart Auth (live.ps1 -Only Auth) to use it"
             : $"[auth] {args[1]}: {r.Error}");
@@ -74,7 +74,7 @@ catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundExcep
 
 static async Task Serve(LoginServerKeys keys)
 {
-    var accounts = new AccountService(new JsonAccountStore(Environment.GetEnvironmentVariable("Game_DEV_DB") ?? Path.Combine("data", "accounts.json")));
+    var accounts = new AccountService(SqliteAccountStore.Open());
     Console.OutputEncoding = System.Text.Encoding.UTF8; // decoded wide strings
     int port = int.TryParse(Environment.GetEnvironmentVariable("Game_LOGIN_PORT"), out var p) ? p : 20493;
     // Local play only by default; Game_BIND=0.0.0.0 to accept other machines.
@@ -193,11 +193,12 @@ static ILoginMessage Redact(ILoginMessage m) => m switch
     _ => m,
 };
 
-// A deleted character's save (the Gateway's data/saves/<name>.json, same file-name rule as CharacterSaves) moves to
-// data/saves/deleted/<name>-<UTC time>.json, so a new character with that name starts with its class's kit and the old
-// one can still be recovered by hand.
+// A deleted character's save in the database went to deleted_characters with the deletion itself (SqliteAccountStore). A
+// save from before the database (data/saves/<name>.json, the Gateway hasn't imported it yet) moves to data/saves/deleted/,
+// so a new character with that name starts with its class's kit and the old one can still be recovered by hand.
 static void SetSaveAside(string character)
 {
+    Console.WriteLine($"[auth] {character} deleted; its save, if it had one, is in deleted_characters ({SaveDatabase.DefaultPath})");
     string folder = Path.Combine("data", "saves");
     string safe = string.Concat(character.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
     string path = Path.Combine(folder, safe + ".json");

@@ -218,7 +218,7 @@ Start the dev account service in one terminal:
 dotnet run --project src/GameServer.Host
 ```
 
-Success: `[host] listening on 127.0.0.1:7000, db=data\accounts.json`.
+Success: `[host] listening on 127.0.0.1:7000, db=data\saves.db`.
 
 In a second terminal:
 
@@ -245,8 +245,8 @@ Every reply should contain `"ok":true`; the last one lists your character.
   Windows user). Replace it with yours.
 - Only the Witch is supported for now. Other classes can be created, but in game you appear as a Witch (with your
   character's name).
-- Then close both: an empty line quits the dev client, and Ctrl+C stops the host. Do not keep `GameServer.Host`
-  running while you play, because it and the login server would both write `data/accounts.json`.
+- Then close both: an empty line quits the dev client, and Ctrl+C stops the host. You can keep `GameServer.Host`
+  running while you play: it and the login server share the accounts in `data/saves.db`, and neither caches them.
 
 ## 9. (Optional) Walk maps
 
@@ -371,7 +371,8 @@ Environment variables, read when each server starts:
 | `Game_PLAYER_ATTACK` | `PlayerMelee` | GrantedEffects `Id` of the player's default attack (level 1) |
 | `Game_MOVE_MODE` | `echo` | `echo`, `move` or `teleport` |
 | `Game_WALK_SPEED` | 37 | walk speed in cells per second, used for position estimates |
-| `Game_DEV_DB` | `data/accounts.json` | account store |
+| `Game_DEV_DB` | `data/accounts.json` | an account store from before the save database, imported once |
+| `Game_SAVES_DB` | `data/saves.db` | character saves and stashes (Gateway, Auth) |
 | `Game_INSTANCE_SECRET` | `data/instance-secret.bin` | instance key secret (created on first start) |
 | `Game_PATCH_URL` | `http://127.0.0.1:8080/` | patch web server address |
 
@@ -382,7 +383,8 @@ Environment variables, read when each server starts:
 | `Client\` | your client copy (gateway list patched) and `Game.patched.exe` | never |
 | `data\login-keys.json` | your login server keys | never |
 | `data\instance-secret.bin` | instance key secret | never |
-| `data\accounts.json` | accounts and characters | never |
+| `data\accounts.json.imported` | the account store from before the save database, kept after its import | never |
+| `data\saves.db` (with `-wal`, `-shm` while the servers run) | accounts, characters, their saves and stashes ([saves](docs/saves.md)) | never |
 | `data\gateway_list.original.txt` | backup for `gateway --restore` | no need |
 | `data\tables\`, `data\*-types.json`, `data\hideouts.json` … | extracted game data (step 7) and their stamps, `data\extract-stamps.json` | no (game data) |
 | `data\walkability\` | captured walk maps | no (derived from game data) |

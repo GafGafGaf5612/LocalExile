@@ -319,13 +319,16 @@ it there again; so does a new character with a deleted one's name in the same in
 
 The kit is built once, when the character has no save, and saved at once. Without `data/tables` (`Characters.json`,
 `SkillGems.json`) and `data/item-types.json` it is empty, the Gateway logs `start kit is empty`, and the character keeps
-the empty kit: set its save aside (`data/saves/<name>.json`, with the Gateway stopped) to give it the kit again.
+the empty kit: remove its row from the `characters` table of `data/saves.db` (with the Gateway stopped) to give it the kit
+again.
 
-**Saves.** Every inventory change writes the character's items to `data/saves/<name>.json` (`CharacterSaves`, git-ignored):
-per Inventories.dat row the item ids, cells and items by BaseItemTypes HASH32 with level, quality, charges, stack size,
-sockets (with their gems), links and gem experience. A saved character loads from it instead of the start kit, so items
-and equipment survive Gateway restarts and logins (live 2026-10-18). The file also holds the skill bar
-([11](11-skills.md) §11).
+**Saves.** Every inventory change writes the character's items to its row in `data/saves.db` (`CharacterSaves`,
+git-ignored): per Inventories.dat row the item ids, cells and items by BaseItemTypes HASH32 with level, quality, charges,
+stack size, sockets (with their gems), links and gem experience. A saved character loads from it instead of the start
+kit, so items and equipment survive Gateway restarts and logins (live 2026-10-18). The save also holds the skill bar
+([11](11-skills.md) §11). How a change is written (SQLite transactions, moves between the character and the stash in
+one transaction, what happens when a save fails, saves that can't be read or hold unknown items) is in
+[saves](../saves.md).
 
 Each move is one change and one save, so a crash at any moment leaves an item in exactly one inventory: picking up
 (`PlayerInventories.PickUp`, C→S 0x28: off its row and onto the cursor), placing or swapping (`Place`, 0x2a), socketing

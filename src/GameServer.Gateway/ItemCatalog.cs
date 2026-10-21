@@ -8,8 +8,19 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class ItemCatalog
 {
+    /// <summary>What the stash tabs hold (<see cref="StashRules"/>), loaded on first use; tests set their own.</summary>
+    public StashRules Stash
+    {
+        get => _stash ??= StashRules.Load(_folder, _rows.Value.Rows);
+        internal set => _stash = value;
+    }
+
+    private StashRules? _stash;
+    private readonly string _folder;
+
     public ItemCatalog(string folder)
     {
+        _folder = folder;
         Mods = new ModCatalog(folder);
         _rows = new(() => Load(folder, Mods));
         _byHash = new(() => _rows.Value.Rows.GroupBy(t => t.Hash).ToDictionary(g => g.Key, g => g.First()));
