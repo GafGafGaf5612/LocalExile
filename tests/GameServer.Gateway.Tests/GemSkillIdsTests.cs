@@ -38,14 +38,58 @@ public class GemSkillIdsTests
     }
 
     [Fact]
-    public void A_new_gem_takes_a_free_id_and_never_another_gems()
+    public void A_new_gem_takes_an_id_no_gem_had_before_one_a_gem_left()
     {
         var ids = new GemSkillIds();
         ids.Assign([G(1, 0, Haste), G(1, 1, RighteousFire)], Pool);
         ids.Assign([G(1, 1, RighteousFire)], Pool);
 
-        // Fireball into the socket Haste left: Haste's old id is free again.
-        Assert.Equal([(ushort?)0x101, 0x102], ids.Assign([G(1, 0, Fireball), G(1, 1, RighteousFire)], Pool));
+        // Fireball into the socket Haste left: Haste's id waits for Haste to come back.
+        Assert.Equal([(ushort?)0x103, 0x102], ids.Assign([G(1, 0, Fireball), G(1, 1, RighteousFire)], Pool));
+    }
+
+    [Fact]
+    public void A_gem_swapped_into_a_socket_never_takes_the_id_its_gem_gives_up()
+    {
+        var ids = new GemSkillIds();
+        ids.Assign([G(1, 0, Haste)], Pool);
+
+        // Fireball swapped with Haste in one move: Haste's id must go out as removed, so its aura ends and its key does
+        // not cast Fireball.
+        Assert.Equal([(ushort?)0x102], ids.Assign([G(1, 0, Fireball)], Pool));
+    }
+
+    [Fact]
+    public void A_gem_moved_through_the_cursor_keeps_its_id()
+    {
+        var ids = new GemSkillIds();
+        ids.Assign([G(1, 0, Haste), G(1, 1, RighteousFire)], Pool);
+
+        // Haste out onto the cursor, Fireball into the wand meanwhile, then Haste into the shield.
+        ids.Assign([G(1, 1, RighteousFire)], Pool);
+        ids.Assign([G(1, 0, Fireball), G(1, 1, RighteousFire)], Pool);
+        Assert.Equal([(ushort?)0x103, 0x102, 0x101],
+            ids.Assign([G(1, 0, Fireball), G(1, 1, RighteousFire), G(2, 0, Haste)], Pool));
+    }
+
+    [Fact]
+    public void Without_an_id_no_gem_had_a_new_gem_takes_the_one_that_left_longest_ago()
+    {
+        var ids = new GemSkillIds();
+        ids.Assign([G(1, 0, Haste), G(1, 1, RighteousFire)], [0x101, 0x102]);
+        ids.Assign([G(1, 1, RighteousFire)], [0x101, 0x102]);
+
+        Assert.Equal([(ushort?)0x101, 0x102], ids.Assign([G(1, 0, Fireball), G(1, 1, RighteousFire)], [0x101, 0x102]));
+    }
+
+    [Fact]
+    public void A_full_pool_gives_a_swapped_in_gem_no_id_until_the_next_update()
+    {
+        var ids = new GemSkillIds();
+        ids.Assign([G(1, 0, Haste)], [0x101]);
+
+        Assert.Equal([(ushort?)null], ids.Assign([G(1, 0, Fireball)], [0x101]));
+        Assert.Equal([(ushort?)0x101], ids.Assign([G(1, 0, Fireball)], [0x101]));
     }
 
     [Fact]
