@@ -505,8 +505,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`EffectObject`: the projectile's Positioned, Animated bit0 + the .ao path) under the player and glides it with 0x1ba
   to where each move ends (`FollowRighteousFire`). It is created with Positioned flags0 0x80
   (`EffectObject.FixedRotation`): without it each glide turned the ring to face the move, so it spun as the player
-  turned (live 2026-10-21). 0x2bb removes it when the fire ends, and the fire also ends when its gem leaves the
-  equipment (`SendEquipment`); it burns again only once the gem is back and the skill is used. Live 2026-10-18: with only the
+  turned (live 2026-10-21). 0x2bb removes it when the fire ends. Live 2026-10-18: with only the
   buffs the player had just the small ring at its feet; with the effect object the big circle shows at the right size
   and follows the player, and monsters around burn to death.
 - **`/god`** toggles 1000% increased attack and cast speed, life and mana regeneration (below), +10 000
