@@ -8,6 +8,21 @@ static class CurrencyEffects
     public const string ChromaticOrb = "Metadata/Items/Currency/CurrencyRerollSocketColours";
     public const string JewellersOrb = "Metadata/Items/Currency/CurrencyRerollSocketNumbers";
     public const string OrbOfFusing = "Metadata/Items/Currency/CurrencyRerollSocketLinks";
+    public const string OrbOfAlchemy = "Metadata/Items/Currency/CurrencyUpgradeToRare";
+    public const string ChaosOrb = "Metadata/Items/Currency/CurrencyRerollRare";
+    public const string DivineOrb = "Metadata/Items/Currency/CurrencyModValues";
+
+    /// <summary>Orb of Alchemy: a normal item with mods becomes an identified rare one with 4-6 new random affixes and
+    /// a rare name (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
+    public static Item? Alchemy(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Normal || !item.Components.Contains("Mods") ? null
+            : rolls.Roll(item, ItemRarity.Rare, random) with { Identified = true };
+
+    /// <summary>Chaos Orb: a rare item with mods gets all its explicit affixes rerolled (4-6 new ones, new tiers and
+    /// values) and a new rare name; implicits stay. Anything else is refused.</summary>
+    public static Item? Chaos(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Rare || !item.Components.Contains("Mods") ? null
+            : rolls.Roll(item, ItemRarity.Rare, random) with { Identified = true };
 
     /// <summary>Change only links; socket colours, gems and all other properties stay intact.</summary>
     public static Item? Fusing(Item item, ItemCatalog.BaseType type, Random random)
