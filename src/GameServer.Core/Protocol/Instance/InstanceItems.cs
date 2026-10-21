@@ -50,6 +50,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// <summary>Unidentified items carry no <see cref="ModSection.Explicit"/> list (the client does not read it).</summary>
     public bool Identified { get; init; } = true;
 
+    /// <summary>Corrupted (Vaal Orb): the Base component's u8 +0xc7 bit 0, which the client checks for corrupted-only
+    /// and corrupted-refused crafting ("input_is_corrupted", 0x141d68e64).</summary>
+    public bool Corrupted { get; init; }
+
     /// <summary>Implicit, explicit and other mods, written into the Mods component per <see cref="ModSection"/>.</summary>
     public IReadOnlyList<ItemMod> Mods { get; init; } = [];
 
@@ -101,7 +105,7 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 // Bit 7 (a vendor price): u8 n, then n × (u32 item type hash, compact uint amount; 0x141fa5290 looks the type
                 // up, 0x141e61010 reads the amount); stored in the Base's +0xb8 item list.
                 case "Base":
-                    w.U16(VisualIdentity).U8(0).U8(0).U16((ushort)(Price.Count > 0 ? 0x80 : 0)).U8(0);
+                    w.U16(VisualIdentity).U8(0).U8((byte)(Corrupted ? 1 : 0)).U16((ushort)(Price.Count > 0 ? 0x80 : 0)).U8(0);
                     if (Price.Count > 0)
                     {
                         w.U8((byte)Price.Count);

@@ -58,9 +58,58 @@ static class CurrencyEffects
             : rolls.Roll(item, ItemRarity.Magic, random) with { Identified = true };
 
     /// <summary>Orb of Scouring: a magic, rare or unique item becomes normal; its explicit mods and name go, the base
-    /// (implicit, enchant …) mods stay. A normal item is refused.</summary>
-    public static Item? Scouring(Item item) => item.Rarity == ItemRarity.Normal ? null
-        : item with { Rarity = ItemRarity.Normal, Identified = true, NameWords = [], Mods = [.. item.Mods.Where(m => m.Section != ModSection.Explicit)] };
+    /// (implicit, enchant …) mods stay. On this server it also sets an armour piece's or weapon's quality back to 0. Refused when
+    /// there is nothing to remove.</summary>
+    public static Item? Scouring(Item item)
+    {
+        bool armourQuality = (item.Components.Contains("Armour") || item.Components.Contains("Weapon")) && item.Quality > 0;
+        if (item.Rarity == ItemRarity.Normal && !armourQuality) return null;
+        return item with { Rarity = ItemRarity.Normal, Identified = true, NameWords = [], Mods = [.. item.Mods.Where(m => m.Section != ModSection.Explicit)],
+            Quality = armourQuality ? (byte)0 : item.Quality };
+    }
+
+    public const string ArmourersScrap = "Metadata/Items/Currency/CurrencyArmourQuality";
+    public const int MaximumQuality = 20;
+
+    /// <summary>Armourer's Scrap: +1% quality on an armour piece (any rarity), up to 20%; the client derives the higher
+    /// armour / evasion / energy shield from the quality. Refused for other items or at 20%.</summary>
+    public static Item? ArmourerScrap(Item item) =>
+        !item.Components.Contains("Armour") || !item.Components.Contains("Quality") || item.Quality >= MaximumQuality ? null
+            : item with { Quality = (byte)(item.Quality + 1) };
+
+    public const string VaalOrb = "Metadata/Items/Currency/CurrencyCorrupt";
+
+    /// <summary>Vaal Orb (this server's rule): a weapon, armour piece or jewellery (ring, amulet, belt) that is not
+    /// corrupted or unique becomes corrupted, always. A normal or magic item becomes rare with 4-6 new affixes; a rare one
+    /// keeps its name and has 1 (20%), 2 (20%), 3 (20%), 4 (20%) or 5 (10%) affixes replaced, or all of them rerolled
+    /// (10%, 4-6 affixes, new name).</summary>
+    public static Item? Vaal(Item item, ItemCatalog.BaseType type, ItemRolls rolls, Random random)
+    {
+        bool target = item.Components.Contains("Weapon") || item.Components.Contains("Armour") || type.Class is "Ring" or "Amulet" or "Belt";
+        if (!target || item.Corrupted || item.Rarity == ItemRarity.Unique || !item.Components.Contains("Mods")) return null;
+        int roll = random.Next(100);
+        Item result = item.Rarity != ItemRarity.Rare || roll >= 90 ? rolls.Roll(item, ItemRarity.Rare, random)
+            : rolls.ReplaceAffixes(item, roll switch { < 20 => 1, < 40 => 2, < 60 => 3, < 80 => 4, _ => 5 }, random);
+        return result with { Corrupted = true, Identified = true };
+    }
+
+    public const string OrbOfChance = "Metadata/Items/Currency/CurrencyUpgradeRandomly";
+
+    /// <summary>Orb of Chance (this server's rule, not the official one): a normal weapon or armour piece becomes rare
+    /// (30%: 4-6 affixes and a rare name) or magic (2-4 affixes, at most two of each kind), identified. Refused for
+    /// anything else.</summary>
+    public static Item? Chance(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Normal || !item.Components.Contains("Mods") || !(item.Components.Contains("Weapon") || item.Components.Contains("Armour")) ? null
+        : (random.Next(100) < 30 ? rolls.Roll(item, ItemRarity.Rare, random)
+            : rolls.Roll(item, ItemRarity.Magic, random, (random.Next(2, 5), 2))) with { Identified = true };
+
+    public const string BlacksmithsWhetstone = "Metadata/Items/Currency/CurrencyWeaponQuality";
+
+    /// <summary>Blacksmith's Whetstone: +1% quality on a weapon (any rarity), up to 20%; the client derives the higher
+    /// physical damage from the quality. Refused for other items or at 20%.</summary>
+    public static Item? Whetstone(Item item) =>
+        !item.Components.Contains("Weapon") || !item.Components.Contains("Quality") || item.Quality >= MaximumQuality ? null
+            : item with { Quality = (byte)(item.Quality + 1) };
 
     /// <summary>Orb of Alchemy: a normal item with mods becomes an identified rare one with 4-6 new random affixes and
     /// a rare name (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
