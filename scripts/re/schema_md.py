@@ -1,7 +1,7 @@
 # usage: schema_md.py [readschema.json]   -- ReadSchema.java output -> Agents/docs/protocol/schema.md
 # Regenerate the input with (about 10 minutes):
 #   bash scripts/re/ghidra/g.sh ReadSchema.java 'C:\...\Tools\re\out\readschema.json' 'C:\...\Agents\docs\re\components.json'
-import json, os, sys
+import json, os, re, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO, "Tools", "re", "out", "readschema.json")
@@ -30,6 +30,52 @@ TRACED = [
 ]
 
 
+# The repo is public: summaries keep only our own notation, never the decompiled C that ReadSchema.java attaches to
+# each line (the `// ...` comments, the conditions, the `in: ...` contexts). Tools/re/out keeps the full output.
+C_TOKENS = re.compile(r"FUN_|param_|local_|[pu]?[a-z]Var\d|PTR_|LAB_|DAT_|\(\*|ulonglong|longlong|undefined")
+
+
+def conditions(c):
+    """The flag bits a condition tests, in our notation; "…" when it tests something else."""
+    bits = [f"bit {int(m, 0):#x} {'set' if op == '!' else 'clear'}"
+            for m, op in re.findall(r"& (0x[0-9a-fA-F]+|\d+)\)? ([!=])= 0", c)]
+    if re.search(r"\(char\)\w+(\[0\])? < '\\0'", c):
+        bits.append("bit 0x80 set")
+    keys = [f'key "{k}"' for k in re.findall(r'"([A-Za-z_][\w ]*)"', c)]
+    return ", ".join(bits + keys) or "…"
+
+
+def clean_line(line):
+    ind = line[:len(line) - len(line.lstrip())]
+    t = line.strip()
+    if t.startswith("//"):
+        word = next((w for w in ("return", "break", "continue", "goto") if re.search(rf"\b{w}\b", t)), None)
+        return None if word is None else ind + word
+    if "    //" in t:
+        t = t.split("    //")[0].rstrip()
+    if " in: " in t:
+        op, ctx = t.split(" in: ", 1)
+        t = f"{op} (when {conditions(ctx)})"
+    if t.startswith(("if ", "if(", "else if")):
+        return ind + ("else if " if t.startswith("else") else "if ") + conditions(t) + " {"
+    if t.startswith(("for ", "for(", "do ", "while")):
+        return ind + "loop {"
+    return ind + t
+
+
+def clean(d):
+    # Ghidra's default names are only addresses.
+    addr = lambda x: re.sub(r"\bFUN_([0-9a-f]+)", r"0x\1", x)
+    for m in d["messages"]:
+        m["via"] = addr(m["via"])
+    for s in d["summaries"].values():
+        s["name"] = addr(s["name"])
+        s["lines"] = [x for x in map(clean_line, s["lines"]) if x is not None]
+        bad = [x for x in s["lines"] if C_TOKENS.search(x)]
+        if bad:
+            raise SystemExit(f"{s['func']}: decompiled code left in {bad[0]!r}")
+
+
 def dispatch_cases():
     try:
         import pefile
@@ -46,6 +92,7 @@ def dispatch_cases():
 def main():
     d = json.load(open(SRC, encoding="utf-8"))
     S = d["summaries"]
+    clean(d)
     comps = json.load(open(COMPONENTS))["registrations"]
     cases = dispatch_cases()
     printed, queue = set(), []
@@ -74,10 +121,11 @@ def main():
           "Inputs: [../re/components.json](../re/components.json) (the component registry, [../re/components.md](../re/components.md))",
           "and the S→C factories `0x1421b5c40` (instance) and `0x1421c6150` (world).", "",
           "## How to read this", "",
-          "Each summary keeps the decompiled C lines that read (as a trailing `//` comment) and the `if`/loop/`switch`",
-          "lines around them; everything else is dropped. Callee parameters were committed before decompiling, so",
-          "readers passed in a register that a stored prototype left out (ObjectMagicProperties' base part, the entity",
-          "header of messages) are visible.", "",
+          "Each summary keeps the reads and the conditions and loops around them, in the notation below; everything else is",
+          "dropped. The decompiled C itself is not published (it stays in `Tools/re/out/readschema.json`): a condition shows",
+          "only the flag bits or string keys it tests, `…` for anything else. Callee parameters were committed before",
+          "decompiling, so readers passed in a register that a stored prototype left out (ObjectMagicProperties' base part,",
+          "the entity header of messages) are visible.", "",
           "| Notation | Meaning |", "|---|---|",
           "| `u8` `u16` `u32` `u64` `bytes[N]` | inline read from the component blob reader `{data, size, pos}` (little-endian): `pos += N` |",
           "| `→ +0xNN` | the value lands in that field of the object (`this`); `(flags)` = it is only tested |",
@@ -88,6 +136,9 @@ def main():
           "| `wstr` | `0x140e0cbe0` wide string; `str` = `0x1408402a0` narrow string; `blob16` = `0x141fa4610` u16 BE length + bytes |",
           "| `sub 0x…` | a call that passes the reader on (its own summary below; \"reader arg k\" when it is not the 2nd argument) |",
           "| `vcall [vt+0xNN]` | an indirect call with the reader (slot 20 is `[vt+0xa0]`) |",
+          "| `if bit 0x4 set {`, `if key \"name\" {`, `if … {` | a condition: the flag bit tested (of the last flags read), the string key compared, or something else |",
+          "| `loop {` | a `for`/`while`/`do` loop (its count is usually the last value read) |",
+          "| `(when …)` | the read happens inside a condition expression |",
           "| bounds checks | `if (size < pos + N) throw` blocks are flattened away |", "",
           "**min** is the byte count of the reads outside every condition and loop, callees included; `+` means a",
           "variable or indirect read also happens unconditionally, so the real minimum is higher.", "",
