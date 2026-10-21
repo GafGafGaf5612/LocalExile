@@ -96,6 +96,12 @@ sealed class ItemCatalog
     /// ItemExperiencePerLevel's Experience for levels 1, 2, … of its experience type; the last level is the cap.</summary>
     public sealed record GemType(int Row, bool IsSupport, IReadOnlyList<GemVariant> Variants, IReadOnlyList<int> Thresholds)
     {
+        /// <summary>SkillGems GemColour: 1 red (strength), 2 green (dexterity), 3 blue (intelligence), 4 white.</summary>
+        public int Colour { get; init; }
+
+        /// <summary>A Vaal gem's own row (IsVaalVariant) or an awakened one (RegularVariant set).</summary>
+        public bool IsVaalOrAwakened { get; init; }
+
         public int MaxLevel => Thresholds.Count;
 
         /// <summary>The level as the client derives it (0x14246f900): the levels whose threshold the experience reaches, up
@@ -108,6 +114,13 @@ sealed class ItemCatalog
         /// <summary>The variant the client uses: an index outside the list is the normal gem (0x14246fa50 resets it).</summary>
         public GemVariant Variant(int index) => index > 0 && index < Variants.Count ? Variants[index] : Variants[0];
     }
+
+    /// <summary>The gems a shop sells of one colour, active or support: creatable, writable, dropping (DropLevel above 0),
+    /// not Vaal or awakened, one per name, by drop level then name.</summary>
+    public IReadOnlyList<BaseType> ShopGems(int colour, bool support) =>
+        [.. _rows.Value.Rows.Where(t => t.Supported && t.DropLevel > 0 && !t.Name.Contains("Playtest")
+                && Gem(t) is { } g && g.Colour == colour && g.IsSupport == support && !g.IsVaalOrAwakened && g.Variants is [{ Creatable: true }, ..])
+            .DistinctBy(t => t.Name).OrderBy(t => t.DropLevel).ThenBy(t => t.Name)];
 
     /// <summary>A base type's gem (its SkillGems row), or null for items that are not gems.</summary>
     public GemType? Gem(BaseType t) => _gems.Value.GetValueOrDefault(t.Row);
@@ -287,7 +300,7 @@ sealed class ItemCatalog
                 variants.Add(new GemVariant(i, name, effect, effect2, creatable));
             }
             result.TryAdd(baseRow, new GemType(baseRow, r.GetProperty("IsSupport").GetBoolean(), variants,
-                thresholds.GetValueOrDefault(expType) ?? []));
+                thresholds.GetValueOrDefault(expType) ?? []) { Colour = Row(r, "GemColour"), IsVaalOrAwakened = vaal || Row(r, "RegularVariant") >= 0 });
         }
         return result;
     }

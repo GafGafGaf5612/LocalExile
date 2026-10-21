@@ -94,6 +94,11 @@ public static class InstanceNpcs
     /// Not 0x11 (Atlas passive tree, UI +0x668, 0x140dcdf80) and not 0x45 (UI +0x678, 0x140dc7e90).</summary>
     public const byte PassiveTreeUi = 0x5f;
 
+    /// <summary>S→C 0x7b kind 0x1c: the Delve chart (Niko's SendOpenScreen( DelveMapScreen, 1 )). The client's screen
+    /// table at 0x142fc5920 (24-byte entries: UTF-16 name, its length, the 0x7b kind) lists it; the same table gives
+    /// CharacterPassiveTreeScreen 0x5f and AtlasPassiveTreeScreen 0x11, as known.</summary>
+    public const byte DelveMapUi = 0x1c;
+
     public const ushort TradeOpenId = 0xb8, TradeCloseId = 0xb9;
 
     /// <summary>

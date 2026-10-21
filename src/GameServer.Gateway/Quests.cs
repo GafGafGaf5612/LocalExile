@@ -66,9 +66,14 @@ static class Quests
     /// (21-hideouts.md §1): HideoutUnlocked; HASH32 0x2f1b9c25 (row 718, the schema's "HideoutJukeboxEnabled"), which the
     /// HUD's hideout panel checks (0x14216c840); CanEditHideout, tested before the Edit button shows (live trace
     /// 2026-10-20); MapDeviceActive, the map device's per-player "active" state (its .ot:
-    /// per_player_quest_flag_state_active_1).</summary>
+    /// per_player_quest_flag_state_active_1). ThisIsMyHideout (row 717): hideout NPCs' own options need it in NPCTalk
+    /// QuestFlag1 (Niko's View Subterranean Chart and Visit Mine Encampment); without it the client lists their
+    /// "not my hideout" rows (717 in QuestFlag2). Every hideout here is the player's own.</summary>
     public static readonly string[] EveryCharacter = ["HideoutUnlocked", "HideoutJukeboxEnabled", "CanEditHideout", "MapDeviceActive",
-        CompletedAllTutorials];
+        CompletedAllTutorials, ThisIsMyHideout];
+
+    /// <summary>QuestFlags row 717, sent only while the player is in a hideout (Program.PlayerQuestFlags).</summary>
+    public const string ThisIsMyHideout = "ThisIsMyHideout";
 
     /// <summary>QuestFlags row 367: the tutorials are done, as on an account that has played before. Quest states that
     /// teach (a1q1 after Hillock: "Open the Passive Skill Screen …", FlagsMissing 280/367) give way to the next step
@@ -85,7 +90,11 @@ static class Quests
     {
         public const int UnlockedHideouts = 3, HaveHideout = 200, UnlockedMapDevice = 350;
 
-        public static readonly int[] EveryCharacter = [UnlockedHideouts, HaveHideout, UnlockedMapDevice];
+        /// <summary>Niko met in a map: his Delve options (View Subterranean Chart, Visit Mine Encampment) need it. NPCTalk
+        /// columns 15-18 are league quest flag ids (16 required, 18 refused: the first-meeting "Talk to Niko" has 68 there).</summary>
+        public const int DelveEncounterComplete = 68;
+
+        public static readonly int[] EveryCharacter = [UnlockedHideouts, HaveHideout, UnlockedMapDevice, DelveEncounterComplete];
 
         /// <summary>The bits the client keeps for these ids (id − 1).</summary>
         public static IEnumerable<int> Bits(IEnumerable<int> ids) => ids.Where(id => id > 0).Select(id => id - 1);

@@ -108,6 +108,14 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   Ours: 1 Scroll of Wisdom for everything (`NpcShops`). The tooltip shows it under Cost, in red when the player can't pay
   it: the client decides that itself, no server message needed (live 2026-10-20).
 - **Stock** is the server's (NPCShop only names shops): `NpcShops.Stock`.
+- **Several tabs**: one manager-1 inventory per tab (S→C 0xc0, ids from 0x400), all listed in 0x8c with their names
+  (the m × (compact uint index, wstr name, u8) list). `NpcShops.Tabs`: the NPC's stock in "Goods", and Nessa also sells
+  every shop gem (`ItemCatalog.ShopGems`: creatable, dropping, not Vaal or awakened, one per name) in seven tabs by
+  SkillGems GemColour and IsSupport: Red Skills, Red Support, Green Skills, Green Support, Blue Skills, Blue Support,
+  White Skills (2026-10-21). 1 Scroll of Wisdom each, as everything. Nessa's goods also list one of every map of tiers
+  1-16 (Maps.dat Tier, a name once at its lowest tier, by tier then name; 225 in 3.29.3b); what does not fit in Goods
+  goes into Goods2, Goods3 …. Tabs fill row by row. With more than one tab 0x8c's u8 is sent as 1 (the window at UI
+  +0x7b8; 0 opens +0x7b0, which drew 8 tabs over its title, live 2026-10-21; being tested).
 - **Sell**: S→C 0xb8 (write `0x141d6acc0`): u32 BE other party (0 = NPC sale → VendorSell, UI +0x7c8), u32 BE your offer,
   u32 BE their offer (both manager-1 inventories, grids `0x140317440` / `0x140c605f0`), u8 flags, wstr name, u32 BE
   NPCs row, u16, u32 BE TradeWindowVisuals row, u16 (+0x54, shown as an error text when set), u16. The offer grids

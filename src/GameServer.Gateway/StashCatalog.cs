@@ -11,7 +11,13 @@ static class StashCatalog
     {
         // Lioneye's Watch: next to Nessa (346, 271), the place the user picked (2026-10-19).
         [AreaLayouts.LioneyesWatch] = new(319, 272, 0),
+        // The Azurite Mine Encampment (Delve_Hub): across the waypoint (333, 402) from Niko (342, 410); our own cell
+        // (2026-10-21). It also gets the guild stash (Program.SpawnTownStash).
+        [DelveHub] = new(322, 412, 0),
     };
+
+    /// <summary>HASH16 of the Azurite Mine Encampment (WorldAreas Delve_Hub).</summary>
+    public const ushort DelveHub = 0x8b9b;
 
     public static Placement? In(ushort areaHash) =>
         Towns.GetValueOrDefault(areaHash)

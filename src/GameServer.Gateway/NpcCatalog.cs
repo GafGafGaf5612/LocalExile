@@ -35,6 +35,9 @@ sealed class NpcCatalog
             new("Metadata/NPC/Act1/Nessa", 346, 271, 4.0f),
             new("Metadata/NPC/Act1/Bestel", 361, 246, 4.0f),
         ],
+        // The Azurite Mine Encampment (Delve_Hub, HASH16 0x8b9b): Niko by the waypoint (333, 402) and the arrival
+        // (330, 420); our own cell (2026-10-21). The hideout Niko's row: the hub's own (DelveMinerHub) lists no Sell Items.
+        [StashCatalog.DelveHub] = [new("Metadata/NPC/League/Delve/DelveMinerHideout", 342, 410, 4.0f)],
     };
 
     public IReadOnlyList<Npc> Rows { get; }
@@ -60,12 +63,23 @@ sealed class NpcCatalog
     }
 
     /// <summary>The NPCTalk row an NPC's option index (C→S 0x82) stands for.</summary>
-    public Talk? TalkOf(Npc npc, int index) => _talk.GetValueOrDefault((npc.Row, index));
+    public Talk? TalkOf(Npc npc, int index) => _talk.GetValueOrDefault((TalkSource(npc).Row, index));
+
+    /// <summary>The NPC whose NPCTalk rows (and shop) this one uses: itself, or for a copy without rows of its own (the
+    /// hideout Kirac, NPCs.dat row 412) the first row of the same name that has them (Kirac, 410).</summary>
+    public Npc TalkSource(Npc npc) => _talk.Keys.Any(k => k.Npc == npc.Row) ? npc
+        : Rows.FirstOrDefault(r => r.Name == npc.Name && _talk.Keys.Any(k => k.Npc == r.Row)) ?? npc;
 
     /// <summary>The town's NPCs, or none.</summary>
     // Hideouts: Nessa, at the cell the user picked in the Lush Hideout (2026-10-20); the real game has no town NPCs in
-    // hideouts.
-    static readonly Placement[] Hideout = [new("Metadata/NPC/Act1/Nessa", 256, 351, 4.0f)];
+    // hideouts. Niko and Kirac (their hideout NPCs.dat rows) stand to her right and left on screen (2026-10-21): screen
+    // right is +x / -y on the grid.
+    static readonly Placement[] Hideout =
+    [
+        new("Metadata/NPC/Act1/Nessa", 256, 351, 4.0f),
+        new("Metadata/NPC/League/Delve/DelveMinerHideout", 263, 344, 4.0f),
+        new("Metadata/NPC/Epilogue/KiracHideout", 249, 358, 4.0f),
+    ];
 
     public static IReadOnlyList<Placement> In(ushort areaHash) =>
         Towns.GetValueOrDefault(areaHash) ?? (HideoutCatalog.ByArea(areaHash) is not null ? Hideout : []);
