@@ -79,6 +79,16 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Use_item_type_on_item_reads_the_currency_type_and_the_target()
+    {
+        // Live 2026-10-21: Chromatic Orb (HASH32 0x1C1E192B) used again with Shift on main-inventory item 13.
+        byte[] m = Convert.FromHexString("00721C1E192B000000010000000D000000000100070002");
+        Assert.Equal(InstanceItems.UseItemTypeOnLength, m.Length);
+        Assert.Equal(InstanceItems.UseItemTypeOnLength, InstanceProtocol.KnownClientLength(InstanceItems.UseItemTypeOnId));
+        Assert.Equal(new InstanceItems.UseItemTypeOn(0x1C1E192B, 1, 13), InstanceItems.ReadUseItemTypeOn(m));
+    }
+
+    [Fact]
     public void Use_flask_reads_the_flask_bar_slot()
     {
         // Live 2026-10-20: flask keys 1 and 2 of the start kit.
