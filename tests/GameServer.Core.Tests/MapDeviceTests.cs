@@ -28,6 +28,20 @@ public class MapDeviceTests
     }
 
     [Fact]
+    public void A_portals_rotation_is_the_Positioned_f32_after_its_x_and_y()
+    {
+        // /portal_rotation (dev): the client turns the portal's visual by this, which a portal cosmetic needs to stand
+        // upright. Flags (2 bytes), x, y, then the rotation f32.
+        byte[] blob = new MapPortalObject(260, 300, 2, Rotation: MathF.PI / 2).Blob();
+        Assert.Equal(0, blob[0]);
+        Assert.Equal(260, BitConverter.ToInt32(blob, 2));
+        Assert.Equal(300, BitConverter.ToInt32(blob, 6));
+        Assert.Equal(MathF.PI / 2, BitConverter.ToSingle(blob, 10));
+        Assert.Equal("0000" + "04010000" + "2C010000" + "00000000" + "0000" + "00020001" + "0400" + "0100" + "0300" + "0200" + "0000"
+            + "00" + "03" + "00" + "00" + "00" + "00", Convert.ToHexString(new MapPortalObject(260, 300, 2).Blob()));
+    }
+
+    [Fact]
     public void Map_item_component_is_three_zero_bytes()
     {
         var plain = new Item(0x1234, ["Base", "Quality"], 0x10);
@@ -43,5 +57,21 @@ public class MapDeviceTests
         Assert.Equal("008F" + "00" + "00" + "00" + "00003002" + "0000" + "00" + "00" + "02"
             + "00003003" + "8434" + "0000" + "00" + "00" + "00" + "0002" + "4162"   // open: variation, u8 × 3, wstr "Ab"
             + "00003004" + "0000", hex);                                              // closed: nothing after the area
+    }
+
+    [Fact]
+    public void A_portals_variation_is_sent_as_its_own_u16()
+    {
+        // The portal cosmetic: +0x26 of the 0x008f entry is the MicrotransactionPortalVariations row the client draws
+        // instead of the base portal. Everything else in the message stays the same.
+        string plain = Convert.ToHexString(InstanceMapDevice.Portals(0x3002, [new(0x3003, 0x8434, "Ab", Variation: 0)]));
+        string black = Convert.ToHexString(InstanceMapDevice.Portals(0x3002, [new(0x3003, 0x8434, "Ab", Variation: 6)]));
+        Assert.Equal(plain.Length, black.Length);
+        int at = Enumerable.Range(0, plain.Length).First(i => plain[i] != black[i]);
+        Assert.Equal("00", plain.Substring(at - 1, 2));     // the variation is 0000 …
+        Assert.Equal("06", black.Substring(at - 1, 2));     // … and 0006 with Black Hole (index 6)
+        Assert.Single(Enumerable.Range(0, plain.Length), i => plain[i] != black[i]);   // one nibble: 0 → 6
+        // The u16 sits right after the area, before the three bytes and the owner.
+        Assert.Contains("8434" + "0006" + "000000" + "0002" + "4162", black);
     }
 }

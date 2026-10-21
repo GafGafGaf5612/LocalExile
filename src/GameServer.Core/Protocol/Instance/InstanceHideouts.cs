@@ -58,7 +58,9 @@ public static class InstanceMapDevice
     /// HASH16; 0 closes it), and the name shown with it (the owner's).</summary>
     /// <param name="Style">Entry +0x2b: with no portal variation, which of three built-in models the portal takes
     /// (0x141e2d240: 0, 1, 2 → hashes 0x8d2ebe26, 0x3380bc00, 0x0d4bf44e).</param>
-    public readonly record struct Portal(uint ObjectId, ushort Area, string Owner = "", byte Style = 0);
+    /// <param name="Variation">+0x26: a MicrotransactionPortalVariations row; the client draws that shop effect in place
+    /// of the base portal (0 the default). This is how a portal cosmetic is applied: the portal itself is never replaced.</param>
+    public readonly record struct Portal(uint ObjectId, ushort Area, string Owner = "", byte Style = 0, ushort Variation = 0);
 
     /// <summary>
     /// S→C 0x008f (class 0x1435dcc00, read 0x1421a0a00; dispatcher case 0x21 → 0x142186070): the map device's portals.
@@ -76,7 +78,7 @@ public static class InstanceMapDevice
         foreach (var p in portals)
         {
             w.U32(p.ObjectId).U16(p.Area);
-            if (p.Area != 0) w.U16(0).U8(0).U8(0).U8(p.Style).WStr(p.Owner);
+            if (p.Area != 0) w.U16(p.Variation).U8(0).U8(0).U8(p.Style).WStr(p.Owner);
         }
         return w.ToArray();
     }
@@ -92,7 +94,8 @@ public static class InstanceMapDevice
 /// transition (<see cref="OpenUpdate"/>), which hung or crashed the client, so map device portals use type 1 created
 /// open (21-hideouts.md §5).
 /// </summary>
-public sealed record MapPortalObject(int GridX, int GridY, int DeviceIndex, byte PortalType = MapPortalObject.MapDevicePortal, byte Open = 0)
+public sealed record MapPortalObject(int GridX, int GridY, int DeviceIndex, byte PortalType = MapPortalObject.MapDevicePortal,
+    byte Open = 0, float Rotation = 0)
 {
     public const string MetadataPath = "Metadata/MiscellaneousObjects/MultiplexPortal";
     public const byte PlayerPortal = 1, TownPortal = 2, MapDevicePortal = 3, MapReturnPortal = 4;
@@ -108,7 +111,7 @@ public sealed record MapPortalObject(int GridX, int GridY, int DeviceIndex, byte
     {
         var w = new BlobWriter();
         w.U8(0).U8(0);                                                              // object flags, base data entry count
-        w.I32(GridX).I32(GridY).F32(0).U16(0).U8(0).U8(0x02).U8(0).U8(1);          // Positioned, as the hideout doodads'
+        w.I32(GridX).I32(GridY).F32(Rotation).U16(0).U8(0).U8(0x02).U8(0).U8(1);    // Positioned, as the hideout doodads'
         // StateMachine: standard_portal, portal, map_device_index, map_device_large; each a compact value and u8 flags.
         w.U8(4).U8(0);
         foreach (int v in new[] { 1, PortalType, DeviceIndex, 0 }) w.CompactI(v).U8(0);

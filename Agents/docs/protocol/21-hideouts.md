@@ -163,6 +163,26 @@ is now missing or has area 0 closes (+0xc0) and runs `on_map_portal_closed`. See
   crashed with the update 2 s later; that was before 0x008f had given the portal its area. **Type 1 (player) renders**,
   so the Gateway uses it (`Game_MAP_PORTAL_TYPE` overrides).
 
+**Portal cosmetics without the shop.** The entry's u16 is the portal's own visual, so a shop portal effect replaces the
+base one rather than adding a second object: `/cosmetic portal <name or index>` (Gateway) sets a per-connection
+variation — a `MicrotransactionPortalVariations` row, e.g. 6 = Black Hole Portal Effect, 291 with an AOFile of 296 —
+and re-sends 0x008f for the portals already standing (and every new portal is listed with it). The choice is saved with
+the character (`CharacterSaves.Save.PortalCosmetic`, null for the base effect) and loaded when the instance connects, so
+it survives a relog. `/cosmetic off` puts it back to 0, the base effect, and clears the field. `CosmeticCatalog` (Cosmetics.cs) names the rows through `MtxTypeGameSpecific` → `MtxTypes`. A name need not be exact: a number (the table's Index), any piece of the
+name, or the whole of it picks one, and a piece several effects share is answered with the list of them and their numbers
+(`CosmeticCatalog.Matches`) instead of the first being applied — the client's chat prompt completes nothing, so the list
+is the completion ([10](10-chat-and-commands.md) §4).
+That the client swaps the effect on a re-sent 0x008f is what the dev command tests; a portal whose variation the client
+cannot resolve is expected to fall back to the default. Seen live 2026-10-21: the swap works — variation 6 draws the
+Black Hole effect on all six Beach portals, in place of the base visual and with no second object. **The orientation is
+the rig's own**: Black Hole's disc lies flat by design (as in the real game), and the portal's Positioned rotation is
+ignored when the client places the shop rig — 0°, 90° and 270°, and portal types 1, 2 and 4 (`/map_portal 2|4`), all
+render identically. `/portal_rotation <degrees>` (dev) still rebuilds the standing portals turned by that angle
+(Positioned f32, radians = degrees × π/180), which is there for a rig that does turn out misoriented. Some effects also
+ship as whole portal objects (`Metadata/Effects/Microtransactions/Town_Portals/…Portal/…`, e.g. AtziriMirrorPortal:
+Positioned, BaseEvents, StateMachine, Animated, Portal, Transitionable, MinimapIcon, InteractionAction, ControlZone);
+the variation route above covers the ones that are effect rigs only.
+
 **Taking a portal** (C→S 0x24): the player walks there, the portal is sent with area 0 in 0x008f and removed (0x2bb),
 and the player changes area into the map: the first portal makes a new instance (Auth "transfer" New), the others enter
 that one (`MapDevice.Entered`). The open map is kept per character in the Gateway (`MapDevice.OpenOf`; lost on a Gateway

@@ -178,7 +178,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
 
             // Anything after the opening was already encrypted by the client.
-            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+            var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             left = conn;
             conn.Commands = Commands(remote, stream, ciphers, conn);
             conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
@@ -3014,7 +3014,8 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
         uint id = conn.NextObjectId++;
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
-            new MapPortalObject(x, y, 0, type, created).Blob()), $"0x02b9 create test portal 0x{id:x} type {type}, transitionable {created}, at ({x}, {y})");
+            new MapPortalObject(x, y, 0, type, created, Rotation: conn.PortalRotationRadians).Blob()),
+            $"0x02b9 create test portal 0x{id:x} type {type}, transitionable {created}, at ({x}, {y})");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
         lock (conn.MapPortals) conn.MapPortals[id] = (x, y, -1);
         if (openMs >= 0) OpenMapPortalLater(remote, stream, ciphers, conn, id, openMs);
@@ -3022,6 +3023,71 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         lock (conn.HideoutDoodads) deviceId = conn.HideoutDoodads.Keys.FirstOrDefault();
         if (deviceId != 0) SendMapPortalsLater(remote, stream, ciphers, conn, deviceId, MapDevice.OpenOf(CharacterName(conn))?.Area.Hash16 ?? conn.Layout.Hash, MapPortalListMs);
         await conn.Commands!.Reply($"Portal 0x{id:x}: type {type}, created {created}, " + (openMs >= 0 ? $"opens after {openMs} ms" : "not opened"));
+    })
+    .Add("cosmetic", "/cosmetic portal <name, number or part of a name> | /cosmetic list [filter] | /cosmetic off (the portal cosmetic: the shop effect replaces the base portal visual)", async args =>
+    {
+        if (args.Length == 0)
+        {
+            await conn.Commands!.Reply($"{Cosmetics.Portals.Count} portal effects. " +
+                "/cosmetic list <part of a name> lists the ones that have it, /cosmetic portal <number or name> applies one.");
+            return;
+        }
+        string what = args[0].ToLowerInvariant();
+        if (what is not ("list" or "portal" or "off")) throw new ArgumentException("list, portal or off");
+        if (what == "off")
+        {
+            conn.CosmeticPortalVariation = 0;
+            CharacterSaves.SetPortalCosmetic(CharacterName(conn), 0);
+            bool back = await ResendMapPortals(remote, stream, ciphers, conn);
+            await conn.Commands!.Reply(back
+                ? "Portal cosmetic off: the open portals are back to the base effect."
+                : "Portal cosmetic off: the next portal uses the base effect.");
+            return;
+        }
+        string filter = string.Join(' ', args.Skip(1).Where(a => !a.Equals("portal", StringComparison.OrdinalIgnoreCase)));
+        if (what == "list")
+        {
+            var shown = filter.Length == 0 ? Cosmetics.Portals : CosmeticCatalog.Matches(Cosmetics.Portals, filter);
+            await conn.Commands!.Reply(shown.Count == 0
+                ? Cosmetics.Portals.Count == 0 ? "No portal effects: data/tables is missing." : $"No portal effects match \"{filter}\"."
+                : $"{shown.Count} portal effects: " + string.Join(", ", shown.Take(12).Select(c => c.ToString())) + (shown.Count > 12 ? ", ..." : ""));
+            return;
+        }
+        if (filter.Length == 0)
+        {
+            // Nothing named: the first page of the list, so the numbers that pick one are right there.
+            await conn.Commands!.Reply($"{Cosmetics.Portals.Count} portal effects: " + string.Join(", ", Cosmetics.Portals.Take(12)) +
+                (Cosmetics.Portals.Count > 12 ? ", ..." : "") + " — use a number, a name or a piece of one.");
+            return;
+        }
+        var matches = CosmeticCatalog.Matches(Cosmetics.Portals, filter);
+        if (matches.Count == 0) throw new ArgumentException($"no portal effect matches \"{filter}\" (try /cosmetic list {filter})");
+        if (matches.Count > 1)
+        {
+            // Several contain what was typed: name them with the numbers that pick one, rather than guessing which was
+            // meant. The next /cosmetic with one of the numbers (or a longer fragment) applies it.
+            await conn.Commands!.Reply($"{matches.Count} portal effects match \"{filter}\": " +
+                string.Join(", ", matches.Take(12).Select(c => c.ToString())) + (matches.Count > 12 ? ", ..." : "") +
+                ". Add more of the name, or use one of the numbers.");
+            return;
+        }
+        var cosmetic = matches[0];
+        // A portal cosmetic is the portal's own variation (+0x26 of its 0x008f entry), not a second object: the client
+        // swaps the base portal effect for the shop one.
+        conn.CosmeticPortalVariation = (ushort)cosmetic.Index;
+        CharacterSaves.SetPortalCosmetic(CharacterName(conn), conn.CosmeticPortalVariation);   // survives a relog
+        bool applied = await ResendMapPortals(remote, stream, ciphers, conn);
+        await conn.Commands!.Reply($"portal: {cosmetic.Name} (variation {cosmetic.Index})" +
+            (applied ? ", applied to the open portals" : ", the next portal uses it"));
+    })
+    .Add("portal_rotation", "/portal_rotation <degrees> (dev: turn the map portals around the vertical axis; rebuilds the ones standing)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("degrees");
+        conn.PortalRotationDegrees = float.Parse(args[0], System.Globalization.CultureInfo.InvariantCulture);
+        int rebuilt = await RebuildMapPortals(remote, stream, ciphers, conn);
+        await conn.Commands!.Reply(rebuilt == 0
+            ? $"Map portals will be created at {conn.PortalRotationDegrees:0.#}°."
+            : $"{rebuilt} map portal(s) rebuilt at {conn.PortalRotationDegrees:0.#}°.");
     })
     .Add("mod", "/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
     {
@@ -4575,7 +4641,8 @@ static Task SpawnMapPortals(string remote, NetworkStream stream, ConnectionCiphe
             if (!Current()) return;
             uint id = conn.NextObjectId++;
             var (x, y) = MapDevice.PortalCell(device.X, device.Y, index);
-            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, new MapPortalObject(x, y, index, MapPortalType, Open: 1).Blob()),
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type,
+                    new MapPortalObject(x, y, index, MapPortalType, Open: 1, Rotation: conn.PortalRotationRadians).Blob()),
                 $"0x02b9 create map portal 0x{id:x} (place {index}, {n}/{open.PortalsLeft}) to {open.Area.Name} at ({x}, {y})");
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
             lock (conn.MapPortals) conn.MapPortals[id] = (x, y, index);
@@ -4590,6 +4657,53 @@ static Task SpawnMapPortals(string remote, NetworkStream stream, ConnectionCiphe
 static void SendMapPortalsLater(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint deviceId, ushort area, int delayMs) =>
     _ = Task.Delay(delayMs).ContinueWith(async _ => { if (!conn.Closed) await SendMapPortals(remote, stream, ciphers, conn, deviceId, area); });
 
+// Removes and recreates the map portals that stand, at the same places and with the current rotation, then lists them
+// again: the client builds a portal's visual from its object, so a rotated portal effect can be tried without reopening
+// the device. Returns how many were rebuilt.
+static async Task<int> RebuildMapPortals(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    uint deviceId;
+    lock (conn.HideoutDoodads) deviceId = conn.HideoutDoodads.Keys.FirstOrDefault();
+    List<(uint Id, int X, int Y, int Index)> old;
+    lock (conn.MapPortals)
+    {
+        old = [.. conn.MapPortals.Select(kv => (kv.Key, kv.Value.X, kv.Value.Y, kv.Value.Index))];
+        conn.MapPortals.Clear();
+    }
+    if (old.Count == 0) return 0;
+    uint type = InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath);
+    foreach (var (id, _, _, _) in old)
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove map portal 0x{id:x} (rebuild)");
+    // Each portal is listed a moment after its create: 0x008f in the same burst as the 0x2b9 reaches none of them (the
+    // client has not built the object yet), which is why they then stay invisible.
+    ushort area = MapDevice.OpenOf(CharacterName(conn))?.Area.Hash16 ?? conn.Layout.Hash;
+    foreach (var (_, x, y, index) in old)
+    {
+        uint id = conn.NextObjectId++;
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type,
+                new MapPortalObject(x, y, index, MapPortalType, Open: 1, Rotation: conn.PortalRotationRadians).Blob()),
+            $"0x02b9 create map portal 0x{id:x} (place {index}) at ({x}, {y}) rotation {conn.PortalRotationDegrees:0.#}°");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+        lock (conn.MapPortals) conn.MapPortals[id] = (x, y, index);
+        await Task.Delay(MapPortalListMs);
+        await SendMapPortals(remote, stream, ciphers, conn, deviceId, area);
+    }
+    return old.Count;
+}
+
+// Lists the portals already standing again, so a portal cosmetic takes effect without reopening the map device: 0x008f
+// carries the variation of every entry and the client re-applies the visual. False when nothing stands.
+static async Task<bool> ResendMapPortals(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    uint deviceId;
+    lock (conn.HideoutDoodads) deviceId = conn.HideoutDoodads.Keys.FirstOrDefault();
+    lock (conn.MapPortals)
+        if (conn.MapPortals.Count == 0) return false;
+    await SendMapPortals(remote, stream, ciphers, conn, deviceId,
+        MapDevice.OpenOf(CharacterName(conn))?.Area.Hash16 ?? conn.Layout.Hash);
+    return true;
+}
+
 // S→C 0x8f: the device's portals and where they lead (21-hideouts.md §5). Without it the client never draws them; a
 // portal listed with area 0 (one just taken) closes.
 static async Task SendMapPortals(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint deviceId, ushort area, uint closed = 0)
@@ -4599,7 +4713,7 @@ static async Task SendMapPortals(string remote, NetworkStream stream, Connection
     lock (conn.MapPortals) ids = [.. conn.MapPortals.Keys.Order()];
     string owner = CharacterName(conn);
     var list = (closed == 0 ? [] : new List<InstanceMapDevice.Portal> { new(closed, 0) })
-        .Concat(ids.Select(id => new InstanceMapDevice.Portal(id, area, owner, style))).ToList();
+        .Concat(ids.Select(id => new InstanceMapDevice.Portal(id, area, owner, style, conn.CosmeticPortalVariation))).ToList();
     await Send(remote, stream, ciphers, InstanceMapDevice.Portals(deviceId, list),
         $"0x008f map device 0x{deviceId:x} portals: {ids.Count} open to 0x{area:x4}{(closed == 0 ? "" : $", 0x{closed:x} closed")}");
 }
@@ -4670,14 +4784,16 @@ static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, Conn
     var (x, y) = conn.Layout.Near((conn.Layout.SpawnX, conn.Layout.SpawnY));
     uint id = conn.NextObjectId++;
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
-        new MapPortalObject(x, y, -1, MapPortalType, Open: 1).Blob()), $"0x02b9 create the portal back to the {hideout.Name} 0x{id:x} at ({x}, {y})");
+        new MapPortalObject(x, y, -1, MapPortalType, Open: 1, Rotation: conn.PortalRotationRadians).Blob()),
+        $"0x02b9 create the portal back to the {hideout.Name} 0x{id:x} at ({x}, {y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
     conn.ReturnPortal = (id, x, y);
     string owner = CharacterName(conn);
     _ = Task.Delay(MapPortalEntryMs).ContinueWith(async _ =>
     {
         if (!conn.Closed)
-            await Send(remote, stream, ciphers, InstanceMapDevice.Portals(0, [new(id, hideout.AreaHash16, owner)]),
+            await Send(remote, stream, ciphers, InstanceMapDevice.Portals(0,
+                [new(id, hideout.AreaHash16, owner, Variation: conn.CosmeticPortalVariation)]),
                 $"0x008f the portal 0x{id:x} leads to the {hideout.Name} (0x{hideout.AreaHash16:x4})");
     });
 }
@@ -4997,6 +5113,8 @@ sealed partial class Program
     internal static readonly SkillCatalog Skills = new();
     // Stat names ↔ client keys (Stats.dat row + 1).
     internal static readonly StatCatalog Stats = new();
+    // The shop's portal effects the server can apply itself (/cosmetic): the visual of the player's own portals.
+    internal static readonly CosmeticCatalog Cosmetics = new();
     // Per character: the ids of worn items whose requirements are not met (CharacterStatSources).
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<uint>> InactiveItems = new(StringComparer.OrdinalIgnoreCase);
     // The character panel's Spell Suppression chance stats (the client reads the final value).
@@ -5438,6 +5556,13 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
         new(l.SpawnX, l.SpawnY, Program.WalkSpeed, l.Walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096);
     public bool PlayerSent;
     public byte[] Carry = [];
+    /// <summary>The portal cosmetic: the MicrotransactionPortalVariations row every portal is listed with (0x008f +0x26),
+    /// 0 for the base effect. Applied to portals already standing as well as to new ones.</summary>
+    public ushort CosmeticPortalVariation;
+    /// <summary>How map portals are turned around the vertical axis (degrees; Positioned rotation). Dev: /portal_rotation,
+    /// which rebuilds the portals that already stand.</summary>
+    public float PortalRotationDegrees;
+    public float PortalRotationRadians => PortalRotationDegrees * MathF.PI / 180f;
     public long Ticks;
     public volatile PendingTransfer? PendingTransfer;
     public ChooserList? Chooser;
