@@ -4136,6 +4136,11 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
         Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: unknown type 0x{item.Item.TypeHash:x8}: {hex}");
         return;
     }
+    if (type.Id == PortalScroll)
+    {
+        await UsePortalScroll(remote, stream, ciphers, conn, r, item, type);
+        return;
+    }
     if (type.Id != Regret)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: {type.Name} is not handled: {hex}");
@@ -4511,6 +4516,7 @@ static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, Conn
         new MapPortalObject(x, y, -1, MapPortalType, Open: 1).Blob()), $"0x02b9 create the portal back to the {hideout.Name} 0x{id:x} at ({x}, {y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
     conn.ReturnPortal = (id, x, y);
+    conn.ReturnPortalTo = 0;
     string owner = CharacterName(conn);
     _ = Task.Delay(MapPortalEntryMs).ContinueWith(async _ =>
     {
@@ -4520,7 +4526,8 @@ static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, Conn
     });
 }
 
-// A click on the map's portal back (C→S 0x24): walk there, then to the hideout, next to its waypoint.
+// A click on the portal back (C→S 0x24, the map's own or a Portal Scroll's): walk there, then to the hideout next to its
+// waypoint, or to the town the scroll's portal leads to (ReturnPortalTo), at its spawn.
 static async Task UseMapReturnPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, (int X, int Y) at)
 {
@@ -4530,7 +4537,56 @@ static async Task UseMapReturnPortal(string remote, NetworkStream stream, Connec
     Console.WriteLine($"[gateway] {remote} <= 0x0024 portal back 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
-    await WarpToHideout(remote, stream, ciphers, conn, "map portal back");
+    if (conn.ReturnPortalTo is ushort town and not 0)
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(town, 0, false, AtSpawn: true), "portal to town");
+    else
+        await WarpToHideout(remote, stream, ciphers, conn, "map portal back");
+}
+
+// A Portal Scroll used (C→S 0x58) outside towns and hideouts: one scroll is spent and a portal opens where the player
+// stands, replacing the one there was (the scroll's earlier one, or a map's own portal back). From a map it leads to the
+// hideout (the player came through its map device), anywhere else to the character's last town. In a town or a hideout
+// nothing happens and nothing is spent.
+static async Task UsePortalScroll(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, byte row, InventoryItem item,
+    ItemCatalog.BaseType type)
+{
+    ushort here = conn.Layout.Hash;
+    if (WaypointCatalog.Areas.Find(here) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == here))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: in a town or hideout, nothing happens");
+        return;
+    }
+    bool toHideout = MapDevices.Value.IsMapArea(here) && HideoutCatalog.Default is not null;
+    ushort town = conn.LastTown != 0 ? conn.LastTown : AreaLayouts.LioneyesWatch;
+    var items = ItemsOf(conn);
+    if (items.ConsumeOne(row, item.Id) is not { } taken) return;
+    uint inventoryId = PlayerInventories.InventoryId(row);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(inventoryId, items.NextRevision(row), [item.Id], taken.Left is { } left ? [left] : []),
+        $"0x00bf inventory {inventoryId}: {type.Name} used" + (taken.Left is { } now ? $", {now.Item.StackSize} left" : ", stack empty"));
+    // One portal per player: the old one closes (0x8f with area 0) and goes.
+    if (conn.ReturnPortal is { } old)
+    {
+        await Send(remote, stream, ciphers, InstanceMapDevice.Portals(0, [new(old.Id, 0)]), null);
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(old.Id), $"0x{InstanceProtocol.RemoveObjectId:x4} remove the old portal 0x{old.Id:x}");
+    }
+    var (px, py) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+    // Beside the player, so the click that opens it is not on the player.
+    var (x, y) = conn.Layout.Walkable is { } walkable && walkable(px + 3, py) ? (px + 3, py) : (px, py);
+    uint id = conn.NextObjectId++;
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
+        new MapPortalObject(x, y, -1, MapPortalType, Open: 1).Blob()), $"0x02b9 create the Portal Scroll's portal 0x{id:x} at ({x}, {y})");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+    conn.ReturnPortal = (id, x, y);
+    conn.ReturnPortalTo = toHideout ? (ushort)0 : town;
+    ushort leadsTo = toHideout ? HideoutCatalog.Default!.AreaHash16 : town;
+    string owner = CharacterName(conn);
+    // 0x8f only reaches a portal the client has finished creating (MapPortalListMs, as the device's portals).
+    _ = Task.Delay(MapPortalListMs).ContinueWith(async _ =>
+    {
+        if (!conn.Closed && conn.ReturnPortal?.Id == id)
+            await Send(remote, stream, ciphers, InstanceMapDevice.Portals(0, [new(id, leadsTo, owner)]),
+                $"0x008f the Portal Scroll's portal 0x{id:x} leads to 0x{leadsTo:x4} ({(toHideout ? "the hideout" : "the last town")})");
+    });
 }
 
 // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects
@@ -4882,6 +4938,7 @@ sealed partial class Program
     // The flask buffs' BuffDefinitions rows (flask_effect_life "Healing", flask_effect_mana "Regenerating Mana": invisible,
     // ended by death or a full pool). Game_FLASK_BUFFS=0 recovers without them.
     internal const ushort FlaskEffectLifeBuffRow = 5, FlaskEffectManaBuffRow = 9;
+    internal const string PortalScroll = "Metadata/Items/Currency/CurrencyPortal";
     /// <summary>The flask recovery's step (RunFlaskRecovery): short enough for one update per point of life.</summary>
     internal const int FlaskStepMs = 20;
     internal static bool FlaskBuffs => Environment.GetEnvironmentVariable("Game_FLASK_BUFFS") != "0";
@@ -5378,6 +5435,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     /// <summary>In a map's area: the portal back to the hideout (object id and cell), or null.</summary>
     public (uint Id, int X, int Y)? ReturnPortal;
+    /// <summary>Where ReturnPortal leads: 0 the hideout (a map's own portal, or a Portal Scroll's in a map), else a town's
+    /// WorldAreas HASH16 (a Portal Scroll's anywhere else).</summary>
+    public ushort ReturnPortalTo;
 
     /// <summary>The 0x8f entries' model byte (/map_portal sets it for experiments).</summary>
     public byte MapPortalStyle;
