@@ -322,6 +322,49 @@ the values of each explicit mod within its own tier; the mods, their order, impl
 would be a different mod, and the client reorders the tooltip by mod, so the lines would jump. An item without explicit
 mods is refused.
 
+### Orb of Scouring (2026-10-21, verified live)
+
+`CurrencyConvertToNormal`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Scouring` makes a magic, rare or
+unique item normal: explicit mods and the rare name are removed, implicits and enchants stay. A normal item is refused
+and nothing is spent.
+
+### Orb of Transmutation (2026-10-21, verified live)
+
+`CurrencyUpgradeToMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Transmutation` makes a normal item with
+a Mods component magic and identified: 1-2 affixes (at most one prefix and one suffix) rolled by `ItemRolls.Roll`, each
+tier drawn by weight; implicits kept. Anything else is refused and nothing is spent.
+
+### Orb of Alteration (2026-10-21, verified live)
+
+`CurrencyRerollMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Alteration` rerolls a magic item's
+affixes: 1-4 of them, at most two prefixes and two suffixes, each tier drawn by weight (`ItemRolls.Roll` with a shape).
+This is a server choice; the official orb gives 1-2. Anything but a magic item with mods is refused, nothing spent.
+
+### Orb of Augmentation (2026-10-21, verified live)
+
+`CurrencyAddModToMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Augmentation` adds one affix to a magic
+item (`ItemRolls.AddAffix`): drawn by weight from the base's pool, no family already on it, at most two prefixes and two
+suffixes (this server's magic limit, as the Orb of Alteration). Old affixes and rarity stay. A full item, or anything
+but a magic item, is refused and nothing is spent.
+
+### Regal Orb (2026-10-21, verified live)
+
+`CurrencyUpgradeMagicToRare`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Regal` makes a magic item rare:
+its affixes stay, one more is added (`ItemRolls.AddAffix`, at most three prefixes and three suffixes) and it gets a rare
+name. Anything but a magic item, or one where no affix fits, is refused and nothing is spent.
+
+### Exalted Orb (2026-10-21, verified live)
+
+`CurrencyAddModToRare`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Exalted` adds one affix to a rare item
+(`ItemRolls.AddAffix`, at most three prefixes and three suffixes); its affixes and name stay. Anything but a rare item,
+or a full one, is refused and nothing is spent.
+
+### Orb of Annulment (2026-10-21, verified live)
+
+`CurrencyRemoveMod`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Annulment` removes one random explicit
+affix from a magic or rare item; implicits, the other affixes, rarity and name stay. Anything else, or an item without
+explicit affixes, is refused and nothing is spent.
+
 ### Orb of Fusing (2026-10-21, verified live)
 
 `CurrencyRerollSocketLinks`, HASH32 `0xC71BF58D`, uses the same 0x71/0x72 currency handler and 0xbf inventory update.

@@ -26,16 +26,16 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
 
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
-    /// rarity, only get the rarity.</summary>
-    public Item Roll(Item item, ItemRarity rarity, Random rng)
+    /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.</summary>
+    public Item Roll(Item item, ItemRarity rarity, Random rng, (int Count, int MaxEach)? shape = null)
     {
         var kept = item.Mods.Where(m => m.Section != ModSection.Explicit).ToList();
         var result = item with { Rarity = rarity, Mods = kept, NameWords = [] };
         if (catalog.ByHash(item.TypeHash) is not { } t || !t.Components.Contains("Mods") || rarity is not (ItemRarity.Magic or ItemRarity.Rare))
             return result;
-        var (count, maxEach) = rarity == ItemRarity.Magic
+        var (count, maxEach) = shape ?? (rarity == ItemRarity.Magic
             ? (rng.Next(1, 3), 1)
-            : (rng.Next(12) switch { < 7 => 4, < 11 => 5, _ => 6 }, 3);
+            : (rng.Next(12) switch { < 7 => 4, < 11 => 5, _ => 6 }, 3));
         var pool = Pool(t, item.ItemLevel).ToList();
         var chosen = new List<ModCatalog.Mod>();
         while (chosen.Count < count)
@@ -56,6 +56,26 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         : item with { Mods = [.. item.Mods.Select(m => m.Section == ModSection.Explicit && catalog.Mods.ByHash(m.Hash) is { } mod
             ? mod.Roll(ModSection.Explicit, rng) : m)] };
 
+    /// <summary>One more explicit affix, drawn by weight from the base's pool at its item level: no family already on the
+    /// item and at most <paramref name="maxEach"/> prefixes / suffixes. The old mods stay; null when nothing fits.</summary>
+    public Item? AddAffix(Item item, int maxEach, Random rng)
+    {
+        if (catalog.ByHash(item.TypeHash) is not { } t) return null;
+        var have = item.Mods.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>().ToList();
+        var allowed = Pool(t, item.ItemLevel).Where(p => have.Count(h => h.GenerationType == p.Mod.GenerationType) < maxEach &&
+            !have.Any(h => h.Families.Intersect(p.Mod.Families).Any())).ToList();
+        if (allowed.Count == 0) return null;
+        var added = Pick(allowed, rng);
+        // Prefixes before suffixes, as Roll orders them.
+        var mods = item.Mods.ToList();
+        int at = added.GenerationType == Prefix
+            ? mods.FindLastIndex(m => m.Section == ModSection.Explicit && catalog.Mods.ByHash(m.Hash)?.GenerationType == Prefix) + 1
+            : mods.Count;
+        if (at == 0) at = mods.FindIndex(m => m.Section == ModSection.Explicit) is int e and >= 0 ? e : mods.Count;
+        mods.Insert(at, added.Roll(ModSection.Explicit, rng));
+        return item with { Mods = mods };
+    }
+
     /// <summary>Two Words.dat keys (prefix from list 1, suffix from list 2) for the base's tags; empty without Words.dat.</summary>
     public IReadOnlyList<uint> RareName(ItemCatalog.BaseType t, Random rng)
     {
@@ -67,6 +87,9 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         }
         return Draw(1) is uint a && Draw(2) is uint b ? [a, b] : [];
     }
+
+    /// <summary>A rare name for this item's base; empty when the base is unknown.</summary>
+    public IReadOnlyList<uint> RareName(Item item, Random rng) => catalog.ByHash(item.TypeHash) is { } t ? RareName(t, rng) : [];
 
     /// <summary>"Dire Bane" from the keys (for logs and /mods).</summary>
     public string NameOf(IReadOnlyList<uint> keys) => string.Concat(keys.Select(k => _words.Value.FirstOrDefault(w => w.Key == k)?.Text ?? $"[{k:x8}]"));
