@@ -113,6 +113,10 @@ static class AreaPopulation
     /// <summary>A named point of a room the client placed (found by <see cref="LoadPoints"/>).</summary>
     public sealed record RoomPoint(string Name, int X, int Y);
 
+    /// <summary>A server object of a room the client placed (an NPC, a quest blocker): its type and model, grid cell,
+    /// angle (radians) and scale, through the room's placement.</summary>
+    public sealed record RoomObject(string Type, string Model, int X, int Y, float Angle, float Scale);
+
     static bool IsMonsterPoint(string name) => name == "mapboss" || name.StartsWith("%area%-", StringComparison.Ordinal);
 
     // One scattered pack per this many walkable cells (The Coast seed 1: 404 620 cells → 45 packs).
@@ -264,12 +268,17 @@ static class AreaPopulation
     /// <see cref="FitTolerance"/> cells of a captured doodad of the same model. The points go through the same placement.
     /// Without either file: none (notes say why).
     /// </summary>
-    public static List<RoomPoint> LoadPoints(string areaId, uint seed, List<string> notes)
+    public static List<RoomPoint> LoadPoints(string areaId, uint seed, List<string> notes) => FitRooms(areaId, seed, notes).Points;
+
+    /// <summary>The server objects of the rooms placed in this (area, seed), found like <see cref="LoadPoints"/>.</summary>
+    public static List<RoomObject> LoadObjects(string areaId, uint seed, List<string> notes) => FitRooms(areaId, seed, notes).Objects;
+
+    static (List<RoomPoint> Points, List<RoomObject> Objects) FitRooms(string areaId, uint seed, List<string> notes)
     {
         string capture = $"data/walkability/{areaId}_seed{seed}.doodads.json";
-        if (RoomFits.Value is not { } rooms) { notes.Add("no data/room-points.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk room-points)"); return []; }
-        if (!rooms.Areas.TryGetValue(areaId, out var candidates)) return [];
-        if (!File.Exists(capture)) { notes.Add($"no {capture} (live.ps1 -Walkmaps, then enter the area): no room points"); return []; }
+        if (RoomFits.Value is not { } rooms) { notes.Add("no data/room-points.json (dotnet run --project scripts/re/atlas -- Client/Content.ggpk room-points)"); return ([], []); }
+        if (!rooms.Areas.TryGetValue(areaId, out var candidates)) return ([], []);
+        if (!File.Exists(capture)) { notes.Add($"no {capture} (live.ps1 -Walkmaps, then enter the area): no room points"); return ([], []); }
         var placed = new HashSet<(string, int, int)>();
         var byModel = new Dictionary<string, List<(int X, int Y)>>(StringComparer.OrdinalIgnoreCase);
         try
@@ -288,7 +297,7 @@ static class AreaPopulation
         catch (Exception ex) when (ex is IOException or JsonException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException)
         {
             notes.Add($"{capture}: {ex.Message}");
-            return [];
+            return ([], []);
         }
         bool Near(string model, int x, int y)
         {
@@ -298,6 +307,7 @@ static class AreaPopulation
             return false;
         }
         var points = new List<RoomPoint>();
+        var objects = new List<RoomObject>();
         foreach (var path in candidates)
         {
             if (!rooms.Rooms.TryGetValue(path, out var room)) continue;
@@ -319,11 +329,27 @@ static class AreaPopulation
                     if (origins.Any(o => Math.Abs(o.X - ox) <= 3 && Math.Abs(o.Y - oy) <= 3)) continue;
                     origins.Add((ox, oy));
                     foreach (var p in room.Points) { var g = At(p.X, p.Y); points.Add(new RoomPoint(p.Name, g.X, g.Y)); }
+                    foreach (var d in room.Doodads.Where(d => d.Type is not null))
+                    {
+                        var g = At(d.X, d.Y);
+                        objects.Add(new RoomObject(d.Type!, d.Model, g.X, g.Y, TurnAngle(a, b, cc, dd, d.Angle), d.Scale));
+                    }
                     notes.Add($"room {path.Split('/')[^1]} at ({ox}, {oy}) turn [{a} {b}; {cc} {dd}]: {hits}/{plain.Count} doodads match; " +
                         string.Join(", ", room.Points.Select(p => $"{p.Name} at {At(p.X, p.Y)}")));
                 }
         }
-        return points;
+        return (points, objects);
+    }
+
+    /// <summary>A room angle through a turn/flip [[a, b], [c, d]] (grid = M · room): a turn adds its own angle, a flip
+    /// mirrors the angle first. Only the identity is checked live (The Twilight Strand's town_entrance_exclude.arm,
+    /// whose captured doodads keep the room's angles mod 2π).</summary>
+    public static float TurnAngle(int a, int b, int c, int d, float angle)
+    {
+        float turn = MathF.Atan2(c, a);
+        if (a * d - b * c < 0) angle = -angle;
+        float r = (turn + angle) % (2 * MathF.PI);
+        return r < 0 ? r + 2 * MathF.PI : r;
     }
 
     // Placement tolerance (cells) and the share of a room's doodads that must match.
@@ -333,7 +359,7 @@ static class AreaPopulation
     static readonly (int, int, int, int)[] Turns =
         [(1, 0, 0, 1), (0, -1, 1, 0), (-1, 0, 0, -1), (0, 1, -1, 0), (-1, 0, 0, 1), (0, 1, 1, 0), (1, 0, 0, -1), (0, -1, -1, 0)];
 
-    sealed record RoomData(IReadOnlyList<RoomPoint> Points, IReadOnlyList<(string Model, float X, float Y, string? Type)> Doodads);
+    sealed record RoomData(IReadOnlyList<RoomPoint> Points, IReadOnlyList<(string Model, float X, float Y, string? Type, float Angle, float Scale)> Doodads);
     sealed record RoomIndex(Dictionary<string, List<string>> Areas, Dictionary<string, RoomData> Rooms);
 
     // data/room-points.json (scripts/re/atlas room-points): the rooms with monster or start points per area. Game data: stays in data/.
@@ -349,7 +375,9 @@ static class AreaPopulation
                 (int)Math.Round(p.GetProperty("x").GetDouble()), (int)Math.Round(p.GetProperty("y").GetDouble())))],
             [.. r.Value.GetProperty("doodads").EnumerateArray().Select(d => (d.GetProperty("model").GetString() ?? "",
                 (float)d.GetProperty("x").GetDouble(), (float)d.GetProperty("y").GetDouble(),
-                d.TryGetProperty("type", out var t) ? t.GetString() : null))]), StringComparer.OrdinalIgnoreCase);
+                d.TryGetProperty("type", out var t) ? t.GetString() : null,
+                d.TryGetProperty("angle", out var an) ? (float)an.GetDouble() : 0f,
+                d.TryGetProperty("scale", out var sc) ? (float)sc.GetDouble() : 1f))]), StringComparer.OrdinalIgnoreCase);
         return new RoomIndex(areas, rooms);
     });
 }

@@ -11,7 +11,7 @@ static class GameDataFiles
         ("data/object-types.json", "monsters, NPCs, area transitions"),
         ("data/item-types.json", "items"),
         ("data/area-transitions.json", "area transitions of fixed layouts"),
-        ("data/room-points.json", "unique bosses"),
+        ("data/room-points.json", "unique bosses, The Twilight Strand's force wall"),
         ("data/hideouts.json", "hideouts"),
         ("data/animation-contacts.json", "class spell timing (the Witch's is used)"),
     ];

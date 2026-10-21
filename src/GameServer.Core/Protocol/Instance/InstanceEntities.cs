@@ -184,6 +184,20 @@ public static class InstanceEntities
     public static byte[] ComponentUpdate(uint entityId, byte componentIndex, byte[] data) =>
         new LoginWriter().U16(ComponentUpdateId).U32(entityId).U32(0).U16(0).Blob([componentIndex, .. data]).ToArray();
 
+    /// <summary>S→C 0x2ba to an object's StateMachine (reader 0x141e3f4a0): all its shared states and timers again
+    /// (<see cref="StateMachineData.Write"/>); the client runs the events of every state whose value changed.</summary>
+    public static byte[] StateMachineUpdate(uint entityId, byte componentIndex, StateMachineData states)
+    {
+        var w = new BlobWriter();
+        states.Write(w);
+        return ComponentUpdate(entityId, componentIndex, w.ToArray());
+    }
+
+    /// <summary>S→C 0x2ba to an object's Transitionable (reader 0x1421c2310): u8 target state; the client steps toward
+    /// it one state at a time and runs each step's on_transition events (12-quests.md §6).</summary>
+    public static byte[] TransitionableUpdate(uint entityId, byte componentIndex, byte state) =>
+        ComponentUpdate(entityId, componentIndex, [state]);
+
     /// <summary>
     /// S→C 0x2ba to an object's Animated component (reader <c>0x141e57490</c>): flags bit0 + a u32-counted UTF-16 .ao path
     /// swaps its animated object, which then plays the new one's default animation (a projectile's impact: Fireball →
@@ -498,12 +512,7 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 // 0x141e3ee40: u8 shared-state count, u8 shared-timer count (the client throws unless they match the
                 // type); per define_shared_state a compact int value + u8 flags (0x02 keeps the sent value), per
                 // define_shared_timer a u32 + u8. The .ot defaults are sent.
-                case "StateMachine":
-                    var sm = StateMachine!;
-                    w.U8((byte)sm.SharedStates.Count).U8((byte)sm.SharedTimers);
-                    foreach (int v in sm.SharedStates) { CompactInt(w, v); w.U8(0); }
-                    for (int i = 0; i < sm.SharedTimers; i++) w.U32(0).U8(0);
-                    break;
+                case "StateMachine": StateMachine!.Write(w); break;
                 // BaseEvents, Pathfinding, Monster, Preload, Functions, PlayerClass: no data.
             }
         }
@@ -512,15 +521,6 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
     }
 
     private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
-
-    /// <summary>Signed compact int as the blob reader 0x141e490e0 reads it (big-endian groups: 1 byte for -0x40..0x3f,
-    /// 0x80 + 14 bits, 0xc0 + 21 bits, 0xe0 + 28 bits), the same encoding as InstanceProtocol.CompactInt.</summary>
-    static void CompactInt(BlobWriter w, int v)
-    {
-        var lw = new LoginWriter();
-        InstanceProtocol.CompactInt(lw, v);
-        foreach (byte b in lw.ToArray()) w.U8(b);
-    }
 
     /// <summary>ObjectMagicProperties flags bit 3: identified (+0x78); bit 7: a custom name follows.</summary>
     const ushort Identified = 0x08, CustomName = 0x80;
@@ -591,9 +591,70 @@ public sealed record EffectObject(int GridX, int GridY, string AnimatedObject)
     }
 }
 
+/// <summary>
+/// A room's blocking object: <c>Metadata/Terrain/Act1/Area1/Objects/Tutorial_Blocker_*</c> (The Twilight Strand's force
+/// walls), components Positioned, BaseEvents, Animated, TriggerableBlockage, Transitionable (12-quests.md §6).
+/// TriggerableBlockage (0x141e44290): u8 blocked, then only while blocked a u8 count and that many u8 (none here); the
+/// client blocks the cells of the model's own footprint where the object stands (0x141d876e0), so the room's scale
+/// matters: Positioned flags0 0x20 adds f32 z, x, y scale (the room gives the Strand's wall 2.7). TriggerableBlockage
+/// has no update reader: the wall goes with the object (0x2bb).
+/// </summary>
+public sealed record BlockerObject(int GridX, int GridY, float Rotation, float Scale = 1)
+{
+    public byte[] Blob()
+    {
+        var w = new BlobWriter();
+        w.U8(0).U8(0);                                                              // object flags, base data entry count
+        bool scaled = Scale != 1;
+        w.I32(GridX).I32(GridY).F32(Rotation).U16(0).U8((byte)(scaled ? 0x20 : 0)).U8(0x02);
+        if (scaled) w.F32(Scale).F32(Scale).F32(Scale);                             // scale z, x, y
+        w.U8(0).U8(1);                                                              // shown
+        w.U8(0);                                                                    // Animated: the type's own
+        w.U8(1).U8(0);                                                              // TriggerableBlockage: blocked
+        w.U8(1);                                                                    // Transitionable: state 1
+        w.U8(0);                                                                    // tasks
+        return w.ToArray();
+    }
+}
+
 /// <summary>A type's networked StateMachine data: the define_shared_state defaults in order and the number of
 /// define_shared_timer entries (scripts/re/ot_components.py "shared_states" / "shared_timers").</summary>
-public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int SharedTimers);
+public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int SharedTimers, IReadOnlyList<string>? Names = null)
+{
+    /// <summary>States the server set (<see cref="Set"/>): sent with flags 0x02, which makes the client keep the sent
+    /// value (the update reader 0x141e3f4a0 takes the type's default for a flag-0 state the client controls).</summary>
+    public IReadOnlySet<int> Overridden { get; init; } = new HashSet<int>();
+
+    /// <summary>The state's index by name, or −1.</summary>
+    public int IndexOf(string name) => Names is null ? -1 : Names.ToList().IndexOf(name);
+
+    /// <summary>A copy with this state set; unknown names change nothing.</summary>
+    public StateMachineData Set(string name, int value)
+    {
+        int i = IndexOf(name);
+        if (i < 0) return this;
+        var states = SharedStates.ToArray();
+        states[i] = value;
+        return this with { SharedStates = states, Overridden = new HashSet<int>(Overridden) { i } };
+    }
+
+    /// <summary>The component's data, the same in the creation blob and in an update (0x2ba, reader 0x141e3f4a0):
+    /// u8 state count, u8 timer count, per state a compact int value (big-endian groups as the blob reader 0x141e490e0
+    /// reads them, InstanceProtocol.CompactInt) + u8 flags, per timer u32 + u8. A changed value
+    /// runs the type's on_state_&lt;name&gt;_&lt;value&gt; events.</summary>
+    public void Write(BlobWriter w)
+    {
+        w.U8((byte)SharedStates.Count).U8((byte)SharedTimers);
+        for (int i = 0; i < SharedStates.Count; i++)
+        {
+            var lw = new LoginWriter();
+            InstanceProtocol.CompactInt(lw, SharedStates[i]);
+            foreach (byte b in lw.ToArray()) w.U8(b);
+            w.U8((byte)(Overridden.Contains(i) ? 0x02 : 0));
+        }
+        for (int i = 0; i < SharedTimers; i++) w.U32(0).U8(0);
+    }
+}
 
 /// <summary>A skill the server grants an Actor (ActiveSkillManager, Actor +0x598): Id is the instance's u16 (+0x40),
 /// which the client uses in its skill messages; the action id (+0x42) comes from the data (GEPL row → GrantedEffect →

@@ -29,8 +29,8 @@ $manifest = @(
        Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'data/area-transitions.json'); Version = 1; Needs = @('tables')
        UsedBy = 'area transitions of fixed layouts (08-area-transitions.md)' }
     @{ Name = 'room-points'; Outputs = @('data\room-points.json'); Runner = 'dotnet'
-       Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'room-points'); Version = 1; Needs = @('tables')
-       UsedBy = 'unique bosses and named packs (14-monster-packs.md)' }
+       Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'room-points'); Version = 2; Needs = @('tables')
+       UsedBy = 'unique bosses and named packs (14-monster-packs.md), quest room objects (12-quests.md)' }
     @{ Name = 'hideouts'; Outputs = @('data\hideouts.json'); Runner = 'dotnet'
        Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'hideouts'); Version = 1; Needs = @('tables')
        UsedBy = 'hideouts and their decorations (21-hideouts.md)' }

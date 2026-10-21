@@ -1,6 +1,6 @@
 # 12 — Quests
 
-State of 2026-10-19: the quest engine (§5) and the first quest, **a1q1 "Enemy at the Gate"** (§6), are in. The notes
+State of 2026-10-21: the quest engine (§5) and the first quest, **a1q1 "Enemy at the Gate"** (§6), are in. The notes
 below §5 were first worked out on **a1q4 "Breaking Some Eggs"** in The Mud Flats, which opens the Submerged Passage. Seen live: the area transition to The Submerged Passage spawns
 ([08](08-area-transitions.md) §7), but an invisible wall in front of the cave stops the player.
 
@@ -116,13 +116,65 @@ first enter a town ([09](09-area-change.md) §4). Hillock stands before Lioneye'
 | What | Where it comes from | What the server does |
 |---|---|---|
 | the start point | the `washedup` room (`washed_up3.arm`, graph node `washedup` in `macro_beach4.tgr`), point `default` | the area's spawn (`AreaLayouts.For`: a room's `default` point, else the deepest cell) |
-| Hillock | WorldAreas `Bosses`: `Metadata/Monsters/ZombieBoss/ZombieBossHillockNormal` (MonsterVarieties 1166) | placed at `mapboss` of `town_entrance_exclude.arm` like any unique boss; his death sets `a1q1-KilledHillock` |
-| the force wall | `Metadata/Terrain/Act1/Area1/Objects/Tutorial_Blocker_3` in `town_entrance_exclude.arm` at room (92, 127), angle −0.988 (model `…/twilight_strand/force_wall/force_wall.ao`) | not created yet (below) |
+| Hillock | WorldAreas `Bosses`: `Metadata/Monsters/ZombieBoss/ZombieBossHillockNormal` (MonsterVarieties 1166) | placed at `mapboss` of `town_entrance_exclude.arm` like any unique boss; within 60 cells (`Quests.SightRange`) he sets `a1q1-SeenHillock`; his death sets `a1q1-KilledHillock` and levels the character to 2 (below) |
+| the force wall | `Metadata/Terrain/Act1/Area1/Objects/Tutorial_Blocker_3` in `town_entrance_exclude.arm` at room (92, 127), angle −0.988, **scale 2.7** (model `…/twilight_strand/force_wall/force_wall.ao`) | created blocked while the character lacks `a1q1-KilledHillock`, removed (0x2bb) when it is set (below) |
 | the Doorman | `Metadata/NPC/Act1/Doorman` in the same room at (130, 156): Transitionable `num_states 3`, state 3 plays `door_open` | not created yet (below) |
 | the gate into Lioneye's Watch | a tile record of `beachtown_south_entrance_test.tdt`: `Metadata/QuestObjects/SouthBeachTownEntrance` (extends AreaTransition, Transitionable `num_states 3`: states 1–2 not targetable, 3 opens and becomes targetable after 0.8 s) | captured by the walk-map recorder; created as a plain AreaTransition (see below). The client lets the player click it once its own quest flags hold `a1q1-KilledHillock` (Lioneye's Watch's `EndQuestFlags`); the Gateway also refuses it without the flag |
 
 The `washedup` room also has a force wall of its own (`Tutorial_Blocker_1`), the `WoundedExile` NPC and a
 `BiteZombieSpawner`: the opening tutorial, not done yet (no quest manages them, so none of them is created).
+
+**Hillock's fight** (live 2026-10-21; `BossFights.cs`):
+- **Boss life bar.** `ZombieBoss.ot` extends `Metadata/Monsters/BossLifeBar` (MonsterVarieties `BossHealthBar` set): its
+  StateMachine shared states are `boss_life_bar`, `disable_life_bar`, `global_first_aggro`, then ZombieBoss's `aggro`.
+  `on_state_boss_life_bar_1` calls `SetStaticLifeBarVisibilty(True)`. The StateMachine has an update reader
+  (`0x141e3f4a0`, slot +0xa0): 0x2ba with the same data as the creation blob (state count, timer count, per state a
+  compact int + u8 flags, per timer u32 + u8); a changed value runs that state's events; a state whose flags lack 0x02
+  may take the type's default instead (a check on the state's name). When Hillock aggroes the Gateway sends
+  `boss_life_bar` 1 and `aggro` 1 (flags 0x02).
+- **Life.** Unique rarity adds `monster_life_+%_final_from_rarity` 698 (Mods.dat MonsterUnique2): 39 × 7.98 = 311 at
+  level 1 (14-monster-packs.md).
+- **Second stage.** His second granted effect is `ZombieBossExtract` (GrantedEffects 2612, ActiveSkills
+  `zombie_boss_extract`, action `ZombieBossExtract`, CastTime 3000; the .act maps it to the `extract` animation). Its stat
+  set has no values, so what he regains is the server's: all his life. The hit that takes him to 50% leaves at least 1
+  life; he stops and uses the skill (0x1ab, skill id 0x0103 in his Actor list, with the attack's skill stats and a 3 s
+  time: without `skill_is_non_pathing` the client played nothing and kept him in the action, frozen, live 2026-10-21;
+  S→C 0x1ac, the object header only, ends the action after the stage), cannot drop below 1 life during the
+  cast, then 0x2ba steps his Transitionable to 2 (`on_transition`: `HideMeshSegment(…Sword…)` +
+  `AddAttached(OneHandSwordZombieHeld.ao, R_Weapon)`: the sword from his back into his hand) and 0x1b1 fills his life.
+  Transitionable's `num_states` must be ≥ 2 when an .ot gives it (`0x141e42a80` throws "That number of states is
+  unsupported" otherwise); `Transitionable {}` takes the type's default, which the sword step treats as 2.
+- **Level 2.** QuestStates' a1q1 text "killed Hillock … and levelled up. Open the Passive Skill Screen" — his kill tops
+  the character's experience up to level 2's start (`Quests.LevelAfterKill`); his own experience (about 150) does not
+  reach it.
+- **No portals.** WorldAreas 1_1_1 has the area mod `MapNoPortals` (`map_disable_portal_use` 1); `AreaModCatalog`
+  reads areas' own mods and a Portal Scroll there does nothing and is not spent.
+
+**The force wall** (live 2026-10-21): created at the room fit's place with the room's angle and scale (Positioned flags0
+0x20: f32 z, x, y scale; `BlockerObject`); `data/room-points.json` (version 2) carries each server object's angle and
+scale. The client blocks cells from the wall model's own footprint where the object stands (`0x141d876e0`, through the
+Animated model), so without the 2.7 scale the wall was a third of its size, standing beside the gap (2026-10-19).
+TriggerableBlockage has no update reader: the Gateway removes the object (0x2bb) when Hillock dies.
+
+The client blocks the wall by itself, but the server's walk estimate did not: it walked on through the wall, and the
+next echo (≥ ~92 units apart) snapped the player to the far side (live 2026-10-21). The wall's centre (1403, 679) is in
+the rock; it blocks where its line, at its angle as given (grid y down), crosses the neck from Hillock's beach into the
+gate corridor, about (1411, 667)–(1421, 652): a player put at (1410, 666) and (1414, 660), 1.3 cells from the line,
+stood stuck in it. The server closes that stretch on its own walk map (`QuestBarriers`): the walkable cells within 2.5
+cells of the wall's line, up to 60 cells from its centre, kept only when closing them cuts the gate off from Hillock's
+`mapboss` point (a stretch over open beach is left open). The player's walk estimate goes around it, so the server
+stops where the client stops; nothing is teleported. (Teleporting the player to the server's position once a walk
+ended put them inside the client's wall, where they could not move: removed.)
+
+The gate's minimap icon comes with the gate object (its `create_state_1` hides it, the plain AreaTransition the Gateway
+sends does not); the Gateway creates it only when Hillock dies. The client's minimap cache (`%LOCALAPPDATA%\Path of
+Exile\Minimap`) keeps icons from earlier visits of the same area and seed, so an icon seen before the kill can be an
+old one.
+
+**Quest log after the kill.** a1q1's state Order 2 ("… and levelled up. Open the Passive Skill Screen …") needs
+`CompletedPassivePointTutorial` (280) and `CompletedAllTutorials` (367) missing. Every character has
+`CompletedAllTutorials` (`Quests.EveryCharacter`, as on an account that has done the tutorials), so the log goes to
+Order 3, "Enter through the gate for a reward" ("Enter town for your reward").
 
 **What was tried for the wall and the Doorman** (live 2026-10-19; the code was not kept, the layouts below are enough to
 write it again): both were created
@@ -176,21 +228,19 @@ The gate works without it, so this is cosmetic; the notes are here so the next a
   or try base-data script variables on the gate, watching with `check-components.js` plus a Frida hook on `0x1421c26f0`
   that logs `+0x120` (the state the post-create sees).
 
-**The force wall and the Doorman** (also paused, low priority): the wall needs where TriggerableBlockage gets its
-blocked cells (`object_size 0`), and why it stood beside the gap; the Doorman needs why a created and updated object
-is not drawn (maybe its `.ao` is the gate's door, hidden by the tile).
+**The Doorman** (paused, low priority): why a created and updated object is not drawn (maybe its `.ao` is the gate's
+door, hidden by the tile).
 
 **What does not work yet:**
 - The gate opens without its animation (above).
-- **No force wall and no Doorman** (above). The Gateway's own check on the gate still keeps the town shut.
-- No quest log or tracker text, no Tarkleigh reward (needs NPCs), no boss life bar
-  ([Roadmap](../../Roadmap.md) monsters).
+- No Doorman (above). The gate is created only once Hillock is dead, and the Gateway still checks the flag on it.
+- No quest log or tracker text beyond what the client derives from the flags, no Tarkleigh reward (needs NPCs).
 
 ## Open
 
 - How the real server gives an AreaTransition subtype its Transitionable state (blob tasks?), so the Strand's gate and
   the Mud Flats' cave entrance play their opening.
-- How TriggerableBlockage blocks cells, where the Strand's force wall really stands, and why the Doorman is not drawn.
+- Why the Doorman is not drawn; the list of u8 TriggerableBlockage reads while blocked (none sent).
 - The QuestItems row layout (which row is which glyph; `TriggeredQuestFlag`).
 - Transitionable on inherited types (`WaterCaveAreaTransition`): how its state gets set.
 - How the server chooses which nests hold which glyph (RhoaChest / 2 / 3).

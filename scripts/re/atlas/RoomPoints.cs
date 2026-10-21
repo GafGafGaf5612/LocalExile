@@ -6,7 +6,7 @@ namespace Atlas;
 /// <summary>
 /// data/room-points.json: per area, the rooms of its room sets and fill tiles that carry monster points ("mapboss", the area's
 /// unique boss; "%area%-…", a MonsterPacks row named after the area) or a "default" start point, with those points and
-/// the room's doodads in room cells (server objects with their type). The Gateway finds where the client placed such a room by matching its doodads against the doodads the
+/// the room's doodads in room cells (server objects with their type, angle and scale: quest objects the Gateway creates). The Gateway finds where the client placed such a room by matching its doodads against the doodads the
 /// walk-map recorder captured (AreaPopulation.FitRooms). Agents/docs/protocol/14-monster-packs.md §3.
 /// </summary>
 static class RoomPoints
@@ -44,7 +44,7 @@ static class RoomPoints
                         points = room.Points.Where(p => IsKeptPoint(p.Name)).Select(p => new { name = p.Name, x = p.X, y = p.Y }),
                         doodads = room.Doodads.Select(d => d.Type.Equals(PlainDoodad, StringComparison.OrdinalIgnoreCase)
                             ? (object)new { model = d.Model, x = d.X, y = d.Y }
-                            : new { model = d.Model, x = d.X, y = d.Y, type = d.Type }),
+                            : new { model = d.Model, x = d.X, y = d.Y, type = d.Type, angle = d.Angle, scale = d.Scale }),
                     });
                 }
             }
@@ -52,7 +52,7 @@ static class RoomPoints
         }
         File.WriteAllText(output, JsonSerializer.Serialize(new
         {
-            note = "Rooms with monster points (mapboss, %area%-<pack>) or a default start point per area: points and doodads in room cells (server objects with their type). scripts/re/atlas room-points.",
+            note = "Rooms with monster points (mapboss, %area%-<pack>) or a default start point per area: points and doodads in room cells (server objects with their type, angle and scale). scripts/re/atlas room-points.",
             areas = areaRooms,
             rooms,
         }, new JsonSerializerOptions { WriteIndented = false }));

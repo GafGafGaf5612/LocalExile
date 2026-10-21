@@ -175,6 +175,45 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void A_set_state_is_sent_with_flag_2_and_updates_carry_every_state()
+    {
+        // ZombieBoss.ot (Hillock): boss_life_bar, disable_life_bar, global_first_aggro, aggro.
+        var states = new StateMachineData([0, 0, 0, 0], 0, ["boss_life_bar", "disable_life_bar", "global_first_aggro", "aggro"]);
+        var shown = states.Set("boss_life_bar", 1).Set("aggro", 1).Set("no_such_state", 1);
+        Assert.Equal([1, 0, 0, 1], shown.SharedStates);
+        Assert.Equal([0, 0, 0, 0], states.SharedStates);
+        // 0x2ba, object 0x3000, u32 0, u16 0, blob16 (length 11): component 11, counts 04 00, states value + flags.
+        Assert.Equal("02BA" + "00003000" + "00000000" + "0000" + "000B" + "0B" + "0400" + "0102" + "0000" + "0000" + "0102",
+            Convert.ToHexString(InstanceEntities.StateMachineUpdate(0x3000, 11, shown)));
+    }
+
+    [Fact]
+    public void Action_ended_is_the_object_header()
+    {
+        Assert.Equal("01AC" + "00003000" + "00000000" + "0000", Convert.ToHexString(InstanceProtocol.ActionEnded(0x3000)));
+    }
+
+    [Fact]
+    public void Transitionable_update_is_the_target_state()
+    {
+        Assert.Equal("02BA" + "00003000" + "00000000" + "0000" + "0002" + "0C" + "02",
+            Convert.ToHexString(InstanceEntities.TransitionableUpdate(0x3000, 12, 2)));
+    }
+
+    [Fact]
+    public void A_scaled_blocker_sends_its_scale_and_starts_blocked()
+    {
+        // The Twilight Strand's force wall: room scale 2.7 → Positioned flags0 0x20 and three f32.
+        byte[] plain = new BlockerObject(1403, 679, 5.2948f).Blob();
+        byte[] scaled = new BlockerObject(1403, 679, 5.2948f, 2.7f).Blob();
+        Assert.Equal(plain.Length + 12, scaled.Length);
+        Assert.Equal(0x20, scaled[2 + 14]);
+        Assert.Equal(2.7f, BitConverter.ToSingle(scaled, 2 + 16));
+        // shown (0 1), Animated 0, TriggerableBlockage blocked with no list (1 0), Transitionable 1, tasks 0.
+        Assert.Equal("0001" + "00" + "0100" + "01" + "00", Convert.ToHexString(scaled.AsSpan(scaled.Length - 7)));
+    }
+
+    [Fact]
     public void Monster_blob_refuses_components_it_cannot_write()
     {
         Assert.False(MonsterObject.CanSerialize([.. MonsterObject.BaseComponents, "StateMachine"]));

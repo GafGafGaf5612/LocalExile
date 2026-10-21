@@ -143,6 +143,10 @@ public static class InstanceProtocol
     /// (live 2026-10-16: sending the target in that pair teleported the player on long clicks, onto unwalkable cells).
     /// Otherwise it looks the skill up in the actor's granted skills and starts the action (0x141ee97f0 → 0x141e8cf10).
     /// </summary>
+    /// <summary>S→C 0x1ac "action ended" (read 0x141f92000): the world object header only (u32 object id, u32 0, u16 0);
+    /// the object's current action stops. Ignored for the local player's predicted actions (07 §5).</summary>
+    public static byte[] ActionEnded(uint objectId) => new LoginWriter().U16(0x1ac).U32(objectId).U32(0).U16(0).ToArray();
+
     public static byte[] ActionStarted(uint objectId, int posX, int posY, int targetX, int targetY, ushort skillId, ushort sequence, ushort flags,
         uint? targetObjectId = null)
     {

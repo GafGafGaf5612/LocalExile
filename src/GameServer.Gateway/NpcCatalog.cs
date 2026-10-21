@@ -96,7 +96,8 @@ sealed class NpcCatalog
                 if (!type.StartsWith("Metadata/NPC/", StringComparison.OrdinalIgnoreCase)) continue;
                 components[type] = [.. t.GetProperty("components").EnumerateArray().Take(t.GetProperty("read").GetInt32()).Select(c => c.GetString()!)];
                 if (t.TryGetProperty("shared_states", out var ss) && t.TryGetProperty("shared_timers", out var st))
-                    stateMachines[type] = new([.. ss.EnumerateArray().Select(e => e[1].GetInt32())], st.GetArrayLength());
+                    stateMachines[type] = new([.. ss.EnumerateArray().Select(e => e[1].GetInt32())], st.GetArrayLength(),
+                        [.. ss.EnumerateArray().Select(e => e[0].GetString() ?? "")]);
                 if (t.TryGetProperty("transitionable", out var tr) && tr.TryGetProperty("num_states", out var ns))
                     transitionStates[type] = (byte)Math.Clamp(ns.GetInt32(), 1, 127);
             }

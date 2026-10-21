@@ -149,7 +149,9 @@ public sealed record TileKey(int Width, int Height, int[] Edges, int[] Points, i
 
 public sealed record RoomSlot(int Column, int Row, TileKey Key);
 public sealed record NamedPoint(float X, float Y, float Angle, string Name);
-public sealed record RoomDoodad(float X, float Y, string Model, string Type);
+/// <summary>A doodad or server object of a room: cell, model, object type, angle (radians, as the client's placed doodads
+/// report it) and scale (the last number before the model: The Twilight Strand's force wall has 2.7).</summary>
+public sealed record RoomDoodad(float X, float Y, string Model, string Type, float Angle = 0, float Scale = 1);
 
 /// <summary>A room (.arm): string dictionary, tag, size (from its own key line), named points (room cells), the tile
 /// slot grid (one row per line; k = tile key at its top-left slot, n = covered/none, s, f N) and doodads.</summary>
@@ -212,7 +214,7 @@ public sealed record RoomFile(int Version, IReadOnlyList<string> Dictionary, str
             if (t.Count == 4 && t[0].IsNumber && t[1].IsNumber && t[2].IsNumber && t[3].Quoted)
                 points.Add(new NamedPoint(t[0].Float, t[1].Float, t[2].Float, t[3].Text));
         }
-        // Doodads after the grid: x y … "model.ao" "Metadata/…type" ….
+        // Doodads after the grid: x y angle, a quaternion, two numbers, scale, "model.ao" "Metadata/…type" ….
         var doodads = new List<RoomDoodad>();
         for (int k = gridAt < 0 ? at : gridAt + roomKey.Height; k < lines.Length; k++)
         {
@@ -220,7 +222,8 @@ public sealed record RoomFile(int Version, IReadOnlyList<string> Dictionary, str
             if (t.Count < 4 || !t[0].IsNumber || !t[1].IsNumber) continue;
             int q = t.FindIndex(x => x.Quoted && x.Text.EndsWith(".ao", StringComparison.OrdinalIgnoreCase));
             if (q < 0 || q + 1 >= t.Count || !t[q + 1].Quoted) continue;
-            doodads.Add(new RoomDoodad(t[0].Float, t[1].Float, t[q].Text, t[q + 1].Text));
+            doodads.Add(new RoomDoodad(t[0].Float, t[1].Float, t[q].Text, t[q + 1].Text,
+                t[2].IsNumber ? t[2].Float : 0, q > 3 && t[q - 1].IsNumber ? t[q - 1].Float : 1));
         }
         return new RoomFile(version, dict, tag, roomKey, points, slots ?? [], doodads, problem);
     }
