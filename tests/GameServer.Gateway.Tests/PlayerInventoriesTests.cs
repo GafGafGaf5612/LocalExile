@@ -366,6 +366,31 @@ public class PlayerInventoriesTests
     }
 
     [Fact]
+    public void Fusing_updates_links_in_the_save_without_losing_socketed_gems()
+    {
+        var items = NewInventories();
+        var gem = new Item(0x99, ["Base", "SkillGem"], 0) { GemExperience = 1234 };
+        var item = new Item(0x1234, ["Base", "Sockets"], 0)
+        {
+            Sockets = [new(SocketColour.Red, gem), new(SocketColour.White)], Links = [1, 1],
+        };
+        var type = new ItemCatalog.BaseType(0, "test", "test", item.TypeHash, 2, 2, 0, item.Components, 0, Class: "Boots");
+        var placed = items.Add(PlayerInventories.MainInventory, 3, 1, item);
+        var orb = items.Add(PlayerInventories.MainInventory, 0, 0, Wand() with { StackSize = 2 });
+        var result = CurrencyEffects.Fusing(item, type, new Random(13));
+        Assert.NotNull(result);
+        Assert.NotNull(items.ConsumeOne(PlayerInventories.MainInventory, orb.Id));
+        Assert.NotNull(items.Change(PlayerInventories.MainInventory, placed.Id, _ => result));
+        var saved = CharacterSaves.Load(_character)!.Inventories[PlayerInventories.MainInventory];
+        Assert.Equal((ushort)1, saved.Single(p => p.Id == orb.Id).Item.StackSize);
+        var target = saved.Single(p => p.Id == placed.Id);
+        Assert.Equal((byte)3, target.X);
+        Assert.Equal(new byte[] { 2 }, target.Item.Links);
+        Assert.Equal(SocketColour.White, target.Item.Sockets![1].Colour);
+        Assert.Equal(1234, target.Item.Sockets[0].Gem!.GemExperience);
+    }
+
+    [Fact]
     public void Consuming_an_item_takes_one_and_removes_the_empty_stack()
     {
         var items = NewInventories();

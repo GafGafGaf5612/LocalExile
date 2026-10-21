@@ -86,8 +86,9 @@ the experience and the variant (`GemExperience`, `GemVariant`).
     reserves 34 mana at level 1 and 279 at level 20.
   - **Quality:** GrantedEffectQualityStats per 1% in thousandths × the quality, rounded toward zero (Fireball at 20%:
     150 × 20 / 1000 = +3 radius). Whether the 16 negative quality values round toward zero or down is unverified.
-  - **Cooldown:** a skill with a GrantedEffectsPerLevel `Cooldown` (the auras' 1.2 s) can't be used again until it ends.
-    `StoredUses` (several uses per cooldown) is not modelled.
+  - **Cooldown:** the cooldown of the gem's level (GrantedEffectsPerLevel `Cooldown`, the auras' 1.2 s) is the one
+    the server enforces and sends with the skill ([11](11-skills.md)); the server allows one use per cooldown even when
+    `StoredUses` is higher.
   - **Vaal skills** need their `VaalSouls`; souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill is refused.
 - **Not created** (`ItemCatalog.FindGem`, `/gem`): the "[DNT]" placeholder variants, the "[UNUSED] …", "[DNT] …" and
   "WIP …" gem rows, the awakened supports other than Awakened Empower, Enhance and Enlighten, and the Vaal variants

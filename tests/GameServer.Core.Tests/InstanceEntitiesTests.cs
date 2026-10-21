@@ -248,6 +248,18 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void An_effect_object_with_a_fixed_rotation_sets_positioned_flags0_0x80()
+    {
+        // object flags, entry count, x, y, f32 rotation, u16, flags0, flags1 (0x02: shown)
+        byte[] fixedRing = new EffectObject(10, 20, "Metadata/Effects/Spells/ri_fire/rifire.ao") { Flags0 = EffectObject.FixedRotation }.Blob();
+        byte[] plain = new EffectObject(10, 20, "Metadata/Effects/Spells/ri_fire/rifire.ao").Blob();
+        Assert.Equal(0x80, fixedRing[16]);
+        Assert.Equal(0x00, plain[16]);
+        Assert.Equal(0x02, fixedRing[17]);
+        Assert.Equal(plain.Length, fixedRing.Length);
+    }
+
+    [Fact]
     public void Character_passives_layout()
     {
         // u16 refund, u16 quest, u16 ascendancy points (big-endian), u8 level, u8 class, u8, u8 flags, vec16 nodes (count
@@ -346,6 +358,14 @@ public class InstanceEntitiesTests
         string body = "09" + "2000" + "01" + "01" + "0201" + "00" + "7A110000" + "00" + "4E110000" + "00" + "00" +
             "00000000" + "00000000" + "00000000" + "00" + "00" + "0401" + "00" + "00";
         Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, Convert.ToHexString(m));
+    }
+
+    [Fact]
+    public void A_skill_records_cooldown_is_its_third_u32()
+    {
+        // Haste: 1200 ms → skill +0xc8, which the client's cooldown reads.
+        byte[] m = InstanceEntities.PlayerSkillsChange(0x1000, [new GrantedSkill(0x0105, 16886, 16733, CooldownMs: 1200)], []);
+        Assert.Contains("00" + "00" + "00000000" + "00000000" + "B0040000" + "00" + "00", Convert.ToHexString(m));
     }
 
     [Fact]

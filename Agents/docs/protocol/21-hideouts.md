@@ -183,6 +183,13 @@ topology transition names: two such captured gates are paired, each teleporting 
 (`AreaTransitionObject.TeleportTo`); the telepads' own cells are not in `data/room-points.json`. Nessa sells 10 Beach
 Maps. Beach's walk map is a `-Walkmaps` capture (2484 × 1656; spawn the deepest cell, (459, 884)).
 
+**Portal Scroll** (C→S 0x58, `UsePortalScroll`). Outside towns and hideouts one scroll is spent and the same portal object
+opens 3 cells beside the player, listed in 0x8f with device 0. There is one per player: a new scroll closes the old portal
+(0x8f with area 0, then 0x2bb) and moves it, the map's own portal back included. From a map area it leads to the hideout,
+anywhere else to the character's last town (`ClientState.ReturnPortalTo`), at its spawn. In a town or a hideout
+nothing happens and nothing is spent. Live 2026-10-21: in a map and in the acts. Not yet: the portal's other end in the
+town (the way back), and the portal staying after the player leaves the area.
+
 ## Open
 
 - The decorations (trees, tents …): `Metadata/MiscellaneousObjects/HideoutDoodad` and other types, each with its own

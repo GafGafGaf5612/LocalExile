@@ -572,11 +572,18 @@ public sealed record EffectObject(int GridX, int GridY, string AnimatedObject)
 {
     public const string TypePath = "Metadata/Effects/PermanentServerEffect";
 
+    /// <summary>Positioned flags0 0x80 (→ +0x1e6 bit 2): the object keeps its rotation while it glides (0x1ba); without it
+    /// a glide turns it to face the move (live 2026-10-21, Righteous Fire's ring). The only flags0 bits taken here are
+    /// those that read no further data (0x01, 0x80).</summary>
+    public const byte FixedRotation = 0x80;
+
+    public byte Flags0 { get; init; }
+
     public byte[] Blob()
     {
         var w = new BlobWriter();
         w.U8(0).U8(0);                                              // object flags, base data entry count
-        w.I32(GridX).I32(GridY).F32(0).U16(0).U8(0).U8(0x02);       // Positioned: on the terrain, shown
+        w.I32(GridX).I32(GridY).F32(0).U16(0).U8((byte)(Flags0 & 0x81)).U8(0x02);   // Positioned: on the terrain, shown
         w.U8(0).U8(1);
         w.U8(1).WStr32(AnimatedObject);                             // Animated: bit0 + the .ao path
         w.U8(0);                                                    // tasks
@@ -590,9 +597,10 @@ public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int Share
 
 /// <summary>A skill the server grants an Actor (ActiveSkillManager, Actor +0x598): Id is the instance's u16 (+0x40),
 /// which the client uses in its skill messages; the action id (+0x42) comes from the data (GEPL row → GrantedEffect →
-/// ActiveSkill → ActionTypes HASH16). Rows are GrantedEffectsPerLevel and GrantedEffectStatSetsPerLevel indices.</summary>
+/// ActiveSkill → ActionTypes HASH16). Rows are GrantedEffectsPerLevel and GrantedEffectStatSetsPerLevel indices.
+/// CooldownMs is the skill's cooldown, which the client takes from the record, not from the data.</summary>
 public sealed record GrantedSkill(ushort Id, uint EffectsPerLevelRow, uint StatSetsPerLevelRow,
-    IReadOnlyList<(uint Key, int Value)>? Stats = null);
+    IReadOnlyList<(uint Key, int Value)>? Stats = null, uint CooldownMs = 0);
 
 /// <summary>ObjectMagicProperties rarity (flags bits 0-2 → +0x7c).</summary>
 public enum MonsterRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
@@ -743,7 +751,10 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U8(0).U32(s.StatSetsPerLevelRow)     // its stat set
          .U8(0)                                // flags: no parent object
          .U8(0)                                // supports
-         .U32(0).U32(0).U32(0).U8(0)
+         // → skill +0xc0, +0xc4, +0xc8, +0xcc (0x141ee73d0). +0xc8 is the cooldown in ms: with it and the stat
+         // virtual_total_cooldown_count the client keeps the skill's cooldown and shows it on the skill bar
+         // (0x141eea6a0 creates the cooldown record only when it is not 0; live 2026-10-21).
+         .U32(0).U32(0).U32(s.CooldownMs).U8(0)
          .Stats(s.Stats);                      // the skill's own stats
 
     /// <summary>One Life pool (0x141e6be70): u32 +0x30 current, u32 +0x10 reserved (flat), i16 +0x14 (reserved percent?),

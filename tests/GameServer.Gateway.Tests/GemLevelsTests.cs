@@ -67,8 +67,9 @@ public class GemLevelsTests
         Assert.Equal(20, Stat(fireball, 20, 0, "mana_cost"));
         Assert.Equal((34, 0), Skills.Reservation(clarity, 1));
         Assert.Equal((279, 0), Skills.Reservation(clarity, 20));
-        Assert.Equal((1200, 0), Skills.Uses(clarity, 20));
-        Assert.Equal((0, 30), Skills.Uses(Skills.EffectRow("VaalFireball"), 1));
+        Assert.Equal(1200, Skills.CooldownMs(clarity, 20));
+        Assert.Equal(0, Skills.VaalSouls(clarity, 20));
+        Assert.Equal(30, Skills.VaalSouls(Skills.EffectRow("VaalFireball"), 1));
     }
 
     [Fact]

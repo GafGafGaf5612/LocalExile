@@ -349,6 +349,15 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 "only Predictive is supported, the player stays hidden and cannot move");
             await Send(remote, stream, ciphers, InstanceChat.MessageBox(LockstepWarning), "0x000d message box: lockstep warning");
         }
+        else if (id == InstanceProtocol.UseInstantSkillId)
+        {
+            // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,
+            // and the client waits for no echo.
+            var (target, skill) = InstanceProtocol.ReadUseInstantSkill(bytes);
+            var spot = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+            Console.WriteLine($"[gateway] {remote} <= 0x0191 instant skill 0x{skill:x4} on 0x{target:x} at ({spot.X}, {spot.Y})");
+            if (Skills.IsGemSkill(skill)) _ = UseInstantSkill(remote, stream, ciphers, conn, skill, target, spot);
+        }
         else if (id == InstanceTransfer.UseSkillOnObjectId)
         {
             var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
@@ -430,6 +439,18 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             await UseFlask(remote, stream, ciphers, conn, InstanceItems.ReadUseFlask(bytes));
         else if (id == InstanceItems.UseItemOnId)
             await UseItemOn(remote, stream, ciphers, conn, InstanceItems.ReadUseItemOn(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.UseItemTypeOnId)
+        {
+            // Shift held: the currency stays on the cursor and is named by type; use a stack of it from the inventories,
+            // the main inventory first.
+            var again = InstanceItems.ReadUseItemTypeOn(bytes);
+            var items = ItemsOf(conn);
+            byte[] rows = [PlayerInventories.MainInventory, .. Enumerable.Range(0, InstanceInventories.PlayerDefaults.Length).Select(r => (byte)r)];
+            var stack = rows.Select(r => (Row: r, Item: items.Items(r).FirstOrDefault(i => i.Item.TypeHash == again.TypeHash))).FirstOrDefault(s => s.Item is not null);
+            if (stack.Item is null) Console.WriteLine($"[gateway] {remote} <= 0x0072 use type 0x{again.TypeHash:x8} again: none left");
+            else await UseItemOn(remote, stream, ciphers, conn, new InstanceItems.UseItemOn(PlayerInventories.InventoryId(stack.Row), stack.Item.Id,
+                again.TargetInventoryId, again.TargetId), Convert.ToHexString(bytes));
+        }
         else if (id == InstanceItems.InventoryRequestId)
             Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (inventory request, not handled yet): {Convert.ToHexString(bytes)}");
         else if (id == InstanceItems.PickUpItemId)
@@ -1408,40 +1429,45 @@ static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers 
     _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, here, target, use.TargetId);
 }
 
-// A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one).
-static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+// A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one). False when
+// it was refused (cooldown, mana), so its use is not confirmed to the client.
+static async Task<bool> CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
-    if (gem.Name is not null)
+    // Vaal souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill never has the souls it needs.
+    if (gem.Name is not null && Skills.VaalSouls(gem.Effect, gem.Level) is int souls and > 0)
     {
-        // Vaal souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill never has the souls it needs.
-        if (Skills.Uses(gem.Effect, gem.Level).VaalSouls is int souls and > 0)
-        {
-            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: needs {souls} Vaal souls, has 0");
-            return;
-        }
+        Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: needs {souls} Vaal souls, has 0");
+        return false;
+    }
+    // A skill with a cooldown (GEPL Cooldown: auras 1200 ms) is refused until it is over: spamming Haste toggled it.
+    if (gem.Name is not null && Skills.CooldownMs(gem.Effect, gem.Level) is int cooldown and > 0)
+    {
         double now = conn.Clock.Elapsed.TotalSeconds, readyAt;
-        lock (conn.Monsters) readyAt = conn.SkillReadyAt.GetValueOrDefault(skillId);
-        if (readyAt > now)
+        lock (conn.Monsters)
         {
-            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: on cooldown for {readyAt - now:0.00} s");
-            return;
+            readyAt = conn.SkillReadyAt.GetValueOrDefault(gem.Effect);
+            if (now >= readyAt) conn.SkillReadyAt[gem.Effect] = now + cooldown / 1000.0;
+        }
+        if (now < readyAt)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: on cooldown for {(readyAt - now) * 1000:0} ms more");
+            return false;
         }
     }
     if (gem.Name is not null && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
     {
         await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, gem.Level, gem.Quality);
-        return;
+        return true;
     }
     if (gem.Name is not null)
     {
         if (!PayMana(conn, gem.Effect, gem.Level, gem.Quality, out uint cost))
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: not enough mana ({conn.PlayerMana} < {cost})");
-            return;
+            return false;
         }
-        StartCooldown(conn, skillId, gem.Effect, gem.Level);
         if (cost > 0)
             await SendPlayerMana(remote, stream, ciphers, conn,
                 $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name})");
@@ -1450,6 +1476,17 @@ static async Task CastGemSkill(string remote, NetworkStream stream, ConnectionCi
         await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality);
     else
         await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId);
+    return true;
+}
+
+// An instant skill (C→S 0x191): its effect, then S→C 0x1ce, which has the client run the skill's action without animation
+// and consume a use of it: the skill bar's cooldown starts (the tooltip showed the cooldown, the bar did not run it).
+static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    ushort skillId, uint targetId, (int X, int Y) at)
+{
+    if (await CastGemSkill(remote, stream, ciphers, conn, skillId, at, at, targetId))
+        await Send(remote, stream, ciphers, InstanceProtocol.InstantAction(PlayerId, skillId, at.X, at.Y, targetId),
+            $"0x01ce player skill 0x{skillId:x4}: instant action (its use and cooldown)");
 }
 
 // Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them
@@ -1493,7 +1530,6 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
         }
         conn.Pools = PoolsFor(conn, conn.Pools.Level);
         conn.ApplyMovementSpeed();
-        StartCooldown(conn, skillId, effect, level);
     }
 
     if (ended is not null)
@@ -1864,6 +1900,7 @@ static string? SkillBarEntry(ClientState conn, ushort skillId) =>
 // keeps its own default.
 static async Task SendSkillBar(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
+    FillSkillBar(conn);
     if (CharacterSaves.Load(CharacterName(conn))?.SkillBar is not { Count: > 0 } bar) return;
     var ids = new ushort[InstanceProtocol.SkillBarSlots];
     var byEffect = GemSkillEffects(conn.Character).Select(g => (g.Id, Effect: Skills.EffectId(g.Effect)))
@@ -1878,6 +1915,22 @@ static async Task SendSkillBar(string remote, NetworkStream stream, ConnectionCi
     if (!bar.ContainsKey(0)) ids[0] = SkillCatalog.FirstSkillId;
     await Send(remote, stream, ciphers, InstanceProtocol.SkillBar(ids),
         $"0x0053 skill bar: {string.Join(", ", ids.Select((id, i) => id == 0 ? null : $"slot {i} 0x{id:x4}").OfType<string>())}");
+}
+
+// Puts the skills that are nowhere on the saved bar into its empty slots (SkillBarLayout), leaving every other slot as
+// it is: the default attack on the left mouse button of a new bar, each gem skill of the equipment on the right mouse
+// button or the next empty slot. True when the bar changed (saved).
+static bool FillSkillBar(ClientState conn)
+{
+    string character = CharacterName(conn);
+    var bar = CharacterSaves.Load(character)?.SkillBar ?? [];
+    string attack = SkillEffectId(conn, SkillCatalog.FirstSkillId)!;
+    var gems = GemSkillEffects(conn.Character).Select(g => Skills.EffectId(g.Effect)).OfType<string>().ToList();
+    var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry));
+    foreach (var (slot, entry) in added) CharacterSaves.SetSkillBar(character, (byte)slot, entry);
+    if (added.Count > 0)
+        Console.WriteLine($"[gateway] {character} skill bar: {string.Join(", ", added.Select(a => $"{a.Entry} on slot {a.Slot}"))}");
+    return added.Count > 0;
 }
 
 // The GrantedEffects Id behind a skill id of the player (the default attack or a gem skill), or null.
@@ -1973,11 +2026,21 @@ static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiph
 {
     var skills = PlayerSkills(conn);
     var gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
+    var added = skills.Select(s => s.Id).Where(id => !conn.ClientSkillIds.Contains(id)).ToList();
     conn.ClientSkillIds = [.. skills.Select(s => s.Id)];
     await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone),
         $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats" +
         (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
     if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
+    // The update can take a bound skill off the skill bar (live 2026-10-21: Haste's slot emptied when its aura went on,
+    // and came back with the area change's 0x53), and a gem socketed again does not get its slot back by itself, so the
+    // saved bar goes out again. Not when a skill the saved bar never had was added: the client binds a new skill to a free
+    // slot itself (C→S 0x4e), and the bar sent now would clear it there. A new gem skill gets an empty slot of the saved
+    // bar first (FillSkillBar: the right mouse button, then Q W E R T …), so it goes out with the bar.
+    FillSkillBar(conn);
+    var saved = CharacterSaves.Load(CharacterName(conn))?.SkillBar?.Values;
+    if (added.All(id => SkillEffectId(conn, id) is { } effect && saved?.Contains(effect) == true))
+        await SendSkillBar(remote, stream, ciphers, conn);
 }
 
 // Skills the player no longer has (their gems left the equipment): their auras and Righteous Fire end with them, and the
@@ -2581,14 +2644,6 @@ static Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCipher
     Send(remote, stream, ciphers,
         InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool), log);
 
-// A used skill's cooldown at its gem's level (GrantedEffectsPerLevel Cooldown) starts; callers hold or take the Monsters lock.
-// shortcut: one use per cooldown, StoredUses (several uses per cooldown) is not modelled yet.
-static void StartCooldown(ClientState conn, ushort skillId, int effect, int level)
-{
-    if (Skills.Uses(effect, level).CooldownMs is int ms and > 0)
-        lock (conn.Monsters) conn.SkillReadyAt[skillId] = conn.Clock.Elapsed.TotalSeconds + ms / 1000.0;
-}
-
 // A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
 // the mana.
 static bool PayMana(ClientState conn, int effect, int level, int quality, out uint cost)
@@ -2656,7 +2711,8 @@ static async Task ActivateRighteousFire(string remote, NetworkStream stream, Con
         $"0x01c1 player buff {aura}: righteous_fire_aura (BuffDefinitions row {RighteousFireAuraBuffRow})");
     // The big burning circle is not a buff visual: it is MiscAnimated RighteousFireRing, an effect object of its own
     // (EffectObject), kept under the player as it walks (FollowRighteousFire).
-    var ringObject = new EffectObject(at.X, at.Y, RighteousFireRingAo);
+    // FixedRotation: the glides that keep it under the player must not turn it (it spun as the player turned).
+    var ringObject = new EffectObject(at.X, at.Y, RighteousFireRingAo) { Flags0 = EffectObject.FixedRotation };
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(ring, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), ringObject.Blob()),
         $"0x02b9 create effect 0x{ring:x} {RighteousFireRingAo} at ({at.X}, {at.Y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(ring), null);
@@ -4391,6 +4447,11 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
         Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: unknown type 0x{item.Item.TypeHash:x8}: {hex}");
         return;
     }
+    if (type.Id == PortalScroll)
+    {
+        await UsePortalScroll(remote, stream, ciphers, conn, r, item, type);
+        return;
+    }
     if (type.Id != Regret)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: {type.Name} is not handled: {hex}");
@@ -4425,7 +4486,7 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
 }
 
 // C→S 0x71: an item used on another one. A Scroll of Wisdom identifies an unidentified item (its explicit mods and rare
-// name are sent from now on) and loses one from its stack. Other currency is not handled yet.
+// name are sent from now on) and loses one from its stack. Socket currency uses the same update path, including Shift.
 static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.UseItemOn use, string hex)
 {
     const string Wisdom = "Metadata/Items/Currency/CurrencyIdentification";
@@ -4437,33 +4498,47 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         return;
     }
     var type = Items.ByHash(used.Item.TypeHash);
-    if (type?.Id != Wisdom)
+    // What the currency makes of the target, or null (nothing happens, nothing is spent).
+    Item? result = type?.Id switch
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: not handled: {hex}");
+        Wisdom => target.Item.Identified || !target.Item.Components.Contains("Mods") ? null : target.Item with { Identified = true },
+        CurrencyEffects.ChromaticOrb => Items.ByHash(target.Item.TypeHash) is { } targetType
+            ? CurrencyEffects.Chromatic(target.Item, Items.Requirements(targetType), Random.Shared) : null,
+        CurrencyEffects.JewellersOrb => Items.ByHash(target.Item.TypeHash) is { } socketType
+            ? CurrencyEffects.Jewellers(target.Item, socketType, Items.Requirements(socketType), Random.Shared) : null,
+        CurrencyEffects.OrbOfFusing => Items.ByHash(target.Item.TypeHash) is { } linkType
+            ? CurrencyEffects.Fusing(target.Item, linkType, Random.Shared) : null,
+        _ => null,
+    };
+    if (result is null)
+    {
+        if (type?.Id == CurrencyEffects.JewellersOrb && Items.ByHash(target.Item.TypeHash) is { } refusedType)
+            Console.WriteLine($"[gateway] Jeweller target {target.Id}: {refusedType.Id}, class {refusedType.Class}, ilvl {target.Item.ItemLevel}, " +
+                $"sockets {target.Item.Sockets.Count}, roll cap {CurrencyEffects.MaximumSockets(target.Item, refusedType)}, " +
+                $"base cap {CurrencyEffects.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
+        Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
+            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing
+                ? "target refused (identified / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
         return;
     }
-    if (target.Item.Identified || !target.Item.Components.Contains("Mods"))
-    {
-        Console.WriteLine($"[gateway] {remote} <= 0x0071 Scroll of Wisdom on item {use.TargetId}: already identified");
-        return;
-    }
-    // The scroll and the identified item are saved together.
-    if (ItemMoves.UseOn(items, usedRow, used.Id, targetRow, target.Id, i => i with { Identified = true }) is not var (taken, identified)) return;
+    // The currency and the changed item are saved together.
+    if (ItemMoves.UseOn(items, usedRow, used.Id, targetRow, target.Id, _ => result) is not var (taken, identified)) return;
     // Remove and add the same ids: the client replaces an item only that way (see UseItem).
     uint usedInventory = PlayerInventories.InventoryId(usedRow), targetInventory = PlayerInventories.InventoryId(targetRow);
     if (usedRow == targetRow)
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [used.Id, target.Id],
-            taken.Left is { } left ? [left, identified] : [identified]), $"0x00bf inventory {targetInventory}: item {target.Id} identified, scroll used");
+            taken.Left is { } left ? [left, identified] : [identified]), $"0x00bf inventory {targetInventory}: item {target.Id} changed, {type!.Name} used");
     else
     {
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(usedInventory, items.NextRevision(usedRow), [used.Id],
-            taken.Left is { } left ? [left] : []), $"0x00bf inventory {usedInventory}: scroll used");
+            taken.Left is { } left ? [left] : []), $"0x00bf inventory {usedInventory}: {type!.Name} used");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [target.Id], [identified]),
-            $"0x00bf inventory {targetInventory}: item {target.Id} identified");
+            $"0x00bf inventory {targetInventory}: item {target.Id} changed");
         if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x0071 Scroll of Wisdom ({used.Id}) identified item {target.Id}: " +
-        string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe)));
+    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id == Wisdom
+        ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
+        : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}; link groups {string.Join(",", identified.Item.Links ?? [])}"));
 }
 
 // C→S 0x4a: the held item clicked on an item. A stack of the same type with room takes what fits (PlayerInventories.MergeOnto,
@@ -4766,6 +4841,7 @@ static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, Conn
         new MapPortalObject(x, y, -1, MapPortalType, Open: 1).Blob()), $"0x02b9 create the portal back to the {hideout.Name} 0x{id:x} at ({x}, {y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
     conn.ReturnPortal = (id, x, y);
+    conn.ReturnPortalTo = 0;
     string owner = CharacterName(conn);
     _ = Task.Delay(MapPortalEntryMs).ContinueWith(async _ =>
     {
@@ -4775,7 +4851,8 @@ static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, Conn
     });
 }
 
-// A click on the map's portal back (C→S 0x24): walk there, then to the hideout, next to its waypoint.
+// A click on the portal back (C→S 0x24, the map's own or a Portal Scroll's): walk there, then to the hideout next to its
+// waypoint, or to the town the scroll's portal leads to (ReturnPortalTo), at its spawn.
 static async Task UseMapReturnPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, (int X, int Y) at)
 {
@@ -4785,7 +4862,56 @@ static async Task UseMapReturnPortal(string remote, NetworkStream stream, Connec
     Console.WriteLine($"[gateway] {remote} <= 0x0024 portal back 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
-    await WarpToHideout(remote, stream, ciphers, conn, "map portal back");
+    if (conn.ReturnPortalTo is ushort town and not 0)
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(town, 0, false, AtSpawn: true), "portal to town");
+    else
+        await WarpToHideout(remote, stream, ciphers, conn, "map portal back");
+}
+
+// A Portal Scroll used (C→S 0x58) outside towns and hideouts: one scroll is spent and a portal opens where the player
+// stands, replacing the one there was (the scroll's earlier one, or a map's own portal back). From a map it leads to the
+// hideout (the player came through its map device), anywhere else to the character's last town. In a town or a hideout
+// nothing happens and nothing is spent.
+static async Task UsePortalScroll(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, byte row, InventoryItem item,
+    ItemCatalog.BaseType type)
+{
+    ushort here = conn.Layout.Hash;
+    if (WaypointCatalog.Areas.Find(here) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == here))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: in a town or hideout, nothing happens");
+        return;
+    }
+    bool toHideout = MapDevices.Value.IsMapArea(here) && HideoutCatalog.Default is not null;
+    ushort town = conn.LastTown != 0 ? conn.LastTown : AreaLayouts.LioneyesWatch;
+    var items = ItemsOf(conn);
+    if (items.ConsumeOne(row, item.Id) is not { } taken) return;
+    uint inventoryId = PlayerInventories.InventoryId(row);
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(inventoryId, items.NextRevision(row), [item.Id], taken.Left is { } left ? [left] : []),
+        $"0x00bf inventory {inventoryId}: {type.Name} used" + (taken.Left is { } now ? $", {now.Item.StackSize} left" : ", stack empty"));
+    // One portal per player: the old one closes (0x8f with area 0) and goes.
+    if (conn.ReturnPortal is { } old)
+    {
+        await Send(remote, stream, ciphers, InstanceMapDevice.Portals(0, [new(old.Id, 0)]), null);
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(old.Id), $"0x{InstanceProtocol.RemoveObjectId:x4} remove the old portal 0x{old.Id:x}");
+    }
+    var (px, py) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+    // Beside the player, so the click that opens it is not on the player.
+    var (x, y) = conn.Layout.Walkable is { } walkable && walkable(px + 3, py) ? (px + 3, py) : (px, py);
+    uint id = conn.NextObjectId++;
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
+        new MapPortalObject(x, y, -1, MapPortalType, Open: 1).Blob()), $"0x02b9 create the Portal Scroll's portal 0x{id:x} at ({x}, {y})");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+    conn.ReturnPortal = (id, x, y);
+    conn.ReturnPortalTo = toHideout ? (ushort)0 : town;
+    ushort leadsTo = toHideout ? HideoutCatalog.Default!.AreaHash16 : town;
+    string owner = CharacterName(conn);
+    // 0x8f only reaches a portal the client has finished creating (MapPortalListMs, as the device's portals).
+    _ = Task.Delay(MapPortalListMs).ContinueWith(async _ =>
+    {
+        if (!conn.Closed && conn.ReturnPortal?.Id == id)
+            await Send(remote, stream, ciphers, InstanceMapDevice.Portals(0, [new(id, leadsTo, owner)]),
+                $"0x008f the Portal Scroll's portal 0x{id:x} leads to 0x{leadsTo:x4} ({(toHideout ? "the hideout" : "the last town")})");
+    });
 }
 
 // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects
@@ -5135,6 +5261,7 @@ sealed partial class Program
     // The flask buffs' BuffDefinitions rows (flask_effect_life "Healing", flask_effect_mana "Regenerating Mana": invisible,
     // ended by death or a full pool). Game_FLASK_BUFFS=0 recovers without them.
     internal const ushort FlaskEffectLifeBuffRow = 5, FlaskEffectManaBuffRow = 9;
+    internal const string PortalScroll = "Metadata/Items/Currency/CurrencyPortal";
     /// <summary>The flask recovery's step (RunFlaskRecovery): short enough for one update per point of life.</summary>
     internal const int FlaskStepMs = 20;
     internal static bool FlaskBuffs => Environment.GetEnvironmentVariable("Game_FLASK_BUFFS") != "0";
@@ -5553,6 +5680,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, int> PlayerStats = [];
     // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
+    // When each skill with a cooldown (GrantedEffects row) may be used again, in Clock seconds. Guarded by the Monsters lock.
+    public readonly Dictionary<int, double> SkillReadyAt = [];
     // The skill ids the client has on this connection's player (SendPlayer, SendSkills): the 0x40 skill list only adds,
     // so the ones that leave are removed by id.
     public HashSet<ushort> ClientSkillIds = [];
@@ -5584,9 +5713,6 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
     public RighteousFireState? RighteousFire;
-
-    /// <summary>When each gem skill's cooldown ends (seconds on <see cref="Clock"/>); guarded by the Monsters lock.</summary>
-    public readonly Dictionary<ushort, double> SkillReadyAt = [];
     /// <summary>The flasks recovering life and mana (C→S 0x70), applied by the player tick.</summary>
     public Flasks.Effects FlaskEffects { get; } = new();
     public ushort NextBuff = 1;
@@ -5633,6 +5759,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     /// <summary>In a map's area: the portal back to the hideout (object id and cell), or null.</summary>
     public (uint Id, int X, int Y)? ReturnPortal;
+    /// <summary>Where ReturnPortal leads: 0 the hideout (a map's own portal, or a Portal Scroll's in a map), else a town's
+    /// WorldAreas HASH16 (a Portal Scroll's anywhere else).</summary>
+    public ushort ReturnPortalTo;
 
     /// <summary>The 0x8f entries' model byte (/map_portal sets it for experiments).</summary>
     public byte MapPortalStyle;

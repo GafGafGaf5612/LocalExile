@@ -73,6 +73,21 @@ sealed class SkillCatalog(string folder = "data")
             Put("hundred_times_casts_per_second", (int)Math.Round(100_000.0 / e.CastTime));
         }
         if (gepl >= 0 && t.ManaCost[gepl] > 0) { Put("base_mana_cost", t.ManaCost[gepl]); Put("mana_cost", t.ManaCost[gepl]); }
+        // A skill with a cooldown (GEPL Cooldown, e.g. Haste's 1200 ms): the client keeps the cooldown only when the skill
+        // has uses (virtual_total_cooldown_count, GEPL StoredUses) and a duration in its record (GrantedSkill.CooldownMs).
+        // An instant skill (ActiveSkillType Instant: Haste, Righteous Fire) is one by its stat: the client reads
+        // skill_is_instant (0x2064), not the skill type. Without it the skill's action waited for a cast that never came,
+        // stayed the player's current action and held back every other skill until a move (Frida, live 2026-10-21).
+        if (IsInstant(effectRow))
+        {
+            Put("base_skill_is_instant", 1);
+            Put("skill_is_instant", 1);
+        }
+        if (gepl >= 0 && t.Cooldowns[gepl] is { Ms: > 0, Uses: > 0 } cooldown)
+        {
+            Put("base_cooldown_count", cooldown.Uses);
+            Put("virtual_total_cooldown_count", cooldown.Uses);
+        }
         if (quality > 0 && t.Quality.TryGetValue(effectRow, out var perQuality))
             foreach (var (s, permille) in perQuality) stats[(uint)s + 1] = stats.GetValueOrDefault((uint)s + 1) + permille * quality / 1000;
         return [.. stats.Select(kv => (kv.Key, kv.Value))];
@@ -149,10 +164,10 @@ sealed class SkillCatalog(string folder = "data")
         return r.ManaFlat == 0 && r.ManaPercent == 0 ? null : (r.ManaFlat, r.ManaPercent);
     }
 
-    /// <summary>A skill's cooldown at a level in ms (GrantedEffectsPerLevel Cooldown; 0 for none) and the Vaal souls a use
-    /// needs (VaalSouls; 0 for skills that are not Vaal skills).</summary>
-    public (int CooldownMs, int VaalSouls) Uses(int effectRow, int level) =>
-        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.Uses[row] : (0, 0);
+    /// <summary>The Vaal souls a use of a skill needs at a level (GrantedEffectsPerLevel VaalSouls; 0 for skills that are
+    /// not Vaal skills).</summary>
+    public int VaalSouls(int effectRow, int level) =>
+        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.VaalSouls[row] : 0;
 
     /// <summary>The mana a GrantedEffects Id reserves at a level, or null.</summary>
     public (int Flat, int Percent)? Reservation(string effectId, int level) =>
@@ -161,6 +176,34 @@ sealed class SkillCatalog(string folder = "data")
     /// <summary>A GrantedEffects row's CastTime in ms (0 when unknown).</summary>
     public int CastMs(int effectRow) =>
         _tables.Value is { } t && effectRow >= 0 && effectRow < t.Effects.Count ? t.Effects[effectRow].CastTime : 0;
+
+    /// <summary>A GrantedEffects row's cooldown at a level in ms (GEPL Cooldown: Haste 1200, Righteous Fire 300), 0 when
+    /// it has none.</summary>
+    public int CooldownMs(int effectRow, int level) =>
+        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int gepl and >= 0 ? t.Cooldowns[gepl].Ms : 0;
+
+    /// <summary>Whether a GrantedEffects row's skill is instant: its ActiveSkills row has the ActiveSkillType Instant (Haste,
+    /// Righteous Fire). An instant skill is used while moving, without an action of its own.</summary>
+    public bool IsInstant(int effectRow) => _instantEffects.Value.Contains(effectRow);
+
+    private readonly Lazy<HashSet<int>> _instantEffects = new(() =>
+    {
+        string TablePath(string name) => Path.Combine(folder, "tables", name + ".json");
+        if (!File.Exists(TablePath("GrantedEffects")) || !File.Exists(TablePath("ActiveSkills")) || !File.Exists(TablePath("ActiveSkillType"))) return [];
+        using var types = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkillType")));
+        int instant = types.RootElement.EnumerateArray().Select((r, i) => (Id: r.GetProperty("Id").GetString(), i))
+            .FirstOrDefault(t => t.Id == "Instant", (null, -1)).i;
+        if (instant < 0) return [];
+        using var active = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkills")));
+        var instantSkills = active.RootElement.EnumerateArray().Select((r, i) => (r, i))
+            .Where(a => a.r.TryGetProperty("ActiveSkillTypes", out var t) && t.ValueKind == JsonValueKind.Array
+                && t.EnumerateArray().Any(v => v.ValueKind == JsonValueKind.Number && v.GetInt32() == instant))
+            .Select(a => a.i).ToHashSet();
+        using var effects = JsonDocument.Parse(File.ReadAllBytes(TablePath("GrantedEffects")));
+        return [.. effects.RootElement.EnumerateArray().Select((r, i) => (r, i))
+            .Where(e => e.r.TryGetProperty("ActiveSkill", out var a) && a.ValueKind == JsonValueKind.Number && instantSkills.Contains(a.GetInt32()))
+            .Select(e => e.i)];
+    });
 
     /// <summary>A projectile type for an effect: the Projectiles.dat row whose Id is Metadata/Projectiles/(GrantedEffects
     /// Id), e.g. Fireball → Metadata/Projectiles/Fireball at speed 1040, or null. The real link between a skill and its
@@ -207,7 +250,7 @@ sealed class SkillCatalog(string folder = "data")
         if (!t.EffectRows.TryGetValue(effect, out var ge)) return null;
         int gepl = t.PerLevel.FindIndex(r => r.Effect == ge.Row && r.Level == level);
         int gesspl = t.StatSetsPerLevel.FindIndex(r => r.StatSet == ge.StatSet && r.Level == level);
-        return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats);
+        return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms);
     }
 
     /// <summary>
@@ -220,7 +263,7 @@ sealed class SkillCatalog(string folder = "data")
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count || t.StatSets[effectRow] < 0) return null;
         int statSet = t.StatSets[effectRow];
         int gepl = PickLevel(t.PerLevel, effectRow, level), gesspl = PickLevel(t.StatSetsPerLevel, statSet, level);
-        return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats);
+        return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms);
     }
 
     /// <summary>The player's default skills: the default attack, with the class's unarmed weapon stats.</summary>
@@ -379,13 +422,14 @@ sealed class SkillCatalog(string folder = "data")
     // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
     // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
     // Reservations: per GEPL row the ManaReservationFlat and ManaReservationPercent (permyriad), parallel to PerLevel.
-    // Uses: per GEPL row its Cooldown (ms) and VaalSouls. Quality: per GrantedEffects row its (quality stat, permille).
+    // Cooldowns: per GEPL row its Cooldown (ms) and StoredUses, parallel to PerLevel. VaalSouls: per GEPL row its VaalSouls.
+    // Quality: per GrantedEffects row its (quality stat, permille).
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
         List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
         List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
         List<(int, int)[]> StatSetLevelStats, List<int> ManaCost,
-        List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int, int)> Uses,
-        Dictionary<int, (int, int)[]> Quality)
+        List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
+        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality)
     {
         public static Tables? Load(string folder)
         {
@@ -423,7 +467,8 @@ sealed class SkillCatalog(string folder = "data")
             var perLevel = new List<(int, int)>();
             var mana = new List<int>();
             var reservations = new List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)>();
-            var uses = new List<(int, int)>();
+            var cooldowns = new List<(int, int)>();
+            var vaalSouls = new List<int>();
             foreach (var r in p.RootElement.EnumerateArray())
             {
                 perLevel.Add((Int(r, "GrantedEffect"), Int(r, "Level")));
@@ -432,7 +477,8 @@ sealed class SkillCatalog(string folder = "data")
                 mana.Add(i >= 0 && i < amounts.Length ? amounts[i] : 0);
                 reservations.Add((Math.Max(0, Int(r, "ManaReservationFlat")), Math.Max(0, Int(r, "ManaReservationPercent")),
                     Math.Max(0, Int(r, "LifeReservationFlat")), Math.Max(0, Int(r, "LifeReservationPercent"))));
-                uses.Add((Math.Max(0, Int(r, "Cooldown")), Math.Max(0, Int(r, "VaalSouls"))));
+                cooldowns.Add((Math.Max(0, Int(r, "Cooldown")), Math.Max(0, Int(r, "StoredUses"))));
+                vaalSouls.Add(Math.Max(0, Int(r, "VaalSouls")));
             }
             var quality = new Dictionary<int, (int, int)[]>();
             if (File.Exists(Table("GrantedEffectQualityStats")))
@@ -449,7 +495,8 @@ sealed class SkillCatalog(string folder = "data")
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
                     .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
             }
-            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana, reservations, uses, quality);
+            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana, reservations, cooldowns,
+                vaalSouls, quality);
         }
     }
 }
