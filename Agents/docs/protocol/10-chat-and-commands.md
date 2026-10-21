@@ -1,7 +1,7 @@
 # 10 — Chat input, server replies and dev commands
 
 Status (live, 2026-10-16): everything typed in the chat box reaches the Gateway. Slash commands run on the server and
-answer with a message box. `/set_speed` works since 2026-10-17: the client reads the new `movement_velocity_+%` and
+answer with chat lines (S→C 0x17, one per line of the reply; message boxes until 2026-10-21). `/set_speed` works since 2026-10-17: the client reads the new `movement_velocity_+%` and
 walks faster. The first version sent the wrong key (see §3). `/spawn_mob` works since 2026-10-17: it puts a visible,
 idle monster next to the player (§5).
 
@@ -38,7 +38,15 @@ Candidates that read a wide string were found by mapping every S→C factory cas
 chat panel `0x140179f20` / `0x14017a300`; verified 2026-10-20 with `/raw`): wstr sender (its first character picks the
 channel), wstr text, wstr guild tag, u16 flags (raw; bit 8 sends the message to the +0xd78 listeners instead, bit 3 adds a
 field read by `0x1408402a0`, bit 7 sets a mode 5), u8, u8, 8 bytes, u8, u8 n + n × (u32, item) linked items. An empty
-sender with every other field 0 prints the text alone (`InstanceChat.ChatLine`).
+sender with every other field 0 prints the text alone (`InstanceChat.ChatLine`). The client's `<green>{text}` markup
+in the text does not colour the line (live 2026-10-21). But with an empty sender, the text up to the first `: ` is drawn
+green like a local speaker's name and the rest white (live 2026-10-21: `/com accuracy` was green up to `default:`); the
+`/commands` header ends with `:` for that. Sender prefixes (live 2026-10-21, `/raw`): `#Test` shows `#Test: line` in
+the global colour (red), `$Test` `$Test: line` in trade orange, `@Test` `@From Test: line` in whisper purple, the whole
+line coloured; `%` and `&` show nothing without a party or guild. A sender of the prefix alone (`$`, `#`) prints the
+text white with no name, like an empty sender. So a coloured line always shows its sender and a colon. With an empty sender, `0x14017a300` wraps the text in a colour
+looked up by `0x142426ea0(byte & 0x1f)` (the byte at +0x158 of the object at instance +0xc810) and runs it through the
+markup parser `0x14018fb50`; `ChatColours.dat` has rows Default, Red, Green, Blue, ChayulaMessage. Per-line colour: open.
 
 Previously: the chat line message was not found. It does not go over the login connection
 (Auth received nothing after Play). The client also prints "Timeout while joining global chat channel 820", so the
@@ -70,7 +78,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 
 | Command | Effect |
 |---|---|
-| `/help` | lists the commands (message box) |
+| `/commands [page \| name]`, `/com …` | lists the commands, 8 per page (`/com 2`, `/com 3`, …; after four blank lines a green header, then each command's syntax only), or the full usage of one command (`/com item`; otherwise every command whose name contains the text) |
 | `/raw <hex>` | sends the bytes as one S→C message (dev probe; spaces allowed) |
 | `/set_speed <percent>` | 0x1b3 `movement_velocity_+%` = percent − 100 on the player; the server's walk estimate uses 37 × percent / 100 cells/s |
 | `/set_stat <stat name or client key> <value>` | records the stat for the player, sends the player's stats (0x1b3) with the attack's recomputed final stats, and the skill again (0x2ba, [11](11-skills.md) §4). Names are Stats.dat Ids (key = row + 1) |
@@ -78,7 +86,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/set_level <1 to 100>` | sets the character's level in the account store (Auth control op `set_level`) and sends it in place: the level's experience to the Player component (0x2ba, [04](04-player-entity.md) §4.6; the client derives the level from it), the level's stats (0x1b3: level, life, mana, accuracy, …, [11](11-skills.md) §4), the skills again (0x2ba Actor) and full life (0x1b1) |
 | `/heal` | full life and mana for the player (0x1b1); from 0 it also revives |
 | `/add_xp <amount>` | experience as from a kill: levels up, saved ([15](15-progression.md) §1) |
-| `/passives` | the passive and refund skill points and the allocated passives (message box) |
+| `/passives` | the passive and refund skill points and the allocated passives |
 | `/add_passive_points <n>` | adds n extra passive skill points (the 0x33 `extra_skill_points` field), saved with the character; sends the tree (0x33) |
 | `/add_refund_points <n>` | dev shortcut: adds n refund points (0x33's first u16), saved with the character; sends the tree (0x33). Orbs of Regret also add them (right-click) |
 | `/gold <amount>` | adds gold, or takes it with a negative amount (not below 0); the account's gold (every character of the account shares it), saved and sent as S→C 0x2a9 ([04](04-player-entity.md)); every area entry sends the saved amount too |
@@ -100,7 +108,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/quest_flag [<QuestFlags Id> [off]]` | lists the character's quest flags, or sets or clears one (saved); the quest's room objects follow ([12](12-quests.md) §5) |
 | `/goto <area id or name>` | change area as if through an area transition (e.g. `/goto 1_1_3`; ids from the atlas), [08](08-area-transitions.md) §7 |
 | `/transition [pos … \| rot <deg> \| z <z \| none> \| model <path \| none> \| index <n>]` | show or change the first area transition (re-created), [08](08-area-transitions.md) §5 |
-| `/mobs` | lists the monsters spawned on this connection (message box) |
+| `/mobs` | lists the monsters spawned on this connection |
 | `/despawn [all \| <id>]` | S→C 0x2bb (remove object, header only) for the last spawned monster, all of them, or one id |
 | `/mob_walk [0x<id>] [skill hex]` | 0x1ab: the monster starts its Move action (skill 0x2909) toward the player; it walks, animated, along the client's path |
 | `/mob_move [0x<id>] [cells/s]` | 0x1ba: slides the monster in a straight line (probe; no animation or pathing) |
