@@ -74,7 +74,7 @@ public sealed class PlayerWalk
 
     /// <summary>A new walk order at <paramref name="now"/> (a Move click, C→S 0x25). Returns where the walker is now
     /// (what the echo must report).</summary>
-    public (int X, int Y) Order(int targetX, int targetY, double now) => Walk((targetX, targetY), 0, now);
+    public (int X, int Y) Order(int targetX, int targetY, double now) => Walk((targetX, targetY), 0, -1, now);
 
     /// <summary>Puts the walker at a cell (a teleport, e.g. S→C 0x1b7): no walk in progress.</summary>
     public void Teleport(int x, int y, double now)
@@ -97,14 +97,34 @@ public sealed class PlayerWalk
     /// </summary>
     public ((int X, int Y) Here, (int X, int Y) Stop, double At) Approach(int targetX, int targetY, double reach, double now)
     {
-        var here = Walk((targetX, targetY), (int)reach, now);
+        var here = Walk((targetX, targetY), (int)reach, -1, now);
         return (here, Destination, ArrivesAt);
     }
 
-    private (int X, int Y) Walk((int X, int Y) target, int maxRange, double now)
+    /// <summary>
+    /// Walks up to an object to use it (C→S 0x24 on an NPC, the stash, a waypoint, an area transition), as the client
+    /// does: max range the object's size + 3 and the size as the tolerance (live 2026-10-21: an NPC, size 4, walks with
+    /// max 7, tolerance 4; the stash, 2, with 5 and 2; a waypoint, 5, with 8 and 5).
+    /// </summary>
+    /// <param name="objectSize">The object's Positioned size (object_size − 1).</param>
+    public ((int X, int Y) Here, (int X, int Y) Stop, double At) WalkUpTo(int targetX, int targetY, int objectSize, double now)
+    {
+        var here = Walk((targetX, targetY), objectSize + 3, objectSize, now);
+        return (here, Destination, ArrivesAt);
+    }
+
+    /// <summary>Whether a cell is in walk-up range of an object (the pathfinder's goal test for <see cref="WalkUpTo"/>:
+    /// the distance less the object's size within the size + 3).</summary>
+    public static bool InWalkUpRange((int X, int Y) cell, (int X, int Y) target, int objectSize)
+    {
+        int dx = cell.X - target.X, dy = cell.Y - target.Y;
+        return MathF.Max(MathF.Sqrt((uint)(dx * dx + dy * dy)) - objectSize, 0f) <= objectSize + 3;
+    }
+
+    private (int X, int Y) Walk((int X, int Y) target, int maxRange, int tolerance, double now)
     {
         var here = At(now, out double fraction);
-        var path = ClientPathfinder.FindPath(here, target, _walkable, _w, _h, _blockers(), _size, 0, maxRange);
+        var path = ClientPathfinder.FindPath(here, target, _walkable, _w, _h, _blockers(), _size, 0, maxRange, tolerance);
         _segments = [];
         _rest = here;
         _restSince = now;

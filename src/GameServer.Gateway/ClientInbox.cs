@@ -13,7 +13,9 @@ sealed class ClientInbox
     public static readonly TimeSpan SlowAfter = TimeSpan.FromMilliseconds(50);
 
     /// <summary>The messages framed from one read, without its ticks, and the read's unframed rest.</summary>
-    public sealed record Batch(IReadOnlyList<(ushort Id, byte[] Bytes)> Messages, byte[] Unknown);
+    /// <param name="ReadAt">When the read completed (Stopwatch timestamp): a click's time on the client is this read time
+    /// (the client applies it right after its frame tick, ~0.7 ms before the read; Agents/docs/protocol/07 §5).</param>
+    public sealed record Batch(IReadOnlyList<(ushort Id, byte[] Bytes)> Messages, byte[] Unknown, long ReadAt = 0);
 
     /// <summary>0x1c's index that clears the client's whole send-time queue (≥ its size, 0x142155930).</summary>
     public const ushort ClearQueue = ushort.MaxValue;
@@ -45,7 +47,7 @@ sealed class ClientInbox
     }
 
     /// <summary>Queues one read's messages for the handler task and returns its ticks, for the read loop to answer.</summary>
-    public List<byte[]> Post(IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown)
+    public List<byte[]> Post(IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown, long readAt = 0)
     {
         if (unknown.Length > 0) _resync = true;   // a tick may be in the bytes that could not be framed
         var ticks = new List<byte[]>();
@@ -53,7 +55,7 @@ sealed class ClientInbox
         foreach (var m in messages)
             if (m.Id == InstanceProtocol.TickId) ticks.Add(m.Bytes);
             else rest.Add(m);
-        if (rest.Count > 0 || unknown.Length > 0) _queue.Writer.TryWrite(new Batch(rest, unknown));
+        if (rest.Count > 0 || unknown.Length > 0) _queue.Writer.TryWrite(new Batch(rest, unknown, readAt));
         return ticks;
     }
 

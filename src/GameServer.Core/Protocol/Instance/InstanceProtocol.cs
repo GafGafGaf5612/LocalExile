@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using GameServer.Core.Protocol.Login;
 
@@ -90,6 +91,31 @@ public static class InstanceProtocol
     /// </summary>
     public static bool IsLockstepMovement(ushort id) => id is LockstepMoveStartId or LockstepMoveUpdateId or LockstepMoveStopId;
 
+    /// <summary>
+    /// C→S 0x018e (lockstep; sender 0x14215f700 when the network mode +0x984 is 2): use a skill at a location, the target
+    /// given relative to the player's cell (i32 dx, i32 dy), then u16 skill id, u16 action flags, u8. 0x0192 (sender
+    /// 0x14215fb10) carries a new (dx, dy) while the button is held; 0x0195 (0x14215fcb0) is the release.
+    /// </summary>
+    public static (int Dx, int Dy, ushort SkillId, ushort Flags, byte Extra) ReadLockstepMoveStart(byte[] b) =>
+        (BinaryPrimitives.ReadInt32BigEndian(b.AsSpan(2)), BinaryPrimitives.ReadInt32BigEndian(b.AsSpan(6)),
+         BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(10)), BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(12)), b[14]);
+
+    public const ushort FrameEndId = 0x02b5, FrameLengthId = 0x02b6;
+
+    /// <summary>S→C 0x02b5 (world group, id only): the end of a server frame. In lockstep (network mode 2) the world's
+    /// message intake 0x1421872b0 then queues one frame of the current length (world +0x11c) behind the messages received
+    /// so far; the world runs its messages and steps its objects one queued frame at a time (0x142183930 → 0x142183ce0).
+    /// Ignored in predictive mode.</summary>
+    public static byte[] FrameEnd() => [FrameEndId >> 8, FrameEndId & 0xff];
+
+    /// <summary>S→C 0x02b6 (world group): u8, the length in ms of the server frames that follow (0x141645fa0 stores it
+    /// at world +0x11c).</summary>
+    public static byte[] FrameLength(byte ms) => [FrameLengthId >> 8, FrameLengthId & 0xff, ms];
+
+    /// <summary>C→S 0x0192 (lockstep): the held skill's new target relative to the player's cell (i32 dx, i32 dy).</summary>
+    public static (int Dx, int Dy) ReadLockstepMoveUpdate(byte[] b) =>
+        (BinaryPrimitives.ReadInt32BigEndian(b.AsSpan(2)), BinaryPrimitives.ReadInt32BigEndian(b.AsSpan(6)));
+
     public const ushort SkillBarId = 0x53, SkillBarSlots = 13;
 
     /// <summary>
@@ -157,6 +183,17 @@ public static class InstanceProtocol
         CompactInt(w, posX); CompactInt(w, posY); CompactInt(w, targetX); CompactInt(w, targetY);
         return w.U16(skillId).U16(sequence).ToArray();
     }
+
+    public const ushort ActionTargetId = 0x1ad;
+
+    /// <summary>
+    /// S→C 0x1ad (class 0x1435c22a8, read 0x141fdde20; Actor handler 0x1421940a0): a new target for the action in
+    /// progress. Object header, u16 action sequence (+0x20; must match the action's +0x11a), i32 x, i32 y (+0x24),
+    /// big-endian. The Actor passes the cell to the action (vtable +0x110), which walks there instead: the held-mouse
+    /// update of a lockstep walk (the answer to C→S 0x0192). Ignored for a predicted local action.
+    /// </summary>
+    public static byte[] ActionTarget(uint objectId, ushort sequence, int x, int y) =>
+        new LoginWriter().U16(ActionTargetId).U32(objectId).U32(0).U16(0).U16(sequence).U32((uint)x).U32((uint)y).ToArray();
 
     public const ushort InstantActionId = 0x1ce;
 

@@ -307,6 +307,18 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x142fbf350` / `0x142fbf330` | Data | the 8 directions (dx, dy) / opposite direction |
 | `0x141e34400` / `0x141e4d180` | Fn | Positioned straight move to a cell / Bresenham segment setup (step time) |
 | `0x141e32710` / `0x141e4d390` | Fn | Positioned per-frame move tick (step checks, accumulator) / one Bresenham step |
+| `0x141e350e0` | Fn | Positioned stop: takes effect at the next tick (`+0x1e6` bit 7), keeps the accumulator |
+| `0x141e4ee90` | Fn | pathfinder: the coarse waypoint a cell heads for (within √143 and in sight) |
+| `0x141e7c0b0` | Fn | Pathfinding speed: base `+0x548` × (1 + stat 0xf5 / 100) × (1 + stat 0xce6 / 100), capped by stat 0x44f |
+| `0x141e9ca20` | Fn | Actor setup: run-speed roll `+0x1a8` = 1 + v / 100, v by TinyMT32 in the actor data's [`+0xa0`, `+0xa4`] |
+| `0x1413cbe50` / `0x1404d03d0` | Fn | TinyMT32 seeding (init_by_array) / random int in a range |
+| `0x14215f700` | Fn | C→S use a skill: lockstep 0x018e (dx, dy) / 0x018f (object) when the network mode `+0x984` is 2, else 0x25 / 0x24 |
+| `0x14215fb10` / `0x14215fcb0` / `0x14215fe50` | Fn | C→S lockstep 0x0192 (new dx, dy) / 0x0195 (release) / 0x0196 (release a skill) |
+| `0x142183930` | Fn | world update: lockstep runs the queued server frames (deque `+0x9c0`, count `+0x9d8`), catching up × 1.01–5 |
+| `0x142183ce0` | Fn | world step (vtable `+0x360`): one server frame's messages, then the objects' ticks |
+| `0x1421872b0` | Fn | world message intake: queues messages; S→C 0x2b5 ends a frame (pushes world `+0x11c` ms), 0x2b6 sets it |
+| `0x141645fa0` | Fn | S→C 0x2b6: world `+0x11c` = the frame length in ms |
+| `0x14190faf0` | Fn | config `networking_type` → network mode (0 predictive, 2 lockstep, 3 auto) |
 
 
 ## Skills ([11](11-skills.md))
