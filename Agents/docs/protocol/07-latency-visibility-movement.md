@@ -99,12 +99,58 @@ confirmation (`InstanceProtocol.ActionStarted`). With the echo the client walks 
 click. 0x1ac ends an action, but is ignored for predicted local actions.
 
 The first version sent the target in the position pair: long clicks teleported the player, sometimes onto unwalkable
-cells past the town edge (toward The Coast), where the client could no longer path anywhere. The server therefore needs
-its own estimate of the player's position: `WalkEstimator` follows each order with A* over the walkability grid
-(walkable = mask ≥ 2, 8 neighbours, no corner cutting, paths ≤ 1.2 × straight distance + 5, else the closest reachable
-cell) at **37 cells/s** (measured with Frida: ~7.3 cells per 200 ms, = `base_speed` in `Character.ot`). Fitted to four
-recorded client walks, its end points are within ~4.5 cells of the client's; live, the reported positions matched the
-client's within ~4 cells. Grid: `data/walkability/1_1_town.bin` (the Frida dump, untracked).
+cells past the town edge (toward The Coast), where the client could no longer path anywhere. The server therefore keeps
+its own copy of the player's walk, and since 2026-10-21 that copy is the client's own algorithm, ported 1:1
+(`ClientPathfinder`, `PlayerWalk`). The earlier fitted A* (`WalkEstimator`, still used for monsters) drifted by a median
+13 cells and up to 50 on held-mouse walks: it walked zig-zag cell paths where the client walks straight lines, rounded
+to whole cells on every re-order, walked through NPCs and refused detours the client takes.
+
+**The client's pathfinder** (`0x141e4d890`, from the Pathfinding component's MoveTo `0x141e7b530` → `0x141e7b920` →
+`0x141e4ef90`). Arguments seen for the player's Move (Frida, `scripts/re/frida/trace-pathfind.js`): precision 1, min and
+max range 0, tolerance −1, no phasing.
+
+- **Grid and size.** Walk values are 4 bits per cell in 3 layers (`0x141d85260`: map `+0xd0 + 0x18 × layer`, row stride
+  `+0x100`, size `+0x18/+0x20` in 23-cell tiles). A mover of size *s* (Positioned `+0x1e3` = `object_size − 1`: the
+  player 1, NPCs 4, the stash 2) may stand on a cell whose value is ≥ *s* + 1. The player uses layer 0
+  (Positioned `+0x2c0`), which is byte for byte `data/walkability/<area>_seed<n>.bin`, so walkable = value ≥ 2. Layer 1
+  only serves the goal check (a line test with threshold 1), which never fails on a walkable town cell.
+- **Search.** A* in a 272 × 272-cell window (`0x110`, centred on the start). 8 neighbours in the order (0,1), (1,0),
+  (0,−1), (−1,0), (1,1), (1,−1), (−1,−1), (−1,1) (`DAT_142fbf350`); no corner rule. Costs are 1 / 1.4142 and the
+  heuristic is `|cell − target| + 0.001 × |cross(target − start, cell − target)|` (`0x141e4d7d0`; with a min/max range
+  it is the distance outside the range, 0 inside), all in float32. The open list is MSVC `push_heap`/`pop_heap` on
+  `{node, f}` with `a.f > b.f` (`0x141beb420`, `0x141beb2b0`), stale entries are skipped, and the goal is the first
+  popped node with h = 0.
+- **The player's limit is an ellipse.** For a mover with a Player component (`0x14013f1e0`) there is no expansion
+  count; a neighbour n is searched only if `clamp(2 |target − start|, 20, 136) > |n − target| + |n − start|`. Other
+  movers get 1000 expansions (monsters, pets) or 100, and a coarse 11.5-unit pass (≤ 300 expansions) when the first
+  search fails.
+- **Objects** (`0x141e61370` → `0x141e61540`). Objects are found in the 23-cell tiles within *s* + 4 of the cell; one
+  blocks when `max(|dx|, |dy|) − its size < s + 1`, a square (an NPC: Chebyshev distance ≤ 5 from its cell). Objects
+  with `blocking = false` (waypoints, area transitions) are never tested. Layer, team and phase flags can exempt an
+  object; a walker that starts inside a footprint may cross object cells at cost 21.
+- **Unreachable targets.** The search ends at the explored cell with the lowest heuristic.
+- **Waypoints.** Walking back from the end, a cell is kept where the Bresenham line (`0x141d87160`, terrain; `0x141e616a0`,
+  objects) from its parent to the last kept waypoint is blocked. At most 136 waypoints.
+
+**The client's walk** (Positioned `0x141e34400` → `0x141e4d180`, ticked by `0x141e32710` → `0x141e4d390`). Each segment
+between waypoints is a Bresenham line of cells; one step takes `(√(dx² + dy²) / speed) / max(|dx|, |dy|)` seconds,
+and the grid cell (`+0x294`) only changes a step at a time. Each frame adds its time to an accumulator and steps while it
+holds a whole step; before every step the next cell is checked again (terrain, objects) and a blocked step ends the walk.
+A new segment, including the first one of a new order, rescales the accumulator to its own step time, so a re-order
+keeps the elapsed fraction of the step in progress. Speed is `base_speed` 37 × the movement speed stats.
+
+**Server side.** `PlayerWalk` runs `ClientPathfinder` from the player's cell on every order and steps the result at the
+client's step times; the blockers are the NPCs and stashes the Gateway created (`ClientState.SetBlocker`), the living
+hostile monsters where the server's estimate has them (size MonsterVarieties `ObjectSize` − 1, not checked live), and the
+quest walls' cells. Replaying a recorded session (424 client path calls, 2026-10-21), every path matched the client's
+waypoint for waypoint. At each order, the predicted cell was exact 184 times, within one cell 392 times, and at most 2.8
+cells off. The rest is the client's frame timing, which the server cannot see. A second session (2026-10-21, town and The Coast,
+speeds 37 and 370) matched all 940 town paths; on The Coast 569 of 614 matched without monsters, and the other 45 bend
+around monsters (hence monsters as blockers). Held-mouse walks drift by a few cells (town, 37 cells/s: median 1, max 7;
+at 370 cells/s one 16 ms frame is ~6 cells): the client applies a click from its previous frame, the server when the
+0x25 arrives, so the timing differences add up while the button is held and vanish when a walk ends on its target. Monsters still use `WalkEstimator`.
+`Approach` (walking into range of an object or a melee target) uses the pathfinder's max range; the client's real range
+arguments for those walks are not traced yet.
 
 **Passive movement speed.** The passives' `base_movement_velocity_+%` are summed into `CharacterStats.Pools` and the
 walk estimate uses `37 × (1 + pct / 100)` cells/s; the same total is sent as the client's `movement_velocity_+%`, so the
@@ -154,4 +200,7 @@ asking for Predictive. Supporting lockstep would mean finding the senders and th
 - What the server should do with the client's HNC packets (type 0xDD).
 - The meaning of 0x1ba's +0x28 and u8. Moving other (non-predicted) objects works with 0x1ab and the Move skill
   0x2909 (monsters, [10](10-chat-and-commands.md) §5); 0x1ba's float is distance per second (duration = distance / value).
-- 0x0099, 0x004e and validation of moves against the walkability grid ([03](03-area-and-world.md) §7).
+- 0x0099 and 0x004e.
+- Monsters still walk on `WalkEstimator`: the client runs them through the same pathfinder with an expansion limit
+  (1000 or 100) and a coarse pass, not ported yet; their estimated positions are what the player's path avoids.
+- The range arguments of the client's walks into range (0x24 on an NPC, a waypoint, a melee target) for `Approach`.

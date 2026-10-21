@@ -297,6 +297,16 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x141fa3c50` / `0x141fa3d60` | Fn | compact int write / read |
 | `0x141f91f60` / `0x141f92000` | Fn | world object header write / read |
 | `0x1416aa670` | Fn | perf overlay ("network: {} ms") |
+| `0x141e7b530` | Fn | Pathfinding component MoveTo (target, min/max range, precision, tolerance) |
+| `0x141e7b920` / `0x141e7b6f0` | Fn | Pathfinding: compute the path (waypoints `+0xd4`, count `+0x518`) / start the next segment |
+| `0x141e4ef90` / `0x141e4d890` | Fn | the pathfinder (A*, player ellipse, waypoint pruning; `ClientPathfinder`) |
+| `0x141e4d7d0` | Fn | pathfinder heuristic (distance outside the range + 0.001 × cross product) |
+| `0x141d85260` / `0x141d87160` | Fn | walk value of a cell (4 bits, 3 layers) / Bresenham line check against a threshold |
+| `0x141e61370` / `0x141e61540` / `0x141e616a0` | Fn | object collision: cell (tile buckets) / one object (Chebyshev − size) / line |
+| `0x141beb420` / `0x141beb2b0` | Fn | pathfinder open list push / pop (MSVC heap, `a.f > b.f`) |
+| `0x142fbf350` / `0x142fbf330` | Data | the 8 directions (dx, dy) / opposite direction |
+| `0x141e34400` / `0x141e4d180` | Fn | Positioned straight move to a cell / Bresenham segment setup (step time) |
+| `0x141e32710` / `0x141e4d390` | Fn | Positioned per-frame move tick (step checks, accumulator) / one Bresenham step |
 
 
 ## Skills ([11](11-skills.md))

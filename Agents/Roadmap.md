@@ -271,8 +271,9 @@ data is in [19](docs/protocol/19-gems.md).
 
 ## 4. Server design
 
-- **Server-side movement:** validate moves against the walk map instead of only estimating
-  ([07](docs/protocol/07-latency-visibility-movement.md) "Open"; messages 0x0099 and 0x004e).
+- **Monster movement on the client's pathfinder:** monsters still use the fitted `WalkEstimator`; the client paths them
+  with an expansion limit and a coarse pass, so the positions the player's path avoids are estimates
+  ([07](docs/protocol/07-latency-visibility-movement.md) §5, "Open").
 - **HNC packets from the client** (type 0xDD): what the server should do with them
   ([07](docs/protocol/07-latency-visibility-movement.md)).
 - **`GameServer.Sim`** is an empty placeholder: a home for a server-side world simulation (monsters, combat) when it is

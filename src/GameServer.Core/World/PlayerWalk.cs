@@ -1,0 +1,132 @@
+namespace GameServer.Core.World;
+
+/// <summary>
+/// The server's copy of the local player's client-predicted walk (Agents/docs/protocol/07-latency-visibility-movement.md
+/// §5). Each order takes the client's own path (<see cref="ClientPathfinder"/>) from the player's cell, and the walker
+/// moves as the client's Positioned does (0x141e34400 → 0x141e4d180, ticked by 0x141e32710 → 0x141e4d390): every
+/// segment between two waypoints is a Bresenham line of cells, one step per (|segment| / speed) / (major-axis steps)
+/// seconds, so the cell is always a whole grid cell. A new order mid-step keeps the step's elapsed fraction (the
+/// client rescales its time accumulator to the new step time). The 0x1ab echo reports <see cref="Position"/>; the
+/// client snaps to it only when it is ~92+ cells off (Actor handler 0x1421940a0).
+/// </summary>
+public sealed class PlayerWalk
+{
+    private readonly Func<int, int, bool> _walkable;
+    private readonly Func<IReadOnlyList<ClientPathfinder.Blocker>> _blockers;
+    private readonly int _w, _h, _size;
+    private double _speed;
+    private List<Segment> _segments = [];
+    private (int X, int Y) _rest;
+    private double _restSince;
+
+    private sealed record Segment((int X, int Y) From, (int X, int Y)[] Cells, double T0, float Step)
+    {
+        public double End => T0 + Cells.Length * (double)Step;
+    }
+
+    /// <param name="walkable">Whether a cell's walk value is ≥ the mover's size + 1 (all cells when null).</param>
+    /// <param name="speed">Walking speed in cells per second (Pathfinding base_speed 37 × movement speed).</param>
+    /// <param name="blockers">The blocking objects now standing (NPCs, the stash).</param>
+    /// <param name="size">The mover's Positioned size (object_size − 1: the player is 1).</param>
+    public PlayerWalk(int x, int y, double speed, Func<int, int, bool>? walkable = null, int width = 4096, int height = 4096,
+        Func<IReadOnlyList<ClientPathfinder.Blocker>>? blockers = null, int size = 1)
+    {
+        _walkable = walkable ?? ((_, _) => true);
+        _blockers = blockers ?? (() => []);
+        (_w, _h, _size) = (width, height, size);
+        _speed = speed;
+        _rest = (x, y);
+    }
+
+    public double Speed => _speed;
+
+    /// <summary>Changes the walking speed. As in the client, the segment in progress keeps its pace; the following
+    /// segments are set up at the new speed.</summary>
+    public void SetSpeed(double speed, double now)
+    {
+        if (speed <= 0) throw new ArgumentOutOfRangeException(nameof(speed));
+        _speed = speed;
+        int i = _segments.FindIndex(s => now < s.End);
+        if (i < 0) return;
+        for (int k = i + 1; k < _segments.Count; k++)
+        {
+            var s = _segments[k];
+            _segments[k] = s with { T0 = _segments[k - 1].End, Step = StepTime(s.From, s.Cells[^1]) };
+        }
+    }
+
+    /// <summary>The walker's cell at <paramref name="now"/> (seconds, any monotonic clock).</summary>
+    public (int X, int Y) Position(double now) => At(now, out _);
+
+    private (int X, int Y) At(double now, out double fraction)
+    {
+        fraction = 0;
+        foreach (var s in _segments)
+        {
+            if (now >= s.End) continue;
+            double steps = Math.Max(0, (now - s.T0) / s.Step);
+            int done = (int)steps;
+            fraction = steps - done;
+            return done == 0 ? s.From : s.Cells[done - 1];
+        }
+        return _segments.Count == 0 ? _rest : _segments[^1].Cells[^1];
+    }
+
+    /// <summary>A new walk order at <paramref name="now"/> (a Move click, C→S 0x25). Returns where the walker is now
+    /// (what the echo must report).</summary>
+    public (int X, int Y) Order(int targetX, int targetY, double now) => Walk((targetX, targetY), 0, now);
+
+    /// <summary>Puts the walker at a cell (a teleport, e.g. S→C 0x1b7): no walk in progress.</summary>
+    public void Teleport(int x, int y, double now)
+    {
+        _segments = [];
+        _rest = (x, y);
+        _restSince = now;
+    }
+
+    /// <summary>When the current walk ends (when it ended, once the walker stands).</summary>
+    public double ArrivesAt => _segments.Count == 0 ? _restSince : _segments[^1].End;
+
+    /// <summary>Where the current walk ends.</summary>
+    public (int X, int Y) Destination => _segments.Count == 0 ? _rest : _segments[^1].Cells[^1];
+
+    /// <summary>
+    /// Walks toward a target only until it is within <paramref name="reach"/> cells (a melee attack or a click on an
+    /// object: the client walks into range first, the pathfinder's max range). Returns where the walker is now, where it
+    /// stops and when; when it is already in reach it stays.
+    /// </summary>
+    public ((int X, int Y) Here, (int X, int Y) Stop, double At) Approach(int targetX, int targetY, double reach, double now)
+    {
+        var here = Walk((targetX, targetY), (int)reach, now);
+        return (here, Destination, ArrivesAt);
+    }
+
+    private (int X, int Y) Walk((int X, int Y) target, int maxRange, double now)
+    {
+        var here = At(now, out double fraction);
+        var path = ClientPathfinder.FindPath(here, target, _walkable, _w, _h, _blockers(), _size, 0, maxRange);
+        _segments = [];
+        _rest = here;
+        _restSince = now;
+        if (path.Count < 2) return here;
+        double t = now;
+        for (int i = 1; i < path.Count; i++)
+        {
+            var cells = ClientPathfinder.Line(path[i - 1], path[i]).Skip(1).ToArray();
+            float step = StepTime(path[i - 1], path[i]);
+            // The first step comes when the step in progress would have: its elapsed fraction carries over.
+            if (i == 1) t -= fraction * step;
+            _segments.Add(new Segment(path[i - 1], cells, t, step));
+            t += cells.Length * (double)step;
+        }
+        return here;
+    }
+
+    // 0x141e4d180: the segment's time is its length over the speed, spread evenly over its major-axis steps.
+    private float StepTime((int X, int Y) a, (int X, int Y) b)
+    {
+        int dx = b.X - a.X, dy = b.Y - a.Y;
+        float total = MathF.Sqrt(dx * dx + dy * dy) / (float)_speed;
+        return total / Math.Max(Math.Abs(dx), Math.Abs(dy));
+    }
+}

@@ -1,0 +1,83 @@
+using GameServer.Core.World;
+
+namespace GameServer.Core.Tests;
+
+public class PlayerWalkTests
+{
+    [Fact]
+    public void Steps_one_cell_per_step_time()
+    {
+        // 37 cells along x at 37 cells/s: one step every 1/37 s, whole cells only.
+        var w = new PlayerWalk(0, 0, speed: 37);
+        Assert.Equal((0, 0), w.Order(37, 0, now: 0));
+        Assert.Equal((0, 0), w.Position(0.02));
+        Assert.Equal((18, 0), w.Position(0.5));
+        Assert.Equal((37, 0), w.Position(1.01));
+        Assert.Equal(1.0, w.ArrivesAt, 3);
+        Assert.Equal((37, 0), w.Destination);
+    }
+
+    [Fact]
+    public void A_diagonal_takes_its_length_over_the_speed()
+    {
+        // (10, 10): 10 major-axis steps over √200 / 10 s.
+        var w = new PlayerWalk(0, 0, speed: 10);
+        w.Order(10, 10, 0);
+        Assert.Equal(Math.Sqrt(200) / 10, w.ArrivesAt, 4);
+        Assert.Equal((5, 5), w.Position(Math.Sqrt(200) / 20 + 0.001));
+    }
+
+    [Fact]
+    public void A_new_order_keeps_the_step_in_progress()
+    {
+        // Half a step into the walk, a new order's first step comes half a step later.
+        var w = new PlayerWalk(0, 0, speed: 10);
+        w.Order(50, 0, 0);
+        Assert.Equal((0, 0), w.Order(0, 50, 0.05));
+        Assert.Equal((0, 0), w.Position(0.099));
+        Assert.Equal((0, 1), w.Position(0.101));
+    }
+
+    [Fact]
+    public void Approach_stops_within_reach()
+    {
+        var w = new PlayerWalk(0, 0, speed: 10);
+        var (here, stop, at) = w.Approach(100, 0, reach: 8, now: 0);
+        Assert.Equal((0, 0), here);
+        Assert.Equal((92, 0), stop);
+        Assert.Equal(9.2, at, 3);
+    }
+
+    [Fact]
+    public void Approach_in_reach_stays()
+    {
+        var w = new PlayerWalk(5, 5, speed: 10);
+        var (_, stop, at) = w.Approach(9, 5, reach: 8, now: 3);
+        Assert.Equal((5, 5), stop);
+        Assert.Equal(3, at, 3);
+    }
+
+    [Fact]
+    public void Walks_around_an_npc()
+    {
+        var npc = new ClientPathfinder.Blocker(20, 0, 4);
+        var w = new PlayerWalk(0, 0, 37, (x, y) => x >= 0 && y >= 0 && x < 60 && y < 60, 60, 60, () => [npc]);
+        w.Order(40, 0, 0);
+        Assert.Equal((40, 0), w.Destination);
+        for (double t = 0; t < w.ArrivesAt; t += 0.005)
+        {
+            var (x, y) = w.Position(t);
+            Assert.True(Math.Max(Math.Abs(x - 20), Math.Abs(y)) >= 6, $"({x}, {y}) at {t:0.000} is inside the NPC");
+        }
+    }
+
+    [Fact]
+    public void Teleport_stops_the_walk()
+    {
+        var w = new PlayerWalk(0, 0, speed: 10);
+        w.Order(50, 0, 0);
+        w.Teleport(7, 7, 1);
+        Assert.Equal((7, 7), w.Position(2));
+        Assert.Equal((7, 7), w.Destination);
+    }
+}

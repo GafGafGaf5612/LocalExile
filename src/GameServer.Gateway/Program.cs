@@ -5,6 +5,8 @@ using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using WalkEstimator = GameServer.Core.World.WalkEstimator;
+using PlayerWalk = GameServer.Core.World.PlayerWalk;
+using ClientPathfinder = GameServer.Core.World.ClientPathfinder;
 using Progression = GameServer.Core.World.Progression;
 using DamageModel = GameServer.Core.World.DamageModel;
 using DamageType = GameServer.Core.World.DamageType;
@@ -329,7 +331,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             if (cast) conn.Walk.Order(px, py, at);
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : "")}");
+                $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})");
             if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y));
             else await FollowRighteousFire(remote, stream, ciphers, conn);
             string mode = Environment.GetEnvironmentVariable("Game_MOVE_MODE") ?? "echo";
@@ -880,6 +882,7 @@ static async Task SpawnNpc(string remote, NetworkStream stream, ConnectionCipher
         $"0x02b9 create npc 0x{id:x} {npc} type=0x{type:x8} at ({x}, {y}) rotation {rotation:0.##}, components {string.Join(", ", npc.Components!)}");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 npc 0x{id:x} enters wake zone");
     lock (conn.Npcs) conn.Npcs[id] = new SpawnedNpc(npc, x, y);
+    conn.SetBlocker(id, x, y, ClientState.NpcBlockerSize);
 }
 
 // The town's NPCs (NpcCatalog.In) at their cells.
@@ -3874,6 +3877,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         lock (conn.Npcs) found = conn.Npcs.FirstOrDefault(n => n.Value.Npc.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
         if (found.Value is not { } npc) { await conn.Commands!.Reply($"No NPC {name} here."); return; }
         lock (conn.Npcs) conn.Npcs.Remove(found.Key);
+        conn.RemoveBlocker(found.Key);
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(found.Key), $"0x02bb remove npc 0x{found.Key:x} {npc.Npc.Name}");
         float rad = deg * MathF.PI / 180;
         await SpawnNpc(remote, stream, ciphers, conn, npc.Npc, npc.X, npc.Y, rad);
@@ -4459,7 +4463,7 @@ static async Task SetQuestFlags(string remote, NetworkStream stream, ConnectionC
     {
         gone = [.. conn.QuestRoomObjects.Where(o => changed.Contains(o.Value.Flag)).Select(o => o.Key)];
         foreach (uint id in gone) conn.QuestRoomObjects.Remove(id);
-        conn.UpdateBarrier(conn.Clock.Elapsed.TotalSeconds);
+        conn.UpdateBarrier();
     }
     foreach (uint id in gone)
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove room object 0x{id:x} (quest flag set)");
@@ -4497,7 +4501,7 @@ static async Task SpawnQuestRoomObjects(string remote, NetworkStream stream, Con
         lock (conn.Monsters)
         {
             conn.QuestRoomObjects[id] = (flag!, cells);
-            conn.UpdateBarrier(conn.Clock.Elapsed.TotalSeconds);
+            conn.UpdateBarrier();
         }
         id++;
     }
@@ -5027,6 +5031,7 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
         $"0x02b9 create stash 0x{id:x} at ({at.X}, {at.Y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 stash 0x{id:x} enters wake zone");
     conn.StashObject = id;
+    conn.SetBlocker(id, at.X, at.Y, ClientState.StashBlockerSize);
     // A hideout also gets the guild stash, a few cells from the stash.
     if (HideoutCatalog.ByArea(conn.Layout.Hash) is null) return;
     var (gx, gy) = conn.Layout.Near((at.X, at.Y));
@@ -5036,6 +5041,7 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(guild), null);
     conn.GuildStashObject = guild;
     conn.GuildStashAt = (gx, gy);
+    conn.SetBlocker(guild, gx, gy, ClientState.StashBlockerSize);
 }
 
 // A click on the guild stash (C→S 0x24): walk there, then its tab list (S→C 0x136 kind 1) and its panel (0x7b kind 2).
@@ -6135,15 +6141,50 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     // The Escape menu's pause (C→S 0x1d4) stops the Clock: walks, cooldowns and flask effects stand still meanwhile.
     public bool Paused => !Clock.IsRunning;
-    // Server-side estimate of the client-predicted walk (reported in each 0x1ab), kept on walkable cells.
-    public WalkEstimator Walk { get; private set; } = NewWalk(layout);
+    // The server's copy of the client-predicted walk (reported in each 0x1ab): the client's own pathfinder and stepping.
+    public PlayerWalk Walk => _walk ??= NewPlayerWalk();
+    PlayerWalk? _walk;
 
     /// <summary>Switches to a layout with a walk map (before the player exists).</summary>
     public void Use(AreaLayout better)
     {
         Layout = better;
-        Walk = NewWalk(better);
+        _walk = NewPlayerWalk();
         ApplyMovementSpeed();
+    }
+
+    // The blocking objects the client's pathfinder walks around (Positioned blocking = true), with their Positioned size
+    // (object_size − 1): NPCs (NPC.ot 5) and the stashes (Stash.ot, GuildStash.ot 3) by object id, and the living
+    // hostile monsters where the server's estimate has them now (MonsterVarieties ObjectSize − 1).
+    public const int NpcBlockerSize = 4, StashBlockerSize = 2;
+    readonly Dictionary<uint, ClientPathfinder.Blocker> _blockers = [];
+    volatile IReadOnlyList<ClientPathfinder.Blocker> _blockerList = [];
+    public IReadOnlyList<ClientPathfinder.Blocker> Blockers
+    {
+        get
+        {
+            var fixedOnes = _blockerList;
+            double now = Clock.Elapsed.TotalSeconds;
+            List<ClientPathfinder.Blocker>? all = null;
+            lock (Monsters)
+                foreach (var m in Monsters.Values)
+                {
+                    if (m.Dead || !m.Hostile || m.Variety is not { } v) continue;
+                    var (x, y) = m.Walk.Position(now);
+                    (all ??= [.. fixedOnes]).Add(new(x, y, Math.Max(0, v.ObjectSize - 1)));
+                }
+            return all ?? fixedOnes;
+        }
+    }
+
+    public void SetBlocker(uint id, int x, int y, int size)
+    {
+        lock (_blockers) { _blockers[id] = new(x, y, size); _blockerList = [.. _blockers.Values]; }
+    }
+
+    public void RemoveBlocker(uint id)
+    {
+        lock (_blockers) if (_blockers.Remove(id)) _blockerList = [.. _blockers.Values];
     }
 
     /// <summary>Applies the passive movement speed to the server's walk estimate; /set_speed is a dev override.</summary>
@@ -6154,8 +6195,14 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public void ReplaceAreaTransition(uint id, AreaTransitionObject transition) =>
         Layout = Layout with { AreaTransitions = [.. Layout.AreaTransitions.Select(e => e.Id == id ? (e.Id, transition) : e)] };
 
-    private static WalkEstimator NewWalk(AreaLayout l) =>
-        new(l.SpawnX, l.SpawnY, Program.WalkSpeed, l.Walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096);
+    // The quest walls (Barrier) are read on every path, so a wall that opens or closes counts from the next order on.
+    private PlayerWalk NewPlayerWalk()
+    {
+        var l = Layout;
+        Func<int, int, bool>? walkable = l.Walkable is { } w ? (cx, cy) => w(cx, cy) && !Barrier.Contains((cx, cy)) : null;
+        return new(l.SpawnX, l.SpawnY, Program.WalkSpeed, walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096,
+            () => Blockers);
+    }
     public bool PlayerSent;
     public byte[] Carry = [];
     /// <summary>The portal cosmetic: the MicrotransactionPortalVariations row every portal is listed with (0x008f +0x26),
@@ -6179,20 +6226,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Cells quest walls close to the player's walk estimate (QuestBarriers), the union of QuestRoomObjects' cells.
     public volatile IReadOnlySet<(int X, int Y)> Barrier = new HashSet<(int X, int Y)>();
 
-    /// <summary>Recomputes <see cref="Barrier"/> from the standing quest walls; the first wall also puts the player's walk
-    /// estimate on a walk map that goes around it (call under the Monsters lock).</summary>
-    public void UpdateBarrier(double now)
-    {
-        var cells = new HashSet<(int X, int Y)>(QuestRoomObjects.Values.SelectMany(o => o.Cells));
-        bool first = Barrier.Count == 0 && cells.Count > 0 && !_barrierWalk;
-        Barrier = cells;
-        if (!first || Layout.Walkable is not { } walkable) return;
-        _barrierWalk = true;
-        var (x, y) = Walk.Position(now);
-        Walk = new WalkEstimator(x, y, Walk.Speed, (cx, cy) => walkable(cx, cy) && !Barrier.Contains((cx, cy)),
-            Layout.GridW > 0 ? Layout.GridW : 4096, Layout.GridH > 0 ? Layout.GridH : 4096);
-    }
-    bool _barrierWalk;
+    /// <summary>Recomputes <see cref="Barrier"/> from the standing quest walls; the player's walk estimate reads it on its
+    /// next order (call under the Monsters lock).</summary>
+    public void UpdateBarrier() =>
+        Barrier = new HashSet<(int X, int Y)>(QuestRoomObjects.Values.SelectMany(o => o.Cells));
     // The player's attacks: the next time one may start (Clock seconds). The client repeats 0x24 while the button is held.
     public double NextAttackAt;
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
