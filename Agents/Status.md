@@ -166,3 +166,13 @@ guide.
 
 `docs/re/001`–`006` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`).
 `docs/superpowers/` and `docs/history/` are the original plans. Treat all of these as history, not reference.
+
+## Jeweller's Orb (2026-10-21)
+
+Initial implementation verified live: normal and Shift use rerolls empty sockets, colours and links, consumes one
+orb, updates inventory and saves the result. Class, dimensions and item level limit socket rolls; only base
+capacity blocks further use. Local counts are 1/2/3/4/6. Probabilities are approximate; quality, white-socket
+3.29 rules and special item overrides remain open. See protocol/13-items.md, Jeweller's Orb.
+
+PR branch validation: build succeeded with zero warnings/errors; Core 307, Data 15, Gateway 210 tests passed.
+Gateway test artifacts were placed in the local workspace so the existing extracted data could be read.

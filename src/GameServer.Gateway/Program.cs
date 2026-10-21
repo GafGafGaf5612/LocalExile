@@ -357,6 +357,18 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             await UseFlask(remote, stream, ciphers, conn, InstanceItems.ReadUseFlask(bytes));
         else if (id == InstanceItems.UseItemOnId)
             await UseItemOn(remote, stream, ciphers, conn, InstanceItems.ReadUseItemOn(bytes), Convert.ToHexString(bytes));
+        else if (id == InstanceItems.UseItemTypeOnId)
+        {
+            // Shift held: the currency stays on the cursor and is named by type; use a stack of it from the inventories,
+            // the main inventory first.
+            var again = InstanceItems.ReadUseItemTypeOn(bytes);
+            var items = ItemsOf(conn);
+            byte[] rows = [PlayerInventories.MainInventory, .. Enumerable.Range(0, InstanceInventories.PlayerDefaults.Length).Select(r => (byte)r)];
+            var stack = rows.Select(r => (Row: r, Item: items.Items(r).FirstOrDefault(i => i.Item.TypeHash == again.TypeHash))).FirstOrDefault(s => s.Item is not null);
+            if (stack.Item is null) Console.WriteLine($"[gateway] {remote} <= 0x0072 use type 0x{again.TypeHash:x8} again: none left");
+            else await UseItemOn(remote, stream, ciphers, conn, new InstanceItems.UseItemOn(PlayerInventories.InventoryId(stack.Row), stack.Item.Id,
+                again.TargetInventoryId, again.TargetId), Convert.ToHexString(bytes));
+        }
         else if (id == InstanceItems.InventoryRequestId)
             Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} (inventory request, not handled yet): {Convert.ToHexString(bytes)}");
         else if (id == InstanceItems.PickUpItemId)
@@ -4171,7 +4183,7 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
 }
 
 // C→S 0x71: an item used on another one. A Scroll of Wisdom identifies an unidentified item (its explicit mods and rare
-// name are sent from now on) and loses one from its stack. Other currency is not handled yet.
+// name are sent from now on) and loses one from its stack. Jeweller's Orbs use the same update path, including Shift.
 static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.UseItemOn use, string hex)
 {
     const string Wisdom = "Metadata/Items/Currency/CurrencyIdentification";
@@ -4183,33 +4195,43 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         return;
     }
     var type = Items.ByHash(used.Item.TypeHash);
-    if (type?.Id != Wisdom)
+    // What the currency makes of the target, or null (nothing happens, nothing is spent).
+    Item? result = type?.Id switch
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: not handled: {hex}");
-        return;
-    }
-    if (target.Item.Identified || !target.Item.Components.Contains("Mods"))
+        Wisdom => target.Item.Identified || !target.Item.Components.Contains("Mods") ? null : target.Item with { Identified = true },
+        Currency.JewellersOrb => Items.ByHash(target.Item.TypeHash) is { } socketType
+            ? Currency.Jewellers(target.Item, socketType, Items.Requirements(socketType), Random.Shared) : null,
+        _ => null,
+    };
+    if (result is null)
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x0071 Scroll of Wisdom on item {use.TargetId}: already identified");
+        if (type?.Id == Currency.JewellersOrb && Items.ByHash(target.Item.TypeHash) is { } refusedType)
+            Console.WriteLine($"[gateway] Jeweller target {target.Id}: {refusedType.Id}, class {refusedType.Class}, ilvl {target.Item.ItemLevel}, " +
+                $"sockets {target.Item.Sockets.Count}, roll cap {Currency.MaximumSockets(target.Item, refusedType)}, " +
+                $"base cap {Currency.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
+        Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
+            (type?.Id is Wisdom or Currency.JewellersOrb
+                ? "target refused (identified / unsupported sockets / maximum sockets / socketed gems)" : $"not handled: {hex}"));
         return;
     }
     if (items.ConsumeOne(usedRow, used.Id) is not { } taken) return;
-    if (items.Change(targetRow, target.Id, i => i with { Identified = true }) is not { } identified) return;
+    if (items.Change(targetRow, target.Id, _ => result) is not { } identified) return;
     // Remove and add the same ids: the client replaces an item only that way (see UseItem).
     uint usedInventory = PlayerInventories.InventoryId(usedRow), targetInventory = PlayerInventories.InventoryId(targetRow);
     if (usedRow == targetRow)
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [used.Id, target.Id],
-            taken.Left is { } left ? [left, identified] : [identified]), $"0x00bf inventory {targetInventory}: item {target.Id} identified, scroll used");
+            taken.Left is { } left ? [left, identified] : [identified]), $"0x00bf inventory {targetInventory}: item {target.Id} changed, {type!.Name} used");
     else
     {
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(usedInventory, items.NextRevision(usedRow), [used.Id],
-            taken.Left is { } left ? [left] : []), $"0x00bf inventory {usedInventory}: scroll used");
+            taken.Left is { } left ? [left] : []), $"0x00bf inventory {usedInventory}: {type!.Name} used");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [target.Id], [identified]),
-            $"0x00bf inventory {targetInventory}: item {target.Id} identified");
+            $"0x00bf inventory {targetInventory}: item {target.Id} changed");
         if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x0071 Scroll of Wisdom ({used.Id}) identified item {target.Id}: " +
-        string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe)));
+    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id == Wisdom
+        ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
+        : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}; link groups {string.Join(",", identified.Item.Links ?? [])}"));
 }
 
 // C→S 0x4a: the held item clicked on an item. A stack of the same type with room takes what fits (PlayerInventories.MergeOnto,

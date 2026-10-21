@@ -358,6 +358,22 @@ public static class InstanceItems
     /// </summary>
     public static uint ReadUseFlask(ReadOnlySpan<byte> m) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]);
 
+    public const ushort UseItemTypeOnId = 0x72;
+    public const int UseItemTypeOnLength = 23;
+
+    /// <summary>
+    /// C→S 0x72 (23 bytes, live 2026-10-21): the held currency used again with Shift (the client keeps it on the cursor
+    /// while the inventory has more). It names the currency by its BaseItemTypes HASH32, not by item: u32 type, then u32
+    /// inventory id and u32 item id of the target, all big-endian; then nine trailing bytes (meaning unknown, varying between currency types).
+    /// </summary>
+    public sealed record UseItemTypeOn(uint TypeHash, uint TargetInventoryId, uint TargetId);
+
+    public static UseItemTypeOn ReadUseItemTypeOn(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32(), r.U32());
+    }
+
     public const ushort UseItemOnId = 0x71;
     public const int UseItemOnLength = 18;
 
