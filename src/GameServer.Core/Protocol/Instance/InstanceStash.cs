@@ -22,6 +22,11 @@ public static class InstanceStash
     /// <summary>The 0x136 / 0xc7 / 0xc8 stash kind: the personal stash (0), the guild stash (1), trade tabs (2); instance
     /// +0xc498 / +0xc4b0 / +0xc4c8 (0x14216cf60).</summary>
     public const byte Personal = 0;
+    /// <summary>The guild stash: 0x136 / 0xc8 kind 1; S→C 0x7b kind 2 opens its panel (listener 0x140dcd780, tabs at instance +0xc4b0).</summary>
+    public const byte Guild = 1, OpenGuildStashUi = 2;
+
+    /// <summary>The guild stash tabs' inventory manager in S→C 0xc0 (instance +0xcb90); the personal stash uses 0.</summary>
+    public const byte GuildManager = 2;
 
     /// <summary>Inventories.dat row 26 (StashInventoryId, kind 0x11): the row of every stash tab inventory. The register
     /// (0x141d625f0) files every row but this one under the row, so any number of tabs can share it.</summary>
@@ -219,6 +224,9 @@ public static class InstanceStash
 public sealed record StashObject(int GridX, int GridY, float Rotation = 0)
 {
     public const string MetadataPath = "Metadata/MiscellaneousObjects/Stash";
+    /// <summary>The guild stash object: the same components (Positioned, BaseEvents, Animated, MinimapIcon,
+    /// InteractionAction), so the same blob.</summary>
+    public const string GuildMetadataPath = "Metadata/MiscellaneousObjects/GuildStash";
 
     public byte[] Blob()
     {

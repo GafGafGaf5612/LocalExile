@@ -275,6 +275,25 @@ public class ItemMovesTests : IDisposable
     }
 
     [Fact]
+    public void A_book_of_skill_is_used_up_only_with_its_passive_point()
+    {
+        var items = Items();
+        var book = items.Add(Main, 0, 0, Orbs(1));
+        FailWrites(_character, from: 2);
+
+        Assert.ThrowsAny<IOException>(() => ItemMoves.UseForPassivePoint(items, _character, Main, book.Id, 1));
+        Saves.FailWrite = null;
+        Assert.Single(Reload().Items.Items(Main));
+        Assert.Null(CharacterSaves.Load(_character)!.ExtraPassivePoints);
+
+        var used = ItemMoves.UseForPassivePoint(Items(), _character, Main, book.Id, 1);
+        Assert.NotNull(used);
+        Assert.Null(used.Left);
+        Assert.Empty(Reload().Items.Items(Main));
+        Assert.Equal((ushort)1, CharacterSaves.Load(_character)!.ExtraPassivePoints);
+    }
+
+    [Fact]
     public void After_a_failed_save_the_old_copy_refuses_changes_and_the_next_use_loads_the_saved_items()
     {
         var items = Items();

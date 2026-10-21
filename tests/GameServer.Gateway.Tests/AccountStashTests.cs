@@ -151,6 +151,32 @@ public class AccountStashTests : IDisposable
     }
 
     [Fact]
+    public void The_guild_stash_has_its_own_tabs_inventory_ids_and_item_ids()
+    {
+        var personal = Open();
+        var guild = AccountStash.ForGuild(_account, new ItemCatalog(_folder));
+
+        Assert.True(guild.IsGuild);
+        Assert.False(personal.IsGuild);
+        Assert.NotSame(personal, guild);
+        // Inventory ids from 0x900: the personal stash's (0x800…) never name a guild tab, and the other way round.
+        Assert.Equal(AccountStash.GuildFirstInventoryId + 1, guild.InventoryOf(1));
+        Assert.Equal(1, guild.TabOf(AccountStash.GuildFirstInventoryId + 1));
+        Assert.Null(guild.TabOf(AccountStash.InventoryId(1)));
+        Assert.Null(personal.TabOf(AccountStash.GuildFirstInventoryId + 1));
+        Assert.All(guild.Records(null), t => Assert.True(t.Inventory >= AccountStash.GuildFirstInventoryId));
+
+        // An item from the personal stash gets a guild id, and back again a personal one.
+        var fromPersonal = personal.Place(1, 0, 0, new InventoryItem(7, 0, 0, Wand()), Shape, out _)!.Value.Placed;
+        var moved = personal.Take(1, fromPersonal.Id)!;
+        var inGuild = guild.Place(0, 0, 0, moved, Shape, out _)!.Value.Placed;
+        Assert.InRange(inGuild.Id, AccountStash.GuildFirstItemId, AccountStash.GuildFirstItemId + 0x0fffffff);
+        var back = personal.Place(1, 0, 0, guild.Take(0, inGuild.Id)!, Shape, out _)!.Value.Placed;
+        Assert.InRange(back.Id, AccountStash.FirstItemId, AccountStash.GuildFirstItemId - 1);
+        Assert.True(personal.NewItemId() < AccountStash.GuildFirstItemId);
+    }
+
+    [Fact]
     public void Stash_inventory_ids_map_back_to_their_tab()
     {
         var stash = Open();
