@@ -107,8 +107,15 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/mob_tp [0x<id>]` | 0x1b7: teleports the monster next to the player |
 | `/npc <row, Id or name> [rotation°]`, `/npcs`, `/pos` | creates an NPC next to the player ([17](17-npcs.md)), lists the NPCs, prints the player's cell |
 | `/ai [on\|off]` | monster AI for this connection (on by default): monsters chase the player (below) |
+| `/cosmetic portal <name, number or part of a name>`, `/cosmetic list [filter]`, `/cosmetic off` | the shop's portal effects, as game data ([21](21-hideouts.md) §5). Several effects containing what was typed are listed with their numbers rather than the first being picked |
 
 Every player can use every command; there are no permissions yet.
+
+**No tab completion for our commands.** The chat prompt sends only the finished line (C→S 0x15, §1) and completes
+nothing itself — its slash commands are the client's own Commands.dat words, which the server cannot add to (the 71
+rows, and the only ones the client sends as C→S 0x16). A command that takes a game-data name therefore has to accept a
+piece of it: `/cosmetic` does, and answers an ambiguous piece with the matching effects and their numbers, so the next
+line can be a number instead of a name.
 
 ## 5. Monsters (`/spawn_mob`)
 

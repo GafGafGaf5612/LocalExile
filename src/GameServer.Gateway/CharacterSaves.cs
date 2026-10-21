@@ -34,12 +34,14 @@ static class CharacterSaves
     /// nodes' PassiveSkillGraphId. Waypoints: the WorldAreas Ids of the activated waypoints; Visited: of the areas
     /// entered (their visit quest flags reveal the World panel's pins). QuestFlags: the quest flags quests set
     /// (QuestFlags.dat Ids, 12-quests.md §5). Gold: only in older saves, see <see cref="TakeGold"/>. StartWeapon: the
-    /// class's start weapon while it waits on the ground for the character to pick it up (<see cref="PlayerInventories.StartWeapon"/>).</summary>
+    /// class's start weapon while it waits on the ground for the character to pick it up (<see cref="PlayerInventories.StartWeapon"/>).
+    /// PortalCosmetic: the MicrotransactionPortalVariations row the character's portals use (null = the base effect), so a
+    /// /cosmetic portal choice survives a relog.</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
-        SavedItem? StartWeapon = null)
+        SavedItem? StartWeapon = null, ushort? PortalCosmetic = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -90,6 +92,14 @@ static class CharacterSaves
             throw;
         }
     }
+
+    /// <summary>Records the portal cosmetic (/cosmetic portal): a MicrotransactionPortalVariations row, 0 for the base
+    /// effect, which is stored as no field so an older save keeps reading as the default.</summary>
+    public static void SetPortalCosmetic(string character, ushort variation) =>
+        Update(character, s => s with { PortalCosmetic = variation == 0 ? null : variation });
+
+    /// <summary>The character's portal cosmetic, 0 (the base effect) when none is saved.</summary>
+    public static ushort PortalCosmetic(string character) => Load(character)?.PortalCosmetic ?? 0;
 
     /// <summary>How long experience may wait in memory before it is saved (<see cref="SaveExperience()"/>).</summary>
     public static readonly TimeSpan ExperienceSaveInterval = TimeSpan.FromSeconds(5);

@@ -87,6 +87,27 @@ The client reads a named configuration profile (`CONFIGURATION_NAME`, `GGG_Game_
 
 `gateway_list.txt` is obtained from the patch CDN (root), not the GGPK; it is not present at `Bundles2/gateway_list.txt` inside our archive.
 
+## The shop and the Cosmetics panel (2026-10-21)
+
+The in-game cosmetics UI is native — RTTI strings `UI::Controls::InGame::CosmeticsPage`,
+`MicrotransactionListPanel`, `MicrotransactionCategoryBar`, `MicrotransactionOption` and
+`AddItem(MicrotransactionOption, PurchasedMicrotransaction, bool)` — and it is **built from purchased
+microtransactions**, not from a game-server message:
+
+- The web endpoints in the binary (UTF-16): `/api/shop-microtransaction-categories?forsale=1`,
+  `/api/shop/microtransactions/specials?type=active&limit=5&platform=`, `/api/client-data`, `/api/settings`,
+  `/api/client-item-filter`, `/api/tracking-conversions/`. The tracking host is Tencent's `pub.game.daum.net`.
+- Live (`scripts/re/frida/trace-http.js` attached at launch with `run.py --follow`, 2026-10-21): the client resolves and
+  opens TLS only to `web.poecdn.com`; the patch/web root is our own `http://127.0.0.1:8080/`. Opening the shop and its
+  cosmetics section made **no** request at all, and the list stayed empty — the catalogue/ownership it needs is fetched
+  from GGG's web APIs, which a local account has no session for.
+- The login protocol has no microtransaction message (`01-login.md` §4: 0x03/0x18/0x12/0x19/0x0e only), so there is no
+  server-side list to fill either.
+
+Consequence: a picker cannot be the client's own cosmetics page without intercepting `web.poecdn.com` TLS (certificate
+bypass) and faking an account's purchases. Server-authored lists exist only where rows are items; the vendor window's
+**tab names** are the one server-written list of arbitrary text (`17-npcs.md` §5).
+
 ## Consequences for the private server
 
 1. **Patch/CDN and login port are redirectable via `GGG_*` env vars** — no binary patch needed for those.

@@ -115,6 +115,7 @@ Workflow per run:
 | `dump-walkability.js` | hooks `0x1410ddcfd` and writes the area's terrain walkability (`walk-meta.json`, `walk-a.bin` = walkable mask, 5 = walkable; `walk-b.bin`) to `Tools/re/out/`. Used to pick the spawn ([../protocol/03-area-and-world.md](../protocol/03-area-and-world.md) §7) |
 | `trace-pong.js` | the 0x1c read, the send-time queue pop and logger calls after the first 0x1c (used to find the HNC violation) |
 | `trace-missing-files.js` | paths the file lookup `0x1421cc280` fails on (C++ exceptions thrown via `0x1421cc54e`) |
+| `trace-http.js` | every outbound socket send reduced to a plaintext HTTP request line + Host, or the SNI of a TLS ClientHello, plus `connect` targets and `getaddrinfo` names — the shop's web endpoints without decrypting anything. `run.py <name> --follow` waits for a *new* process, so it can catch a client's startup traffic (found `web.poecdn.com` and the empty cosmetics panel, [001-client-endpoints.md](001-client-endpoints.md)) |
 | `check-components.js` | any created object (0x2b9): per component the live vtable, its deserializer and the bytes it consumed, the leftover, and the component that was reading on a Buffer Underflow (section 7) |
 | `trace-skills.js` | every skill added to an ActiveSkillManager (`SkillInstanceAdded` `0x141eea6a0`): id, action id, effect name, backtrace |
 | `trace-skill-stats.js` | stat getter calls (key, value, caller) while a skill action is created or started |
@@ -149,6 +150,11 @@ call. There is no `cdb`/WinDbg installed.
 - **Component class from a name:** `strexact.py Name` → `Callers.java` on the ASCII address → the static initializer in
   `0x14006xxxx` (`lea rdx,name; lea rcx,pool`) → `Callers.java pool` → factory → ctor vtable. Then confirm with
   Frida, because live objects can use other vtables.
+- **A portal object after the fact:** `python -I scripts/re/portal_capture.py` decodes every `0x02b9` map portal and
+  `0x008f` portal list in `logs/live-gateway.log` (to `Tools/re/out/portals.json`): position, place index, portal type,
+  open flag, the `0x008f` entry's area, portal variation (+0x26) and owner. The Gateway caps a logged hex dump at 96
+  bytes, so a six-portal list and a long `.ao` path arrive partial (the capture marks them `truncated`; an effect's
+  `loggedAo` from the log line is the complete path).
 - **What a crash needs:** Frida backtrace → decompile the faulting function → find the null field → find its writer
   → find the message that calls that writer.
 
