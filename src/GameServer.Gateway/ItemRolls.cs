@@ -50,6 +50,12 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         return result with { Mods = [.. kept, .. explicits], NameWords = rarity == ItemRarity.Rare ? RareName(t, rng) : [] };
     }
 
+    /// <summary>Divine Orb: every explicit mod keeps its place and tier and rerolls only its values (a new tier would
+    /// change the mod, and the client reorders the tooltip by mod). Null when the item has no explicit mods.</summary>
+    public Item? Reforge(Item item, Random rng) => !item.Mods.Any(m => m.Section == ModSection.Explicit) ? null
+        : item with { Mods = [.. item.Mods.Select(m => m.Section == ModSection.Explicit && catalog.Mods.ByHash(m.Hash) is { } mod
+            ? mod.Roll(ModSection.Explicit, rng) : m)] };
+
     /// <summary>Two Words.dat keys (prefix from list 1, suffix from list 2) for the base's tags; empty without Words.dat.</summary>
     public IReadOnlyList<uint> RareName(ItemCatalog.BaseType t, Random rng)
     {

@@ -96,6 +96,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   refusal of level-1 boots/gloves with two sockets is fixed and verified live. Probabilities are
   approximate; quality and special socket overrides are not modelled. See [13](docs/protocol/13-items.md),
   "Jeweller's Orb".
+- **Orb of Alchemy, Chaos Orb, Divine Orb (verified live, 2026-10-21):** Alchemy makes a normal item an identified
+  rare with 4-6 random affixes and a rare name; Chaos rerolls all of a rare item's affixes (4-6, new tiers); Divine
+  keeps the affixes, tiers and order and rerolls only values. Shift works for all three. See
+  [13](docs/protocol/13-items.md), "Orb of Alchemy", "Chaos Orb", "Divine Orb".
 - **Orb of Fusing: verified live (2026-10-21).** Captured 0x71/0x72 packets feed the same
   handler. Only links change; sockets, colours, gems and item properties stay intact. Refuses fewer than two sockets
   and protects fully linked 5/6-socket items; 2-4 sockets remain rerollable. Quality favours longer groups without
@@ -169,7 +173,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate opens without its
   animation; its force wall and Doorman are not created ([12](docs/protocol/12-quests.md) §6). Only quest a1q1 is
   scripted; no quest log.
-- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing and Orb of Regret; utility flasks; support gems and links
+- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb, Divine Orb and Orb of Regret; utility flasks; support gems and links
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
   Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).

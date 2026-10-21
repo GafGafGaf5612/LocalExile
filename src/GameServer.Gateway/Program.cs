@@ -4637,6 +4637,9 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
             ? CurrencyEffects.Jewellers(target.Item, socketType, Items.Requirements(socketType), Random.Shared) : null,
         CurrencyEffects.OrbOfFusing => Items.ByHash(target.Item.TypeHash) is { } linkType
             ? CurrencyEffects.Fusing(target.Item, linkType, Random.Shared) : null,
+        CurrencyEffects.OrbOfAlchemy => CurrencyEffects.Alchemy(target.Item, Rolls, Random.Shared),
+        CurrencyEffects.ChaosOrb => CurrencyEffects.Chaos(target.Item, Rolls, Random.Shared),
+        CurrencyEffects.DivineOrb => Rolls.Reforge(target.Item, Random.Shared),
         _ => null,
     };
     if (result is null)
@@ -4646,8 +4649,8 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
                 $"sockets {target.Item.Sockets.Count}, roll cap {CurrencyEffects.MaximumSockets(target.Item, refusedType)}, " +
                 $"base cap {CurrencyEffects.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
         Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
-            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing
-                ? "target refused (identified / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
+            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb
+                ? "target refused (identified / wrong rarity / no explicit mods / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
         return;
     }
     // The currency and the changed item are saved together.
@@ -4665,7 +4668,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
             $"0x00bf inventory {targetInventory}: item {target.Id} changed");
         if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id == Wisdom
+    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb
         ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
         : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}; link groups {string.Join(",", identified.Item.Links ?? [])}"));
 }

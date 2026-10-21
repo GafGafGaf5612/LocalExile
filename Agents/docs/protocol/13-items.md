@@ -302,6 +302,26 @@ C→S 0x72 is 23 bytes: u16 id, u32 currency BaseItemTypes HASH32, u32 target in
 then nine currently uninterpreted bytes. All integer fields above are big-endian. The Gateway resolves a stack
 of that currency (main inventory first) and reuses the 0x71 handler.
 
+### Orb of Alchemy (2026-10-21, verified live)
+
+`CurrencyUpgradeToRare` goes through the same 0x71/0x72 handler. `CurrencyEffects.Alchemy` takes only a normal item with
+a Mods component and makes it rare and identified: implicits kept, 4-6 explicit affixes rolled by `ItemRolls.Roll`
+(weighted by Mods.dat spawn weights, each mod's values rolled within its tier), and a Words.dat rare name. Anything
+else is refused and nothing is spent.
+
+### Chaos Orb (2026-10-21, verified live)
+
+`CurrencyRerollRare`, same handler (0x71, and 0x72 with Shift for repeated use). `CurrencyEffects.Chaos` takes only a
+rare item with a Mods component: every explicit affix is replaced by a fresh `ItemRolls.Roll` (4-6 affixes, new tiers
+and values), a new rare name, implicits kept; the item ends identified. Anything else is refused and nothing is spent.
+
+### Divine Orb (2026-10-21, verified live)
+
+`CurrencyModValues`, same handler (0x71, 0x72 with Shift; one orb spent per use). `ItemRolls.Reforge` rerolls only
+the values of each explicit mod within its own tier; the mods, their order, implicits, rarity and name stay. A new tier
+would be a different mod, and the client reorders the tooltip by mod, so the lines would jump. An item without explicit
+mods is refused.
+
 ### Orb of Fusing (2026-10-21, verified live)
 
 `CurrencyRerollSocketLinks`, HASH32 `0xC71BF58D`, uses the same 0x71/0x72 currency handler and 0xbf inventory update.
