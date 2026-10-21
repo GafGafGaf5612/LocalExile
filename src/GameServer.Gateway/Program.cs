@@ -3023,8 +3023,12 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
     return new ChatCommands
     {
         Send = (bytes, log) => Send(remote, stream, ciphers, bytes, log),
-        // S→C 0x0d shows the text in a message box with OK (no chat line message is mapped yet).
-        Reply = text => Send(remote, stream, ciphers, InstanceChat.MessageBox(text), $"0x000d message box \"{text}\""),
+        // S→C 0x17 chat lines in the player's chat panel, one per line of the text (an empty line as a space).
+        Reply = async text =>
+        {
+            foreach (string line in text.Split('\n').Select(l => l.Length == 0 ? " " : l))
+                await Send(remote, stream, ciphers, InstanceChat.ChatLine(line), $"0x0017 chat line \"{line}\"");
+        },
     }
     .Add("raw", "/raw <hex> (send one S→C message)", async args =>
     {

@@ -313,7 +313,7 @@ To check the result from the logs (useful for agents):
 In game:
 - **The Coast:** click "The Coast" on the east side of town. Ctrl+click it to open the Instance Manager instead (pick
   an instance or create a new one).
-- **Commands:** type in chat with Enter, for example `/help`, `/set_speed 200`.
+- **Commands:** type in chat with Enter, for example `/commands` (or `/com`), `/set_speed 200`.
 
 Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and `walkmaps.log`), plus the client's own
 `Client\logs\Client.txt`.
