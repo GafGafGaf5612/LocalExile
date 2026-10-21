@@ -94,6 +94,11 @@ sealed class AccountStash
 
     AccountStash(string account) => _account = account;
 
+    /// <summary>The stash key of an account in a league: every league has its own stash and gold. Standard (and a
+    /// character without a league) keeps the account's own key, so the stash it had before leagues counted stays there.</summary>
+    public static string Key(string account, string? league) =>
+        string.IsNullOrEmpty(league) || league.Equals("Standard", StringComparison.OrdinalIgnoreCase) ? account : $"{account} ({league})";
+
     /// <summary>The account's stash, loaded from the save database or made with the starter tabs. A saved item the game
     /// data doesn't know stops the load (<see cref="UnknownSavedItemException"/>) and the save stays as it is.</summary>
     public static AccountStash For(string account, ItemCatalog catalog) => Create(account, catalog, FirstInventoryId, FirstItemId, StarterTabs);

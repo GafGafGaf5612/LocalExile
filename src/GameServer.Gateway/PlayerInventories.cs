@@ -32,7 +32,7 @@ sealed class PlayerInventories
 
     /// <summary>The class's start weapon while it waits on the ground for the character (as on the real game's Twilight
     /// Strand: the Gateway puts it near the spawn of each instance the character enters outside towns); null once picked
-    /// up, or with <c>Game_START_WEAPON=equipped</c>, which equips it in the start kit instead.</summary>
+    /// up. Only with <c>Game_START_WEAPON=ground</c>: by default the start kit wears it.</summary>
     public Item? StartWeapon
     {
         get { lock (_lock) return _startWeapon; }
@@ -845,8 +845,8 @@ sealed class PlayerInventories
     }
 
     /// <summary>
-    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) as the
-    /// <see cref="StartWeapon"/> waiting on the ground (Game_START_WEAPON=equipped: in Weapon1), the
+    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) worn in
+    /// Weapon1 (Game_START_WEAPON=ground: the <see cref="StartWeapon"/> waiting on the ground), the
     /// StartSkillGem and StartSupportGem (SkillGems rows → their BaseItemTypes: Fireball, Arcane Surge Support) in the main
     /// inventory, and
     /// two Small Life Flasks (flask keys 1 and 2) and a Small Mana Flask (key 5). Missing tables or unsupported types are skipped;
@@ -887,8 +887,9 @@ sealed class PlayerInventories
             catalog.Row(w.GetInt32()) is { Supported: true } weapon)
         {
             var item = ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]);
-            if (Environment.GetEnvironmentVariable("Game_START_WEAPON") == "equipped") inv.Add(Weapon1, 0, 0, item);
-            else inv._startWeapon = item;
+            // Worn from the start (Game_START_WEAPON=ground: waiting on the ground next to the spawn instead).
+            if (Environment.GetEnvironmentVariable("Game_START_WEAPON") == "ground") inv._startWeapon = item;
+            else inv.Add(Weapon1, 0, 0, item);
         }
         Put(MainInventory, 0, 0, Gem("StartSkillGem"));
         Put(MainInventory, 1, 0, Gem("StartSupportGem"));

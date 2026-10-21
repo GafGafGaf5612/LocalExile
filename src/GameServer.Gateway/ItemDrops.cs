@@ -66,6 +66,25 @@ sealed class ItemDrops(ItemCatalog catalog, ItemRolls? rolls = null)
         return drops;
     }
 
+    /// <summary>The gold item (ItemClasses "Gold"): on the ground a pile of <see cref="Item.StackSize"/> gold, which a pickup
+    /// adds to the stash's gold instead of the inventory.</summary>
+    public const string GoldId = "Metadata/Items/Currency/GoldCoin", GoldClass = "Gold";
+
+    /// <summary>The gold a dying monster drops, 0 for none: normal monsters 40% of the time, magic 75%, rare and unique
+    /// always; (3 + 1.2 × level) × 1 / 2 / 5 / 15 by rarity, ±25%. Our own numbers until the game's are known.</summary>
+    public static int GoldAmount(int monsterLevel, MonsterRarity rarity, Random rng)
+    {
+        double chance = rarity switch { MonsterRarity.Normal => 0.40, MonsterRarity.Magic => 0.75, _ => 1 };
+        if (rng.NextDouble() >= chance) return 0;
+        double times = rarity switch { MonsterRarity.Magic => 2, MonsterRarity.Rare => 5, MonsterRarity.Unique => 15, _ => 1 };
+        return Math.Max(1, (int)Math.Round((3 + 1.2 * Math.Max(1, monsterLevel)) * times * (0.75 + 0.5 * rng.NextDouble())));
+    }
+
+    /// <summary>A pile of gold for a dying monster (<see cref="GoldAmount"/>), or null for none.</summary>
+    public Drop? Gold(int monsterLevel, MonsterRarity rarity, Random rng) =>
+        GoldAmount(monsterLevel, rarity, rng) is int amount and > 0 && catalog.Find(GoldId) is { Supported: true } type
+            ? new Drop(ItemCatalog.Create(type) with { StackSize = (ushort)Math.Min(amount, ushort.MaxValue) }, type) : null;
+
     Drop? RollOne(int level, MonsterRarity monster, Random rng)
     {
         var (currency, equipment, flasks) = _pools.Value;
