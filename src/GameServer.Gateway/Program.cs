@@ -2446,7 +2446,8 @@ static async Task ActivateRighteousFire(string remote, NetworkStream stream, Con
         $"0x01c1 player buff {aura}: righteous_fire_aura (BuffDefinitions row {RighteousFireAuraBuffRow})");
     // The big burning circle is not a buff visual: it is MiscAnimated RighteousFireRing, an effect object of its own
     // (EffectObject), kept under the player as it walks (FollowRighteousFire).
-    var ringObject = new EffectObject(at.X, at.Y, RighteousFireRingAo);
+    // FixedRotation: the glides that keep it under the player must not turn it (it spun as the player turned).
+    var ringObject = new EffectObject(at.X, at.Y, RighteousFireRingAo) { Flags0 = EffectObject.FixedRotation };
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(ring, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), ringObject.Blob()),
         $"0x02b9 create effect 0x{ring:x} {RighteousFireRingAo} at ({at.X}, {at.Y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(ring), null);
@@ -3815,6 +3816,10 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
     conn.Pools = PoolsFor(conn, conn.Pools.Level);
     lock (conn.Monsters) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
     await SendSkills(remote, stream, ciphers, conn);
+    // Righteous Fire burns only while its gem is in the equipment: taking it out ends the fire, and it starts again only
+    // when the gem is back and the skill is used.
+    if (conn.RighteousFire is not null && !GemSkillEffects(conn.Character).Any(g => IsRighteousFire(g.Effect)))
+        await EndRighteousFire(remote, stream, ciphers, conn, "its gem left the equipment");
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
         "0x01b3 player stats (equipment)");
     await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
