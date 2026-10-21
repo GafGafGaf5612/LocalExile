@@ -11,6 +11,56 @@ static class CurrencyEffects
     public const string OrbOfAlchemy = "Metadata/Items/Currency/CurrencyUpgradeToRare";
     public const string ChaosOrb = "Metadata/Items/Currency/CurrencyRerollRare";
     public const string DivineOrb = "Metadata/Items/Currency/CurrencyModValues";
+    public const string OrbOfScouring = "Metadata/Items/Currency/CurrencyConvertToNormal";
+    public const string OrbOfTransmutation = "Metadata/Items/Currency/CurrencyUpgradeToMagic";
+    public const string OrbOfAlteration = "Metadata/Items/Currency/CurrencyRerollMagic";
+    public const string OrbOfAugmentation = "Metadata/Items/Currency/CurrencyAddModToMagic";
+    public const string RegalOrb = "Metadata/Items/Currency/CurrencyUpgradeMagicToRare";
+    public const string ExaltedOrb = "Metadata/Items/Currency/CurrencyAddModToRare";
+    public const string OrbOfAnnulment = "Metadata/Items/Currency/CurrencyRemoveMod";
+
+    /// <summary>Orb of Annulment: one random explicit affix leaves a magic or rare item; implicits, the other affixes,
+    /// rarity and name stay. Refused for anything else, or an item without explicit affixes.</summary>
+    public static Item? Annulment(Item item, Random random)
+    {
+        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit).Select(p => p.i).ToList();
+        if (item.Rarity is not (ItemRarity.Magic or ItemRarity.Rare) || explicits.Count == 0) return null;
+        int gone = explicits[random.Next(explicits.Count)];
+        return item with { Mods = [.. item.Mods.Where((_, i) => i != gone)] };
+    }
+
+    /// <summary>Exalted Orb: a rare item keeps its affixes and name and gets one more (at most three prefixes and three
+    /// suffixes). Refused for anything else, or when the item is full.</summary>
+    public static Item? Exalted(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Rare || !item.Components.Contains("Mods") ? null : rolls.AddAffix(item, 3, random);
+
+    /// <summary>Regal Orb: a magic item becomes rare with its affixes kept, one more affix (at most three of each kind)
+    /// and a rare name. Refused for anything else, or when no affix fits.</summary>
+    public static Item? Regal(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") || rolls.AddAffix(item, 3, random) is not { } added ? null
+            : added with { Rarity = ItemRarity.Rare, Identified = true, NameWords = rolls.RareName(item, random) };
+
+    /// <summary>Orb of Augmentation: a magic item with fewer than this server's 4 affixes (two prefixes, two suffixes,
+    /// as the Orb of Alteration rolls) gets one more; its affixes and rarity stay. Anything else is refused.</summary>
+    public static Item? Augmentation(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null : rolls.AddAffix(item, 2, random);
+
+    /// <summary>Orb of Alteration (as asked for this server, not the official 1-2): a magic item with mods gets new
+    /// affixes, 1-4 of them with at most two prefixes and two suffixes, each tier drawn by weight. Anything else is refused.</summary>
+    public static Item? Alteration(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null
+            : rolls.Roll(item, ItemRarity.Magic, random, (random.Next(1, 5), 2)) with { Identified = true };
+
+    /// <summary>Orb of Transmutation: a normal item with mods becomes an identified magic one with 1-2 random affixes
+    /// (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
+    public static Item? Transmutation(Item item, ItemRolls rolls, Random random) =>
+        item.Rarity != ItemRarity.Normal || !item.Components.Contains("Mods") ? null
+            : rolls.Roll(item, ItemRarity.Magic, random) with { Identified = true };
+
+    /// <summary>Orb of Scouring: a magic, rare or unique item becomes normal; its explicit mods and name go, the base
+    /// (implicit, enchant …) mods stay. A normal item is refused.</summary>
+    public static Item? Scouring(Item item) => item.Rarity == ItemRarity.Normal ? null
+        : item with { Rarity = ItemRarity.Normal, Identified = true, NameWords = [], Mods = [.. item.Mods.Where(m => m.Section != ModSection.Explicit)] };
 
     /// <summary>Orb of Alchemy: a normal item with mods becomes an identified rare one with 4-6 new random affixes and
     /// a rare name (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
