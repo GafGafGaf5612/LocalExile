@@ -119,7 +119,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** `GrantedEffectsPerLevel` carries the reservation; the Life pool's reserved field and S→C 0x1b1 update it;
   Purity of Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste are implemented with their buff
   visuals and `/auras`, awaiting live verification ([11](docs/protocol/11-skills.md) 13, [Status](Status.md)).
-- **Start:** the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
+- **Start:** the auras' 3D effects (BuffVisuals EPKs of the `IsSkillBuff` rows do not render, unlike Righteous Fire's);
+  the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
   Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar active border is still open: 0x25f is a
   client UI event, not a server message. Support gems and gem levels come with the gem system ("Gems" below); party and
   minion auras and life reservation with their own systems.

@@ -37,6 +37,25 @@ public class InstanceMovementTests
     }
 
     [Fact]
+    public void Use_instant_skill_parses_a_live_capture()
+    {
+        // Haste (skill 0x0105) cast on the player itself.
+        var bytes = Convert.FromHexString("0191000010000105");
+
+        Assert.Equal(bytes.Length, InstanceProtocol.KnownClientLength(InstanceProtocol.UseInstantSkillId));
+        Assert.Equal((0x1000u, (ushort)0x0105), InstanceProtocol.ReadUseInstantSkill(bytes));
+    }
+
+    [Fact]
+    public void Instant_action_answers_with_the_skill_no_sequence_and_the_target_object()
+    {
+        string hex = Convert.ToHexString(InstanceProtocol.InstantAction(0x1000, 0x0105, 254, 312, targetObjectId: 0x1000));
+
+        // object header, skill 0x0105, sequence 0xffff (none), flags 0x20 (+ u32 target object), then the position
+        Assert.StartsWith("01CE" + "00001000" + "00000000" + "0000" + "0105" + "FFFF" + "0020" + "00001000", hex);
+    }
+
+    [Fact]
     public void Wake_zone_pong_move_and_teleport_layouts()
     {
         Assert.Equal("01A900001000000000000000", Convert.ToHexString(InstanceProtocol.EnterWakeZone(0x1000)));
