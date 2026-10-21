@@ -365,7 +365,7 @@ Environment variables, read when each server starts:
 | `Game_CLIENT_EXE` | `Client/Game.exe` | client executable the Gateway reads protocol constants from |
 | `Game_RANDOM_SEEDS` | unset | `1` = random seeds for new non-town instances (each needs its own walk map) |
 | `Game_LEAGUE` | `standard` | `hardcore` shows the hardcore death screen (a single Exit button) |
-| `Game_START_WEAPON` | unset | `equipped` = a new character's class weapon starts equipped instead of on the ground near the spawn |
+| `Game_START_WEAPON` | unset | `ground` = a new character's class weapon waits on the ground near the spawn instead of being worn |
 | `Game_FLASK_BUFFS` | unset | `0` = flasks recover without putting their flask_effect buff on the player |
 | `Game_FLASK_KILL_CHARGES` | unset | unset = every kill fills all flasks; `rarity` = a few charges per kill, more for rarer monsters |
 | `Game_PLAYER_ATTACK` | `PlayerMelee` | GrantedEffects `Id` of the player's default attack (level 1) |

@@ -50,8 +50,9 @@ catch (Exception e) when (e is IOException or Microsoft.Data.Sqlite.SqliteExcept
 }
 
 // Every item sent carries its level requirement (13-items.md §2d): the client shows and checks the byte it receives.
-// Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead.
-Item.LevelRequirementOf = item => !item.Components.Contains("SkillGem") && Items.ByHash(item.TypeHash) is { } t
+// Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead. Maps have
+// none, as in the game: their drop level is where they drop, not who may run them.
+Item.LevelRequirementOf = item => !item.Components.Contains("SkillGem") && Items.ByHash(item.TypeHash) is { Class: not MapDevice.MapClass } t
     ? ItemModStats.LevelRequirement(item, t.DropLevel, Items.Mods) : 0;
 
 // Local play only by default; Game_BIND=0.0.0.0 to accept other machines (then also set Game_GATEWAY_HOST).
@@ -584,7 +585,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 conn.PlayerSent = true;
                 await SendWaypoints(remote, stream, ciphers, conn);
                 uint gold = PersonalStashOf(conn).Gold;
-                await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account)");
+                await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
                 await PopulateArea(remote, stream, ciphers, conn);
@@ -1574,6 +1575,29 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     double release = Animations.SpellRelease(Skills.ClassFor(conn.ClassRow).AnimatedObject);
     await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, CastMs(conn, gem.Effect) * release)));
     if (conn.ActionCount != action || conn.Closed) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
+    await FlyProjectile(remote, stream, ciphers, conn, projectile, from, to, m =>
+    {
+        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
+        // types separate so conversion and per-type mitigation apply.
+        var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        foreach (var (k, v) in Skills.EffectStats(gem.Effect, gem.Level, gem.Quality)) stats[k] = v;
+        var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, gem.Level, gem.Quality),
+                name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
+            .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false));
+        int damage = hit.RollTotal(Random.Shared);
+        bool critical = conn.Pools.SpellCriticalStrikeChance > 0
+            && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
+        if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
+        return (damage, critical);
+    });
+}
+
+// A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
+// to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
+static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    (string Id, int Speed) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)> damageTo,
+    bool log = true)
+{
     uint id = conn.NextObjectId++;
     double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
     var inv = System.Globalization.CultureInfo.InvariantCulture;
@@ -1631,11 +1655,11 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     if (startHeight is null) TerrainHeights.Forget(conn.Layout.Id, conn.Seed);
     var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Direction: direction, Height: startHeight);
     uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
-    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()),
+    await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()), !log ? null :
         $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})");
-    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 projectile 0x{id:x} enters wake zone");
+    await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 projectile 0x{id:x} enters wake zone");
     // 0x1ba's float is the move's duration in seconds, not a speed (InstanceProtocol.MoveTo).
-    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: endHeight is int e ? (uint)e : TerrainHeight),
+    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: endHeight is int e ? (uint)e : TerrainHeight), !log ? null :
         $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight?.ToString() ?? "terrain"} → {endHeight?.ToString() ?? "terrain"}" +
         (hitId != 0 ? $", will hit monster 0x{hitId:x}" : hitWall ? ", will hit a wall" : ""));
     await Task.Delay(TimeSpan.FromSeconds(cells / cellsPerSecond));
@@ -1644,31 +1668,8 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     if (hitId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(hitId);
     if (m is not null && m.Life > 0)
     {
-        // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
-        // types separate so conversion and per-type mitigation apply.
-        var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        foreach (var (k, v) in Skills.EffectStats(gem.Effect, gem.Level, gem.Quality)) stats[k] = v;
-        var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, gem.Level, gem.Quality),
-                name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
-            .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false));
-        int damage = hit.RollTotal(Random.Shared);
-        bool critical = conn.Pools.SpellCriticalStrikeChance > 0
-            && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
-        if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
-        uint life;
-        lock (conn.Monsters)
-        {
-            m.Life = (uint)Math.Max(0, (long)m.Life - damage);
-            life = m.Life;
-            conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
-            if (life == 0) { m.Aggro = false; m.Dead = true; }
-        }
-        if (life == 0)
-            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(hitId, [(StatKeys.HideMiniLifeBar, 1)]),
-                $"0x01b3 monster 0x{hitId:x} hide_mini_life_bar = 1");
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(hitId, life),
-            $"0x01b1 monster 0x{hitId:x} hit by {projectile.Id} for {damage}{(critical ? " (critical)" : "")}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
-        if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, hitId, m);
+        var (damage, critical) = damageTo(m);
+        await HitMonster(remote, stream, ciphers, conn, hitId, m, damage, $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
     }
     // The impact: on a monster or a wall the projectile's model becomes the explosion (Game_PROJECTILE_IMPACT_AO overrides
     // it; "none" turns it off), which plays its default animation; the object goes 1.5 s later. At the end of its range it
@@ -1682,6 +1683,28 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         if (conn.Closed) return;
     }
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}");
+}
+
+// A hit on a monster for damage: its life goes down (0x1b1) and at 0 it dies (MonsterKilled). A monster another hit has
+// killed meanwhile is left alone, so it dies only once (hits that land together).
+static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
+    int damage, string by, bool log = true)
+{
+    uint life;
+    lock (conn.Monsters)
+    {
+        if (m.Dead) return;
+        m.Life = (uint)Math.Max(0, (long)m.Life - damage);
+        life = m.Life;
+        conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
+        if (life == 0) { m.Aggro = false; m.Dead = true; }
+    }
+    if (life == 0)
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(id, [(StatKeys.HideMiniLifeBar, 1)]),
+            !log ? null : $"0x01b3 monster 0x{id:x} hide_mini_life_bar = 1");
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life),
+        !log && life > 0 ? null : $"0x01b1 monster 0x{id:x} hit by {by} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
+    if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
 }
 
 // The player's granted skills: the default attack with the unarmed weapon's stats and every stat the server set on the
@@ -2580,7 +2603,9 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
 static async Task DropLoot(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedMonster m, (int X, int Y) at)
 {
     if (Environment.GetEnvironmentVariable("Game_DROPS") == "0") return;
-    var drops = Drops.Roll(m.Level, m.Rarity, Random.Shared);
+    List<ItemDrops.Drop> drops = [.. Drops.Roll(m.Level, m.Rarity, Random.Shared)];
+    // And a pile of gold (ItemDrops.Gold), picked up into the stash's gold.
+    if (Drops.Gold(m.Level, m.Rarity, Random.Shared) is { } gold) drops.Add(gold);
     foreach (var drop in drops)
     {
         // A ring around the corpse, 3 to 6 cells out.
@@ -2807,6 +2832,10 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         if (conn.Layout.Waypoint is { } waypoint
             && Dist(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds), (waypoint.GridX, waypoint.GridY)) <= WaypointActivationRange)
             await ActivateWaypoint(remote, stream, ciphers, conn, "the player came near");
+        // Gold within GoldAutoLootRange is picked up without a click.
+        var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        foreach (var (id, gold) in conn.Instance.Ground.Within(at.X, at.Y, GoldAutoLootRange, IsGold))
+            await PickUpGold(remote, stream, ciphers, conn, id, gold, "auto-looted");
     }
 }
 
@@ -4423,6 +4452,11 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
         $"0x01ab player picks up world item 0x{id:x}");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
+    if (IsGold(ground))
+    {
+        await PickUpGold(remote, stream, ciphers, conn, id, ground, "picked up");
+        return;
+    }
     var items = ItemsOf(conn);
     var shape = ShapeOf(ground.Item) ?? new(1, 1, "");
     // With the inventory panel open the item goes to the cursor (when it is free), otherwise to the first free cell.
@@ -4472,6 +4506,17 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
         toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
+}
+
+static bool IsGold(WorldItemObject ground) => Items.ByHash(ground.Item.TypeHash)?.Class == ItemDrops.GoldClass;
+
+// Gold goes to the stash's gold of the character's league (S→C 0x2a9), not into the inventory.
+static async Task PickUpGold(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, WorldItemObject ground, string how)
+{
+    if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+    uint total = PersonalStashOf(conn).AddGold(ground.Item.StackSize);
+    await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (gold {how})");
+    await Send(remote, stream, ciphers, InstanceEntities.Gold(total), $"0x02a9 gold: {total} (+{ground.Item.StackSize} {how})");
 }
 
 // A pickup whose save fails puts the item back on the ground before the error closes the connection: it left the ground
@@ -4780,8 +4825,9 @@ static async Task PlaceItem(string remote, NetworkStream stream, ConnectionCiphe
 // character's name stands in.
 static AccountStash StashOf(ClientState conn) => conn.GuildStashOpen ? GuildStashOf(conn) : PersonalStashOf(conn);
 
-// The personal stash (and the account's gold, kept with it), whichever stash panel is open.
-static AccountStash PersonalStashOf(ClientState conn) => AccountStash.For(conn.Account ?? CharacterName(conn), Items);
+// The personal stash (and the account's gold, kept with it), whichever stash panel is open: the account's in the
+// character's league (AccountStash.Key).
+static AccountStash PersonalStashOf(ClientState conn) => AccountStash.For(AccountStash.Key(conn.Account ?? CharacterName(conn), conn.League), Items);
 
 // The guild stash: no guilds yet, so each account has its own (AccountStash.ForGuild).
 static AccountStash GuildStashOf(ClientState conn) => AccountStash.ForGuild(conn.Account ?? CharacterName(conn), Items);
@@ -5437,6 +5483,9 @@ sealed partial class Program
     // (object_size 2 each). Measured live 2026-10-18 (Positioned +0x294/+0x298): the client walked from (1301, 1250)
     // toward an item at (1278, 1304) and stopped at (1284, 1284), 20.9 cells away, on the first step inside the range.
     internal const double PickupReach = 20 + 2;
+    // How close (cells, centre to centre) gold on the ground is picked up by itself (RunPlayerTick): our own number, a
+    // little inside a click's PickupReach.
+    internal const double GoldAutoLootRange = 15;
 
     // NPCs.dat with the NPC types' components; loaded with the first town.
     internal static readonly Lazy<NpcCatalog> Npcs = new(() => NpcCatalog.Load());

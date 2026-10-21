@@ -97,6 +97,14 @@ sealed class InstanceGround
     {
         lock (_items) return [.. _items.Select(e => (e.Key, e.Value))];
     }
+
+    /// <summary>The items of <paramref name="which"/> within <paramref name="range"/> cells (centre to centre) of a cell.</summary>
+    public IReadOnlyList<(uint Id, WorldItemObject Item)> Within(int x, int y, double range, Func<WorldItemObject, bool> which)
+    {
+        lock (_items)
+            return [.. _items.Where(e => which(e.Value) && Math.Sqrt((double)(e.Value.GridX - x) * (e.Value.GridX - x)
+                + (double)(e.Value.GridY - y) * (e.Value.GridY - y)) <= range).Select(e => (e.Key, e.Value))];
+    }
 }
 
 /// <summary>A living monster of an instance, as it was when the last connection left: re-created there with this life on

@@ -23,6 +23,25 @@ public class AccountStashTests : IDisposable
     void Restart() => AccountStash.Forget(_account);
 
     [Fact]
+    public void Each_league_has_its_own_stash_and_gold_and_standard_keeps_the_accounts()
+    {
+        Assert.Equal(_account, AccountStash.Key(_account, "Standard"));
+        Assert.Equal(_account, AccountStash.Key(_account, null));
+        var catalog = new ItemCatalog(_folder);
+        var standard = AccountStash.For(AccountStash.Key(_account, "Standard"), catalog);
+        var allflame = AccountStash.For(AccountStash.Key(_account, "Allflame"), catalog);
+        var hardcore = AccountStash.For(AccountStash.Key(_account, "Hardcore Allflame"), catalog);
+        standard.AddGold(100);
+        allflame.AddGold(7);
+
+        Assert.Equal(100u, standard.Gold);
+        Assert.Equal(7u, allflame.Gold);
+        Assert.Equal(0u, hardcore.Gold);
+        AccountStash.Forget(AccountStash.Key(_account, "Allflame"));
+        Assert.Equal(7u, AccountStash.For(AccountStash.Key(_account, "Allflame"), catalog).Gold);
+    }
+
+    [Fact]
     public void Gold_changed_concurrently_is_saved_as_it_ends()
     {
         var stash = Open();
