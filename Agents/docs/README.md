@@ -54,4 +54,4 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 ## Working notes (history)
 - `re/007`–`010`: the notes these documents were consolidated from (login TCP, handshake, message tables, live instance
   notes). `re/009` still has the most complete login message tables.
-- `re/001`–`006`: early notes with known errors (for example "login is HTTPS"). Verify before use.
+- `re/003`–`004`: early notes with known errors (for example "login is HTTPS"). Verify before use.
