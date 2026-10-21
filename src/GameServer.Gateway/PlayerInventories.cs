@@ -21,6 +21,14 @@ sealed class PlayerInventories
     private string? _owner;   // the character whose save this is; null while the start kit is being built
     private ModCatalog? _mods;  // to save mods by their Mods.dat Id
     private Item? _startWeapon;
+    private bool _stale;  // dropped after a failed save: the database has the items as they are
+    private bool _unsaved;  // ChangeUnsaved changed something the database doesn't have yet
+    // Items offered to an NPC while the sell window is open (id → its cell in the offer). As in 3.29 an offered item stays
+    // in its inventory cell, a greyed imprint that keeps its size and collision, until the sale ends: nothing can take its
+    // cell, so a cancel always puts every item back where it was. In memory only: a sale that ends any other way (a
+    // disconnect, a crash) is a cancel, and the save already has every item in its place.
+    private readonly Dictionary<uint, (byte X, byte Y)> _offered = [];
+    private (byte Row, byte X, byte Y)? _heldFrom;  // where the held item was picked up from (PickUp)
 
     /// <summary>The class's start weapon while it waits on the ground for the character (as on the real game's Twilight
     /// Strand: the Gateway puts it near the spawn of each instance the character enters outside towns); null once picked
@@ -49,20 +57,33 @@ sealed class PlayerInventories
         }
     }
 
-    /// <summary>Writes the character's save (every inventory, with item ids and cells, and the start weapon).</summary>
+    /// <summary>Writes the character's save (every inventory, with item ids and cells, and the start weapon), in a
+    /// transaction of its own or the one it runs in (<see cref="Saves"/>).</summary>
     void Persist()
     {
-        if (_owner is null) return;
-        Dictionary<byte, List<CharacterSaves.SavedPlacement>> items;
-        CharacterSaves.SavedItem? startWeapon;
-        lock (_lock)
+        if (_owner is not { } owner) return;
+        Saves.Atomically(() =>
         {
-            items = _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
-                kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList());
-            startWeapon = _startWeapon is null ? null : CharacterSaves.ToSaved(_startWeapon, _mods);
-        }
-        // The rest of the save (skill bar, experience, passives) stays as it is.
-        CharacterSaves.SetInventories(_owner, items, startWeapon);
+            if (_stale) throw new InvalidOperationException($"items of {owner}: changed on a copy dropped after a failed save");
+            // A failed save leaves this copy ahead of the database: drop it, the next use loads the items as saved.
+            Saves.Db.OnRollback(() =>
+            {
+                _stale = true;
+                ByCharacter.TryRemove(new KeyValuePair<string, PlayerInventories>(owner, this));
+            });
+            // Copied under the items' lock, inside the transaction: an older copy never lands after a newer one. The rest
+            // of the save (skill bar, experience, passives) stays as it is.
+            Dictionary<byte, List<CharacterSaves.SavedPlacement>> saved;
+            CharacterSaves.SavedItem? weapon;
+            lock (_lock)
+            {
+                _unsaved = false;   // this copy has it (a rollback drops the whole object)
+                saved = _items.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key,
+                    kv => kv.Value.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods))).ToList());
+                weapon = _startWeapon is null ? null : CharacterSaves.ToSaved(_startWeapon, _mods);
+            }
+            CharacterSaves.SetInventories(owner, saved, weapon);
+        });
     }
 
     public static uint InventoryId(byte row) => (uint)row + 1;
@@ -152,6 +173,7 @@ sealed class PlayerInventories
                 inTheWay = [.. ItemsIn(row).Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height)];
             }
             if (inTheWay.Count > 1) { why = $"{inTheWay.Count} items in the way"; return null; }
+            if (inTheWay.Any(i => _offered.ContainsKey(i.Id))) { why = "an item offered for sale is in the way"; return null; }
             var items = ItemsIn(row);
             int amount = one ? 1 : held.Item.StackSize;
             if (inTheWay is [var under] && under.Item.TypeHash == held.Item.TypeHash && shape.MaxStack > 1 && under.Item.StackSize < shape.MaxStack)
@@ -230,12 +252,16 @@ sealed class PlayerInventories
         }
     }
 
-    /// <summary>The row an item is in (not the cursor), or null.</summary>
+    /// <summary>The row an item is in (not the cursor), or null; null for an item offered for sale too, which nothing may
+    /// move or use until the sale ends.</summary>
     public byte? RowOf(uint itemId)
     {
         lock (_lock)
+        {
+            if (_offered.ContainsKey(itemId)) return null;
             foreach (var (row, items) in _items)
                 if (row != Cursor && items.Any(i => i.Id == itemId)) return row;
+        }
         return null;
     }
 
@@ -266,6 +292,7 @@ sealed class PlayerInventories
             var items = ItemsIn(row);
             int at = items.FindIndex(i => i.Id == itemId);
             if (at < 0) { why = "no such item"; return null; }
+            if (_offered.ContainsKey(itemId)) { why = "offered for sale"; return null; }
             var item = items[at];
             if (socket < 0 || socket >= item.Item.Sockets.Count) { why = "no such socket"; return null; }
             var sockets = item.Item.Sockets.ToList();
@@ -298,6 +325,7 @@ sealed class PlayerInventories
             var items = ItemsIn(row);
             int at = items.FindIndex(i => i.Id == itemId);
             if (at < 0) { why = "no such item"; return null; }
+            if (_offered.ContainsKey(itemId)) { why = "offered for sale"; return null; }
             var item = items[at];
             if (socket < 0 || socket >= item.Item.Sockets.Count || item.Item.Sockets[socket].Gem is not { } gem) { why = "no gem in that socket"; return null; }
             var sockets = item.Item.Sockets.ToList();
@@ -404,6 +432,7 @@ sealed class PlayerInventories
             var items = ItemsIn(row);
             int at = items.FindIndex(i => i.Id == itemId);
             if (at < 0) { why = "no such item"; return null; }
+            if (_offered.ContainsKey(itemId)) { why = "offered for sale"; return null; }
             var stack = items[at];
             if (amount < 1 || amount >= stack.Item.StackSize) { why = $"cannot split {amount} off a stack of {stack.Item.StackSize}"; return null; }
             items[at] = stack with { Item = stack.Item with { StackSize = (ushort)(stack.Item.StackSize - amount) } };
@@ -416,16 +445,44 @@ sealed class PlayerInventories
     /// <summary>Replaces an item with a changed copy (same id and cell) in one save; null when it is not there.</summary>
     public InventoryItem? Change(byte row, uint itemId, Func<Item, Item> change)
     {
-        InventoryItem result;
+        var result = ChangeUnsaved(row, itemId, change);
+        if (result is not null) Persist();
+        return result;
+    }
+
+    /// <summary>
+    /// <see cref="Change"/> without saving it now: for flask charges from kills, which come by the hundred per second. It
+    /// is saved with the character's next save, or by <see cref="SaveUnsaved()"/> within
+    /// <see cref="CharacterSaves.ExperienceSaveInterval"/>; a crash loses at most those seconds of charges. Never for an
+    /// item's existence, place or mods.
+    /// </summary>
+    public InventoryItem? ChangeUnsaved(byte row, uint itemId, Func<Item, Item> change)
+    {
         lock (_lock)
         {
             var items = ItemsIn(row);
             int at = items.FindIndex(i => i.Id == itemId);
             if (at < 0) return null;
-            result = items[at] = items[at] with { Item = change(items[at].Item) };
+            _unsaved = true;
+            return items[at] = items[at] with { Item = change(items[at].Item) };
         }
-        Persist();
-        return result;
+    }
+
+    /// <summary>Saves what <see cref="ChangeUnsaved"/> changed, if anything.</summary>
+    public void SaveUnsaved()
+    {
+        bool unsaved;
+        lock (_lock) unsaved = _unsaved;
+        if (unsaved && !_stale) Persist();
+    }
+
+    /// <summary>Saves every loaded character's unsaved changes (the Gateway's timer, its shutdown). One that can't be
+    /// saved doesn't stop the others.</summary>
+    public static void SaveAllUnsaved()
+    {
+        foreach (var (character, items) in ByCharacter)
+            try { items.SaveUnsaved(); }
+            catch (Exception e) when (e is IOException or InvalidOperationException) { Console.WriteLine($"[saves] items of {character} not saved yet: {e.Message}"); }
     }
 
     /// <summary>Identifies every unidentified item with mods in a row (an NPC's Identify Items) in one save. Returns them
@@ -544,6 +601,7 @@ sealed class PlayerInventories
         lock (_lock)
         {
             if (row == Cursor || ItemsIn(Cursor).Count > 0 || RemoveCore(row, itemId) is not { } it) return null;
+            _heldFrom = (row, it.X, it.Y);   // where the held item goes back to as a sale imprint (Offer)
             var held = it with { X = 0, Y = 0 };
             ItemsIn(Cursor).Add(held);
             return held;
@@ -562,6 +620,7 @@ sealed class PlayerInventories
     {
         lock (_lock)
         {
+            if (_offered.ContainsKey(itemId)) return null;   // stays where it is until the sale ends (Sell, TakeBack)
             if (!_items.TryGetValue(row, out var l) || l.FindIndex(i => i.Id == itemId) is var at && at < 0) return null;
             var it = l[at];
             l.RemoveAt(at);
@@ -580,7 +639,7 @@ sealed class PlayerInventories
         {
             var list = ItemsIn(row);
             int at = list.FindIndex(i => i.Id == itemId);
-            if (at < 0) return null;
+            if (at < 0 || _offered.ContainsKey(itemId)) return null;
             var it = list[at];
             if (it.Item.StackSize > 1)
             {
@@ -605,12 +664,18 @@ sealed class PlayerInventories
     /// Takes <paramref name="amount"/> of the item type <paramref name="typeHash"/> from the stacks in <paramref name="row"/>
     /// (smallest stacks first), in one step and one save. Null (nothing changes) when the row holds fewer.
     /// </summary>
+    /// <summary>How many of an item type the row's stacks hold (not counting items offered for sale).</summary>
+    public int Count(byte row, uint typeHash)
+    {
+        lock (_lock) return ItemsIn(row).Where(i => i.Item.TypeHash == typeHash && !_offered.ContainsKey(i.Id)).Sum(i => (int)i.Item.StackSize);
+    }
+
     public Payment? Pay(byte row, uint typeHash, int amount)
     {
         Payment payment;
         lock (_lock)
         {
-            var stacks = ItemsIn(row).Where(i => i.Item.TypeHash == typeHash).OrderBy(i => i.Item.StackSize).ToList();
+            var stacks = ItemsIn(row).Where(i => i.Item.TypeHash == typeHash && !_offered.ContainsKey(i.Id)).OrderBy(i => i.Item.StackSize).ToList();
             if (stacks.Sum(i => (int)i.Item.StackSize) < amount) return null;
             var removed = new List<uint>();
             var changed = new List<InventoryItem>();
@@ -644,18 +709,28 @@ sealed class PlayerInventories
     public static void SetClass(string character, int characterRow)
     {
         ClassRows[character] = characterRow;
-        if (CharacterSaves.Load(character) is null && ByCharacter.TryRemove(character, out _))
+        if (CharacterSaves.Load(character) is not null) return;
+        CharacterSaves.ForgetExperience(character);   // a deleted character's, if any
+        if (ByCharacter.TryRemove(character, out var gone))
+        {
+            gone._stale = true;
             Console.WriteLine($"[gateway] {character}: no save any more (deleted?), items start over");
+        }
     }
 
-    /// <summary>The character's items, created with the class's start kit on first use.</summary>
+    /// <summary>Forgets the character's loaded items: the next use loads them from the database (tests: a restart).</summary>
+    internal static void Forget(string character) => ByCharacter.TryRemove(character, out _);
+
+    /// <summary>The character's items: as saved, or the class's start kit (saved at once) when it has no save. A saved item
+    /// the game data doesn't know stops the load (<see cref="UnknownSavedItemException"/>) and the save stays as it is.</summary>
     public static PlayerInventories For(string character, ItemCatalog catalog, string folder = "data") =>
         ByCharacter.GetOrAdd(character, name =>
         {
-            var inv = FromSave(name, catalog) ?? StartKit(catalog, folder, ClassRows.GetValueOrDefault(name, 1));
+            var saved = FromSave(name, catalog);
+            var inv = saved ?? StartKit(catalog, folder, ClassRows.GetValueOrDefault(name, 1));
             inv._owner = name;
             inv._mods = catalog.Mods;
-            inv.Persist();
+            if (saved is null) inv.Persist();
             return inv;
         });
 
@@ -666,15 +741,107 @@ sealed class PlayerInventories
         var inv = new PlayerInventories();
         foreach (var (row, items) in save.Inventories)
             foreach (var p in items)
-                if (CharacterSaves.FromSaved(p.Item, catalog) is { } item)
-                {
-                    inv.ItemsIn(row).Add(new InventoryItem(p.Id, p.X, p.Y, item));
-                    // Stash ids (AccountStash.FirstItemId up) are the account's; the character's own stay below them.
-                    if (p.Id < AccountStash.FirstItemId) inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
-                }
-                else Console.WriteLine($"[gateway] {character}: saved item type 0x{p.Item.Type:x8} is unknown, dropped");
+            {
+                inv.ItemsIn(row).Add(new InventoryItem(p.Id, p.X, p.Y, CharacterSaves.FromSaved(p.Item, catalog)));
+                // Stash ids (AccountStash.FirstItemId up) are the account's; the character's own stay below them.
+                if (p.Id < AccountStash.FirstItemId) inv._nextItemId = Math.Max(inv._nextItemId, p.Id + 1);
+            }
         if (save.StartWeapon is { } weapon) inv._startWeapon = CharacterSaves.FromSaved(weapon, catalog);
         return inv;
+    }
+
+    /// <summary>The items offered for sale, each at its cell in the offer window (its inventory cell keeps its imprint).</summary>
+    public IReadOnlyList<InventoryItem> Offered()
+    {
+        lock (_lock)
+            return [.. _items.Values.SelectMany(l => l).Where(i => _offered.ContainsKey(i.Id))
+                .Select(i => i with { X = _offered[i.Id].X, Y = _offered[i.Id].Y })];
+    }
+
+    /// <summary>
+    /// Offers an item for sale at (x, y) of the offer window. An item in an inventory stays in its cell, as the greyed
+    /// imprint; the held item goes back to the main inventory cell it was picked up from (or the first free one) and waits
+    /// there the same way. Returns the row and the item where it waits, or null (nothing changes): it is not there, it is
+    /// offered already, or there is no room for the held item.
+    /// </summary>
+    public (byte Row, InventoryItem Item)? Offer(byte row, uint itemId, byte x, byte y, Func<Item, Shape?> shapeOf)
+    {
+        (byte, InventoryItem) result;
+        bool moved = false;
+        lock (_lock)
+        {
+            if (_offered.ContainsKey(itemId) || ItemsIn(row).FirstOrDefault(i => i.Id == itemId) is not { } it) return null;
+            if (row == Cursor)
+            {
+                var shape = shapeOf(it.Item) ?? new(1, 1, "");
+                var main = ItemsIn(MainInventory);
+                bool FreeAt(byte cx, byte cy) => cx + shape.Width <= InstanceInventories.PlayerDefaults[MainInventory].Width
+                    && cy + shape.Height <= InstanceInventories.PlayerDefaults[MainInventory].Height
+                    && !main.Any(i => shapeOf(i.Item) is { } s && i.X < cx + shape.Width && cx < i.X + s.Width && i.Y < cy + shape.Height && cy < i.Y + s.Height);
+                (byte X, byte Y)? cell = _heldFrom is (MainInventory, var hx, var hy) && FreeAt(hx, hy) ? (hx, hy)
+                    : FreeCellIn(MainInventory, main, shape.Width, shape.Height, shapeOf);
+                if (cell is not { } at) return null;
+                ItemsIn(Cursor).Remove(it);
+                it = it with { X = at.X, Y = at.Y };
+                main.Add(it);
+                (row, moved) = (MainInventory, true);
+            }
+            _offered[itemId] = (x, y);
+            result = (row, it);
+        }
+        if (moved) Persist();
+        return result;
+    }
+
+    /// <summary>The items offered for sale where they wait in the inventories (their rows and cells).</summary>
+    public IReadOnlyList<(byte Row, InventoryItem Item)> OfferedInPlace()
+    {
+        lock (_lock) return [.. _items.SelectMany(kv => kv.Value.Where(i => _offered.ContainsKey(i.Id)).Select(i => (kv.Key, i)))];
+    }
+
+    /// <summary>An offered item taken back out of the offer: it is in its cell again. Returns its row and the item, or
+    /// null when it is not offered.</summary>
+    public (byte Row, InventoryItem Item)? TakeBack(uint itemId)
+    {
+        lock (_lock)
+        {
+            if (!_offered.Remove(itemId)) return null;
+            foreach (var (row, items) in _items)
+                if (items.FirstOrDefault(i => i.Id == itemId) is { } it) return (row, it);
+            return null;
+        }
+    }
+
+    /// <summary>The sale cancelled (or ended any other way): every offered item is in its cell again. Returns them with
+    /// their rows; nothing to save, the save has them there.</summary>
+    public IReadOnlyList<(byte Row, InventoryItem Item)> CancelOffers()
+    {
+        lock (_lock)
+        {
+            var back = _items.SelectMany(kv => kv.Value.Where(i => _offered.ContainsKey(i.Id)).Select(i => (kv.Key, i))).ToList();
+            _offered.Clear();
+            return back;
+        }
+    }
+
+    /// <summary>
+    /// The sale accepted: every offered item is gone and <paramref name="reward"/> (one stack of it) goes into the main
+    /// inventory, in one save. Null (nothing changes) when the reward doesn't all fit: the sale stays open.
+    /// </summary>
+    public Stacking? Sell(Item reward, Func<Item, Shape?> shapeOf)
+    {
+        Stacking result;
+        lock (_lock)
+        {
+            uint probe = _nextItemId;
+            var mainAfter = ItemsIn(MainInventory).Where(i => !_offered.ContainsKey(i.Id)).ToList();
+            if (reward.StackSize > 0 && StackInto(MainInventory, mainAfter, reward, shapeOf, ref probe).Left > 0) return null;
+            foreach (var items in _items.Values) items.RemoveAll(i => _offered.ContainsKey(i.Id));
+            _offered.Clear();
+            result = reward.StackSize > 0 ? StackInto(MainInventory, ItemsIn(MainInventory), reward, shapeOf, ref _nextItemId) : new([], [], 0);
+        }
+        Persist();
+        return result;
     }
 
     /// <summary>

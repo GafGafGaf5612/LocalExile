@@ -1,22 +1,50 @@
 using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Saves;
+using GameServer.Storage;
 
 namespace GameServer.Gateway.Tests;
 
-// One class: CharacterSaves.Folder is static, so these tests must not run in parallel with other save tests.
-public class PlayerInventoriesTests : IDisposable
+public class PlayerInventoriesTests
 {
     readonly string _folder = Path.Combine(Path.GetTempPath(), $"saves-{Guid.NewGuid():N}");
     readonly string _character = $"Picker{Guid.NewGuid():N}"[..20];
 
-    public PlayerInventoriesTests() => CharacterSaves.Folder = _folder;
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_folder)) Directory.Delete(_folder, recursive: true);
-    }
+    public PlayerInventoriesTests() => TestSaves.Ensure();
 
     // No item tables in this folder: the character starts with no kit, and items are kept by their type hash.
     PlayerInventories NewInventories() => PlayerInventories.For(_character, new ItemCatalog(_folder));
+
+    [Fact]
+    public void Items_changed_concurrently_are_saved_as_they_end()
+    {
+        var items = NewInventories();
+
+        // Every change saves; an older copy of the items must never land on disk after a newer one.
+        Parallel.For(0, 16, t =>
+        {
+            for (int i = 0; i < 40; i++)
+            {
+                var it = items.Add(PlayerInventories.MainInventory, (byte)t, (byte)(i % 5), Wand());
+                if (i % 2 == 0) items.Remove(PlayerInventories.MainInventory, it.Id);
+            }
+        });
+
+        var saved = CharacterSaves.Load(_character)!.Inventories.GetValueOrDefault(PlayerInventories.MainInventory) ?? [];
+        Assert.Equal(items.Items(PlayerInventories.MainInventory).Select(i => i.Id).Order(), saved.Select(p => p.Id).Order());
+    }
+
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("null")]
+    public void A_save_that_cannot_be_read_stops_the_login_and_every_change_and_stays_as_it_is(string content)
+    {
+        Saves.Db.Put(SaveDatabase.Table.Characters, _character, content);
+
+        Assert.Throws<UnreadableSaveException>(() => PlayerInventories.SetClass(_character, 1));   // the login
+        Assert.Throws<UnreadableSaveException>(() => NewInventories());                          // the items
+        Assert.Throws<UnreadableSaveException>(() => CharacterSaves.SetExperience(_character, 1)); // a change
+        Assert.Equal(content, Saves.Get(SaveDatabase.Table.Characters, _character));
+    }
 
     static Item Wand() => new(0xd9b1a12f, ["Base"], 0x40a1);
 
