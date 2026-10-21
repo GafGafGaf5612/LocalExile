@@ -256,8 +256,7 @@ guide.
 
 ## Doc caveats
 
-`docs/re/001`–`006` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`).
-`docs/superpowers/` and `docs/history/` are the original plans. Treat all of these as history, not reference.
+`docs/re/001`–`006` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`). Treat them as history, not reference.
 
 ## Jeweller's Orb (2026-10-21)
 

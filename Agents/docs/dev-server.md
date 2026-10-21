@@ -78,8 +78,8 @@ Defaults (no opt-in):
 
 - The welcome advertises our own web root for both the primary and backup roots: `http://127.0.0.1:8080/` (the listen
   URL with `0.0.0.0`/`+`/`*` as `127.0.0.1`; override with `Game_PATCH_WEB_ROOT`). It never names `patch.poecdn.com`.
-- The web root serves only `gateway_list.txt` (from `server/gateway_list.txt` or `Game_GATEWAY_LIST`, else local
-  gateways) and answers **404** for everything else. Nothing is proxied or redirected to the real CDN, so even a client
+- The web root serves only `gateway_list.txt` (the UTF-16 file `Game_GATEWAY_LIST` names, else the two local
+  gateways in the code) and answers **404** for everything else. Nothing is proxied or redirected to the real CDN, so even a client
   that decides to patch cannot download real files. Requested paths are logged (`[patch] GET …`).
 
 Opt-in CDN passthrough — only to repair stale local data on purpose, with a backup of `Client/`:
