@@ -661,6 +661,12 @@ sealed class PlayerInventories
     /// Takes <paramref name="amount"/> of the item type <paramref name="typeHash"/> from the stacks in <paramref name="row"/>
     /// (smallest stacks first), in one step and one save. Null (nothing changes) when the row holds fewer.
     /// </summary>
+    /// <summary>How many of an item type the row's stacks hold (not counting items offered for sale).</summary>
+    public int Count(byte row, uint typeHash)
+    {
+        lock (_lock) return ItemsIn(row).Where(i => i.Item.TypeHash == typeHash && !_offered.ContainsKey(i.Id)).Sum(i => (int)i.Item.StackSize);
+    }
+
     public Payment? Pay(byte row, uint typeHash, int amount)
     {
         Payment payment;

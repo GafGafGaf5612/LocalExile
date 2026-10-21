@@ -111,8 +111,13 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
 - **0xe3** (12 bytes, vtable `0x1435c0500`, write `0x141f97e40`, built by `0x142168e20`): Ctrl + click on a tab item.
   u16 BE tab, u32 BE item id, u8, u8, u8, u8 (live `00 a7 cd 00`: the middle two change per request). The Gateway moves
   it to the main inventory's first free cell, keeping its stash id.
-- **0xe1** (vtable `0x1435c00f8`, write `0x141f97810`: u32, flags, three u8, u8 n + n × 4 bytes) and **0xe2** (u16, u8;
-  `0x142168d00`, the unique / special pages) are not handled yet.
+- **0xe1** (vtable `0x1435c00f8`, write `0x141f97810`): Ctrl + click on an inventory item that has an affinity tab
+  (currency, maps, gems …) while the stash is open, whatever tab is shown: the client names the tab. Read from live bytes
+  (2026-10-20, Scroll of Wisdom, Armourer's Scrap, Orbs of Alteration and Transmutation, the Currency tab at index 5):
+  u32 BE item id, u8 flags, u8, u16 token (raw), u8 n, n × (u16 BE tab, u8 affinity); `00E1 00000008 00 00 225E 01 0005
+  03`, 14 bytes with one entry (the static notes said n × 4, the bytes say 3). The Gateway moves the item into that tab
+  like 0xe0.
+- **0xe2** (u16, u8; `0x142168d00`, the unique / special pages) is not seen yet.
 
 ## 6. The server's stash
 
@@ -137,16 +142,25 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   StashtabAffinityByItemClassCategory (gems, flasks, map keys …; maps of class Map too, which the table leaves out) and
   the special tabs' layouts below. StashTabAffinities lists, for each affinity, the StashType rows that may hold it
   (`__col2`): Currency → Normal, Premium, Quad, PC-bang Premium, Currency. Normal, premium and quad tabs hold anything; a
-  special tab only items with one of its affinities. A move into a tab that doesn't hold the item is refused (0x2a, 0xe0).
+  special tab only items with one of its affinities. A move into a tab that doesn't hold the item is refused (0x2a, 0xe0,
+  0xe1).
 - **Slots.** The currency, essence and fragment tabs give each item type one slot: CurrencyStashTabLayout /
   EssenceStashTabLayout / FragmentStashTabLayout `FirstSlotIndex` (a fragment slot also takes its `StoredItems`). The
   client shows slot n as cell (n, 0) and sends it so (live 2026-10-20: a Scroll of Wisdom dropped at (54, 0), (12, 0) and
   (1, 0); its slot is 1). An item dropped anywhere on such a tab goes into its own slot, onto what is there.
 - **Stack sizes.** A currency tab slot holds CurrencyItems `CurrencyTab_StackSize` (10 000 for most currency) instead of
   the item's stack size.
+- **Ctrl + click** into a tab (0xe0, 0xe1) puts a stack onto the tab's stacks of its type first (in a slotted tab, its
+  slot), then into free cells; what doesn't fit stays in the inventory. Out of a tab (0xe3), a stack tops up the
+  inventory's stacks of its type first, and what doesn't fit stays in the tab. Each is one transaction
+  (`ItemMoves`, [saves](../saves.md)).
 - **The map tab takes nothing yet.** The 3.29 client lists a map tab's maps by tier ([maps](../game/maps.md)), not at
   grid cells: two Beach Maps saved at (0, 0) and (0, 1) were not shown (live 2026-10-20). Until its layout is known,
   `StashRules.NotShown` refuses every item, and maps already there move out at load.
+- **A plain click on a special tab's item** sends C→S 0x7c (split) with the whole stack (live 2026-10-20, the currency
+  tab: `Amount` = the stack, `B` = 0; Shift + click sends `B` = 3 with the amount chosen). The Gateway puts the whole
+  stack on the cursor, keeping its id; a slot holding more than a stack (currency, up to 10 000) gives a full stack
+  (the item's max) and keeps the rest. A Shift + click split takes at most a full stack too.
 - **Repair.** Items a special tab can't show (an earlier build let any item into any tab) move at load into their slot,
   else into the first normal tab with room, and are saved there. One that finds no room stays where it is, saved.
 
@@ -154,6 +168,7 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
 
 - **Last tab:** switching to an already loaded tab sends nothing, so a switch followed by a logout without reopening
   the stash or moving an item is not seen; the next login opens on the tab before it.
-- Not checked live yet: the affinity window closing on S→C 0x136, and the special tabs other than currency and map.
-- Tab rename / colour / order / folders (0xcc, 0xd1 are logged), 0xe1 / 0xe2, the unique, divination and other special tabs, the
+- Not checked live yet: currency into its slot from Ctrl + click (0xe1), the affinity window closing on S→C 0x136, and
+  the special tabs other than currency and map.
+- Tab rename / colour / order / folders (0xcc, 0xd1 are logged), 0xe2, the unique, divination and other special tabs, the
   guild stash, stashes per league, and stashes in the other towns.
