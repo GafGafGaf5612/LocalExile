@@ -97,7 +97,7 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   tab names. Listener `0x140dcccf0` → VendorBuy (UI +0x7b8, vtable `0x1431356b8`, +0x380 = `0x14073d570`).
 - **C→S 0x88** (write `0x141f95380`): u32 BE shop item, u32 BE destination inventory (masked like 0x28's), u8 x, u8 y,
   u8, u8 flags, compact uint. The Gateway moves the item (0xbf on the tab, manager 1, and on the inventory) and takes the
-  price from the main inventory's stacks.
+  price from the main inventory's stacks, in one transaction.
 - **Prices**: item Base flag bit 7: u8 n + n × (u32 item type hash, compact uint amount), stored in the Base's +0xb8 list.
   Ours: 1 Scroll of Wisdom for everything (`NpcShops`); whether the tooltip shows it is not checked.
 - **Stock** is the server's (NPCShop only names shops): `NpcShops.Stock`.
@@ -126,6 +126,13 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   S→C 0x84 with object 0 ends it. Cancel also sends C→S 0x85 for it, Accept sends nothing, so the Gateway sends 0x84
   object 0 after every 0xb9. Verified live 2026-10-19: drops, Ctrl + click (19 items into the first free cells),
   Accept (the NPC's offer lands in the inventory) and Cancel (the items come back), walking afterwards.
+- **Offered items keep their cells.** In 3.29 an offered item leaves a greyed imprint in its inventory cell with its size
+  and collision, so a cancel always puts it back where it was. The Gateway does the same (`PlayerInventories.Offer`,
+  [saves](../saves.md) "The sell window"): the item stays in its cell in the save, nothing may take the cell, and the
+  sale itself is only in memory. With a 0xbf taking the item out of the inventory the client drew no imprint (live
+  2026-10-20), so the Gateway now leaves the client's inventory alone while the item is offered, and takes the sold items
+  out on Accept; whether the client then draws the imprint is being tested. Not checked either: what it shows when
+  Accept is refused for room.
 - S→C 0x87 opens the quest reward window (u16 = QuestRewardOffers row, `0x140c2b690`); a wrong row crashes the client.
 
 ## 6. Dev commands

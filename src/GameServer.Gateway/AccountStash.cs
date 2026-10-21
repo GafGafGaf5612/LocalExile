@@ -1,11 +1,14 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Storage;
 
 /// <summary>
 /// An account's stash (Agents/docs/protocol/18-stash.md): its tabs and their items, shared by every character of the
-/// account, the tab the stash was last on, and the account's gold (S→C 0x2a9, also shared by every character). One JSON file per account in data/stashes/ (git-ignored), written after
-/// every change. A new account gets <see cref="StarterTabs"/>.
+/// account, the tab the stash was last on, and the account's gold (S→C 0x2a9, also shared by every character). One row
+/// per account in the save database (<see cref="Saves"/>), written in a transaction after every change. A new account
+/// gets <see cref="StarterTabs"/>.
 /// <para>Item ids: characters number their items from 1, each on its own, so an item put into the stash gets a stash id
 /// (from <see cref="FirstItemId"/>, never reused: the next id is saved) and keeps it when a character takes it out.
 /// PlayerInventories does not count stash ids when it picks its next id.</para>
@@ -22,7 +25,11 @@ sealed class AccountStash
 
     public sealed record SavedTab(string Name, byte Type, byte R, byte G, byte B, List<CharacterSaves.SavedPlacement> Items);
 
-    public sealed record Save(List<SavedTab> Tabs, int LastTab = 0, uint NextItemId = FirstItemId, uint Gold = 0);
+    public sealed record Save(List<SavedTab> Tabs, int LastTab = 0, uint NextItemId = FirstItemId, uint Gold = 0)
+    {
+        /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
+        [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
+    }
 
     /// <summary>A StashType row's grid: StorageSlots × column 4 (NormalStash 12 × 12, QuadStash 24 × 24; the special tabs'
     /// slots are cells x = slot index of a StorageSlots-wide grid, as their layouts' FirstSlotIndex).</summary>
@@ -54,9 +61,7 @@ sealed class AccountStash
     }
 
     static readonly ConcurrentDictionary<string, AccountStash> ByAccount = new(StringComparer.OrdinalIgnoreCase);
-    static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
-
-    public static string Folder { get; set; } = Path.Combine("data", "stashes");
+    static readonly JsonSerializerOptions Opts = CharacterSaves.Opts;
 
     readonly string _account;
     readonly List<TabState> _tabs = [];
@@ -65,21 +70,29 @@ sealed class AccountStash
     uint _nextItemId = FirstItemId;
     uint _gold;
     ModCatalog? _mods;  // to save mods by their Mods.dat Id
+    Dictionary<string, JsonElement>? _unknown;  // fields of a newer build's save, written back as they are
+    bool _stale;  // dropped after a failed save: the database has the stash as it is
+    bool _itemsInHeader;  // loaded from a stash saved before tabs had rows: the next save writes every tab
 
     AccountStash(string account) => _account = account;
 
-    /// <summary>The account's stash, loaded from its file or made with the starter tabs.</summary>
+    /// <summary>The account's stash, loaded from the save database or made with the starter tabs. A saved item the game
+    /// data doesn't know stops the load (<see cref="UnknownSavedItemException"/>) and the save stays as it is.</summary>
     public static AccountStash For(string account, ItemCatalog catalog) =>
         ByAccount.GetOrAdd(account, name =>
         {
             var stash = new AccountStash(name) { _mods = catalog.Mods };
             var save = Load(name);
-            foreach (var t in save?.Tabs ?? [.. StarterTabs])
+            var headers = save?.Tabs ?? [.. StarterTabs];
+            for (int i = 0; i < headers.Count; i++)
             {
-                var tab = new TabState(t with { Items = [] });
-                foreach (var p in t.Items)
-                    if (CharacterSaves.FromSaved(p.Item, catalog) is { } item) tab.Items.Add(new InventoryItem(p.Id, p.X, p.Y, item));
-                    else Console.WriteLine($"[gateway] stash of {name}: saved item type 0x{p.Item.Type:x8} is unknown, dropped");
+                var tab = new TabState(headers[i] with { Items = [] });
+                // Each tab's items are a row of their own; a stash saved before that (imported) keeps them in its header,
+                // and its first save gives every tab its row.
+                var items = Saves.LoadStashTab<List<CharacterSaves.SavedPlacement>>(name, i, Opts);
+                if (items is null && headers[i].Items.Count > 0) stash._itemsInHeader = true;
+                foreach (var p in items ?? headers[i].Items)
+                    tab.Items.Add(new InventoryItem(p.Id, p.X, p.Y, CharacterSaves.FromSaved(p.Item, catalog)));
                 stash._tabs.Add(tab);
             }
             stash._lastTab = Math.Clamp(save?.LastTab ?? 0, 0, Math.Max(0, stash._tabs.Count - 1));
@@ -87,39 +100,40 @@ sealed class AccountStash
             uint used = stash._tabs.SelectMany(t => t.Items).Select(i => i.Id).Where(i => i >= FirstItemId).DefaultIfEmpty(FirstItemId - 1).Max();
             stash._nextItemId = Math.Max(save?.NextItemId ?? FirstItemId, used + 1);
             stash._gold = save?.Gold ?? 0;
-            if (save is null) stash.Persist();
+            stash._unknown = save?.Unknown;
+            if (save is null) stash.Persist([.. Enumerable.Range(0, stash._tabs.Count)]);
             return stash;
         });
 
-    static string PathOf(string account) =>
-        Path.Combine(Folder, string.Concat(account.Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_')) + ".json");
+    // A stash that can't be read throws UnreadableSaveException and stays as it is, instead of becoming the starter tabs,
+    // which For would write over it.
+    static Save? Load(string account) => Saves.Load<Save>(SaveDatabase.Table.Stashes, account, Opts);
 
-    static Save? Load(string account)
+    /// <summary>Saves the stash's header (tabs, last tab, next item id, gold: small) and the items of the tabs that
+    /// changed, in one transaction: a click in one tab writes that tab, not the whole stash.</summary>
+    void Persist(params int[] changedTabs) => Saves.Atomically(() =>
     {
-        string path = PathOf(account);
-        if (!File.Exists(path)) return null;
-        try { return JsonSerializer.Deserialize<Save>(File.ReadAllText(path), Opts); }
-        catch (Exception e) when (e is IOException or JsonException)
+        if (_stale) throw new InvalidOperationException($"stash of {_account}: changed on a copy dropped after a failed save");
+        // A failed save leaves this copy ahead of the database: drop it, the next use loads the stash as saved.
+        Saves.Db.OnRollback(() =>
         {
-            Console.WriteLine($"[gateway] stash {path} unreadable: {e.Message}");
-            return null;
-        }
-    }
-
-    void Persist()
-    {
-        Save save;
+            _stale = true;
+            ByAccount.TryRemove(new KeyValuePair<string, AccountStash>(_account, this));
+        });
+        // Copied under the stash's lock, inside the transaction: an older copy never lands after a newer one.
+        Save header;
+        List<(int Tab, string Items)> tabs;
         lock (_lock)
-            save = new([.. _tabs.Select(t => t.Saved with
-            {
-                Items = [.. t.Items.Select(i => new CharacterSaves.SavedPlacement(i.Id, i.X, i.Y, CharacterSaves.ToSaved(i.Item, _mods)))],
-            })], _lastTab, _nextItemId, _gold);
-        string path = PathOf(_account);
-        Directory.CreateDirectory(Folder);
-        string tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(save, Opts));
-        File.Move(tmp, path, overwrite: true);
-    }
+        {
+            header = new Save([.. _tabs.Select(t => t.Saved with { Items = [] })], _lastTab, _nextItemId, _gold) { Unknown = _unknown };
+            var write = _itemsInHeader ? Enumerable.Range(0, _tabs.Count) : changedTabs.Distinct();
+            tabs = [.. write.Select(i => (i, JsonSerializer.Serialize(
+                _tabs[i].Items.Select(it => new CharacterSaves.SavedPlacement(it.Id, it.X, it.Y, CharacterSaves.ToSaved(it.Item, _mods))).ToList(), Opts)))];
+            _itemsInHeader = false;   // a rollback drops this whole copy
+        }
+        Saves.Put(SaveDatabase.Table.Stashes, _account, JsonSerializer.Serialize(header, Opts));
+        foreach (var (tab, items) in tabs) Saves.PutStashTab(_account, tab, items);
+    });
 
     public int Count { get { lock (_lock) return _tabs.Count; } }
 
@@ -211,7 +225,7 @@ sealed class AccountStash
             it = items[at];
             items.RemoveAt(at);
         }
-        Persist();
+        Persist(tab);
         return it;
     }
 
@@ -241,7 +255,7 @@ sealed class AccountStash
             t.Items.Add(placed);
             result = (placed, displaced);
         }
-        Persist();
+        Persist(tab);
         return result;
     }
 
@@ -265,7 +279,7 @@ sealed class AccountStash
             items[items.IndexOf(under)] = grown;
             result = (grown, moved);
         }
-        Persist();
+        Persist(tab);
         return result;
     }
 
@@ -282,27 +296,28 @@ sealed class AccountStash
             if (at < 0 || amount < 1 || amount >= items[at].Item.StackSize) return null;
             result = items[at] = items[at] with { Item = items[at].Item with { StackSize = (ushort)(items[at].Item.StackSize - amount) } };
         }
-        Persist();
+        Persist(tab);
         return result;
     }
 
     /// <summary>The first free cell of a tab for an item of this size (column by column), or null.</summary>
     public (byte X, byte Y)? FreeCell(int tab, byte width, byte height, Func<Item, PlayerInventories.Shape?> shapeOf)
     {
-        lock (_lock)
-        {
-            var t = _tabs[tab];
-            for (int x = 0; x + width <= t.Grid.W; x++)
-                for (int y = 0; y + height <= t.Grid.H; y++)
-                    if (!t.Items.Any(i => shapeOf(i.Item) is { } s && i.X < x + width && x < i.X + s.Width && i.Y < y + height && y < i.Y + s.Height))
-                        return ((byte)x, (byte)y);
-            return null;
-        }
+        lock (_lock) return FreeCellIn(_tabs[tab], width, height, shapeOf);
+    }
+
+    static (byte X, byte Y)? FreeCellIn(TabState t, byte width, byte height, Func<Item, PlayerInventories.Shape?> shapeOf)
+    {
+        for (int x = 0; x + width <= t.Grid.W; x++)
+            for (int y = 0; y + height <= t.Grid.H; y++)
+                if (!t.Items.Any(i => shapeOf(i.Item) is { } s && i.X < x + width && x < i.X + s.Width && i.Y < y + height && y < i.Y + s.Height))
+                    return ((byte)x, (byte)y);
+        return null;
     }
 
     /// <summary>A fresh stash item id.</summary>
     public uint NewItemId() { lock (_lock) return _nextItemId++; }
 
-    /// <summary>Forgets the loaded stashes (tests).</summary>
-    internal static void Reset() => ByAccount.Clear();
+    /// <summary>Forgets the account's loaded stash: the next use loads it from the database (tests: a restart).</summary>
+    internal static void Forget(string account) => ByAccount.TryRemove(account, out _);
 }
