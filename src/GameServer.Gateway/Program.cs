@@ -1452,6 +1452,12 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
     {
         if (conn.Auras.Remove(skillId, out var old))
             ended = old;
+        else if (conn.Auras.Values.FirstOrDefault(a => a.EffectId == effectId) is { } same)
+        {
+            // One aura of a kind at a time: a second gem of the same aura can't start it.
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {name}: refused, {same.Name} already runs (skill 0x{same.SkillId:x4})");
+            return;
+        }
         else
         {
             var aura = new AuraCatalog.Aura(skillId, effect, effectId, name, conn.NextBuff++,
@@ -1876,16 +1882,22 @@ static bool IsInactive(ClientState conn, uint itemId) => InactiveItems.GetValueO
 
 static string CharacterName(ClientState conn) => string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character;
 
-// The active gems socketed in the equipped items in skill-list order: skill id, GrantedEffects row, gem name.
+// The active gems socketed in the equipped items in skill-list order: skill id, GrantedEffects row, gem name. Each gem keeps
+// its skill id while it stays socketed (GemSkillIds): the client binds skill bar keys by skill id.
 static IEnumerable<(ushort Id, int Effect, string Name)> GemSkillEffects(string? character)
 {
-    using var ids = Skills.SkillIds().Skip(1).GetEnumerator();
     string name = string.IsNullOrEmpty(character) ? "Exile" : character;
     var inactive = InactiveItems.GetValueOrDefault(name);
-    // Gems in an inactive item grant nothing, but still take their id, so the other skills keep theirs.
-    foreach (var (host, gem) in PlayerInventories.For(name, Items).SocketedGemsByItem())
-        if (Items.ByHash(gem.TypeHash) is { } t && Items.GemEffect(t) is int effect and >= 0 && ids.MoveNext() && inactive?.Contains(host) != true)
-            yield return (ids.Current, effect, t.Name);
+    var gems = PlayerInventories.For(name, Items).SocketedGemPlaces()
+        .Select(g => (g.ItemId, g.Socket, Type: Items.ByHash(g.Gem.TypeHash)))
+        .Select(g => (g.ItemId, g.Socket, g.Type, Effect: g.Type is { } t ? Items.GemEffect(t) : -1))
+        .Where(g => g.Effect >= 0).ToList();
+    var ids = GemSkillIdsOf.GetOrAdd(name, _ => new GemSkillIds())
+        .Assign([.. gems.Select(g => new GemSkillIds.Gem(g.ItemId, g.Socket, g.Effect))], GemSkillIdPool.Value);
+    // Gems in an inactive item grant nothing, but keep their id.
+    for (int i = 0; i < gems.Count; i++)
+        if (ids[i] is ushort id && inactive?.Contains(gems[i].ItemId) != true)
+            yield return (id, gems[i].Effect, gems[i].Type!.Name);
 }
 
 static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
@@ -1946,6 +1958,32 @@ static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiph
     await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone),
         $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats" +
         (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
+    if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
+}
+
+// Skills the player no longer has (their gems left the equipment): their auras and Righteous Fire end with them, and the
+// reserved mana comes back.
+static async Task EndSkillEffects(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IReadOnlyCollection<ushort> gone)
+{
+    List<AuraCatalog.Aura> ended;
+    lock (conn.Monsters)
+    {
+        ended = [.. conn.Auras.Values.Where(a => gone.Contains(a.SkillId))];
+        foreach (var aura in ended) conn.Auras.Remove(aura.SkillId);
+        if (ended.Count > 0)
+        {
+            conn.Pools = PoolsFor(conn, conn.Pools.Level);
+            conn.ApplyMovementSpeed();
+        }
+    }
+    foreach (var aura in ended)
+        await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, aura.Buff), $"0x01c2 player buff {aura.Buff}: {aura.Name} ends (its gem left)");
+    if (ended.Count > 0)
+    {
+        await SendCharacterStats(remote, stream, ciphers, conn, $"aura {string.Join(", ", ended.Select(a => a.Name))} off (gem left)");
+        await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}/{conn.Pools.Mana}, {ReservedMana(conn)} reserved");
+    }
+    if (conn.RighteousFire is { } rf && gone.Contains(rf.Skill)) await EndRighteousFire(remote, stream, ciphers, conn, "its gem left");
 }
 
 // The character's experience and passives from its save; returns its level. The saved experience decides the level: the
@@ -5004,6 +5042,10 @@ sealed partial class Program
         "base_spell_suppression_chance_%", "combined_spell_suppression_chance_%" }.Select(n => Stats.Key(n)).OfType<uint>()];
     // Item types (BaseItemTypes + data/item-types.json); loaded with the first player.
     internal static readonly ItemCatalog Items = new();
+    // Per character: the skill ids of the socketed gems (GemSkillIds), and the ids gem skills may use (after the default
+    // attack, the ids below FirstSkillId + 64 that no basic action uses: SkillCatalog.IsGemSkill; 55 in 3.29.3b).
+    internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, GemSkillIds> GemSkillIdsOf = new(StringComparer.OrdinalIgnoreCase);
+    internal static readonly Lazy<ushort[]> GemSkillIdPool = new(() => [.. Skills.SkillIds().Skip(1).Where(Skills.IsGemSkill)]);
     // Maps.dat: which area each map opens (MapDevice.cs); loaded with the first Activate.
     internal static readonly Lazy<MapDevice> MapDevices = new(() => MapDevice.Load("data", row => Items.Row(row)?.Hash));
     // The map device's portals are MultiplexPortals of the player type (1): the map device type (3) is only drawn after an
