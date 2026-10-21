@@ -41,6 +41,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     public IReadOnlyList<byte>? Links { get; init; }
     public int GemExperience { get; init; }
 
+    /// <summary>A gem's variant: its index in the SkillGems row's GemVariants (0 the normal gem, then the transfigured,
+    /// Trarthan or Vaal ones; SkillGem component +0x3c).</summary>
+    public int GemVariant { get; init; }
+
     public ItemRarity Rarity { get; init; }
 
     /// <summary>Unidentified items carry no <see cref="ModSection.Explicit"/> list (the client does not read it).</summary>
@@ -127,8 +131,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 // 0x1423f3f10 (write 0x1423f3e60): u8 +0x19, u8 +0x18, u8 flag (1: a u32 HASH32 follows, looked up in a
                 // table; stored at +0x20). Zeros: the map's tier and area come from Maps.dat by its type.
                 case "Map": w.U8(0).U8(0).U8(0); break;
-                // 0x14246eb00: i32 experience (-1: none), u32 +0x3c, u8 +0x10, u16 +0x40.
-                case "SkillGem": w.I32(GemExperience).U32(0).U8(0).U16(0); break;
+                // 0x14246eb00: i32 experience (-1: one level over the cap), u32 +0x3c the variant (the copy 0x14246fa50
+                // checks it against the GemVariants count and sets +0x10 bit 5 when it is not 0), u8 +0x10, u16 +0x40 an
+                // IndexableSupportGems index (0: none).
+                case "SkillGem": w.I32(GemExperience).U32((uint)GemVariant).U8(0).U16(0); break;
                 // 0x1421e2e20: u8 = bit0/bit1 (special, nothing more) | socket count << 2 | link group count << 5; per socket
                 // u8 colour << 1 | has gem, then the gem (item data without the length prefix); then a u8 per link group
                 // (assumed: the group's socket count).

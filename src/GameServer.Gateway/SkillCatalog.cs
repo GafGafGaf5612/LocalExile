@@ -45,9 +45,11 @@ sealed class SkillCatalog(string folder = "data")
     /// ImplicitStats = 1, ConstantStats with their values) and its per-level row (GESSPL FloatStats with
     /// BaseResolvedValues, e.g. Fireball's spell_minimum/maximum_base_fire_damage 9–14 at level 1, and AdditionalStats),
     /// then the cast: base_spell_cast_time_ms (GrantedEffects CastTime), hundred_times_casts_per_second, and the mana cost
-    /// (GEPL CostAmounts of CostTypes 0 = mana). No modifiers yet: the base values are the final ones.
+    /// (GEPL CostAmounts of CostTypes 0 = mana). Then the quality stats: GrantedEffectQualityStats per 1% quality in
+    /// thousandths, times the gem's quality, rounded toward zero (the wiki: rounded down;
+    /// the 16 negative values are unverified). No modifiers yet: the base values are the final ones.
     /// </summary>
-    public IReadOnlyList<(uint, int)> EffectStats(int effectRow, int level)
+    public IReadOnlyList<(uint, int)> EffectStats(int effectRow, int level, int quality = 0)
     {
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.Effects.Count) return [];
         var e = t.Effects[effectRow];
@@ -86,6 +88,8 @@ sealed class SkillCatalog(string folder = "data")
             Put("base_cooldown_count", cooldown.Uses);
             Put("virtual_total_cooldown_count", cooldown.Uses);
         }
+        if (quality > 0 && t.Quality.TryGetValue(effectRow, out var perQuality))
+            foreach (var (s, permille) in perQuality) stats[(uint)s + 1] = stats.GetValueOrDefault((uint)s + 1) + permille * quality / 1000;
         return [.. stats.Select(kv => (kv.Key, kv.Value))];
 
         void Put(string name, int value) { if (_stats.Key(name) is uint k) stats[k] = value; }
@@ -96,9 +100,9 @@ sealed class SkillCatalog(string folder = "data")
     /// The packet keeps the types separate so conversion and mitigation can be applied per type. Added damage and
     /// increased/more modifiers are applied by the caller; this is the skill's own base range.
     /// </summary>
-    public DamagePacket HitDamage(int effectRow, int level)
+    public DamagePacket HitDamage(int effectRow, int level, int quality = 0)
     {
-        var stats = EffectStats(effectRow, level).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var stats = EffectStats(effectRow, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         var result = DamagePacket.Empty;
         foreach (var type in DamageTypes.ConversionOrder)
         {
@@ -154,11 +158,16 @@ sealed class SkillCatalog(string folder = "data")
     public (int Flat, int Percent)? Reservation(int effectRow, int level)
     {
         if (_tables.Value is not { } t) return null;
-        int row = t.PerLevel.FindIndex(r => r.Effect == effectRow && r.Level == level);
+        int row = PickLevel(t.PerLevel, effectRow, level);
         if (row < 0 || row >= t.Reservations.Count) return null;
         var r = t.Reservations[row];
         return r.ManaFlat == 0 && r.ManaPercent == 0 ? null : (r.ManaFlat, r.ManaPercent);
     }
+
+    /// <summary>The Vaal souls a use of a skill needs at a level (GrantedEffectsPerLevel VaalSouls; 0 for skills that are
+    /// not Vaal skills).</summary>
+    public int VaalSouls(int effectRow, int level) =>
+        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.VaalSouls[row] : 0;
 
     /// <summary>The mana a GrantedEffects Id reserves at a level, or null.</summary>
     public (int Flat, int Percent)? Reservation(string effectId, int level) =>
@@ -413,12 +422,14 @@ sealed class SkillCatalog(string folder = "data")
     // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
     // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
     // Reservations: per GEPL row the ManaReservationFlat and ManaReservationPercent (permyriad), parallel to PerLevel.
-    // Cooldowns: per GEPL row its Cooldown (ms) and StoredUses, parallel to PerLevel.
+    // Cooldowns: per GEPL row its Cooldown (ms) and StoredUses, parallel to PerLevel. VaalSouls: per GEPL row its VaalSouls.
+    // Quality: per GrantedEffects row its (quality stat, permille).
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
         List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
         List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
         List<(int, int)[]> StatSetLevelStats, List<int> ManaCost,
-        List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns)
+        List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
+        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality)
     {
         public static Tables? Load(string folder)
         {
@@ -457,6 +468,7 @@ sealed class SkillCatalog(string folder = "data")
             var mana = new List<int>();
             var reservations = new List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)>();
             var cooldowns = new List<(int, int)>();
+            var vaalSouls = new List<int>();
             foreach (var r in p.RootElement.EnumerateArray())
             {
                 perLevel.Add((Int(r, "GrantedEffect"), Int(r, "Level")));
@@ -466,6 +478,14 @@ sealed class SkillCatalog(string folder = "data")
                 reservations.Add((Math.Max(0, Int(r, "ManaReservationFlat")), Math.Max(0, Int(r, "ManaReservationPercent")),
                     Math.Max(0, Int(r, "LifeReservationFlat")), Math.Max(0, Int(r, "LifeReservationPercent"))));
                 cooldowns.Add((Math.Max(0, Int(r, "Cooldown")), Math.Max(0, Int(r, "StoredUses"))));
+                vaalSouls.Add(Math.Max(0, Int(r, "VaalSouls")));
+            }
+            var quality = new Dictionary<int, (int, int)[]>();
+            if (File.Exists(Table("GrantedEffectQualityStats")))
+            {
+                using var q = JsonDocument.Parse(File.ReadAllBytes(Table("GrantedEffectQualityStats")));
+                foreach (var r in q.RootElement.EnumerateArray())
+                    quality.TryAdd(Int(r, "GrantedEffectsKey"), Pairs(Ints(r, "StatsKeys"), Ints(r, "StatsValuesPermille")));
             }
             var setLevels = new List<(int, int)>();
             var levelStats = new List<(int, int)[]>();
@@ -475,7 +495,8 @@ sealed class SkillCatalog(string folder = "data")
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
                     .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
             }
-            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana, reservations, cooldowns);
+            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana, reservations, cooldowns,
+                vaalSouls, quality);
         }
     }
 }

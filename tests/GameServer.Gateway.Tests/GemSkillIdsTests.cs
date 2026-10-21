@@ -109,4 +109,14 @@ public class GemSkillIdsTests
 
         Assert.Equal([(ushort?)0x101, null], ids.Assign([G(1, 0, Haste), G(1, 1, Fireball)], [0x101]));
     }
+
+    [Fact]
+    public void A_Vaal_gems_two_skills_keep_their_own_ids()
+    {
+        const int VaalFireball = 40;
+        var ids = new GemSkillIds();
+        ids.Assign([G(1, 0, Haste), G(1, 1, VaalFireball), G(1, 1, Fireball)], Pool);
+
+        Assert.Equal([(ushort?)0x102, 0x103], ids.Assign([G(1, 1, VaalFireball), G(1, 1, Fireball)], Pool));
+    }
 }

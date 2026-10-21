@@ -344,10 +344,11 @@ the creation blob and again as 0x1b3 after entering.
 **The class byte** of the Player component is Characters.dat **IntegerId** (Marauder 1, Witch 3), not the row: with row
 1 the panel showed Marauder.
 
-**Gem skills:** each active gem socketed in an equipped item grants its skill (SkillGems → first GemEffects variant →
-GrantedEffect at level 1, `ItemCatalog.GemEffect`), sent in the Actor skill list after the default attack. **Support
+**Gem skills:** each active gem socketed in an equipped item grants its skill (SkillGems → the gem's GemEffects variant →
+GrantedEffect at the gem's level, `ItemCatalog.GemEffects`; [19](19-gems.md) §3), sent in the Actor skill list after the
+default attack. **Support
 gems must not be granted:** a support's effect in the list crashed the client in the skill reader (`0x141ee795a`, via
-`0x142197b59` → `0x141eea955`). Supports and links do nothing yet. Gem skills carry their level-1 stats and can be cast
+`0x142197b59` → `0x141eea955`). Supports and links do nothing yet. Gem skills carry their level's stats and can be cast
 ([11](11-skills.md) §9–10).
 
 ## 7. Start kit, saves and dev command
