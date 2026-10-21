@@ -1893,6 +1893,7 @@ static string? SkillBarEntry(ClientState conn, ushort skillId) =>
 // keeps its own default.
 static async Task SendSkillBar(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
+    FillSkillBar(conn);
     if (CharacterSaves.Load(CharacterName(conn))?.SkillBar is not { Count: > 0 } bar) return;
     var ids = new ushort[InstanceProtocol.SkillBarSlots];
     var byEffect = GemSkillEffects(conn.Character).Select(g => (g.Id, Effect: Skills.EffectId(g.Effect)))
@@ -1907,6 +1908,22 @@ static async Task SendSkillBar(string remote, NetworkStream stream, ConnectionCi
     if (!bar.ContainsKey(0)) ids[0] = SkillCatalog.FirstSkillId;
     await Send(remote, stream, ciphers, InstanceProtocol.SkillBar(ids),
         $"0x0053 skill bar: {string.Join(", ", ids.Select((id, i) => id == 0 ? null : $"slot {i} 0x{id:x4}").OfType<string>())}");
+}
+
+// Puts the skills that are nowhere on the saved bar into its empty slots (SkillBarLayout), leaving every other slot as
+// it is: the default attack on the left mouse button of a new bar, each gem skill of the equipment on the right mouse
+// button or the next empty slot. True when the bar changed (saved).
+static bool FillSkillBar(ClientState conn)
+{
+    string character = CharacterName(conn);
+    var bar = CharacterSaves.Load(character)?.SkillBar ?? [];
+    string attack = SkillEffectId(conn, SkillCatalog.FirstSkillId)!;
+    var gems = GemSkillEffects(conn.Character).Select(g => Skills.EffectId(g.Effect)).OfType<string>().ToList();
+    var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry));
+    foreach (var (slot, entry) in added) CharacterSaves.SetSkillBar(character, (byte)slot, entry);
+    if (added.Count > 0)
+        Console.WriteLine($"[gateway] {character} skill bar: {string.Join(", ", added.Select(a => $"{a.Entry} on slot {a.Slot}"))}");
+    return added.Count > 0;
 }
 
 // The GrantedEffects Id behind a skill id of the player (the default attack or a gem skill), or null.
@@ -2011,7 +2028,9 @@ static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiph
     // The update can take a bound skill off the skill bar (live 2026-10-21: Haste's slot emptied when its aura went on,
     // and came back with the area change's 0x53), and a gem socketed again does not get its slot back by itself, so the
     // saved bar goes out again. Not when a skill the saved bar never had was added: the client binds a new skill to a free
-    // slot itself (C→S 0x4e), and the bar sent now would clear it there.
+    // slot itself (C→S 0x4e), and the bar sent now would clear it there. A new gem skill gets an empty slot of the saved
+    // bar first (FillSkillBar: the right mouse button, then Q W E R T …), so it goes out with the bar.
+    FillSkillBar(conn);
     var saved = CharacterSaves.Load(CharacterName(conn))?.SkillBar?.Values;
     if (added.All(id => SkillEffectId(conn, id) is { } effect && saved?.Contains(effect) == true))
         await SendSkillBar(remote, stream, ciphers, conn);
