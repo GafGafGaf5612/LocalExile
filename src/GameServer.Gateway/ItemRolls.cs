@@ -26,10 +26,12 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
 
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
-    /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.</summary>
+    /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.
+    /// Fractured mods stay, first, and count towards the affixes.</summary>
     public Item Roll(Item item, ItemRarity rarity, Random rng, (int Count, int MaxEach)? shape = null)
     {
-        var kept = item.Mods.Where(m => m.Section != ModSection.Explicit).ToList();
+        var fractured = item.FracturedIndexes();
+        var kept = item.Mods.Where((m, i) => m.Section != ModSection.Explicit || fractured.Contains(i)).ToList();
         var result = item with { Rarity = rarity, Mods = kept, NameWords = [] };
         if (catalog.ByHash(item.TypeHash) is not { } t || !t.Components.Contains("Mods") || rarity is not (ItemRarity.Magic or ItemRarity.Rare))
             return result;
@@ -37,7 +39,8 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
             ? (rng.Next(1, 3), 1)
             : (rng.Next(12) switch { < 7 => 4, < 11 => 5, _ => 6 }, 3));
         var pool = Pool(t, item.ItemLevel).ToList();
-        var chosen = new List<ModCatalog.Mod>();
+        var chosen = kept.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>().ToList();
+        int keptCount = chosen.Count;
         while (chosen.Count < count)
         {
             var allowed = pool.Where(p => chosen.Count(c => c.GenerationType == p.Mod.GenerationType) < maxEach &&
@@ -46,14 +49,14 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
             chosen.Add(Pick(allowed, rng));
         }
         // Prefixes first, as the tooltip lists them.
-        var explicits = chosen.OrderBy(m => m.GenerationType).Select(m => m.Roll(ModSection.Explicit, rng));
+        var explicits = chosen.Skip(keptCount).OrderBy(m => m.GenerationType).Select(m => m.Roll(ModSection.Explicit, rng));
         return result with { Mods = [.. kept, .. explicits], NameWords = rarity == ItemRarity.Rare ? RareName(t, rng) : [] };
     }
 
     /// <summary>Divine Orb: every explicit mod keeps its place and tier and rerolls only its values (a new tier would
     /// change the mod, and the client reorders the tooltip by mod). Null when the item has no explicit mods.</summary>
-    public Item? Reforge(Item item, Random rng) => !item.Mods.Any(m => m.Section == ModSection.Explicit) ? null
-        : item with { Mods = [.. item.Mods.Select(m => m.Section == ModSection.Explicit && catalog.Mods.ByHash(m.Hash) is { } mod
+    public Item? Reforge(Item item, Random rng) => item.Mods.Count(m => m.Section == ModSection.Explicit) <= item.FracturedCount ? null
+        : item with { Mods = [.. item.Mods.Select((m, i) => m.Section == ModSection.Explicit && !item.FracturedIndexes().Contains(i) && catalog.Mods.ByHash(m.Hash) is { } mod
             ? mod.Roll(ModSection.Explicit, rng) : m)] };
 
     /// <summary>One more explicit affix, drawn by weight from the base's pool at its item level: no family already on the
@@ -72,6 +75,8 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
             ? mods.FindLastIndex(m => m.Section == ModSection.Explicit && catalog.Mods.ByHash(m.Hash)?.GenerationType == Prefix) + 1
             : mods.Count;
         if (at == 0) at = mods.FindIndex(m => m.Section == ModSection.Explicit) is int e and >= 0 ? e : mods.Count;
+        // Never before the fractured mods, which stay the first explicits.
+        if (item.FracturedIndexes() is { Count: > 0 } f) at = Math.Max(at, f.Max() + 1);
         mods.Insert(at, added.Roll(ModSection.Explicit, rng));
         return item with { Mods = mods };
     }
@@ -92,7 +97,8 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     /// (<see cref="AddAffix"/>, at most three of each kind); the others stay.</summary>
     public Item ReplaceAffixes(Item item, int count, Random rng)
     {
-        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit).Select(p => p.i)
+        var fractured = item.FracturedIndexes();
+        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit && !fractured.Contains(p.i)).Select(p => p.i)
             .OrderBy(_ => rng.Next()).Take(count).ToHashSet();
         var result = item with { Mods = [.. item.Mods.Where((_, i) => !explicits.Contains(i))] };
         for (int n = 0; n < explicits.Count && AddAffix(result, 3, rng) is { } added; n++) result = added;

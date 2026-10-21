@@ -23,7 +23,8 @@ static class CurrencyEffects
     /// rarity and name stay. Refused for anything else, or an item without explicit affixes.</summary>
     public static Item? Annulment(Item item, Random random)
     {
-        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit).Select(p => p.i).ToList();
+        var fractured = item.FracturedIndexes();
+        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit && !fractured.Contains(p.i)).Select(p => p.i).ToList();
         if (item.Rarity is not (ItemRarity.Magic or ItemRarity.Rare) || explicits.Count == 0) return null;
         int gone = explicits[random.Next(explicits.Count)];
         return item with { Mods = [.. item.Mods.Where((_, i) => i != gone)] };
@@ -40,16 +41,16 @@ static class CurrencyEffects
         item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") || rolls.AddAffix(item, 3, random) is not { } added ? null
             : added with { Rarity = ItemRarity.Rare, Identified = true, NameWords = rolls.RareName(item, random) };
 
-    /// <summary>Orb of Augmentation: a magic item with fewer than this server's 4 affixes (two prefixes, two suffixes,
-    /// as the Orb of Alteration rolls) gets one more; its affixes and rarity stay. Anything else is refused.</summary>
+    /// <summary>Orb of Augmentation: a magic item with a free prefix or suffix (at most one of each) gets one more affix;
+    /// its affixes and rarity stay. Anything else is refused.</summary>
     public static Item? Augmentation(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null : rolls.AddAffix(item, 2, random);
+        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null : rolls.AddAffix(item, 1, random);
 
-    /// <summary>Orb of Alteration (as asked for this server, not the official 1-2): a magic item with mods gets new
-    /// affixes, 1-4 of them with at most two prefixes and two suffixes, each tier drawn by weight. Anything else is refused.</summary>
+    /// <summary>Orb of Alteration (as the official one): a magic item with mods gets new affixes, 1-2 with at most one
+    /// prefix and one suffix, each tier drawn by weight. Anything else is refused.</summary>
     public static Item? Alteration(Item item, ItemRolls rolls, Random random) =>
         item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null
-            : rolls.Roll(item, ItemRarity.Magic, random, (random.Next(1, 5), 2)) with { Identified = true };
+            : rolls.Roll(item, ItemRarity.Magic, random) with { Identified = true };
 
     /// <summary>Orb of Transmutation: a normal item with mods becomes an identified magic one with 1-2 random affixes
     /// (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
@@ -58,13 +59,16 @@ static class CurrencyEffects
             : rolls.Roll(item, ItemRarity.Magic, random) with { Identified = true };
 
     /// <summary>Orb of Scouring: a magic, rare or unique item becomes normal; its explicit mods and name go, the base
-    /// (implicit, enchant …) mods stay. On this server it also sets an armour piece's or weapon's quality back to 0. Refused when
+    /// (implicit, enchant …) mods stay. On this server it also sets an armour piece's, weapon's or flask's quality back to 0. Refused when
     /// there is nothing to remove.</summary>
     public static Item? Scouring(Item item)
     {
-        bool armourQuality = (item.Components.Contains("Armour") || item.Components.Contains("Weapon")) && item.Quality > 0;
+        bool armourQuality = (item.Components.Contains("Armour") || item.Components.Contains("Weapon") || item.Components.Contains("Flask")) && item.Quality > 0;
         if (item.Rarity == ItemRarity.Normal && !armourQuality) return null;
-        return item with { Rarity = ItemRarity.Normal, Identified = true, NameWords = [], Mods = [.. item.Mods.Where(m => m.Section != ModSection.Explicit)],
+        // Fractured mods stay; an item that keeps one stays magic (a normal item shows no explicit mods).
+        var fractured = item.FracturedIndexes();
+        return item with { Rarity = fractured.Count > 0 ? ItemRarity.Magic : ItemRarity.Normal, Identified = true, NameWords = [],
+            Mods = [.. item.Mods.Where((m, i) => m.Section != ModSection.Explicit || fractured.Contains(i))],
             Quality = armourQuality ? (byte)0 : item.Quality };
     }
 
@@ -91,6 +95,28 @@ static class CurrencyEffects
         Item result = item.Rarity != ItemRarity.Rare || roll >= 90 ? rolls.Roll(item, ItemRarity.Rare, random)
             : rolls.ReplaceAffixes(item, roll switch { < 20 => 1, < 40 => 2, < 60 => 3, < 80 => 4, _ => 5 }, random);
         return result with { Corrupted = true, Identified = true };
+    }
+
+    public const string GlassblowersBauble = "Metadata/Items/Currency/CurrencyFlaskQuality";
+
+    /// <summary>Glassblower's Bauble: +1% quality on a flask (any rarity), up to 20%. Refused for other items or at 20%.</summary>
+    public static Item? Glassblower(Item item) =>
+        !item.Components.Contains("Flask") || !item.Components.Contains("Quality") || item.Quality >= MaximumQuality ? null
+            : item with { Quality = (byte)(item.Quality + 1) };
+
+    public const string FracturingOrb = "Metadata/Items/Currency/CurrencyFractureRare";
+
+    /// <summary>Fracturing Orb (as the official one): a rare item with at least four explicit mods, not corrupted and not
+    /// fractured yet, has one random explicit mod fractured: it moves to the front of the explicits and from then on no
+    /// currency removes or changes it (Scouring, Chaos, Annulment, Divine, Vaal …).</summary>
+    public static Item? Fracture(Item item, Random random)
+    {
+        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit).ToList();
+        if (item.Rarity != ItemRarity.Rare || item.Corrupted || item.FracturedCount > 0 || explicits.Count < 4) return null;
+        var (mod, index) = explicits[random.Next(explicits.Count)];
+        var mods = item.Mods.Where((_, i) => i != index).ToList();
+        mods.Insert(explicits[0].i, mod);
+        return item with { Mods = mods, FracturedCount = 1 };
     }
 
     public const string OrbOfChance = "Metadata/Items/Currency/CurrencyUpgradeRandomly";

@@ -337,14 +337,14 @@ tier drawn by weight; implicits kept. Anything else is refused and nothing is sp
 ### Orb of Alteration (2026-10-21, verified live)
 
 `CurrencyRerollMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Alteration` rerolls a magic item's
-affixes: 1-4 of them, at most two prefixes and two suffixes, each tier drawn by weight (`ItemRolls.Roll` with a shape).
-This is a server choice; the official orb gives 1-2. Anything but a magic item with mods is refused, nothing spent.
+affixes as the official orb: 1-2, at most one prefix and one suffix, each tier drawn by weight (`ItemRolls.Roll`).
+Anything but a magic item with mods is refused, nothing spent.
 
 ### Orb of Augmentation (2026-10-21, verified live)
 
 `CurrencyAddModToMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Augmentation` adds one affix to a magic
-item (`ItemRolls.AddAffix`): drawn by weight from the base's pool, no family already on it, at most two prefixes and two
-suffixes (this server's magic limit, as the Orb of Alteration). Old affixes and rarity stay. A full item, or anything
+item (`ItemRolls.AddAffix`): drawn by weight from the base's pool, no family already on it, at most one prefix and one
+suffix (the magic limit, as the Orb of Alteration). Old affixes and rarity stay. A full item, or anything
 but a magic item, is refused and nothing is spent.
 
 ### Regal Orb (2026-10-21, verified live)
@@ -381,8 +381,27 @@ accepts a normal armour piece with quality). Other items, or 20%, are refused an
 
 `CurrencyUpgradeRandomly`, same handler (0x71, 0x72 with Shift). A server rule, not the official one (which can also
 make uniques): `CurrencyEffects.Chance` turns a normal weapon or armour piece (Weapon or Armour component) rare with a
-30% chance (4-6 affixes, rare name) and magic otherwise (2-4 affixes, at most two prefixes and two suffixes, as the
-Orb of Alteration); the item ends identified. Anything else is refused and nothing is spent.
+30% chance (4-6 affixes, rare name) and magic otherwise (2-4 affixes, at most two prefixes and two suffixes, a server
+rule above the normal magic limit); the item ends identified. Anything else is refused and nothing is spent.
+
+### Glassblower's Bauble (2026-10-21, verified live)
+
+`CurrencyFlaskQuality`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Glassblower`: +1% quality on an item with
+a Flask component, any rarity, up to 20%. The Orb of Scouring makes a flask normal, removes its explicit mods and sets its
+quality back to 0, as for armour and weapons.
+
+### Fracturing Orb (2026-10-21, verified live)
+
+`CurrencyFractureRare`, same handler (0x71, 0x72 with Shift). As the official orb: a rare item with at least four explicit
+mods, not corrupted and not fractured yet, has one random explicit mod fractured (`CurrencyEffects.Fracture`). The mod
+moves to the front of the explicits and `Item.FracturedCount` (saved) counts it. Every other currency keeps fractured
+mods: Chaos, Vaal and the other rerolls roll around them (they count towards the affix limits), Annulment and Divine
+skip them, Augmentation / Exalted insert after them, and Scouring removes everything else (the item stays magic so the
+mod still shows).
+
+The client is told through the magic properties' u8 `+0x7a` (the byte right after their u16 flags, sent 0 before):
+the fractured explicit count, the first explicits being the fractured ones. Verified live: those mods show fractured.
+Tried first and wrong: the Mods component's flag bit 4 with a u8 after the flags shifted the item (it showed magic).
 
 ### Vaal Orb and corruption (2026-10-21, verified live)
 

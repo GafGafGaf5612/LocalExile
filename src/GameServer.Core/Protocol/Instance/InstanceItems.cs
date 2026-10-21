@@ -54,6 +54,14 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// and corrupted-refused crafting ("input_is_corrupted", 0x141d68e64).</summary>
     public bool Corrupted { get; init; }
 
+    /// <summary>Fracturing Orb: the first this many explicit mods are fractured (kept by every other currency). Sent as
+    /// the magic properties' u8 +0x7a, right after their flags; the client shows those mods fractured.</summary>
+    public byte FracturedCount { get; init; }
+
+    /// <summary>The indexes in <see cref="Mods"/> of the fractured explicit mods.</summary>
+    public IReadOnlySet<int> FracturedIndexes() => Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit)
+        .Take(FracturedCount).Select(p => p.i).ToHashSet();
+
     /// <summary>Implicit, explicit and other mods, written into the Mods component per <see cref="ModSection"/>.</summary>
     public IReadOnlyList<ItemMod> Mods { get; init; } = [];
 
@@ -172,7 +180,8 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
         bool named = Identified && NameWords.Count > 0;
         ushort flags = (ushort)((byte)Rarity & 7 | (Identified ? 0x8 : 0) | (named ? 0x100 : 0));
         foreach (var s in sections.Keys) flags |= (ushort)(1 << (byte)s);
-        w.U16(flags).U8(0);
+        // +0x7a: how many of the first explicit mods are fractured (verified live: they show fractured).
+        w.U16(flags).U8(FracturedCount);
         foreach (var s in new[] { ModSection.Implicit, ModSection.Enchant, ModSection.Scourge, ModSection.Hidden, ModSection.Explicit })
         {
             // The name comes between the lists read for every item and the identified-only explicit list.
