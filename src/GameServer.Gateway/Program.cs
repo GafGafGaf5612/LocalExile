@@ -593,6 +593,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await PlaceStartWeapon(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 await SpawnTownStash(remote, stream, ciphers, conn);
+                await SpawnQuestRoomObjects(remote, stream, ciphers, conn);
                 await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                 await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
@@ -623,21 +624,41 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
     byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null)
 {
     uint id = conn.NextObjectId++;
-    // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife); mods are not sent yet.
-    uint life = (uint)(Monsters.BaseLife(variety, level) ?? 100);
+    // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife) and the rarity's
+    // monster_life_+%_final_from_rarity, which goes on its Stats; other mods are not sent yet.
+    int rarityLife = MonsterCatalog.RarityLifePct(rarity);
+    uint life = (uint)MonsterCatalog.LifeWithRarity(Monsters.BaseLife(variety, level) ?? 100, rarity);
     // The type supplies the animated object; Game_MONSTER_AO=1 also sends the variety's first AOFiles path (Animated
     // bit0), which is not needed.
     string? ao = Environment.GetEnvironmentVariable("Game_MONSTER_AO") == "1" ? variety.AnimatedObject : null;
     ushort team = friendly ? (ushort)0 : (ushort)1;
     // Its attack: the variety's first granted effect (Hungry Corpse: Melee) at its level, with the variety's attack time,
     // reach and the level's damage as the skill's final stats (11-skills.md §7).
-    var damage = Monsters.BaseDamage(variety, level) ?? (1, 1);
-    var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0, variety.AttackRange,
+    // The rarity's own mods: more damage per hit, then faster attacks with that much less damage (MonsterCatalog.RarityAttack).
+    var (rarityDamage, raritySpeed) = MonsterCatalog.RarityAttack(rarity);
+    var (baseMin, baseMax) = Monsters.BaseDamage(variety, level) ?? (1, 1);
+    var damage = (Min: Math.Max(1, (int)Math.Round(baseMin * rarityDamage)), Max: Math.Max(1, (int)Math.Round(baseMax * rarityDamage)));
+    var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0 / raritySpeed, variety.AttackRange,
         DamagePacket.Of(DamageType.Physical, damage.Min, damage.Max));
     var skill = variety.GrantedEffects is [int effect, ..]
         ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
+    // A boss with stages also has the skill that changes them (Hillock's sword extract, BossFights).
+    var stage = BossFights.For(variety.Id);
+    // Its stats as the attack's (skill_is_non_pathing above all, and the stage's own time): without them the client sent
+    // the action through its pathing step, played nothing and kept the monster in it (live 2026-10-21).
+    var stageSkill = skill is not null && stage is not null
+        ? Skills.FindByRow(StageSkillId, stage.SkillEffect, level, (attack with { SkillId = StageSkillId, Seconds = stage.CastSeconds }).SkillStats())
+        : null;
+    List<(uint, int)>? stats = skill is null ? null : [.. attack.Stats()];
+    // The final maximum too: the client applies no modifier of its own (as for the player's maximum_life), so without it
+    // the life bars kept the base maximum and a unique showed full until its life fell below it (live 2026-10-21).
+    if (rarityLife > 0)
+    {
+        (stats ??= []).Add((StatKeys.MonsterLifeFromRarityPct, rarityLife));
+        stats.Add((StatKeys.MaximumLife, (int)life));
+    }
     var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
-        skill is null ? null : [skill], skill is null ? null : attack.Stats());
+        skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats);
     // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
     if (conn.MonsterTypes.Add((variety.Row, level)))
         await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
@@ -652,7 +673,7 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
             variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
         {
             Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
-            Life = Math.Min(damagedLife ?? life, life),
+            Life = Math.Min(damagedLife ?? life, life), Stage = stageSkill is null ? null : stage, States = variety.StateMachine,
         };
     // A kept monster that was hit: its life as a hit sets it (0x1b1).
     if (damagedLife < life)
@@ -1355,6 +1376,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     if (m.Life == 0) return;
     await Task.Delay(TimeSpan.FromSeconds(duration / 2));   // the contact point, roughly
     uint life;
+    bool stageStarts = false;
     int accuracy, evasion;
     lock (conn.Monsters)
     {
@@ -1401,7 +1423,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled by a later action");
             return;
         }
-        m.Life = (uint)Math.Max(0, (long)m.Life - damage);
+        (m.Life, stageStarts) = TakeDamageLocked(m, damage);
         life = m.Life;
         conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
         if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
@@ -1417,6 +1439,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
         (impaled ? $", impaled ({impaleStacks} stack(s), {impaleStored:0.#} stored)" : "") +
         $", life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, use.TargetId, m);
+    if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, use.TargetId, m);
 }
 
 // A gem skill used on a monster (C→S 0x24 with a skill id other than the default attack's): echo the action from where the
@@ -1691,10 +1714,11 @@ static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiph
     int damage, string by, bool log = true)
 {
     uint life;
+    bool stageStarts;
     lock (conn.Monsters)
     {
         if (m.Dead) return;
-        m.Life = (uint)Math.Max(0, (long)m.Life - damage);
+        (m.Life, stageStarts) = TakeDamageLocked(m, damage);
         life = m.Life;
         conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
         if (life == 0) { m.Aggro = false; m.Dead = true; }
@@ -1705,6 +1729,65 @@ static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiph
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life),
         !log && life > 0 ? null : $"0x01b1 monster 0x{id:x} hit by {by} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
+    if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
+}
+
+// A hit's damage off a monster's life (under the Monsters lock): the new life, and whether the hit starts its boss stage
+// (BossFights; the stage is then taken, so it runs once).
+static (uint Life, bool StageStarts) TakeDamageLocked(SpawnedMonster m, int damage)
+{
+    // While the stage runs the boss cannot die: its life fills up at the end anyway.
+    if (m.StageRunning) return ((uint)Math.Max(1, (long)m.Life - damage), false);
+    var (life, starts) = BossFights.Damage(m.Life, m.MaxLife, damage, m.StageTaken ? null : m.Stage);
+    if (starts) m.StageTaken = m.StageRunning = true;
+    return (life, starts);
+}
+
+// A boss's stage (BossFights): it stops and uses its stage skill in place (0x1ab, the skill's animation: Hillock pulls
+// out his sword), then its Transitionable steps to the stage's state (0x2ba: the sword in his hand) and its life fills
+// up (0x1b1).
+static async Task RunBossStage(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m)
+{
+    var stage = m.Stage!;
+    (int X, int Y) at;
+    lock (conn.Monsters)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        at = m.Walk.Position(now);
+        m.Walk.Order(at.X, at.Y, now);
+        m.LastTarget = null;
+        m.BusyUntil = now + stage.CastSeconds;
+    }
+    await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, at.X, at.Y, at.X, at.Y, StageSkillId, 0xffff, 0x0408),
+        $"0x01ab monster 0x{id:x} ({m.Label}) starts its stage at {m.Life}/{m.MaxLife} life: skill 0x{StageSkillId:x4} (GrantedEffects {stage.SkillEffect}), {stage.CastSeconds:0.#} s");
+    await Task.Delay(TimeSpan.FromSeconds(stage.CastSeconds));
+    await WhilePaused(conn);
+    uint life;
+    lock (conn.Monsters)
+    {
+        m.StageRunning = false;
+        if (m.Dead || conn.Closed) return;
+        m.Life = life = m.MaxLife;
+    }
+    if (m.Variety?.ComponentsOrBase.ToList().IndexOf("Transitionable") is int t and >= 0)
+        await Send(remote, stream, ciphers, InstanceEntities.TransitionableUpdate(id, (byte)t, stage.TransitionTo),
+            $"0x02ba monster 0x{id:x} ({m.Label}) Transitionable → {stage.TransitionTo}");
+    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life), $"0x01b1 monster 0x{id:x} ({m.Label}) life refilled to {life}");
+    // The stage's action is over: 0x1ac ends it, so the client never keeps the boss in it.
+    await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(id), $"0x01ac monster 0x{id:x} ({m.Label}) stage action ended");
+}
+
+// A boss whose variety has the big life bar (MonsterVarieties BossHealthBar) shows it at the top of the screen once it
+// aggroes: its StateMachine's boss_life_bar (Metadata/Monsters/BossLifeBar.ot) and aggro (Hillock's aggro effect) go to 1.
+static async Task ShowBossLifeBar(string remote, NetworkStream stream, ConnectionCiphers ciphers, uint id, SpawnedMonster m, ClientState conn)
+{
+    if (m.Variety is not { } v || m.States is not { } states) return;
+    int index = v.ComponentsOrBase.ToList().IndexOf("StateMachine");
+    if (index < 0) return;
+    states = states.Set("boss_life_bar", 1).Set("aggro", 1);
+    lock (conn.Monsters) m.States = states;
+    await Send(remote, stream, ciphers, InstanceEntities.StateMachineUpdate(id, (byte)index, states),
+        $"0x02ba monster 0x{id:x} ({m.Label}) StateMachine: boss_life_bar 1, aggro 1");
 }
 
 // The player's granted skills: the default attack with the unarmed weapon's stats and every stat the server set on the
@@ -2593,6 +2676,13 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
         uint xp = Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, m.Rarity, conn.Pools.Level, m.Level);
         await GainExperience(remote, stream, ciphers, conn, xp, $"{m.Rarity} {m.Label} 0x{id:x}");
     }
+    // A quest kill that levels the character up (a1q1: Hillock → at least level 2), wherever the player stands.
+    if (Quests.LevelAfterKill(conn.Layout.Id, variety.Id) is int level and > 1 && level <= CharacterStats.LevelStarts.Count)
+    {
+        uint needed = CharacterStats.LevelStarts[level - 1], have;
+        lock (conn.Monsters) have = conn.Experience;
+        if (have < needed) await GainExperience(remote, stream, ciphers, conn, needed - have, $"quest: {m.Label} killed, level {level}");
+    }
     await GainFlaskCharges(remote, stream, ciphers, conn, Flasks.KillCharges(m.Rarity, Environment.GetEnvironmentVariable("Game_FLASK_KILL_CHARGES")),
         $"{m.Rarity} {m.Label} 0x{id:x} killed");
     await DropLoot(remote, stream, ciphers, conn, m, at);
@@ -2836,6 +2926,16 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
         foreach (var (id, gold) in conn.Instance.Ground.Within(at.X, at.Y, GoldAutoLootRange, IsGold))
             await PickUpGold(remote, stream, ciphers, conn, id, gold, "auto-looted");
+        // Quests that start when the player comes near a monster (a1q1: Hillock, "Kill Hillock").
+        if (Quests.Watched(conn.Layout.Id) is { Count: > 0 } watched)
+        {
+            double now = conn.Clock.Elapsed.TotalSeconds;
+            List<string> seen;
+            lock (conn.Monsters)
+                seen = [.. conn.Monsters.Values.Where(m => !m.Dead && m.Life > 0 && m.Variety is { } v && watched.Contains(v.Id)
+                    && Dist(m.Walk.Position(now), at) <= Quests.SightRange).Select(m => m.Variety!.Id).Distinct()];
+            foreach (string variety in seen) await SetQuestFlags(remote, stream, ciphers, conn, Quests.OnMonsterSeen(conn.Layout.Id, variety));
+        }
     }
 }
 
@@ -2906,6 +3006,7 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
     double perSecond = conn.PlayerMaxLife * rf.DamagePctPerMinute / 6000.0;
     var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
     var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
+    var stages = new List<(uint Id, SpawnedMonster M)>();
     var entered = new List<(uint Id, ushort Buff)>();
     var left = new List<(uint Id, ushort Buff)>();
     lock (conn.Monsters)
@@ -2923,10 +3024,11 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
             var (damage, carry) = damageOverTime.Tick(seconds, m.Burn);
             m.Burn = carry;
             if (damage == 0) continue;
-            m.Life = (uint)Math.Max(0, (long)m.Life - damage);
+            (m.Life, bool stageStarts) = TakeDamageLocked(m, damage);
             m.Aggro = m.Life > 0;
             if (m.Life == 0) { m.Dead = true; if (rf.Auras.Remove(id, out ushort b)) left.Add((id, b)); }
             hits.Add((id, m, m.Life, damage));
+            if (stageStarts) stages.Add((id, m));
         }
     }
     foreach (var (id, buff) in entered)
@@ -2941,6 +3043,7 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
             life == 0 ? $"0x01b1 monster 0x{id:x} ({m.Label}) burnt to death by Righteous Fire" : null);
         if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
     }
+    foreach (var (id, m) in stages) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
 }
 
 // To the character's hideout (21-hideouts.md §3): "/hideout" (C→S 0x16 command 45) or the World panel's Hideout button
@@ -3865,6 +3968,7 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
             if (!conn.AiEnabled || conn.Paused) continue;
             var orders = new List<(uint Id, (int X, int Y) From, (int X, int Y) To, string Why)>();
             var swings = new List<(uint Id, SpawnedMonster M, (int X, int Y) From)>();
+            var bossBars = new List<(uint Id, SpawnedMonster M)>();
             double now = conn.Clock.Elapsed.TotalSeconds;
             var (px, py) = conn.Walk.Position(now);
             lock (conn.Monsters)
@@ -3875,6 +3979,11 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
                     var (mx, my) = m.Walk.Position(now);
                     double d = Math.Sqrt((double)(mx - px) * (mx - px) + (double)(my - py) * (my - py));
                     if (!m.Aggro && d <= m.AggroRange) { m.Aggro = true; m.LastTarget = null; }
+                    if (m.Aggro && !m.BossBarShown && m.Variety is { BossHealthBar: true } && m.States?.IndexOf("boss_life_bar") >= 0)
+                    {
+                        m.BossBarShown = true;
+                        bossBars.Add((id, m));
+                    }
                     else if (m.Aggro && d > 2 * m.AggroRange)
                     {
                         m.Aggro = false;
@@ -3904,6 +4013,8 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
             foreach (var (id, from, to, why) in orders)
                 await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, to.X, to.Y, Move, 0xffff, 0x0408),
                     $"0x01ab monster 0x{id:x} {why}: move from {from} to {to}");
+            foreach (var (id, m) in bossBars)
+                await ShowBossLifeBar(remote, stream, ciphers, id, m, conn);
             foreach (var (id, m, from) in swings)
                 _ = MonsterSwing(remote, stream, ciphers, conn, id, m, from, (px, py));
         }
@@ -4329,7 +4440,76 @@ static async Task SetQuestFlags(string remote, NetworkStream stream, ConnectionC
     if (!conn.PlayerSent) return;
     var all = PlayerQuestFlags(conn);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, all), $"0x02ba player quest flags: {all.Count}");
+    // The exits these flags open appear (or go again when a flag is cleared).
+    foreach (var (id, transition) in conn.Layout.AreaTransitions)
+    {
+        if (TransitionFlag(conn, transition) is not { } flag || !changed.Contains(flag)) continue;
+        if (on)
+        {
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(transition.Type), transition.Blob()),
+                $"0x02b9 create area transition 0x{id:x} {transition} (quest flag {flag})");
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+        }
+        else await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove area transition 0x{id:x} (quest flag {flag} cleared)");
+    }
+    // The room objects these flags take away (a1q1: the force wall when Hillock dies).
+    if (!on) return;
+    List<uint> gone;
+    lock (conn.Monsters)
+    {
+        gone = [.. conn.QuestRoomObjects.Where(o => changed.Contains(o.Value.Flag)).Select(o => o.Key)];
+        foreach (uint id in gone) conn.QuestRoomObjects.Remove(id);
+        conn.UpdateBarrier(conn.Clock.Elapsed.TotalSeconds);
+    }
+    foreach (uint id in gone)
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove room object 0x{id:x} (quest flag set)");
 }
+
+// The rooms' server objects a quest manages (Quests.RoomObjectRemovedBy), where the room fit places them, while the
+// character lacks the flag that takes them away: The Twilight Strand's force wall (Tutorial_Blocker_3) blocks the way to
+// the gate until Hillock is dead (12-quests.md §6). Ids from QuestRoomObjectFirstId.
+static async Task SpawnQuestRoomObjects(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    var notes = new List<string>();
+    var objects = AreaPopulation.LoadObjects(conn.Layout.Id, conn.Seed, notes)
+        .Select(o => (Object: o, Flag: Quests.RoomObjectRemovedBy(conn.Layout.Id, o.Type)))
+        .Where(o => o.Flag is not null).ToList();
+    if (objects.Count == 0) return;
+    // The walls guard the exits their flag opens; the boss's side is the room's "mapboss" point (else the arrival).
+    var boss = AreaPopulation.LoadPoints(conn.Layout.Id, conn.Seed, []).FirstOrDefault(p => p.Name == "mapboss");
+    var from = conn.Layout.Near(boss is null ? (conn.Layout.SpawnX, conn.Layout.SpawnY) : (boss.X, boss.Y));
+    uint id = QuestRoomObjectFirstId;
+    foreach (var (o, flag) in objects)
+    {
+        if (conn.QuestFlags.Contains(flag!)) continue;
+        var blocker = new BlockerObject(o.X, o.Y, o.Angle, o.Scale);
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(o.Type), blocker.Blob()),
+            $"0x02b9 create room object 0x{id:x} {o.Type} at ({o.X}, {o.Y}), angle {o.Angle:0.###}, scale {o.Scale:0.##}, until quest flag {flag}");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
+        // The server's own wall: the walkable cells across the way (QuestBarriers).
+        var guarded = conn.Layout.AreaTransitions.Where(t => TransitionFlag(conn, t.Transition) == flag)
+            .Select(t => conn.Layout.Near((t.Transition.GridX, t.Transition.GridY))).ToList();
+        var cells = conn.Layout.Walkable is { } walkable
+            ? QuestBarriers.Cells(walkable, conn.Layout.GridW, conn.Layout.GridH, (o.X, o.Y), o.Angle, from, guarded)
+            : [];
+        Console.WriteLine($"[gateway] {remote} room object 0x{id:x}: {cells.Count} walkable cell(s) closed on the server between ({from.X}, {from.Y}) " +
+            $"and {string.Join(", ", guarded)}" + (cells.Count == 0 ? "" : $", from {cells.Min()} to {cells.Max()}"));
+        lock (conn.Monsters)
+        {
+            conn.QuestRoomObjects[id] = (flag!, cells);
+            conn.UpdateBarrier(conn.Clock.Elapsed.TotalSeconds);
+        }
+        id++;
+    }
+}
+
+// The quest flag an area transition needs (Quests.FlagToEnter), or null. Such an exit is created only once the character
+// has the flag: The Twilight Strand's gate into Lioneye's Watch appears when Hillock dies (a1q1, 12-quests.md §6).
+static string? TransitionFlag(ClientState conn, AreaTransitionObject transition) =>
+    AreaTransitionCatalog.IdOf(transition.DestinationHash16) is { } dest ? Quests.FlagToEnter(conn.Layout.Id, dest) : null;
+
+static bool TransitionShown(ClientState conn, AreaTransitionObject transition) =>
+    TransitionFlag(conn, transition) is not { } flag || conn.QuestFlags.Contains(flag);
 
 // The instance's items on the ground, where they were left (InstanceStore): dropped or looted on an earlier connection.
 static async Task SendGroundItems(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
@@ -5158,6 +5338,12 @@ static async Task UsePortalScroll(string remote, NetworkStream stream, Connectio
         Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: in a town or hideout, nothing happens");
         return;
     }
+    // Areas whose own mods forbid portals (The Twilight Strand: MapNoPortals): nothing happens and nothing is spent.
+    if (AreaMods.Value.DisablesPortals(conn.Layout.Id))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: {conn.Layout.Id} has map_disable_portal_use, nothing happens");
+        return;
+    }
     bool toHideout = MapDevices.Value.IsMapArea(here) && HideoutCatalog.Default is not null;
     ushort town = conn.LastTown != 0 ? conn.LastTown : AreaLayouts.LioneyesWatch;
     var items = ItemsOf(conn);
@@ -5413,7 +5599,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var (passives, passivesLabel) = PassivesMessage(conn);
     messages.Add((passivesLabel, passives));
     // Area transitions. Like the player they are queued by the world and created when 0x21 activates it.
-    foreach (var (id, transition) in layout.AreaTransitions)
+    foreach (var (id, transition) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))
         messages.Add(($"0x02b9 create area transition 0x{id:x} {transition}",
             InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(transition.Type), transition.Blob())));
     if (layout.Waypoint is { } waypoint)
@@ -5425,7 +5611,8 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}", InstanceProtocol.EnterArea(tabs)));
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
-        foreach (var (id, _) in layout.AreaTransitions) messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
+        foreach (var (id, _) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))
+            messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
         if (layout.Waypoint is not null) messages.Add(($"0x01a9 waypoint 0x{WaypointCatalog.ObjectId:x} enters wake zone", InstanceProtocol.EnterWakeZone(WaypointCatalog.ObjectId)));
         // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
         // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
@@ -5486,7 +5673,15 @@ sealed partial class Program
     // How close (cells, centre to centre) gold on the ground is picked up by itself (RunPlayerTick): our own number, a
     // little inside a click's PickupReach.
     internal const double GoldAutoLootRange = 15;
+    // A monster's second skill, after its attack (SkillCatalog.FirstSkillId): a boss's stage skill (BossFights). 0x0103
+    // is free in 3.29.3b (SkillCatalog.SkillIds).
+    internal const ushort StageSkillId = 0x0103;
+    // Server object ids of the quest room objects (SpawnQuestRoomObjects): between the area transitions (0x2000…) and
+    // the waypoint (0x2f00).
+    internal const uint QuestRoomObjectFirstId = 0x2e00;
 
+    // WorldAreas' own mods (AreaModCatalog); loaded with the first Portal Scroll.
+    internal static readonly Lazy<AreaModCatalog> AreaMods = new(() => AreaModCatalog.Load());
     // NPCs.dat with the NPC types' components; loaded with the first town.
     internal static readonly Lazy<NpcCatalog> Npcs = new(() => NpcCatalog.Load());
     // Shared by every connection; loaded on the first /spawn_mob.
@@ -5580,6 +5775,10 @@ sealed partial class Program
 /// </summary>
 static class StatKeys
 {
+    /// <summary>monster_life_+%_final_from_rarity (Stats.dat row 2895): the rarity's extra life (MonsterCatalog.RarityLifePct).</summary>
+    public const uint MonsterLifeFromRarityPct = 0xb50;
+    /// <summary>maximum_life (Stats.dat row 246): the final maximum the life bars and orbs read.</summary>
+    public const uint MaximumLife = 0xf7;
     /// <summary>movement_velocity_+%: walk speed = base × (1 + value / 100), at least −100 (0x141e7c0b0).</summary>
     public const uint MovementVelocityPct = 0xf5;
     /// <summary>movement_velocity_cap (0x141e7c0b0 caps the speed with it when positive).</summary>
@@ -5896,6 +6095,12 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public uint Life = maxLife;
     public bool Aggro, Dead;
     public (int X, int Y)? LastTarget;
+    // A boss's stage (BossFights) and whether a hit has started it.
+    public BossFights.Stage? Stage { get; init; }
+    public bool StageTaken, StageRunning;
+    // Its StateMachine's shared states as last sent, and whether the big boss life bar is up.
+    public StateMachineData? States;
+    public bool BossBarShown;
 }
 
 // A running Righteous Fire: the player's buff instance, the skill, its damage (percent of maximum life per minute, to
@@ -5967,6 +6172,25 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public InstanceKeyring Keyring = null!;
     // Server objects created after entering (monsters); the player is 0x1000 and area transitions start at 0x2000.
     public uint NextObjectId = 0x3000;
+    // Room server objects a quest keeps in the area until its flag is set (The Twilight Strand's force wall), by id.
+    public readonly Dictionary<uint, (string Flag, IReadOnlySet<(int X, int Y)> Cells)> QuestRoomObjects = [];
+    // Cells quest walls close to the player's walk estimate (QuestBarriers), the union of QuestRoomObjects' cells.
+    public volatile IReadOnlySet<(int X, int Y)> Barrier = new HashSet<(int X, int Y)>();
+
+    /// <summary>Recomputes <see cref="Barrier"/> from the standing quest walls; the first wall also puts the player's walk
+    /// estimate on a walk map that goes around it (call under the Monsters lock).</summary>
+    public void UpdateBarrier(double now)
+    {
+        var cells = new HashSet<(int X, int Y)>(QuestRoomObjects.Values.SelectMany(o => o.Cells));
+        bool first = Barrier.Count == 0 && cells.Count > 0 && !_barrierWalk;
+        Barrier = cells;
+        if (!first || Layout.Walkable is not { } walkable) return;
+        _barrierWalk = true;
+        var (x, y) = Walk.Position(now);
+        Walk = new WalkEstimator(x, y, Walk.Speed, (cx, cy) => walkable(cx, cy) && !Barrier.Contains((cx, cy)),
+            Layout.GridW > 0 ? Layout.GridW : 4096, Layout.GridH > 0 ? Layout.GridH : 4096);
+    }
+    bool _barrierWalk;
     // The player's attacks: the next time one may start (Clock seconds). The client repeats 0x24 while the button is held.
     public double NextAttackAt;
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).

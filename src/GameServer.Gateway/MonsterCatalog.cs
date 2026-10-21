@@ -14,7 +14,7 @@ sealed class MonsterCatalog(string folder = "data")
     public sealed record Variety(int Row, string Id, string Name, string BaseType, string? AnimatedObject, IReadOnlyList<string>? Components,
         int LifeMultiplier = 100, int MonsterType = -1, StateMachineData? StateMachine = null, byte TransitionStates = 1,
         int MovementSpeed = 30, int ObjectSize = 3, int AggroRange = 60, IReadOnlyList<int>? GrantedEffects = null,
-        int AttackMs = 1500, int AttackRange = 8, int DamageMultiplier = 100, int ExperienceMultiplier = 100)
+        int AttackMs = 1500, int AttackRange = 8, int DamageMultiplier = 100, int ExperienceMultiplier = 100, bool BossHealthBar = false)
     {
         public IReadOnlyList<string> ComponentsOrBase => Components ?? MonsterObject.BaseComponents;
         public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase, StateMachine is not null);
@@ -42,14 +42,50 @@ sealed class MonsterCatalog(string folder = "data")
     }
 
     /// <summary>
-    /// A monster's hit at this level, before mods: DefaultMonsterStats row level − 1 `Damage` × DamageMultiplier / 100,
-    /// spread 80–120% (the spread is an assumption, not taken from the client). Null when the tables are missing.
+    /// monster_life_+%_final_from_rarity of the rarity's own monster mod (Mods.dat MonsterMagic2 148, MonsterRare2 390,
+    /// MonsterUnique2 698): the life a magic, rare or unique monster has more than a normal one. Hillock at level 1:
+    /// 39 → 311.
+    /// </summary>
+    public static int RarityLifePct(MonsterRarity rarity) => rarity switch
+    {
+        MonsterRarity.Magic => 148,
+        MonsterRarity.Rare => 390,
+        MonsterRarity.Unique => 698,
+        _ => 0,
+    };
+
+    /// <summary>The maximum life with the rarity's monster_life_+%_final_from_rarity (<see cref="RarityLifePct"/>).</summary>
+    public static int LifeWithRarity(int baseLife, MonsterRarity rarity) => (int)((long)baseLife * (100 + RarityLifePct(rarity)) / 100);
+
+    /// <summary>
+    /// A monster's hit at this level, before mods: DefaultMonsterStats row level − 1 `Damage` × DamageMultiplier / 100
+    /// × the attack time in seconds (unless its MonsterTypes row has BaseDamageIgnoresAttackSpeed, as Path of Building
+    /// does), spread ± MonsterTypes `DamageSpread` percent (20 without one). Hillock at level 1: 4.99 × 1.01 × 1.65 = 8.3,
+    /// spread 30%. Null when the tables are missing.
     /// </summary>
     public (int Min, int Max)? BaseDamage(Variety v, byte level)
     {
         if (_life.Value is not { } t || level < 1 || level > t.Levels.Count) return null;
-        double d = t.Levels[level - 1].Damage * v.DamageMultiplier / 100.0;
-        return (Math.Max(1, (int)Math.Round(d * 0.8)), Math.Max(1, (int)Math.Round(d * 1.2)));
+        var type = v.MonsterType >= 0 && v.MonsterType < t.Types.Count ? t.Types[v.MonsterType] : default;
+        double d = t.Levels[level - 1].Damage * v.DamageMultiplier / 100.0 * (type.IgnoresAttackSpeed ? 1 : v.AttackMs / 1000.0);
+        double spread = (type.DamageSpread > 0 ? type.DamageSpread : 20) / 100.0;
+        return (Math.Max(1, (int)Math.Round(d * (1 - spread))), Math.Max(1, (int)Math.Round(d * (1 + spread))));
+    }
+
+    /// <summary>The rarity's damage and attack speed (its monster mods MonsterMagic5/Rare5/Unique5
+    /// monster_rarity_damage_+%_final 30/50/70, and MonsterMagic9/Rare9/Unique8
+    /// monster_rarity_attack_cast_speed_+%_and_damage_-%_final 20/33/33: that much faster, that much less damage per
+    /// hit). Hillock: × 1.7 × 0.67 per hit, 1.65 s → 1.24 s.</summary>
+    public static (double DamageFactor, double SpeedFactor) RarityAttack(MonsterRarity rarity)
+    {
+        var (more, faster) = rarity switch
+        {
+            MonsterRarity.Magic => (30, 20),
+            MonsterRarity.Rare => (50, 33),
+            MonsterRarity.Unique => (70, 33),
+            _ => (0, 0),
+        };
+        return ((1 + more / 100.0) * (1 - faster / 100.0), 1 + faster / 100.0);
     }
 
     /// <summary>The experience a monster of this level gives before its variety's ExperienceMultiplier, rarity and the
@@ -79,7 +115,7 @@ sealed class MonsterCatalog(string folder = "data")
 
     private sealed record LifeTables(List<(int MonsterLife, int MinionLife, int AltLife1, int AltLife2, double Damage,
         int Experience, int Accuracy, int Evasion, int EvasiveEvasion)> Levels,
-        List<(bool Minion, bool AltLife1, bool AltLife2)> Types)
+        List<(bool Minion, bool AltLife1, bool AltLife2, int DamageSpread, bool IgnoresAttackSpeed)> Types)
     {
         public static LifeTables? Load(string folder)
         {
@@ -93,7 +129,9 @@ sealed class MonsterCatalog(string folder = "data")
                     r.GetProperty("Experience").GetInt32(), r.GetProperty("Accuracy").GetInt32(), r.GetProperty("Evasion").GetInt32(),
                     r.GetProperty("EvasiveEvasion").GetInt32()))],
                 [.. t.RootElement.EnumerateArray().Select(r => (r.GetProperty("IsPlayerMinion").GetBoolean(), r.GetProperty("AltLife1").GetBoolean(),
-                    r.GetProperty("AltLife2").GetBoolean()))]);
+                    r.GetProperty("AltLife2").GetBoolean(),
+                    r.TryGetProperty("DamageSpread", out var spread) && spread.ValueKind == JsonValueKind.Number ? spread.GetInt32() : 0,
+                    r.TryGetProperty("BaseDamageIgnoresAttackSpeed", out var ignores) && ignores.ValueKind == JsonValueKind.True))]);
         }
     }
 
@@ -135,7 +173,8 @@ sealed class MonsterCatalog(string folder = "data")
                 components[type] = [.. t.GetProperty("components").EnumerateArray().Take(read).Select(c => c.GetString()!)];
                 // Files generated before the StateMachine data have no "shared_states": those types stay unsupported.
                 if (t.TryGetProperty("shared_states", out var ss) && t.TryGetProperty("shared_timers", out var st))
-                    stateMachines[type] = new([.. ss.EnumerateArray().Select(e => e[1].GetInt32())], st.GetArrayLength());
+                    stateMachines[type] = new([.. ss.EnumerateArray().Select(e => e[1].GetInt32())], st.GetArrayLength(),
+                        [.. ss.EnumerateArray().Select(e => e[0].GetString() ?? "")]);
                 if (t.TryGetProperty("transitionable", out var tr) && tr.TryGetProperty("num_states", out var ns))
                     transitionStates[type] = (byte)Math.Clamp(ns.GetInt32(), 1, 127);
             }
@@ -156,7 +195,8 @@ sealed class MonsterCatalog(string folder = "data")
                     r.GetProperty("MovementSpeed").GetInt32(), r.GetProperty("ObjectSize").GetInt32(), r.GetProperty("MaxAgroRange").GetInt32(),
                     [.. r.GetProperty("GrantedEffectsKeys").EnumerateArray().Select(e => e.GetInt32())],
                     r.GetProperty("AttackSpeed").GetInt32(), r.GetProperty("MaximumAttackDistance").GetInt32(),
-                    r.GetProperty("DamageMultiplier").GetInt32(), r.GetProperty("ExperienceMultiplier").GetInt32()));
+                    r.GetProperty("DamageMultiplier").GetInt32(), r.GetProperty("ExperienceMultiplier").GetInt32(),
+                    r.TryGetProperty("BossHealthBar", out var bar) && bar.ValueKind == JsonValueKind.True));
             }
         }
         // With object-types.json, a type missing from it has no .ot: do not guess.

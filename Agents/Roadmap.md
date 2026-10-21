@@ -69,7 +69,7 @@ Items are in rough priority order within each section. "Known" says what is alre
   melee attacks all work ([10](docs/protocol/10-chat-and-commands.md) §5, [11](docs/protocol/11-skills.md) §6); areas
   are populated with their MonsterPacks and unique boss ([14](docs/protocol/14-monster-packs.md)).
 - **Start:** the "emerge" action for emerge monsters (then add the skipped emerge packs), mods for magic/rare monsters
-  (and their life bonus), the boss life bar (StateMachine `boss_life_bar`), pack `Grounds`, the 346 varieties with NPC / ControlZone / BlightTower … components (each needs its
+  (their life bonus is done), stages of other bosses (`BossFights.cs` has Hillock's), pack `Grounds`, the 346 varieties with NPC / ControlZone / BlightTower … components (each needs its
   deserializer, schema.md). Check every new component with `scripts/re/frida/check-components.js`.
 - **Done when:** monsters in areas match the official game's (mods, rarity bonuses, emerge, boss bar).
 
@@ -172,7 +172,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** the quest engine and a1q1 "Enemy at the Gate" ([12](docs/protocol/12-quests.md) §5–6): quest flags saved
   per character, one script per quest (events → flags; flags → exits), S→C 0x2ba steps a Transitionable.
 - **Start:** the next quests act by act, each checked against the real game's behavior. The Strand's visual pieces
-  (the gate's animation, the force wall, the Doorman; [12](docs/protocol/12-quests.md) §6) are low priority.
+  (the gate's animation, the Doorman; [12](docs/protocol/12-quests.md) §6) are low priority.
   a1q4's Glyph Wall (§1–4) is the next world-changing one.
 - **Done when:** the campaign's quests can be played through, with their world changes, logs and rewards.
 

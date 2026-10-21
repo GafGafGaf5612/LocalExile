@@ -135,7 +135,7 @@ public class TerrainTests
             "n s",
             "2",
             "40 41 0.5 0 0 0.2 0.9 0 0 0 1 \"Metadata/Terrain/Doodads/Beach/beach_driftwood_pile_05.ao\" \"Metadata/MiscellaneousObjects/Doodad\"",
-            "3 4 0 0 0 0 1 0 0 0 1 \"Metadata/Terrain/LevelTransitions/Coast/CoastToMudFlats.ao\" \"Metadata/MiscellaneousObjects/AreaTransition\" 0");
+            "3 4 -0.98839 -0 0 -0.474323 0.880351 0 0 0 2.7 \"Metadata/Terrain/LevelTransitions/Coast/CoastToMudFlats.ao\" \"Metadata/MiscellaneousObjects/AreaTransition\" 0");
         var room = RoomFile.Parse(arm);
         Assert.Null(room.Problem);
         Assert.Equal(("townentrance", 2, 2), (room.Tag, room.Width, room.Height));
@@ -147,6 +147,8 @@ public class TerrainTests
         Assert.Equal("Metadata/Terrain/wildcard.et", room.Dict(slot.Key.Edges[0]));
         Assert.Equal(2, room.Doodads.Count);
         Assert.Equal("Metadata/MiscellaneousObjects/AreaTransition", room.Doodads[1].Type);
+        Assert.Equal((0.5f, 1f), (room.Doodads[0].Angle, room.Doodads[0].Scale));
+        Assert.Equal((-0.98839f, 2.7f), (room.Doodads[1].Angle, room.Doodads[1].Scale));
     }
 
     [Fact]

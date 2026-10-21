@@ -12,22 +12,52 @@ static class Quests
         /// <summary>Flags set when a monster of this MonsterVarieties Id dies in this area.</summary>
         public virtual IEnumerable<string> OnMonsterKilled(string areaId, string varietyId) => [];
 
+        /// <summary>Flags set when the player comes within <see cref="SightRange"/> of a living monster of this
+        /// MonsterVarieties Id in this area.</summary>
+        public virtual IEnumerable<string> OnMonsterSeen(string areaId, string varietyId) => [];
+
+        /// <summary>The MonsterVarieties Ids whose sighting this script cares about in this area (the player tick looks only for them).</summary>
+        public virtual IEnumerable<string> Watched(string areaId) => [];
+
+        /// <summary>The level a character reaches at least when it kills a monster of this variety in this area, or 0.</summary>
+        public virtual int LevelAfterKill(string areaId, string varietyId) => 0;
+
         /// <summary>The flag a character needs to take the exit from one area to the other, or null.</summary>
         public virtual string? FlagToEnter(string fromArea, string toArea) => null;
+
+        /// <summary>For a room's server object of this type in this area: the flag that takes it away, or null when the
+        /// quest does not manage it (only managed room objects are created).</summary>
+        public virtual string? RoomObjectRemovedBy(string areaId, string objectType) => null;
     }
 
-    /// <summary>a1q1 "Enemy at the Gate": Hillock stands before Lioneye's Watch at the end of The Twilight Strand; the way
-    /// into the town opens once he is dead (12-quests.md §6).</summary>
+    /// <summary>a1q1 "Enemy at the Gate": Hillock stands before Lioneye's Watch at the end of The Twilight Strand. Coming
+    /// near him sets SeenHillock (the quest log's "Kill Hillock"); his death sets KilledHillock, which takes down the force
+    /// wall in front of the gate and opens the way into the town (12-quests.md §6).</summary>
     public sealed class EnemyAtTheGate : Script
     {
-        public const string KilledHillock = "a1q1-KilledHillock";
+        public const string KilledHillock = "a1q1-KilledHillock", SeenHillock = "a1q1-SeenHillock";
         const string Strand = "1_1_1", Town = "1_1_town";
         const string Hillock = "Metadata/Monsters/ZombieBoss/ZombieBossHillockNormal";
 
         public override IEnumerable<string> OnMonsterKilled(string areaId, string varietyId) =>
             areaId == Strand && varietyId == Hillock ? [KilledHillock] : [];
 
+        public override IEnumerable<string> OnMonsterSeen(string areaId, string varietyId) =>
+            areaId == Strand && varietyId == Hillock ? [SeenHillock] : [];
+
+        public override IEnumerable<string> Watched(string areaId) => areaId == Strand ? [Hillock] : [];
+
+        // QuestStates "You have killed Hillock … and levelled up. Open the Passive Skill Screen …": his kill gives
+        // level 2 (his own experience alone does not reach it).
+        public override int LevelAfterKill(string areaId, string varietyId) => areaId == Strand && varietyId == Hillock ? 2 : 0;
+
         public override string? FlagToEnter(string fromArea, string toArea) => fromArea == Strand && toArea == Town ? KilledHillock : null;
+
+        // The force wall across the way to the gate (town_entrance_exclude.arm), until Hillock is dead.
+        const string ForceWall = "Metadata/Terrain/Act1/Area1/Objects/Tutorial_Blocker_3";
+
+        public override string? RoomObjectRemovedBy(string areaId, string objectType) =>
+            areaId == Strand && objectType == ForceWall ? KilledHillock : null;
     }
 
     static readonly Script[] All = [new EnemyAtTheGate()];
@@ -37,7 +67,13 @@ static class Quests
     /// HUD's hideout panel checks (0x14216c840); CanEditHideout, tested before the Edit button shows (live trace
     /// 2026-10-20); MapDeviceActive, the map device's per-player "active" state (its .ot:
     /// per_player_quest_flag_state_active_1).</summary>
-    public static readonly string[] EveryCharacter = ["HideoutUnlocked", "HideoutJukeboxEnabled", "CanEditHideout", "MapDeviceActive"];
+    public static readonly string[] EveryCharacter = ["HideoutUnlocked", "HideoutJukeboxEnabled", "CanEditHideout", "MapDeviceActive",
+        CompletedAllTutorials];
+
+    /// <summary>QuestFlags row 367: the tutorials are done, as on an account that has played before. Quest states that
+    /// teach (a1q1 after Hillock: "Open the Passive Skill Screen …", FlagsMissing 280/367) give way to the next step
+    /// ("Enter through the gate for a reward").</summary>
+    public const string CompletedAllTutorials = "CompletedAllTutorials";
 
     /// <summary>
     /// League quest flags: a set of their own, kept in the Player component's second flag set (+0x1d0). They are not a
@@ -57,6 +93,20 @@ static class Quests
 
     public static IReadOnlyList<string> OnMonsterKilled(string areaId, string varietyId) =>
         [.. All.SelectMany(s => s.OnMonsterKilled(areaId, varietyId))];
+
+    /// <summary>How close (cells) the player must come to a monster for <see cref="OnMonsterSeen"/>: our own number, about
+    /// half a screen.</summary>
+    public const double SightRange = 60;
+
+    public static int LevelAfterKill(string areaId, string varietyId) => All.Max(s => s.LevelAfterKill(areaId, varietyId));
+
+    public static IReadOnlyList<string> OnMonsterSeen(string areaId, string varietyId) =>
+        [.. All.SelectMany(s => s.OnMonsterSeen(areaId, varietyId))];
+
+    public static IReadOnlySet<string> Watched(string areaId) => All.SelectMany(s => s.Watched(areaId)).ToHashSet();
+
+    public static string? RoomObjectRemovedBy(string areaId, string objectType) =>
+        All.Select(s => s.RoomObjectRemovedBy(areaId, objectType)).FirstOrDefault(f => f is not null);
 
     public static string? FlagToEnter(string fromArea, string toArea) =>
         All.Select(s => s.FlagToEnter(fromArea, toArea)).FirstOrDefault(f => f is not null);

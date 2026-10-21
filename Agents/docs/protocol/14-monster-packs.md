@@ -89,7 +89,17 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
 - Pack density and magic/rare chances are guesses (§1). Rarity gives no mods, no extra life, no rare names.
 - `Grounds` (Drowned on wet beach) is not checked; we have no ground-type grid.
 - Emerge packs (Gravel Eaters) are skipped until the Emerge action is known.
-- Fire Fury has no boss life bar and uses only her first granted effect; monsters give no experience or loot.
+- Fire Fury uses only her first granted effect. Bosses whose MonsterVarieties row has `BossHealthBar` and whose type
+  extends `Metadata/Monsters/BossLifeBar` show the big life bar once they aggro (12-quests.md §6).
+- **Rarity life:** a magic, rare or unique monster has `monster_life_+%_final_from_rarity` of its rarity's monster mod
+  (Mods.dat MonsterMagic2 148, MonsterRare2 390, MonsterUnique2 698) on top of its base life; the Gateway applies it
+  and sends the stat and the final `maximum_life` in the monster's Stats (the client applies no modifier itself: with
+  only the rarity stat Hillock's bar stayed full above his base 39).
+- **Hits:** DefaultMonsterStats `Damage` × DamageMultiplier × the attack time in seconds (unless MonsterTypes
+  `BaseDamageIgnoresAttackSpeed`), spread ± MonsterTypes `DamageSpread`; then the rarity's monster mods:
+  `monster_rarity_damage_+%_final` (magic 30, rare 50, unique 70) and
+  `monster_rarity_attack_cast_speed_+%_and_damage_-%_final` (20, 33, 33: that much faster, that much less damage per
+  hit; read from the stat's name, no description exists). Hillock at level 1: 6.6–12.3 every 1.24 s.
 - Kept monsters lose their corpses (a corpse is removed 10 s after death anyway) and a `/spawn_mob` name.
 - Each new (area, seed) needs a `-Walkmaps` visit for its room points; without the capture there is no unique boss
   (the log says so).

@@ -1,6 +1,6 @@
 # Status
 
-Where the project stands. Last updated 2026-10-20, against client **3.29.3b**. Update this file in the same pull request
+Where the project stands. Last updated 2026-10-21, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
 What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in [docs/README.md](docs/README.md).
@@ -21,7 +21,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Arrival points: entering through an exit (or `/goto`) puts the player next to the exit back; The Twilight Strand → Lioneye's Watch arrives at the town's `entrance1`; Resurrect at Checkpoint revives there, or next to the area's waypoint once the character has activated it | `AreaLayout.Arrival`, Gateway | [09](docs/protocol/09-area-change.md) §4 |
 | Monsters belong to the area instance: re-entering it finds the living ones where they were, with their damage, and the dead stay dead; a new instance gets fresh packs | `InstanceStore.cs`, `PopulateArea`, Gateway | [14](docs/protocol/14-monster-packs.md) §2 |
 | Ground items belong to the area instance: dropped items and loot stay where they lay across logouts, disconnects and client crashes until the instance expires; ids from 0x100000; one pickup per item | `InstanceStore.cs`, Gateway | [13](docs/protocol/13-items.md) §5 |
-| Quests: flags per character in the save, one script per quest (`Quests.cs`), `/quest_flag`. a1q1: new characters start on The Twilight Strand's beach and log in there until they reach a town; the gate into Lioneye's Watch can be clicked once Hillock is dead (the flag reaches the client's quest flags; the Gateway checks it too); no Resurrect in Town before a town | `Quests.cs`, Gateway | [12](docs/protocol/12-quests.md) §5–6 |
+| Quests: flags per character in the save, one script per quest (`Quests.cs`), `/quest_flag`. a1q1: new characters start on The Twilight Strand's beach and log in there until they reach a town; coming within 60 cells of Hillock sets `a1q1-SeenHillock` ("Kill Hillock"); Hillock has the boss life bar at the top of the screen once he aggroes (StateMachine `boss_life_bar`, 0x2ba), unique life (311 at level 1) and a second stage: at half life he pulls out his sword (ZombieBossExtract, Transitionable → 2) and his life fills up again; the force wall (`Tutorial_Blocker_3`, the room's angle and scale 2.7) stands across the way to the gate until he dies, and the server closes the way on its own walk map too (`QuestBarriers`), so its position estimate stops where the client stops; after his death the quest log says to enter the gate (every character has `CompletedAllTutorials`); his death levels the character to 2, removes the wall and creates the gate into Lioneye's Watch (the Gateway checks the flag too); Portal Scrolls do nothing on the Strand (its area mod MapNoPortals); no Resurrect in Town before a town | `Quests.cs`, `BossFights.cs`, `QuestBarriers.cs`, `AreaModCatalog.cs`, Gateway | [12](docs/protocol/12-quests.md) §5–6 |
 | Instances: one per town (all 12 act towns from WorldAreas `IsTown`); other areas get private instances that live 6 minutes once empty | `InstanceRegistry.cs`, `WorldAreaTowns.cs` | [09](docs/protocol/09-area-change.md) |
 | Walk maps and area transitions captured from the client on first visit; the Gateway uses them for position estimates, spawns and area transitions | `scripts/walkmaps`, `live.ps1 -Walkmaps` | [GettingStarted](GettingStarted.md) step 9, [08](docs/protocol/08-area-transitions.md) §7 |
 | Chat commands `/commands` (`/com`; paged, `/com <name>` for one), `/raw <hex>`, `/set_stat`, `/set_speed`, `/set_level <1 to 100>` (saved to the account, sent in place), `/add_passive_points <n>`, `/add_passive <id>` (replies as chat lines) | `Program.cs` (`Commands`), `ChatCommands.cs` | [10](docs/protocol/10-chat-and-commands.md) |
@@ -185,7 +185,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Not working yet
 
-- Area monsters: pack counts and magic/rare chances are our own numbers; rarity adds no mods or life; Drowned ignore their ground types; emerge packs (Gravel Eaters) are skipped; no boss life bar; monsters respawn on every entry; a new (area, seed) needs a `-Walkmaps` visit for its unique boss ([14](docs/protocol/14-monster-packs.md) §4).
+- Area monsters: pack counts and magic/rare chances are our own numbers; rarity adds its life (MonsterMagic2/Rare2/Unique2 `monster_life_+%_final_from_rarity`) but no other mods; Drowned ignore their ground types; emerge packs (Gravel Eaters) are skipped; the boss life bar and boss stages exist for Hillock only (`BossFights.cs`; other bosses with `BossHealthBar` get the bar too); monsters respawn on every entry; a new (area, seed) needs a `-Walkmaps` visit for its unique boss ([14](docs/protocol/14-monster-packs.md) §4).
 - NPC dialogue options, shops, NPCs in other towns and outside towns ([17](docs/protocol/17-npcs.md) "Open"); the 346
   monster varieties with NPC, ControlZone, BlightTower … components. "Emerge" monsters (Gravel Eater …)
   are created but stay hidden until an Emerge action, which the server does not send.
@@ -193,9 +193,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   (the client logs "Timeout while joining global chat channel").
 - Area transitions of a generated area need a `-Walkmaps` capture for its seed; quest-gated ones are created but the
   way stays blocked: The Mud Flats' Submerged Passage has a client-side wall until quest flag `a1q4-PlacedGlyphs`.
-  Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate opens without its
-  animation; its force wall and Doorman are not created ([12](docs/protocol/12-quests.md) §6). Only quest a1q1 is
-  scripted; no quest log.
+  Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate appears without
+  its animation; the Doorman and the opening tutorial's wall are not created ([12](docs/protocol/12-quests.md) §6).
+  Only quest a1q1 is scripted; no quest log.
 - Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb, Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb, Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb and Orb of Regret; utility flasks; support gems and links
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
