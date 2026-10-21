@@ -503,7 +503,9 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`0x142087910`) makes MiscAnimated effects as `Metadata/Effects/Effect`, `ServerEffect`, `PermanentServerEffect` …
   objects; `PermanentServerEffect` is Positioned, BaseEvents, Animated (Render client-only), so the Gateway creates one
   (`EffectObject`: the projectile's Positioned, Animated bit0 + the .ao path) under the player and glides it with 0x1ba
-  to where each move ends (`FollowRighteousFire`); 0x2bb removes it when the fire ends. Live 2026-10-18: with only the
+  to where each move ends (`FollowRighteousFire`). It is created with Positioned flags0 0x80
+  (`EffectObject.FixedRotation`): without it each glide turned the ring to face the move, so it spun as the player
+  turned (live 2026-10-21). 0x2bb removes it when the fire ends. Live 2026-10-18: with only the
   buffs the player had just the small ring at its feet; with the effect object the big circle shows at the right size
   and follows the player, and monsters around burn to death.
 - **`/god`** toggles 1000% increased attack and cast speed, life and mana regeneration (below), +10 000

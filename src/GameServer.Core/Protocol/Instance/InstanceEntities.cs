@@ -572,11 +572,18 @@ public sealed record EffectObject(int GridX, int GridY, string AnimatedObject)
 {
     public const string TypePath = "Metadata/Effects/PermanentServerEffect";
 
+    /// <summary>Positioned flags0 0x80 (→ +0x1e6 bit 2): the object keeps its rotation while it glides (0x1ba); without it
+    /// a glide turns it to face the move (live 2026-10-21, Righteous Fire's ring). The only flags0 bits taken here are
+    /// those that read no further data (0x01, 0x80).</summary>
+    public const byte FixedRotation = 0x80;
+
+    public byte Flags0 { get; init; }
+
     public byte[] Blob()
     {
         var w = new BlobWriter();
         w.U8(0).U8(0);                                              // object flags, base data entry count
-        w.I32(GridX).I32(GridY).F32(0).U16(0).U8(0).U8(0x02);       // Positioned: on the terrain, shown
+        w.I32(GridX).I32(GridY).F32(0).U16(0).U8((byte)(Flags0 & 0x81)).U8(0x02);   // Positioned: on the terrain, shown
         w.U8(0).U8(1);
         w.U8(1).WStr32(AnimatedObject);                             // Animated: bit0 + the .ao path
         w.U8(0);                                                    // tasks

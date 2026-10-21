@@ -2671,7 +2671,8 @@ static async Task ActivateRighteousFire(string remote, NetworkStream stream, Con
         $"0x01c1 player buff {aura}: righteous_fire_aura (BuffDefinitions row {RighteousFireAuraBuffRow})");
     // The big burning circle is not a buff visual: it is MiscAnimated RighteousFireRing, an effect object of its own
     // (EffectObject), kept under the player as it walks (FollowRighteousFire).
-    var ringObject = new EffectObject(at.X, at.Y, RighteousFireRingAo);
+    // FixedRotation: the glides that keep it under the player must not turn it (it spun as the player turned).
+    var ringObject = new EffectObject(at.X, at.Y, RighteousFireRingAo) { Flags0 = EffectObject.FixedRotation };
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(ring, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), ringObject.Blob()),
         $"0x02b9 create effect 0x{ring:x} {RighteousFireRingAo} at ({at.X}, {at.Y})");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(ring), null);
