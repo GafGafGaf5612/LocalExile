@@ -361,6 +361,14 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void A_skill_records_cooldown_is_its_third_u32()
+    {
+        // Haste: 1200 ms → skill +0xc8, which the client's cooldown reads.
+        byte[] m = InstanceEntities.PlayerSkillsChange(0x1000, [new GrantedSkill(0x0105, 16886, 16733, CooldownMs: 1200)], []);
+        Assert.Contains("00" + "00" + "00000000" + "00000000" + "B0040000" + "00" + "00", Convert.ToHexString(m));
+    }
+
+    [Fact]
     public void Monster_blob_with_a_skill_and_stats()
     {
         // Live 2026-10-17: Hungry Corpse with Melee (GEPL 4394) in its Actor and its attack stats: 175 bytes, 0 left.
