@@ -403,6 +403,19 @@ The client is told through the magic properties' u8 `+0x7a` (the byte right afte
 the fractured explicit count, the first explicits being the fractured ones. Verified live: those mods show fractured.
 Tried first and wrong: the Mods component's flag bit 4 with a u8 after the flags shifted the item (it showed magic).
 
+### Mirror of Kalandra (2026-10-21, verified live)
+
+`CurrencyDuplicate`, same 0x71 / 0x72 messages (`MirrorItem`). As the official mirror: an item that is neither
+corrupted nor mirrored is copied with every property (mods and values, fractured mods, quality, sockets, links,
+socketed gems, name); the copy is **mirrored** and goes onto the cursor (S→C 0xbf on the cursor inventory) for the
+player to place, the original stays unchanged. A held item,
+a corrupted or mirrored target, or an item without mods is refused and nothing is spent. A mirrored item takes no
+currency but a Scroll of Wisdom.
+
+`Item.Mirrored` (saved) is sent as the Mods component's u16 flags bit 1 (`+0x2df`, a plain bool with no data after
+it): the client's crafting check refuses an item with it (`0x141d68f9b`); the tooltip shows
+"Mirrored".
+
 ### Vaal Orb and corruption (2026-10-21, verified live)
 
 **Corrupted** is bit 0 of the Base component's u8 `+0xc7` (the second u8 after the visual identity): the client's

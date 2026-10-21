@@ -129,6 +129,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Fracturing Orb (verified live, 2026-10-21):** one random mod of a rare item with 4+ mods is fractured and kept by
   every other currency, Scouring included; shown fractured (magic properties u8 +0x7a). See
   [13](docs/protocol/13-items.md), "Fracturing Orb".
+- **Mirror of Kalandra (verified live, 2026-10-21):** a mirrored copy (Mods flag bit 1) of a non-corrupted,
+  non-mirrored item goes onto the cursor; mirrored items take no currency. See [13](docs/protocol/13-items.md),
+  "Mirror of Kalandra".
 - **Orb of Fusing: verified live (2026-10-21).** Captured 0x71/0x72 packets feed the same
   handler. Only links change; sockets, colours, gems and item properties stay intact. Refuses fewer than two sockets
   and protects fully linked 5/6-socket items; 2-4 sockets remain rerollable. Quality favours longer groups without
@@ -202,7 +205,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate appears without
   its animation; the Doorman and the opening tutorial's wall are not created ([12](docs/protocol/12-quests.md) §6).
   Only quest a1q1 is scripted; no quest log.
-- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb, Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb, Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble, Fracturing Orb and Orb of Regret; utility flasks; support gems and links
+- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb, Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb, Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble, Fracturing Orb, Mirror of Kalandra and Orb of Regret; utility flasks; support gems and links
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
   Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).
