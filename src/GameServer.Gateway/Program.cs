@@ -614,6 +614,13 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
     {
         ushort uid = unknown.Length > 1 ? (ushort)(unknown[0] << 8 | unknown[1]) : unknown[0];
         Console.WriteLine($"[gateway] {remote} <= unframed 0x{uid:x4} ({unknown.Length} bytes): {Convert.ToHexString(unknown.AsSpan(0, Math.Min(unknown.Length, 256)))}");
+        // C→S 0x23f: the Delve chart (opened by Niko) asks for its data; S→C 0x240 answers (an empty chart for now).
+        if (uid == InstanceDelve.ChartRequestId && unknown.Length == 2)
+        {
+            var (a, b, cells) = conn.DelveChartProbe;
+            await Send(remote, stream, ciphers, InstanceDelve.Chart(a, b, cells),
+                $"0x0240 Delve chart: {a}, {b}, {cells.Count} cell(s) {string.Join(" ", cells)}");
+        }
         // C→S 0x35: the mastery effect chosen in the passive tree (node, effect HASH16). It allocates the mastery node
         // and records the effect; the client waits for the 0x33 tree and the updated stats.
         if (uid == InstanceEntities.MasteryEffectId && unknown.Length >= 6)
@@ -975,6 +982,20 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
         case "IdentifyItems":
             await IdentifyInventory(remote, stream, ciphers, conn, npc);
             break;
+        // Niko's View Subterranean Chart: SendOpenScreen( DelveMapScreen, 1 ), S→C 0x7b kind 0x1c with 1.
+        case "Quests" when talk.Script.Contains("DelveMapScreen"):
+            conn.InNpcTalk = false;
+            await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.DelveMapUi, 1), "0x007b open the Delve chart");
+            break;
+        // Niko's Visit Mine Encampment: BeginDelve(), to the Azurite Mine Encampment (WorldAreas Delve_Hub), as /goto does.
+        // The mine's own mechanics (darkness, the cart, depth) are not implemented.
+        case "Quests" when talk.Script.Contains("BeginDelve"):
+            conn.InNpcTalk = false;
+            if (AreaTransitionCatalog.HashOf("Delve_Hub") is { } delve)
+                await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(delve, 0, false, AtSpawn: true), $"{npc.Npc.Name}: {talk.Option}");
+            else
+                Console.WriteLine($"[gateway] {remote} {talk.Option}: Delve_Hub is not in data/area-transitions.json");
+            break;
         default:
             Console.WriteLine($"[gateway] {remote} npc option category {talk.Category} is not implemented yet");
             break;
@@ -1012,16 +1033,17 @@ static async Task IdentifyInventory(string remote, NetworkStream stream, Connect
 static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.Buy buy)
 {
     OpenShop? shop;
+    uint tab = 0;
     InventoryItem? item = null;
     lock (conn.Npcs)
     {
         shop = conn.Shop;
-        if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) item = found;
+        if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) (tab, item) = found;
     }
     if (shop is null || item is null || PlayerInventories.Row(buy.InventoryId) is not byte row)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x0088 buy {buy}: {(shop is null ? "no shop open" : item is null ? "not in the shop" : "unknown inventory")}");
-        if (shop is not null && item is not null) lock (conn.Npcs) shop.Items[item.Id] = item;
+        if (shop is not null && item is not null) lock (conn.Npcs) shop.Items[item.Id] = (tab, item);
         return;
     }
     var items = ItemsOf(conn);
@@ -1031,7 +1053,7 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
     (uint Currency, int Amount)? price = item.Item.Price is [var (currency, amount), ..] ? (currency, (int)amount) : null;
     if (ItemMoves.Buy(items, stash, row, item with { X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] } }, price) is not var (paid, bought))
     {
-        lock (conn.Npcs) shop.Items[item.Id] = item;
+        lock (conn.Npcs) shop.Items[item.Id] = (tab, item);
         Console.WriteLine($"[gateway] {remote} <= 0x0088 buy item {item.Id}: costs {price!.Value.Amount} × {Items.ByHash(price.Value.Currency)?.Name ?? $"0x{price.Value.Currency:x8}"}, not enough in the inventory and the stash");
         return;
     }
@@ -1040,8 +1062,8 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
             items.NextRevision(PlayerInventories.MainInventory), [.. fromInventory.Removed, .. fromInventory.Changed.Select(c => c.Id)], fromInventory.Changed),
             $"0x00bf inventory 1: paid (stacks emptied [{string.Join(", ", fromInventory.Removed)}], changed [{string.Join(", ", fromInventory.Changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
     await SendStashPayment(remote, stream, ciphers, conn, stash, paid?.Stash);
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(shop.Tab, ++shop.Revision, [item.Id], [], NpcShops.Manager),
-        $"0x00bf shop tab {shop.Tab}: item {item.Id} sold");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(tab, shop.NextRevision(tab), [item.Id], [], NpcShops.Manager),
+        $"0x00bf shop tab {tab}: item {item.Id} sold");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(buy.InventoryId, items.NextRevision(row), [], [bought]),
         $"0x00bf inventory {buy.InventoryId}: bought item {item.Id} from {shop.Npc.Npc.Name} at ({buy.X}, {buy.Y}) ({buy})");
 }
@@ -1062,11 +1084,12 @@ static async Task SendStashPayment(string remote, NetworkStream stream, Connecti
 static async Task CtrlBuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.CtrlBuy buy)
 {
     OpenShop? shop;
+    uint tab = 0;
     InventoryItem? item = null;
     lock (conn.Npcs)
     {
         shop = conn.Shop;
-        if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) item = found;
+        if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) (tab, item) = found;
     }
     if (shop is null || item is null)
     {
@@ -1078,7 +1101,7 @@ static async Task CtrlBuyFromShop(string remote, NetworkStream stream, Connectio
     (uint Currency, int Amount)? price = item.Item.Price is [var (currency, amount), ..] ? (currency, (int)amount) : null;
     if (ItemMoves.BuyToInventory(items, stash, item.Item with { Price = [] }, price, ShapeOf, out string why) is not var (paid, into))
     {
-        lock (conn.Npcs) shop.Items[item.Id] = item;
+        lock (conn.Npcs) shop.Items[item.Id] = (tab, item);
         Console.WriteLine($"[gateway] {remote} <= 0x008a Ctrl + click buy item {item.Id}: refused ({why})");
         return;
     }
@@ -1089,8 +1112,8 @@ static async Task CtrlBuyFromShop(string remote, NetworkStream stream, Connectio
     foreach (var i in (IEnumerable<InventoryItem>)[.. fromInventory?.Changed ?? [], .. into.Changed, .. into.Added]) now[i.Id] = i;
     foreach (var removed in fromInventory?.Removed ?? []) now.Remove(removed);
     await SendStashPayment(remote, stream, ciphers, conn, stash, paid?.Stash);
-    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(shop.Tab, ++shop.Revision, [item.Id], [], NpcShops.Manager),
-        $"0x00bf shop tab {shop.Tab}: item {item.Id} sold");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(tab, shop.NextRevision(tab), [item.Id], [], NpcShops.Manager),
+        $"0x00bf shop tab {tab}: item {item.Id} sold");
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
         items.NextRevision(PlayerInventories.MainInventory), [.. gone.Distinct()], [.. now.Values]),
         $"0x00bf inventory 1: bought item {item.Id} from {shop.Npc.Npc.Name} with Ctrl + click" + (price is var (_, a) ? $" for {a}" : ""));
@@ -1254,15 +1277,22 @@ static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCip
     if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
     var notes = new List<string>();
     var items = ItemsOf(conn);
-    var stock = NpcShops.Fill(npc.Npc.Id, Items, items.NewItemId, notes);
+    var tabs = NpcShops.Tabs(npc.Npc.Id, Items, items.NewItemId, notes);
+    int shopRow = Npcs.Value.TalkSource(npc.Npc).ShopRow;
     foreach (var n in notes) Console.WriteLine($"[gateway] {remote} shop {npc.Npc.Name}: {n}");
-    uint tab = NpcShops.FirstTabId;
-    lock (conn.Npcs) conn.Shop = new OpenShop(npc, tab, stock.ToDictionary(i => i.Id));
-    await Send(remote, stream, ciphers, InstanceInventories.AddInventory(tab, NpcShops.Tab, NpcShops.Manager, stock),
-        $"0x00c0 shop tab {tab} (manager {NpcShops.Manager}) of {npc.Npc.Name}: {stock.Count} items");
+    // One manager-1 inventory per tab (S→C 0xc0), then 0x8c lists them with their names.
+    var ids = tabs.Select((_, i) => NpcShops.FirstTabId + (uint)i).ToList();
+    lock (conn.Npcs) conn.Shop = new OpenShop(npc, tabs.SelectMany((t, i) => t.Items.Select(item => (Tab: ids[i], Item: item))).ToDictionary(p => p.Item.Id));
+    for (int i = 0; i < tabs.Count; i++)
+        await Send(remote, stream, ciphers, InstanceInventories.AddInventory(ids[i], NpcShops.Tab, NpcShops.Manager, tabs[i].Items),
+            $"0x00c0 shop tab {ids[i]} \"{tabs[i].Name}\" (manager {NpcShops.Manager}) of {npc.Npc.Name}: {tabs[i].Items.Count} items");
     conn.InNpcTalk = false;
-    await Send(remote, stream, ciphers, InstanceNpcs.Dialogue(npcObject, (ushort)Math.Max(0, npc.Npc.ShopRow), false, [tab], []),
-        $"0x008c open the buy window of {npc.Npc.Name} (NPCShop row {npc.Npc.ShopRow}) on tab {tab}");}
+    // 0x8c's u8: 0 opens the window at UI +0x7b0, 1 the one at +0x7b8 (listener 0x140dcccf0); being tested live whether
+    // +0x7b8 is the tabbed vendor window (with 8 tabs +0x7b0 drew its tab bar over the title and the grid below the frame).
+    await Send(remote, stream, ciphers, InstanceNpcs.Dialogue(npcObject, (ushort)Math.Max(0, shopRow), tabs.Count > 1, ids,
+        [.. tabs.Select((t, i) => new InstanceNpcs.Choice(i, t.Name))]),
+        $"0x008c open the buy window of {npc.Npc.Name} (NPCShop row {shopRow}) with tabs {string.Join(", ", tabs.Select(t => t.Name))}");
+}
 
 // Activates this area's waypoint for the character (saved, added to the saved ones) and tells the client: a new 0x4c with
 // the area's bit set plays the waypoint's activation. Towns activate on entry, other waypoints when the player comes near
@@ -1309,10 +1339,13 @@ static async Task SendWaypointList(string remote, NetworkStream stream, Connecti
 // waypoints' areas (their pins become travel targets).
 static List<int> PlayerQuestFlags(ClientState conn)
 {
+    // ThisIsMyHideout only in a hideout and the Mine Encampment, where Niko needs it for his own options; elsewhere NPCs
+    // show their "not my hideout" rows. (It does not hide Sell Items: the client offers Sell only in towns and hideouts.)
+    bool inHideout = HideoutCatalog.ByArea(conn.Layout.Hash) is not null || conn.Layout.Hash == StashCatalog.DelveHub;
     lock (conn.Waypoints)
         return [.. WaypointCatalog.Areas.Entries.Where(e => conn.Waypoints.Contains(e.Id)).SelectMany(e => e.AccessFlags ?? [])
             .Concat(conn.Visited.Concat(conn.Waypoints).SelectMany(id => WaypointCatalog.Visits.For(id)))
-            .Concat(Quests.Rows(conn.QuestFlags))
+            .Concat(Quests.Rows(conn.QuestFlags.Where(f => inHideout || f != Quests.ThisIsMyHideout)))
             .Distinct().Order()];
 }
 
@@ -3808,6 +3841,18 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await SetQuestFlags(remote, stream, ciphers, conn, [args[0]], on: !off);
         await conn.Commands!.Reply($"{args[0]} {(off ? "cleared" : "set")}");
     })
+    .Add("delve_chart", "/delve_chart <u32> <u16> [<u16> <u16> <u64> <u8> <u32> ...] (dev: what the next Delve chart (S→C 0x240) carries, to work out its fields)", async args =>
+    {
+        try
+        {
+            var n = args.Select(a => a.StartsWith("0x") ? Convert.ToUInt64(a[2..], 16) : ulong.Parse(a)).ToArray();
+            var cells = new List<InstanceDelve.Cell>();
+            for (int i = 2; i + 4 < n.Length; i += 5) cells.Add(new((ushort)n[i], (ushort)n[i + 1], n[i + 2], (byte)n[i + 3], (uint)n[i + 4]));
+            conn.DelveChartProbe = (n.Length > 0 ? (uint)n[0] : 0, n.Length > 1 ? (ushort)n[1] : (ushort)0, cells);
+            await conn.Commands!.Reply($"Next Delve chart: {conn.DelveChartProbe.A}, {conn.DelveChartProbe.B}, {cells.Count} cell(s). Open it from Niko.");
+        }
+        catch (FormatException) { await conn.Commands!.Reply("Numbers only (decimal or 0x…)."); }
+    })
     .Add("goto", "/goto <area id or name> (dev: change area as if through an area transition, e.g. /goto 1_1_3)", async args =>
     {
         string target = string.Join(' ', args);
@@ -5087,8 +5132,8 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 stash 0x{id:x} enters wake zone");
     conn.StashObject = id;
     conn.SetBlocker(id, at.X, at.Y, ClientState.StashBlockerSize);
-    // A hideout also gets the guild stash, a few cells from the stash.
-    if (HideoutCatalog.ByArea(conn.Layout.Hash) is null) return;
+    // A hideout and the Mine Encampment also get the guild stash, a few cells from the stash.
+    if (HideoutCatalog.ByArea(conn.Layout.Hash) is null && conn.Layout.Hash != StashCatalog.DelveHub) return;
     var (gx, gy) = conn.Layout.Near((at.X, at.Y));
     uint guild = conn.NextObjectId++;
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(guild, InstanceEntities.ObjectTypeHash(StashObject.GuildMetadataPath),
@@ -6134,12 +6179,16 @@ sealed class NpcSale(SpawnedNpc npc, uint mine, uint theirs)
 }
 
 // An open shop tab: the NPC, its inventory id (manager 1), the items left by id and the tab's 0xbf revision.
-sealed class OpenShop(SpawnedNpc npc, uint tab, Dictionary<uint, InventoryItem> items)
+sealed class OpenShop(SpawnedNpc npc, Dictionary<uint, (uint Tab, InventoryItem Item)> items)
 {
     public SpawnedNpc Npc { get; } = npc;
-    public uint Tab { get; } = tab;
-    public Dictionary<uint, InventoryItem> Items { get; } = items;
-    public uint Revision;
+
+    /// <summary>The items for sale by id, each with its tab's inventory id.</summary>
+    public Dictionary<uint, (uint Tab, InventoryItem Item)> Items { get; } = items;
+
+    /// <summary>The next revision of a tab's inventory (S→C 0xbf).</summary>
+    public uint NextRevision(uint tab) => _revisions[tab] = _revisions.GetValueOrDefault(tab) + 1;
+    readonly Dictionary<uint, uint> _revisions = [];
 }
 
 sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange, uint maxLife)
@@ -6382,6 +6431,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
     public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter];
+    /// <summary>What the next Delve chart (S→C 0x240) carries; /delve_chart sets it (one cell at 0, 0 by default).</summary>
+    public (uint A, ushort B, List<InstanceDelve.Cell> Cells) DelveChartProbe = (0, 0, [new(0, 0, 0, 0, 0)]);
 
     /// <summary>The hideout doodads created in this area (the map device), by object id.</summary>
     public readonly Dictionary<uint, HideoutCatalog.Doodad> HideoutDoodads = [];

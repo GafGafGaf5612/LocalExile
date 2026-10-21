@@ -25,6 +25,9 @@ static class WaypointCatalog
 
     public static WorldAreaWaypoints Areas => Order.Value;
 
+    /// <summary>The Azurite Mine Encampment (WorldAreas Delve_Hub), where Niko's Visit Mine Encampment leads.</summary>
+    public const string DelveHub = "Delve_Hub";
+
     static readonly Lazy<AreaVisitFlags> VisitFlags = new(() => AreaVisitFlags.Load("data/tables/WorldAreas.json", "data/tables/MapPins.json"));
 
     /// <summary>The quest flags entering an area sets (AreaVisitFlags), and the areas with a World panel pin.</summary>
@@ -38,7 +41,9 @@ static class WaypointCatalog
     /// <summary>The area's waypoint, or null when it has none or its place is not known yet.</summary>
     public static WaypointObject? For(ushort hash, string id, uint seed)
     {
-        if (Areas.BitOf(hash) is null) return null;
+        // The Azurite Mine Encampment has a waypoint (its tile places one) but no WorldAreas waypoint bit of its own, so
+        // 0x4c cannot light it: its StateMachine "active" is sent as 1 instead (being tested live).
+        if (Areas.BitOf(hash) is null) return id == DelveHub ? LoadCapture(id, seed) is { } hub ? hub with { Active = 1 } : null : null;
         var captured = LoadCapture(id, seed);
         if (captured is not null) return captured;
         return hash == AreaLayouts.LioneyesWatch ? TownFallback : null;

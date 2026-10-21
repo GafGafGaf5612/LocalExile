@@ -133,6 +133,20 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Mirror of Kalandra (verified live, 2026-10-21):** a mirrored copy (Mods flag bit 1) of a non-corrupted,
   non-mirrored item goes onto the cursor; mirrored items take no currency. See [13](docs/protocol/13-items.md),
   "Mirror of Kalandra".
+- **Niko and Kirac in the hideout (verified live, 2026-10-21):** Niko to Nessa's right, Kirac to her left. Kirac's
+  hideout row has no dialogue of its own and uses the main Kirac's (`NpcCatalog.TalkSource`); Purchase Items sells maps.
+  Niko's Delve options need quest flag ThisIsMyHideout (sent in hideouts and the Mine Encampment) and league quest flag
+  68 DelveEncounterComplete (every character): NPCTalk columns 15-18 are league quest flag ids. See
+  [21](docs/protocol/21-hideouts.md).
+- **Delve, first steps (verified live, 2026-10-21):** View Subterranean Chart opens the chart (S→C 0x7b kind 0x1c, from
+  the client's screen table); its data request C→S 0x23f is answered with S→C 0x240, and one entry draws the first mine
+  section (the other fields are being worked out with `/delve_chart`). Visit Mine Encampment goes to Delve_Hub, which
+  has its tile's waypoint (still drawn inactive: no 0x4c bit), Niko, the stash and the guild stash. The mine itself is
+  not implemented. See [21](docs/protocol/21-hideouts.md).
+- **Nessa's shop tabs (2026-10-21; the gem tabs verified live, the maps and the tabbed window flag being tested):** Goods (her stock, one Beach Map, then every map of tiers 1-16)
+  and Goods2 for the rest, then every shop gem in Red / Green / Blue Skills and Support and White Skills, 1 Scroll of
+  Wisdom each, filled row by row. Shops send one inventory per tab and their names in 0x8c. See
+  [17](docs/protocol/17-npcs.md) §5.
 - **Orb of Fusing: verified live (2026-10-21).** Captured 0x71/0x72 packets feed the same
   handler. Only links change; sockets, colours, gems and item properties stay intact. Refuses fewer than two sockets
   and protects fully linked 5/6-socket items; 2-4 sockets remain rerollable. Quality favours longer groups without
