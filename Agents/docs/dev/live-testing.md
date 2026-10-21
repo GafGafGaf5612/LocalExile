@@ -24,7 +24,7 @@ How to run the patched 3.29.3b client against our servers safely and repeatably.
    the connection and Log In works again. In the client the password field needs a click before typing; Enter does not
    submit, click Log In.
 4. The dev account is `devtester` (password in `data/dev-login.txt`, untracked). Its characters live in
-   `data/accounts.json`.
+   `data/saves.db` ([saves](../saves.md)).
 
 ## One-time setup
 
@@ -101,6 +101,6 @@ field, character row and Play button were near (245, 217), (375, 61) and (455, 2
 | `Game_GATEWAY_PORT` | 6112 | Gateway |
 | `Game_GATEWAY_ENTER` | unset | Gateway: `1` sends 0x21 |
 | `Game_INSTANCE_SECRET` | `data/instance-secret.bin` | Auth and Gateway (must match) |
-| `Game_DEV_DB` | `data/accounts.json` | Auth, Host |
+| `Game_SAVES_DB` | `data/saves.db` | Gateway, Auth, Host |
 | `Game_PATCH_TCP_PORT`, `Game_PATCH_URL`, `Game_PATCH_WEB_ROOT` | 12995, http://0.0.0.0:8080, http://127.0.0.1:8080/ | Patch |
 | `Game_CDN_PASSTHROUGH` | unset | Patch: `1` proxies to the real CDN (only to repair data on purpose, with a backup of `Client/`) |

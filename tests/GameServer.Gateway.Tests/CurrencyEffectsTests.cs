@@ -2,7 +2,7 @@ using GameServer.Core.Protocol.Instance;
 
 namespace GameServer.Gateway.Tests;
 
-public class CurrencyTests
+public class CurrencyEffectsTests
 {
     static ItemCatalog.BaseType SocketBase(string itemClass, byte width = 2, byte height = 3) =>
         new(0, "test", "test", 0x1234, width, height, 0x10, ["Base", "Sockets"], 0, Class: itemClass);
@@ -26,19 +26,19 @@ public class CurrencyTests
     [InlineData("Quiver", 100, 0)]
     public void Jewellers_respects_class_and_item_level(string itemClass, byte level, int expected)
     {
-        Assert.Equal(expected, Currency.MaximumSockets(Boots() with { ItemLevel = level }, SocketBase(itemClass)));
+        Assert.Equal(expected, CurrencyEffects.MaximumSockets(Boots() with { ItemLevel = level }, SocketBase(itemClass)));
     }
 
     [Fact]
     public void Jewellers_refuses_gems_maximum_sockets_and_unsupported_items()
     {
         var random = new Random(4);
-        Assert.Null(Currency.Jewellers(Boots(SocketColour.Red) with { ItemLevel = 100 }, SocketBase("Boots"), (0, 0, 0), random));
+        Assert.Null(CurrencyEffects.Jewellers(Boots(SocketColour.Red) with { ItemLevel = 100 }, SocketBase("Boots"), (0, 0, 0), random));
         var full = Boots() with { ItemLevel = 100, Sockets = Enumerable.Repeat(new ItemSocket(SocketColour.Red), 4).ToArray() };
-        Assert.Null(Currency.Jewellers(full, SocketBase("Boots"), (0, 0, 0), random));
-        Assert.Null(Currency.Jewellers(Boots(), SocketBase("Ring"), (0, 0, 0), random));
-        Assert.Null(Currency.Jewellers(new Item(1, ["Base"], 0), SocketBase("Boots"), (0, 0, 0), random));
-        Assert.Equal(2, Currency.MaximumSockets(full, SocketBase("Wand", 1, 2)));
+        Assert.Null(CurrencyEffects.Jewellers(full, SocketBase("Boots"), (0, 0, 0), random));
+        Assert.Null(CurrencyEffects.Jewellers(Boots(), SocketBase("Ring"), (0, 0, 0), random));
+        Assert.Null(CurrencyEffects.Jewellers(new Item(1, ["Base"], 0), SocketBase("Boots"), (0, 0, 0), random));
+        Assert.Equal(2, CurrencyEffects.MaximumSockets(full, SocketBase("Wand", 1, 2)));
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class CurrencyTests
         var before = Boots() with { ItemLevel = 100, Quality = 20, Rarity = ItemRarity.Rare };
         for (int i = 0; i < 10000; i++)
         {
-            var after = Currency.Jewellers(before, SocketBase("Body Armour"), (20, 20, 20), random)!;
+            var after = CurrencyEffects.Jewellers(before, SocketBase("Body Armour"), (20, 20, 20), random)!;
             counts.Add(after.Sockets.Count);
             linkPatterns.Add(string.Join(",", after.Links!));
             Assert.Equal(after.Sockets.Count, after.Links!.Sum(n => n));
@@ -77,7 +77,7 @@ public class CurrencyTests
             var random = new Random(7);
             for (int i = 0; i < 20; i++)
             {
-                var result = Currency.Jewellers(item, type, (6, 0, 0), random);
+                var result = CurrencyEffects.Jewellers(item, type, (6, 0, 0), random);
                 Assert.NotNull(result);
                 Assert.Equal(item.Sockets.Count == 2 ? 1 : 2, result.Sockets.Count);
                 item = result;
@@ -90,7 +90,7 @@ public class CurrencyTests
     {
         var before = Boots() with { ItemLevel = 100, Sockets = [new(SocketColour.Red), new(SocketColour.Blue)] };
         for (int i = 0; i < 100; i++)
-            Assert.NotEqual(2, Currency.Jewellers(before, SocketBase("Boots"), (0, 0, 0), new Random(i))!.Sockets.Count);
+            Assert.NotEqual(2, CurrencyEffects.Jewellers(before, SocketBase("Boots"), (0, 0, 0), new Random(i))!.Sockets.Count);
     }
 
     static Item Boots(params SocketColour[] colours) => new(0x1234, ["Base", "Sockets"], 0x10)
@@ -99,4 +99,40 @@ public class CurrencyTests
         Links = [(byte)colours.Length],
     };
 
+    [Fact]
+    public void A_chromatic_orb_changes_the_colours_and_keeps_gems_and_links()
+    {
+        var random = new Random(1);
+        for (int i = 0; i < 200; i++)
+        {
+            var before = Boots(SocketColour.Red, SocketColour.Red, SocketColour.Green);
+            var after = CurrencyEffects.Chromatic(before, (20, 20, 0), random)!;
+
+            Assert.NotEqual(before.Sockets.Select(s => s.Colour), after.Sockets.Select(s => s.Colour));
+            Assert.All(after.Sockets, s => Assert.NotEqual(SocketColour.White, s.Colour));
+            Assert.Equal(before.Sockets[0].Gem, after.Sockets[0].Gem);
+            Assert.Equal(before.Links, after.Links);
+        }
+    }
+
+    [Fact]
+    public void The_colours_follow_the_attribute_requirements()
+    {
+        var random = new Random(2);
+        int red = 0, total = 0;
+        for (int i = 0; i < 2000; i++)
+        {
+            var after = CurrencyEffects.Chromatic(Boots(SocketColour.Blue), (100, 0, 0), random)!;
+            total++;
+            if (after.Sockets[0].Colour == SocketColour.Red) red++;
+        }
+        // Strength 100: red weighs 112 against green's 12 (blue, the old colour, cannot come back on one socket).
+        Assert.InRange(red / (double)total, 0.85, 0.95);
+    }
+
+    [Fact]
+    public void An_item_without_sockets_is_not_changed()
+    {
+        Assert.Null(CurrencyEffects.Chromatic(new Item(0x1, ["Base"], 0), (0, 0, 0), new Random(3)));
+    }
 }

@@ -81,7 +81,7 @@ around each nest).
 ## 5. The quest engine
 
 **Quest flags are the truth.** A character's quest progress is the set of its quest flags, `QuestFlags.dat` Ids (e.g.
-`a1q1-KilledHillock`), saved by name in its save file (`data/saves/<character>.json`, `QuestFlags`): names are readable
+`a1q1-KilledHillock`), saved by name in its save (`data/saves.db`, `QuestFlags`; [saves](../saves.md)): names are readable
 and survive game patches, where row numbers do not. The client keeps its own copy as QuestFlags **rows** in the Player
 component ([16](16-waypoints.md) §3): the Gateway sends them with the player object and again (0x2ba, flag 0x02,
 `PlayerQuestFlagsUpdate`) whenever one changes, together with the World panel's visit and access flags

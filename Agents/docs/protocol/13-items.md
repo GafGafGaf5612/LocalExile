@@ -209,7 +209,8 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` / `0x141f90340`, senders `0x14215f520` / `0x14215f570` | inventory request, not mapped: u8, u32, u8 flag (0 / 1 by sender) | not handled |
 | 0x58 | 10 | `0x1435bf8a8` / `0x141f926a0` | use an item that needs no target (right-click): u32 inventory id, u32 item id, both big-endian | an Orb of Regret loses one item and adds one refund point (0xbf the stack, 0x33 the tree) |
-| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20) | a Scroll of Wisdom identifies the target (§2b): 0xbf with the stack and the target |
+| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20) | a Scroll of Wisdom identifies the target (§2b); a Chromatic Orb gives every socket a new colour (`CurrencyEffects.Chromatic`: red / green / blue weighted by the base's strength / dexterity / intelligence requirement + 12, our own weights; never white, gems and links stay, always different from before; live 2026-10-21 the client sent it for boots and a helmet): 0xbf with the stack and the target |
+| 0x72 | 23 | not traced | the held currency used again with **Shift** (the client keeps it on the cursor while the inventory has more, live 2026-10-21): u32 its BaseItemTypes HASH32 (the type, not an item), u32 inventory id and u32 item id of the target, all big-endian, then u32 0, u8 1, u8 0, u8 7, u16 2 (unknown) | as 0x71, with a stack of that type from the inventories (the main inventory first) |
 | 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | the held item clicked **on an item** (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 the clicked item's id, u8 flags (bit 2 = Shift; HNC bits 3-7), u8 (3), u16 (low byte first, differs every click, unknown) | a merge (0xbf the stack, 0xbf cursor), else a swap as 0x2a |
 | 0x7c | 17 | `0x1435bfdd8` / `0x141f90870`, sender `0x142165640` | split a stack (§4a): u32 inventory id, u32 item id, u32 amount, u8 (3), u16 (unknown); no HNC bits | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
 
@@ -343,13 +344,16 @@ it there again; so does a new character with a deleted one's name in the same in
 
 The kit is built once, when the character has no save, and saved at once. Without `data/tables` (`Characters.json`,
 `SkillGems.json`) and `data/item-types.json` it is empty, the Gateway logs `start kit is empty`, and the character keeps
-the empty kit: set its save aside (`data/saves/<name>.json`, with the Gateway stopped) to give it the kit again.
+the empty kit: remove its row from the `characters` table of `data/saves.db` (with the Gateway stopped) to give it the kit
+again.
 
-**Saves.** Every inventory change writes the character's items to `data/saves/<name>.json` (`CharacterSaves`, git-ignored):
-per Inventories.dat row the item ids, cells and items by BaseItemTypes HASH32 with level, quality, charges, stack size,
-sockets (with their gems), links and gem experience. A saved character loads from it instead of the start kit, so items
-and equipment survive Gateway restarts and logins (live 2026-10-18). The file also holds the skill bar
-([11](11-skills.md) §11).
+**Saves.** Every inventory change writes the character's items to its row in `data/saves.db` (`CharacterSaves`,
+git-ignored): per Inventories.dat row the item ids, cells and items by BaseItemTypes HASH32 with level, quality, charges,
+stack size, sockets (with their gems), links and gem experience. A saved character loads from it instead of the start
+kit, so items and equipment survive Gateway restarts and logins (live 2026-10-18). The save also holds the skill bar
+([11](11-skills.md) §11). How a change is written (SQLite transactions, moves between the character and the stash in
+one transaction, what happens when a save fails, saves that can't be read or hold unknown items) is in
+[saves](../saves.md).
 
 Each move is one change and one save, so a crash at any moment leaves an item in exactly one inventory: picking up
 (`PlayerInventories.PickUp`, C→S 0x28: off its row and onto the cursor), placing or swapping (`Place`, 0x2a), socketing

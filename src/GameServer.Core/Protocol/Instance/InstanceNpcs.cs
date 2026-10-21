@@ -55,6 +55,29 @@ public static class InstanceNpcs
     public static int? BuyLength(ReadOnlySpan<byte> data) =>
         data.Length < 15 ? null : 14 + CompactUIntLength(data[14]) is int n && data.Length >= n ? n : null;
 
+    public const ushort CtrlBuyId = 0x8a;
+
+    /// <summary>C→S 0x8a: Ctrl + click on an item in an open shop tab: buy it into the main inventory (the server picks the
+    /// cell).</summary>
+    public sealed record CtrlBuy(uint ItemId, byte U8, byte Flags, uint Extra, ushort Token);
+
+    /// <summary>
+    /// C→S 0x8a (dispatcher case 0x8a; 11 bytes in every live capture, 2026-10-20 in Nessa's shop): u32 BE shop item id,
+    /// u8, u8 flags, compact uint (as 0x88's), u16 token (raw, changes per request). Read from live bytes:
+    /// <c>008A 00000061 00 00 00 A777</c>.
+    /// </summary>
+    public static CtrlBuy ReadCtrlBuy(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        uint item = r.U32();
+        byte u8 = r.U8(), flags = r.U8();
+        int at = 8, n = CompactUIntLength(m[at]);
+        return new(item, u8, flags, CompactUInt(m[at..]), (ushort)(m[at + n] | m[at + n + 1] << 8));
+    }
+
+    /// <summary>The length of a C→S 0x8a at the start of <paramref name="data"/>, or null until its compact int arrived.</summary>
+    public static int? CtrlBuyLength(ReadOnlySpan<byte> data) => data.Length < 9 ? null : 8 + CompactUIntLength(data[8]) + 2;
+
     static int CompactUIntLength(byte first) => first < 0x80 ? 1 : first < 0xc0 ? 2 : first < 0xe0 ? 3 : first < 0xf0 ? 4 : 5;
 
     static uint CompactUInt(ReadOnlySpan<byte> b) => CompactUIntLength(b[0]) switch

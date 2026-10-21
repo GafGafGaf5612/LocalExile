@@ -28,12 +28,13 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
 
-### Stash: the special tabs and tab settings
+### Stash: tab settings and the other special tabs
 - **Known:** the stash opens on the last tab, tabs load and items move by click and Ctrl + click
-  ([18](docs/protocol/18-stash.md)). Switching to a loaded tab sends nothing to the server.
-- **Start:** place currency, essences and fragments in their slots (the *StashTabLayout tables, x = FirstSlotIndex);
-  tab rename / colour (0xd2 / 0xd3), order (0xcc) and folders (0xd1).
-- **Done when:** the special tabs take their items in the right slots and tab settings are kept.
+  ([18](docs/protocol/18-stash.md)); special tabs hold only their own items, the currency, essence and fragment tabs each
+  item in its slot, and affinities (0xd3) are saved (18 §7). Switching to a loaded tab sends nothing to the server.
+- **Start:** check live that the affinity window closes on S→C 0x136 and that currency Ctrl + click (0xe1) lands in its
+  slot; tab rename / colour (0xd2), order (0xcc) and folders (0xd1); the unique and divination tabs.
+- **Done when:** tab settings are kept and every special tab takes its items as the real one does.
 
 ## 2. The world
 
@@ -71,6 +72,13 @@ Items are in rough priority order within each section. "Known" says what is alre
   (and their life bonus), the boss life bar (StateMachine `boss_life_bar`), pack `Grounds`, the 346 varieties with NPC / ControlZone / BlightTower … components (each needs its
   deserializer, schema.md). Check every new component with `scripts/re/frida/check-components.js`.
 - **Done when:** monsters in areas match the official game's (mods, rarity bonuses, emerge, boss bar).
+
+### Maps and the Atlas (3.29)
+- **Known:** the 3.29 rules and the 20 generic map bases (`MapKeyTier1` … `MapKeyTier16` and four special ones) are in
+  [game/maps.md](docs/game/maps.md). The map device and Nessa's shop use the older area-named maps (Beach Map).
+- **Start:** the Atlas panel's messages and how it stores progress; the map stash tab's layout (18 §7); maps from the
+  generic bases on the layout picked on the Atlas; drops by tier.
+- **Done when:** maps drop, are stored and run the 3.29 way, and the Atlas shows and saves progress.
 
 ### Hideouts: decorations, editing and the map device
 - **Known:** the Lush Hideout works: travel, waypoint, stash, Nessa, the Edit button and the map device: slots, Activate
@@ -111,7 +119,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Known:** `GrantedEffectsPerLevel` carries the reservation; the Life pool's reserved field and S→C 0x1b1 update it;
   Purity of Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste are implemented with their buff
   visuals and `/auras`, awaiting live verification ([11](docs/protocol/11-skills.md) 13, [Status](Status.md)).
-- **Start:** the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
+- **Start:** the auras' 3D effects (BuffVisuals EPKs of the `IsSkillBuff` rows do not render, unlike Righteous Fire's);
+  the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
   Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar active border is still open: 0x25f is a
   client UI event, not a server message. Support gems and gem levels come with the gem system ("Gems" below); party and
   minion auras and life reservation with their own systems.
@@ -182,11 +191,11 @@ data is in [19](docs/protocol/19-gems.md).
   "[UNUSED] …" or "WIP …" are never created.
 
 ### Gems 1: gem levels, stable skill ids and requirements (#62)
-- **Known:** every socketed skill gem grants its level-1 skill, with ids in socket order. The client derives a gem's
+- **Known:** every socketed skill gem grants its level-1 skill; each keeps its skill id while it stays socketed, and an
+  aura or Righteous Fire ends with its gem (part (a), [19](docs/protocol/19-gems.md) §3). The client derives a gem's
   level from its experience ([19](docs/protocol/19-gems.md) §1). GrantedEffectsPerLevel, GrantedEffectStatSetsPerLevel
   and GrantedEffectQualityStats hold each level's numbers and the quality stats.
-- **Start:** three PRs. (a) One skill id per gem, kept while it stays socketed, and auras that end with their gem.
-  (b) Gem levels: the level from experience, each level's stats, cost, cooldown and reservation, quality stats (rounded
+- **Start:** two more PRs. (b) Gem levels: the level from experience, each level's stats, cost, cooldown and reservation, quality stats (rounded
   down), transfigured and Trarthan variants, the Vaal gem's base skill, and `/gem <name> [level] [quality]`. One PR if
   it holds together, with extra live testing; first find where the variant sits in the gem's item data. (c) Requirements:
   the level and attribute requirements, refusing to socket, and the disabled state.
@@ -235,7 +244,7 @@ data is in [19](docs/protocol/19-gems.md).
 - **Done when:** Fireball looks like the real one in every area: over the terrain, stopping at walls and objects.
 
 ### The game's start and resurrection
-- **Known:** items, equipment, the skill bar, experience and passives are saved per character in `data/saves/`
+- **Known:** items, equipment, the skill bar, experience and passives are saved per character in `data/saves.db` ([saves](docs/saves.md))
   ([13](docs/protocol/13-items.md) §7, [11](docs/protocol/11-skills.md) §11, [15](docs/protocol/15-progression.md)), and
   every login starts at the last town's spawn point ([09](docs/protocol/09-area-change.md) §4). This follows the real
   game on purpose: the area and position a character was in are not saved, because the real client never logs anyone

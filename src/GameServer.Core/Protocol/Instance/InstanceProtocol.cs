@@ -56,13 +56,27 @@ public static class InstanceProtocol
         TickId => 7, AreaGeneratedId => 10, UseSkillAtLocationId => 16, 0x015a => 2, 0x01ef => 2, 0x0099 => 20,
         InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
-        InstanceItems.InventoryRequestId => InstanceItems.InventoryRequestLength, InstanceItems.UseItemId => InstanceItems.UseItemLength, InstanceItems.UseItemOnId => InstanceItems.UseItemOnLength, InstanceItems.UseItemTypeOnId => InstanceItems.UseItemTypeOnLength, InstanceItems.UseFlaskId => InstanceItems.UseFlaskLength,
+        InstanceItems.InventoryRequestId => InstanceItems.InventoryRequestLength, InstanceItems.UseItemId => InstanceItems.UseItemLength, InstanceItems.UseItemOnId => InstanceItems.UseItemOnLength, InstanceItems.UseFlaskId => InstanceItems.UseFlaskLength, InstanceItems.UseItemTypeOnId => InstanceItems.UseItemTypeOnLength,
         InstanceItems.ItemActionId => InstanceItems.ItemActionLength, InstanceItems.SplitStackId => InstanceItems.SplitStackLength, InstanceItems.SocketGemId => 16,
         InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
         InstanceEntities.AllocatePassiveId => 7, InstanceEntities.RefundPassiveId => InstanceEntities.RefundPassiveLength,
         InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength, InstanceStash.RequestTabId => InstanceStash.RequestTabLength, InstanceStash.MoveTabId => InstanceStash.MoveTabLength, InstanceStash.MoveToTabId => InstanceStash.MoveToTabLength, InstanceStash.TakeFromTabId => InstanceStash.TakeFromTabLength, InstanceMapDevice.ActivateId => InstanceMapDevice.ActivateLength,
-        LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, _ => null,
+        LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, UseInstantSkillId => 8, _ => null,
     };
+
+    /// <summary>
+    /// C→S 0x191 (8 bytes, live 2026-10-21): use an instant skill, one whose stats have <c>skill_is_instant</c> (Haste,
+    /// Purity of Elements, Righteous Fire). u32 target object id (the player's own for a self-cast), u16 skill id. It has
+    /// no action sequence: the client starts no action for it and waits for no echo. The layout is read from captures
+    /// (0191 00001000 0105), not from the client's serializer.
+    /// </summary>
+    public const ushort UseInstantSkillId = 0x191;
+
+    public static (uint TargetId, ushort SkillId) ReadUseInstantSkill(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return (r.U32(), r.U16());
+    }
 
     public const ushort LockstepMoveStartId = 0x018e, LockstepMoveUpdateId = 0x0192, LockstepMoveStopId = 0x0195;
 
@@ -137,6 +151,26 @@ public static class InstanceProtocol
         if (targetObjectId is { } t) w.U32(t);
         CompactInt(w, posX); CompactInt(w, posY); CompactInt(w, targetX); CompactInt(w, targetY);
         return w.U16(skillId).U16(sequence).ToArray();
+    }
+
+    public const ushort InstantActionId = 0x1ce;
+
+    /// <summary>
+    /// S→C 0x1ce (class 0x1435c2360, read 0x141fde150; Actor handler 0x1421940a0 → 0x142195880): an instant or triggered
+    /// action from the server, the answer to C→S 0x191. Object header, u16 skill id (+0x20), u16 action sequence (+0x22 →
+    /// action +0x11a; 0xffff = none), u16 flags (+0x38 → action +0x122; 0x20 adds a u32 target object id +0x24, 0x2000 two
+    /// compact ints +0x30/+0x34, 0x10 a further struct; a negative low byte makes it a triggered action), then the target
+    /// position as compact ints (+0x28/+0x2c), big-endian. The client creates the skill's action, runs it without
+    /// animation and consumes a use of the skill: that starts its cooldown on the skill bar (live 2026-10-21).
+    /// </summary>
+    public static byte[] InstantAction(uint objectId, ushort skillId, int targetX, int targetY, uint? targetObjectId = null,
+        ushort sequence = 0xffff)
+    {
+        var w = new LoginWriter().U16(InstantActionId).U32(objectId).U32(0).U16(0)
+            .U16(skillId).U16(sequence).U16((ushort)(targetObjectId is null ? 0 : 0x20));
+        if (targetObjectId is { } t) w.U32(t);
+        CompactInt(w, targetX); CompactInt(w, targetY);
+        return w.ToArray();
     }
 
     public const ushort LifeUpdateId = 0x1b1;
@@ -253,6 +287,9 @@ public static class InstanceProtocol
                 : id == InstanceItems.CommandId ? InstanceItems.CommandLength(data[pos..]) ?? int.MaxValue
                 : id == InstanceNpcs.BuyId ? InstanceNpcs.BuyLength(data[pos..]) ?? int.MaxValue
                 : id == InstanceStash.ReorderTabsId ? InstanceStash.ReorderTabsLength(data[pos..]) ?? int.MaxValue
+                : id == InstanceStash.MoveToAffinityTabId ? InstanceStash.MoveToAffinityTabLength(data[pos..]) ?? int.MaxValue
+                : id == InstanceStash.SetAffinitiesId ? InstanceStash.SetAffinitiesLength(data[pos..]) ?? int.MaxValue
+                : id == InstanceNpcs.CtrlBuyId ? InstanceNpcs.CtrlBuyLength(data[pos..]) ?? int.MaxValue
                 : id == InstanceWaypoints.VisitHideoutId ? InstanceWaypoints.VisitHideoutLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
             if (known is not int len) { unknown = data[pos..].ToArray(); break; }
             if (data.Length - pos < len) { partial = data[pos..].ToArray(); break; }
