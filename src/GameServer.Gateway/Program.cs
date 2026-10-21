@@ -349,6 +349,8 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 "only Predictive is supported, the player stays hidden and cannot move");
             await Send(remote, stream, ciphers, InstanceChat.MessageBox(LockstepWarning), "0x000d message box: lockstep warning");
         }
+        else if (id == InstancePause.RequestId)
+            await SetPaused(remote, stream, ciphers, conn, InstancePause.ReadRequest(bytes));
         else if (id == InstanceProtocol.UseInstantSkillId)
         {
             // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,
@@ -2746,6 +2748,7 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
     {
         await Task.Delay(PlayerTickMs);
         if (conn.Closed) break;
+        if (conn.Paused) continue;
         double seconds = PlayerTickMs / 1000.0;
         double regen = LifeRegenPerSecond(conn) * seconds;
         var rf = conn.RighteousFire;
@@ -3825,7 +3828,7 @@ static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCi
         while (!conn.Closed)
         {
             await Task.Delay(500);
-            if (!conn.AiEnabled) continue;
+            if (!conn.AiEnabled || conn.Paused) continue;
             var orders = new List<(uint Id, (int X, int Y) From, (int X, int Y) To, string Why)>();
             var swings = new List<(uint Id, SpawnedMonster M, (int X, int Y) From)>();
             double now = conn.Clock.Elapsed.TotalSeconds;
@@ -3894,6 +3897,25 @@ static bool EvadesLocked(ClientState conn, int hitChance, double now)
     return false;
 }
 
+// The Escape menu (C→S 0x1d4, 22-pause.md) pauses the area outside towns and hideouts, where the client does not ask
+// anyway: the Clock stops, the monster AI and the player tick skip their steps, and S→C 0x1d3 pauses the client's world.
+static async Task SetPaused(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool pause)
+{
+    ushort here = conn.Layout.Hash;
+    if (pause && (WaypointCatalog.Areas.Find(here) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == here)))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x01d4 pause: in a town or hideout, not paused");
+        return;
+    }
+    if (pause) conn.Clock.Stop(); else conn.Clock.Start();
+    await Send(remote, stream, ciphers, InstancePause.State(pause), $"0x01d3 {(pause ? "paused" : "resumed")} (C→S 0x01d4 {(pause ? 1 : 0)})");
+}
+
+static async Task WhilePaused(ClientState conn)
+{
+    while (conn.Paused && !conn.Closed) await Task.Delay(100);
+}
+
 static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
     SpawnedMonster m, (int X, int Y) from, (int X, int Y) player)
 {
@@ -3902,6 +3924,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         InstanceProtocol.ActionStarted(id, from.X, from.Y, player.X, player.Y, a.SkillId, 0xffff, 0x0408, targetObjectId: PlayerId),
         $"0x01ab monster 0x{id:x} ({m.Label}) attacks the player, attack time {a.Seconds:0.00} s");
     await Task.Delay(TimeSpan.FromSeconds(a.Seconds / 2));
+    await WhilePaused(conn);   // a swing started just before the pause lands after it
     double now = conn.Clock.Elapsed.TotalSeconds;
     uint life, mana, manaBefore;
     int rawDamage = 0, damage = 0;
@@ -5761,6 +5784,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The character's class: its Characters.dat row (the Witch: 1).
     public int ClassRow { get; init; } = SkillCatalog.WitchRow;
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+    // The Escape menu's pause (C→S 0x1d4) stops the Clock: walks, cooldowns and flask effects stand still meanwhile.
+    public bool Paused => !Clock.IsRunning;
     // Server-side estimate of the client-predicted walk (reported in each 0x1ab), kept on walkable cells.
     public WalkEstimator Walk { get; private set; } = NewWalk(layout);
 
