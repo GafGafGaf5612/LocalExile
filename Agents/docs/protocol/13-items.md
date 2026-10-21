@@ -365,6 +365,38 @@ or a full one, is refused and nothing is spent.
 affix from a magic or rare item; implicits, the other affixes, rarity and name stay. Anything else, or an item without
 explicit affixes, is refused and nothing is spent.
 
+### Armourer's Scrap (2026-10-21, verified live)
+
+`CurrencyArmourQuality`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.ArmourerScrap` adds 1% quality (the
+Quality component's u8) to an item with an Armour component, any rarity, up to 20%; the client shows the raised
+defences from the quality. On this server the Orb of Scouring also sets an armour piece's quality back to 0 (and so
+accepts a normal armour piece with quality). Other items, or 20%, are refused and nothing is spent.
+
+### Blacksmith's Whetstone (2026-10-21, verified live)
+
+`CurrencyWeaponQuality`, the same as Armourer's Scrap for items with a Weapon component (`CurrencyEffects.Whetstone`):
++1% quality, any rarity, up to 20%, Shift included; the Orb of Scouring sets a weapon's quality back to 0 as well.
+
+### Orb of Chance (2026-10-21, verified live)
+
+`CurrencyUpgradeRandomly`, same handler (0x71, 0x72 with Shift). A server rule, not the official one (which can also
+make uniques): `CurrencyEffects.Chance` turns a normal weapon or armour piece (Weapon or Armour component) rare with a
+30% chance (4-6 affixes, rare name) and magic otherwise (2-4 affixes, at most two prefixes and two suffixes, as the
+Orb of Alteration); the item ends identified. Anything else is refused and nothing is spent.
+
+### Vaal Orb and corruption (2026-10-21, verified live)
+
+**Corrupted** is bit 0 of the Base component's u8 `+0xc7` (the second u8 after the visual identity): the client's
+crafting checks read it ("input_is_corrupted" at `0x141d68e64`, `test byte ptr [base+0xc7], 1`). `Item.Corrupted` writes
+it and is saved with the item. A corrupted item takes no currency but a Scroll of Wisdom (there is no corrupted
+currency yet), and nothing removes corruption.
+
+`CurrencyCorrupt`, same handler (0x71, 0x72 with Shift). A server rule, not the official one: `CurrencyEffects.Vaal`
+takes a weapon, armour piece or jewellery (ring, amulet, belt) that is not corrupted or unique, and always corrupts it.
+A normal or magic item becomes rare with 4-6 new affixes and a rare name. A rare item has 1, 2, 3 or 4 random affixes
+replaced (20% each), 5 (10%) or all of them rerolled (10%: 4-6, new name) (`ItemRolls.ReplaceAffixes`: the replaced
+ones come back through `AddAffix`, at most three of each kind, so the count stays).
+
 ### Orb of Fusing (2026-10-21, verified live)
 
 `CurrencyRerollSocketLinks`, HASH32 `0xC71BF58D`, uses the same 0x71/0x72 currency handler and 0xbf inventory update.

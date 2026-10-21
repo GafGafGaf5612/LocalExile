@@ -88,6 +88,17 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         return Draw(1) is uint a && Draw(2) is uint b ? [a, b] : [];
     }
 
+    /// <summary>Vaal Orb on a rare item: <paramref name="count"/> random explicit affixes leave and as many new ones come
+    /// (<see cref="AddAffix"/>, at most three of each kind); the others stay.</summary>
+    public Item ReplaceAffixes(Item item, int count, Random rng)
+    {
+        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit).Select(p => p.i)
+            .OrderBy(_ => rng.Next()).Take(count).ToHashSet();
+        var result = item with { Mods = [.. item.Mods.Where((_, i) => !explicits.Contains(i))] };
+        for (int n = 0; n < explicits.Count && AddAffix(result, 3, rng) is { } added; n++) result = added;
+        return result;
+    }
+
     /// <summary>A rare name for this item's base; empty when the base is unknown.</summary>
     public IReadOnlyList<uint> RareName(Item item, Random rng) => catalog.ByHash(item.TypeHash) is { } t ? RareName(t, rng) : [];
 
