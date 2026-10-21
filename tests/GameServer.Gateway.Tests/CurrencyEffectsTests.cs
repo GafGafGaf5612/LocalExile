@@ -4,6 +4,83 @@ namespace GameServer.Gateway.Tests;
 
 public class CurrencyEffectsTests
 {
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public void Fusing_changes_only_links_and_keeps_socketed_gems(int count)
+    {
+        var before = Boots(Enumerable.Repeat(SocketColour.White, count).ToArray()) with
+        {
+            ItemLevel = 1, Quality = 20, Rarity = ItemRarity.Rare,
+            Links = Enumerable.Repeat((byte)1, count).ToArray(),
+        };
+        var random = new Random(9);
+        for (int i = 0; i < 100; i++)
+        {
+            var after = CurrencyEffects.Fusing(before, SocketBase("Body Armour", 2, 4), random)!;
+            Assert.NotNull(after);
+            Assert.False(before.Links!.SequenceEqual(after.Links!));
+            Assert.Same(before.Sockets, after.Sockets);
+            Assert.NotNull(after.Sockets[0].Gem);
+            Assert.Equal(count, after.Links!.Sum(n => n));
+            Assert.All(after.Links!, n => Assert.InRange(n, (byte)1, (byte)count));
+            Assert.Equal(before, after with { Links = before.Links });
+        }
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Small_fully_linked_items_can_be_unlinked_even_at_level_one(int count)
+    {
+        var before = Boots(Enumerable.Repeat(SocketColour.Red, count).ToArray());
+        var after = CurrencyEffects.Fusing(before, SocketBase("Boots", 2, 2), new Random(10));
+        Assert.NotNull(after);
+        Assert.True(after.Links!.Count > 1);
+    }
+
+    [Fact]
+    public void Fusing_refuses_invalid_targets_and_protects_completed_large_links()
+    {
+        var type = SocketBase("Body Armour", 2, 4);
+        var random = new Random(11);
+        Assert.Null(CurrencyEffects.Fusing(Boots(), type, random));
+        Assert.Null(CurrencyEffects.Fusing(Boots(SocketColour.Red), type, random));
+        Assert.Null(CurrencyEffects.Fusing(Boots(SocketColour.Red, SocketColour.Red), SocketBase("Ring"), random));
+        Assert.Null(CurrencyEffects.Fusing(Boots(SocketColour.Red, SocketColour.Red) with { Components = ["Base"] }, type, random));
+        foreach (int count in new[] { 5, 6 })
+            Assert.Null(CurrencyEffects.Fusing(Boots(Enumerable.Repeat(SocketColour.Red, count).ToArray()), type, random));
+        Assert.Null(CurrencyEffects.Fusing(Boots(Enumerable.Repeat(SocketColour.Red, 6).ToArray()) with { Links = null }, SocketBase("Boots"), random));
+    }
+
+    [Fact]
+    public void Fusing_can_produce_large_links_and_quality_favours_them_without_being_consumed()
+    {
+        var before = Boots(Enumerable.Repeat(SocketColour.Blue, 6).ToArray()) with { Links = null };
+        int CountLarge(byte quality)
+        {
+            int large = 0;
+            var sizes = new HashSet<byte>();
+            var random = new Random(12);
+            for (int i = 0; i < 20000; i++)
+            {
+                var after = CurrencyEffects.Fusing(before with { Quality = quality }, SocketBase("Body Armour"), random)!;
+                byte largest = after.Links!.Max();
+                sizes.Add(largest);
+                if (largest >= 4) large++;
+                Assert.Equal(quality, after.Quality);
+            }
+            Assert.Contains((byte)5, sizes);
+            Assert.Contains((byte)6, sizes);
+            return large;
+        }
+        Assert.True(CountLarge(30) > CountLarge(0));
+    }
+
     static ItemCatalog.BaseType SocketBase(string itemClass, byte width = 2, byte height = 3) =>
         new(0, "test", "test", 0x1234, width, height, 0x10, ["Base", "Sockets"], 0, Class: itemClass);
 

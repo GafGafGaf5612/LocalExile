@@ -296,12 +296,32 @@ The new count differs from the old count. Colours and links are independently re
 This is deliberately an initial local rule set, not exact 3.29 socket crafting: weights for counts 1/2/3/4/6 are
 50/120/100/30/1 (filtered by eligibility and old count), RGB uses attribute requirement + 12, each adjacent link has
 a 50% chance. Quality bonuses, white-socket 3.29 rules, special unique/mod socket overrides and corruption are not
-modelled. No new extracted data is needed. Orb of Fusing remains unimplemented.
+modelled. No new extracted data is needed.
 
 C→S 0x72 is 23 bytes: u16 id, u32 currency BaseItemTypes HASH32, u32 target inventory, u32 target item,
 then nine currently uninterpreted bytes. All integer fields above are big-endian. The Gateway resolves a stack
-of that currency (main inventory first) and reuses the 0x71 handler. The framing/parser test uses the existing
-live Chromatic Orb capture; that orb's effect is outside this PR.
+of that currency (main inventory first) and reuses the 0x71 handler.
+
+### Orb of Fusing (2026-10-21, verified live)
+
+`CurrencyRerollSocketLinks`, HASH32 `0xC71BF58D`, uses the same 0x71/0x72 currency handler and 0xbf inventory update.
+Captured normal use on item 229: `0071000000010000005B00000001000000E5` (currency stack 91).
+Captured Shift use on that item: `0072C71BF58D00000001000000E5000000000100060000`.
+The nine trailing bytes of 0x72 vary by currency; do not validate them against the earlier Chromatic capture.
+Tests parse both, split consecutive messages and keep a partial 0x72 until all 23 bytes arrive.
+
+`CurrencyEffects.Fusing` replaces only link groups. Socket count, colours (including white), gems and their experience,
+quality, rarity and mods stay unchanged. At least two sockets and a supported equipment class are required; the
+item-level roll cap does not apply to existing sockets. Fully linked 5/6-socket items are protected; 2-4 sockets
+may be unlinked. A refused use spends nothing. Normal and Shift uses consume one orb, update the target, refresh
+equipped items and persist through the existing inventory path. The new link layout differs from the old one;
+the number of links may repeat with different positions. This does not implement support-gem effects.
+
+Initial **approximate** probability model: enumerate all partitions of the socket chain, assign total weights
+500/3500/4500/1400/90/10 to largest groups 1/2/3/4/5/6, divide each weight among that group's layouts, then exclude
+the current layout. Quality multiplies a layout's weight by `(1 + quality / 100)^(largestGroup - 1)` and is not
+consumed. This is a local approximation, not an official probability table; exact chances, corruption and special
+item overrides remain open. No extracted-data changes are required.
 
 ## 6. Equipment on the character: visuals, attributes, gem skills
 

@@ -4451,7 +4451,7 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
 }
 
 // C→S 0x71: an item used on another one. A Scroll of Wisdom identifies an unidentified item (its explicit mods and rare
-// name are sent from now on) and loses one from its stack. Jeweller's Orbs use the same update path, including Shift.
+// name are sent from now on) and loses one from its stack. Socket currency uses the same update path, including Shift.
 static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.UseItemOn use, string hex)
 {
     const string Wisdom = "Metadata/Items/Currency/CurrencyIdentification";
@@ -4471,6 +4471,8 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
             ? CurrencyEffects.Chromatic(target.Item, Items.Requirements(targetType), Random.Shared) : null,
         CurrencyEffects.JewellersOrb => Items.ByHash(target.Item.TypeHash) is { } socketType
             ? CurrencyEffects.Jewellers(target.Item, socketType, Items.Requirements(socketType), Random.Shared) : null,
+        CurrencyEffects.OrbOfFusing => Items.ByHash(target.Item.TypeHash) is { } linkType
+            ? CurrencyEffects.Fusing(target.Item, linkType, Random.Shared) : null,
         _ => null,
     };
     if (result is null)
@@ -4480,8 +4482,8 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
                 $"sockets {target.Item.Sockets.Count}, roll cap {CurrencyEffects.MaximumSockets(target.Item, refusedType)}, " +
                 $"base cap {CurrencyEffects.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
         Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
-            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb
-                ? "target refused (identified / no or unsupported sockets / maximum sockets / socketed gems)" : $"not handled: {hex}"));
+            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing
+                ? "target refused (identified / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
         return;
     }
     // The currency and the changed item are saved together.

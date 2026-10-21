@@ -89,6 +89,23 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Fusing_normal_and_shift_captures_frame_and_target_the_same_item()
+    {
+        byte[] normal = Convert.FromHexString("0071000000010000005B00000001000000E5");
+        byte[] shift = Convert.FromHexString("0072C71BF58D00000001000000E5000000000100060000");
+        Assert.Equal(new InstanceItems.UseItemOn(1, 91, 1, 229), InstanceItems.ReadUseItemOn(normal));
+        Assert.Equal(new InstanceItems.UseItemTypeOn(0xC71BF58D, 1, 229), InstanceItems.ReadUseItemTypeOn(shift));
+        var messages = InstanceProtocol.SplitClientMessages([.. normal, .. shift, .. normal], out var partial, out var unknown);
+        Assert.Equal(new[] { 18, 23, 18 }, messages.Select(m => m.Bytes.Length));
+        Assert.Empty(partial);
+        Assert.Empty(unknown);
+        var incomplete = InstanceProtocol.SplitClientMessages(shift.AsSpan(0, 22), out partial, out unknown);
+        Assert.Empty(incomplete);
+        Assert.Equal(22, partial.Length);
+        Assert.Empty(unknown);
+    }
+
+    [Fact]
     public void Use_flask_reads_the_flask_bar_slot()
     {
         // Live 2026-10-20: flask keys 1 and 2 of the start kit.

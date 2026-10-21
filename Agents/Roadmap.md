@@ -128,8 +128,11 @@ Items are in rough priority order within each section. "Known" says what is alre
   same reserved and unreserved values.
 
 ### Items: mods, rarity, using flasks and currency
-- **Jeweller's Orb:** initial normal/Shift implementation is in Status.md and 13-items.md. Exact probabilities,
-  quality, 3.29 white-socket rules and special item overrides remain open; Orb of Fusing is not implemented here.
+- **Jeweller's Orb:** initial local 0x71/Shift 0x72 implementation rerolls counts, colours and links with class and
+  item-level caps; the live-found refusal at the item-level cap is fixed (only base capacity blocks use), verified
+  live. See 13-items.md, "Jeweller's Orb" for the requested local rules and remaining exact-game behaviour.
+- **Orb of Fusing:** normal/Shift handling and link-only rerolls are implemented and verified live. Exact
+  link probabilities, quality scaling and special item overrides remain open (13-items.md, "Orb of Fusing").
 - **Known:** items serialize, move, socket and drop ([13](docs/protocol/13-items.md)); rarity, implicits and every mod
   list are sent and saved (13 §2a); magic and rare items roll, drop unidentified and a Scroll of Wisdom identifies
   them (13 §2b); equipped items' mods count on the character (13 §2c). Open issues: enchants / crafted / corrupted / influences / uniques (#60), area and monster mods (#61).

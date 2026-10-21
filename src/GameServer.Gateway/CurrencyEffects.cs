@@ -7,6 +7,42 @@ static class CurrencyEffects
 {
     public const string ChromaticOrb = "Metadata/Items/Currency/CurrencyRerollSocketColours";
     public const string JewellersOrb = "Metadata/Items/Currency/CurrencyRerollSocketNumbers";
+    public const string OrbOfFusing = "Metadata/Items/Currency/CurrencyRerollSocketLinks";
+
+    /// <summary>Change only links; socket colours, gems and all other properties stay intact.</summary>
+    public static Item? Fusing(Item item, ItemCatalog.BaseType type, Random random)
+    {
+        int count = item.Sockets.Count;
+        if (count < 2 || count > 6 || count > SocketCapacity(item, type)) return null;
+        IReadOnlyList<byte> old = item.Links ?? [.. Enumerable.Repeat((byte)1, count)];
+        // Small fully linked items can be unlinked; protect completed five- and six-socket items.
+        if (count >= 5 && old.Count == 1 && old[0] == count) return null;
+
+        // At most 32 possible partitions. Weight by the largest linked group, then divide that weight among
+        // its layouts. These are initial server weights, not recovered official probabilities.
+        double[] weights = [0, 500, 3500, 4500, 1400, 90, 10];
+        var layouts = new List<byte[]>();
+        int[] sizes = new int[7];
+        for (int mask = 0; mask < 1 << (count - 1); mask++)
+        {
+            var groups = new List<byte> { 1 };
+            for (int edge = 0; edge < count - 1; edge++)
+                if ((mask & (1 << edge)) != 0) groups[^1]++;
+                else groups.Add(1);
+            var layout = groups.ToArray();
+            layouts.Add(layout);
+            sizes[layout.Max()]++;
+        }
+        var choices = layouts.Where(g => !g.SequenceEqual(old)).Select(g =>
+            (Links: g, Weight: weights[g.Max()] / sizes[g.Max()] * Math.Pow(1 + item.Quality / 100.0, g.Max() - 1))).ToArray();
+        double roll = random.NextDouble() * choices.Sum(c => c.Weight);
+        foreach (var choice in choices)
+        {
+            roll -= choice.Weight;
+            if (roll < 0) return item with { Links = choice.Links };
+        }
+        return item with { Links = choices[^1].Links };
+    }
 
     // Initial local rules: 1, 2, 3, 4 or 6 sockets (five deliberately excluded).
     // Weights and link chances are approximations, not recovered client/server constants.
