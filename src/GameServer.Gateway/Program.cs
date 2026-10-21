@@ -4249,7 +4249,7 @@ static async Task SplitStack(string remote, NetworkStream stream, ConnectionCiph
     {
         // From a stash tab: the tab's stack shrinks and the split-off part is held with a character id, in one transaction.
         var stash = StashOf(conn);
-        if (ItemMoves.SplitFromStash(stash, items, tab, split.ItemId, amount) is not var (left, part))
+        if (ItemMoves.SplitFromStash(stash, items, tab, split.ItemId, amount, ShapeOf) is not var (left, part))
         {
             Console.WriteLine($"[gateway] {remote} <= 0x007c split {split} in stash tab {tab}: refused: {hex}");
             return;

@@ -183,13 +183,29 @@ public class CtrlClickTests : IDisposable
         var (items, stash) = (Items(), Stash());
         var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(16)), Shapes, out _)!.Value.Placed;
 
-        var (left, held) = ItemMoves.SplitFromStash(stash, items, Currency, inSlot.Id, 16)!.Value;
+        var (left, held) = ItemMoves.SplitFromStash(stash, items, Currency, inSlot.Id, 16, Shapes)!.Value;
 
         Assert.Null(left);
         Assert.Equal((inSlot.Id, 16), (held.Id, (int)held.Item.StackSize));
         var (again, stashAgain) = Reload();
         Assert.Empty(stashAgain.Inventory(Currency).Items);
         Assert.Equal(inSlot.Id, again.Items(PlayerInventories.Cursor).Single().Id);
+    }
+
+    [Fact]
+    public void A_click_on_a_currency_slot_bigger_than_a_stack_picks_up_a_full_stack()
+    {
+        var (items, stash) = (Items(), Stash());
+        var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(40)), Shapes, out _)!.Value.Placed;
+        stash.Merge(Currency, 1, 0, new InventoryItem(2, 0, 0, Scrolls(10)), Shapes);   // the slot's 50, a stack is 40
+
+        var (left, held) = ItemMoves.SplitFromStash(stash, items, Currency, inSlot.Id, 50, Shapes)!.Value;
+
+        Assert.Equal((inSlot.Id, 10), (left!.Id, (int)left.Item.StackSize));
+        Assert.Equal(40, held.Item.StackSize);
+        var (again, stashAgain) = Reload();
+        Assert.Equal(10, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
+        Assert.Equal(40, again.Items(PlayerInventories.Cursor).Single().Item.StackSize);
     }
 
     [Fact]

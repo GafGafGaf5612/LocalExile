@@ -197,7 +197,7 @@ public class ItemMovesTests : IDisposable
         var stack = InStash(stash, Orbs(20));
         FailWrites(_character);
 
-        Assert.ThrowsAny<IOException>(() => ItemMoves.SplitFromStash(stash, items, 0, stack.Id, 5));
+        Assert.ThrowsAny<IOException>(() => ItemMoves.SplitFromStash(stash, items, 0, stack.Id, 5, Shapes));
         Saves.FailWrite = null;
 
         var (again, stashAgain) = Reload();

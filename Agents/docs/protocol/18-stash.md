@@ -159,7 +159,8 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   `StashRules.NotShown` refuses every item, and maps already there move out at load.
 - **A plain click on a special tab's item** sends C→S 0x7c (split) with the whole stack (live 2026-10-20, the currency
   tab: `Amount` = the stack, `B` = 0; Shift + click sends `B` = 3 with the amount chosen). The Gateway puts the whole
-  stack on the cursor, keeping its id.
+  stack on the cursor, keeping its id; a slot holding more than a stack (currency, up to 10 000) gives a full stack
+  (the item's max) and keeps the rest. A Shift + click split takes at most a full stack too.
 - **Repair.** Items a special tab can't show (an earlier build let any item into any tab) move at load into their slot,
   else into the first normal tab with room, and are saved there. One that finds no room stays where it is, saved.
 

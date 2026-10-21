@@ -171,18 +171,22 @@ static class ItemMoves
     }
 
     /// <summary>Splits <paramref name="amount"/> off a stash tab's stack onto the empty cursor (C→S 0x7c), as a new
-    /// character item. Returns the tab's stack as it is now and the held part, or null (nothing changes).</summary>
-    public static (InventoryItem? Left, InventoryItem Part)? SplitFromStash(AccountStash stash, PlayerInventories items, int tab, uint itemId, int amount) =>
+    /// character item, at most the item's max stack (a currency slot holds more). Returns the tab's stack as it is now and
+    /// the held part, or null (nothing changes).</summary>
+    public static (InventoryItem? Left, InventoryItem Part)? SplitFromStash(AccountStash stash, PlayerInventories items, int tab, uint itemId, int amount,
+        Func<Item, PlayerInventories.Shape?> shapeOf) =>
         Saves.Atomically<(InventoryItem?, InventoryItem)?>(() =>
         {
             if (items.Items(Cursor).Count > 0 || tab < 0 || tab >= stash.Count || amount < 1
-                || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } source) return null;
+                || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } source
+                || shapeOf(source.Item) is not { } shape) return null;
+            amount = Math.Min(amount, Math.Max((int)shape.MaxStack, 1));
             // The whole stack: a plain click on a special tab's item sends it this way (a currency slot, live 2026-10-20). It
-            // goes onto the cursor as it is, keeping its id.
+            // goes onto the cursor as it is, keeping its id; a bigger slot gives a full stack and keeps the rest.
             if (amount >= source.Item.StackSize)
                 return stash.Take(tab, itemId) is { } taken ? (null, items.Put(Cursor, taken with { X = 0, Y = 0 })) : null;
             if (stash.Shrink(tab, itemId, amount) is not { } left) return null;
-            var part = items.Put(Cursor, new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = (ushort)amount }));
+            var part = items.Put(Cursor, PlayerInventories.Completed(new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = (ushort)amount }), shape));
             return (left, part);
         });
 
