@@ -80,4 +80,15 @@ public class PlayerWalkTests
         Assert.Equal((7, 7), w.Position(2));
         Assert.Equal((7, 7), w.Destination);
     }
+
+    [Fact]
+    public void Walk_up_to_an_object_stops_in_its_range()
+    {
+        // The stash (size 2) at (40, 0): max range 5, tolerance 2 → the walker stops 7 cells short.
+        var w = new PlayerWalk(0, 0, speed: 37);
+        var (_, stop, _) = w.WalkUpTo(40, 0, 2, now: 0);
+        Assert.Equal((33, 0), stop);
+        Assert.True(PlayerWalk.InWalkUpRange(stop, (40, 0), 2));
+        Assert.False(PlayerWalk.InWalkUpRange((32, 0), (40, 0), 2));
+    }
 }

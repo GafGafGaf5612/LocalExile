@@ -70,13 +70,21 @@ if (-not $NoBuild) {
     }
 }
 
+# Long-running processes start through `cmd /c ... > log` rather than Start-Process -RedirectStandardOutput: the
+# redirecting form creates them with handle inheritance on, so they would hold this shell's stdout open, and whoever runs
+# this script through a pipe (an AI agent's shell tool, `| Select-Object`) would wait until they exit. Started this way
+# (ShellExecute) they inherit the environment (the Game_* settings) but no handles.
+function Start-Detached([string]$exe, [string[]]$arguments, [string]$log, [string]$err) {
+    $line = (@($exe) + $arguments | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' '
+    Start-Process cmd.exe -ArgumentList "/c $line 1>`"$log`" 2>`"$err`"" -WorkingDirectory $repo -WindowStyle Hidden
+}
+
 $bin = 'bin\Debug\net10.0'
 $serverArgs = @{ Auth = @('serve'); Patch = @(); Gateway = @() }
 foreach ($s in 'Patch', 'Gateway', 'Auth') {
     if ($servers -notcontains $s) { continue }
-    Start-Process dotnet -ArgumentList (@("src\GameServer.$s\$bin\GameServer.$s.dll") + $serverArgs[$s]) -WorkingDirectory $repo `
-        -WindowStyle Hidden -RedirectStandardOutput (Join-Path $out "live-$($s.ToLower()).log") `
-        -RedirectStandardError (Join-Path $out "live-$($s.ToLower()).err")
+    Start-Detached 'dotnet' (@("src\GameServer.$s\$bin\GameServer.$s.dll") + $serverArgs[$s]) `
+        (Join-Path $out "live-$($s.ToLower()).log") (Join-Path $out "live-$($s.ToLower()).err")
 }
 
 # The patch server must read the GGPK root hash before the client locks the file.
@@ -97,8 +105,7 @@ foreach ($name in ($servers | Where-Object { $_ -ne 'Patch' } | ForEach-Object {
 }
 
 if ($Walkmaps) {
-    Start-Process $python -ArgumentList ('"' + (Join-Path $repo 'scripts\walkmaps\walkmaps.py') + '"') -WorkingDirectory $repo -WindowStyle Hidden `
-        -RedirectStandardOutput (Join-Path $out 'walkmaps.log') -RedirectStandardError (Join-Path $out 'walkmaps.err')
+    Start-Detached $python @((Join-Path $repo 'scripts\walkmaps\walkmaps.py')) (Join-Path $out 'walkmaps.log') (Join-Path $out 'walkmaps.err')
     Write-Output 'walk-map capture on (logs\walkmaps.log)'
 }
 

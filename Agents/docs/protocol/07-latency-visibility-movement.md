@@ -106,24 +106,32 @@ its own copy of the player's walk, and since 2026-10-21 that copy is the client'
 to whole cells on every re-order, walked through NPCs and refused detours the client takes.
 
 **The client's pathfinder** (`0x141e4d890`, from the Pathfinding component's MoveTo `0x141e7b530` → `0x141e7b920` →
-`0x141e4ef90`). Arguments seen for the player's Move (Frida, `scripts/re/frida/trace-pathfind.js`): precision 1, min and
-max range 0, tolerance −1, no phasing.
+`0x141e4ef90`). Arguments seen (Frida, `scripts/re/frida/trace-movement.js`): a Move click or a monster's move has
+precision 1, min and max range 0, tolerance −1, no phasing; a walk up to an object to use it has max range = the
+object's size + 3 and tolerance = its size (an NPC, size 4: 7 and 4; the stash, 2: 5 and 2; a waypoint, 5: 8 and 5).
 
 - **Grid and size.** Walk values are 4 bits per cell in 3 layers (`0x141d85260`: map `+0xd0 + 0x18 × layer`, row stride
   `+0x100`, size `+0x18/+0x20` in 23-cell tiles). A mover of size *s* (Positioned `+0x1e3` = `object_size − 1`: the
-  player 1, NPCs 4, the stash 2) may stand on a cell whose value is ≥ *s* + 1. The player uses layer 0
+  player 1, NPCs 4, the stash 2, monsters 1–3) may stand on a cell whose value is ≥ *s* + 1, so a monster of size 2
+  needs ≥ 3 where the player needs ≥ 2. The player uses layer 0
   (Positioned `+0x2c0`), which is byte for byte `data/walkability/<area>_seed<n>.bin`, so walkable = value ≥ 2. Layer 1
   only serves the goal check (a line test with threshold 1), which never fails on a walkable town cell.
 - **Search.** A* in a 272 × 272-cell window (`0x110`, centred on the start). 8 neighbours in the order (0,1), (1,0),
   (0,−1), (−1,0), (1,1), (1,−1), (−1,−1), (−1,1) (`DAT_142fbf350`); no corner rule. Costs are 1 / 1.4142 and the
-  heuristic is `|cell − target| + 0.001 × |cross(target − start, cell − target)|` (`0x141e4d7d0`; with a min/max range
-  it is the distance outside the range, 0 inside), all in float32. The open list is MSVC `push_heap`/`pop_heap` on
+  heuristic is `|cell − target| + 0.001 × |cross(target − start, cell − target)|` (`0x141e4d7d0`; the distance less the
+  tolerance, then the part outside [min, max], 0 inside), all in float32. The open list is MSVC `push_heap`/`pop_heap` on
   `{node, f}` with `a.f > b.f` (`0x141beb420`, `0x141beb2b0`), stale entries are skipped, and the goal is the first
   popped node with h = 0.
 - **The player's limit is an ellipse.** For a mover with a Player component (`0x14013f1e0`) there is no expansion
-  count; a neighbour n is searched only if `clamp(2 |target − start|, 20, 136) > |n − target| + |n − start|`. Other
-  movers get 1000 expansions (monsters, pets) or 100, and a coarse 11.5-unit pass (≤ 300 expansions) when the first
-  search fails.
+  count; a neighbour n is searched only if `clamp(2 |target − start|, 20, 136) > |n − target| + |n − start|`.
+- **Other movers stop after 100 expansions** (1000 for a unique, ObjectMagicProperties `+0x144` = 3, or a pet with
+  PetAi). When that search does not reach the target and the straight line to it is blocked, a **coarse pass** runs:
+  A* over cells of 11.5 grid units (`(c × 23) / 2`), seeded from the start's coarse cell and its (0,1), (1,0), (1,1)
+  neighbours where a straight line reaches them, costs 11.5 / 16.2634, only through cells within 136 of the target and
+  a straight line apart, at most 300 expansions; the first coarse cell with h < 23 that sees the target ends it. Its
+  chain back (goal first, with the path length from each to the target) then guides a second fine search: a cell heads
+  for the next coarse waypoint once it is within √143 and in sight (`0x141e4ee90`), and its heuristic becomes the
+  distance to that waypoint plus the length left (`DAT_1445bb850`, `0x1445bb868`).
 - **Objects** (`0x141e61370` → `0x141e61540`). Objects are found in the 23-cell tiles within *s* + 4 of the cell; one
   blocks when `max(|dx|, |dy|) − its size < s + 1`, a square (an NPC: Chebyshev distance ≤ 5 from its cell). Objects
   with `blocking = false` (waypoints, area transitions) are never tested. Layer, team and phase flags can exempt an
@@ -134,13 +142,34 @@ max range 0, tolerance −1, no phasing.
 
 **The client's walk** (Positioned `0x141e34400` → `0x141e4d180`, ticked by `0x141e32710` → `0x141e4d390`). Each segment
 between waypoints is a Bresenham line of cells; one step takes `(√(dx² + dy²) / speed) / max(|dx|, |dy|)` seconds,
-and the grid cell (`+0x294`) only changes a step at a time. Each frame adds its time to an accumulator and steps while it
-holds a whole step; before every step the next cell is checked again (terrain, objects) and a blocked step ends the walk.
-A new segment, including the first one of a new order, rescales the accumulator to its own step time, so a re-order
-keeps the elapsed fraction of the step in progress. Speed is `base_speed` 37 × the movement speed stats.
+and the grid cell (`+0x294`) only changes a step at a time. Each frame adds its time to the accumulator (`+0x244`, a
+whole number of milliseconds on the client's clock) and steps while it holds a whole step time (`+0x240`); before every
+step the next cell is checked again (terrain, objects) and a blocked step ends the walk. A new segment, including the
+first one of a new order, rescales the accumulator to its own step time (`A × s_new / s_old`), so a re-order keeps the
+elapsed fraction of the step in progress. A stop (`0x141e350e0`) takes effect in the next tick, after that tick's
+steps, and keeps the accumulator. Verified on a capture (2026-10-21): the per-tick rule held in 55,915 of 56,069 player
+ticks (the rest are counter resets), the rescale on 575 of 575 clicks. Speed (`0x141e7c0b0`) is the Pathfinding base
+(`+0x548`, `base_speed` 37 for the player, times the Actor's run-speed roll `+0x1a8`) × (1 + `movement_velocity_+%`
+/ 100) × (1 + stat 0xce6 / 100), capped by stat 0x44f.
+
+**Click timing.** The client applies a click right after its frame's tick and sends the 0x25 in the same frame: on one
+QPC clock (Frida in the client, the Gateway's `Game_MOVE_TRACE=1` log), the 0x25 reaches the Gateway's socket 0.24 ms
+(sd 0.05) after the client's sender ran, and the tick was 0.74 ms before that read (526 clicks). So the server applies a
+click at its read time (`ClientInbox.Batch.ReadAt` → `ClientState.ClockAt`), not when the handler runs. The client sends
+no clock: neither 0x25, the 0x1b tick nor the HNC 0xDD (an inventory checksum) carries one. Its game clock counts whole
+milliseconds and runs ~1 ms (sd 0.5) before its tick, so a click whose step boundary falls within ~1 ms of the frame can
+still differ by one cell.
+
+**Monsters on the client.** A monster's 0x1ab is applied when the client next reads packets, 5–50 ms after the
+server sent it (median 17 ms), and the client paths it at once (1,235 of 1,235 recorded monster paths match
+`ClientPathfinder` with `SearchLimit.Expansions100`, all other objects as blockers and the size's walk threshold). When a
+walk ends short of the target the client paths again on its own, and monsters far from the player keep their walk but do
+not tick. Their speeds vary by a few percent (7.60–8.40 for a base of 8); the Actor roll is 1 for these, so the source
+is still open.
 
 **Server side.** `PlayerWalk` runs `ClientPathfinder` from the player's cell on every order and steps the result at the
-client's step times; the blockers are the NPCs and stashes the Gateway created (`ClientState.SetBlocker`), the living
+client's step times; walk-ups to NPCs, stashes, waypoints and area transitions use the client's range
+(`PlayerWalk.WalkUpTo`, `InWalkUpRange`); the blockers are the NPCs and stashes the Gateway created (`ClientState.SetBlocker`), the living
 hostile monsters where the server's estimate has them (size MonsterVarieties `ObjectSize` − 1, not checked live), and the
 quest walls' cells. Replaying a recorded session (424 client path calls, 2026-10-21), every path matched the client's
 waypoint for waypoint. At each order, the predicted cell was exact 184 times, within one cell 392 times, and at most 2.8
@@ -148,9 +177,10 @@ cells off. The rest is the client's frame timing, which the server cannot see. A
 speeds 37 and 370) matched all 940 town paths; on The Coast 569 of 614 matched without monsters, and the other 45 bend
 around monsters (hence monsters as blockers). Held-mouse walks drift by a few cells (town, 37 cells/s: median 1, max 7;
 at 370 cells/s one 16 ms frame is ~6 cells): the client applies a click from its previous frame, the server when the
-0x25 arrives, so the timing differences add up while the button is held and vanish when a walk ends on its target. Monsters still use `WalkEstimator`.
-`Approach` (walking into range of an object or a melee target) uses the pathfinder's max range; the client's real range
-arguments for those walks are not traced yet.
+0x25 arrives, so the timing differences add up while the button is held and vanish when a walk ends on its target. With
+the walk-up arguments, all 246 town paths of a third capture match, NPC, stash and waypoint walks included. Monsters
+still use `WalkEstimator`. `Approach` (a melee target, an item pickup, the map device) keeps a reach in cells; the
+client's arguments for those walks are not traced yet.
 
 **Passive movement speed.** The passives' `base_movement_velocity_+%` are summed into `CharacterStats.Pools` and the
 walk estimate uses `37 × (1 + pct / 100)` cells/s; the same total is sent as the client's `movement_velocity_+%`, so the
@@ -167,23 +197,45 @@ Positioned handler calls `0x141e34120` with duration = distance / speed. With sp
 and crawled (~1 cell per 1.5 s), so it is not sent for the local player (`Game_MOVE_MODE=move` to test).
 **S→C 0x1b7** teleport: header, `i32 x, i32 y, u32 → +0x290, u32 → +0x2b4`; works (`Game_MOVE_MODE=teleport`).
 
-**Lockstep.** Everything above is the client's **Predictive** network mode (Options → Game → Network Mode;
-`[NETWORKING] networking_type=predictive` in `Documents\My Games\Path of Exile\production_Config.ini`). With
-`networking_type=auto` the client chose lockstep on localhost (live 2026-10-18): the player object was created and
-in the wake zone but never drawn, and clicks sent no 0x25. Each click sent instead:
+## 6. Lockstep (not served yet)
 
-| Id | Bytes | Notes |
+Everything above is the client's **Predictive** network mode (Options → Game → Network Mode;
+`[NETWORKING] networking_type=predictive` in `Documents\My Games\Path of Exile\production_Config.ini`; the mode is
+`+0x984` of the world: 0 predictive, 2 lockstep, 3 auto). "Auto" picks lockstep when connecting took under 70 ms and
+predictive over 90 ms (`0x142148880`), so it picks lockstep on localhost. The Gateway answers lockstep's moves with a
+message box asking for Predictive (once per connection).
+
+**Server frames.** In lockstep the client's world does not run on its own clock: it runs **server frames**. S→C
+**0x2b6** (u8) sets the frame length in ms (`0x141645fa0` stores it at world `+0x11c`); S→C **0x2b5** (id only) ends a
+frame: the world's message intake (`0x1421872b0`) queues one frame of that length (deque at world `+0x9c0`, count
+`+0x9d8`) behind the world messages received so far (`+0x9e0`). Each client update adds its time to world `+0x988` and
+runs every queued frame it covers (`0x142183930` → world vtable `+0x360` = `0x142183ce0`): the frame's messages first,
+then the objects tick by exactly the frame's length. Behind by 1, 2, 30 or 60 frames, it speeds up × 1.01, 1.5, 2 or 5;
+the most frames it was behind since the last tick goes out as the u8 of C→S 0x1b (world `+0xb98`,
+"lockstep_lag_frames"). Without 0x2b5 nothing runs: the player is created but never drawn. A predictive client ignores
+0x2b5, and 0x2b6 only stores its byte, so the Gateway always sends them (`RunServerFrames`, 33 ms, `Game_FRAME_MS`):
+a lockstep client is then drawn and its world runs. Found with hardware watchpoints on those fields
+(`scripts/re/frida/watch-lockstep-world.js`).
+
+**Client moves** (`0x14215f700`, `0x14215fb10`, `0x14215fcb0`, `0x14215fe50` send them when `+0x984` is 2):
+
+| Id | Bytes | Fields |
 |---|---|---|
-| 0x018e | 15 | `018E 00000029 FFFFFFEF 2909 0402 00`: i32, i32 (small signed values: offsets from the player?), u16 skill id (0x2909 Move), u16 flags (0x0400 / 0x0402), u8 |
-| 0x0192 | 10 | `0192 00000010 FFFFFFF2`: two i32, as in 0x018e |
-| 0x0195 | 2 | id only, ends the click |
+| 0x018e | 15 | use a skill at a location: i32 dx, i32 dy (the target relative to the player's cell), u16 skill id, u16 action flags, u8 (`018E 00000029 FFFFFFEF 2909 0402 00`) |
+| 0x018f | 13 | use a skill on an object: u32 object id, u16 skill id, u16 flags, u8 (instead of predictive 0x24) |
+| 0x0192 | 10 | the held skill's new target: i32 dx, i32 dy |
+| 0x0195 | 2 | release |
+| 0x0196 | 4 | u16 skill id: release that skill |
 
-Lengths are from 26 captures of each, every one alone in its chunk; the field layout is inferred, not read from the
-client's serializers. The server sends nothing back that lockstep accepts, so the Gateway frames the three
-(`InstanceProtocol.IsLockstepMovement`), ignores them, and once per connection logs a warning and shows a message box
-asking for Predictive. Supporting lockstep would mean finding the senders and the S→C answer the client waits for.
+The client still creates the action itself, with its sequence number's top bit set (`| 0x8000`), and waits for the
+server. Answering a click with a non-predicted 0x1ab (sequence 0xffff) made the player walk (live 2026-10-21);
+answering held-mouse updates with S→C **0x1ad** (object header, u16 sequence, i32 x, i32 y: a new target for the action
+in progress, `InstanceProtocol.ActionTarget`) did nothing, presumably because the sequence must match the client's own
+action number, which the lockstep messages do not carry. Serving lockstep means: that sequence, every action through
+the lockstep messages (0x018f for NPCs, stashes, transitions, items), and the server stepping every object by its
+frames (the tick rules above) and sending the start of each action in the frame it belongs to.
 
-## 6. More client messages seen
+## 7. More client messages seen
 
 | Id | Bytes | Notes |
 |---|---|---|
@@ -197,10 +249,13 @@ asking for Predictive. Supporting lockstep would mean finding the senders and th
 - Area transitions: The Coast exit (and other exits) are world objects the server has to create; none are sent yet, so
   walking to the town edge just stops there.
 
-- What the server should do with the client's HNC packets (type 0xDD).
+- What the server should do with the client's HNC packets (type 0xDD: a one-byte inventory checksum reply, sent when the
+  client's item count differs from the server's 0xDC request).
 - The meaning of 0x1ba's +0x28 and u8. Moving other (non-predicted) objects works with 0x1ab and the Move skill
   0x2909 (monsters, [10](10-chat-and-commands.md) §5); 0x1ba's float is distance per second (duration = distance / value).
 - 0x0099 and 0x004e.
-- Monsters still walk on `WalkEstimator`: the client runs them through the same pathfinder with an expansion limit
-  (1000 or 100) and a coarse pass, not ported yet; their estimated positions are what the player's path avoids.
-- The range arguments of the client's walks into range (0x24 on an NPC, a waypoint, a melee target) for `Approach`.
+- Monsters on the server still walk on `WalkEstimator`. `ClientPathfinder` paths them as the client does (§5), but the
+  client's monster controller (its own re-paths, frozen far monsters), the speed variance and the 5–50 ms until the
+  client applies an order are not reproduced; their estimated positions are what the player's path avoids.
+- The client's walk-up arguments for melee attacks, item pickups and the map device (`Approach`).
+- Lockstep (§6): the action sequence for 0x1ad, the object-use path (0x018f) and server frame stepping.

@@ -271,9 +271,16 @@ data is in [19](docs/protocol/19-gems.md).
 
 ## 4. Server design
 
-- **Monster movement on the client's pathfinder:** monsters still use the fitted `WalkEstimator`; the client paths them
-  with an expansion limit and a coarse pass, so the positions the player's path avoids are estimates
+- **Monster movement on the client's pathfinder:** monsters still use the fitted `WalkEstimator`. `ClientPathfinder`
+  already paths them exactly as the client does; still missing are the client's monster controller (its own re-paths,
+  frozen far monsters), the speed variance and the 5–50 ms until the client applies an order
   ([07](docs/protocol/07-latency-visibility-movement.md) §5, "Open").
+- **Lockstep network mode:** the server would decide every position and the client play it back by server frames,
+  which makes client and server identical by construction. Found so far: the frame protocol (S→C 0x2b6 / 0x2b5, already
+  sent), the client's lockstep messages (0x018e, 0x018f, 0x0192, 0x0195, 0x0196) and the target update 0x1ad. Still
+  needed: the client's action sequence (0x1ad is ignored without it), every action through the lockstep messages
+  (NPCs, stashes, transitions, items, skills), and stepping every object by the server's frames
+  ([07](docs/protocol/07-latency-visibility-movement.md) §6).
 - **HNC packets from the client** (type 0xDD): what the server should do with them
   ([07](docs/protocol/07-latency-visibility-movement.md)).
 - **`GameServer.Sim`** is an empty placeholder: a home for a server-side world simulation (monsters, combat) when it is

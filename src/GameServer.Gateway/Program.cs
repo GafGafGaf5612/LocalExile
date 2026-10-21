@@ -269,7 +269,11 @@ static async Task OnClientData(string remote, NetworkStream stream, ConnectionCi
     ciphers.Receive.Process(data);
     byte[] all = [.. conn.Carry, .. data];
     var messages = InstanceProtocol.SplitClientMessages(all, out conn.Carry, out byte[] unknown);
-    foreach (var bytes in inbox.Post(messages, unknown))
+    if (MoveTrace)
+        foreach (var (id, bytes) in messages)
+            if (id is 0x0024 or 0x0025 or 0x0191)
+                Console.WriteLine($"[move-trace] qpc={readAt} recv 0x{id:x4} {Convert.ToHexString(bytes)}");
+    foreach (var bytes in inbox.Post(messages, unknown, readAt))
     {
         if (conn.Ticks++ % 50 == 0) Console.WriteLine($"[gateway] {remote} <= 0x001b tick #{conn.Ticks}: {Convert.ToHexString(bytes)} (answered with 0x001c)");
         await Send(remote, stream, ciphers, InstanceProtocol.Pong(serverDelayMs: ClientInbox.ServerDelayMs, ackIndex: inbox.NextAckIndex(), sideChannel: conn.Hnc!.NextIdleU32()), null);
@@ -291,7 +295,7 @@ static async Task RunHandlers(string remote, NetworkStream stream, ConnectionCip
         {
             if (conn.Closed) break;
             long start = Stopwatch.GetTimestamp();
-            await OnClientMessages(remote, stream, ciphers, batch.Messages, batch.Unknown, conn);
+            await OnClientMessages(remote, stream, ciphers, batch.Messages, batch.Unknown, conn, batch.ReadAt);
             var took = Stopwatch.GetElapsedTime(start);
             if (took > ClientInbox.SlowAfter)
             {
@@ -315,7 +319,7 @@ static async Task RunHandlers(string remote, NetworkStream stream, ConnectionCip
 // 0x24 on an area transition → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
 // Anything else is logged in hex: those are the next messages to map.
 static async Task OnClientMessages(string remote, NetworkStream stream, ConnectionCiphers ciphers,
-    IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown, ClientState conn)
+    IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown, ClientState conn, long readAt = 0)
 {
     foreach (var (id, bytes) in messages)
     {
@@ -324,7 +328,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             // Echo the action so the client runs it (Move on a ground click). The server does no validation yet.
             var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);
             Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
-            double at = conn.Clock.Elapsed.TotalSeconds;
+            double at = conn.ClockAt(readAt);   // when the client applied the click, not when this handler runs
             // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
             bool cast = Skills.IsGemSkill(use.SkillId);
             var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
@@ -345,11 +349,12 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         }
         else if (InstanceProtocol.IsLockstepMovement(id))
         {
-            // The client moves this way only in lockstep, which the Gateway does not answer: say so once per connection.
+            // The client moves this way only in lockstep, which the Gateway does not serve yet (07 §6): say so once per
+            // connection.
             if (conn.WarnedLockstep) continue;
             conn.WarnedLockstep = true;
             Console.WriteLine($"[gateway] {remote} <= 0x{id:x4} lockstep movement: the client's Network Mode is lockstep (\"auto\" picks it on localhost); " +
-                "only Predictive is supported, the player stays hidden and cannot move");
+                "only Predictive is supported, the player cannot move");
             await Send(remote, stream, ciphers, InstanceChat.MessageBox(LockstepWarning), "0x000d message box: lockstep warning");
         }
         else if (id == InstancePause.RequestId)
@@ -598,6 +603,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SpawnQuestRoomObjects(remote, stream, ciphers, conn);
                 await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                 await SpawnMapReturnPortal(remote, stream, ciphers, conn);
+                _ = RunServerFrames(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
                 _ = RunFlaskRecovery(remote, stream, ciphers, conn);
@@ -812,11 +818,11 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     // The client walks to the area transition first; follow it and act once the player is there (a move meanwhile cancels).
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(transition.GridX, transition.GridY, AreaTransitionReach, now);
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(transition.GridX, transition.GridY, AreaTransitionObjectSize, now);
     Console.WriteLine($"[gateway] {remote} <= 0x0024 area transition 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
-    if (Dist(stop, (transition.GridX, transition.GridY)) > AreaTransitionReach + 2)
+    if (!PlayerWalk.InWalkUpRange(stop, (transition.GridX, transition.GridY), AreaTransitionObjectSize))
     {
         Console.WriteLine($"[gateway] {remote} area transition 0x{use.TargetId:x} out of reach from ({stop.X}, {stop.Y})");
         return;
@@ -857,11 +863,11 @@ static async Task UseWaypoint(string remote, NetworkStream stream, ConnectionCip
 {
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(waypoint.GridX, waypoint.GridY, WaypointReach, now);
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(waypoint.GridX, waypoint.GridY, WaypointObjectSize, now);
     Console.WriteLine($"[gateway] {remote} <= 0x0024 waypoint ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
-    if (Dist(stop, (waypoint.GridX, waypoint.GridY)) > WaypointReach + 2)
+    if (!PlayerWalk.InWalkUpRange(stop, (waypoint.GridX, waypoint.GridY), WaypointObjectSize))
     {
         Console.WriteLine($"[gateway] {remote} waypoint out of reach from ({stop.X}, {stop.Y})");
         return;
@@ -905,7 +911,7 @@ static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphe
 {
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(npc.X, npc.Y, NpcReach, now);
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(npc.X, npc.Y, ClientState.NpcBlockerSize, now);
     Console.WriteLine($"[gateway] {remote} <= 0x0024 npc {npc.Npc} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
@@ -3961,6 +3967,26 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
 // cells) of the player starts chasing: it walks (Move action 0x1ab, skill 0x2909; the client paths it) to a cell
 // StopRange from the player, re-ordered when that cell has moved by 3+ cells. Beyond twice the range it gives up and stops.
 // Positions are the server's estimates (WalkEstimator at MonsterVarieties MovementSpeed cells/s).
+// The server frame clock (Agents/docs/protocol/07 §6): S→C 0x2b6 sets the frame length, then 0x2b5 ends a frame every
+// FrameMs. A lockstep client advances its world by exactly these frames, running the messages of each at its start (it
+// is drawn and its world runs; its moves are not served yet); a predictive client ignores them.
+static async Task RunServerFrames(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    try
+    {
+        await Send(remote, stream, ciphers, InstanceProtocol.FrameLength(FrameMs), $"0x02b6 server frame length {FrameMs} ms");
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(FrameMs));
+        while (!conn.Closed && await timer.WaitForNextTickAsync())
+        {
+            await Send(remote, stream, ciphers, InstanceProtocol.FrameEnd(), null);
+            conn.ServerFrame++;
+        }
+    }
+    catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+    {
+    }
+}
+
 static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     const ushort Move = 0x2909;
@@ -4206,8 +4232,11 @@ static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ci
     try
     {
         if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
+        string? trace = MoveTrace && bytes.Length >= 6 && (bytes[0] << 8 | bytes[1]) is 0x01ab or 0x01b7 or 0x01ba
+            ? Convert.ToHexString(bytes) : null;
         ciphers.Send.Process(bytes);
         await stream.WriteAsync(bytes);
+        if (trace is not null) Console.WriteLine($"[move-trace] qpc={Stopwatch.GetTimestamp()} send {trace}");
     }
     finally { gate.Release(); }
 }
@@ -5077,7 +5106,7 @@ static async Task OpenGuildStash(string remote, NetworkStream stream, Connection
 {
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(conn.GuildStashAt.X, conn.GuildStashAt.Y, StashReach, now);
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(conn.GuildStashAt.X, conn.GuildStashAt.Y, ClientState.StashBlockerSize, now);
     Console.WriteLine($"[gateway] {remote} <= 0x0024 guild stash ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
@@ -5291,7 +5320,7 @@ static async Task UseMapPortal(string remote, NetworkStream stream, ConnectionCi
 {
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(at.X, at.Y, AreaTransitionReach, now);
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(at.X, at.Y, AreaTransitionObjectSize, now);
     Console.WriteLine($"[gateway] {remote} <= 0x0024 map portal 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action || conn.PendingTransfer is not null) return;
@@ -5349,7 +5378,7 @@ static async Task UseMapReturnPortal(string remote, NetworkStream stream, Connec
 {
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(at.X, at.Y, AreaTransitionReach, now);
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(at.X, at.Y, AreaTransitionObjectSize, now);
     Console.WriteLine($"[gateway] {remote} <= 0x0024 portal back 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
@@ -5418,7 +5447,7 @@ static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphe
     if (StashCatalog.In(conn.Layout.Hash) is not { } at) return;
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
-    var (here, stop, arrive) = conn.Walk.Approach(at.X, at.Y, StashReach, now);
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(at.X, at.Y, ClientState.StashBlockerSize, now);
     Console.WriteLine($"[gateway] {remote} <= 0x0024 stash ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.ActionCount != action) return;
@@ -5679,14 +5708,12 @@ sealed partial class Program
     // Shown once per connection when the client moves in lockstep (InstanceProtocol.IsLockstepMovement).
     internal const string LockstepWarning = "Your Network Mode is lockstep, which this server does not support yet: your character stays " +
         "hidden and cannot move. Set Options > Game > Network Mode to Predictive, then log out to the character screen and Play again.";
-    // How close (cells, centre to centre) the player must be to use an area transition.
-    internal const double AreaTransitionReach = 6;
-    // How close the player must be to use a waypoint (Waypoint.ot object_size 6, as an area transition), and how close
-    // it activates on its own.
-    internal const double WaypointReach = 6, WaypointActivationRange = 25;
-    // How close the player walks to an NPC before talking (not measured yet).
-    internal const double NpcReach = 8;
-    // How close the player walks to the Stash before it opens (Stash.ot object_size 3; not measured).
+    // The Positioned size (object_size − 1) of area transitions and waypoints (AreaTransition.ot, Waypoint.ot
+    // object_size 6): the player walks up to them as the client does (PlayerWalk.WalkUpTo).
+    internal const int AreaTransitionObjectSize = 5, WaypointObjectSize = 5;
+    // How close a waypoint activates on its own.
+    internal const double WaypointActivationRange = 25;
+    // How close the player walks to the map device before it opens (its size is not known yet).
     internal const double StashReach = 6;
     // The affinity (StashTabAffinityId row 0, "UNUSED0": no item has it) that marks the account's last tab in the tab
     // list, so that S->C 0x7b kind 1 with it opens the stash on that tab.
@@ -5801,6 +5828,14 @@ sealed partial class Program
     // base_speed). Game_WALK_SPEED overrides it.
     internal static readonly double WalkSpeed =
         double.TryParse(Environment.GetEnvironmentVariable("Game_WALK_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var s) ? s : 37;
+
+    // Game_MOVE_TRACE=1 logs "[move-trace] qpc=…" for the client's 0x24/0x25/0x191 as read and the server's
+    // 0x1ab/0x1b7/0x1ba as written, on the machine's QPC clock (scripts/re/frida/trace-movement.js uses the same clock).
+    internal static readonly bool MoveTrace = Environment.GetEnvironmentVariable("Game_MOVE_TRACE") == "1";
+
+    // The server frame length (ms, S→C 0x2b6): a lockstep client's world advances by these frames. Game_FRAME_MS overrides.
+    internal static readonly byte FrameMs =
+        byte.TryParse(Environment.GetEnvironmentVariable("Game_FRAME_MS"), out var fm) && fm > 0 ? fm : (byte)33;
 }
 
 /// <summary>
@@ -6167,6 +6202,13 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     // The Escape menu's pause (C→S 0x1d4) stops the Clock: walks, cooldowns and flask effects stand still meanwhile.
     public bool Paused => !Clock.IsRunning;
+
+    /// <summary>The <see cref="Clock"/> time of a Stopwatch timestamp in the past (a socket read); now when 0 or paused.</summary>
+    public double ClockAt(long timestamp)
+    {
+        double now = Clock.Elapsed.TotalSeconds;
+        return timestamp == 0 || Paused ? now : Math.Max(0, now - System.Diagnostics.Stopwatch.GetElapsedTime(timestamp).TotalSeconds);
+    }
     // The server's copy of the client-predicted walk (reported in each 0x1ab): the client's own pathfinder and stepping.
     public PlayerWalk Walk => _walk ??= NewPlayerWalk();
     PlayerWalk? _walk;
@@ -6230,6 +6272,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
             () => Blockers);
     }
     public bool PlayerSent;
+    // Server frames ended so far (0x2b5).
+    public long ServerFrame;
     public byte[] Carry = [];
     /// <summary>The portal cosmetic: the MicrotransactionPortalVariations row every portal is listed with (0x008f +0x26),
     /// 0 for the base effect. Applied to portals already standing as well as to new ones.</summary>
