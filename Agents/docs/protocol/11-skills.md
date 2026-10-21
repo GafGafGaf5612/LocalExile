@@ -48,7 +48,8 @@ byte f0:
   a × skill record (0x1421981d0, as in the list: add or replace)
   b × u16 skill id (0x142198560: binary search of the manager's skills at +0x158 by id (+0x40), the manager's
                     vtable +0x40 runs for it, then it is erased; an unknown id is skipped)
-  u8 c, c × (u32, u32)        → manager +0x188
+  u8 c, c × (u32, u32)        → manager +0x188 (ActiveSkills row → Vaal souls: FUN_141eea5b0 compares the souls a
+                                use needs with the entry's count)
   u8 d, d × (u32, u32, u32)
   ```
   After login the Gateway sends every skill change this way (`SendSkills`): all the player's skills as records and the
@@ -58,7 +59,7 @@ byte f0:
 `0x142197b10`:
 ```
 u8 n,  n × skill record (0x142196ce0, through 0x1421981d0: insert sorted by id, replacing an equal id, then slot 7)
-u8 m,  m × (u32 row of a 0x101-byte table, u32, u32)          → manager +0x188 (not used)
+u8 m,  m × (u32 ActiveSkills row (0x101-byte rows), u32, u32) → manager +0x188, the Vaal souls (not used)
 u32 k, k × (u16 skill id, u32 c, c × (u32, u32, u32, u32))     (not used)
 ```
 
@@ -72,7 +73,7 @@ GEPL reference (0x1424a0dc0):
   one more stat-set reference per entry of the effect's additional stat sets (GrantedEffects row → its list count)
 u8   flags: bit0 → u32 parent object id ("Skill parent object did not exist" if unknown) + u16; bit1, bit2 → instance flags
 u8   n supports, n × (GEPL reference, u32)
-u32, u32, u32, u8
+u32, u32, u32 cooldown ms, u8                       → skill +0xc0, +0xc4, +0xc8, +0xcc (0x141ee73d0)
 compact n × (compact stat key, compact value)      the skill's own stats
 per additional stat set: the same stats list
 ```
@@ -321,12 +322,38 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 - **Casting.** At the ground: C→S 0x25 with the gem skill's id; the server echoes 0x1ab from where the player stands (no
   walk). On a monster: C→S 0x24; the server echoes 0x1ab aimed at it (no walk into range, unlike the default attack).
   On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server echoes 0x1ab in place.
+  An **instant** skill (stat `skill_is_instant`, below) is not sent this way: C→S **0x191** (8 bytes: u32 target
+  object id, u16 skill id; `InstanceProtocol.ReadUseInstantSkill`) uses it without an action or a sequence, so the
+  client keeps walking. The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
+  object header, u16 skill id, u16 sequence (0xffff), u16 flags (0x20 → u32 target object), compact target position;
+  handler `0x142195880`): the client runs the skill's action without animation and consumes a use of the skill
+  (actor vtable +0x198), which starts the skill bar's cooldown. Without it the tooltip showed the cooldown but the bar
+  never ran it: the cooldown records had no entries (Frida, live 2026-10-21; not yet checked with 0x1ce).
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
   contacts to data/animation-contacts.json (`AnimationContacts`); the Gateway waits cast time × that fraction.
 - **Cast speed.** `base_cast_speed_+%` and `cast_speed_+%` shorten `virtual_base_spell_cast_time_ms` and
   `hundred_times_casts_per_second` in the skill's stats and the server's release time.
+- **Instant skills.** The client knows an instant skill by its stat **`skill_is_instant`** (0x2064), not by the
+  ActiveSkillType `Instant`; the server derives it from the type and sends it with `base_skill_is_instant`
+  (`SkillCatalog.EffectStats`). Without it Haste's and Righteous Fire's actions used the spell action class (vtable
+  `0x1434adb70`, as Fireball's) and waited for a cast that never played: the action stayed the player's current
+  action (+0x1b0, flag +0x218 bit 0x02), and the queued-action gate `0x141e8d900` refused every other skill (only
+  Move passes it) until a move replaced it (Frida, live 2026-10-21). With the stat the client sends the skill as 0x191
+  (above) instead. The 0x1ab handler skips a remote actor's action of a skill with 0x2064.
+- **Cooldowns.** The client keeps a skill's cooldown itself (manager +0x170 records, cooldown group from the data, 36 =
+  per skill; entries `{remaining s, total s, recovery rate, -NaN}` added by `0x141eebfe0` when the skill is used), but
+  only when the skill's stats have **`virtual_total_cooldown_count`** (0x4806; `0x141eea440` returns no cooldown
+  otherwise). The duration comes from the data (or `skill_cooldown_time_override_ms`) plus `virtual_cooldown_modifier_ms`.
+  `SkillCatalog.EffectStats` sends `base_cooldown_count` and `virtual_total_cooldown_count` = GEPL StoredUses for
+  skills with a GEPL Cooldown. The client creates the cooldown record when the skill is added (`0x141eea6a0`) and
+  needs a cooldown time there: the skill's +0xc8, which comes from the **skill record** (the third u32 of the record's
+  `u32, u32, u32, u8` → +0xc0, +0xc4, +0xc8, +0xcc in `0x141ee73d0`), not from the data; or the stats
+  `skill_cooldown_time_override_ms` / `skill_cooldown_is_4_seconds`. With 0 there the client kept no cooldown and the
+  bar showed none (Frida: no records, +0xc8 = 0; live 2026-10-21); `GrantedSkill.CooldownMs` now carries GEPL Cooldown.
+  +0xd0 (the cooldown group) comes from the GEPL row's CooldownGroup (+0x30). The server also enforces it: `CastGemSkill` refuses a skill until its
+  GEPL Cooldown is over (`ClientState.SkillReadyAt`; Haste and the Purities 1200 ms, Righteous Fire 300 ms).
 - **Mana.** The server keeps the player's mana (`PlayerMana`): a cast pays the skill's `mana_cost` first (refused
   without enough), and `RunPlayerTick` regenerates 1.75% of maximum mana per second (Character.ot
   `mana_regeneration_rate_per_minute_%` 105) plus `base_mana_regeneration_rate_per_minute`, raised by
@@ -440,7 +467,12 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   little-endian; basic actions by their own id, Move = 0x2909), then u16 +0x2a and u16 +0x2c (sent 0). The bar (vtable `0x14319d870`) rebuilds from such an array in
   vtable +0x390 `0x140ae0fb0`: it looks each id up in the ActiveSkillManager and fills the slot; an unknown id (0)
   clears it. Without 0x53 the bar is empty after every area change and login.
-- **The Gateway** saves each 0x4e (`CharacterSaves`, data/saves/) as slot → a GrantedEffects Id for gems and the default
+- **The 0x20 skill update can take a bound skill off the bar**: live 2026-10-21, Haste's slot emptied when its aura went
+  on (the aura's stats resend every skill record), and the area change's 0x53 brought it back. A gem taken out and
+  socketed again did not get its slot back either. `SendSkills` therefore sends the saved bar (0x53) after every
+  update, unless it adds a skill whose GrantedEffects Id the saved bar does not have: the client binds such a new
+  skill to a free slot itself (0x4e), and a bar sent then would clear it.
+- **The Gateway** saves each 0x4e (`CharacterSaves`, `data/saves.db`) as slot → a GrantedEffects Id for gems and the default
   attack (skill ids change with the socketed gems), `Action/<ActionTypes Id>` for a basic action (Move 0x2909 =
   "Move only"), or "" for a cleared slot. It sends 0x53 right after the player and area messages, no delay needed,
   with the default attack on slot 0 only when nothing was saved there. Live 2026-10-18: Fireball on the right mouse

@@ -2,7 +2,7 @@ using GameServer.Core.Protocol.Instance;
 
 namespace GameServer.Gateway.Tests;
 
-public class CurrencyTests
+public class CurrencyEffectsTests
 {
     static Item Boots(params SocketColour[] colours) => new(0x1234, ["Base", "Sockets"], 0x10)
     {
@@ -17,7 +17,7 @@ public class CurrencyTests
         for (int i = 0; i < 200; i++)
         {
             var before = Boots(SocketColour.Red, SocketColour.Red, SocketColour.Green);
-            var after = Currency.Chromatic(before, (20, 20, 0), random)!;
+            var after = CurrencyEffects.Chromatic(before, (20, 20, 0), random)!;
 
             Assert.NotEqual(before.Sockets.Select(s => s.Colour), after.Sockets.Select(s => s.Colour));
             Assert.All(after.Sockets, s => Assert.NotEqual(SocketColour.White, s.Colour));
@@ -33,7 +33,7 @@ public class CurrencyTests
         int red = 0, total = 0;
         for (int i = 0; i < 2000; i++)
         {
-            var after = Currency.Chromatic(Boots(SocketColour.Blue), (100, 0, 0), random)!;
+            var after = CurrencyEffects.Chromatic(Boots(SocketColour.Blue), (100, 0, 0), random)!;
             total++;
             if (after.Sockets[0].Colour == SocketColour.Red) red++;
         }
@@ -44,6 +44,6 @@ public class CurrencyTests
     [Fact]
     public void An_item_without_sockets_is_not_changed()
     {
-        Assert.Null(Currency.Chromatic(new Item(0x1, ["Base"], 0), (0, 0, 0), new Random(3)));
+        Assert.Null(CurrencyEffects.Chromatic(new Item(0x1, ["Base"], 0), (0, 0, 0), new Random(3)));
     }
 }
