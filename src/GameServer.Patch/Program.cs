@@ -229,7 +229,7 @@ static string DecodeList(byte[] b) =>
 
 static string LoadGatewayList()
 {
-    string? path = Environment.GetEnvironmentVariable("Game_GATEWAY_LIST") ?? Find("server/gateway_list.txt");
+    string? path = Environment.GetEnvironmentVariable("Game_GATEWAY_LIST");
     if (path is not null && File.Exists(path))
         return File.ReadAllText(path, Encoding.Unicode);
 

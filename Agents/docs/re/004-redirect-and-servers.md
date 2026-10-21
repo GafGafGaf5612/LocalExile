@@ -42,7 +42,7 @@ UTF-16LE, BOM `FF FE`, CRLF, one line per gateway:
 <id>;<display>;<login-host:port>;<speedtest-host>;<bool>
 ```
 
-Example (ours, `server/gateway_list.txt`):
+Example (ours, what `GameServer.Patch` serves unless `Game_GATEWAY_LIST` names another file):
 
 ```
 Europe;Local (EU);127.0.0.1:20484;127.0.0.1;false

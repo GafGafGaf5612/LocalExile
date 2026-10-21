@@ -34,8 +34,6 @@ PathOfExile*.exe
 *.p12
 *.key
 *.pem
-!/Server/*.cer
-!/Server/poe-dev.pem
 .env
 .env.*
 *secret*
