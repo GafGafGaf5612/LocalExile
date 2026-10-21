@@ -98,8 +98,12 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
   BE tab, u16 BE position). Logged, not kept.
 - **0xd1** (7 bytes, vtable `0x1435c0198`, write `0x141f96c50`, `0x142167370`): u16 BE tab, u16 BE folder (0xffff out),
   u8 kind: a tab into a folder. Logged.
-- **0xd2** (u16 tab, u8 kind; `0x14025c030`) and **0xd3** (tab, kind, affinity pairs; `0x1421674c0`): from the tab
-  settings. Not seen yet.
+- **0xd2** (u16 tab, u8 kind; `0x14025c030`): from the tab settings. Not seen yet.
+- **0xd3** (class `0x1435c0338`, write `0x141f96da0`, built by `0x1421674c0`): the tab settings' affinities, sent by the
+  window's check mark. u16 BE tab, u8 kind, u8 n, n × (u8 affinity, u8 on). Live 2026-10-20: `00D3 0005 00 01 03 01`
+  (Currency on, tab 5). The window stays open until the server answers; the Gateway saves the bits with the tab
+  (`SavedTab.Affinities`) and sends the tab list again (S→C 0x136), with flag 0x40 and the bitset in each record. Whether
+  0x136 is what closes the window is not checked live yet.
 - **0xe0** (20 bytes, vtable `0x1435c0878`, write `0x141f97560`, built by `0x142168ab0`): Ctrl + click on an inventory
   item while a tab is shown. u16 BE tab (the stash page's +0x4a4), u32 BE item id, u8 flags (bits 0, 1), u8 kind (page
   +0x491), u16 token (raw, changes per request), u64 raw (0). The item's inventory is not sent. The Gateway moves the
@@ -108,7 +112,7 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
   u16 BE tab, u32 BE item id, u8, u8, u8, u8 (live `00 a7 cd 00`: the middle two change per request). The Gateway moves
   it to the main inventory's first free cell, keeping its stash id.
 - **0xe1** (vtable `0x1435c00f8`, write `0x141f97810`: u32, flags, three u8, u8 n + n × 4 bytes) and **0xe2** (u16, u8;
-  `0x142168d00`, the unique / special pages) are not seen yet.
+  `0x142168d00`, the unique / special pages) are not handled yet.
 
 ## 6. The server's stash
 
@@ -123,12 +127,33 @@ the next id is saved) and keeps it when a character takes it out: characters cou
 The account's last tab is every tab the client shows the server: each 0xc7 (but not, during the first open's first
 second, `StashForcedWindow`, a request for another tab than the forced one: that is the panel's old tab), and every
 item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a tab's stacks and split out of them like in the inventory
-([13](13-items.md) §4a); the Currency tab's own limit (CurrencyItems `CurrencyTab_StackSize`) is not applied yet. The same file holds the account's gold (`Gold`,
-[04](04-player-entity.md) §6).
+([13](13-items.md) §4a). The same save holds the account's gold (`Gold`, [04](04-player-entity.md) §6).
+
+## 7. What each tab holds
+
+`StashRules` (Gateway), from the game data:
+
+- **Which tab holds what.** An item's affinities (StashTabAffinityId rows) come from StashTabAffinityByBaseItemType,
+  StashtabAffinityByItemClassCategory (gems, flasks, map keys …; maps of class Map too, which the table leaves out) and
+  the special tabs' layouts below. StashTabAffinities lists, for each affinity, the StashType rows that may hold it
+  (`__col2`): Currency → Normal, Premium, Quad, PC-bang Premium, Currency. Normal, premium and quad tabs hold anything; a
+  special tab only items with one of its affinities. A move into a tab that doesn't hold the item is refused (0x2a, 0xe0).
+- **Slots.** The currency, essence and fragment tabs give each item type one slot: CurrencyStashTabLayout /
+  EssenceStashTabLayout / FragmentStashTabLayout `FirstSlotIndex` (a fragment slot also takes its `StoredItems`). The
+  client shows slot n as cell (n, 0) and sends it so (live 2026-10-20: a Scroll of Wisdom dropped at (54, 0), (12, 0) and
+  (1, 0); its slot is 1). An item dropped anywhere on such a tab goes into its own slot, onto what is there.
+- **Stack sizes.** A currency tab slot holds CurrencyItems `CurrencyTab_StackSize` (10 000 for most currency) instead of
+  the item's stack size.
+- **The map tab takes nothing yet.** The 3.29 client lists a map tab's maps by tier ([maps](../game/maps.md)), not at
+  grid cells: two Beach Maps saved at (0, 0) and (0, 1) were not shown (live 2026-10-20). Until its layout is known,
+  `StashRules.NotShown` refuses every item, and maps already there move out at load.
+- **Repair.** Items a special tab can't show (an earlier build let any item into any tab) move at load into their slot,
+  else into the first normal tab with room, and are saved there. One that finds no room stays where it is, saved.
 
 ## Open
 
 - **Last tab:** switching to an already loaded tab sends nothing, so a switch followed by a logout without reopening
   the stash or moving an item is not seen; the next login opens on the tab before it.
-- The special tabs' slot rules, tab rename / colour / order / folders (0xcc, 0xd1 are logged), 0xe1 / 0xe2, the guild
-  stash, stashes per league, and stashes in the other towns.
+- Not checked live yet: the affinity window closing on S→C 0x136, and the special tabs other than currency and map.
+- Tab rename / colour / order / folders (0xcc, 0xd1 are logged), 0xe1 / 0xe2, the unique, divination and other special tabs, the
+  guild stash, stashes per league, and stashes in the other towns.
