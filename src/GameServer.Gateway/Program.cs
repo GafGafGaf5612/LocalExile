@@ -5043,7 +5043,7 @@ sealed partial class Program
     // Item types (BaseItemTypes + data/item-types.json); loaded with the first player.
     internal static readonly ItemCatalog Items = new();
     // Per character: the skill ids of the socketed gems (GemSkillIds), and the ids gem skills may use (after the default
-    // attack, the first 64 that no basic action uses: SkillCatalog.IsGemSkill).
+    // attack, the ids below FirstSkillId + 64 that no basic action uses: SkillCatalog.IsGemSkill; 55 in 3.29.3b).
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, GemSkillIds> GemSkillIdsOf = new(StringComparer.OrdinalIgnoreCase);
     internal static readonly Lazy<ushort[]> GemSkillIdPool = new(() => [.. Skills.SkillIds().Skip(1).Where(Skills.IsGemSkill)]);
     // Maps.dat: which area each map opens (MapDevice.cs); loaded with the first Activate.

@@ -71,10 +71,16 @@ The server writes the component as `i32 experience, u32 0, u8 0, u16 0` (`Item.P
 ## 3. Skills from gems today
 
 - Each socketed skill gem's GrantedEffect at level 1, sent in the Actor skill list (`GemSkills`, `GemSkillEffects`).
-- **Skill ids stay with their gem** (`GemSkillIds`): a gem keeps its skill id while it stays socketed, a gem moved to
-  another socket keeps it too (matched by its skill), and a new gem takes the lowest free one of the 64 gem skill ids. The
-  client binds skill bar keys by skill id: with ids given in socket order, taking Haste out of a wand gave Righteous Fire
-  Haste's id, and Haste's keys then cast Righteous Fire (live 2026-10-20).
+- **Skill ids stay with their gem** (`GemSkillIds`): a gem keeps its skill id while it stays socketed. A gem moved to
+  another socket keeps it too (matched by its skill): a move goes through the cursor, where the gem is out of the
+  equipment for an update or more, so the id of a gem that left waits for a gem of its skill to come back. A new gem
+  takes the lowest gem skill id no gem had, and only when none is left the id of the gem that left longest ago. The gem
+  skill ids are the ids below `FirstSkillId + 64` that no basic action uses (`SkillCatalog.IsGemSkill`): 55 in 3.29.3b.
+  The client binds skill bar keys by skill id: with ids given in socket order, taking Haste out of a wand gave Righteous
+  Fire Haste's id, and Haste's keys then cast Righteous Fire (live 2026-10-20).
+- An id a gem gives up never goes to another skill's gem in the same update. A gem swapped into a socket (the old gem
+  goes to the cursor) or an item equipped over another changes the gems in one update; the old skill must go out as
+  removed, so its aura or Righteous Fire ends and its skill bar key does not cast the new gem.
 - A skill that goes away (its gem left the equipment) ends its aura or Righteous Fire, and the reserved mana comes back.
   One aura of a kind runs at a time: a second gem of the same aura can't start it.
 - Support gems are not granted: one as a skill crashed the client ([13](13-items.md) §6). The skill record has a

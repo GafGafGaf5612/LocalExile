@@ -64,7 +64,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Partly working
 
 - **Stable gem skill ids (tested, not yet checked with the real client).** Each gem keeps its skill id while it stays
-  socketed (a moved gem keeps its own), so skill bar keys no longer move when other gems come or go; a skill that goes
+  socketed (a gem moved through the cursor keeps its own; a gem swapped in never takes the old gem's id), so skill bar keys no longer move when other gems come or go; a skill that goes
   away ends its aura or Righteous Fire; one aura of a kind runs at a time (`GemSkillIds.cs`; [19](docs/protocol/19-gems.md) §3).
 - **Saves in SQLite (tested, not yet checked with the real client).** Accounts, characters, character saves and stashes
   are rows in `data/saves.db` (WAL, synchronous=FULL); a stash is a header row and one row per tab. Every item, stash,
@@ -163,7 +163,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Tests
 
 `dotnet test tests/GameServer.Core.Tests` (325 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (269: stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`tests/GameServer.Gateway.Tests` (273: stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
