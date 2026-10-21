@@ -63,6 +63,18 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Partly working
 
+- **Jeweller's Orb: initial local implementation verified live (2026-10-21).** Normal use and Shift share the currency
+  handler; rerolls counts 1/2/3/4/6, RGB colours and link groups, limited by class, dimensions and item level.
+  Socketed gems, unsupported targets and maximum base capacity are refused without spending an orb. The live-found
+  refusal of level-1 boots/gloves with two sockets is fixed and verified live. Probabilities are
+  approximate; quality and special socket overrides are not modelled. See [13](docs/protocol/13-items.md),
+  "Jeweller's Orb".
+- **Orb of Fusing: verified live (2026-10-21).** Captured 0x71/0x72 packets feed the same
+  handler. Only links change; sockets, colours, gems and item properties stay intact. Refuses fewer than two sockets
+  and protects fully linked 5/6-socket items; 2-4 sockets remain rerollable. Quality favours longer groups without
+  being consumed. Link/quality probabilities are approximate, and special overrides/corruption are not modelled.
+  See [13](docs/protocol/13-items.md), "Orb of Fusing".
+
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel
   (`ManaReservationFlat` / `ManaReservationPercent`), reduced by the passive/mastery reservation efficiency and sent as
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
@@ -129,7 +141,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate opens without its
   animation; its force wall and Doorman are not created ([12](docs/protocol/12-quests.md) §6). Only quest a1q1 is
   scripted; no quest log.
-- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb and Orb of Regret; currency use; utility flasks; support gems and links; gem levels
+- Uniques and special mods (#60), items' base damage and defences; currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing and Orb of Regret; utility flasks; support gems and links; gem levels
   ([13](docs/protocol/13-items.md) "Open").
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is not drawn and cannot move.
   Only Predictive is supported; the Gateway asks for it once per connection ([07](docs/protocol/07-latency-visibility-movement.md) §5).
@@ -149,8 +161,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (307 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (193: inventory moves, stacks, currency on items, the start weapon on the ground, flasks, arrival points,
+`dotnet test tests/GameServer.Core.Tests` (308 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (224, verified 2026-10-21: socket currency, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.

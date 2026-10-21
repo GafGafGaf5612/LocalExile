@@ -4183,7 +4183,7 @@ static async Task UseItem(string remote, NetworkStream stream, ConnectionCiphers
 }
 
 // C→S 0x71: an item used on another one. A Scroll of Wisdom identifies an unidentified item (its explicit mods and rare
-// name are sent from now on) and loses one from its stack. Other currency is not handled yet.
+// name are sent from now on) and loses one from its stack. Socket currency uses the same update path, including Shift.
 static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.UseItemOn use, string hex)
 {
     const string Wisdom = "Metadata/Items/Currency/CurrencyIdentification";
@@ -4201,12 +4201,21 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         Wisdom => target.Item.Identified || !target.Item.Components.Contains("Mods") ? null : target.Item with { Identified = true },
         Currency.ChromaticOrb => Items.ByHash(target.Item.TypeHash) is { } targetType
             ? Currency.Chromatic(target.Item, Items.Requirements(targetType), Random.Shared) : null,
+        Currency.JewellersOrb => Items.ByHash(target.Item.TypeHash) is { } socketType
+            ? Currency.Jewellers(target.Item, socketType, Items.Requirements(socketType), Random.Shared) : null,
+        Currency.OrbOfFusing => Items.ByHash(target.Item.TypeHash) is { } linkType
+            ? Currency.Fusing(target.Item, linkType, Random.Shared) : null,
         _ => null,
     };
     if (result is null)
     {
+        if (type?.Id == Currency.JewellersOrb && Items.ByHash(target.Item.TypeHash) is { } refusedType)
+            Console.WriteLine($"[gateway] Jeweller target {target.Id}: {refusedType.Id}, class {refusedType.Class}, ilvl {target.Item.ItemLevel}, " +
+                $"sockets {target.Item.Sockets.Count}, roll cap {Currency.MaximumSockets(target.Item, refusedType)}, " +
+                $"base cap {Currency.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
         Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
-            (type?.Id is Wisdom or Currency.ChromaticOrb ? "nothing to change (identified / no sockets)" : $"not handled: {hex}"));
+            (type?.Id is Wisdom or Currency.ChromaticOrb or Currency.JewellersOrb or Currency.OrbOfFusing
+                ? "target refused (identified / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
         return;
     }
     if (items.ConsumeOne(usedRow, used.Id) is not { } taken) return;
@@ -4226,7 +4235,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id == Wisdom
         ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
-        : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}"));
+        : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}; link groups {string.Join(",", identified.Item.Links ?? [])}"));
 }
 
 // C→S 0x4a: the held item clicked on an item. A stack of the same type with room takes what fits (PlayerInventories.MergeOnto,
