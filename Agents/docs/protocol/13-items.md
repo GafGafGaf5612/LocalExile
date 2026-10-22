@@ -390,6 +390,11 @@ rule above the normal magic limit); the item ends identified. Anything else is r
 a Flask component, any rarity, up to 20%. The Orb of Scouring makes a flask normal, removes its explicit mods and sets its
 quality back to 0, as for armour and weapons.
 
+### Gemcutter's Prism (2026-10-22, being tested)
+
+`CurrencyGemQuality`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Gemcutter`: +1% quality on an item with a
+SkillGem component (active or support) that is not corrupted, up to 20%. Anything else is refused and nothing is spent.
+
 ### Fracturing Orb (2026-10-21, verified live)
 
 `CurrencyFractureRare`, same handler (0x71, 0x72 with Shift). As the official orb: a rare item with at least four explicit
@@ -454,8 +459,8 @@ item overrides remain open. No extracted-data changes are required.
 
 **What the model wears** is the player's Inventories component (index 8, reader `0x141e1ee30`, also as a 0x2ba update):
 u8 n × (u8 slot, record `0x1424f44e0`), then u8 m × u16. The slot is Inventories.dat column 7 (Weapon1 0, Offhand1 1,
-BodyArmour1 2, Helm1 4, Gloves1 5, Boots1 6, Ring1 8, Ring2 9, Belt1 10, Amulet1 11). The record: u8 tag (**0 = empty**,
-nothing more), two (u16 ItemVisualIdentity HASH16, u32 TieredMicrotransactions key, u8) references (`0x1424f3fc0`,
+BodyArmour1 2, Helm1 4, Gloves1 5, Boots1 6, Ring1 8, Ring2 9, Belt1 10, Amulet1 11). The record: u8 type (**0 = empty**,
+nothing more; else the item's ItemClasses row + 1, the weapon type skills check, 11-skills.md §10a), two (u16 ItemVisualIdentity HASH16, u32 TieredMicrotransactions key, u8) references (`0x1424f3fc0`,
 `0x1424f4250`), u8 ItemStances row (`0x1424f4b10`; the row's ItemStance, else its class's: Wand = 2), u16
 ItemVisualIdentity HASH16 (`0x1424f4730`), u8. The Gateway sends every visible slot, empty ones with tag 0: a slot left
 out keeps what the model showed before (the unequipped wand stayed in the hand).

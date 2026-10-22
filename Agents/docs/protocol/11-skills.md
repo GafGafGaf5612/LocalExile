@@ -77,6 +77,10 @@ u32, u32, u32 cooldown ms, u8                       → skill +0xc0, +0xc4, +0xc
 compact n × (compact stat key, compact value)      the skill's own stats
 per additional stat set: the same stats list
 ```
+The additional stat sets are the GrantedEffects row's `StatSet2` list (Volcanic Fissure has one). Each needs its
+reference after the first and its stat list after the skill's own: a record without them made the client misread the
+rest and crash when Volcanic Fissure was socketed (live 2026-10-23). `GrantedSkill.ExtraStatSets` carries them
+(`SkillCatalog.WithExtraSets`: each set's GESSPL row at the gem's level, its implicit, constant and per-level stats).
 The action id (+0x42) is not sent: `0x141ee73d0` takes it from the data (GEPL row → GrantedEffect → ActiveSkill →
 ActionType → `HASH16`); the default attack's is `Melee` 45448 = 0xb188.
 
@@ -456,6 +460,19 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
 - **Still wrong.** Without a height grid the fireball flies on the terrain. The
   four floats of Positioned's f1 0x04 block (+0x2d8..+0x2e4, zero by default) are not the direction: (dx, dy, 0, 0) put
   it under the ground (`Game_PROJECTILE_DIRECTION=1` sends them).
+
+## 10a. Weapon restrictions: why a skill is greyed out
+
+The client decides itself whether a skill can be used (the skill bar's "[Skill can't be used]", ClientStrings 844
+`SkillPopupSkillUnusable`): `FUN_141ee7fb0(skill, mainType, offType)` sets the skill's +0xb0 (usable) / +0xb1, and
+`FUN_141ee8410` checks a hand's type against the ActiveSkills `WeaponRestriction_ItemClassesKeys` (setting +0xb2 main
+hand / +0xb3 off hand fits; neither → unusable). The types live in the ActiveSkillManager at +0x14c / +0x150, set
+through its vtable +8 (`FUN_142199200`) from `FUN_141e97190`, which reads them from the player's Inventories component
+(`FUN_141e1f310(inventories, 0 / 1)`: the slot's record's first field). A type is the item's **ItemClasses row + 1**
+(`FUN_1423b8b90`; `FUN_1424aac70` goes back): Two Hand Axe (row 16) = 17, no weapon = Unarmed 37, 0x68 = nothing.
+That first field is the equipment record's first u8 (13-items.md "What the model wears"), which the Gateway sent as 1
+for every item: every skill with a weapon restriction was greyed out (Ground Slam with a two-handed axe, live
+2026-10-23, found with a Frida trace of `FUN_142199200`). The Gateway now sends ClassRow + 1 (`VisibleItem.Type`).
 
 ## 11. The skill bar
 

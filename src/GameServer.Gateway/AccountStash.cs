@@ -61,12 +61,15 @@ sealed class AccountStash
     /// whose StashType the client supports (StashAvailabilities lists Divination, Delve, Blight and Ultimatum as not).</summary>
     static readonly SavedTab[] StarterTabs =
     [
-        new("1", 0, 0x7c, 0x54, 0x36, []), new("2", 0, 0x7c, 0x54, 0x36, []),
+        new("1", 0, 0x7c, 0x54, 0x36, []), new("2", 0, 0x7c, 0x54, 0x36, []), new("3", 0, 0x7c, 0x54, 0x36, []), new("4", 0, 0x7c, 0x54, 0x36, []),
         new("Premium", 1, 0x2c, 0x6e, 0xc8, []), new("Loot", 1, 0xc8, 0x8c, 0x1e, []),
         new("Quad", 7, 0x8a, 0x2b, 0xe2, []),
         new("Currency", 3, 0xd2, 0xb4, 0x28, []), new("Essence", 8, 0x3c, 0xb4, 0x50, []),
         new("Fragment", 9, 0xa0, 0x3c, 0x3c, []), new("Map", 5, 0x50, 0x82, 0xb4, []),
         new("Flask", 17, 0xb4, 0x28, 0x28, []), new("Gem", 18, 0x28, 0xa0, 0x78, []),
+        new("Delve", 12, 0x8c, 0x64, 0x3c, []), new("Blight", 13, 0x5a, 0xa0, 0x3c, []),
+        new("Unique", 4, 0xaf, 0x60, 0x25, []), new("Delirium", 15, 0x78, 0x78, 0x78, []), new("Breach", 22, 0x8c, 0x3c, 0xb4, []),
+        new("Divination", 6, 0x3c, 0x78, 0xc8, []), new("Ultimatum", 14, 0xb4, 0x8c, 0x3c, []),
     ];
 
     sealed class TabState(SavedTab saved)
@@ -122,6 +125,11 @@ sealed class AccountStash
             var stash = new AccountStash(name) { _mods = catalog.Mods, _rules = catalog.Stash, _firstInventoryId = firstInventoryId, _firstItemId = firstItemId };
             var save = Load(name);
             var headers = save?.Tabs ?? [.. starter];
+            // A stash saved before a starter tab existed gets it at the end: a special tab type it has none of (Delve,
+            // Blight, Unique …: 2026-10-22), or a normal tab "3" / "4" (the real game starts with four).
+            var added = save is null ? [] : starter.Where(s => s.Type is not (0 or 1 or 7) ? headers.All(h => h.Type != s.Type)
+                : s.Type == 0 && headers.All(h => h.Type != 0 || h.Name != s.Name)).ToList();
+            if (added.Count > 0) headers = [.. headers, .. added];
             for (int i = 0; i < headers.Count; i++)
             {
                 var tab = new TabState(headers[i] with { Items = [] });
@@ -140,6 +148,7 @@ sealed class AccountStash
             stash._gold = save?.Gold ?? 0;
             stash._unknown = save?.Unknown;
             if (save is null) stash.Persist([.. Enumerable.Range(0, stash._tabs.Count)]);
+            else if (added.Count > 0) stash.Persist([.. Enumerable.Range(stash._tabs.Count - added.Count, added.Count)]);
             else if (stash.Repair(i => catalog.ByHash(i.TypeHash) is { } t ? new PlayerInventories.Shape(t.Width, t.Height, t.Class) : null) is { Count: > 0 } repaired)
                 stash.Persist([.. repaired]);
             return stash;

@@ -152,11 +152,19 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   special tab only items with one of its affinities. A move into a tab that doesn't hold the item is refused (0x2a, 0xe0,
   0xe1).
 - **Slots.** The currency, essence and fragment tabs give each item type one slot: CurrencyStashTabLayout /
-  EssenceStashTabLayout / FragmentStashTabLayout `FirstSlotIndex` (a fragment slot also takes its `StoredItems`). The
+  EssenceStashTabLayout / FragmentStashTabLayout `FirstSlotIndex` (a currency slot also takes its `StoredItem`: the Eldritch Embers and Ichors rows keep old Ids, CurrencyCleansingFireOrb1-4 and CurrencyGreatTangleOrb1-4, SlotGroup 1 = the Atlas page; a fragment slot also takes its `StoredItems`). The
   client shows slot n as cell (n, 0) and sends it so (live 2026-10-20: a Scroll of Wisdom dropped at (54, 0), (12, 0) and
   (1, 0); its slot is 1). An item dropped anywhere on such a tab goes into its own slot, onto what is there.
-- **Stack sizes.** A currency tab slot holds CurrencyItems `CurrencyTab_StackSize` (10 000 for most currency) instead of
-  the item's stack size.
+- **Stack sizes.** Every slot of a slotted tab (currency, essence, fragment, delve, blight) holds 5000 of its item
+  (`StashRules.SlotStack`, our own number since 2026-10-22; before, CurrencyItems `CurrencyTab_StackSize` for currency
+  and the item's own stack elsewhere, so essences stopped at 10). The Delve (StashType 12, DelveStashTabLayout) and
+  Blight (13, BlightStashTabLayout) and Delirium (15, DeliriumStashTabLayout) tabs are slotted the same way; the
+  Divination tab (6) too, a card's slot being its DivinationCardStashTabLayout row (a guess: the table has no slot
+  numbers). Unique (4), Breach (22) and Ultimatum (14) tabs exist but take nothing yet (`StashRules.NotShown`: uniques
+  are keyed by unique names and the server has none; 3.29.3b has no breach or ultimatum layout table). The starter tabs
+  are four normal tabs "1"-"4", as the real game's, then the premium and special ones; a stash saved before gets the
+  missing ones
+  appended.
 - **Ctrl + click** into a tab (0xe0, 0xe1) puts a stack onto the tab's stacks of its type first (in a slotted tab, its
   slot), then into free cells; what doesn't fit stays in the inventory. Out of a tab (0xe3), a stack tops up the
   inventory's stacks of its type first, and what doesn't fit stays in the tab. Each is one transaction
@@ -166,7 +174,7 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   `StashRules.NotShown` refuses every item, and maps already there move out at load.
 - **A plain click on a special tab's item** sends C→S 0x7c (split) with the whole stack (live 2026-10-20, the currency
   tab: `Amount` = the stack, `B` = 0; Shift + click sends `B` = 3 with the amount chosen). The Gateway puts the whole
-  stack on the cursor, keeping its id; a slot holding more than a stack (currency, up to 10 000) gives a full stack
+  stack on the cursor, keeping its id; a slot holding more than a stack (up to 5000) gives a full stack
   (the item's max) and keeps the rest. A Shift + click split takes at most a full stack too.
 - **Repair.** Items a special tab can't show (an earlier build let any item into any tab) move at load into their slot,
   else into the first normal tab with room, and are saved there. One that finds no room stays where it is, saved.

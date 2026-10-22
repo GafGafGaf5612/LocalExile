@@ -9,7 +9,7 @@ namespace GameServer.Gateway.Tests;
 public class StashRulesTests : IDisposable
 {
     internal const uint WandType = 0xd9b1a12f, ScrollType = 0x5c10aa01, MapType = 0x3a9b0001, OrbType = 0x1234abcd;
-    internal const int Currency = 5, Map = 8;   // the starter tabs' indexes of those types
+    internal const int Currency = 7, Map = 10;   // the starter tabs' indexes of those types (after the four normal tabs)
     readonly string _folder = TestSaves.Catalog(new TestSaves.Type(WandType, "Wand", 1, 3), new TestSaves.Type(ScrollType, "Scroll", StackSize: 40),
         new TestSaves.Type(MapType, "Map"), new TestSaves.Type(OrbType, "Orb", StackSize: 20));
     readonly string _account = $"Rules{Guid.NewGuid():N}"[..16];
@@ -137,7 +137,7 @@ public class StashRulesTests : IDisposable
 
         Assert.True(rules.Loaded);
         Assert.Equal(1, rules.SlotOf(StashRules.Currency, scroll.Hash));
-        Assert.Equal((ushort)10000, rules.MaxStack(StashRules.Currency, scroll.Hash));
+        Assert.Equal(StashRules.SlotStack, rules.MaxStack(StashRules.Currency, scroll.Hash));
         Assert.False(rules.Holds(StashRules.Map, scroll.Hash));
         Assert.True(rules.Holds(0, scroll.Hash));
     }
