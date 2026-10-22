@@ -205,13 +205,14 @@ data is in [19](docs/protocol/19-gems.md).
   the right skills, skill ids don't change when other gems move, and requirements match the tooltips and are enforced.
 
 ### Gems 2: gem experience and levelling (#63)
-- **Known:** saves keep each gem's experience; character experience arrives in one place (`GainExperience`); the
-  "Click to level up" column under the minimap is client UI.
-- **Start:** research first: the panel's client messages, how "ready to level" works when the client derives the level
-  from experience, and where the lock is kept. Then gems in equipped items (both weapon sets) get 10% of every
-  experience gain before the level penalty, and stop at the next level until the player levels them. Then the panel:
-  level up, level all, lock (right click), the locked list under the inventory (right click levels, Shift + right click
-  unlocks), greyed when the requirements aren't met.
+- **Known:** saves keep each gem's experience; character experience arrives in one place (`GainExperience`). In this
+  change: gems in equipped items already gain 10% of every kill's experience, saved with the character, sent as 0x00bf
+  item changes and levelled by the client itself ([19](docs/protocol/19-gems.md) §1, Status "Gem experience from
+  kills").
+- **Start:** whether `PlayerLevelReq` should stall the skill's level (the level against the character's). Then the
+  panel: research first the panel's client messages and where the lock is kept; level up, level all, lock (right click),
+  the locked list under the inventory (right click levels, Shift + right click unlocks), greyed when the requirements
+  aren't met.
 - **Done when:** killing monsters levels socketed gems the way the real game does, and locked gems stay locked across
   logins.
 

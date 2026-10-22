@@ -2678,6 +2678,7 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
 // points (ApplyLevel) and the account's level (Auth set_level, for the character list).
 static async Task GainExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain, string why)
 {
+    await GainGemExperience(remote, stream, ciphers, conn, gain);   // the gems gain as much as a kill's share, cap or not
     // Added to the character's total (an older connection's or another task's gain is never written over), kept in memory
     // and saved every few seconds; a new level is saved at once.
     uint start;
@@ -2694,6 +2695,43 @@ static async Task GainExperience(string remote, NetworkStream stream, Connection
     var r = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level });
     if (!r.Ok) Console.WriteLine($"[gateway] {remote} level {level} not saved to the account: {r.Error}");
     await ApplyLevel(remote, stream, ciphers, conn, level);
+}
+
+// A kill's experience goes to the gems too: every one socketed in an equipped item gains 10% of the player's gain
+// (support gems too, a gem in an inactive item nothing), written into the gem item inside the socket list — the equipped
+// item's own component has no skill gems. Sent as the socket's equipment row 0x00bf item change, the same item id removed
+// and added again (the replace idiom: an addition of a known id alone is dropped as a duplicate, so the client would keep
+// the stale gem), so the client's gem XP bar and tooltip follow; the next save keeps it.
+static async Task GainGemExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain)
+{
+    int share = (int)Math.Max(1, gain / 10);
+    var items = ItemsOf(conn);
+    var changes = new Dictionary<byte, List<InventoryItem>>();
+    bool leveled = false;
+    foreach (var (row, itemId, socket, gem) in items.SocketedGemSlots())
+    {
+        if (Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is null || IsInactive(conn, itemId)) continue;
+        var before = gem.GemExperience;
+        if (items.ChangeSocketedGem(row, itemId, socket, g => g with { GemExperience = g.GemExperience + share })
+            is not { } current) continue;
+        if (current.Item.Sockets[socket].Gem is not { } present || present.GemExperience <= before) continue;
+        if (!changes.TryGetValue(row, out var list)) changes[row] = list = [];
+        list.Add(current);
+        if (Items.GemLevel(present) > Items.GemLevel(gem))
+        {
+            leveled = true;
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(gem)} levels to {Items.GemLevel(present)}");
+        }
+        else
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(gem)} gains experience " +
+                $"+{present.GemExperience - before} ({present.GemExperience}, level {Items.GemLevel(present)})");
+    }
+    foreach (var (row, list) in changes)
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row),
+            [.. list.Select(i => i.Id)], list),
+            $"0x00bf inventory {row}: gem experience +{share} ({string.Join(", ", list.Select(i => $"{i.Id:x} {i.Item.Sockets.Count(s => s.Gem is not null)} gem(s)"))})");
+    // A gem's level's costs, damage and reservation live with the skills (the 0x20 Actor update), not the item.
+    if (leveled) await SendSkills(remote, stream, ciphers, conn);
 }
 
 // A monster died (its life reached 0 from the player's attack or skill): the player gains its experience when near

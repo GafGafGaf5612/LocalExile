@@ -25,7 +25,18 @@ The reader zeroes the level (+0x2c) and two experience thresholds (+0x30, +0x34)
   threshold and +0x34 the next level's from the gem's experience table (ItemExperiencePerLevel, the row's +0x14).
 
 So the client derives the level from the experience alone; the server sends experience, not a level. How a gem that
-can level up but hasn't been levelled by the player is represented is open (Roadmap "Gems 2").
+can level up but hasn't been levelled by the player is represented is open (Roadmap "Gems 2"), so the server lets a
+gem's experience run levels freely and its skill uses that level (`GemLevel`); the game's `PlayerLevelReq` gates and
+the level-up stall join the requirements step (Status "Gem levels").
+
+The server gives the kills' experience to the gems (`GainGemExperience`): each gem socketed in an equipped item gains
+10% of the player's monster experience (a support gem too, a gem in an inactive item nothing), written into the gem
+inside the socket list (`PlayerInventories.ChangeSocketedGem`) and sent as the socket's equipment row 0x00bf item
+change — the same item id removed and added again, the replace idiom: an addition of a known id alone is dropped as a
+duplicate and the client keeps the stale gem (live 2026-10-23). One per row per kill; the client's XP bar and tooltip
+follow, it levels the gem itself at the threshold, and the level's change is logged. A level's costs, damage and
+reservation ride the skills, so a level-up also re-sends the skills (the 0x20 Actor update, `SendSkills`), the same
+thing an equipment change does.
 
 The variant: the copy `0x14246fa50` checks +0x3c against the `GemVariants` count (the SkillGems row's +0x77, the list's
 count in the 3.29 layout) and keeps 0 when it is outside the list. The u16: `0x14246fae3` and `0x1424732c3` look it up
@@ -120,6 +131,8 @@ the experience and the variant (`GemExperience`, `GemVariant`).
 - Not checked with the real client yet: a gem of a higher level or with quality, a transfigured gem's tooltip and skill,
   a Vaal gem's two skills, and how the client shows a Vaal skill without souls and a skill on cooldown.
 - "Ready to level": how the client shows a gem that can level up when it derives the level from experience; the
-  level-up panel's messages; where a gem's lock is kept.
+  level-up panel's messages; where a gem's lock is kept. The server's kill experience leaves this visible immediately:
+  a gem that crossed a threshold may show or apply the level without a click (checked live 2026-10-23: a monster kill's
+  share levels the gem itself).
 - The attribute requirement formula.
 - The support list's layout in the skill record, and supports in the 0x20 update.

@@ -461,4 +461,30 @@ public class PlayerInventoriesTests
 
         Assert.Equal([(wand.Id, 0, fireball), (wand.Id, 2, clarity)], items.SocketedGemPlaces());
     }
+
+    [Fact]
+    public void A_gem_experience_change_reaches_the_socketed_gem_its_blob_and_the_save()
+    {
+        var items = NewInventories();
+        var gem = new Item(0x11111111, ["Base", "SkillGem"], 0x1111) { GemExperience = 10 };
+        var socketed = new Item(0xd9b1a12f, ["Base", "Sockets"], 0x40a1)
+            { Sockets = [new(SocketColour.Blue, gem)] };
+        var wand = items.Add(PlayerInventories.Weapon1, 0, 0, socketed);
+        Assert.Equal([(PlayerInventories.Weapon1, wand.Id, 0, gem)], items.SocketedGemSlots());
+
+        var current = items.ChangeSocketedGem(PlayerInventories.Weapon1, wand.Id, 0,
+            g => g with { GemExperience = g.GemExperience + 13 });
+
+        Assert.NotNull(current);
+        Assert.Equal(23, current.Item.Sockets[0]!.Gem!.GemExperience);
+        // The client's gem level comes from the SkillGem data inside the socketed item's blob: nothing without it gets out.
+        Assert.Equal((socketed with { Sockets = [new(SocketColour.Blue, gem with { GemExperience = 23 })] }).Payload(),
+            current.Item.Payload());
+        items.SaveUnsaved();
+        Assert.Equal(23, CharacterSaves.Load(_character)!.Inventories[PlayerInventories.Weapon1]
+            .Single(p => p.Id == wand.Id).Item.Sockets![0].Gem!.GemExperience);
+
+        Assert.Null(items.ChangeSocketedGem(PlayerInventories.Weapon1, wand.Id, 1, g => g with { GemExperience = 1 }));
+        Assert.Equal(23, items.SocketedGemSlots()[0].Gem.GemExperience);
+    }
 }

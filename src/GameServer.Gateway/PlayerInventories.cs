@@ -351,6 +351,35 @@ sealed class PlayerInventories
                 .SelectMany(i => i.Item.Sockets.Select((s, socket) => (i.Id, socket, s.Gem)).Where(g => g.Gem is not null).Select(g => (g.Id, g.socket, g.Gem!)))];
     }
 
+    /// <summary><see cref="SocketedGemPlaces"/> with the equipment row and socket each gem sits in: the place a gem's
+    /// experience change goes through.</summary>
+    public IReadOnlyList<(byte Row, uint ItemId, int Socket, Item Gem)> SocketedGemSlots()
+    {
+        lock (_lock)
+            return [.. VisibleSlots.Keys.Order().SelectMany(row => _items.TryGetValue(row, out var l)
+                    ? l.SelectMany(i => i.Item.Sockets.Select((s, socket) => (Row: row, Id: i.Id, Socket: socket, Gem: s.Gem)))
+                    : [])
+                .Where(g => g.Gem is not null)
+                .Select(g => (g.Row, g.Id, g.Socket, g.Gem!))];
+    }
+
+    /// <summary>Changes the gem in an equipped item's socket, without saving it now (like <see cref="ChangeUnsaved"/>).
+    /// Only for persistent values of a socketed gem, its experience.</summary>
+    public InventoryItem? ChangeSocketedGem(byte row, uint itemId, int socket, Func<Item, Item> change)
+    {
+        lock (_lock)
+        {
+            var items = ItemsIn(row);
+            int at = items.FindIndex(i => i.Id == itemId);
+            if (at < 0 || items[at].Item.Sockets is not { Count: > 0 } sockets || socket >= sockets.Count
+                || sockets[socket].Gem is not { } gem) return null;
+            var list = sockets.ToArray();
+            list[socket] = list[socket] with { Gem = change(gem) };
+            _unsaved = true;
+            return items[at] = items[at] with { Item = items[at].Item with { Sockets = list } };
+        }
+    }
+
     static readonly string[] OneHand = ["Claw", "Dagger", "Wand", "One Hand Sword", "Thrusting One Hand Sword", "One Hand Axe", "One Hand Mace", "Sceptre", "Rune Dagger"];
     static readonly string[] TwoHand = ["Bow", "Staff", "Two Hand Sword", "Two Hand Axe", "Two Hand Mace", "Warstaff", "FishingRod"];
 
