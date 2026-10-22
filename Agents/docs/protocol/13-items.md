@@ -459,6 +459,22 @@ nothing more), two (u16 ItemVisualIdentity HASH16, u32 TieredMicrotransactions k
 `0x1424f4250`), u8 ItemStances row (`0x1424f4b10`; the row's ItemStance, else its class's: Wand = 2), u16
 ItemVisualIdentity HASH16 (`0x1424f4730`), u8. The Gateway sends every visible slot, empty ones with tag 0: a slot left
 out keeps what the model showed before (the unequipped wand stayed in the hand).
+The player object's own list does not set how a two-handed weapon is held: after every area load it was held one-handed
+(live 2026-10-22). The Gateway sends the same list again as a 0x2ba update right after the player and the skill bar, as
+after an equip (verified live 2026-10-22).
+
+**Weapon swap (verified with a live trace, 2026-10-22).** The client sends C→S 0xdd (3 bytes, `0x1421690f0`): u8 the
+set it wants (1 the second, sent as "the current set is the first"), then waits (session +0xcfa4 = 1): no other 0xdd
+and no skill input (`FUN_14011d660`, `FUN_14215f700`) until the server answers. **S→C 0xde** (u8 flags, dispatcher case
+0x42 at `0x14214eb65`) answers: bit 0 is the active set (session +0xcd31, which the inventory panel shows,
+`FUN_1408f52e0`; a change tells the listeners), bit 1 keeps the wait (+0xcfa4 = 2), else it ends (0). S→C 0x21 carries
+the set on entry as its flag bit 0. Watch out: in the dispatcher `0x14214a190` r13 is the session object + 8, so its
+"[r13+0xcd29]" is the session's +0xcd31 and "[r13+0xcf9c]" is +0xcfa4 (a Frida trace of both places showed it; reading
+the offsets as they stand had suggested only a reconnect could swap). The panel always shows the hands' rows (Weapon1 /
+Offhand1, rows 2 and 3) as the active set and rows 14 / 15 as the other one, under the I / II tab the flag selects
+(live 2026-10-22: with only the flag switched, the second tab showed the first set's weapons). So the Gateway answers
+0xdd by trading the items of rows 2 ↔ 14 and 3 ↔ 15 (`PlayerInventories.SwapWeaponSets`, saved, ids and cells kept), a
+0xbf with the new contents of each of the four, then 0xde with the set and the equipment update.
 
 **Attribute requirements** are checked (`0x1402ce5f0`) against `virtual_strength_for_requirements`,
 `virtual_dexterity_for_requirements` and `virtual_intelligence_for_requirements` (keys 0x3d1b-0x3d1d), cached on the Player

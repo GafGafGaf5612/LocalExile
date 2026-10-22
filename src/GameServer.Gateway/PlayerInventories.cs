@@ -9,6 +9,7 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class PlayerInventories
 {
+    public const byte Weapon2 = 14, Offhand2 = 15;
     public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
         Boots = 9, Flask = 11, MapDevice = 13, Cursor = InstanceInventories.CursorRow;
 
@@ -388,6 +389,25 @@ sealed class PlayerInventories
         lock (_lock)
             return [.. VisibleSlots.OrderBy(e => e.Value).Select(e =>
                 _items.TryGetValue(e.Key, out var l) && l.Count > 0 && look(l[0].Item) is { } v ? v with { Slot = e.Value } : VisibleItem.Empty(e.Value))];
+    }
+
+    /// <summary>Which weapon set is in the hands: 0 the first, 1 the second (the 0x21 / 0xde flag the panel's I / II tab
+    /// shows). Kept for the character while the server runs (C→S 0xdd, 13-items.md "Weapon swap").</summary>
+    public byte WeaponSet { get; set; }
+
+    /// <summary>The weapon swap: the hands' rows (Weapon1, Offhand1) and the other set's (Weapon2, Offhand2, rows 14, 15)
+    /// trade their items, keeping ids and cells, as the client shows the active set in the hands' rows. Saved.</summary>
+    public void SwapWeaponSets()
+    {
+        lock (_lock)
+            foreach (var (hand, other) in new[] { (Weapon1, Weapon2), (Offhand1, Offhand2) })
+            {
+                var inHand = _items.TryGetValue(hand, out var a) ? a : [];
+                var away = _items.TryGetValue(other, out var b) ? b : [];
+                _items[hand] = away;
+                _items[other] = inHand;
+            }
+        Persist();
     }
 
     /// <summary>A free cell for an item of this size in a grid inventory, row by row; null when it is full.</summary>
