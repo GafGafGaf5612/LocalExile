@@ -40,6 +40,13 @@ public static class InstanceProtocol
     /// first; the client sends "current set is the first"). It then waits (session +0xcfa4 = 1) for S→C 0xde.</summary>
     public const ushort SwapWeaponsId = 0xdd;
 
+    /// <summary>C→S 0x197 (10 bytes, live 2026-10-23 while Cyclone was held): a channelled skill goes on, u32 BE x, u32 BE
+    /// y (grid cells) of the player. C→S 0x199 (2 bytes): the channel ends (the button let go). Read from captures.</summary>
+    public const ushort ChannelUpdateId = 0x197, ChannelEndId = 0x199;
+
+    public static (int X, int Y) ReadChannelUpdate(ReadOnlySpan<byte> m) =>
+        ((int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[2..]), (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[6..]));
+
     /// <summary>S→C 0xde (3 bytes, class 0x14345ef10, dispatcher case 0x42 at 0x14214eb65): the weapon set. u8 flags: bit 0
     /// the active set (→ session +0xcd31; a change tells the listeners at +0x72f8), bit 1 keeps the client waiting
     /// (session +0xcfa4 = 2), else the wait ends (0). Verified with a live trace, 2026-10-22.</summary>
@@ -75,7 +82,7 @@ public static class InstanceProtocol
         InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
         InstanceEntities.AllocatePassiveId => 7, InstanceEntities.RefundPassiveId => InstanceEntities.RefundPassiveLength,
         InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength, InstanceStash.RequestTabId => InstanceStash.RequestTabLength, InstanceStash.MoveTabId => InstanceStash.MoveTabLength, InstanceStash.MoveToTabId => InstanceStash.MoveToTabLength, InstanceStash.TakeFromTabId => InstanceStash.TakeFromTabLength, InstanceMapDevice.ActivateId => InstanceMapDevice.ActivateLength,
-        SwapWeaponsId => 3, LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, UseInstantSkillId => 8,
+        SwapWeaponsId => 3, ChannelUpdateId => 10, ChannelEndId => 2, LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, UseInstantSkillId => 8,
         InstancePause.RequestId => InstancePause.RequestLength, _ => null,
     };
 

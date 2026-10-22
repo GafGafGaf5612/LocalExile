@@ -334,9 +334,15 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             bool cast = Skills.IsGemSkill(use.SkillId);
             var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
             if (cast) conn.Walk.Order(px, py, at);
+            // A movement skill (Leap Slam …) takes the player to the aimed point: the server keeps the position the
+            // client will have, or a later resync would pull the player back to where the skill started.
+            if (cast && GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) is { Name: not null } moving && Skills.IsMovement(moving.Effect)
+                && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
+                conn.Walk.Teleport(use.X, use.Y, at);
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                 $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})");
+            conn.ChannelSkill = cast ? use.SkillId : (ushort)0;
             if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y));
             else await FollowRighteousFire(remote, stream, ciphers, conn);
             string mode = Environment.GetEnvironmentVariable("Game_MOVE_MODE") ?? "echo";
@@ -519,6 +525,24 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             int moved = target.SetPositions(order);
             Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} ({moved} moved, saved)");
         }
+        else if (id == InstanceProtocol.ChannelUpdateId)
+        {
+            // A channelled skill (Cyclone) goes on where the player now is: it moves there and, once per attack time, the
+            // skill hits around it (AreaSkillHit).
+            var (cx, cy) = InstanceProtocol.ReadChannelUpdate(bytes);
+            double t = conn.ClockAt(readAt);
+            conn.Walk.Teleport(cx, cy, t);
+            var channelled = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == conn.ChannelSkill);
+            if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
+            {
+                double every;
+                lock (conn.Monsters) every = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+                conn.NextChannelHitAt = t + every;
+                _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy), immediate: true);
+            }
+        }
+        else if (id == InstanceProtocol.ChannelEndId)
+            conn.ChannelSkill = 0;
         else if (id == InstanceProtocol.SwapWeaponsId)
         {
             // The weapon swap: the hands' rows and the other set's trade their items (the client shows the active set in
@@ -1449,7 +1473,7 @@ static async Task TravelByWaypoint(string remote, NetworkStream stream, Connecti
 static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
 {
-    var weapon = Skills.UnarmedFor(conn.ClassRow);
+    var weapon = WeaponFor(conn);
     double now = conn.Clock.Elapsed.TotalSeconds, duration;
     lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn));
     // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
@@ -1710,9 +1734,11 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
-    if (gem.Name is null || Skills.ProjectileFor(gem.Effect) is not { } projectile)
+    if (gem.Name is null) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4}: no gem skill"); return; }
+    if (Skills.ProjectileFor(gem.Effect) is not { } projectile)
     {
-        Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4}: no projectile");
+        // Not a projectile skill (strikes, slams, areas): its hit lands on the monsters around the aimed point.
+        await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to);
         return;
     }
     int action = conn.ActionCount;
@@ -1735,6 +1761,58 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
         return (damage, critical);
     });
+}
+
+// A gem skill without a projectile (strikes, slams, area spells): a first, simple hit (2026-10-23). It lands once, after
+// half the attack time (attacks) or the cast (spells), on every living monster within the skill's area radius
+// (active_skill_base_area_of_effect_radius, else AreaSkillRadius cells) of the aimed point, or of the player for a
+// point too far for a melee skill. Attacks deal the weapon's hit as the default attack does, spells their own damage
+// (SkillCatalog.HitDamage) with the player's stats; both convert, crit and roll per monster. Not modelled yet: damage
+// effectiveness, the skills' own shapes (waves, cones, chains), stun, and the attack's accuracy roll.
+static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality) gem, (int X, int Y) from, (int X, int Y) to,
+    bool immediate = false)
+{
+    const int AreaSkillRadius = 12;   // cells, for a skill without its own area stat
+    var skillStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+    int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
+    if (Stat("base_deal_no_damage") != 0) return;
+    var spellBase = Skills.HitDamage(gem.Effect, gem.Level, gem.Quality);
+    bool spell = spellBase.RollTotal(new Random(0)) > 0;
+    var weapon = WeaponFor(conn);
+    double delay;
+    lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0 : weapon.AttackSeconds(CharacterPlayerStats(conn)) / 2;
+    int radius = Stat("active_skill_base_area_of_effect_radius") is int r and > 0 ? Math.Max(3, r / 2) : AreaSkillRadius;
+    // A melee skill aimed far away still lands in front of the player.
+    var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
+    int action = conn.ActionCount;
+    // A channel's hits (Cyclone, C→S 0x197) land at once, where the player is.
+    if (!immediate)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(Math.Max(0.05, delay)));
+        if (conn.ActionCount != action || conn.Closed) return;
+    }
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    List<(uint Id, SpawnedMonster M)> targets;
+    lock (conn.Monsters)
+        targets = [.. conn.Monsters.Where(e => !e.Value.Dead && e.Value.Life > 0 && Dist(e.Value.Walk.Position(now), centre) <= radius)
+            .Select(e => (e.Key, e.Value))];
+    var player = CharacterPlayerStats(conn);
+    var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+    foreach (var (k, v) in skillStats) stats[k] = v;
+    foreach (var (id, m) in targets)
+    {
+        DamagePacket hit = spell
+            ? SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
+                .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false))
+            : weapon.HitDamage(player).Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true));
+        int damage = hit.RollTotal(Random.Shared);
+        int chance = spell ? conn.Pools.SpellCriticalStrikeChance : conn.Pools.AttackCriticalStrikeChance;
+        bool critical = chance > 0 && Random.Shared.Next(10_000) < chance;
+        if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
+        await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}");
+    }
+    Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y})");
 }
 
 // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
@@ -1939,7 +2017,7 @@ static List<(uint, int)> PlayerStatsWithCleared(ClientState conn)
 static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
-    foreach (var (k, v) in Skills.UnarmedFor(conn.ClassRow).Stats(stats)) stats[k] = v;
+    foreach (var (k, v) in WeaponFor(conn).Stats(stats)) stats[k] = v;
     return stats.Select(kv => (kv.Key, kv.Value));
 }
 
@@ -1968,7 +2046,7 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
     // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
     if (Stats.Key("skill_uses_main_hand") is uint usesMainHand && !devSet.Contains(usesMainHand)) stats[usesMainHand] = 1;
-    var attack = Skills.UnarmedFor(conn.ClassRow).HitDamage(stats);
+    var attack = WeaponFor(conn).HitDamage(stats);
     foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The conditions as they are now; the player tick sends the chance again when they change.
@@ -4418,6 +4496,22 @@ static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
 // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
 // The local stats of the active main hand and off hand items (the first weapon set, else the second), for the panel's
 // hand rows (PanelStats).
+// The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, its
+// physical damage with the weapon's own local mods (local_physical_damage_+%, local_minimum / maximum_added_physical_damage)
+// and its attack time with local_attack_speed_+%; no weapon, the class's unarmed attack.
+static SkillCatalog.Unarmed WeaponFor(ClientState conn)
+{
+    var unarmed = Skills.UnarmedFor(conn.ClassRow);
+    var item = ItemsOf(conn).Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
+    if (item is null || Items.ByHash(item.TypeHash) is not { } type || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return unarmed;
+    var local = ItemModStats.Local(item, Items.Mods);
+    double scale = 1 + local.GetValueOrDefault("local_physical_damage_+%") / 100.0;
+    int lo = (int)((min + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
+    int hi = (int)((max + local.GetValueOrDefault("local_maximum_added_physical_damage")) * scale);
+    int attackMs = (int)Math.Round(ms / (1 + local.GetValueOrDefault("local_attack_speed_+%") / 100.0));
+    return new SkillCatalog.Unarmed(Math.Max(1, attackMs), Math.Max(0, lo), Math.Max(lo, hi), Math.Max(range, unarmed.Range));
+}
+
 static (Dictionary<string, int> Main, Dictionary<string, int> Off) HandLocalStats(ClientState conn)
 {
     var items = ItemsOf(conn);
@@ -6591,6 +6685,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public (uint Id, int X, int Y)? ReturnPortal;
     /// <summary>The portal back to the character's open town portal, in its town or hideout (SpawnBackPortal).</summary>
     public (uint Id, int X, int Y)? BackPortal;
+    /// <summary>The gem skill being channelled (Cyclone: C→S 0x197 until 0x199), 0 for none, and when it next hits.</summary>
+    public ushort ChannelSkill;
+    public double NextChannelHitAt;
     /// <summary>The instance this connection is in (its number), for a portal back to it.</summary>
     public ulong InstanceNumber { get; init; }
     /// <summary>Arrive at this cell instead of the spawn (back through a town portal).</summary>
