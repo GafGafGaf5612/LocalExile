@@ -232,7 +232,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - Map device: a map without a walk-map capture puts the player at an arbitrary cell (Beach is captured); the arena gates
   land next to their pair, not on the telepads; fragments add nothing; the portals look like player portals; the open map is lost on a
   Gateway restart ([21](docs/protocol/21-hideouts.md) §5, "Open").
-- Stash: a switch to an already loaded tab sends nothing, so it is missed if the player logs out without reopening the stash or moving an item; the special tabs' slot rules, tab rename / order / folders, real guilds for the guild stash, per-league stashes and stashes in other towns ([18](docs/protocol/18-stash.md) "Open").
+- Stash: a switch to an already loaded tab sends nothing, so it is missed if the player logs out without reopening the stash or moving an item; the special tabs' slot rules, tab folders (the tab order, names and colours are kept, 2026-10-22), real guilds for the guild stash, per-league stashes and stashes in other towns ([18](docs/protocol/18-stash.md) "Open").
 - Saving quest progress. Quest passive points, quest refund points and ascendancy ([15](docs/protocol/15-progression.md) "Open").
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent; an
   effect object follows the player only by 0x1ba glides. Combat auras, Heralds and banners are not implemented; only the

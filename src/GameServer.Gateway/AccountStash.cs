@@ -38,7 +38,9 @@ sealed class AccountStash
 
     /// <summary>A tab: name, StashType row, colour, items, and its affinities (a bitset of StashTabAffinityId rows, set in the
     /// tab settings, C→S 0xd3).</summary>
-    public sealed record SavedTab(string Name, byte Type, byte R, byte G, byte B, List<CharacterSaves.SavedPlacement> Items, uint Affinities = 0);
+    /// <summary>A tab as saved. <paramref name="Position"/>: its button's place in the panel (C→S 0xcc), null for its index.</summary>
+    public sealed record SavedTab(string Name, byte Type, byte R, byte G, byte B, List<CharacterSaves.SavedPlacement> Items, uint Affinities = 0,
+        ushort? Position = null, uint Colour = 0);
 
     public sealed record Save(List<SavedTab> Tabs, int LastTab = 0, uint NextItemId = FirstItemId, uint Gold = 0)
     {
@@ -232,6 +234,54 @@ sealed class AccountStash
         return now;
     }
 
+    /// <summary>Keeps the tab buttons' order the panel sends (C→S 0xcc: tab index → position). Returns how many tabs moved.</summary>
+    public int SetPositions(IEnumerable<(ushort Index, ushort Position)> order)
+    {
+        int moved = 0;
+        lock (_lock)
+            foreach (var (index, position) in order)
+            {
+                if (index >= _tabs.Count || (_tabs[index].Saved.Position ?? index) == position) continue;
+                _tabs[index].Saved = _tabs[index].Saved with { Position = position };
+                moved++;
+            }
+        if (moved > 0) Persist();
+        return moved;
+    }
+
+    /// <summary>Every tab but the free normal ones (StashType 0) and folders (16) is premium, as bought tabs are in the real
+    /// game: the tab settings then offer the name and colour (record flag 0x02).</summary>
+    static bool IsPremium(byte type) => type is not (0 or 16);
+
+    /// <summary>Renames a premium tab (C→S 0xcd). False for no such tab, a tab that is not premium or an empty name.</summary>
+    public bool Rename(int tab, string name)
+    {
+        name = name.Trim();
+        if (name.Length is 0 or > 64) return false;
+        lock (_lock)
+        {
+            if (tab < 0 || tab >= _tabs.Count || !IsPremium(_tabs[tab].Saved.Type)) return false;
+            if (_tabs[tab].Saved.Name == name) return true;
+            _tabs[tab].Saved = _tabs[tab].Saved with { Name = name };
+        }
+        Persist();
+        return true;
+    }
+
+    /// <summary>Sets a premium tab's colour (C→S 0xce, the u32 the client keeps at the tab record's +0x2c). False for no
+    /// such tab or a tab that is not premium.</summary>
+    public bool SetColour(int tab, uint colour)
+    {
+        lock (_lock)
+        {
+            if (tab < 0 || tab >= _tabs.Count || !IsPremium(_tabs[tab].Saved.Type)) return false;
+            if (_tabs[tab].Saved.Colour == colour) return true;
+            _tabs[tab].Saved = _tabs[tab].Saved with { Colour = colour };
+        }
+        Persist();
+        return true;
+    }
+
     /// <summary>The tab of a stash inventory id, or null.</summary>
     public int? TabOf(uint inventoryId)
     {
@@ -247,9 +297,9 @@ sealed class AccountStash
         lock (_lock)
             return [.. _tabs.Select((t, i) => new InstanceStash.Tab((ushort)i, t.Saved.Name, InventoryOf(i), t.Saved.Type,
                 t.Saved.R, t.Saved.G, t.Saved.B,
-                Flags: t.Saved.Type is 1 or 7 ? InstanceStash.TabFlags.Premium : InstanceStash.TabFlags.None,
-                Position: (ushort)i, Affinities: t.Saved.Affinities | (selectBit is int b && i == _lastTab ? 1u << b : 0),
-                Loaded: loaded?.Contains(i) ?? false, Id: $"{i + 1:x8}"))];
+                Flags: IsPremium(t.Saved.Type) ? InstanceStash.TabFlags.Premium : InstanceStash.TabFlags.None,
+                Position: t.Saved.Position ?? (ushort)i, Affinities: t.Saved.Affinities | (selectBit is int b && i == _lastTab ? 1u << b : 0),
+                Loaded: loaded?.Contains(i) ?? false, Id: $"{i + 1:x8}", U2c: t.Saved.Colour))];
     }
 
     public string NameOf(int tab) { lock (_lock) return tab >= 0 && tab < _tabs.Count ? _tabs[tab].Saved.Name : "?"; }

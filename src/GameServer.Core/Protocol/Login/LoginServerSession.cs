@@ -67,6 +67,8 @@ public sealed class LoginServerSession(AccountService accounts)
         if (characters.Count == 0) return [];
         // The u32 is probably the character's index on the character screen (0 for the first, the only one tested).
         var chosen = characters[(int)Math.Min(play.Value, (uint)characters.Count - 1)];
+        // Last played now: the character screen selects it next time (CharacterList's B28).
+        accounts.Touch(Session.AccountId, chosen.Id, chosen.AreaId);
         CharacterName = chosen.Name;
         CharacterLeague = Leagues.Find(chosen.League);
         CharacterClass = chosen.Class;
@@ -130,10 +132,22 @@ public sealed class LoginServerSession(AccountService accounts)
                 new LeagueList(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Leagues.Entries(), false, false)];
     }
 
-    /// <summary>0x15: the characters, then B28 (→ character screen +0x280, unknown) and B29, the character slots
-    /// (login+0xe81 → character screen +0x281): its Create Character button is enabled only while the account has fewer
-    /// characters than that (0x140d17cc0; 0 kept it greyed out, live 2026-10-18).</summary>
-    private List15 CharacterList() => new(CharacterEntries(), 0, (byte)Math.Clamp(accounts.MaxCharacters, 0, 255), []);
+    /// <summary>0x15: the characters, then B28 (→ character screen +0x280: the index of the character it selects, the
+    /// last played one here; verified live 2026-10-22) and B29, the character slots (login+0xe81 → character screen
+    /// +0x281): its Create Character button is enabled only while the account has fewer characters than that
+    /// (0x140d17cc0; 0 kept it greyed out, live 2026-10-18).</summary>
+    private List15 CharacterList() => new(CharacterEntries(), LastPlayedIndex(), (byte)Math.Clamp(accounts.MaxCharacters, 0, 255), []);
+
+    /// <summary>The list index of the account's most recently played character (Play updates LastPlayedUtc), 0 for none.</summary>
+    private byte LastPlayedIndex()
+    {
+        if (Session is null) return 0;
+        var characters = accounts.Characters(Session.AccountId);
+        int best = 0;
+        for (int i = 1; i < characters.Count; i++)
+            if (characters[i].LastPlayedUtc > characters[best].LastPlayedUtc) best = i;
+        return (byte)Math.Min(best, 255);
+    }
 
     /// <summary>C→S 0x0c: delete a character; answered with S→C 0x0d (u16 result).</summary>
     public const ushort DeleteCharacterId = 0x0c, DeleteCharacterResultId = 0x0d;

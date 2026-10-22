@@ -10,7 +10,8 @@ namespace GameServer.Core.Protocol.Instance;
 /// </summary>
 public static class InstanceStash
 {
-    public const ushort TabListId = 0x136, TabLoadedId = 0xc8, RequestTabId = 0xc7, ReorderTabsId = 0xcc, MoveTabId = 0xd1;
+    public const ushort TabListId = 0x136, TabLoadedId = 0xc8, RequestTabId = 0xc7, ReorderTabsId = 0xcc, MoveTabId = 0xd1,
+        RenameTabId = 0xcd, ColourTabId = 0xce;
 
     /// <summary>S→C 0x7b kind that opens the personal stash (0x142163420 case 1 → listeners at instance +0x1178 →
     /// 0x140dcd5e0): u32 a = the Stash object, u32 b = an affinity (StashTabAffinityId row): the panel selects the first tab
@@ -122,6 +123,34 @@ public static class InstanceStash
     /// <summary>C→S 0xcc (vtable 0x1435c0438, write 0x141f96130; 0x1421670f0): the tab buttons' order. u8 kind, u8 n, n ×
     /// (u16 BE tab index, u16 BE position). Length 4 + 4n, or null while the count byte has not arrived.</summary>
     public static int? ReorderTabsLength(ReadOnlySpan<byte> m) => m.Length < 4 ? null : 4 + 4 * m[3];
+
+    /// <summary>C→S 0xcd (vtable 0x1435c00d8, write 0x141f962a0; built by the tab settings 0x14025b420): a premium tab
+    /// renamed. u8 kind, u16 BE tab, u64 (0), wstr name.</summary>
+    public static int? RenameTabLength(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m);
+        r.U16(); r.U8(); r.U16(); r.U32(); r.U32();
+        r.WStr();
+        return r.Short ? null : r.Position;
+    }
+
+    public static (byte Kind, ushort Tab, string Name) ReadRenameTab(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m);
+        r.U16();
+        byte kind = r.U8();
+        ushort tab = r.U16();
+        r.U32(); r.U32();
+        return (kind, tab, r.WStr());
+    }
+
+    /// <summary>C→S 0xce (17 bytes, vtable 0x1435bf9a8, write 0x141f96670; the tab settings 0x14025b420): a premium tab's
+    /// colour. u8 kind, u16 BE tab, u64 (0), u32 BE colour, which the client keeps in the tab record's +0x2c (sent back
+    /// as <see cref="Tab.U2c"/>).</summary>
+    public const int ColourTabLength = 17;
+
+    public static (byte Kind, ushort Tab, uint Colour) ReadColourTab(ReadOnlySpan<byte> m) =>
+        (m[2], (ushort)(m[3] << 8 | m[4]), System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(m[13..]));
 
     public static (byte Kind, List<(ushort Index, ushort Position)> Order) ReadReorderTabs(ReadOnlySpan<byte> m)
     {
