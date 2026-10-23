@@ -518,6 +518,31 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             int moved = target.SetPositions(order);
             Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} ({moved} moved, saved)");
         }
+        else if (id == InstanceProtocol.SwapWeaponsId)
+        {
+            // The weapon swap: the hands' rows and the other set's trade their items (the client shows the active set in
+            // the hands' rows), each of the four inventories gets its new contents (0xbf), S→C 0xde gives the set (which
+            // also ends the client's wait), then what the hands hold, with the new set's stats and skills (13-items.md).
+            var swapItems = ItemsOf(conn);
+            byte wanted = (byte)(bytes[2] == 1 ? 1 : 0);
+            if (wanted != swapItems.WeaponSet)
+            {
+                var before = new[] { PlayerInventories.Weapon1, PlayerInventories.Offhand1, PlayerInventories.Weapon2, PlayerInventories.Offhand2 }
+                    .ToDictionary(r => r, swapItems.Items);
+                swapItems.SwapWeaponSets();
+                swapItems.WeaponSet = wanted;
+                foreach (var (row, old) in before)
+                {
+                    uint inv = PlayerInventories.InventoryId(row);
+                    var now = swapItems.Items(row);
+                    if (old.Count + now.Count == 0) continue;
+                    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(inv, swapItems.NextRevision(row), [.. old.Select(i => i.Id)], now),
+                        $"0x00bf inventory {inv}: weapon swap, {old.Count} out, {now.Count} in");
+                }
+            }
+            await Send(remote, stream, ciphers, InstanceProtocol.WeaponSet(swapItems.WeaponSet == 1), $"0x00de weapon set {swapItems.WeaponSet + 1}");
+            await SendEquipment(remote, stream, ciphers, conn, swapItems);
+        }
         else if (id == InstanceStash.RenameTabId)
         {
             // A premium tab renamed in the tab settings; kept with the stash (personal or guild), account-wide.
@@ -613,6 +638,11 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
+                // The equipment again (S→C 0x02ba), as after an equip: the player object's own list does not set how a
+                // two-handed weapon is held, the update does (live 2026-10-22: it was held one-handed after every load).
+                var worn = ItemsOf(conn).Equipped(LookOf);
+                await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, worn),
+                    $"0x02ba player equipment on entering: {string.Join(", ", worn.Select(e => $"slot {e.Slot} stance {e.Stance}"))}");
                 await PopulateArea(remote, stream, ciphers, conn);
                 await SendGroundItems(remote, stream, ciphers, conn);
                 await PlaceStartWeapon(remote, stream, ciphers, conn);
@@ -5744,7 +5774,9 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     if (Environment.GetEnvironmentVariable("Game_GATEWAY_ENTER") == "1")
     {
         var tabs = PersonalStashOf(conn).Records((int)StashSelectAffinity);
-        messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}", InstanceProtocol.EnterArea(tabs)));
+        bool secondSet = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).WeaponSet == 1;
+        messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}, weapon set {(secondSet ? 2 : 1)}",
+            InstanceProtocol.EnterArea(tabs, secondSet)));
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))
