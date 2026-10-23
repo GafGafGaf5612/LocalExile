@@ -169,6 +169,32 @@ sealed class SkillCatalog(string folder = "data")
         return 0;
     }
 
+    /// <summary>How far a gem's stored experience may level it (GrantedEffectStatSetsPerLevel PlayerLevelReq): its level
+    /// stalls at the first one the character's level does not meet, as the game's does. The client derives the level from
+    /// the experience alone (it does not stall), so the server stops the experience below that level's threshold
+    /// (Program.GainGemExperience). 1 when not even the first level's requirement is met (the character cannot use the
+    /// gem), 40 when the skill has none.</summary>
+    public int MaxLevelAt(int effectRow, int charLevel)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 40;
+        int statSet = t.StatSets[effectRow];
+        int max = 0;
+        foreach (var (ss, level, req) in t.GemLevelReqs)
+            if (ss == statSet && req <= charLevel && level > max) max = level;
+        return max > 0 ? max : 1;
+    }
+
+    /// <summary>The character level a gem needs at this level (GrantedEffectStatSetsPerLevel PlayerLevelReq): the
+    /// highest requirement of its levels at or below it, 0 when the skill has none.</summary>
+    public int PlayerLevelReq(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 0;
+        int statSet = t.StatSets[effectRow], req = 0;
+        foreach (var (ss, lvl, r) in t.GemLevelReqs)
+            if (ss == statSet && lvl <= level && r > req) req = r;
+        return req;
+    }
+
     /// <summary>The ActionTypes Id of a basic action's skill id (HASH16 &amp; 0x3fff: Move 0x2909), or null.</summary>
     public string? ActionName(ushort skillId) => _actions.Value.FirstOrDefault(a => a.Id == skillId).Name;
 
@@ -494,7 +520,7 @@ sealed class SkillCatalog(string folder = "data")
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
         List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
         List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
-        List<(int, int)[]> StatSetLevelStats, List<int> ManaCost,
+        List<(int, int)[]> StatSetLevelStats, List<(int StatSet, int GemLevel, int PlayerLevelReq)> GemLevelReqs, List<int> ManaCost,
         List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
         List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality)
     {
@@ -556,13 +582,15 @@ sealed class SkillCatalog(string folder = "data")
             }
             var setLevels = new List<(int, int)>();
             var levelStats = new List<(int, int)[]>();
+            var levelReqs = new List<(int, int, int)>();
             foreach (var r in s.RootElement.EnumerateArray())
             {
                 setLevels.Add((Int(r, "StatSet"), Int(r, "GemLevel")));
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
                     .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
+                if (Int(r, "PlayerLevelReq") is >= 0 and var req) levelReqs.Add((Int(r, "StatSet"), Int(r, "GemLevel"), req));
             }
-            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana, reservations, cooldowns,
+            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, levelReqs, mana, reservations, cooldowns,
                 vaalSouls, quality);
         }
     }

@@ -76,7 +76,20 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   experience type's cap; its skill uses that level's cost, damage, reservation and cooldown, and its quality stats;
   transfigured and Trarthan gems grant their own skill, Vaal gems their Vaal skill and their base skill (refused without
   Vaal souls, which are not gathered yet); the variant is sent in the SkillGem data and saved; `/gem <name> [level]
-  [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](docs/protocol/19-gems.md) §1, §3). Not yet: requirements, supports, corruption.
+  [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](docs/protocol/19-gems.md) §1, §3). Not yet: supports, corruption.
+- **Gem level requirements (tested, checked with the real client).** A gem's level requirement is the
+  character level of its level (GrantedEffectStatSetsPerLevel `PlayerLevelReq`; Haste 24 at gem level 1 . 70 at 20, the
+  client's tooltips). Socketing a gem the character is too low for is refused (0x30, `GemLevelTooLow`), and a gem its
+  level requirement is above the character's makes its item inactive, as a worn item the character is too low for is:
+  the client reds it ("Requires level 70"), the item's mods stop counting and its skills leave the Actor list, so there
+  is nothing to cast; a use that arrives anyway is refused without the action (no 0x1ab, and the mana pool again so the
+  client's predicted cost comes back; `GemDisabled`). An inactive main-hand weapon is ignored: the default attack falls
+  back to the class's unarmed hit, as if it were not worn. Checked live 2026-10-23 with a level 20 Fireball wand at
+  character level 10. In play the gem never gets there: its experience stalls at the first level the
+  character does not meet (`SkillCatalog.MaxLevelAt` in `GainGemExperience`, the game's rule; the client derives levels
+  from experience alone and would not stall by itself), and the level change re-sends the skills. Not yet: the attribute
+  requirements (their formula is not fitted; the client does check them, Fireball level 20 needs 155 Int), supports don't
+  stop applying when a gem is disabled, and a disabled gem's aura keeps running ([19](docs/protocol/19-gems.md) 1, 3).
 - **Gem experience from kills (one gem in the first weapon set checked with the real client).** Every gem socketed in an
   equipped item, in either weapon set, gains 10% of a kill's monster experience (support gems included; inactive items,
   gems at their last level and corrupted gems over their cap nothing; quest levels and `/add_xp` give the gems nothing),
@@ -248,8 +261,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (359 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (364: currency on items (from the inventory or a stash tab), the currency tab's crafting slot, gem levels, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`dotnet test tests/GameServer.Core.Tests` (371 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (373: currency on items (from the inventory or a stash tab), the currency tab's crafting slot, gem levels, gem level requirements and the level stall, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.

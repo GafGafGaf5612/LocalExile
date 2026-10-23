@@ -165,6 +165,17 @@ kept). After each change, items that fall short are switched off one at a time, 
 active item including their own, until all active items are satisfied; an inactive item comes back when the character
 and the other active items meet its requirement without its own attributes.
 
+A gem socketed in a worn item whose level requirement the character no longer meets makes that item inactive as well
+(`CharacterStatSources`: the gem's requirement is checked per socket with `GemLevelTooLow`), so the item counts for
+nothing and the Actor skill list leaves its gems out: with no skill, there is nothing for the client to cast
+([19](19-gems.md) §2 "Requirements"). An inactive main-hand weapon is not there for the attack or for the weapon shape
+either: the default attack falls back to the class's unarmed hit (`WeaponFor`) and the shape passives read as unarmed
+(`WeaponProfileFor`).
+
+Open: the client still draws an inactive item on the character (a red wand stays in hand), and the server leaves it
+where it is — what the real game does is not observable, since nothing in it takes a level or an attribute away from an
+equipped item; moving the item out of the row is the only way to take the visual away (Roadmap "Gems 1").
+
 **Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).
 
