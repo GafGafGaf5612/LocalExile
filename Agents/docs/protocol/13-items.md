@@ -339,6 +339,14 @@ the values of each explicit mod within its own tier; the mods, their order, impl
 would be a different mod, and the client reorders the tooltip by mod, so the lines would jump. An item without explicit
 mods is refused.
 
+### Blessed Orb (2026-10-23, not verified live yet)
+
+`CurrencyRerollImplicit`, same handler (0x71, 0x72 with Shift; one orb spent per use). Before, the Gateway logged it as
+"not handled" (live 2026-10-23, item 221). `ItemRolls.Bless` rerolls only the values of each implicit mod within its own
+tier, as the Divine Orb does for explicits; explicit, enchant and other mods, rarity and name stay. An item without an
+implicit mod is refused (nothing spent), and like every currency here but the Scroll of Wisdom it does nothing to a
+corrupted or mirrored item.
+
 ### Orb of Scouring (2026-10-21, verified live)
 
 `CurrencyConvertToNormal`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Scouring` makes a magic, rare or

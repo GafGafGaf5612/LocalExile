@@ -59,6 +59,13 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         : item with { Mods = [.. item.Mods.Select((m, i) => m.Section == ModSection.Explicit && !item.FracturedIndexes().Contains(i) && catalog.Mods.ByHash(m.Hash) is { } mod
             ? mod.Roll(ModSection.Explicit, rng) : m)] };
 
+    /// <summary>Blessed Orb: every implicit mod keeps its place and tier and rerolls only its values within the tier, as
+    /// <see cref="Reforge"/> does for explicits; explicit, enchant and other mods stay. Null when the item has no implicit
+    /// mod (nothing is spent).</summary>
+    public Item? Bless(Item item, Random rng) => !item.Mods.Any(m => m.Section == ModSection.Implicit) ? null
+        : item with { Mods = [.. item.Mods.Select(m => m.Section == ModSection.Implicit && catalog.Mods.ByHash(m.Hash) is { } mod
+            ? mod.Roll(ModSection.Implicit, rng) : m)] };
+
     /// <summary>One more explicit affix, drawn by weight from the base's pool at its item level: no family already on the
     /// item and at most <paramref name="maxEach"/> prefixes / suffixes. The old mods stay; null when nothing fits.</summary>
     public Item? AddAffix(Item item, int maxEach, Random rng)
