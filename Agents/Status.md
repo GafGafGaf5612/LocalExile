@@ -72,7 +72,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Stable gem skill ids (tested, not yet checked with the real client).** Each gem keeps its skill id while it stays
   socketed (a gem moved through the cursor keeps its own; a gem swapped in never takes the old gem's id), so skill bar keys no longer move when other gems come or go; a skill that goes
   away ends its aura or Righteous Fire; one aura of a kind runs at a time (`GemSkillIds.cs`; [19](docs/protocol/19-gems.md) §3).
-- **Gem levels (tested, not yet checked with the real client).** A gem's level comes from its experience up to its
+- **Gem levels (tested, level 1 → 2 checked with the real client).** A gem's level comes from its experience up to its
   experience type's cap; its skill uses that level's cost, damage, reservation and cooldown, and its quality stats;
   transfigured and Trarthan gems grant their own skill, Vaal gems their Vaal skill and their base skill (refused without
   Vaal souls, which are not gathered yet); the variant is sent in the SkillGem data and saved; `/gem <name> [level]
@@ -98,10 +98,17 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   equipped item, in either weapon set, gains 10% of a kill's monster experience (support gems included; inactive items,
   gems at their last level and corrupted gems over their cap nothing; quest levels and `/add_xp` give the gems nothing),
   sent with the kill as 0x00bf item changes, each item once, so the XP bars follow, and saved with the character
-  (`GainGemExperience`, `PlayerInventories.ChangeSocketedGems`; [19](docs/protocol/19-gems.md) §1). Checked live
-  2026-10-23: the client updates the XP bar in real time and levels the gem itself at the threshold; a level-up re-sends
-  the skills (0x02ba Actor), so the level's damage and costs apply at once. Not checked live yet: several gems in one
-  item, the second weapon set.
+  (`GainGemExperience`, `PlayerInventories.ChangeSocketedGems`; [19](docs/protocol/19-gems.md) §1). A kill's share stops
+  one point below the next threshold, where the client shows the "+": it does not level a gem by itself (checked live
+  2026-10-23). Not checked live yet: several gems in one item, the second weapon set.
+- **Gem level-up and the lock (checked with the real client).** Clicking the "+" sends C→S 0x31 (inventory, item, socket;
+  14 bytes); the server writes the next threshold into the gem, replaces the item (0xbf) and re-sends the skills (0x02ba
+  Actor), so the client derives the new level and its numbers at once, and refuses a gem at its last level, a locked one,
+  or one whose next level's requirements the character does not meet (`LevelUpGem`). A right-click sends C→S 0xd7 (the
+  same three u32s and a u8 lock flag; 15 bytes), kept in the SkillGem flags bit 2 (`Item.GemFlags`) and saved, so the
+  lock survives a login; the client greys the "+" while it is set (`LockGem`). Checked live 2026-10-23: level 1 → 2,
+  right-click, relogin, unlock, level again; `/gem_xp <amount|near>` sets the experience. Not checked: a gem in the
+  inventory (not socketed) sends nothing in the captures.
 - **Saves in SQLite (tested, not yet checked with the real client).** Accounts, characters, character saves and stashes
   are rows in `data/saves.db` (WAL, synchronous=FULL); a stash is a header row and one row per tab. Every item, stash,
   gold, passive, quest flag and waypoint change is saved at once in a transaction. Stash moves, purchases, sales,
@@ -265,8 +272,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (376 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (375: currency on items (from the inventory or a stash tab), the currency tab's crafting slot, gem levels, gem requirements (level and attributes) and the level stall, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`dotnet test tests/GameServer.Core.Tests` (378 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (375: currency on items (from the inventory or a stash tab), the currency tab's crafting slot, gem levels, gem requirements (level and attributes) and the level stall, the gem level-up and lock messages and the saved lock flag, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.

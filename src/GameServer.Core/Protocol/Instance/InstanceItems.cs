@@ -45,6 +45,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// Trarthan or Vaal ones; SkillGem component +0x3c).</summary>
     public int GemVariant { get; init; }
 
+    /// <summary>SkillGem component +0x10: bit 2 (0x04) is the client's "level locked" (right-click on the gem; its level-up
+    /// check 0x142472db0 returns false then). The client's own bits 5 (variant) and 7 are not sent.</summary>
+    public byte GemFlags { get; init; }
+
     public ItemRarity Rarity { get; init; }
 
     /// <summary>Unidentified items carry no <see cref="ModSection.Explicit"/> list (the client does not read it).</summary>
@@ -150,7 +154,7 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 // 0x14246eb00: i32 experience (-1: one level over the cap), u32 +0x3c the variant (the copy 0x14246fa50
                 // checks it against the GemVariants count and sets +0x10 bit 5 when it is not 0), u8 +0x10, u16 +0x40 an
                 // IndexableSupportGems index (0: none).
-                case "SkillGem": w.I32(GemExperience).U32((uint)GemVariant).U8(0).U16(0); break;
+                case "SkillGem": w.I32(GemExperience).U32((uint)GemVariant).U8(GemFlags).U16(0); break;
                 // 0x1421e2e20: u8 = bit0/bit1 (special, nothing more) | socket count << 2 | link group count << 5; per socket
                 // u8 colour << 1 | has gem, then the gem (item data without the length prefix); then a u8 per link group
                 // (assumed: the group's socket count).
@@ -275,7 +279,28 @@ public sealed record InventoryItem(uint Id, byte X, byte Y, Item Item);
 public static class InstanceItems
 {
     public const ushort InventoryChangeId = 0xbf, PickUpItemId = 0x28, DropItemId = 0x29, PlaceItemId = 0x2a, InventoryRequestId = 0x2d,
-        ItemActionId = 0x4a, SplitStackId = 0x7c, CommandId = 0x16, SocketGemId = 0x30, UnsocketGemId = 0x2f;
+        ItemActionId = 0x4a, SplitStackId = 0x7c, CommandId = 0x16, SocketGemId = 0x30, UnsocketGemId = 0x2f,
+        LevelUpGemId = 0x31, LockGemId = 0xd7;
+
+    /// <summary>
+    /// C→S 0x31 (14 bytes, live 2026-10-23): the level-up arrow on a socketed gem with experience one below its next
+    /// level's threshold (the client's "+", 19-gems.md §4). u32 inventory id, u32 item id, u32 socket index.
+    /// </summary>
+    public static SocketGem ReadLevelUpGem(ReadOnlySpan<byte> m) => ReadSocketGem(m);
+
+    /// <summary>
+    /// C→S 0xd7 (15 bytes, live 2026-10-23): the gem's level lock toggled by a right-click. u32 inventory id, u32 item
+    /// id, u32 socket index, u8 locked (1 lock, 0 unlock; SkillGem +0x10 bit 2).
+    /// </summary>
+    public sealed record LockGem(uint InventoryId, uint ItemId, uint Socket, bool Locked);
+
+    public const int LockGemLength = 15;
+
+    public static LockGem ReadLockGem(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32(), r.U32(), r.U8() != 0);
+    }
 
     /// <summary>
     /// C→S 0x2f (17 bytes): take the gem out of a socket onto the cursor (a click on a socketed gem with nothing held).

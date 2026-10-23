@@ -1,35 +1,37 @@
 # 19. Gems
 
-State of 2026-10-20: gem items serialize, socket and save ([13](13-items.md)). Every socketed skill gem grants its
-variant's skill at the gem's level and quality (§3), and skill changes after login go out as the Actor's 0x20 update
-([11](11-skills.md) §3). Gem experience, requirements and supports are planned in the Roadmap's "Gems" items (#62,
-#63, #64). This file collects what is known for them.
+State of 2026-10-23: gem items serialize, socket and save ([13](13-items.md)). Every socketed skill gem grants its
+variant's skill at the gem's level and quality (§3), skill changes after login go out as the Actor's 0x20 update
+([11](11-skills.md) §3), and a gem gains experience, levels up when the player clicks its "+", and can have its level
+locked (§4). Requirements are in §2; supports are still planned (Roadmap "Gems 3", #64).
 
 ## 1. The gem in the item data (SkillGem component)
 
-The SkillGem component's reader `0x14246eb00` takes, in order:
+The SkillGem component's reader `0x14246eb00` (writer `0x14246ea40`) takes, in order:
 
 | Data | Stored at | Use |
 |---|---|---|
-| i32 experience | +0x28 | -1 is special (below) |
+| i32 experience | +0x28 | -1 when the gem is one level over the cap (the writer sends -1 when its level is above the type's) |
 | u32 | +0x3c | the variant: an index into the SkillGems row's `GemVariants` (0 the normal gem) |
-| u8 | +0x10 | flags (read through `0x140e28cf0`); bit 5 is set when the variant is not 0 |
+| u8 | +0x10 | flags (read through `0x140e28cf0`); bit 2 = the level is locked (right-click, §4); bit 5 is set by the client when the variant is not 0, bit 7 when it builds the component empty |
 | u16 | +0x40 | an IndexableSupportGems row's `Index` (0: none); not used for gems yet |
 
 The reader zeroes the level (+0x2c) and two experience thresholds (+0x30, +0x34) first. Then:
 
 - **Experience -1:** experience 0 and level = the gem type's +0x28 + 1. The gem type's +0x28 is the maximum level
-  (below), so this is one level over the cap. A guess to check: the corrupted level 21 gems.
+  (below), so this is one level over the cap; the writer produces it for a level above the cap (a corrupted level 21
+  gem is the likely case).
 - **Any other experience:** `0x14246f900` derives the level. From level 0, while the level is under the maximum (gem
   type +0x28) and the next threshold (+0x34) is not above the experience, the level goes up by one, +0x30 takes the old
   threshold and +0x34 the next level's from the gem's experience table (ItemExperiencePerLevel, the row's +0x14).
 
-So the client derives the level from the experience alone; the server sends experience, not a level. How a gem that
-can level up but hasn't been levelled by the player is represented is open (Roadmap "Gems 2"), so the server lets a
-gem's experience run levels freely and its skill uses that level (`GemLevel`). The one stall is the character's level
-requirement: the game keeps the gem at the last level the character meets, and the server stops the experience just
-below the next level's threshold (`SkillCatalog.MaxLevelAt`, `GainGemExperience`; §"Requirements" below) — the client
-does not stall it, it derives whatever the experience says (checked live 2026-10-23).
+So the client derives the level from the experience alone; the server sends experience, not a level. Because the level
+is derived on every read, a gem whose experience reached a threshold levels at once: the server stops the experience one
+point below the next threshold, which is also the state the client draws a full bar and the "+" for (§4), and only the
+player's click sends the experience to the threshold. The other stall is the character's level requirement: the game
+keeps the gem at the last level the character meets, and the server stops the experience just below the next level's
+threshold (`SkillCatalog.MaxLevelAt`, `GainGemExperience`; §"Requirements" below) — the client does not stall it, it
+derives whatever the experience says (checked live 2026-10-23).
 
 The server gives the kills' experience to the gems (`GainGemExperience`, from `MonsterKilled` only: a quest's level and
 `/add_xp` give the gems nothing): each gem socketed in an equipped item, in either weapon set (rows 1–10, 14, 15),
@@ -39,17 +41,17 @@ inactive item, at its last level, or at experience -1, a corrupted gem over its 
 one step under the inventory's lock (`PlayerInventories.ChangeSocketedGems`), written into the gem inside the socket
 list, and are sent as the socket's equipment row 0x00bf item change, each item once with all its gems — the same item
 id removed and added again, the replace idiom: an addition of a known id alone is dropped as a duplicate and the client
-keeps the stale gem (live 2026-10-23). One per row per kill; the client's XP bar and tooltip
-follow, it levels the gem itself at the threshold, and the level's change is logged. A level's costs, damage and
-reservation ride the skills, so a level-up also re-sends the skills (the 0x20 Actor update, `SendSkills`), the same
-thing an equipment change does.
+keeps the stale gem (live 2026-10-23). One item change per row per kill; the client's XP bar and tooltip follow. A
+level's costs, damage and reservation ride the skills, so a level-up also re-sends the skills (the 0x20 Actor update,
+`SendSkills`), the same thing an equipment change does.
 
 The variant: the copy `0x14246fa50` checks +0x3c against the `GemVariants` count (the SkillGems row's +0x77, the list's
 count in the 3.29 layout) and keeps 0 when it is outside the list. The u16: `0x14246fae3` and `0x1424732c3` look it up
 in `Data/IndexableSupportGems.dat` when it is not 0.
 
-The server writes the component as `i32 experience, u32 variant, u8 0, u16 0` (`Item.Payload`, `GemVariant`); saves keep
-the experience and the variant (`GemExperience`, `GemVariant`).
+The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0` (`Item.Payload`, `GemVariant`,
+`GemFlags`: 0, or 4 for a locked level); saves keep the experience, the variant and the flags (`GemExperience`,
+`GemVariant`, `GemFlags`).
 
 ## 2. The game data
 
@@ -163,17 +165,36 @@ the experience and the variant (`GemExperience`, `GemVariant`).
 - Skill changes after login (equipment, levels, passives, auras) go out as the 0x20 update, which removes skills and
   tells the character panel ([11](11-skills.md) §3).
 
+## 4. Levelling up and the level lock
+
+The client draws the "+" on a gem whose experience is one point below the next level's threshold (the server's cap,
+§1). Clicking it sends C→S 0x31 ([13](13-items.md) §6): u32 inventory id, u32 item id, u32 socket index (14 bytes,
+live 2026-10-23). The server writes the next level's threshold into the gem and replaces the item (0xbf, the remove and
+add idiom), so the client derives the new level and its skill; the skills go out again as the 0x20 Actor update. The
+new level's requirements are the server's check (`GemRequirementsUnmet` at that level); a locked gem is refused. A gem
+lying in the inventory, not in a socket, sent nothing in the captures.
+
+The lock: a right-click on a socketed gem sends C→S 0xd7 (15 bytes): the same three u32s and a u8, 1 to lock and 0 to
+unlock. The client keeps the lock in the SkillGem flags +0x10 bit 2 — its level-up check `0x142472db0` returns false
+when the bit is set, so the "+" goes away — and the server writes the bit into the item (`GemFlags`) and saves it, so
+the lock is back after a login. Checked live 2026-10-23: the "+" appears with `/gem_xp near`, the click levels the gem
+(level 1 → 2, 9–14 → 10–16 damage), right-click locks it, the lock survives a relogin, unlocking brings the "+" back.
+
+The client's level-up check `0x142472db0` (reached from `0x1402169c0`, a vtable slot at `0x143036de8`) does not only
+test the threshold: with `remaining = next − experience` it wants `remaining <= 10 × v` and
+`remaining <= (next − current) / 4`, `v` being a field of the next level's stat set. Only the last condition was
+exercised live (experience one below the threshold); whether the client also draws the "+" for the last quarter of a
+level's bar is not checked, and the server only ever leaves a gem one point below the threshold.
+
 ## Open
 
-- The SkillGem component's u8 (+0x10) and what IndexableSupportGems (+0x40) is for.
+- What IndexableSupportGems (+0x40) is for; the u8's other bits.
 - Not checked with the real client yet: a gem of a higher level or with quality, a transfigured gem's tooltip and skill,
   a Vaal gem's two skills, and how the client shows a Vaal skill without souls and a skill on cooldown. Checked
   2026-10-23: the level requirement (a level 20 gem red at character level 10; the client still sends its use, the
   server refusing the action) and the socketing refusal; the attribute requirements were fitted and checked live on
-  2026-10-23 (`/set_stat intelligence 200`, then 130, under a level 20 Fireball).
-- "Ready to level": how the client shows a gem that can level up when it derives the level from experience; the
-  level-up panel's messages; where a gem's lock is kept. The server's kill experience leaves this visible immediately:
-  a gem that crossed a threshold may show or apply the level without a click (checked live 2026-10-23: a monster kill's
-  share levels the gem itself).
+  2026-10-23 (`/set_stat intelligence 200`, then 130, under a level 20 Fireball); the "+", the level-up and the lock
+  (§4).
+- A gem in the inventory (not socketed): its "+" and lock messages were not seen; the client may level it locally.
 - A disabled gem's supports still apply, and its aura still runs: supports are not modelled yet (Roadmap "Gems 3").
 - The support list's layout in the skill record, and supports in the 0x20 update.

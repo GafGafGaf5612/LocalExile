@@ -464,6 +464,10 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             await UnsocketGem(remote, stream, ciphers, conn, InstanceItems.ReadUnsocketGem(bytes));
         else if (id == InstanceItems.SocketGemId)
             await SocketGem(remote, stream, ciphers, conn, InstanceItems.ReadSocketGem(bytes));
+        else if (id == InstanceItems.LevelUpGemId)
+            await LevelUpGem(remote, stream, ciphers, conn, InstanceItems.ReadLevelUpGem(bytes));
+        else if (id == InstanceItems.LockGemId)
+            await LockGem(remote, stream, ciphers, conn, InstanceItems.ReadLockGem(bytes));
         else if (id == InstanceItems.PlaceItemId)
             await PlaceItem(remote, stream, ciphers, conn, InstanceItems.ReadPlaceItem(bytes));
         else if (id == InstanceItems.ItemActionId)
@@ -3723,6 +3727,32 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             items.NextRevision(PlayerInventories.MainInventory), [], [added]),
             $"0x00bf inventory 1: /gem {variant.Name} (variant {variant.Index}) level {level}, {quality}% quality, experience {created.GemExperience}");
     })
+    .Add("gem_xp", "/gem_xp <amount|near> (dev: set the experience of every gem in the inventory and the sockets; near = one below the next level's threshold)", async args =>
+    {
+        if (args.Length != 1) throw new ArgumentException("an amount, or near");
+        bool near = args[0].Equals("near", StringComparison.OrdinalIgnoreCase);
+        int amount = near ? 0 : int.Parse(args[0]);
+        var items = ItemsOf(conn);
+        int Set(Item gem, ItemCatalog.GemType type)
+        {
+            int level = Items.GemLevel(gem);
+            int max = Math.Min(Skills.MaxLevelAt(type.Variant(gem.GemVariant).Effect, conn.Pools.Level), type.MaxLevel);
+            return near ? (level < max ? type.ExperienceFor(level + 1) - 1 : gem.GemExperience) : amount;
+        }
+        var changed = new List<(byte Row, InventoryItem Item)>();
+        foreach (var held in items.Items(PlayerInventories.MainInventory))
+            if (Items.ByHash(held.Item.TypeHash) is { } baseType && Items.Gem(baseType) is { } type)
+                if (items.Change(PlayerInventories.MainInventory, held.Id, it => it with { GemExperience = Set(it, type) }) is { } after)
+                    changed.Add((PlayerInventories.MainInventory, after));
+        foreach (var (row, item, _) in items.ChangeSocketedGems((_, gem) =>
+            Items.ByHash(gem.TypeHash) is { } baseType && Items.Gem(baseType) is { } type ? gem with { GemExperience = Set(gem, type) } : null))
+            changed.Add((row, item));
+        if (changed.Count == 0) { await conn.Commands!.Reply("No gem to change"); return; }
+        foreach (var row in changed.GroupBy(c => c.Row))
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
+                [.. row.Select(c => c.Item.Id)], [.. row.Select(c => c.Item)]),
+                $"0x00bf inventory {row.Key}: /gem_xp {(near ? "near" : amount.ToString())} ({string.Join(", ", row.Select(c => $"{c.Item.Id:x} exp {c.Item.Item.GemExperience}"))})");
+    })
     .Add("map_portal", "/map_portal [type 1-4] [created 0|1] [open after ms, -1 never] [model 0-2] (dev: one MultiplexPortal next to you, listed in the map device's 0x8f)", async args =>
     {
         if (args.Length > 3) conn.MapPortalStyle = byte.Parse(args[3]);
@@ -5154,6 +5184,55 @@ static async Task SocketGem(string remote, NetworkStream stream, ConnectionCiphe
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(s.InventoryId, items.NextRevision(r), [item.Id], [item]),
         $"0x00bf inventory {s.InventoryId}: item {item.Id} with a gem in socket {s.Socket}");
     if (PlayerInventories.ShowsOnModel(r)) await SendEquipment(remote, stream, ciphers, conn, items);
+}
+
+// C→S 0x31: the "+" on a socketed gem. The client derives the level from the gem's experience on read (0x14246f900), so
+// the server writes the next level's threshold and replaces the item; the client then derives the level and its skill.
+static async Task LevelUpGem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.SocketGem s)
+{
+    var items = ItemsOf(conn);
+    if (PlayerInventories.Row(s.InventoryId) is not byte row) return;
+    if (items.Items(row).FirstOrDefault(i => i.Id == s.ItemId) is not { Item: { } worn } ||
+        s.Socket >= worn.Sockets.Count || worn.Sockets[(int)s.Socket].Gem is not { } gem) return;
+    if (Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is not { } type) return;
+    if ((gem.GemFlags & 4) != 0) { await conn.Commands!.Reply($"{Items.GemName(gem)}'s level is locked"); return; }
+    int level = Items.GemLevel(gem);
+    int max = Math.Min(Skills.MaxLevelAt(type.Variant(gem.GemVariant).Effect, conn.Pools.Level), type.MaxLevel);
+    if (level >= max) { await conn.Commands!.Reply($"{Items.GemName(gem)} is at its highest level ({max})"); return; }
+    var next = gem with { GemExperience = type.ExperienceFor(level + 1) };
+    if (GemRequirementsUnmet(conn, next) is { } missing) { await conn.Commands!.Reply(missing); return; }
+    var after = items.Change(row, s.ItemId, it =>
+    {
+        var sockets = it.Sockets.ToList();
+        sockets[(int)s.Socket] = sockets[(int)s.Socket] with { Gem = next };
+        return it with { Sockets = sockets };
+    });
+    if (after is null) return;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(s.InventoryId, items.NextRevision(row), [after.Id], [after]),
+        $"0x00bf inventory {s.InventoryId}: item {after.Id} socket {s.Socket} gem to level {level + 1}");
+    await SendSkills(remote, stream, ciphers, conn);
+    Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(next)} levels to {level + 1}");
+}
+
+// C→S 0xd7: a right-click on a socketed gem toggles its level lock (SkillGem +0x10 bit 2); the item is replaced with the
+// new flag so the client shows the lock again after a login.
+static async Task LockGem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.LockGem s)
+{
+    var items = ItemsOf(conn);
+    if (PlayerInventories.Row(s.InventoryId) is not byte row) return;
+    if (items.Items(row).FirstOrDefault(i => i.Id == s.ItemId) is not { Item: { } worn } ||
+        s.Socket >= worn.Sockets.Count || worn.Sockets[(int)s.Socket].Gem is not { } gem) return;
+    byte flags = (byte)((gem.GemFlags & ~4) | (s.Locked ? 4 : 0));
+    var after = items.Change(row, s.ItemId, it =>
+    {
+        var sockets = it.Sockets.ToList();
+        sockets[(int)s.Socket] = sockets[(int)s.Socket] with { Gem = gem with { GemFlags = flags } };
+        return it with { Sockets = sockets };
+    });
+    if (after is null) return;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(s.InventoryId, items.NextRevision(row), [after.Id], [after]),
+        $"0x00bf inventory {s.InventoryId}: item {after.Id} socket {s.Socket} gem {(s.Locked ? "locked" : "unlocked")}");
+    Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(gem)} in item {after.Id} socket {s.Socket}: {(s.Locked ? "level locked" : "level unlocked")}");
 }
 
 // C→S 0x2f: a socketed gem goes onto the cursor; the item is replaced in its inventory.

@@ -213,18 +213,6 @@ data is in [19](docs/protocol/19-gems.md).
 - **Done when:** a `/gem` gem of any level and quality casts with that level's numbers, transfigured and Vaal gems grant
   the right skills, skill ids don't change when other gems move, and requirements match the tooltips and are enforced.
 
-### Gems 2: gem experience and levelling (#63)
-- **Known:** saves keep each gem's experience; character experience arrives in one place (`GainExperience`). Gems in
-  equipped items gain 10% of every kill's experience, saved with the character and sent as 0x00bf item changes
-  ([19](docs/protocol/19-gems.md) §1, Status "Gem experience from kills"). Checked live 2026-10-23: the client updates
-  the XP bar in real time and levels the gem itself at the threshold (no click), and the level's numbers are stalled by
-  the gem's level requirement (Gems 1 (c)).
-- **Start:** the panel: research first the panel's client messages and where the lock is kept; level up, level all,
-  lock (right click), the locked list under the inventory (right click levels, Shift + right click unlocks), greyed when
-  the requirements aren't met.
-- **Done when:** killing monsters levels socketed gems the way the real game does, and locked gems stay locked across
-  logins.
-
 ### Gems 3: support gems and links (#64)
 - **Known:** the skill record has a support list ([11](docs/protocol/11-skills.md) §3); granting a support as a skill
   crashes the client ([13](docs/protocol/13-items.md) §6). GrantedEffects holds each support's compatible skill types and
