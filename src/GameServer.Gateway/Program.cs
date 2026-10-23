@@ -5197,10 +5197,17 @@ static async Task LevelUpGem(string remote, NetworkStream stream, ConnectionCiph
     if (Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is not { } type) return;
     if ((gem.GemFlags & 4) != 0) { await conn.Commands!.Reply($"{Items.GemName(gem)}'s level is locked"); return; }
     int level = Items.GemLevel(gem);
+    // The character's level can fall below the next level's requirement after the experience was gained (/set_level, or a
+    // save from before the stall): the "+" is still there, so say what is missing rather than that the gem is at its last
+    // level. The next level is only computed while the gem is under its type's cap (ExperienceFor clamps).
+    if (level < type.MaxLevel && GemRequirementsUnmet(conn, gem with { GemExperience = type.ExperienceFor(level + 1) }) is { } missing)
+    {
+        await conn.Commands!.Reply(missing);
+        return;
+    }
     int max = Math.Min(Skills.MaxLevelAt(type.Variant(gem.GemVariant).Effect, conn.Pools.Level), type.MaxLevel);
     if (level >= max) { await conn.Commands!.Reply($"{Items.GemName(gem)} is at its highest level ({max})"); return; }
     var next = gem with { GemExperience = type.ExperienceFor(level + 1) };
-    if (GemRequirementsUnmet(conn, next) is { } missing) { await conn.Commands!.Reply(missing); return; }
     var after = items.Change(row, s.ItemId, it =>
     {
         var sockets = it.Sockets.ToList();

@@ -104,11 +104,13 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Gem level-up and the lock (checked with the real client).** Clicking the "+" sends C→S 0x31 (inventory, item, socket;
   14 bytes); the server writes the next threshold into the gem, replaces the item (0xbf) and re-sends the skills (0x02ba
   Actor), so the client derives the new level and its numbers at once, and refuses a gem at its last level, a locked one,
-  or one whose next level's requirements the character does not meet (`LevelUpGem`). A right-click sends C→S 0xd7 (the
+  or one whose next level's requirements the character does not meet (`LevelUpGem`; the client's "+" check does not test
+  them, so the server answers with the missing level or attribute). A right-click sends C→S 0xd7 (the
   same three u32s and a u8 lock flag; 15 bytes), kept in the SkillGem flags bit 2 (`Item.GemFlags`) and saved, so the
   lock survives a login; the client greys the "+" while it is set (`LockGem`). Checked live 2026-10-23: level 1 → 2,
-  right-click, relogin, unlock, level again; `/gem_xp <amount|near>` sets the experience. Not checked: a gem in the
-  inventory (not socketed) sends nothing in the captures.
+  right-click, relogin, unlock, level again; a level-up refused at character level 31 (Fireball level 10 needs 32) and
+  with 70 Int (needs 75); `/gem_xp <amount|near>` sets the experience. Not checked: a gem in the inventory (not
+  socketed), which sent nothing in the captures.
 - **Saves in SQLite (tested, not yet checked with the real client).** Accounts, characters, character saves and stashes
   are rows in `data/saves.db` (WAL, synchronous=FULL); a stash is a header row and one row per tab. Every item, stash,
   gold, passive, quest flag and waypoint change is saved at once in a transaction. Stash moves, purchases, sales,
@@ -273,7 +275,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 ## Tests
 
 `dotnet test tests/GameServer.Core.Tests` (378 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (375: currency on items (from the inventory or a stash tab), the currency tab's crafting slot, gem levels, gem requirements (level and attributes) and the level stall, the gem level-up and lock messages and the saved lock flag, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`tests/GameServer.Gateway.Tests` (376: currency on items (from the inventory or a stash tab), the currency tab's crafting slot, gem levels, gem requirements (level and attributes) and the level stall, the level-up stopped between two levels, the gem level-up and lock messages and the saved lock flag, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.

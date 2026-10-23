@@ -171,8 +171,11 @@ The client draws the "+" on a gem whose experience is one point below the next l
 §1). Clicking it sends C→S 0x31 ([13](13-items.md) §6): u32 inventory id, u32 item id, u32 socket index (14 bytes,
 live 2026-10-23). The server writes the next level's threshold into the gem and replaces the item (0xbf, the remove and
 add idiom), so the client derives the new level and its skill; the skills go out again as the 0x20 Actor update. The
-new level's requirements are the server's check (`GemRequirementsUnmet` at that level); a locked gem is refused. A gem
-lying in the inventory, not in a socket, sent nothing in the captures.
+new level's requirements are the server's check (`GemRequirementsUnmet` at that level); a locked gem is refused. The
+client's own check does not look at the requirements — only the lock and the remaining experience — so a gem whose next
+level the character does not meet still shows the "+", and the click is answered with what is missing (checked live
+2026-10-23: Fireball at level 9 with the experience one below level 10 on a character set to level 31, level 10 needing
+32; then with 70 Int, level 10 needing 75). A gem lying in the inventory, not in a socket, sent nothing in the captures.
 
 The lock: a right-click on a socketed gem sends C→S 0xd7 (15 bytes): the same three u32s and a u8, 1 to lock and 0 to
 unlock. The client keeps the lock in the SkillGem flags +0x10 bit 2 — its level-up check `0x142472db0` returns false

@@ -67,6 +67,23 @@ public class GemRequirementsTests
     }
 
     [Fact]
+    public void The_level_up_stops_where_the_character_no_longer_meets_the_next_level()
+    {
+        // The "+" appears when the experience is one point below the next threshold, so the character can be between the
+        // two levels only if its level fell after the experience was gained (/set_level; the game has no de-level):
+        // Fireball level 9 needs 28 and level 10 needs 32, so at 31 the gem stays level 9.
+        var skills = new SkillCatalog(Data());
+        int fireball = skills.EffectRow("Fireball");
+
+        Assert.Equal(28, skills.PlayerLevelReq(fireball, 9));
+        Assert.Equal(32, skills.PlayerLevelReq(fireball, 10));
+        Assert.Equal(9, skills.MaxLevelAt(fireball, 31));
+        // The same with attributes: 67 Int meets level 9's requirement, 75 does not meet level 10's.
+        Assert.Equal(67, SkillCatalog.GemAttributeRequirement(100, 28, support: false));
+        Assert.Equal(75, SkillCatalog.GemAttributeRequirement(100, 32, support: false));
+    }
+
+    [Fact]
     public void Attribute_requirements_follow_the_clients_curve()
     {
         // The level requirement through (3 x it + 11), the percentage share to the power 0.9, 0.7 for a skill.
