@@ -11,7 +11,7 @@ sealed class PlayerInventories
 {
     public const byte Weapon2 = 14, Offhand2 = 15;
     public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
-        Boots = 9, Flask = 11, MapDevice = 13, Cursor = InstanceInventories.CursorRow;
+        Boots = 9, Flask = 11, MapDevice = 13, Weapon2 = 14, Offhand2 = 15, Cursor = InstanceInventories.CursorRow;
 
     private static readonly ConcurrentDictionary<string, PlayerInventories> ByCharacter = new(StringComparer.OrdinalIgnoreCase);
 
@@ -352,6 +352,41 @@ sealed class PlayerInventories
                 .SelectMany(i => i.Item.Sockets.Select((s, socket) => (i.Id, socket, s.Gem)).Where(g => g.Gem is not null).Select(g => (g.Id, g.socket, g.Gem!)))];
     }
 
+    /// <summary>
+    /// Changes the gems socketed in the <see cref="GemExperienceRows"/> items in one step (a gem moved meanwhile is never
+    /// changed with another's values), without saving it now (like <see cref="ChangeUnsaved"/>). <paramref name="change"/>
+    /// gets the item's id and the gem and returns the changed gem, or null to keep it. Returns each changed item once, as
+    /// it is now, with its row and each changed gem before and after. Only for persistent values of a socketed gem, its
+    /// experience.
+    /// </summary>
+    public IReadOnlyList<(byte Row, InventoryItem Item, IReadOnlyList<(Item Before, Item After)> Gems)> ChangeSocketedGems(
+        Func<uint, Item, Item?> change)
+    {
+        var changed = new List<(byte, InventoryItem, IReadOnlyList<(Item, Item)>)>();
+        lock (_lock)
+            foreach (var row in GemExperienceRows)
+            {
+                if (!_items.TryGetValue(row, out var items)) continue;
+                for (int at = 0; at < items.Count; at++)
+                {
+                    if (items[at].Item.Sockets is not { Count: > 0 } held) continue;
+                    var sockets = held.ToArray();
+                    var gems = new List<(Item, Item)>();
+                    for (int socket = 0; socket < sockets.Length; socket++)
+                        if (sockets[socket].Gem is { } gem && change(items[at].Id, gem) is { } after)
+                        {
+                            gems.Add((gem, after));
+                            sockets[socket] = sockets[socket] with { Gem = after };
+                        }
+                    if (gems.Count == 0) continue;
+                    _unsaved = true;
+                    items[at] = items[at] with { Item = items[at].Item with { Sockets = sockets } };
+                    changed.Add((row, items[at], gems));
+                }
+            }
+        return changed;
+    }
+
     static readonly string[] OneHand = ["Claw", "Dagger", "Wand", "One Hand Sword", "Thrusting One Hand Sword", "One Hand Axe", "One Hand Mace", "Sceptre", "Rune Dagger"];
     static readonly string[] TwoHand = ["Bow", "Staff", "Two Hand Sword", "Two Hand Axe", "Two Hand Mace", "Warstaff", "FishingRod"];
 
@@ -379,6 +414,9 @@ sealed class PlayerInventories
     {
         [1] = 2, [2] = 0, [3] = 1, [4] = 4, [5] = 11, [6] = 8, [7] = 9, [8] = 5, [9] = 6, [10] = 10,
     };
+
+    /// <summary>The rows whose socketed gems gain experience: the visible equipment rows and the second weapon set.</summary>
+    static readonly byte[] GemExperienceRows = [.. VisibleSlots.Keys.Order(), Weapon2, Offhand2];
 
     public static bool ShowsOnModel(byte row) => VisibleSlots.ContainsKey(row);
 
