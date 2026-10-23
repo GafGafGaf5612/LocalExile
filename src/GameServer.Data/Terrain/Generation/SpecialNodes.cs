@@ -23,8 +23,8 @@ sealed class NodePlacement
 /// sorted into lists (<c>0x14211f100</c>), tagged nodes and nodes on virtual edges get a room or a tile
 /// (<c>0x1421225d0</c> → <c>0x1421203f0</c>), and the placed rooms are tilised (<c>0x142121610</c>).</summary>
 /// <summary>A tilised room as <c>0x141fea780</c> records it (0x38 bytes on the layout context's +0x58 list): the
-/// room, its footprint in map entries and the node's descriptions (+0x20).</summary>
-sealed record PlacedRoom(RoomDef Room, int X, int Y, int Width, int Height, IReadOnlyList<string> Descriptions);
+/// room, its footprint in map entries, the node's descriptions (+0x20) and its orientation code (+0x1b).</summary>
+public sealed record PlacedRoom(RoomDef Room, int X, int Y, int Width, int Height, IReadOnlyList<string> Descriptions, int Orientation = 0);
 
 sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> notes, TileGraph graph, TileGrid grid,
     int offsetX, int offsetY, TileStore store, RoomSetIndex rooms)
@@ -1209,7 +1209,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
                     }
         grid.CheckGrounds = check;
         var (w, h) = Orientation.Size(o, room.Width, room.Height);
-        Rooms.Add(new PlacedRoom(room, x0 + offsetX, y0 + offsetY, w, h, descriptions));
+        Rooms.Add(new PlacedRoom(room, x0 + offsetX, y0 + offsetY, w, h, descriptions, o));
     }
 
     void TiliseSlots(RoomDef room, int x0, int y0, int o, bool fillGrounds)

@@ -82,6 +82,11 @@ switch (args.FirstOrDefault())
         // (data/walkability/<area>_seed<seed>.bin and .projectile.bin); without an area, one line per seed-1 capture.
         Walk(args.Length > 1 ? args[1] : null, args.Length > 2 ? uint.Parse(args[2]) : 1);
         break;
+    case "doodads":
+        // doodads <area id> <seed>: the doodad stage after the port's generation, its draws against the trace and its
+        // doodads against the walk-map capture (<area>_seed<seed>.doodads.json).
+        Doodads(args[1], uint.Parse(args[2]));
+        break;
     case "oracle":
         // oracle [area regex]: every (area, seed) the client logged with its tile hash (Client/logs/Client.txt), run by
         // the port: match, mismatch, or where it stops.
@@ -172,6 +177,58 @@ static void Walk(string? areaId, uint seed)
     }
 }
 
+static void Doodads(string areaId, uint seed)
+{
+    string root = Root();
+    using var fs = OpenGame();
+    var files = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+    string stem = Path.Combine(root, "data", "walkability", $"{areaId}_seed{seed}");
+    using var trace = JsonDocument.Parse(File.ReadAllText(stem + ".gen.json"));
+    var t = trace.RootElement;
+    int level = t.TryGetProperty("level", out var l) ? l.GetInt32() : 1;
+    var area = AreaInfo.Load(p => fs.TryReadFile(p, out var d) ? d : null, areaId, level);
+    var rng = new LevelRandom(seed, area.RandomnessDisabled) { Log = [] };
+    var result = LevelGenerator.Generate(files, area, seed, rng: rng);
+    var grid = result.Grid;
+    int before = rng.Log!.Count;
+    var walk = Walkability.Build(grid, tile => files.Walk(tile.Path));
+    var notes = new List<string>();
+    foreach (var r in result.Records)
+    {
+        Console.WriteLine($"record ({r.X}, {r.Y}) {r.W}x{r.H} {r.MasterPath}: {r.Rooms.Count} rooms");
+        foreach (var p in r.Rooms)
+            Console.WriteLine($"  {p.Room.Path} at ({p.X}, {p.Y}) o{p.Orientation}");
+    }
+    var stage = new DoodadStage(files, rng, grid, walk, notes);
+    stage.Run(result.Records);
+    foreach (var n in notes.Distinct()) Console.WriteLine("  " + n);
+    // Draw by draw from the tile stage's end.
+    var theirs = t.GetProperty("draws").EnumerateArray().Where(d => d[0].GetString() is "n" or "u" or "l")
+        .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
+    var mine = rng.Log!;
+    int same = 0;
+    while (same < theirs.Count && same < mine.Count && theirs[same].Kind == mine[same].Kind && theirs[same].Arg == mine[same].Arg && theirs[same].Result == mine[same].Result) same++;
+    Console.WriteLine($"draws: {same} of {theirs.Count} match (port made {mine.Count}, {mine.Count - before} in the doodad stage)");
+    if (same < theirs.Count)
+        for (int i = same; i < Math.Min(same + 6, theirs.Count); i++)
+            Console.WriteLine($"  #{i}: client {theirs[i].Kind}({theirs[i].Arg}) = {theirs[i].Result} {theirs[i].Caller}" +
+                (i < mine.Count ? $"  port {mine[i].Kind}({mine[i].Arg}) = {mine[i].Result}" : "  port -"));
+    // Placements against the capture (model, x, y).
+    using var dd = JsonDocument.Parse(File.ReadAllText(stem + ".doodads.json"));
+    var models = dd.RootElement.GetProperty("models").EnumerateArray().Select(m => m.GetString()!).ToList();
+    var captured = dd.RootElement.GetProperty("doodads").EnumerateArray()
+        .Select(d => (Model: models[d[0].GetInt32()].ToLowerInvariant(), X: d[1].GetInt32(), Y: d[2].GetInt32(), A: d[3].GetSingle())).ToList();
+    var placed = stage.Placed.Select(p => (Model: p.Model.ToLowerInvariant(), p.X, p.Y, A: p.Angle)).ToList();
+    var capturedSet = captured.Select(c => (c.Model, c.X, c.Y)).ToHashSet();
+    int found = placed.Count(p => capturedSet.Contains((p.Model, p.X, p.Y)));
+    Console.WriteLine($"doodads: port {placed.Count}, {found} of them captured; capture {captured.Count}");
+    foreach (var p in placed.Where(p => !capturedSet.Contains((p.Model, p.X, p.Y))).Take(8))
+        Console.WriteLine($"  port only: {Path.GetFileName(p.Model)} ({p.X}, {p.Y}) {p.A:0.###}");
+    var placedSet = placed.Select(p => (p.Model, p.X, p.Y)).ToHashSet();
+    foreach (var c in captured.Where(c => !placedSet.Contains((c.Model, c.X, c.Y))).Take(12))
+        Console.WriteLine($"  capture only: {Path.GetFileName(c.Model)} ({c.X}, {c.Y}) {c.A:0.###}");
+}
+
 static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string areaId, uint seed, bool verbose)
 {
     string stem = Path.Combine(root, "data", "walkability", $"{areaId}_seed{seed}");
@@ -187,6 +244,42 @@ static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string 
     var result = LevelGenerator.Generate(files, area, seed);
     var grid = result.Grid;
     var walk = Walkability.Build(grid, t => files.Walk(t.Path));
+    // The doodad stage stamps the generated doodads' collision; with LEVELGEN_CAPTURED_DOODADS the captured ones
+    // (<area>_seed<seed>.doodads.json: models, then [model, x, y, angle]) instead; LEVELGEN_NODOODADS: none.
+    int stamped = 0;
+    string doodadNote = "";
+    bool noDoodads = Environment.GetEnvironmentVariable("LEVELGEN_NODOODADS") is not null;
+    bool captured = Environment.GetEnvironmentVariable("LEVELGEN_CAPTURED_DOODADS") is not null;
+    if (!noDoodads && !captured)
+    {
+        var notes = new List<string>();
+        var stage = new DoodadStage(files, result.Random, grid, walk, notes);
+        try
+        {
+            stage.Run(result.Records);
+        }
+        catch (Exception e) when (e is NotSupportedException or InvalidDataException)
+        {
+            notes.Add("stage stopped: " + e.Message);
+        }
+        stamped = stage.Placed.Count;
+        doodadNote = notes.Count == 0 ? "" : $" ({notes.Distinct().Count()} doodad notes: {notes[0]})";
+        if (verbose) foreach (var n in notes.Distinct()) Console.WriteLine("  " + n);
+    }
+    if (captured && File.Exists(stem + ".doodads.json"))
+        using (var dd = JsonDocument.Parse(File.ReadAllText(stem + ".doodads.json")))
+        {
+            var models = dd.RootElement.GetProperty("models").EnumerateArray().Select(m => m.GetString()!).ToList();
+            var hulls = new Dictionary<string, DoodadHull?>();
+            foreach (var d in dd.RootElement.GetProperty("doodads").EnumerateArray())
+            {
+                string model = models[d[0].GetInt32()];
+                if (!hulls.TryGetValue(model, out var hull)) hulls[model] = hull = DoodadHull.Load(files.Text, model);
+                if (hull is null || hull.IsEmpty) continue;
+                walk.Stamp(hull, new PlacedDoodad(model, d[1].GetInt32(), d[2].GetInt32(), d[3].GetSingle()));
+                stamped++;
+            }
+        }
     if (!verbose)
     {
         static string Count(byte[] mine, string file)
@@ -196,7 +289,7 @@ static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string 
             return theirs.Length != mine.Length ? $"size {theirs.Length}/{mine.Length}" : $"{mine.Where((v, i) => v != theirs[i]).Count()}/{mine.Length}";
         }
         string match = clientHash is null ? "?" : grid.Hash() == clientHash ? "yes" : "no";
-        Console.WriteLine($"{areaId} {match} walk {Count(walk.Walk, stem + ".bin")} proj {Count(walk.Projectile, stem + ".projectile.bin")}");
+        Console.WriteLine($"{areaId} {match} walk {Count(walk.Walk, stem + ".bin")} proj {Count(walk.Projectile, stem + ".projectile.bin")} doodads {stamped}{doodadNote}");
         return;
     }
     // Every placed tile's data: parsed, and one sub-tile per slot.
@@ -215,6 +308,35 @@ static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string 
         for (int y = vy; y <= vy + vh; y++)
             Console.WriteLine($"  v{y}: " + string.Join(" ", Enumerable.Range(vx, vw + 1).Select(x =>
                 $"{Path.GetFileNameWithoutExtension(grid.Corner(x, y).Ground ?? "-")}/{grid.Corner(x, y).Flags}")));
+    // LEVELGEN_HULL=x,y: the entry's sub-tile, its planes, and how many of the slot's cells each plane gets right.
+    if (Environment.GetEnvironmentVariable("LEVELGEN_HULL") is { Length: > 0 } hr && hr.Split(',').Select(int.Parse).ToArray() is [var hx, var hy] &&
+        grid[hx, hy] is { } he && files.Walk(he.Tile.Path) is { } hw)
+    {
+        var capture = File.ReadAllBytes(stem + ".bin");
+        int idx = Enumerable.Range(0, he.Tile.Width * he.Tile.Height).First(i =>
+            Orientation.Map(he.Orientation, i % he.Tile.Width, i / he.Tile.Width, he.Tile.Width, he.Tile.Height) == (he.OffsetX, he.OffsetY));
+        var sub = hw.SubTiles[idx];
+        var buf = new byte[sub.HullWidth * sub.HullHeight * 4];
+        int n = sub.Hull is null ? 0 : Lz4.Decompress(sub.Hull, buf);
+        int size = sub.HullWidth * sub.HullHeight;
+        Console.WriteLine($"  {he.Tile.Path} o{he.Orientation} sub {idx} F 0x{sub.F:x2} G 0x{sub.G:x2} masks [{string.Join(",", hw.PlaneMasks)}] " +
+            $"hull {n} bytes = {(double)n / size} planes of {sub.HullWidth}x{sub.HullHeight}");
+        for (int p = 0; p * size < n; p++)
+        {
+            int ok = 0;
+            for (int v = 0; v < 23; v++)
+                for (int u = 0; u < 23; u++)
+                {
+                    var (tx, ty) = Orientation.Map(he.Orientation, u, v, 23, 23);
+                    byte c = capture[(hy * 23 + ty) * grid.Width * 23 + hx * 23 + tx];
+                    if ((buf[p * size + (v - sub.Y0) * sub.HullWidth + u - sub.X0] & 0xf) == c) ok++;
+                }
+            Console.WriteLine($"  plane {p}: {ok} of 529 cells equal the capture's");
+        }
+        for (int v = 0; v < 23; v++)
+            Console.WriteLine("  " + string.Concat(Enumerable.Range(0, 23).Select(u => capture[(hy * 23 + v) * grid.Width * 23 + hx * 23 + u].ToString())) +
+                "  " + string.Concat(Enumerable.Range(0, 23).Select(u => (buf[(v - sub.Y0) * sub.HullWidth + u - sub.X0] & 0xf).ToString())));
+    }
     // LEVELGEN_WALK=<file>: the port's walk grid, one byte per cell (as the capture's .bin).
     if (Environment.GetEnvironmentVariable("LEVELGEN_WALK") is { Length: > 0 } walkOut) File.WriteAllBytes(walkOut, walk.Walk);
     Console.WriteLine($"{areaId} seed {seed}: tile hash {grid.Hash()} (client {clientHash}), grid {walk.Width}x{walk.Height}");

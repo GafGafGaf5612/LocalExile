@@ -6,7 +6,8 @@ so walkability, area transitions, waypoints and room points no longer need a `li
 the tile hash, the extra-terrain-feature rolls (for areas without area stats), the topology pick, and fixed layouts with
 one room (`.dgr`): **Lioneye's Watch generates on the server tile for tile** (hash 1139181677, all 540 entries, every
 draw up to the finished grid), and tile graphs (`.tgr`) far enough that **The Twilight Strand seed 1 generates tile
-for tile** (hash 266153788, every draw up to the finished grid, §3g). Not ported: what §3g lists, doodads. Seeds stay pinned to 1 until an area's generation matches (Roadmap "Server-side level
+for tile** (hash 266153788, every draw up to the finished grid, §3g). Not ported: what §3g lists, parts of the doodads (§6c; room, random and vertex doodads are in, and the Strand's
+doodad-stage draws and walkability grids match). Seeds stay pinned to 1 until an area's generation matches (Roadmap "Server-side level
 generation"). Code: `src/GameServer.Data/Terrain/Generation/`.
 
 Size: the call tree under `0x14204d820` (callers ≤ 30, so allocators and strings excluded) is about 1 800 functions /
@@ -816,8 +817,7 @@ pass 2; seeds 3 and 7 stop with "Could not tilise edge", which the client answer
 ## 5. Not yet mapped in detail
 
 The rest of the room/tile solver (`0x1420f7960` outer edge, `0x14202e6c0` chisel, `0x14201db80` fix heights, the
-height stages), doodads (`0x1420425d0`), and how doodad collision reaches the walkability grids (§6b): `0x142042360`
-makes each doodad a client entity (`0x141ebdf30`), not through the generator's map.
+height stages). Doodads: §6c.
 
 The busiest draw sites in the traces (§8): `0x142042fae`/`0x142042fbc` (doodads, ~2 per tile), `0x1421257cc`,
 `0x14152e730`/`0x14152e73a` and `0x141530658` (outside the generator range: tile mesh variation), `0x141febf93` /
@@ -870,18 +870,56 @@ value, so the order does not matter.
   buffer included; records with CountAsPrimary too), followed by `0x142028870` (the map's border vertices). The
   second run is what makes a tile graph's outer buffer unwalkable. Then `0x142049420` flags the vertices under a
   room's `outside_tiles` sector (`0x142025190`; none in the areas checked, not ported).
-- **Doodads** are not in the port: their collision lowers both grids around them (The Twilight Strand: wall torches,
-  shore rocks).
+- **Doodads** lower both grids around their collision as they are created (§6c).
 
-Checked with `levelgen walk` against the seed-1 captures (`data/walkability/<area>_seed1.bin`, `.projectile.bin`):
-The Twilight Strand matches all but 1 258 of 1 733 004 walk cells and 480 projectile cells, all of them at doodads.
-Over the 61 captures whose tile hash matches (`levelgen walk` without arguments) the median area matches 99.44% of
-walk cells and 99.89% of projectile cells, 39 of them at 99% or more. The largest gaps are dungeon rooms' forced-blank
-slots (`forced_blank.tdt`, F = 7: open) that the client blocks with flag 8 on all their vertices: The Control Blocks
-`1_5_2` 93.9%, `2_10_2` 93.2%. The likely source is the step of `0x1420289a0` after `0x142028510` that flags every
-vertex of an origin tile whose data +0x16c has 0x40, whose +0x90 → +0x30 has 8, whose four values at +0x62 equal
-master +0x230 and whose four handles at +0x40 are null or have a negative byte +0x48, when master +0x165 is set and
-+0x230 is not null. Which master keys those are is not mapped (the parser's locals do not follow the master's layout).
+Checked with `levelgen walk` against the seed-1 captures (`data/walkability/<area>_seed1.bin`, `.projectile.bin`;
+`LEVELGEN_NODOODADS` leaves the doodads out, `LEVELGEN_CAPTURED_DOODADS` stamps the captured ones instead of the
+generated): of the 61 captures whose tile hash matches, **47 match both grids cell for cell** with the generated
+doodads (without doodads: none; median 99.44% walk, 99.89% projectile). The dungeon forced-blank slots (`1_5_2`
+93.9%, `2_10_2` 93.2% before) were doodad collision, not a walkability rule. The 14 left: §6c.
+
+## 6c. Doodads (`DoodadStage.cs`, `DoodadHull.cs`)
+
+`0x1420425d0` ("Generating doodads...", step +0x58 of §1) over the subgraph records (generator +0x30 → +0x10, 0x98
+bytes; `GenerationResult.Records`: rectangle +0x40…+0x4c, master +0x50, placed rooms +0x58 at 0x38 bytes: +8 x, +0xc
+y, +0x18 height, +0x1b orientation code). Order:
+
+1. **Room doodads** of every record's rooms, in placing order (`0x142040770`). A `.tgr` record's rooms are the special
+   nodes', overlays' and fill rooms (`special.Rooms`), a dungeon's the layout's placed rooms. Per room line (`.arm`
+   reader `0x142a0f3a0`: `x y [has position, x y](v ≥ 34) angle [quaternion](v ≥ 17) flip [wake group](v > 24)
+   has-fixed-height [height] [scale](v > 13) "file.ao" "type"`, then links and decals): `0x14202ede0` resolves the .ao
+   with no random angle (no draw without AOSet); filters type +0x2ac ∈ {60, generator +0xd0}, a per-line orientation
+   mask (+0x1e), vtable +0x98 (`0x14152d680`: type +0x2a8 ∈ {0, 1}); `0x14202f1c0` places it: cell =
+   `Orientation.Map(code, x, y, w·23, h·23)` (the room's own size) + room origin·23 + the AOSet offset; angle = 2π − a
+   for codes 4–7, + (code & 3)·π/2, wrapped, + the AOSet angle; scale = line × AOSet; mirrored = (code 4–7) ^ flip ^
+   AOSet. Type checks `0x142030080` / `0x14202fe70` (angle halves), `0x14202f860` (inside a +0x1c bit-2 room),
+   `0x14202f640` (server objects → `0x142041ac0`), `0x14202f530` (map vtable +0x60). The port creates only
+   `Metadata/MiscellaneousObjects/Doodad` objects (NPCs, monsters and blockers are not client doodads; the captures
+   agree).
+2. Per record: **random doodads** of the master's `.ddt` (attempts = max density·w·h/1000) between a copy and a
+   restore of the generator state (TLS +400), then **vertex doodads** ("All" groups, fixed lines) with normal draws.
+   Not ported (not hit by any matching trace): the entity exclusion circles and the `Next(10000)` falloff (lines
+   274–550: entities with components 0x407c7f95 / 0x9e3b9e73, stats 0x25a4f824 / 0xc9c0b154 / 0xb36d48d9), the
+   `0x14154c2d0` check after walk ≥ 5, the tile no-doodad bitmask (tile +0x150).
+3. The deferred list `0x142041d40` (groups shuffled by `Next(count)`, no two within 3 × 3): not ported.
+
+Each doodad is created by `0x142042360` (nothing outside the map) and added to the world, which stamps its `.ao`
+`Hull` on both grids (§6b, `Walkability.Stamp`: walk grid walk shapes then projectile shapes, projectile grid
+projectile shapes; triangles at 1/16 cell with a top-left rule, circles as dx² + dy² < round(r²), falloff ≤ 4). So
+later walk checks (`walk < 5` in the random loop) see earlier doodads: this is what kept the Strand's draws apart
+before.
+
+Results: The Twilight Strand matches every doodad-stage draw (to #25 151, then the mesh variation `0x141530658`) and
+places 237 of the 250 captured doodads; its grids match cell for cell, as 46 other captures'. Left:
+- **AOSet** (`0x14202ede0`: `AOSet` component, weighted children +0x10 / total +0x28 picked by `Next(total)` while the
+  fixed list +0x30 is empty; angle range +0x48/+0x4c, orientation mask +0x5c with `Next(840)`, scale range
+  +0x50/+0x54, offset radius +0x58: two `Next(512)`): skipped with a note (`1_1_6` `lioneye_swords_hill_set.ao`,
+  `1_1_3` toxic lights).
+- **Tile doodad lists** (tile data +0x178, or a `.tmd` beside the tile; `0x141d7eda0` → `0x141d7f700` →
+  `0x1420415e0`, same placement as room lines with the entry's origin and code): the Strand's torches and waterfalls,
+  `1_4_2`'s plants (every stage draw matches there; 18 279 walk cells off). Where they run is not mapped yet.
+- `2_7_5_map`: the first random loop ends later in the port (#24 268, the client starts the next record);
+  `2_10_6`: the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing.
 
 ## 7. What the server will use
 

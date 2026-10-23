@@ -96,6 +96,9 @@ public sealed record RoomDef(string Path, string Tag, TileKey Key, RoomSlot[,] S
     /// the file); empty when the file has none.</summary>
     public string?[] VertexGrounds { get; init; } = [];
 
+    /// <summary>The room's doodads and objects (room data +0x70, 0x58 bytes each), in file order.</summary>
+    public IReadOnlyList<RoomDoodad> Doodads { get; init; } = [];
+
     public int Width => Key.Width;
     public int Height => Key.Height;
 }
@@ -171,6 +174,23 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
 
     /// <summary>A tile's walkability data (<see cref="TileWalk.Parse"/>), null for a tile with a base tile.</summary>
     public TileWalk? Walk(string path) => Get("walk", path, TileWalk.Parse);
+
+    readonly Dictionary<string, int> _tileFlags = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The u16 flags word after a .tdt's key (tile data +0x16c / +0x16d; bit 4: doodads may go on the tile).</summary>
+    public int TileFlags(string path)
+    {
+        if (_tileFlags.TryGetValue(path, out int known)) return known;
+        var data = read(path);
+        int flags = 0;
+        if (data is not null)
+        {
+            int length = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
+            int at = 8 + 2 * length + 58;
+            if (at + 2 <= data.Length) flags = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(at));
+        }
+        return _tileFlags[path] = flags;
+    }
 
     readonly Dictionary<string, bool> _transitionTiles = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _transitionTypes = new(StringComparer.OrdinalIgnoreCase);
@@ -418,7 +438,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         string?[] vertexGrounds = [];
         if (inner > 0 && last is not null && last.Count == inner && last.All(t => t.IsNumber && !t.Text.Contains('.')))
             vertexGrounds = [.. last.Select(t => Path(file, t.Int))];
-        return new RoomDef(path, file.Tag, roomKey, grid) { PointCount = file.Points.Count, VertexGrounds = vertexGrounds, Overlap = HeaderOverlap(text) };
+        return new RoomDef(path, file.Tag, roomKey, grid) { PointCount = file.Points.Count, VertexGrounds = vertexGrounds, Overlap = HeaderOverlap(text), Doodads = file.Doodads };
     }
 
     static string? Path(RoomFile file, int index) => file.Dict(index) is { Length: > 0 } s ? s : null;

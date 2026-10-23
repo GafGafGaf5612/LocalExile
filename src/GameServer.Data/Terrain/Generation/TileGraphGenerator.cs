@@ -15,6 +15,12 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     TileGrid? _grid;
     int _ox, _oy;
 
+    /// <summary>The rooms placed in the subgraph (special nodes, overlays, fill rooms), in placing order.</summary>
+    public List<PlacedRoom> Rooms { get; private set; } = [];
+
+    /// <summary>The primary subgraph's record (the whole map) once <see cref="Generate"/> has run.</summary>
+    public List<DoodadRecord> Records { get; private set; } = [];
+
     /// <summary>The subgraph's TileSet store (master +0x228), for the stages after the layout.</summary>
     public TileStore Store { get; private set; } = null!;
 
@@ -39,7 +45,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// graph positions at the buffer; after the layout the post-unique tiles, the outer buffer and StoreyHeight.</summary>
     TileGrid Layout(string graphPath, int orientation)
     {
-        var (_, master, fills) = Stages(graphPath, orientation, null, 0, 0, primary: true);
+        var (masterPath, master, fills) = Stages(graphPath, orientation, null, 0, 0, primary: true);
         var grid = _grid!;
         int buffer = _ox;
         // 0x14203ece0: the TileSet's post-unique tiles.
@@ -60,7 +66,8 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             for (int x = 0; x < grid.Width; x++)
                 if (grid[x, y] is { IsOrigin: true, HeightOffset: not 0 }) grid.ScaleHeight(x, y, storey);
         // The tile grid is final here (0x1420289a0 / 0x142028870 set grounds and entry flags only); the doodads
-        // (0x1420425d0) are not ported, as for the towns.
+        // (0x1420425d0) run over the record afterwards (DoodadStage).
+        Records = [new DoodadRecord(0, 0, grid.Width, grid.Height, master, masterPath, Rooms)];
         return grid;
     }
 
@@ -117,6 +124,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         var rooms = new RoomSetIndex(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
         var special = new SpecialNodes(files, rng, notes, Graph, grid, _ox, _oy, store, rooms) { BeforeRelax = () => onStage?.Invoke("relax", Graph) };
         special.Run();
+        Rooms = special.Rooms;
         onStage?.Invoke("special", Graph);
         // Edges whose type is a wildcard leave the graph (0x141f4f130).
         foreach (var e in Graph.Edges.Where(e => files.Edge(e.Type)?.Wildcard == true).ToList()) Graph.RemoveEdge(e);

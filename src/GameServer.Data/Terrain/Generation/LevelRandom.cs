@@ -96,6 +96,16 @@ public sealed class LevelRandom
         return result;
     }
 
+    /// <summary>The generator's state, to put back with <see cref="Restore"/> (the doodad stage copies TLS +400 aside
+    /// around its random doodads, <c>0x1420425d0</c>).</summary>
+    public (uint[] Mt, int Index) Save() => ((uint[])_mt.Clone(), _index);
+
+    public void Restore((uint[] Mt, int Index) state)
+    {
+        state.Mt.CopyTo(_mt, 0);
+        _index = state.Index;
+    }
+
     /// <summary>A percent roll as the generator writes it: chance ≤ 0 never, ≥ 100 always (no draw), else
     /// <c>Next(100) &lt; chance</c> (e.g. <c>0x142054a50</c>).</summary>
     public bool Chance(int percent, uint outOf = 100)

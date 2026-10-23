@@ -46,7 +46,10 @@ public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo
     }
 }
 
-public sealed record GenerationResult(TileGrid Grid, LevelRandom Random, TopologyInfo Topology, IReadOnlyList<string> Notes);
+/// <summary>The generated tile grid and the subgraph records (rectangle, master, placed rooms) the doodad stage
+/// (<see cref="DoodadStage"/>) runs over.</summary>
+public sealed record GenerationResult(TileGrid Grid, LevelRandom Random, TopologyInfo Topology, IReadOnlyList<string> Notes,
+    IReadOnlyList<DoodadRecord> Records);
 
 /// <summary>The server's port of the client's level generator (<c>0x14204d820</c>, Agents/docs/re/011-level-generation.md).
 /// Ported so far: .dgr layouts (one node: towns; several: dungeons, Agents/docs/re/011-level-generation.md §3c2) and
@@ -95,11 +98,21 @@ public static class LevelGenerator
         bool dgr = topology.Graph.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase);
         if (!dgr && secondaries.Count != 0)
             throw new NotSupportedException($"{topology.Graph}: sub-area subgraphs beside a tile graph (0x142047540) are not ported");
-        var grid = dgr
-            ? new DungeonTiler(files, rng, notes, pool) { Hideout = hideout, Secondaries = secondaries }.Generate(topology.Graph, orientation)
-            : new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage) { Hideout = hideout }
-                .Generate(topology.Graph, orientation);
-        return new GenerationResult(grid, rng, topology, notes);
+        TileGrid grid;
+        IReadOnlyList<DoodadRecord> records;
+        if (dgr)
+        {
+            var tiler = new DungeonTiler(files, rng, notes, pool) { Hideout = hideout, Secondaries = secondaries };
+            grid = tiler.Generate(topology.Graph, orientation);
+            records = tiler.Records;
+        }
+        else
+        {
+            var gen = new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage) { Hideout = hideout };
+            grid = gen.Generate(topology.Graph, orientation);
+            records = gen.Records;
+        }
+        return new GenerationResult(grid, rng, topology, notes, records);
     }
 
     static List<TopologyInfo> Choices(IReadOnlyList<TopologyInfo> topologies, int variant, string areaId)
@@ -228,6 +241,12 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         return new Subgraph(graphPath, x, y, w + m.Left + m.Right, h + m.Top + m.Bottom, masterPath, master, m, orientation, parent);
     }
 
+    /// <summary>The subgraph records with their placed rooms, once generated.</summary>
+    public List<DoodadRecord> Records { get; private set; } = [];
+
+    /// <summary>The rooms <see cref="Tilise"/> placed, in layout order.</summary>
+    List<PlacedRoom> _placed = [];
+
     public TileGrid Generate(string graphPath, int graphOrientation)
     {
         var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
@@ -254,10 +273,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         // 0x142025440 over the whole map, the room in its room list (its vertex grounds are not ported here).
         var (rw, rh) = Orientation.Size(code, room.Width, room.Height);
         var tg = TileGraph.Parse(files.Text(graphPath)!);
-        new Seams(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, [new PlacedRoom(room, 0, 0, rw, rh, [])], new HashSet<(int X, int Y)>(),
+        new Seams(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, [new PlacedRoom(room, 0, 0, rw, rh, [], code)], new HashSet<(int X, int Y)>(),
             (Ground(tg.TopGround), Ground(tg.BottomGround), Ground(tg.DefaultGround)), notes).Run();
         // 0x142044f30: the walkability pass (0x1420289a0) over the one record, the whole map.
         new GroundStages(_grid, 0, 0, _grid.Width, _grid.Height, files).Walkability(TileGraphGenerator.ImpassableGround, files.HasTransition);
+        Records = [new DoodadRecord(0, 0, _grid.Width, _grid.Height, master, masterPath, [new PlacedRoom(room, 0, 0, rw, rh, [], code)])];
         return _grid;
         string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
     }
@@ -273,6 +293,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var (gw, gh) = PlaceSecondaries(records);
         var grid = new TileGrid(gw, gh) { CheckGrounds = false, GroundFlags = g => files.Ground(g)?.Flags ?? 0 };
         var outers = new List<Action>();
+        var roomsOf = new List<IReadOnlyList<PlacedRoom>>();
         // 0x142049d10: with rows in the pool, the weight to share them by is the sum of the subgraphs' masters' +0x152
         // (0x14204bfa0); +0x152 is taken to default to 0 (no trace drew 0x141d8bba0's remainder roll), and a master
         // that sets ExtraFeatureWeight (the key taken to be +0x152) is not ported.
@@ -293,6 +314,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout };
                 gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
                 store = gen.Store;
+                roomsOf.Add(gen.Rooms);
                 outers.Add(() => OuterTileGraph(r));
             }
             else
@@ -300,6 +322,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout };
                 t.Tilise(r, grid, records, i);
                 store = t._store;
+                roomsOf.Add(t._placed);
                 outers.Add(() => t.Outer(r));
             }
             // 0x1420452e0 after the layout: the TileSet's post-unique tiles over the subgraph's view (0x14203ece0).
@@ -323,6 +346,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                     int k = records.FindLastIndex(r => x >= r.X && x < r.X + r.W && y >= r.Y && y < r.Y + r.H);
                     grid.ScaleHeight(x, y, storeys[Math.Max(k, 0)]);
                 }
+        Records = [.. records.Select((r, i) => new DoodadRecord(r.X, r.Y, r.W, r.H, r.Master, r.MasterPath, roomsOf[i]))];
         return grid;
     }
 
@@ -423,12 +447,12 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         FillRecords(master, masterPath);
         // 0x1420f8f20 (draws only when +0xb0 lists cells, not ported), then the mirror seams (0x142025440) over the
         // layout's view, with the placed rooms as its room list.
-        var placed = new List<PlacedRoom>();
+        var placed = _placed = [];
         foreach (var p in map.Rooms)
             if (p.Room?.Def is { } def)
             {
                 var (w, h) = Orientation.Size(p.Orientation, def.Width, def.Height);
-                placed.Add(new PlacedRoom(def, _ox + step * p.X, _oy + step * p.Y, w, h, p.Descriptions));
+                placed.Add(new PlacedRoom(def, _ox + step * p.X, _oy + step * p.Y, w, h, p.Descriptions, p.Orientation));
             }
         new Seams(files, rng, _grid, _ox, _oy, step * map.Width + map.Overlap, step * map.Height + map.Overlap, _store, placed, roomVertices,
             _graphGrounds, notes).Run();

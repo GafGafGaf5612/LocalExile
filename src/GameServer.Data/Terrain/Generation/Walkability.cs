@@ -99,7 +99,7 @@ public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
 /// on 2 and up. Each tile entry lays its sub-tile's hull plane (turned by the entry's code) over the grid, keeping the
 /// lower value; an empty entry, or a tile whose flags or four unwalkable vertices (flag 8) block it, lays a blocked
 /// patch that falls off by 1 per cell into neighbours it does not share the block with.</summary>
-public sealed class Walkability
+public sealed partial class Walkability
 {
     public int Width { get; }
     public int Height { get; }

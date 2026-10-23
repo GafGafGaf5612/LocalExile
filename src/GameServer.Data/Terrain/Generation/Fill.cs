@@ -286,7 +286,7 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
                 TilePlaced?.Invoke(p.Tile, p.Orientation, bx, by);
             }
         var (rw, rh) = Orientation.Size(o, room.Width, room.Height);
-        rooms.Add(new PlacedRoom(room, x + offsetX, y + offsetY, rw, rh, []));
+        rooms.Add(new PlacedRoom(room, x + offsetX, y + offsetY, rw, rh, [], o));
         for (int v = 0; v <= rh; v++)
             for (int u = 0; u <= rw; u++)
                 if (grid.Corner(x + u + offsetX, y + v + offsetY).Ground is null) grid.SetGround(x + u + offsetX, y + v + offsetY, fillGround);
