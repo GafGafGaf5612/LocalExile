@@ -190,6 +190,22 @@ static class ItemMoves
             return (left, part);
         });
 
+    /// <summary>A currency item from a stash tab used on a character item (C→S 0x71: right-click it in the stash, then
+    /// click the target): one leaves the tab's stack (the last one removes it) and the target becomes
+    /// <paramref name="change"/>(target), together. Returns the tab's stack as it is now (null when it is gone) and the
+    /// changed target, or null when either is gone (nothing changes).</summary>
+    public static (InventoryItem? Left, InventoryItem Changed)? UseFromStashOn(AccountStash stash, int tab, uint usedId,
+        PlayerInventories items, byte targetRow, uint targetId, Func<Item, Item> change) =>
+        Saves.Atomically<(InventoryItem?, InventoryItem)?>(() =>
+        {
+            if (!items.Items(targetRow).Any(i => i.Id == targetId) || tab < 0 || tab >= stash.Count
+                || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == usedId) is not { } used) return null;
+            InventoryItem? left = null;
+            if (used.Item.StackSize <= 1) { if (stash.Take(tab, usedId) is null) return null; }
+            else if ((left = stash.Shrink(tab, usedId, 1)) is null) return null;
+            return (left, items.Change(targetRow, targetId, change)!);
+        });
+
     /// <summary>
     /// A purchase (C→S 0x88): the price (<paramref name="price"/>: currency type and amount, or null when free) paid from the
     /// main inventory and then the stash, and the item goes to <paramref name="row"/> at its cell, together. Null when the

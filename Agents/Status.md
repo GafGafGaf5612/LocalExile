@@ -247,8 +247,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (331 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (324: currency on items, gem levels, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`dotnet test tests/GameServer.Core.Tests` (359 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (359: currency on items (from the inventory or a stash tab), gem levels, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
