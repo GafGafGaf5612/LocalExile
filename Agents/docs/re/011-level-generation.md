@@ -874,9 +874,9 @@ value, so the order does not matter.
 
 Checked with `levelgen walk` against the seed-1 captures (`data/walkability/<area>_seed1.bin`, `.projectile.bin`;
 `LEVELGEN_NODOODADS` leaves the doodads out, `LEVELGEN_CAPTURED_DOODADS` stamps the captured ones instead of the
-generated): of the 61 captures whose tile hash matches, **58 match both grids cell for cell** with the generated
+generated): of the 61 captures whose tile hash matches, **59 match both grids cell for cell** with the generated
 doodads (without doodads: none; median 99.44% walk, 99.89% projectile). The dungeon forced-blank slots (`1_5_2`
-93.9%, `2_10_2` 93.2% before) were doodad collision, not a walkability rule. The 3 left: §6c.
+93.9%, `2_10_2` 93.2% before) were doodad collision, not a walkability rule. The 2 left: §6c.
 
 ## 6c. Doodads (`DoodadStage.cs`, `DoodadHull.cs`)
 
@@ -932,18 +932,32 @@ later walk checks (`walk < 5` in the random loop) see earlier doodads: this is w
 before.
 
 Results: The Twilight Strand matches every doodad-stage draw (to #25 151, then the mesh variation `0x141530658`) and
-places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 57
-other captures' (58 of the 61 with a matching tile hash; 47 before the tile objects and the type rules, 53 before the
+places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 58
+other captures' (59 of the 61 with a matching tile hash; 47 before the tile objects and the type rules, 53 before the
 dungeon fill rooms; the fill rooms brought `1_4_2`, `1_5_1`, `2_7_5_map`, `2_10_5`, `2_10_6`: their missing
-collision was also what made `2_7_5_map`'s first random loop run longer). Left:
-- **AOSet** (`0x14202ede0`: `AOSet` component, weighted children +0x10 / total +0x28 picked by `Next(total)` while the
-  fixed list +0x30 is empty; angle range +0x48/+0x4c, orientation mask +0x5c with `Next(840)`, scale range
-  +0x50/+0x54, offset radius +0x58: two `Next(512)`): skipped with a note (`1_1_6` `lioneye_swords_hill_set.ao`,
-  194 walk cells; `1_1_3` toxic lights).
+collision was also what made `2_7_5_map`'s first random loop run longer; AOSet then brought `1_1_6`). Left:
 - The per-sub-tile lists of `0x141d7eda0` (tiles with +0x16d bit 1).
 - `2_9_5` (1 908 walk cells, 610 projectile), `2_8_10` (6 walk cells).
 - `2_10_6`: grids exact, but the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing, and 2 of
   the 1 639 captured doodads are not placed.
+
+**AOSet** (`0x14202ede0`, every room, tile, random and vertex line resolves its `.ao` through it, room and tile lines
+before their type filters, so a set draws even when its type is not created). The component (`0x141dbf380`, keys
+`0x141dc0140` / `0x141dc0270`; 232 `.ao` files, all extending `Metadata/AOSetParent`) holds either fixed children
+`fixed_ao = "x y z … file"` (+0x30) or weighted ones `ao = "weight file"` (+0x10, total +0x28; `null` places nothing),
+never both; `random_rotation_min` / `_max` +0x48 / +0x4c (`random_rotation = true`: −π … π), `random_scale_min` /
+`_max` +0x50 / +0x54 (1 when absent), `random_translate_radius` +0x58, orientation mask +0x5c (`random_flip` |= 0x11,
+`random_orientation` = 0xff). The resolver loops: an `.ao` whose AOSet has no fixed children picks a child
+(`Next(total)`, `0x141dd31d0`) and goes on with it; an `.ao` without AOSet, or with fixed children, is the doodad (a
+fixed set is one entity with its own Hull; its children are attached, not placed). The last AOSet seen then gives:
+the angle (`Next(512)` in the rotation range when min < 0 or max > 0, else a full random angle only for a line
+without one), an orientation code (`Next(840)`, `0x14299da50`: the roll's set bit mod their count, 0xff → roll & 7;
+codes 4–7 mirror the angle and set the mirror), the scale (`Next(512)` when min < 1 or max > 1), the offset (two
+`Next(512)`, radius 0 in every file: the offset itself is not ported). Result: +0 `.ao`, +8 angle, +0xc scale, +0x10
+mirror, +0x14 / +0x18 offset; room and tile lines add the angle, multiply the scale, xor the mirror and add the
+offset (`0x14202f1c0`), random and vertex doodads (`0x142044180`) add their own angle draw and xor their mirror roll.
+`1_1_6` (`lioneye_swords_hill_set.ao`) now matches both grids and `1_1_3` places its toxic lights, both fixed sets
+(no draws). Weighted sets and the range draws are ported from the code but no matching trace has hit one yet.
 
 ## 7. What the server will use
 

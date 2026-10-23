@@ -208,6 +208,93 @@ public sealed class DoodadTable
     }
 }
 
+/// <summary>An .ao's <c>AOSet</c> component (parser <c>0x141dbf380</c>, keys <c>0x141dc0140</c> / <c>0x141dc0270</c>):
+/// either fixed children (<c>fixed_ao = "x y z … file"</c>, +0x30: the set itself is the doodad, its children are
+/// attached to it) or weighted ones (<c>ao = "weight file"</c>, +0x10, total +0x28; "null" places nothing), never both.
+/// <c>random_rotation_min</c> / <c>_max</c> +0x48 / +0x4c (<c>random_rotation = true</c>: −π … π),
+/// <c>random_scale_min</c> / <c>_max</c> +0x50 / +0x54 (1 when absent), <c>random_translate_radius</c> +0x58, an
+/// orientation mask +0x5c (<c>random_flip</c> |= 0x11, <c>random_orientation</c> = 0xff).</summary>
+public sealed class AoSet
+{
+    public bool HasFixed { get; private set; }
+    public List<(string? Model, int Weight)> Weighted { get; } = [];
+    public int Total { get; private set; }
+    public float RotationMin { get; private set; }
+    public float RotationMax { get; private set; }
+    public float ScaleMin { get; private set; } = 1;
+    public float ScaleMax { get; private set; } = 1;
+    public float TranslateRadius { get; private set; }
+    public byte OrientationMask { get; private set; }
+
+    /// <summary>The file's top-level <c>AOSet</c> block, or null without one.</summary>
+    public static AoSet? Parse(string text)
+    {
+        AoSet? set = null;
+        int braces = 0;
+        bool inSet = false;
+        foreach (var raw in TerrainText.Lines(text))
+        {
+            string l = raw.Trim();
+            if (braces == 0 && l.StartsWith("AOSet", StringComparison.Ordinal) && (l.Length == 5 || l[5] is ' ' or '\t' or '{'))
+            {
+                set ??= new AoSet();
+                inSet = true;
+            }
+            if (inSet && braces >= 1 && l.Contains('='))
+            {
+                int eq = l.IndexOf('=');
+                string key = l[..eq].Trim(), value = l[(eq + 1)..].Trim().Trim('"');
+                set!.Set(key, value);
+            }
+            braces += l.Count(c => c == '{') - l.Count(c => c == '}');
+            if (braces == 0 && l.Contains('}')) inSet = false;
+        }
+        return set;
+    }
+
+    void Set(string key, string value)
+    {
+        static float F(string v) => float.Parse(v, NumberStyles.Float, CultureInfo.InvariantCulture);
+        switch (key)
+        {
+            case "fixed_ao": HasFixed = true; break;
+            case "ao":
+                int space = value.IndexOf(' ');
+                int weight = (int)uint.Parse(value[..space], CultureInfo.InvariantCulture);
+                string file = value[(space + 1)..].Trim();
+                Weighted.Add((file == "null" ? null : file, weight));
+                Total += weight;
+                break;
+            case "random_rotation_min": RotationMin = F(value); break;
+            case "random_rotation_max": RotationMax = F(value); break;
+            case "random_scale_min": ScaleMin = F(value); break;
+            case "random_scale_max": ScaleMax = F(value); break;
+            case "random_translate_radius": TranslateRadius = F(value); break;
+            case "random_rotation":
+                (RotationMin, RotationMax) = value == "true" ? (-MathF.PI, MathF.PI) : (0, 0);
+                break;
+            case "random_flip": if (value == "true") OrientationMask |= 0x11; break;
+            case "random_orientation": if (value == "true") OrientationMask = 0xff; break;
+        }
+    }
+
+    /// <summary><c>0x141dd31d0</c>: the child the roll falls on.</summary>
+    public string? Pick(uint roll)
+    {
+        int r = (int)roll;
+        foreach (var (model, weight) in Weighted)
+        {
+            if (r < weight) return model;
+            r -= weight;
+        }
+        return null;
+    }
+}
+
+/// <summary>What <c>0x14202ede0</c> makes of a doodad line's .ao: the model created, its angle, scale, mirror and offset
+/// (result +0, +8, +0xc, +0x10, +0x14 / +0x18).</summary>
+public readonly record struct AoPick(string Model, float Angle, float Scale, bool Mirrored, int Dx, int Dy);
+
 /// <summary>A subgraph record as the doodad stage reads it (generator +0x30 → +0x10, 0x98 bytes): its rectangle in tiles
 /// (+0x40 … +0x4c), master (+0x50) and the rooms placed in it (+0x58, 0x38 bytes each, in placing order).</summary>
 public sealed record DoodadRecord(int X, int Y, int W, int H, Dictionary<string, string> Master, string MasterPath,
@@ -329,18 +416,14 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
                 }
                 foreach (var o in objects)
                 {
+                    // 0x1420415e0: the .ao is resolved (AOSet draws) before the type filters.
+                    if (Resolve(o.Animation ?? o.VirtualModel(tile.Path), false) is not { } def) continue;
                     var (created, isStatic) = ClientType(o.Type);
                     if (!created) continue;
-                    string model = o.Animation ?? o.VirtualModel(tile.Path);
-                    var text = files.Text(model);
-                    if (text is not null && text.Contains("AOSet", StringComparison.Ordinal))
-                    {
-                        notes.Add($"tile doodad {model}: AOSet (0x14202ede0) is not ported");
-                        continue;
-                    }
                     var (cx, cy) = Orientation.Map(e.Orientation, o.CellX, o.CellY, tile.Width * 23, tile.Height * 23);
                     bool mirrors = e.Orientation is >= 4 and < 8;
-                    Create(new PlacedDoodad(model, x * 23 + cx, y * 23 + cy, TilePlacement.Angle(e.Orientation, o.Angle), 1, mirrors), isStatic);
+                    float angle = TilePlacement.Angle(e.Orientation, o.Angle) + def.Angle;
+                    Create(new PlacedDoodad(def.Model, x * 23 + cx + def.Dx, y * 23 + cy + def.Dy, angle, def.Scale, mirrors ^ def.Mirrored), isStatic);
                 }
             }
     }
@@ -437,18 +520,10 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
     /// <summary><c>0x142044180</c>.</summary>
     bool Place(DdtEntry entry, int x, int y, bool flip)
     {
-        var text = files.Text(entry.Model);
-        if (text is null) return false;
-        if (text.Contains("AOSet", StringComparison.Ordinal))
-        {
-            notes.Add($"doodad {entry.Model}: AOSet (0x14202ede0) is not ported");
-            return false;
-        }
-        // 0x14202ede0 without an AOSet: a random angle when the line has none.
-        float defAngle = entry.RandomAngle ? rng.Next(0x200) * (1f / 512) * (MathF.PI * 2) : 0;
-        bool mirrored = false;
+        if (files.Text(entry.Model) is null || Resolve(entry.Model, entry.RandomAngle) is not { } def) return false;
+        bool mirrored = def.Mirrored;
         float angle;
-        if (entry.RandomAngle && flip && rng.Next(2) != 0) mirrored = true;
+        if (entry.RandomAngle && flip && rng.Next(2) != 0) mirrored = !mirrored;
         if (entry.RandomAngle) angle = rng.Next(0x200) * (1f / 512) * (MathF.PI * 2);
         else
         {
@@ -456,8 +531,80 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             while (angle < 0) angle += MathF.PI * 2;
             while (angle > MathF.PI * 2) angle -= MathF.PI * 2;
         }
-        Create(new PlacedDoodad(entry.Model, x, y, defAngle + angle, 1, mirrored));
+        Create(new PlacedDoodad(def.Model, x + def.Dx, y + def.Dy, def.Angle + angle, def.Scale, mirrored));
         return true;
+    }
+
+    readonly Dictionary<string, AoSet?> _sets = new(StringComparer.OrdinalIgnoreCase);
+
+    AoSet? Set(string model, string text)
+    {
+        if (!_sets.TryGetValue(model, out var set)) _sets[model] = set = text.Contains("AOSet", StringComparison.Ordinal) ? AoSet.Parse(text) : null;
+        return set;
+    }
+
+    static float Wrap(float a)
+    {
+        while (a < 0) a += MathF.PI * 2;
+        while (a > MathF.PI * 2) a -= MathF.PI * 2;
+        return a;
+    }
+
+    /// <summary><c>0x14202ede0</c>: while the .ao has an AOSet of weighted children, one is picked (<c>Next(total)</c>;
+    /// "null" places nothing); a set with fixed children, or an .ao without AOSet, is the doodad. The last AOSet seen
+    /// gives the rest: an angle in its rotation range (<c>Next(512)</c>), else a random one when
+    /// <paramref name="randomAngle"/>; with an orientation mask a code (<c>Next(840)</c>, <c>0x14299da50</c>: the
+    /// roll's set bit, codes 4-7 mirrored) turns it; a scale in its range; an offset in its translate radius (two
+    /// <c>Next(512)</c>; no file has one, so the offset itself is not ported). Null when nothing is placed.</summary>
+    AoPick? Resolve(string model, bool randomAngle)
+    {
+        AoSet? set = null;
+        for (int depth = 0; ; depth++)
+        {
+            // A virtual .ao (no file, e.g. a tile object's <.tdt folder>/<name>.ao) has no AOSet.
+            var text = files.Text(model);
+            var own = text is null ? null : Set(model, text);
+            if (own is not null) set = own;
+            if (own is null || own.HasFixed || depth >= 16) break;
+            if (own.Pick(rng.Next((uint)own.Total)) is not { } child) return null;
+            model = child;
+        }
+        float angle = 0, scale = 1;
+        bool mirrored = false;
+        const float step = 1f / 512, turn = MathF.PI * 2;
+        if (set is null)
+        {
+            if (randomAngle) angle = rng.Next(0x200) * step * turn;
+            return new AoPick(model, angle, scale, mirrored, 0, 0);
+        }
+        if (set.RotationMin < 0 || set.RotationMax > 0)
+            angle = (set.RotationMax - set.RotationMin) * rng.Next(0x200) * step + set.RotationMin;
+        else if (randomAngle) angle = rng.Next(0x200) * step * turn;
+        if (set.OrientationMask != 0)
+        {
+            uint roll = (uint)rng.Next(0x348);
+            int code = OrientationBit(set.OrientationMask, roll);
+            mirrored = code is >= 4 and < 8;
+            if (mirrored) angle = turn - angle;
+            angle = Wrap(angle + (code & 3) * (MathF.PI / 2));
+        }
+        if (set.ScaleMin < 1 || set.ScaleMax > 1)
+            scale = (set.ScaleMax - set.ScaleMin) * rng.Next(0x200) * step + set.ScaleMin;
+        if (set.TranslateRadius > 0)
+        {
+            rng.Next(0x200);
+            rng.Next(0x200);
+            notes.Add($"doodad {model}: AOSet random_translate_radius offset (0x14202ede0) is not ported");
+        }
+        return new AoPick(model, angle, scale, mirrored, 0, 0);
+    }
+
+    /// <summary><c>0x14299da50</c>: the roll-th (mod count) set bit of the mask; a full or empty mask takes roll &amp; 7.</summary>
+    static int OrientationBit(byte mask, uint roll)
+    {
+        if ((byte)(mask - 1) >= 0xfe) return (int)(roll & 7);
+        var bits = Enumerable.Range(0, 8).Where(b => (mask >> b & 1) != 0).ToList();
+        return bits[(int)(roll % (uint)bits.Count)];
     }
 
     /// <summary><c>0x142040770</c>: a room's doodad lines in order. Each resolves its .ao (<c>0x14202ede0</c> without a
@@ -469,15 +616,10 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
         int code = room.Orientation;
         foreach (var d in room.Room.Doodads)
         {
+            // The .ao is resolved (AOSet draws) before the type filters.
+            if (files.Text(d.Model) is null || Resolve(d.Model, false) is not { } def) continue;
             var (created, isStatic) = ClientType(d.Type);
             if (!created) continue;
-            var text = files.Text(d.Model);
-            if (text is null) continue;
-            if (text.Contains("AOSet", StringComparison.Ordinal))
-            {
-                notes.Add($"room doodad {d.Model}: AOSet (0x14202ede0) is not ported");
-                continue;
-            }
             var (cx, cy) = Orientation.Map(code, (int)d.X, (int)d.Y, room.Room.Width * 23, room.Room.Height * 23);
             float angle = d.Angle;
             bool mirrors = code is >= 4 and < 8;
@@ -485,7 +627,8 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             angle += (code & 3) * (MathF.PI / 2);
             while (angle < 0) angle += MathF.PI * 2;
             while (angle > MathF.PI * 2) angle -= MathF.PI * 2;
-            Create(new PlacedDoodad(d.Model, room.X * 23 + cx, room.Y * 23 + cy, angle, d.Scale, mirrors ^ d.Flip), isStatic);
+            Create(new PlacedDoodad(def.Model, room.X * 23 + cx + def.Dx, room.Y * 23 + cy + def.Dy, angle + def.Angle,
+                d.Scale * def.Scale, mirrors ^ d.Flip ^ def.Mirrored), isStatic);
         }
     }
 

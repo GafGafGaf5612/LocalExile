@@ -83,8 +83,8 @@ Items are in rough priority order within each section. "Known" says what is alre
   retry seed); the 57 oracle seeds that run to the end with another hash (`levelgen oracle`, e.g. `1_1_3` seed 1,
   `1_2_1`, The Wetlands `1_2_12`, The Beacon `2_6_14`) each need a trace;
   HideoutForest needs the outer buffer on the one-node `.dgr` path (`DungeonTiler`; the multi-node path has it). The
-  walkability grids are built from the placed tiles and doodads (re/011 §6b, §6c: 58 of 61 captures exact); left
-  there: AOSet doodads (`0x14202ede0`'s AOSet branch, `1_1_6`), the per-sub-tile lists of tiles made of sub-tiles
+  walkability grids are built from the placed tiles and doodads (re/011 §6b, §6c: 59 of 61 captures exact); left
+  there: the per-sub-tile lists of tiles made of sub-tiles
   (`0x141d7eda0`, tile data +0x16d bit 1), `2_9_5` (1 908 walk cells) and `2_8_10` (6), the `DoodadNoOverlap` path
   `0x142041ac0` and `DoodadLayerDoodad` (world vtable +0x60), the random loop's entity exclusion circles and
   `Next(10000)` falloff (`0x1420425d0` lines 274–550), `0x14154c2d0`, the tile no-doodad bitmask (+0x150), the

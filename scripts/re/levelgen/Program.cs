@@ -28,6 +28,20 @@ switch (args.FirstOrDefault())
             foreach (var path in fs.EnumeratePaths().Where(p => pattern.IsMatch(p)).Order()) Console.WriteLine(path);
         }
         break;
+    case "grep":
+        // grep <path regex> <text regex>: the lines matching the text regex in every text file whose path matches.
+        using (var fs = OpenGame())
+        {
+            var paths = new System.Text.RegularExpressions.Regex(args[1], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var text = new System.Text.RegularExpressions.Regex(args[2]);
+            foreach (var path in fs.EnumeratePaths().Where(p => paths.IsMatch(p)).Order())
+            {
+                if (!fs.TryReadFile(path, out var data)) continue;
+                foreach (var line in TerrainText.Decode(data).Split('\n').Where(l => text.IsMatch(l)))
+                    Console.WriteLine($"{path}: {line.TrimEnd()}");
+            }
+        }
+        break;
     case "raw":
         // raw <game path> <out file>: a game file's bytes as they are.
         using (var fs = OpenGame())
