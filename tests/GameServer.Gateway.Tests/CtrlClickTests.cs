@@ -53,6 +53,9 @@ public class CtrlClickTests : IDisposable
     {
         var (items, stash) = (Items(), Stash());
         stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(40)), Shapes, out _);
+        // The spare slots under the crafting slot are full too, so only the own slot has room.
+        stash.Place(Currency, SpareSlot1, 0, new InventoryItem(2, 0, 0, Scrolls(50)), Shapes, out _);
+        stash.Place(Currency, SpareSlot2, 0, new InventoryItem(3, 0, 0, Scrolls(50)), Shapes, out _);
         var scrolls = items.Add(Main, 3, 2, Scrolls(30));
 
         var moved = ItemMoves.InventoryToStash(stash, items, Currency, scrolls.Id, Shapes, out _)!;
@@ -60,7 +63,7 @@ public class CtrlClickTests : IDisposable
         Assert.Equal(20, moved.LeftInInventory!.Item.StackSize);   // the slot holds 50
         var (again, stashAgain) = Reload();
         Assert.Equal(20, again.Items(Main).Single().Item.StackSize);
-        Assert.Equal(50, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
+        Assert.Equal(50, stashAgain.Inventory(Currency).Items.Single(i => i.X == 1).Item.StackSize);
         Assert.Null(ItemMoves.InventoryToStash(stashAgain, again, Currency, scrolls.Id, Shapes, out string why));   // full now
         Assert.Equal("the tab is full", why);
     }
@@ -74,7 +77,7 @@ public class CtrlClickTests : IDisposable
         items.Put(PlayerInventories.Cursor, new InventoryItem(items.NewItemId(), 0, 0, Scrolls(7)));
 
         // Dropped anywhere on the tab, one of the held stack: its slot is full, so nothing moves (nothing is swapped out).
-        Assert.Null(ItemMoves.HeldToStash(stash, items, Currency, 30, 0, one: true, Shapes, out _));
+        Assert.Null(ItemMoves.HeldToStash(stash, items, Currency, 54, 0, one: true, Shapes, out _));
 
         var (again, stashAgain) = Reload();
         Assert.Equal(50, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);

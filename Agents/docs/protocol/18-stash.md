@@ -161,8 +161,12 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
 - **Crafting slot.** The currency tab's big cell in the middle is CurrencyStashTabLayout row `CraftingSlot` (no
   `StoredItem`, `FirstSlotIndex` 28, 2 × 4). The client drops onto it as (28, 0) (live 2026-10-23, a weapon). It takes
   any item, where dropped (`StashRules.TakesAnything`), at the item's own stack size; an item dropped on it swaps with the
-  one there; the load-time repair leaves it. Ctrl + click never puts anything there. Currency (from its slot or the inventory) works on the item there: 0x71 / 0x72 name the tab as the target inventory ([13](13-items.md) §4b). The 14 `Generic1`–`Generic14` cells
-  under it (slots 30–34, 40–48) are not handled yet: they take nothing.
+  one there; the load-time repair leaves it. Ctrl + click never puts anything there. Currency (from its slot or the inventory) works on the item there: 0x71 / 0x72 name the tab as the target inventory ([13](13-items.md) §4b). 
+- **Spare slots.** The 14 cells under the crafting slot are rows `Generic1`–`Generic14` (no `StoredItem`, slots 30–34
+  and 40–48; two rows on screen, YOffset 680 and 770). They take any item the currency tab holds, where dropped, up to
+  the slot size (5000). Ctrl + click (and Ctrl + right click, 0xe1 flags 0x02) puts into them what the item's own slot has
+  no room for: first onto a spare slot of that type with room, then into the first free one, left to right and top to
+  bottom (`StashRules.OverflowSlots`, `AccountStash.AddStacked`); what still doesn't fit stays in the inventory.
 - **Stack sizes.** Every slot of a slotted tab (currency, essence, fragment, delve, blight) holds 5000 of its item
   (`StashRules.SlotStack`, our own number since 2026-10-22; before, CurrencyItems `CurrencyTab_StackSize` for currency
   and the item's own stack elsewhere, so essences stopped at 10). The Delve (StashType 12, DelveStashTabLayout) and

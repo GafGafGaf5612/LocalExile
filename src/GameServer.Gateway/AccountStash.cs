@@ -358,6 +358,7 @@ sealed class AccountStash
         if (_rules.TakesAnything(t.Saved.Type, x, y)) return (x, y);   // the currency tab's crafting slot: any item, where dropped
         if (!_rules.Holds(t.Saved.Type, item.TypeHash)) { why = $"the {TypeName(t)} tab doesn't hold that item"; return null; }
         if (!_rules.Slotted(t.Saved.Type)) return (x, y);
+        if (_rules.IsOverflowSlot(t.Saved.Type, x, y)) return (x, y);   // a spare cell under the crafting slot: where dropped
         if (_rules.SlotOf(t.Saved.Type, item.TypeHash) is not int slot) { why = $"the {TypeName(t)} tab has no slot for that item"; return null; }
         return (slot, 0);
     }
@@ -445,8 +446,9 @@ sealed class AccountStash
     /// <summary>
     /// Puts <paramref name="item"/> (a stack of <see cref="Item.StackSize"/>, or any one item) into a tab the way Ctrl +
     /// click does: a stack first onto the tab's stacks of its type with room (fullest first), then into free cells (in a
-    /// slotted tab: its own slot), in one save. What does not fit is <see cref="Stacking.Left"/>; null (nothing changes)
-    /// with the reason when the tab doesn't hold the item. New items get stash ids.
+    /// slotted tab: its own slot, then the spare slots in screen order, <see cref="StashRules.OverflowSlots"/>), in one
+    /// save. What does not fit is <see cref="Stacking.Left"/>; null (nothing changes) with the reason when the tab doesn't
+    /// hold the item. New items get stash ids.
     /// </summary>
     public Stacking? AddStacked(int tab, Item item, Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
     {
@@ -463,9 +465,11 @@ sealed class AccountStash
             bool slotted = _rules.Slotted(t.Saved.Type);
             int max = Math.Max(1, MaxStack(t, item, shape, -1, -1));   // stacks into the item's own slot, never the crafting slot
             left = item.StackSize;
+            // A slotted tab's cells for it, in order: its own slot, then the spare slots (left to right, top to bottom).
+            List<(int X, int Y)> spots = slotted ? [(slotX, slotY), .. _rules.OverflowSlots(t.Saved.Type).Select(s => (s, 0))] : [];
             if (max > 1)
-                foreach (var s in t.Items.Where(i => i.Item.TypeHash == item.TypeHash && i.Item.StackSize < max && (!slotted || (i.X == slotX && i.Y == slotY)))
-                             .OrderByDescending(i => i.Item.StackSize).ToList())
+                foreach (var s in t.Items.Where(i => i.Item.TypeHash == item.TypeHash && i.Item.StackSize < max && (!slotted || spots.Contains((i.X, i.Y))))
+                             .OrderBy(i => slotted ? spots.IndexOf((i.X, i.Y)) : 0).ThenByDescending(i => i.Item.StackSize).ToList())
                 {
                     if (left == 0) break;
                     int take = Math.Min(left, max - s.Item.StackSize);
@@ -476,7 +480,7 @@ sealed class AccountStash
                     changed.Add(grown);
                 }
             while (left > 0 && (slotted
-                       ? (t.Items.Any(i => i.X == slotX && i.Y == slotY) ? null : ((byte)slotX, (byte)slotY))
+                       ? spots.Where(p => !t.Items.Any(i => i.X == p.X && i.Y == p.Y)).Select(p => ((byte, byte)?)((byte)p.X, (byte)p.Y)).FirstOrDefault()
                        : FreeCellIn(t, shape.Width, shape.Height, shapeOf)) is { } cell)
             {
                 int take = Math.Min(left, max);
