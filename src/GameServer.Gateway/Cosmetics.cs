@@ -15,6 +15,10 @@ sealed class CosmeticCatalog(string folder = "data")
     /// <summary>One playable cosmetic: <paramref name="Index"/> is the table's own number.</summary>
     public sealed record Cosmetic(string Name, string Id, string Ao, int Index)
     {
+        /// <summary>The MtxTypeGameSpecific HASH32 (= the MtxTypes HASH32): what the Cosmetics tab's records key by,
+        /// 0 when the row names none.</summary>
+        public uint Hash { get; init; }
+
         public override string ToString() => $"{Index} {Name}";
     }
 
@@ -70,12 +74,13 @@ sealed class CosmeticCatalog(string folder = "data")
             if (path.Length == 0) continue;
             int index = row.TryGetProperty("Index", out var i) && i.TryGetInt32(out int n) ? n : list.Count + 1;
             string name = "";
+            uint hash = 0;
             if (row.TryGetProperty("MtxTypeGameSpecific", out var gs) && gs.TryGetInt32(out int gsRow) &&
                 gsRow >= 0 && gsRow < gameSpecific.Count &&
-                gameSpecific[gsRow].TryGetProperty("HASH32", out var gh) && gh.TryGetUInt32(out uint gsh))
-                names.TryGetValue(gsh, out name!);
+                gameSpecific[gsRow].TryGetProperty("HASH32", out var gh) && gh.TryGetUInt32(out hash))
+                names.TryGetValue(hash, out name!);
             if (string.IsNullOrEmpty(name)) name = $"Portal {index}";
-            list.Add(new Cosmetic(name, name, path, index));
+            list.Add(new Cosmetic(name, name, path, index) { Hash = hash });
         }
         return list;
     }

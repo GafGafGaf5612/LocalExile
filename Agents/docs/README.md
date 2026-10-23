@@ -28,6 +28,7 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 | [protocol/19-gems.md](protocol/19-gems.md) | gems: the SkillGem item data, levels from experience, the game data for levels, variants, Vaal gems, requirements, quality and supports |
 | [protocol/20-damage.md](protocol/20-damage.md) | damage packets: types and conversion order, gain as extra, per-type mitigation, damage over time and ailments |
 | [protocol/22-pause.md](protocol/22-pause.md) | pause from the Escape menu: C→S 0x1d4, S→C 0x1d3 (world +0xb9c/+0xb9d), what the Gateway freezes |
+| [protocol/23-microtransactions.md](protocol/23-microtransactions.md) | microtransactions: the owned lists and their loaded flags (C→S 0x1f2, S→C 0x1f4/0x1f5), the Cosmetics tab (C→S 0x1f9, the worn table in S→C 0x1f3), cosmetics on the model and in the stats (ItemisedVisualEffect) |
 | [protocol/12-quests.md](protocol/12-quests.md) | quests (research): the data tables, a1q4 "Breaking Some Eggs" and the Submerged Passage blocker |
 | [protocol/06-debugging-log.md](protocol/06-debugging-log.md) | every live run, crash and fix, and lessons |
 | [protocol/address-index.md](protocol/address-index.md) | all client addresses by subsystem |

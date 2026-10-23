@@ -219,6 +219,18 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
 /// </summary>
 public sealed record VisibleItem(byte Slot, ushort VisualIdentity, byte Stance = 0xff, byte Type = 1)
 {
+    /// <summary>
+    /// A worn skin (the first reference, 0x1424f3fc0 → entry +0x18): the cosmetic's ItemVisualIdentity HASH16 and its
+    /// MTXTypeGameSpecific HASH32, which the client also looks up for tiered cosmetics. 0 shows the item's own art.
+    /// </summary>
+    public ushort SkinVisual { get; init; }
+    public uint SkinHash { get; init; }
+
+    /// <summary>A worn effect (the second reference, 0x1424f4250 → entry +0x40): an ItemVisualEffect HASH16 (weapon
+    /// effects) and its MTXTypeGameSpecific HASH32; 0 for none.</summary>
+    public ushort EffectVisual { get; init; }
+    public uint EffectHash { get; init; }
+
     /// <summary>An empty slot (tag 0): what clears an unequipped item from the model. A slot left out of the list keeps
     /// whatever the model showed before.</summary>
     public static VisibleItem Empty(byte slot) => new(slot, 0);
@@ -226,7 +238,10 @@ public sealed record VisibleItem(byte Slot, ushort VisualIdentity, byte Stance =
     public void Write(BlobWriter w)
     {
         if (VisualIdentity == 0) { w.U8(Slot).U8(0); return; }
-        w.U8(Slot).U8(Type).U16(VisualIdentity).U32(0).U8(0).U16(0).U32(0).U8(0).U8(Stance).U16(VisualIdentity).U8(0);
+        w.U8(Slot).U8(Type)
+            .U16(SkinVisual != 0 ? SkinVisual : VisualIdentity).U32(SkinHash).U8(0)
+            .U16(EffectVisual).U32(EffectHash).U8(0)
+            .U8(Stance).U16(VisualIdentity).U8(0);
     }
 }
 

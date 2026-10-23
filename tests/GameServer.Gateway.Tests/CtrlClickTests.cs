@@ -237,4 +237,52 @@ public class CtrlClickTests : IDisposable
 
         Assert.Equal(10, Reload().Items.Items(Main).Single().Item.StackSize);
     }
+
+    // Currency from the stash used on an inventory item (C→S 0x71 naming a stash tab): one leaves the tab's stack, the
+    // target changes, both saved together.
+    [Fact]
+    public void Currency_from_the_stash_is_spent_from_its_stack_and_changes_the_inventory_item()
+    {
+        var (items, stash) = (Items(), Stash());
+        var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(16)), Shapes, out _)!.Value.Placed;
+        var wand = items.Add(Main, 0, 0, Wand());
+
+        var (left, changed) = ItemMoves.UseFromStashOn(stash, Currency, inSlot.Id, items, Main, wand.Id, i => i with { ItemLevel = 77 })!.Value;
+
+        Assert.Equal((inSlot.Id, 15), (left!.Id, (int)left.Item.StackSize));
+        Assert.Equal(77, changed.Item.ItemLevel);
+        var (again, stashAgain) = Reload();
+        Assert.Equal(15, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
+        Assert.Equal(77, again.Items(Main).Single().Item.ItemLevel);
+    }
+
+    [Fact]
+    public void The_last_currency_from_the_stash_leaves_the_tab()
+    {
+        var (items, stash) = (Items(), Stash());
+        var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(1)), Shapes, out _)!.Value.Placed;
+        var wand = items.Add(Main, 0, 0, Wand());
+
+        var (left, _) = ItemMoves.UseFromStashOn(stash, Currency, inSlot.Id, items, Main, wand.Id, i => i with { ItemLevel = 77 })!.Value;
+
+        Assert.Null(left);
+        Assert.Empty(Reload().Stash.Inventory(Currency).Items);
+    }
+
+    [Fact]
+    public void Currency_from_the_stash_on_a_missing_item_or_a_failed_write_changes_nothing()
+    {
+        var (items, stash) = (Items(), Stash());
+        var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(16)), Shapes, out _)!.Value.Placed;
+        var wand = items.Add(Main, 0, 0, Wand());
+
+        Assert.Null(ItemMoves.UseFromStashOn(stash, Currency, inSlot.Id, items, Main, wand.Id + 1000, i => i with { ItemLevel = 77 }));
+        Saves.FailWrite = k => k.Equals(_character, StringComparison.OrdinalIgnoreCase);   // the stash's write goes, the item's fails
+        Assert.ThrowsAny<IOException>(() => ItemMoves.UseFromStashOn(stash, Currency, inSlot.Id, items, Main, wand.Id, i => i with { ItemLevel = 77 }));
+        Saves.FailWrite = null;
+
+        var (again, stashAgain) = Reload();
+        Assert.Equal(16, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
+        Assert.NotEqual(77, again.Items(Main).Single().Item.ItemLevel);
+    }
 }
