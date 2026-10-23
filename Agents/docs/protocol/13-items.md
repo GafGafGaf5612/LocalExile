@@ -51,7 +51,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Quality | `0x14363acd8` | `0x1424aec50` | u8 |
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
-| SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: none), u32 +0x3c, u8 +0x10, u16 +0x40 |
+| SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: one level over the cap), u32 +0x3c the variant, u8 +0x10 flags (bit 2: level locked), u16 +0x40 |
 | Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue (seen), 4 white (assumed) |
 | Armour | `0x14363ad40` | `0x1424affc0` | u8 0..0x20 (stored at +0x28; 0x20 also sets +0x2a) |
 | LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
@@ -220,6 +220,8 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x2a | 18 | `0x1435bf710` / `0x141f8feb0` | put the held item down: u32 inventory id, u32 x, u32 y (0, 0 for equipment), u8 Shift (1: one of a held stack, §4a), u8 (3), u8, u8. Sent for a click while holding on a cell; a click on an item sends 0x4a | 0xbf target (remove the displaced item, add the held one), 0xbf cursor (remove the held one, add the displaced one) |
 | 0x30 | 16 | `0x1435c0838` / `0x141f90650` | put the held gem into a socket: u32 inventory id, u32 item id, u32 socket index, u8, u8 | 0xbf cursor, 0xbf replacing the item |
 | 0x2f | 17 | — | take a socketed gem onto the empty cursor: u32 inventory id, u32 item id, u32 socket index, 3 bytes | 0xbf replacing the item, 0xbf cursor |
+| 0x31 | 14 | not traced | the **"+"** on a socketed gem ([19](19-gems.md) §4): u32 inventory id, u32 item id, u32 socket index | 0xbf replacing the item with the experience at the next level's threshold (the client derives the level), the 0x20 Actor update |
+| 0xd7 | 15 | not traced | a right-click on a socketed gem toggles its **level lock** ([19](19-gems.md) §4): u32 inventory id, u32 item id, u32 socket index, u8 locked | 0xbf replacing the item with SkillGem +0x10 bit 2 set or cleared |
 | 0x29 | 2 | `0x14316c930` (id only), sender `0x140117b80` | drop the held item into the world | 0xbf cursor, then a WorldItem (§5) |
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` / `0x141f90340`, senders `0x14215f520` / `0x14215f570` | inventory request, not mapped: u8, u32, u8 flag (0 / 1 by sender) | not handled |

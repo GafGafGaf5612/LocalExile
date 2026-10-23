@@ -237,6 +237,28 @@ public class InstanceItemsTests
     }
 
     [Fact]
+    public void Gem_level_up_and_lock_layout()
+    {
+        // Captured 2026-10-23: the "+" on socket 0 of item 1 in Weapon1 (inventory 3), and the right-click lock.
+        Assert.Equal(new InstanceItems.SocketGem(3, 1, 0),
+            InstanceItems.ReadLevelUpGem(Convert.FromHexString("0031000000030000000100000000")));
+        Assert.Equal(14, InstanceProtocol.KnownClientLength(InstanceItems.LevelUpGemId));
+        Assert.Equal(new InstanceItems.LockGem(3, 1, 0, true),
+            InstanceItems.ReadLockGem(Convert.FromHexString("00D700000003000000010000000001")));
+        Assert.Equal(new InstanceItems.LockGem(3, 1, 1, false),
+            InstanceItems.ReadLockGem(Convert.FromHexString("00D700000003000000010000000100")));
+        Assert.Equal(15, InstanceProtocol.KnownClientLength(InstanceItems.LockGemId));
+    }
+
+    [Fact]
+    public void Skill_gem_component_carries_the_level_lock_flag()
+    {
+        // SkillGem: i32 experience, u32 variant, u8 flags (+0x10, bit 2 = level locked), u16.
+        var gem = new Item(7, ["SkillGem"], 0) { GemExperience = 378, GemVariant = 3, GemFlags = 4 };
+        Assert.Equal("070000000000" + "7A010000" + "03000000" + "04" + "0000", Convert.ToHexString(gem.Payload()));
+    }
+
+    [Fact]
     public void Command_framing_and_destroy()
     {
         // The town popup's Destroy: command 9 (Commands.dat DestroyCursorItem), no argument.
