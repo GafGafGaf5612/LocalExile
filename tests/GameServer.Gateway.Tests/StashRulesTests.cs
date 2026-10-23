@@ -22,12 +22,15 @@ public class StashRulesTests : IDisposable
     }
 
     /// <summary>Scrolls have the currency affinity and slot 1 (a currency tab slot holds 50 of them), maps the map
-    /// affinity; orbs and wands neither.</summary>
+    /// affinity; orbs and wands neither. The currency tab's crafting slot takes anything.</summary>
     internal static StashRules Rules() => StashRules.For(
         new() { [ScrollType] = [3], [MapType] = [5] },
         new() { [3] = [0, 1, 7, 10, 3], [5] = [0, 1, 7, 10, 5] },
         new() { [StashRules.Currency] = new() { [ScrollType] = 1 } },
-        new() { [ScrollType] = 50 });
+        new() { [ScrollType] = 50 },
+        new() { [StashRules.Currency] = [CraftingSlot] });
+
+    internal const int CraftingSlot = 28;   // CurrencyStashTabLayout CraftingSlot
 
     internal static PlayerInventories.Shape? Shapes(Item i) => i.TypeHash switch
     {
@@ -66,6 +69,34 @@ public class StashRulesTests : IDisposable
         Assert.Equal((1, 0), (placed.X, placed.Y));
         Assert.Null(stash.Place(Currency, 3, 0, new InventoryItem(2, 0, 0, new Item(OrbType, ["Base"], 0x1)), Shapes, out string why));   // no slot for it
         Assert.Contains("doesn't hold", why);
+    }
+
+    [Fact]
+    public void The_currency_tab_crafting_slot_takes_any_item_and_keeps_it_after_a_reload()
+    {
+        var stash = Open();
+
+        var placed = stash.Place(Currency, CraftingSlot, 0, new InventoryItem(1, 0, 0, Wand()), Shapes, out _)!.Value.Placed;
+
+        Assert.Equal((CraftingSlot, 0), ((int)placed.X, (int)placed.Y));
+        // A second item dropped there swaps with the first (it goes onto the cursor), as in any slot.
+        var (_, displaced) = stash.Place(Currency, CraftingSlot, 0, new InventoryItem(2, 0, 0, Wand()), Shapes, out _)!.Value;
+        Assert.Equal(placed.Id, displaced!.Id);
+        // The load-time repair leaves it there (it would move an item a special tab can't show).
+        AccountStash.Forget(_account);
+        Assert.Equal((CraftingSlot, 0), Open().Inventory(Currency).Items.Select(i => ((int)i.X, (int)i.Y)).Single());
+    }
+
+    [Fact]
+    public void Currency_in_the_crafting_slot_stacks_only_to_its_own_size()
+    {
+        var stash = Open();
+        stash.Place(Currency, CraftingSlot, 0, new InventoryItem(1, 0, 0, Scrolls(30)), Shapes, out _);
+
+        var (stack, moved) = stash.Merge(Currency, CraftingSlot, 0, new InventoryItem(2, 0, 0, Scrolls(30)), Shapes)!.Value;
+
+        Assert.Equal((10, 40), (moved, (int)stack.Item.StackSize));   // the scroll's own 40, not the slot's 50
+        Assert.Equal((CraftingSlot, 0), ((int)stack.X, (int)stack.Y));
     }
 
     [Fact]
