@@ -701,6 +701,10 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  2026-10-23 (seed-1 traces of 186 areas, `data/walkability/<area>_seed1.gen.json`): 51 of 710 match (new, all
+  seed 1: `1_1_4_0`, `1_2_5_2`, `1_4_3_1`, `1_4_7`, `1_5_4b`, `2_6_2`, `2_6_7_1`, `2_6_8`, `2_6_15`, `2_7_4`,
+  `2_9_2`, `2_9_5`, `2_9_7`, ChayulaLeague, MapWorldsBoneCrypt); 238 run to the end with another hash; the most
+  common stops are unported node kinds (115) and glacier tile-graph subgraphs (118).
   2026-10-23 (The Fetid Pool): 35 of 561 match (new: `1_1_3a` seed 1).
   2026-10-23 (composite maps): 34 of 561 match (new: `1_1_7_2` seeds 1, 2512127042; `1_3_3_1` seed 1055960378;
   `1_5_4` seed 1). Before: 30 of 560 (new then: the Prison `1_1_7_1` seeds 1, 1898277627, 4162278830; `1_3_3_1` seeds 1,
@@ -713,6 +717,19 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   1 matches every draw up to the doodads (10 562), every vertex and tile, and the tile hash (2500166236). The Coast seed 1 matches
   every tile-stage draw (8 178, up to the doodads), every vertex at the painting and as the fill starts (`levelgen`
   compares the trace's `paint.after` and `fillVertices`), every tile and the tile hash.
+  Some seeds fail in the client itself ("Terrain generation failed" in `Client.txt`, then an exception dialog). Seen
+  2026-10-23, all seed 1:
+  - The Crossroads (`1_2_3`, macro_crossroads.tgr): "Mismatching ground types at (44, 57): Cannot place
+    ForestPoolFlowingWater over (wildcard) … forestpool_flowingwater_v01_02.tdt @ (43, 56) (R180)". The port stops
+    earlier (fill tiles with edge types).
+  - The Southern Forest, Act 6 (`2_6_12`, southern_forest_01.tgr): "Failed to tilise edge: Could not find matching
+    tile at (22, 57) for edge type ForestRiverBank".
+  - The Karui Fortress (`2_6_5`, karui_fortress_01.dgr): "Dungeon generation failed: Failed to connect edge (58,
+    58)(35, 12) of type Metadata/Terrain/Act6/Area5/Rooms/swamp_deep_pool_cliff_rooms.et".
+  - The Crossroads, Act 7 (`2_7_2`, crossroads.tgr): "Could not permute edge ForestSmallCliff: (758, 931)-(782, 977)".
+
+  The official server must give the client only seeds that generate; ours pins 1, so such an area cannot be entered
+  (or traced) until the server rerolls failing seeds.
   `Game_SEED=<n>` (Auth) pins non-town seeds for traces of one seed; `LEVELGEN_AROUND=<n>` prints the draws around the first
   difference (a composite map's layouts are compared one by one: the trace's `dungeons`, every layout of the load,
   and `subgraphs`, each record as 0x1420452e0 starts it); `LEVELGEN_DUMP=<file>` writes the port's grid as the trace's `tiles` (to line it up with the client's,
