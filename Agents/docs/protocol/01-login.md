@@ -84,7 +84,7 @@ C#: `LoginWire.cs` (`LoginWriter`, `LoginReader`), `LoginMessages.cs` (records +
 | S→C | 0x0d | u16 result | delete result: 0 closes the delete screen back to the list (`0x140cfb5f0`, listener +0xa90); non-zero shows the BackendErrors text |
 | C→S | 0x19 | — | "leagues with progress" (migration), answered with S→C 0x1a |
 | C→S | 0x18 | — | character screen opened (`0x140d13060`) |
-| S→C | 0x15 | vec8⟨Entry15⟩, u8, u8, blob | character list shown on the character screen (`0x140d12590`) |
+| S→C | 0x15 | vec8⟨Entry15⟩, u8, u8, blob | character list shown on the character screen (`0x140d12590`); the first u8 (→ screen +0x280) is sent as the index of the last played character (Play updates `LastPlayedUtc`); verified live 2026-10-22: the screen selects it |
 | C→S | 0x0e | u8 realm, u32 | **Play**. The client shows "Contacting Server..." until 0x14 |
 | S→C | 0x14 | str host, u16 port, u32, u16 area hash, u32 ticket, bytes[64] key, bytes[8], u8 | instance assignment (below) |
 | S→C | 0x17 | u16 reason | disconnect |

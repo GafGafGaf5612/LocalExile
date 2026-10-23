@@ -512,8 +512,26 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         }
         else if (id == InstanceStash.ReorderTabsId)
         {
+            // The tab buttons' order, kept with the stash (personal or guild by kind) and sent back in the tab lists.
             var (kind, order) = InstanceStash.ReadReorderTabs(bytes);
-            Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} (not kept)");
+            var target = kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn);
+            int moved = target.SetPositions(order);
+            Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} ({moved} moved, saved)");
+        }
+        else if (id == InstanceStash.RenameTabId)
+        {
+            // A premium tab renamed in the tab settings; kept with the stash (personal or guild), account-wide.
+            var (kind, tab, name) = InstanceStash.ReadRenameTab(bytes);
+            bool done = (kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn)).Rename(tab, name);
+            Console.WriteLine($"[gateway] {remote} <= 0x00cd stash {kind} tab {tab} renamed \"{name}\": {(done ? "saved" : "refused")}");
+            await SendTabListAgain(remote, stream, ciphers, conn, kind);
+        }
+        else if (id == InstanceStash.ColourTabId)
+        {
+            var (kind, tab, colour) = InstanceStash.ReadColourTab(bytes);
+            bool done = (kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn)).SetColour(tab, colour);
+            Console.WriteLine($"[gateway] {remote} <= 0x00ce stash {kind} tab {tab} colour 0x{colour:x8}: {(done ? "saved" : "refused")} ({Convert.ToHexString(bytes)})");
+            await SendTabListAgain(remote, stream, ciphers, conn, kind);
         }
         else if (id == InstanceStash.MoveToTabId)
             await MoveToStash(remote, stream, ciphers, conn, InstanceStash.ReadMoveToTab(bytes));
@@ -5657,6 +5675,16 @@ static async Task SendTransfer(string remote, NetworkStream stream, ConnectionCi
 
 // C→S 0xd3: the tab settings' affinities, confirmed: saved with the tab, and the tab list again (S→C 0x136), which the
 // settings window waits for.
+// After the tab settings change a tab (0xcd, 0xce): the tab list again (S→C 0x136), as after the affinities; the
+// settings window waits for it before it closes.
+static async Task SendTabListAgain(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, byte kind)
+{
+    var stash = kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn);
+    var tabs = stash.Records(null, TabsSentOf(conn, stash));
+    await Send(remote, stream, ciphers, InstanceStash.TabList(tabs, kind == InstanceStash.Guild ? InstanceStash.Guild : InstanceStash.Personal),
+        $"0x0136 stash {kind} tab list again ({tabs.Count} tabs, after the tab settings)");
+}
+
 static async Task SetTabAffinities(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.SetAffinities set)
 {
     var stash = StashOf(conn);

@@ -95,9 +95,16 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
 ## 5. Other C→S messages
 
 - **0xcc** (vtable `0x1435c0438`, write `0x141f96130`, `0x1421670f0`): the tab buttons' order. u8 kind, u8 n, n × (u16
-  BE tab, u16 BE position). Logged, not kept.
+  BE tab, u16 BE position). Kept (2026-10-22): `AccountStash.SetPositions` saves each tab's position with the stash
+  (kind 1 the guild stash), and the tab lists send it back as the record's +0x38, so the order survives a relog.
 - **0xd1** (7 bytes, vtable `0x1435c0198`, write `0x141f96c50`, `0x142167370`): u16 BE tab, u16 BE folder (0xffff out),
   u8 kind: a tab into a folder. Logged.
+- **0xcd** (vtable `0x1435c00d8`, write `0x141f962a0`; built by the tab settings `0x14025b420`): a premium tab renamed.
+  u8 kind, u16 BE tab, u64 (0), wstr name. **0xce** (17 bytes, vtable `0x1435bf9a8`, write `0x141f96670`): its colour,
+  u8 kind, u16 BE tab, u64 (0), u32 BE colour; the client keeps the colour in the tab record's +0x2c, which the tab lists
+  send back (the record's second u32). Both are kept with the stash, account-wide (`AccountStash.Rename`, `SetColour`;
+  every tab but normal ones and folders is premium, as bought tabs are: the tab settings show the name and colour only
+  with the record's premium flag; kind 1 the guild stash). Verified live 2026-10-22: the settings window closes on the tab list (S→C 0x136) sent after each change, and the name and colour survive a relog.
 - **0xd2** (u16 tab, u8 kind; `0x14025c030`): from the tab settings. Not seen yet.
 - **0xd3** (class `0x1435c0338`, write `0x141f96da0`, built by `0x1421674c0`): the tab settings' affinities, sent by the
   window's check mark. u16 BE tab, u8 kind, u8 n, n × (u8 affinity, u8 on). Live 2026-10-20: `00D3 0005 00 01 03 01`
@@ -183,5 +190,5 @@ Gold stays with the personal stash.
   the stash or moving an item is not seen; the next login opens on the tab before it.
 - Not checked live yet: currency into its slot from Ctrl + click (0xe1), the affinity window closing on S→C 0x136, and
   the special tabs other than currency and map.
-- Tab rename / colour / order / folders (0xcc, 0xd1 are logged), 0xe2, the unique, divination and other special tabs, the
+- Tab folders (0xd1 is logged), 0xe2, the unique, divination and other special tabs, the
   real guilds (shared guild stash, members, rights), stashes per league, and stashes in the other towns.
