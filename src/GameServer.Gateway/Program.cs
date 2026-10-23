@@ -6733,6 +6733,18 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         bool secondSet = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).WeaponSet == 1;
         messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}, weapon set {(secondSet ? 2 : 1)}",
             InstanceProtocol.EnterArea(tabs, secondSet)));
+        // The contents of every stash tab with currency in it (stackable items), as 0xc7 would send them (0xc0, no 0xc8:
+        // the panel is not open). The client checks a shop price against the currency it knows of, the inventory's and
+        // the loaded stash tabs' (3.29 vendors take it from the stash): without this a price was red, and no 0x88 came,
+        // until the stash had been opened in that area (live 2026-10-23, Nessa in the hideout).
+        var personal = PersonalStashOf(conn);
+        for (int t = 0; t < personal.Count; t++)
+        {
+            var (slot, inside) = personal.Inventory(t);
+            if (!inside.Any(i => i.Item.Components.Contains("Stack")) || !conn.StashTabsSent.Add(t)) continue;
+            messages.Add(($"0x00c0 stash tab {t} inventory {personal.InventoryOf(t)}: {inside.Count} item(s) (currency for shop prices)",
+                InstanceInventories.AddInventory(personal.InventoryOf(t), slot, 0, inside)));
+        }
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))

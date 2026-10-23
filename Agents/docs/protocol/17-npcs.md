@@ -98,7 +98,11 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
 - **C→S 0x88** (write `0x141f95380`): u32 BE shop item, u32 BE destination inventory (masked like 0x28's), u8 x, u8 y,
   u8, u8 flags, compact uint. The Gateway moves the item (0xbf on the tab, manager 1, and on the inventory) and takes the
   price from the main inventory's stacks and then the stash's (any tab, as 3.29 vendors do), in one transaction. Not
-  enough: nothing happens, no message (the client shows the price in red itself, below).
+  enough: nothing happens, no message (the client shows the price in red itself, below). The client counts only the
+  currency it knows of: the inventory's and the stash tabs it has the contents of. So on entering an area the Gateway
+  sends the contents of every stash tab with stackable items (S→C 0xc0, no 0xc8; `SendPlayer`); before that, a price paid
+  from the stash was red and no 0x88 came until the stash had been opened in that area (verified live 2026-10-23, Nessa
+  in the hideout, the stash not opened).
 - **C→S 0x8a** (dispatcher case 0x8a): Ctrl + click on a shop item. Read from live bytes (2026-10-20, Nessa): u32 BE shop
   item, u8, u8 flags, compact uint (as 0x88's), u16 token (raw); `008A 00000061 00 00 00 A777`, 11 bytes. No cell: the
   Gateway puts the item into the main inventory (a stack onto stacks of its type, then the first free cell) and takes the
