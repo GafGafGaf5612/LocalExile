@@ -29,11 +29,14 @@ can level up but hasn't been levelled by the player is represented is open (Road
 gem's experience run levels freely and its skill uses that level (`GemLevel`); the game's `PlayerLevelReq` gates and
 the level-up stall join the requirements step (Status "Gem levels").
 
-The server gives the kills' experience to the gems (`GainGemExperience`): each gem socketed in an equipped item gains
-10% of the player's monster experience (a support gem too, a gem in an inactive item nothing), written into the gem
-inside the socket list (`PlayerInventories.ChangeSocketedGem`) and sent as the socket's equipment row 0x00bf item
-change — the same item id removed and added again, the replace idiom: an addition of a known id alone is dropped as a
-duplicate and the client keeps the stale gem (live 2026-10-23). One per row per kill; the client's XP bar and tooltip
+The server gives the kills' experience to the gems (`GainGemExperience`, from `MonsterKilled` only: a quest's level and
+`/add_xp` give the gems nothing): each gem socketed in an equipped item, in either weapon set (rows 1–10, 14, 15),
+gains 10% of the player's monster experience, up to its last level's threshold (a support gem too; a gem in an
+inactive item, at its last level, or at experience -1, a corrupted gem over its cap, nothing). All the gems change in
+one step under the inventory's lock (`PlayerInventories.ChangeSocketedGems`), written into the gem inside the socket
+list, and are sent as the socket's equipment row 0x00bf item change, each item once with all its gems — the same item
+id removed and added again, the replace idiom: an addition of a known id alone is dropped as a duplicate and the client
+keeps the stale gem (live 2026-10-23). One per row per kill; the client's XP bar and tooltip
 follow, it levels the gem itself at the threshold, and the level's change is logged. A level's costs, damage and
 reservation ride the skills, so a level-up also re-sends the skills (the 0x20 Actor update, `SendSkills`), the same
 thing an equipment change does.

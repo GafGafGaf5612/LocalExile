@@ -2678,7 +2678,6 @@ static async Task<string?> ChangePassives(string remote, NetworkStream stream, C
 // points (ApplyLevel) and the account's level (Auth set_level, for the character list).
 static async Task GainExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain, string why)
 {
-    await GainGemExperience(remote, stream, ciphers, conn, gain);   // the gems gain as much as a kill's share, cap or not
     // Added to the character's total (an older connection's or another task's gain is never written over), kept in memory
     // and saved every few seconds; a new level is saved at once.
     uint start;
@@ -2697,39 +2696,42 @@ static async Task GainExperience(string remote, NetworkStream stream, Connection
     await ApplyLevel(remote, stream, ciphers, conn, level);
 }
 
-// A kill's experience goes to the gems too: every one socketed in an equipped item gains 10% of the player's gain
-// (support gems too, a gem in an inactive item nothing), written into the gem item inside the socket list — the equipped
+// A kill's experience goes to the gems too: every one socketed in an equipped item, in either weapon set, gains 10% of the
+// player's gain (support gems too, a gem in an inactive item, at its last level or over its cap nothing), up to the last
+// level's threshold, written into the gem item inside the socket list — the equipped
 // item's own component has no skill gems. Sent as the socket's equipment row 0x00bf item change, the same item id removed
 // and added again (the replace idiom: an addition of a known id alone is dropped as a duplicate, so the client would keep
 // the stale gem), so the client's gem XP bar and tooltip follow; the next save keeps it.
 static async Task GainGemExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain)
 {
-    int share = (int)Math.Max(1, gain / 10);
+    int share = (int)Math.Min(gain / 10, int.MaxValue);
+    if (share == 0) return;
     var items = ItemsOf(conn);
-    var changes = new Dictionary<byte, List<InventoryItem>>();
-    bool leveled = false;
-    foreach (var (row, itemId, socket, gem) in items.SocketedGemSlots())
+    var changed = items.ChangeSocketedGems((itemId, gem) =>
     {
-        if (Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is null || IsInactive(conn, itemId)) continue;
-        var before = gem.GemExperience;
-        if (items.ChangeSocketedGem(row, itemId, socket, g => g with { GemExperience = g.GemExperience + share })
-            is not { } current) continue;
-        if (current.Item.Sockets[socket].Gem is not { } present || present.GemExperience <= before) continue;
-        if (!changes.TryGetValue(row, out var list)) changes[row] = list = [];
-        list.Add(current);
-        if (Items.GemLevel(present) > Items.GemLevel(gem))
+        if (IsInactive(conn, itemId) || Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is not { } type) return null;
+        // -1 is a corrupted gem over its cap (GemType.Level), and at its last level's threshold a gem gains no more.
+        int cap = type.ExperienceFor(type.MaxLevel);
+        if (gem.GemExperience < 0 || gem.GemExperience >= cap) return null;
+        return gem with { GemExperience = (int)Math.Min((long)gem.GemExperience + share, cap) };
+    });
+    bool leveled = false;
+    foreach (var (before, after) in changed.SelectMany(c => c.Gems))
+    {
+        if (Items.GemLevel(after) > Items.GemLevel(before))
         {
             leveled = true;
-            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(gem)} levels to {Items.GemLevel(present)}");
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(after)} levels to {Items.GemLevel(after)}");
         }
         else
-            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(gem)} gains experience " +
-                $"+{present.GemExperience - before} ({present.GemExperience}, level {Items.GemLevel(present)})");
+            Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(after)} gains experience " +
+                $"+{after.GemExperience - before.GemExperience} ({after.GemExperience}, level {Items.GemLevel(after)})");
     }
-    foreach (var (row, list) in changes)
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row),
-            [.. list.Select(i => i.Id)], list),
-            $"0x00bf inventory {row}: gem experience +{share} ({string.Join(", ", list.Select(i => $"{i.Id:x} {i.Item.Sockets.Count(s => s.Gem is not null)} gem(s)"))})");
+    // One change per row, each item in it once with all its gems' experience.
+    foreach (var row in changed.GroupBy(c => c.Row))
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
+            [.. row.Select(c => c.Item.Id)], [.. row.Select(c => c.Item)]),
+            $"0x00bf inventory {row.Key}: gem experience +{share} ({string.Join(", ", row.Select(c => $"{c.Item.Id:x} {c.Gems.Count} gem(s)"))})");
     // A gem's level's costs, damage and reservation live with the skills (the 0x20 Actor update), not the item.
     if (leveled) await SendSkills(remote, stream, ciphers, conn);
 }
@@ -2754,6 +2756,8 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
     if (alive && Dist(at, player) <= ExperienceRange && Monsters.BaseExperience(variety, m.Level) is int baseXp)
     {
         uint xp = Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, m.Rarity, conn.Pools.Level, m.Level);
+        // The gems gain their share of the kill only (not a quest's level or /add_xp), at the character's cap too.
+        await GainGemExperience(remote, stream, ciphers, conn, xp);
         await GainExperience(remote, stream, ciphers, conn, xp, $"{m.Rarity} {m.Label} 0x{id:x}");
     }
     // A quest kill that levels the character up (a1q1: Hillock → at least level 2), wherever the player stands.

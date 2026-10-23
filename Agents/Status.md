@@ -76,11 +76,14 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   transfigured and Trarthan gems grant their own skill, Vaal gems their Vaal skill and their base skill (refused without
   Vaal souls, which are not gathered yet); the variant is sent in the SkillGem data and saved; `/gem <name> [level]
   [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](docs/protocol/19-gems.md) §1, §3). Not yet: requirements, supports, corruption.
-- **Gem experience from kills (not yet checked with the real client).** Every gem socketed in an equipped item gains
-  10% of a kill's monster experience (support gems included, inactive items nothing), sent with the kill as 0x00bf item
-  changes so the XP bars follow, and saved with the character (`GainGemExperience`, `PlayerInventories.SocketedGemSlots`;
-  [19](docs/protocol/19-gems.md) §1). Checked live: the client updates the XP bars in real time and levels the gem
-  itself at the threshold; a level-up re-sends the skills (0x02ba Actor), so the level's damage and costs apply at once.
+- **Gem experience from kills (one gem in the first weapon set checked with the real client).** Every gem socketed in an
+  equipped item, in either weapon set, gains 10% of a kill's monster experience (support gems included; inactive items,
+  gems at their last level and corrupted gems over their cap nothing; quest levels and `/add_xp` give the gems nothing),
+  sent with the kill as 0x00bf item changes, each item once, so the XP bars follow, and saved with the character
+  (`GainGemExperience`, `PlayerInventories.ChangeSocketedGems`; [19](docs/protocol/19-gems.md) §1). Checked live
+  2026-10-23: the client updates the XP bar in real time and levels the gem itself at the threshold; a level-up re-sends
+  the skills (0x02ba Actor), so the level's damage and costs apply at once. Not checked live yet: several gems in one
+  item, the second weapon set.
 - **Saves in SQLite (tested, not yet checked with the real client).** Accounts, characters, character saves and stashes
   are rows in `data/saves.db` (WAL, synchronous=FULL); a stash is a header row and one row per tab. Every item, stash,
   gold, passive, quest flag and waypoint change is saved at once in a transaction. Stash moves, purchases, sales,
