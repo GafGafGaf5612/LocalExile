@@ -9,7 +9,6 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class PlayerInventories
 {
-    public const byte Weapon2 = 14, Offhand2 = 15;
     public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
         Boots = 9, Flask = 11, MapDevice = 13, Weapon2 = 14, Offhand2 = 15, Cursor = InstanceInventories.CursorRow;
 
