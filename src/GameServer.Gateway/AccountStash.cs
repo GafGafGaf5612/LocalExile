@@ -491,6 +491,23 @@ sealed class AccountStash
         return new(changed, added, left);
     }
 
+    /// <summary>Replaces an item in a tab with a changed copy (same id and cell), saved; null when it is not there (currency
+    /// used on an item in the stash, e.g. the currency tab's crafting slot).</summary>
+    public InventoryItem? Change(int tab, uint itemId, Func<Item, Item> change)
+    {
+        InventoryItem result;
+        lock (_lock)
+        {
+            if (tab < 0 || tab >= _tabs.Count) return null;
+            var items = _tabs[tab].Items;
+            int at = items.FindIndex(i => i.Id == itemId);
+            if (at < 0) return null;
+            result = items[at] = items[at] with { Item = change(items[at].Item) };
+        }
+        Persist(tab);
+        return result;
+    }
+
     /// <summary>Takes <paramref name="amount"/> off a stack in a tab (a split: less than the whole stack). Returns the
     /// stack as it is now, or null (nothing changes).</summary>
     public InventoryItem? Shrink(int tab, uint itemId, int amount)

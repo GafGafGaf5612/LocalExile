@@ -161,7 +161,7 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
 - **Crafting slot.** The currency tab's big cell in the middle is CurrencyStashTabLayout row `CraftingSlot` (no
   `StoredItem`, `FirstSlotIndex` 28, 2 × 4). The client drops onto it as (28, 0) (live 2026-10-23, a weapon). It takes
   any item, where dropped (`StashRules.TakesAnything`), at the item's own stack size; an item dropped on it swaps with the
-  one there; the load-time repair leaves it. Ctrl + click never puts anything there. The 14 `Generic1`–`Generic14` cells
+  one there; the load-time repair leaves it. Ctrl + click never puts anything there. Currency (from its slot or the inventory) works on the item there: 0x71 / 0x72 name the tab as the target inventory ([13](13-items.md) §4b). The 14 `Generic1`–`Generic14` cells
   under it (slots 30–34, 40–48) are not handled yet: they take nothing.
 - **Stack sizes.** Every slot of a slotted tab (currency, essence, fragment, delve, blight) holds 5000 of its item
   (`StashRules.SlotStack`, our own number since 2026-10-22; before, CurrencyItems `CurrencyTab_StackSize` for currency
