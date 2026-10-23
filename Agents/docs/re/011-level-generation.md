@@ -816,8 +816,8 @@ pass 2; seeds 3 and 7 stop with "Could not tilise edge", which the client answer
 ## 5. Not yet mapped in detail
 
 The rest of the room/tile solver (`0x1420f7960` outer edge, `0x14202e6c0` chisel, `0x14201db80` fix heights, the
-height stages), doodads (`0x1420425d0`), and how the walkability grid
-(`0x1410ddcfd`, [03](../protocol/03-area-and-world.md) §7) is built from the placed tiles.
+height stages), doodads (`0x1420425d0`), and how doodad collision reaches the walkability grids (§6b): `0x142042360`
+makes each doodad a client entity (`0x141ebdf30`), not through the generator's map.
 
 The busiest draw sites in the traces (§8): `0x142042fae`/`0x142042fbc` (doodads, ~2 per tile), `0x1421257cc`,
 `0x14152e730`/`0x14152e73a` and `0x141530658` (outside the generator range: tile mesh variation), `0x141febf93` /
@@ -836,6 +836,52 @@ MurmurHash2 (seed 0xf36b12) of that u32 array (`0x140df8570`; `0x1406db330` is t
 Checked against four live traces (seed 1): Lioneye's Watch 1139181677, The Twilight Strand 266153788, The Coast
 695393902, HideoutForest 3482012158 — all match (`levelgen hash`). The client log (`Client/logs/Client.txt`) has
 "Generating level … with seed …" / "Tile hash" pairs for ~560 (area, seed) loads, an oracle for any seed.
+
+## 6b. Walkability and projectile grids (`Walkability.cs`)
+
+The grids the walk-map recorder captures ([03](../protocol/03-area-and-world.md) §7: `0x1410ddb90` asks the terrain
+for them, vtable `0x14346ea40` +0x50 = `0x14165c260` → `0x141d852d0`) are stored nibbles of the tile map: walk at
+map +0xd0, projectile at +0xe8, (23·w + 1) / 2 bytes a row (+0x100), built once by `0x141d85970` in step 5 of §1
+(after the outside tiles). Every cell starts at 5; each tile entry then lays a patch over the grid keeping the lower
+value, so the order does not matter.
+
+- **Tile data** (`0x1429f31a0`, `TileWalk.Parse`; only tiles without a base tile): after the 58-byte key a u16 flags
+  word (bit 0x100 from version 14, 0x200 from 13), from version 10 the orientation restriction byte and the hull plane
+  count (0 … 4; with 2 or more one orientation mask per plane), with flag 0x200 one byte, then a u16 sub-tile count
+  (w × h, the tile's own frame, row by row) and per sub-tile: u16 F | G << 8, a byte, three more with flag 0x200, a
+  byte map unless F has bit 4 (`0x1429f59a0`: a header byte, bits 0-2 the packing — 0 one value, 1 … 4 LZ4 to 69 / 137
+  / 281 / 529 bytes — bits 3-4 extra length bytes, bits 5-7 the length's low bits), and unless F has bits 1 and 2 a
+  u16 length and the LZ4 hull (`0x140e42cd0` is LZ4_decompress_safe). The vertex blocks follow.
+- **F / G**: 1 walking uniform, 2 projectiles uniform (no hull when both), 8 not walkable, 0x10 stops projectiles,
+  0x20 / 0x40 / 0x80 the hull reaches 4 cells past the top / right / bottom; G 1 past the left. A hull is
+  (23 + margins)² bytes per plane, low nibble walk, high nibble projectile. A tile's plane is the first whose mask is 0
+  or has the entry's orientation code, else the last (tile data +0x172 / +0x173).
+- **Per entry** (`0x141d85970`): the entry's sub-tile, u = its 4 vertices with flag 8 (outside the map counts,
+  `0x141d883c0`). Without F 2: walk and projectile from the hull when F has no 1 and u < 4; otherwise a blocked walk
+  patch when F has 8 or u = 4, and the projectile from the hull. With F 2: F 0x10 blocks both; else walk from the hull
+  when F has no 1 and u < 4, or a blocked walk patch when F has 8 or u = 4. A hull cell (x, y), x and y from −4, goes
+  to the slot's cell turned by the entry's code (`0x142fa04b0` with 23 × 23), clamped into the map.
+- **Blocked patch** (`0x141d867d0`; an empty entry blocks both): 0 over the slot; toward each neighbour (up, right,
+  down, left) that is a tile not blocked the same way (its F lacks 8, or 0x10) it reaches 4 cells further with 1 … 4
+  away from the slot (`0x141d7c6d0` / `0x1429f53b0`: top and bottom rows set, left and right columns raised); cells
+  outside the map are left out.
+- **Vertex flag 8** comes from the walkability pass (`0x1420289a0`, §3g), which runs twice: in the tile-graph
+  pipeline on the view, and in `0x142044f30` after the outer stages over each primary record's whole rectangle (the
+  buffer included; records with CountAsPrimary too), followed by `0x142028870` (the map's border vertices). The
+  second run is what makes a tile graph's outer buffer unwalkable. Then `0x142049420` flags the vertices under a
+  room's `outside_tiles` sector (`0x142025190`; none in the areas checked, not ported).
+- **Doodads** are not in the port: their collision lowers both grids around them (The Twilight Strand: wall torches,
+  shore rocks).
+
+Checked with `levelgen walk` against the seed-1 captures (`data/walkability/<area>_seed1.bin`, `.projectile.bin`):
+The Twilight Strand matches all but 1 258 of 1 733 004 walk cells and 480 projectile cells, all of them at doodads.
+Over the 61 captures whose tile hash matches (`levelgen walk` without arguments) the median area matches 99.44% of
+walk cells and 99.89% of projectile cells, 39 of them at 99% or more. The largest gaps are dungeon rooms' forced-blank
+slots (`forced_blank.tdt`, F = 7: open) that the client blocks with flag 8 on all their vertices: The Control Blocks
+`1_5_2` 93.9%, `2_10_2` 93.2%. The likely source is the step of `0x1420289a0` after `0x142028510` that flags every
+vertex of an origin tile whose data +0x16c has 0x40, whose +0x90 → +0x30 has 8, whose four values at +0x62 equal
+master +0x230 and whose four handles at +0x40 are null or have a negative byte +0x48, when master +0x165 is set and
++0x230 is not null. Which master keys those are is not mapped (the parser's locals do not follow the master's layout).
 
 ## 7. What the server will use
 

@@ -221,7 +221,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   its stop), the shuffle and unique node groups and the template nodes (`1_3_18_1` likewise): 61 of the 197 seed-1
   traces; the oracle matches 104 of 710 logged seeds), the
   one-node `.dgr` path (hideouts) lacks the outer buffer, doodads are not ported, and the Gateway does not use the port
-  yet.
+  yet. The walkability and projectile grids are built from the generated tiles (re/011 §6b, `Walkability.cs`, `levelgen
+  walk`): on the 61 seed-1 captures whose tile hash matches, the median area matches 99.44% of walk cells and 99.89%
+  of projectile cells (39 areas at 99% or more, the lowest 93.2%; The Twilight Strand's 0.07% are all at doodads);
+  doodad collision and a dungeon rule that blocks forced-blank slots are missing.
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
   stop it ([11](docs/protocol/11-skills.md) §10).

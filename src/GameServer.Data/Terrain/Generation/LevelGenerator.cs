@@ -256,6 +256,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var tg = TileGraph.Parse(files.Text(graphPath)!);
         new Seams(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, [new PlacedRoom(room, 0, 0, rw, rh, [])], new HashSet<(int X, int Y)>(),
             (Ground(tg.TopGround), Ground(tg.BottomGround), Ground(tg.DefaultGround)), notes).Run();
+        // 0x142044f30: the walkability pass (0x1420289a0) over the one record, the whole map.
+        new GroundStages(_grid, 0, 0, _grid.Width, _grid.Height, files).Walkability(TileGraphGenerator.ImpassableGround, files.HasTransition);
         return _grid;
         string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
     }
@@ -304,6 +306,13 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             PostUniqueTiles.Run(rng, grid, vx, vy, vw, vh, store, notes);
         }
         for (int i = records.Count - 1; i >= 0; i--) outers[i]();
+        // 0x142044f30 then: the walkability pass (0x1420289a0) over the rectangle of each primary record (the first,
+        // generator +0x30 +9 taken to be 1) and of each later one whose master has CountAsPrimary (+0x164), then
+        // 0x142028870 flags the map's border vertices. Only grounds and vertex flags change.
+        for (int i = 0; i < records.Count; i++)
+            if (i == 0 || records[i].Master.ContainsKey("CountAsPrimary"))
+                new GroundStages(grid, records[i].X, records[i].Y, records[i].W, records[i].H, files).Walkability(TileGraphGenerator.ImpassableGround, files.HasTransition);
+        new GroundStages(grid, 0, 0, grid.Width, grid.Height, files).FlagBorder();
         // 0x14204cbd0: tile heights in levels become the client's units, each tile origin by the StoreyHeight of the
         // last record whose rectangle holds it (0x141d77a90), else the first's.
         var storeys = records.Select(r => int.Parse(r.Master.GetValueOrDefault("StoreyHeight", "0"))).ToList();

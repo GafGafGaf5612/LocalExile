@@ -88,6 +88,42 @@ public class LevelGenerationTests
         Assert.Equal(TileHash.Murmur2(bytes, 0xf36b12), TileHash.Compute(2, 1, (x, y) => x == 1 ? ("Metadata/Terrain/x.tdt", (short)-2, (byte)3) : null));
     }
 
+    [Fact]
+    public void Lz4DecodesLiteralsAndOverlappingMatches()
+    {
+        // "abcd", then a match 4 back of length 8 (overlapping its own output), then the literal "e".
+        byte[] block = [0x44, (byte)'a', (byte)'b', (byte)'c', (byte)'d', 4, 0, 0x10, (byte)'e'];
+        var output = new byte[32];
+        int n = Lz4.Decompress(block, output);
+        Assert.Equal("abcdabcdabcde", Encoding.ASCII.GetString(output, 0, n));
+        Assert.Equal(-1, Lz4.Decompress([0x40, (byte)'a', (byte)'b', (byte)'c', (byte)'d', 9, 0], output));
+    }
+
+    [Fact]
+    public void HullPlaneFollowsTheOrientationMasks()
+    {
+        var walk = new TileWalk([0x01, 0x00], []);
+        Assert.Equal(0, walk.Plane(0));
+        Assert.Equal(1, walk.Plane(3));
+        Assert.Equal(1, new TileWalk([0x01, 0x02], []).Plane(5));
+    }
+
+    [Fact]
+    public void EmptyEntryBlocksAndFallsOffIntoItsNeighbour()
+    {
+        // An empty entry beside an open tile (both layers uniform, no hull): 0 over its slot, then 1 … 4 into the
+        // neighbour's first four columns; the rest stays 5.
+        var tile = new TileDef("open.tdt", "", new TileKey { Width = 1, Height = 1 });
+        var grid = new TileGrid(2, 1);
+        grid.Place(tile, 0, 1, 0, 0);
+        var map = Walkability.Build(grid, _ => new TileWalk([0], [new SubTileWalk(0x03, 0, null)]));
+        Assert.Equal((46, 23), (map.Width, map.Height));
+        int row = 10 * map.Width;
+        Assert.Equal(0, map.Walk[row + 22]);
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, map.Walk[(row + 23)..(row + 28)]);
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, map.Projectile[(row + 23)..(row + 28)]);
+    }
+
     static TileKey Straight()
     {
         // Metadata/Terrain/Beach/Shoreline/beachtoocean_straight_v01_01.tdt: shoreline edges right and left, deep water on

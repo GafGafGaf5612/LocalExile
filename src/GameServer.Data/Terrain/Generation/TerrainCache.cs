@@ -169,6 +169,9 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
 
     public TileDef? Tile(string path) => Get("tdt", path, d => ParseTile(path, d));
 
+    /// <summary>A tile's walkability data (<see cref="TileWalk.Parse"/>), null for a tile with a base tile.</summary>
+    public TileWalk? Walk(string path) => Get("walk", path, TileWalk.Parse);
+
     readonly Dictionary<string, bool> _transitionTiles = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _transitionTypes = new(StringComparer.OrdinalIgnoreCase);
 

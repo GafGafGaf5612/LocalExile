@@ -82,8 +82,10 @@ Items are in rough priority order within each section. "Known" says what is alre
   fill); seeds 3 and 7 fail edge tiling, which the client answers with "Retrying with seed" (`0x14204d820`, find the
   retry seed); the 57 oracle seeds that run to the end with another hash (`levelgen oracle`, e.g. `1_1_3` seed 1,
   `1_2_1`, The Wetlands `1_2_12`, The Beacon `2_6_14`) each need a trace;
-  HideoutForest needs the outer buffer on the one-node `.dgr` path (`DungeonTiler`; the multi-node path has it). Then the walkability
-  grid from the placed tiles, and doodads (`0x1420425d0`).
+  HideoutForest needs the outer buffer on the one-node `.dgr` path (`DungeonTiler`; the multi-node path has it). The
+  walkability grids are built from the placed tiles (re/011 §6b); left there: the walkability pass's rule after
+  `0x142028510` that flags every vertex of tiles matching master +0x165 / +0x230 (dungeon forced-blank slots stay open,
+  e.g. `1_5_2`), room `outside_tiles` sectors (`0x142049420`), and doodad collision. Then doodads (`0x1420425d0`).
 - **Done when:** the server's tile hash equals the client's 0x7d hash for a random seed in every act area, and
   non-town, non-hideout instances get a random seed without a walk-map capture (Auth's `SeedFor`, Gateway's
   `AreaLayouts`).

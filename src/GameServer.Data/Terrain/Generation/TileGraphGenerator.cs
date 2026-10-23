@@ -19,7 +19,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     public TileStore Store { get; private set; } = null!;
 
     /// <summary>The ground <c>0x1420289a0</c> floods the unwalkable border with (the string at 0x1435c4c50).</summary>
-    const string ImpassableGround = "Metadata/Terrain/impassable_ground.gt";
+    internal const string ImpassableGround = "Metadata/Terrain/impassable_ground.gt";
 
     /// <summary>The finished grid. A stage that is not ported throws <see cref="PartialGenerationException"/> with the
     /// grid so far once the grid exists.</summary>
@@ -49,6 +49,10 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         if (master.ContainsKey("OuterGroundType")) throw new NotSupportedException("OuterGroundType (0x14201db80) is not ported");
         if (buffer != 0)
             new OuterBuffer(files, rng, grid, buffer, buffer, buffer + Graph.Width, buffer + Graph.Height, Store, fills, notes).Run();
+        // 0x142044f30 then runs the walkability pass (0x1420289a0) again for the primary record, over its whole
+        // rectangle (the buffer included), and 0x142028870 flags the map's border vertices (the pass's border flags).
+        // Only grounds and vertex flags change: the walkability grids read flag 8.
+        new GroundStages(grid, 0, 0, grid.Width, grid.Height, files).Walkability(ImpassableGround, files.HasTransition);
         // 0x14204cbd0 (after the layout 0x142049d10): every tile origin with a height offset has it multiplied by the
         // master's StoreyHeight (+0x14a, default 0), row by row (0x141d83060). Levels become the client's units here.
         int storey = int.Parse(master.GetValueOrDefault("StoreyHeight", "0"));

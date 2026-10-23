@@ -155,6 +155,21 @@ sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, in
     /// are flagged; a tile whose border is all flagged, without a tag (tile data +0x10), real edges or different corner grounds, is
     /// flagged whole (<c>0x142028510</c>). "No walkable area in the level" with fewer than max(10, w · h / 500) inner
     /// open vertices left.</summary>
+    /// <summary><c>0x142028870</c>: flag 8 on the view's border vertices.</summary>
+    public void FlagBorder()
+    {
+        for (int x = 0; x <= width; x++)
+        {
+            Corner(x, 0).Flags |= 8;
+            Corner(x, height).Flags |= 8;
+        }
+        for (int y = 0; y <= height; y++)
+        {
+            Corner(0, y).Flags |= 8;
+            Corner(width, y).Flags |= 8;
+        }
+    }
+
     public void Walkability(string impassable, Func<TileDef, bool> transition)
     {
         var visited = new bool[(width + 1) * (height + 1)];

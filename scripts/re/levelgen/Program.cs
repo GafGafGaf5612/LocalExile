@@ -77,6 +77,11 @@ switch (args.FirstOrDefault())
         // generate <area id> <seed> [trace.gen.json]: the server's generation, compared with a client trace when given.
         Generate(args[1], uint.Parse(args[2]), args.Length > 3 ? args[3] : null);
         break;
+    case "walk":
+        // walk [<area id> <seed>]: the port's walkability and projectile grids against the walk-map capture
+        // (data/walkability/<area>_seed<seed>.bin and .projectile.bin); without an area, one line per seed-1 capture.
+        Walk(args.Length > 1 ? args[1] : null, args.Length > 2 ? uint.Parse(args[2]) : 1);
+        break;
     case "oracle":
         // oracle [area regex]: every (area, seed) the client logged with its tile hash (Client/logs/Client.txt), run by
         // the port: match, mismatch, or where it stops.
@@ -143,6 +148,109 @@ static void Oracle(string filter)
     }
     Console.WriteLine($"{match} of {total} match");
     foreach (var (k, n) in reasons.OrderByDescending(r => r.Value)) Console.WriteLine($"  {n} × {k}");
+}
+
+static void Walk(string? areaId, uint seed)
+{
+    string root = Root();
+    using var fs = OpenGame();
+    var files = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+    if (areaId is not null)
+    {
+        WalkArea(fs, files, root, areaId, seed, verbose: true);
+        return;
+    }
+    // Every area with a seed-1 capture: whether the port's tile hash is the client's, and the cells that differ.
+    foreach (var bin in Directory.GetFiles(Path.Combine(root, "data", "walkability"), "*_seed1.bin").Order())
+    {
+        string id = Path.GetFileName(bin)[..^"_seed1.bin".Length];
+        try { WalkArea(fs, files, root, id, 1, verbose: false); }
+        catch (Exception e)
+        {
+            Console.WriteLine($"{id} stop ({e.Message.Split('\n')[0]})");
+        }
+    }
+}
+
+static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string areaId, uint seed, bool verbose)
+{
+    string stem = Path.Combine(root, "data", "walkability", $"{areaId}_seed{seed}");
+    int level = 1;
+    uint? clientHash = null;
+    if (File.Exists(stem + ".gen.json"))
+        using (var head = JsonDocument.Parse(File.ReadAllText(stem + ".gen.json")))
+        {
+            level = head.RootElement.TryGetProperty("level", out var l) ? l.GetInt32() : 1;
+            clientHash = head.RootElement.TryGetProperty("tileHash", out var th) ? th.GetUInt32() : null;
+        }
+    var area = AreaInfo.Load(p => fs.TryReadFile(p, out var d) ? d : null, areaId, level);
+    var result = LevelGenerator.Generate(files, area, seed);
+    var grid = result.Grid;
+    var walk = Walkability.Build(grid, t => files.Walk(t.Path));
+    if (!verbose)
+    {
+        static string Count(byte[] mine, string file)
+        {
+            if (!File.Exists(file)) return "-";
+            var theirs = File.ReadAllBytes(file);
+            return theirs.Length != mine.Length ? $"size {theirs.Length}/{mine.Length}" : $"{mine.Where((v, i) => v != theirs[i]).Count()}/{mine.Length}";
+        }
+        string match = clientHash is null ? "?" : grid.Hash() == clientHash ? "yes" : "no";
+        Console.WriteLine($"{areaId} {match} walk {Count(walk.Walk, stem + ".bin")} proj {Count(walk.Projectile, stem + ".projectile.bin")}");
+        return;
+    }
+    // Every placed tile's data: parsed, and one sub-tile per slot.
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    for (int y = 0; y < grid.Height; y++)
+        for (int x = 0; x < grid.Width; x++)
+            if (grid[x, y] is { } e && seen.Add(e.Tile.Path))
+            {
+                var data = files.Walk(e.Tile.Path);
+                if (data is null) Console.WriteLine($"  no walk data: {e.Tile.Path}");
+                else if (data.SubTiles.Length != e.Tile.Width * e.Tile.Height)
+                    Console.WriteLine($"  {e.Tile.Path}: {data.SubTiles.Length} sub-tiles for {e.Tile.Width}x{e.Tile.Height}");
+            }
+    // LEVELGEN_VERTICES=x,y,w,h: the port's vertex grounds and flags there.
+    if (Environment.GetEnvironmentVariable("LEVELGEN_VERTICES") is { Length: > 0 } vr && vr.Split(',').Select(int.Parse).ToArray() is [var vx, var vy, var vw, var vh])
+        for (int y = vy; y <= vy + vh; y++)
+            Console.WriteLine($"  v{y}: " + string.Join(" ", Enumerable.Range(vx, vw + 1).Select(x =>
+                $"{Path.GetFileNameWithoutExtension(grid.Corner(x, y).Ground ?? "-")}/{grid.Corner(x, y).Flags}")));
+    // LEVELGEN_WALK=<file>: the port's walk grid, one byte per cell (as the capture's .bin).
+    if (Environment.GetEnvironmentVariable("LEVELGEN_WALK") is { Length: > 0 } walkOut) File.WriteAllBytes(walkOut, walk.Walk);
+    Console.WriteLine($"{areaId} seed {seed}: tile hash {grid.Hash()} (client {clientHash}), grid {walk.Width}x{walk.Height}");
+    using (var meta = JsonDocument.Parse(File.ReadAllText(stem + ".json")))
+        Console.WriteLine($"capture: {meta.RootElement.GetProperty("w")}x{meta.RootElement.GetProperty("h")}");
+    void Compare(string label, byte[] mine, string file)
+    {
+        if (!File.Exists(file)) { Console.WriteLine($"{label}: no capture"); return; }
+        var theirs = File.ReadAllBytes(file);
+        if (theirs.Length != mine.Length) { Console.WriteLine($"{label}: capture has {theirs.Length} cells, port {mine.Length}"); return; }
+        int differ = 0;
+        var byValue = new Dictionary<(int, int), int>();
+        for (int i = 0; i < mine.Length; i++)
+            if (mine[i] != theirs[i])
+            {
+                if (differ++ < 15) Console.WriteLine($"  {label} ({i % walk.Width}, {i / walk.Width}): client {theirs[i]}, port {mine[i]}");
+                byValue[(theirs[i], mine[i])] = byValue.GetValueOrDefault((theirs[i], mine[i])) + 1;
+            }
+        Console.WriteLine($"{label}: {differ} of {mine.Length} cells differ " +
+            string.Join(" ", byValue.OrderByDescending(p => p.Value).Take(8).Select(p => $"[client {p.Key.Item1} port {p.Key.Item2}: {p.Value}]")));
+        // The tile entries with the most differing cells: the tile, its sub-tile flags and unwalkable vertices.
+        var perTile = new Dictionary<(int, int), int>();
+        for (int i = 0; i < mine.Length; i++)
+            if (mine[i] != theirs[i]) perTile[(i % walk.Width / 23, i / walk.Width / 23)] = perTile.GetValueOrDefault((i % walk.Width / 23, i / walk.Width / 23)) + 1;
+        foreach (var ((tx, ty), n) in perTile.OrderByDescending(p => p.Value).Take(12))
+        {
+            int flagged = 0;
+            for (int v = 0; v < 2; v++) for (int u = 0; u < 2; u++) if ((grid.Corner(tx + u, ty + v).Flags & 8) != 0) flagged++;
+            var e = grid[tx, ty];
+            var sub = e is { } en ? files.Walk(en.Tile.Path)?.SubTiles.ElementAtOrDefault(0) : null;
+            Console.WriteLine($"    tile ({tx}, {ty}): {n} cells, {(e is { } ee ? $"{Path.GetFileName(ee.Tile.Path)} o{ee.Orientation} +({ee.OffsetX},{ee.OffsetY})" : "empty")}" +
+                $" F 0x{sub?.F:x2} G 0x{sub?.G:x2} flag-8 vertices {flagged}");
+        }
+    }
+    Compare("walk", walk.Walk, stem + ".bin");
+    Compare("projectile", walk.Projectile, stem + ".projectile.bin");
 }
 
 static GameFileSystem OpenGame()
