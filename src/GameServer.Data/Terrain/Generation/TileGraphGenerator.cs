@@ -1,0 +1,240 @@
+namespace GameServer.Data.Terrain.Generation;
+
+/// <summary>A tile graph (.tgr) subgraph: <c>0x14203f890</c> prepares the graph (tag choices, exist rolls, removals),
+/// then <c>0x142116600</c> lays it out (Voronoi jitter first). Ported in client order, stage by stage; the next stage
+/// that is not ported throws <see cref="NotSupportedException"/>.</summary>
+sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string> notes, bool vaalSideArea,
+    Action<string, TileGraph>? onStage = null)
+{
+    public TileGraph Graph { get; private set; } = null!;
+
+    TileGrid? _grid;
+
+    /// <summary>The ground <c>0x1420289a0</c> floods the unwalkable border with (the string at 0x1435c4c50).</summary>
+    const string ImpassableGround = "Metadata/Terrain/impassable_ground.gt";
+
+    /// <summary>The finished grid. A stage that is not ported throws <see cref="PartialGenerationException"/> with the
+    /// grid so far once the grid exists.</summary>
+    public TileGrid Generate(string graphPath, int orientation)
+    {
+        try
+        {
+            return Layout(graphPath, orientation);
+        }
+        catch (NotSupportedException e) when (e is not PartialGenerationException && _grid is not null)
+        {
+            throw new PartialGenerationException(e.Message, _grid);
+        }
+    }
+
+    TileGrid Layout(string graphPath, int orientation)
+    {
+        Graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
+        if (orientation != 0) throw new NotSupportedException($"turning a tile graph (orientation {orientation}) is not ported");
+        Prepare(Graph, rng, vaalSideArea);
+        notes.Add($"graph {graphPath}: {Graph.Nodes.Count} nodes, {Graph.Edges.Count} edges after exist rolls");
+        var cells = new VoronoiCells(Graph);
+        cells.Jitter(rng);
+
+        string masterPath = TerrainText.Resolve(graphPath, Graph.MasterFile);
+        var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
+        // The tile map has the graph's size plus the outer buffer on every side; graph positions sit at the buffer.
+        int buffer = int.Parse(master.GetValueOrDefault("OuterBufferSize", "0"));
+        var grid = new TileGrid(Graph.Width + 2 * buffer, Graph.Height + 2 * buffer) { GroundFlags = g => files.Ground(g)?.Flags ?? 0 };
+        _grid = grid;
+        var store = new TileStore(files, files.TileList(TerrainText.Resolve(masterPath, master["TileSet"])));
+        var rooms = new RoomSetIndex(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
+        var special = new SpecialNodes(files, rng, notes, Graph, grid, buffer, store, rooms) { BeforeRelax = () => onStage?.Invoke("relax", Graph) };
+        special.Run();
+        onStage?.Invoke("special", Graph);
+        // Edges whose type is a wildcard leave the graph (0x141f4f130).
+        foreach (var e in Graph.Edges.Where(e => files.Edge(e.Type)?.Wildcard == true).ToList()) Graph.RemoveEdge(e);
+        var router = new EdgeRouter(Graph, grid, buffer, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type));
+        // 0x142122d90: the special stage's failed nodes, then plain nodes with more than two edges, are exploded.
+        foreach (var n in special.Failed) special.Explode(n);
+        foreach (var n in special.Plain.Where(n => n.Degree > 2)) special.Explode(n);
+        onStage?.Invoke("beforeRoute", Graph);
+        router.Run();
+        onStage?.Invoke("route", Graph);
+        new EdgeShaping(Graph, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type)).Run();
+        onStage?.Invoke("corners", Graph);
+        foreach (var n in special.Failed)
+        {
+            special.TileLessVirtual(n);
+            onStage?.Invoke("virtualNode", Graph);
+        }
+        new EdgeSplitting(Graph, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type), special.Plain,
+            t => files.Edge(t) ?? throw new FileNotFoundException(t)).Run();
+        onStage?.Invoke("split", Graph);
+        new LinkMerge(Graph, special.Plain).Run();
+        onStage?.Invoke("merge", Graph);
+        // 0x142003bc0, then another corner rounding (0x14210aeb0, up to five rounds), then the plain nodes.
+        Graph.Nodes = [.. Graph.Nodes.OrderByDescending(n => n.Priority)];
+        var shaping = new EdgeShaping(Graph, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type));
+        shaping.RoundAll();
+        special.RunPlain();
+        onStage?.Invoke("plain", Graph);
+        // 0x142114ea0: every node's edge slots move to the front, in order; then another corner rounding.
+        foreach (var n in Graph.Nodes)
+        {
+            var edges = n.Slots.Where(e => e is not null).ToArray();
+            for (int i = 0; i < 4; i++) n.Slots[i] = i < edges.Length ? edges[i] : null;
+        }
+        shaping.RoundAll();
+        onStage?.Invoke("beforeTiling", Graph);
+        // The edge types whose tiles get their open sides filled (0x141feed20) are listed in the FillTiles object
+        // (master +0x218, +0x140); a .gft that names edge types is not ported.
+        string? gftPath = master.TryGetValue("FillTiles", out var gft) ? TerrainText.Resolve(masterPath, gft) : null;
+        if (gftPath is not null && (files.Text(gftPath) ?? "").Contains(".et\"", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException($"{gftPath}: fill tiles with edge types (FillTiles +0x140, 0x141feed20) are not ported");
+        List<EdgePoint> edgePoints = [];
+        var tiling = new EdgeTiling(Graph, grid, buffer, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type), files, store, notes, edgePoints);
+        tiling.Run();
+        special.RunLonely();
+        // The vertex grounds (0x142110a20, 0x142118470 heights, 0x142110d60, 0x141feed20).
+        var grounds = new GroundStages(grid, buffer, Graph.Width, Graph.Height, files);
+        grounds.Lock();
+        grounds.Flood();
+        var heights = new HeightLevels(grid, buffer, Graph.Width, Graph.Height, files);
+        heights.Run();
+        // 0x1420289a0 (the primary subgraph; the only kind ported).
+        grounds.Walkability(ImpassableGround, files.HasTransition);
+        // 0x142110d60's levels: the master's +0x146 / +0x144 when set (not ported: no ported master sets them), else
+        // the view's highest and lowest vertex heights, 0 without heights.
+        var levels = grid.HasHeights ? heights.Range() : (0, 0);
+        string? GraphGround(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
+        // The graph's top ground (+0xa0) goes on the highest level, its bottom ground (+0xa8) on the lowest, its
+        // default ground (+0xb0) on every vertex still without one.
+        LevelGenerator.PaintStarting?.Invoke(grid, buffer);
+        grounds.FillUnset(GraphGround(Graph.DefaultGround), GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), levels);
+        grounds.EdgePoints(tiling.EdgePointTiles, edgePoints);
+        grounds.Unlock();
+        // +0x90 / +0x94 = the levels: from here on the fill object's listener (0x141fef240) repaints the level grounds
+        // under every tile that room tilising and the fill place.
+        var painter = grounds.LevelPainter(GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), levels);
+        special.TilePlaced = painter;
+        // 0x142115390 (master +0x92 off, area unique rooms), 0x142115cc0 (chests), 0x142115140 / 0x1421162d0
+        // (pre-unique rooms): none draws for the ported areas; not ported.
+        // 0x141ffe240, then the first overlay pass (0x141fff1a0 with bit 1).
+        var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
+        var overlays = new Overlays(files, rng, notes, grid, buffer, Graph.Width, Graph.Height, special, [.. special.Rooms],
+            int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
+        foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays.Run(pass, afterFill: false);
+        onStage?.Invoke("overlays", Graph);
+        // 0x141fef070, then the second overlay pass (bit 2, after the fill).
+        if (gftPath is null) throw new InvalidOperationException("Cannot tilise blank: Fill tile list is not specified");
+        LevelGenerator.FillStarting?.Invoke(grid, buffer);
+        new Fill(files, rng, grid, buffer, Graph.Width, Graph.Height, store, files.FillTiles(gftPath), special.Rooms, notes) { TilePlaced = painter }.Run();
+        foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays.Run(pass, afterFill: true);
+        // 0x1421193d0 (storeys: plain tiles take their neighbours' heights), then the mirror seams (0x142025440).
+        new Storeys(grid, buffer, Graph.Width, Graph.Height, files).Run();
+        new Seams(files, rng, grid, buffer, Graph.Width, Graph.Height, store, special.Rooms,
+            (GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), GraphGround(Graph.DefaultGround)), notes).Run();
+        // 0x14203ece0: the TileSet's post-unique tiles.
+        PostUniqueTiles.Run(rng, grid, buffer, Graph.Width, Graph.Height, store, notes);
+        // 0x142049d10 → 0x142044f30: per subgraph the outer ground (0x14201db80, needs the master's OuterGroundType) and
+        // the outer buffer (0x14201ffa0).
+        if (master.ContainsKey("OuterGroundType")) throw new NotSupportedException("OuterGroundType (0x14201db80) is not ported");
+        if (buffer != 0)
+            new OuterBuffer(files, rng, grid, buffer, buffer, buffer + Graph.Width, buffer + Graph.Height, store, files.FillTiles(gftPath), notes).Run();
+        // 0x14204cbd0 (after the layout 0x142049d10): every tile origin with a height offset has it multiplied by the
+        // master's StoreyHeight (+0x14a, default 0), row by row (0x141d83060). Levels become the client's units here.
+        int storey = int.Parse(master.GetValueOrDefault("StoreyHeight", "0"));
+        for (int y = 0; y < grid.Height; y++)
+            for (int x = 0; x < grid.Width; x++)
+                if (grid[x, y] is { IsOrigin: true, HeightOffset: not 0 }) grid.ScaleHeight(x, y, storey);
+        // The tile grid is final here (0x1420289a0 / 0x142028870 set grounds and entry flags only); the doodads
+        // (0x1420425d0) are not ported, as for the towns.
+        return grid;
+    }
+
+    /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws).</summary>
+    internal static void Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea)
+    {
+        foreach (var n in graph.Nodes)
+        {
+            // 0x14203a600: a random offset inside the node's rectangle.
+            if (n.OffsetX1 != n.OffsetX2 || n.OffsetY1 != n.OffsetY2 || n.OffsetX1 != 0 || n.OffsetY1 != 0)
+                throw new NotSupportedException("node random offsets (0x14203a600) are not ported");
+            if (n.Descriptions.Any(d => d.StartsWith("subarea", StringComparison.OrdinalIgnoreCase) ||
+                                        d.StartsWith("league=", StringComparison.OrdinalIgnoreCase) ||
+                                        d.StartsWith("shuffle", StringComparison.Ordinal)))
+                throw new NotSupportedException($"{n}: description-driven node passes are not ported");
+            if (n.Tag == "league") n.Exist = 0;
+        }
+        // 0x14203a480: a tag listing alternatives "a,b,c" keeps one of them.
+        foreach (var n in graph.Nodes)
+        {
+            if (!n.Tag.Contains(',')) continue;
+            var parts = n.Tag.Split(',');
+            if (parts.Length > 1) n.Tag = parts[(int)rng.Next((uint)parts.Length)];
+        }
+        SideAreas(graph, rng, vaalSideArea);
+        // 0x142031390: exist rolls, nodes then edges; failed edges go first, then failed nodes.
+        var nodesOut = new List<GraphNode>();
+        foreach (var n in graph.Nodes)
+        {
+            if (n.Exist != 0)
+            {
+                if (n.Exist > 99) continue;
+                if (rng.Next(100u) < (uint)n.Exist) continue;
+            }
+            nodesOut.Add(n);
+        }
+        var edgesOut = new List<GraphEdge>();
+        foreach (var e in graph.Edges)
+            if (e.Exist == 0 || rng.Next(100u) >= (uint)e.Exist) edgesOut.Add(e);
+        foreach (var e in edgesOut) graph.RemoveEdge(e);
+        foreach (var n in nodesOut) graph.RemoveNode(n);
+        // 0x142003bc0: stable sort by priority, highest first.
+        graph.Nodes = [.. graph.Nodes.OrderByDescending(n => n.Priority)];
+    }
+
+    /// <summary><c>0x142032320</c>: nodes with a description "sidearea&lt;N&gt;" (the first such, N from '1'; none = 1) are
+    /// Vaal side area entrances, grouped by N. When the area rolled a Vaal side area (generator +0xa), one node of a
+    /// random group keeps its entrance: <c>Next(groups)</c>, <c>Next(group size)</c> (unused), the group shuffled, its
+    /// first node loses its "unique…" descriptions, gets exist 100 and "accessible". Every other grouped node gets exist
+    /// 0 with its descriptions cleared, so the exist rolls remove it (a tagged one stays as a plain node).</summary>
+    static void SideAreas(TileGraph graph, LevelRandom rng, bool vaalSideArea)
+    {
+        var groups = new List<List<GraphNode>>();
+        foreach (var n in graph.Nodes)
+        {
+            var d = n.Descriptions.FirstOrDefault(d => d.Length > 7 && d.StartsWith("sidearea", StringComparison.Ordinal));
+            if (d is null) continue;
+            int g = d.Length < 9 ? 0 : d[8] - '1';
+            if (g < 0) throw new NotSupportedException($"{n}: side area group '{d}'");
+            while (groups.Count <= g) groups.Add([]);
+            groups[g].Add(n);
+        }
+        groups.RemoveAll(g => g.Count == 0);
+        if (groups.Count == 0)
+        {
+            // The generator then adds the VaalSideArea extra terrain feature row itself (not ported).
+            if (vaalSideArea) throw new NotSupportedException("a Vaal side area without sidearea nodes is not ported");
+            return;
+        }
+        if (vaalSideArea)
+        {
+            var group = groups[(int)rng.Next((uint)groups.Count)];
+            rng.Next((uint)group.Count);
+            rng.Shuffle(group);
+            var keep = group[0];
+            keep.Descriptions.RemoveAll(d => d.StartsWith("unique", StringComparison.Ordinal));
+            keep.Exist = 100;
+            keep.Descriptions.Add("accessible");
+            group.RemoveAt(0);
+        }
+        foreach (var n in groups.SelectMany(g => g))
+        {
+            n.Exist = 0;
+            n.Descriptions.Clear();
+        }
+    }
+}
+
+/// <summary>Generation stopped at a part that is not ported; <see cref="Grid"/> holds the tiles placed so far.</summary>
+public sealed class PartialGenerationException(string message, TileGrid grid) : NotSupportedException(message)
+{
+    public TileGrid Grid { get; } = grid;
+}

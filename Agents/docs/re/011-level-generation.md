@@ -1,0 +1,722 @@
+# 011 — The client's level generator (port in progress)
+
+Goal: the server generates every non-town, non-hideout area from a **random seed** exactly as client 3.29.3b does,
+so walkability, area transitions, waypoints and room points no longer need a `live.ps1 -Walkmaps` capture per
+(area, seed). State of 2026-10-22: the pipeline is mapped (below); ported and checked against the live client: the RNG,
+the tile hash, the extra-terrain-feature rolls (for areas without area stats), the topology pick, and fixed layouts with
+one room (`.dgr`): **Lioneye's Watch generates on the server tile for tile** (hash 1139181677, all 540 entries, every
+draw up to the finished grid), and tile graphs (`.tgr`) far enough that **The Twilight Strand seed 1 generates tile
+for tile** (hash 266153788, every draw up to the finished grid, §3g). Not ported: what §3g lists, doodads. Seeds stay pinned to 1 until an area's generation matches (Roadmap "Server-side level
+generation"). Code: `src/GameServer.Data/Terrain/Generation/`.
+
+Size: the call tree under `0x14204d820` (callers ≤ 30, so allocators and strings excluded) is about 1 800 functions /
+1.1 MB of code, ~89 of which draw random numbers. Most of it sits in `0x141fe0000`–`0x142130000`; the file parsers
+are at `0x1429f0000`–`0x142a20000` and `0x142bb2a10`.
+
+## 1. Entry and order
+
+`0x142183130` (area load job, after 0x1d queues it) builds the generator (`0x14203bce0`, vtable `0x1435c6988`) and
+calls `0x14204d820` "Generating terrain...". The generator object (`gen`):
+
+| Field | Meaning |
+|---|---|
+| `gen[5]` (+0x28) | the tile grid (world vtable +0x180): +0x18 u64 width, +0x20 u64 height (in tiles), +0x28 entries of 0x38 bytes |
+| `gen[6]` (+0x30) | generation params (world vtable +0x1a0): +0 u32 seed, +4 u32 seed actually used, +8/+10 flags, +9 u8 primary subgraph count, +0x10 vector of subgraphs (0x98 bytes each) |
+| `gen[7]` (+0x38) | the world: +0xb0 WorldAreas row, +0xd0 topology variant, +0xd4 u8 level, +0x114 tile hash, +0x120 area stats (vtable +0 = stat lookup by id) |
+| +0x40 | extra terrain features to add (`0x141f28aa0(name, count)`) |
+| +0x88..+0x90 | ExtraTerrainFeatures rows |
+
+`0x14204d820` in order:
+1. seeds the thread-local RNG (TLS +400) with `gen[6]+0` (§2); WorldAreas byte +0x14e disables `Next` (always 0).
+   Stats 0x22c1 / 0x22c2 / 0x528b set flags. Plugins (world +0xe0..+0xe8, vtable +0x10) run.
+2. `0x14204a570` — extra terrain features: area-stat and WorldAreas-driven rolls (strongboxes, shrines, league
+   encounters, discoverable hideouts…). It **draws even in plain campaign areas** (e.g. `Next(100)` against
+   WorldAreas chances, `Next(100000)`), so it must be ported for the stream to line up.
+3. `0x142049d10` — the layout: `0x142047e50` picks the topology (vtable slot 0 = `0x142046c60`, §3), sub-areas
+   (slot 1 = `0x142047540`), places secondary subgraphs around the primary (`0x1420487f0`, sorts), sizes the grid
+   (`gen[5]` vtable +8); then `0x1420452e0` "Processing subgraph" per subgraph (the room/tile solver), overlays
+   (`0x142049ef0`), `0x1420455f0`, plugins +0x28, `0x14202eaf0`, `0x142044f30`.
+4. `0x14204c7e0` (Betrayal forts / Vaal side area, when gen +0xe), `0x14204cbd0` (scales tile heights by the master's
+   +0x14a), `0x14204cdc0` (VaalSideArea), plugins +0x48, world +400 → `0x141ebfeb0`.
+5. `0x142049420` (outside tiles), `0x141d85970(gen[5])`, then vtable +0x48 `0x142048930` (zones / environments),
+   +0x58 `0x1420425d0` "Generating doodads...", +0x50, +0x20, `0x14204d0f0`.
+6. tile hash `0x141d8a460(gen[5])` → world +0x114 (§6), logged "Tile hash:" and sent in C→S 0x7d.
+
+"Retrying with seed: {}" — a failed generation is retried with another seed (`gen[6]+4`); the trace records it.
+
+## 2. Random numbers (`LevelRandom.cs`)
+
+| Client | Port | What |
+|---|---|---|
+| TLS +400, `0x14204d820` | constructor | `std::mt19937` (MSVC double-buffer layout: +8 index, +0xc state[624·2], +0x1390 temper mask 0xffffffff), standard seeding |
+| `0x140a0f990` | `NextRaw` | one mt19937 output (standard tempering) |
+| `0x141f5d130` | `Uniform(n)` | MSVC `_Rng_from_urng`: one draw, rejected while in the last incomplete bucket; n ≤ 1 draws nothing |
+| `0x141ff9720` | `Next(n)` | n = 0 → 1; returns 0 without drawing when the area disables randomness |
+| `0x141f4fb80`, `0x14212d7f0`, `0x142129060`, `0x142037ea0` | `Shuffle` | forward shuffle: element i swaps with i + Uniform(remaining) (the last one draws nothing); `0x142037ea0` stops after a count |
+| `0x142054a50` | `Chance` | percent roll: ≤ 0 never, ≥ 100 always, else `Next(100) < p` |
+| `0x140e3b310` | `LcgBits` | MSVC `rand()` LCG at TLS +0x170 (×0x41c64e6d + 0x3039, 15 bits per step) |
+| `0x142046a70` | `PickIndex(AndOrientation)` | one `Next(0xffffffff)` seeds the LCG; index by rejection over bit-length(n−1) bits; orientation restarts the LCG from the same seed: 10 bits until ≤ 0x347, then `0x14299da50` |
+| `0x14299da50` | `OrientationFromMask` | r-th allowed code of a mask (0 / 0xff = r & 7) |
+| `0x141d75980` | — | composes two orientation codes (9 × 9 table) |
+| `0x141d8bba0` | — | proportional share with a random remainder (`Next`), used when splitting counts |
+
+Checked: the first draw of Lioneye's Watch seed 1 is 1791095845 in the client trace and in the port (test
+`FirstDrawsMatchLionsEyeWatchTrace`).
+
+## 3. Topology
+
+`0x142046c60`: stat 0xc1f forces topology N (1-based), stat 0xc20 an orientation (else 8 = random). Otherwise
+`0x142027a20(area, world +0xd0)` lists the area's Topologies (WorldAreas in-memory +0x68 count / +0x70 rows) whose
+Topologies +0x2c equals world +0xd0, else those with 60 (the default; 59 = Deepwater variants), else retries with 1.
+`0x142046a70` picks one (`PickIndexAndOrientation`, mask from Topologies +0x1c, a list of codes, 8 = all; every row
+lists `[0]` in 3.29.3b, so the orientation is 0). `0x142046340` then loads the graph (`0x141ff9340`: .dgr sets
+flag 1, .tgr not) and `0x1420457f0` adds it as a subgraph: its master file (`0x14203c190`: the area's TSI override at
+row +0x192, else the graph's `MasterFile:`, following .tgr/.dgr to their own master; a non-file name picks among
+masters with `Next`), size from the graph (+0x40 / +0x48) scaled by the master's tile units (+0x149 − +0x14b), the
+master's outer buffer (+0x170..+0x173), and the orientation's placement code (`0x142fa04b0`, as in
+[08](../protocol/08-area-transitions.md) §5).
+
+## 3b. Extra terrain features (`ExtraTerrainFeatures.cs`)
+
+`0x14204a570` returns at once for towns, areas with randomness off (WorldAreas +0x14e, hideouts), area type
+(+0x1e4) 0x13 and HASH16 0x8f53. Otherwise, with every area stat 0 (no map mods), its rolls come from the area's
+`WorldAreaLeagueChances` row (+0x22a; +0x23e when world +0xd7) read by byte offset: Vaal side area `Chance(+0x60)`;
+maps above level 72 a labyrinth trial `Chance(+0x6c)`; the discoverable hideout of `Hideouts.dat` (the row whose
+SpawnAreas +0x1a lists the area: +0x42 enabled, +0x43 chance in 10 000; campaign hideouts have 10 000, no draw);
+league mechanics by `CoreLeagues` row N (`0x14204a310` → `0x141ea1f50` picks the league-chances field: 1 → +0x24,
+7 → +0x40, 0xf → +0x2c, 0x10 → +0x48, 0x12 → +0x34, 0x1b → +0x9c) rolled by `0x141ea2400` with the percent roll
+`0x142054a50`; the fishing mission `Next(100000) == 0` when +0x88..+0x94 sum above 0. A zero chance draws nothing,
+which is why the traces of The Twilight Strand and The Coast start with the topology pick. Rolls with a nonzero
+league-mechanic chance (`0x141ea1c80`, which mixes in stats) are not ported and throw. The WorldAreas row in memory
+is the `.datc64` row, so `AreaInfo.Load` reads these offsets from the file (`RawDat`).
+
+## 3c. Fixed layouts: one room (`LevelGenerator.cs`, `DungeonTiler`)
+
+The `.dgr` path of `0x1420452e0` is `0x14203c900`: rooms placed by `0x1421038d0`, then `0x1420f3480` tilises.
+For a one-node graph (towns, hideouts):
+
+1. **Grid**: graph `Size` × master `RoomUnitSize` (town 5 × 3 × 6 = 30 × 18); hideouts add the master's
+   `OuterBufferSize` around it (HideoutForest 21 + 2 × 6 = 33, not ported).
+2. **Room**: `0x142105a70` picks among the RoomSet's (.rs) rooms with the node's tag, `Next(total weight)` (the town
+   has one: `Next(1)`, no draw). Its orientation is the node's rotation word (`R270` = code 3) composed with the
+   topology's (`0x141d75980`, 9 × 9 table).
+3. **Tilise** (`0x1420ef310`), slot by slot, row by row in the room's own grid: a 'k' slot whose key has no edges,
+   no tag, no corner heights and one ground on all corners is left for the fill (`0x1420eec10` records its cells
+   with the ground); any other slot's key is turned by the room's orientation and looked up in the tile store
+   (`0x141d81f70`): `Next(total weight)` over the candidate list (`0x141d902d0`), placed at the turned footprint's
+   top-left corner with the picked orientation (`0x141d833e0`; entries +0x34/+0x35 = offset inside the tile).
+4. **Tile store** (`0x141d81590`): the master's TileSet (.tst, `0x1429f7040`: optional weight, quoted path,
+   orientation words `I`, `R90`, `FR180`, … as a mask, none = all; `include`); every tile is filed for each
+   orientation of its mask (and of the tile's own restriction mask, tile data +0x171, not ported) under (tag, key
+   turned by that orientation), in list order. Tiles tagged `postunique` are not filed: they go to the TileSet's +0x80
+   list (step 7b). A tile whose key is
+   the same under two orientations is listed twice (live probe: `[(straight, 0), (straight, 4)]`). The key
+   (`TileKey.cs`): edges, size, corner grounds (a ground whose .gt sets flag bit 4 is left out, `0x141d813c0`; the .gt parser `0x1429f6a80` reads
+   five flag numbers after the name, number i → bit i, and a number the file leaves out keeps its default 1, 1, 1, 1,
+   0: `chris_sand_dune.gt` "1 0" has flags 1 | 4 | 8),
+   corner heights, edge points; turning uses the tables `0x142fbe3b8` / `0x142fbe3d8` and mirrors edge points for
+   codes 4..7 (`0x141d80480`). `.tdt` layout after the string table: u32 "", u32 .tgt, u32 tag, 4 × u32 edges,
+   u8 w, u8 h, 4 × u32 grounds, 4 × i8 heights, 4 × u8 points a, 4 × u8 points b.
+5. **Fill**: the recorded cells plus every still-empty entry (ground "default"), sorted by (x, y), so column by
+   column (`0x14212d520`); each empty one gets a tile from the master's FillTiles (.gft: quoted ground name, then
+   "weight path") for its ground's name (.gt first line): `Next(total weight)`, then for a square tile `Next(8)` as
+   its orientation (`0x141fecd00`; non-square tiles use `Next(840)` and a mask, not ported).
+6. **Mirror seams** (`0x142025440`, after `0x1420f8f20`, which draws only when +0xb0 lists cells): row by row, a
+   placed tile larger than one entry, without a tag and not a plain fill tile, whose neighbour one tile size away
+   (up, right, down, left) is the same tile in the mirrored orientation (left/right: 0↔4, 1↔7, 2↔6, 3↔5; up/down:
+   0↔6, 1↔5, 2↔4, 3↔7) is re-picked (`0x142027670`) among its key's candidates that make no such seam with their up
+   and left neighbours (`0x142026100`) and do not mirror that neighbour: `Next(total weight)`. With none left, the
+   edge-point fallback `0x142026bc0` (not ported; it found nothing in the town either). This is why every
+   symmetric edge tile of Lioneye's Watch ends in orientation 4 or 6 whatever its first pick.
+
+Lioneye's Watch (seed 1): topology (MT draw + 10 LCG bits), room `Next(1)`, 11 keyed slots, 82 fills, 3 seam
+repairs: the grid is final after 181 logical draws, all equal to the trace's. The client's next draws
+(`0x141530658`, `Next(100)` / `Next(110)`, ~300) and LCG bits at `0x142be7a0b` belong to later stages (meshes,
+doodads).
+
+## 3c2. Dungeon layouts: several nodes (`DungeonLayout.cs`, `DungeonRoomSet.cs`)
+
+A `.dgr` graph with more than one node goes through `TileGraphGenerator.Prepare` (the same exist rolls as a tile
+graph) and the layout `0x1421038d0` on a grid of the graph's `Size` in room units (a `DungeonMap`: cell 0 free, 1
+reserved, k ≥ 2 = room k − 2). **The Ship Graveyard Cave (`1_1_9a` seed 1, `shipdungeon1_4.dgr`, 9 × 6 units of 7
+tiles) generates tile for tile: all 2 835 entries, tile hash 3341726258, all 2 076 draws up to the doodads** (the
+225 layout draws, the cells at every recorded stage and all 17 rooms included). So does **the Prison (`1_1_7_1` seeds
+1, 1898277627, 4162278830; `prisonlower_4_1.dgr`, 12 × 8 units of 5, buffer 5, 59 × 43): seed 1 all 2 537 entries,
+tile hash 1542354689, all 1 962 draws up to the doodads, all 13 rooms** (untagged nodes, special rooms, door tiles).
+
+The master's **RoomOverlap defaults to 1** (Lioneye's Watch sets 0; the cave and the tile-graph masters set nothing):
+rooms step by unit − overlap tiles and share their outer row and column with the neighbour. For tile graphs it only
+shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after version 21, room data +1) is the same.
+
+- **.dgr records** (`0x142a0c0a0`): after the grounds a `Default%:` line (branching, extra door, fuzzy %, and after
+  version 22 `open_extra_doors_into_impenetrable_rooms`); a node adds a voidness word `V`/`N` (+0x88) and, after
+  version 21, its branching byte (+0x89); an edge adds chance2 (+0x4c), chance1 (+0x48), depth (+0x50), branch type,
+  extra door % (+0x54: the path rooms' extra door chance, room +0x10) and type (+0x70, default rooms.et), fuzzy
+  (+0x58), bias (+0x5c: the path rooms' search bias, fill state +8, and the edge lists' key), `I`/`P` (+0x60), `V`/`N`
+  (+0x61), accessible (+0x62). (The reader stores them in this order; the port had +0x54 and +0x5c swapped until
+  2026-10-23.)
+- **Room set** (`0x141ff7930`, `.arm` header `0x142a0f3a0`): unit, size in units, tag, unique, the room's own key
+  line (any slot, read by `0x142a0e2a0`: `k`, or `s` in `shrine_1_1.arm`), then 2(w + h) exits clockwise (top left → right, right top → bottom, bottom right → left, left bottom → top):
+  door type, height, chirality. Per door type a size table (`0x141ff5760` / `0x141ff6350`, the fill's sizes: the
+  weights of the rooms filed under the type, at the sizes some room allows: a room that is not unique, room data +6,
+  and, for rooms.et, whose exits all have a door at height 0); per tag
+  every room in every orientation of its mask (the "" list: untagged rooms); per size every room that is not unique
+  and not of a special tag (shrine, mission, stonecircle, preunique, injectors), in every orientation that gives that
+  size. Turning exits (`0x141ff2ca0`, `0x141d75a50`): exit i → (j + a·w + b·h) mod 2(w + h), a = 0 0 1 1 1 1 2 2,
+  b = 0 1 1 2 0 1 1 2, j = i or, mirrored (4..7), 2(w + h) − 1 − i, which also flips a directional type's chirality.
+- **Order** (`0x1421038d0`): void edges reserve their Bresenham line (`0x142002460`); tagged nodes then untagged,
+  by priority, take a room of their tag (see "Node rooms" below); teleport flags (`0x142100be0`); then, edge list
+  by edge list (`0x1420028c0`: per priority group and slot, the slot's edges keyed by `0x1420014a0`: I first, then
+  bias descending (unsigned), then the door type's n0 (.et +0x4c) descending, then the type's path in ordinal order
+  (`0x142006570`); one list per key in key order; each `Next(count)` + shuffle, by priority), `0x1421040c0`:
+  1. **Fill** (`0x1420fd4e0`): row by row each free cell gets a blank of one of the type's sizes (≤ 5
+     `Next(total)` tries, else the first size, else 1 × 1); new rooms draw their `Next(128)` (`0x1420fd1f0`).
+  2. **Connect** (`0x1420facb0`): A* over rooms (`0x1420fb720`: step = half the centre distance in half units,
+     estimate = half distance × (100 − fuzzy) + bias × 128 / 100 + fuzzy × the room's `Next(128)`), then from the far
+     end every room joins the path at the edge's level and each step opens a door (`0x142001e80`: the possible doors
+     `0x1420017a0`, `Next(count)` + shuffle, the first).
+  3. **Prune** (`0x1420fd9c0`): rooms off every path go (two-pointer swap), paths renumbered, cells rebuilt.
+- **Branches** (`0x1420fc690`): the paths' door types sorted, `Next(count)` + shuffle, rooms.et last and types with
+  one size first; for each type with a path whose edge has chance1: fill again, then `0x1420fca30`: blanks next to
+  branching end nodes learn the path level (`0x1420fa120`); the path rooms (ends only for branching nodes) offer their
+  neighbours (`0x1420fc240` → `0x1420fbfe0`: off every path, not impenetrable, levels fit, and `0x1420fb480`: a door
+  there leaves some untagged room able to fit the blank, `0x141ff89d0`); below 100 % the offers are cut to
+  share(chance1, n) (⌊c·n/100⌋ + (`Next(100)` < remainder)) after `Next(n)` + shuffle; each offer is taken
+  (`0x1420fcf40`: level, type, flags, kind 5, a door, and while depth is left it offers its own neighbours); then
+  round by round the new offers are shuffled, grouped by chance2 and share(chance2, n) of each taken. Prune.
+- **Extra doors** (`0x142100d60`, rooms with a chance at +0x10) and **door swaps** (`0x1421012c0`, master
+  `SwapDungeonDoorsFrom` / `To`): ported, not exercised by the cave.
+- **Room picks** (`0x1421083e0`, each room on a path): a blank with a door type and no descriptions takes a room of
+  its size whose exits have its doors (`0x141ff8300` → `0x141ff84e0`; strict = no extra exits, else extra exits of
+  types that can end (.et flag 0x10) on the first pass, any on a second); weight (10 e² + 1) × room weight, e = empty
+  exits both share; `Next(total)`, `Next(840)` the orientation among those that fit (`0x14299da50`); once more when a
+  side neighbour already holds that room (`0x142108920`). The entry takes the room's turned exits (`0x1420fe360`).
+- **Node rooms** (`0x142105a70`, a tagged node that is not "graph"): the wanted exits (`0x142104990`, fixed
+  orientation): one per slot edge in slot order, (type, max of the edge's two nodes' heights − the node's, chirality
+  = directional type and (node is the edge's A) xor edge chirality; `0x141ff2ee0`). The candidates
+  (`0x141ff8ff0`) are the room set's per-tag (room, orientation) entries (weight ≠ 0) whose turned exits hold the
+  wanted ones as a multiset keyed by (type, height, chirality) (`0x141ff8900`). None → the generator's extra room
+  pool (layout +0x38 = generator +0x40, filled per graph by `0x14204bfa0` / `0x141d8bba0`; entries with an id, −1 =
+  any, matched to layout +8; every orientation at weight 1; `0x141d8b750`; the Labyrinth's `secret` rooms; not
+  ported), else "No possible rooms found". Then `0x1421298e0` keeps those in the node's orientation (any for 8 and
+  9) that pass `0x1421065a0`: cells free or reserved at the anchor (`0x1420fe0e0`); unless the room is the map's
+  size, its doors leading to a cell inside the map must number at least the node's edges; a door into a placed room
+  (not a blank) whose facing exit has another type is a mismatch (doors of rooms.et = layout +0x20, or of an .et
+  with flag 0x10, aside). Mismatched entries go when some entry has none. Empty → "No suitable room found". Then
+  `Next(total)`, the anchor (`0x1421062e0`, graph orientation), and once more when a side neighbour holds that room
+  (`0x142108920`). Orientation 9 (`0x142104990`'s first branch: the slot edges sorted by the direction to their next
+  point, `0x141ff81b0`) is not ported.
+- **Untagged nodes** (`0x142107130`): blank kind 3; its sizes from the first slot edge's type (`roomSet.Sizes`,
+  `0x142106db0`, "size:" description filter `0x142127f90`), `Next(total)`, anchored at the graph-oriented corner (not
+  clamped); the rectangle must be free cells with no other node's cell (`0x1421069d0` → `0x142133340`), else that
+  size is dropped and the pick redrawn.
+- **Special rooms** (room data tags starting "special": .arm flag +8, number after "special" at +4 else −1, chance +5
+  default 100; filed apart, `DungeonRoomSet.Apart`, so out of the size tables): `0x142101aa0` → `0x1420ed7a0` →
+  `0x1420ff140`: each unnumbered special room by its chance; candidates are the accessible placed rooms with a room,
+  not special, empty tag, whose size and exits fit some allowed orientation (the first, `0x1420ffb90`; exits by
+  `0x1420feff0`, door types that can end may be missing); `Next(count)` over them, `Next(1)`; the entry takes room
+  and orientation, kind 8. Not ported: numbered lists, placement over several rooms (`0x1420ffcf0`), injector rooms,
+  room data +9 / +0x13a, `0x142101e50` / `0x142102170` / `0x142103490`.
+- **End** (0x142103f31): door counts (`0x142100910`); fill rooms (`0x142108dc0`, below); the special rooms;
+  reserved cells become free; fill rooms again.
+- **Fill rooms** (`0x142108dc0` → `0x142108f70` while it places one, first for grounds with .gt flag 2, then the
+  rest): every placed room (those placed in the pass too) whose two corner grounds along a side are the same (room
+  data +0x13a = the room key's corners TL, TR, BR, BL, turned: table 0x142fbe348 = inverse orientation, then
+  rows 0 1 2 3 / 1 2 3 0 / 2 3 0 1 / 3 0 1 2 / 1 0 3 2 / 2 1 0 3 / 3 2 1 0 / 0 3 2 1) offers each cell across that
+  side (right, bottom, left, top) at the level of the exit there (master DungeonFillRoomHeightOverride, +0x159 /
+  +0x14d, not ported) to `0x1421096f0`: a free cell (0) takes a fill room of that ground. Fill rooms (room data +9,
+  `0x141ff4e70`: four equal corner grounds, no exits, +0x40 clear, taken to be no tag and not unique) are filed by
+  `0x141ff5760` per ground into a size list (room set +0x98: (w, h) and, not square, (h, w), each at the room's
+  weight) and per (ground, size) into a room list (+0xd8: mask all for square, else & 0x55 at (w, h), & 0xaa at
+  (h, w)). `Next(size total)`; `0x142109e90` tries the size with the cell at its top left, top right, bottom left,
+  bottom right (`0x142109c10`: inside, free cells `0x1420fe050`, `Next(room total)`, `Next(840)` orientation
+  `0x14299da50`, placed kind 6 at the level, accessible when the ground is null or has .gt flag 4 and is not
+  master +0x230, taken to be OuterGroundType); a size that fits nowhere goes and the pick repeats. Master
+  +0x238 / +0x240 ground overrides over a flooded region (`0x142108a40`) are not ported.
+- **Search neighbours** (`0x1420fb720` → `0x1420fee60` with `0x1421337a0`): a neighbour is kept when a door from
+  the current room to it is possible (`0x1420fb650(cur, n, level, type, chirality)`); the step test is then
+  `0x1420fb650(n, cur, …, chirality ^ 1)`. The port had the first one reversed, so paths of door types with a
+  direction never connected (57 oracle loads).
+
+- **RoomOverlap in the layout:** the middle of three rooms on a path (`0x1420fa240(next, middle, before, …, type,
+  chirality)`, in the connect and for every path in the branches) lets the blanks across its doorless exits learn
+  that exit's level, and a branch room (`0x1420fec10`) the blanks around it and across its corners
+  (`0x1420fa120`). For a door type with a direction (no RoomOverlap test): the sides of the middle room's first
+  door to `next` (chirality flipped) and to `before` (`0x1420017a0`); for ground 1 (null or .gt flag 1) the sides
+  (1 + 2·flipped + door side) & 3, for ground 2 (1 + 2·chirality + door side) & 3, each through `0x1420fa750`:
+  when side s (top, right, bottom, left) has no door, the blanks across the side in the order top, bottom, left,
+  right (s → that one, as the client) learn their levels.
+
+`levelgen generate` compares the trace's `dungeon.stages` (cells at the entry `<` and exit `>` of each stage) and
+`dungeon.rooms` with the port's (`LevelGenerator.DungeonStage` / `DungeonRooms`).
+
+**Tilising** (`0x14203c900` → `0x1420f3480`, `DungeonTiler` in `LevelGenerator.cs`):
+
+1. **Grid:** (unit − overlap) × size + overlap tiles plus OuterBufferSize on every side (cave: 6 × 9 + 1 + 8 = 63,
+   6 × 6 + 1 + 8 = 45); room k at buffer + (unit − overlap) × its cell.
+2. **Rooms** (`0x1420ef310`, map order): slot by slot as for the towns (`k`, `f` and `s` slots; height = slot height +
+   room level). A key's last number (slot +0x73, "corner": 0 top left, 1 top right, 2 bottom right, 3 bottom left) is
+   the corner at the slot's cell: the key moves by 1 − w when corner % 3 ≠ 0 and by 1 − h when corner > 1, in the
+   room's unturned cells, before the orientation (`RoomSlot.ShiftX` / `ShiftY`; also for tile-graph rooms and the
+   fill's slots). Each tile is placed (`0x141ffb870`) and then set to the slot height (`0x141d82d00`): its vertices take
+   that height plus the tile's own whatever their grounds (placing alone writes a vertex height only where a ground
+   has flag 1 or there was none). The same holds for the shared slots (`0x1420f5fb0`). With RoomOverlap, a slot whose key has an odd size and is centred on the room's outer row or column
+   (`0x1420f0a70`, not for `missiontile`) is shared: `0x1420eeec0` stores it by position (sorted by x · 65536 + y),
+   with the sides the room covers (0x10 right, 8 left, 2 bottom, 4 top) and the side it lies on; a second room's slot
+   is merged (`0x1420ee240`): corners both of whose sides it covers take its ground and height (`0x1420ee460`), sides
+   it covers take its edge, or, covered twice, the two edges combined by the master's EdgeCombination (.ecf,
+   `0x1420ee580` / `0x1420f9880`; one edge stays, two without an entry give none) and the side is marked shared
+   (`0x1420ee900`); then the key's heights are made to start at 0.
+3. **Shared slots** (`0x1420f6b70`, by x then y): without tags and with a plain key (`0x1420ee9e0`) they go to the
+   fill; else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
+   store (`0x1420f5fb0`: `Next(total weight)`; its fallbacks for keys without a match, `0x1420f69c0` / `0x1420f6ab0`,
+   are not ported). A 1 × 1 slot placed with tag "door", and an untagged shared tile with a 3 × 3 or passage-shaped
+   key (end of `0x1420f6b70`), become doorways (`0x1420edf80`; non-1 × 1 ones apart).
+3b. **Door tiles** (TileSet has "door" tiles, tiler +0x38; with RoomOverlap): `0x1420ed9f0` marks each room's exits
+   (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots; `0x1420f4010`: per doorway the orientation, the
+   sizes from the store's "door" sizes for its edges, `Next(n)` + shuffle, the key resized with points at none, the
+   middle of the unit for odd units else `Next(len − size + 1)`, `Next(total)`; `0x1420f4ae0` for the big ones.
+   Without RoomOverlap (`0x1420edd50` / `0x1420f4d90`) not ported.
+4. **Room vertex grounds** (`0x141ffbd70` per room), then the **fill**: the recorded cells (`0x1420eec10`, which also
+   gives the footprint's vertices the height and flag 2) sorted by (x, y), each still empty one filled by
+   `0x141feb970` (as for tile graphs) for its ground, or its top-left vertex's ground when that vertex has flag 1,
+   at the record's height (`0x1420f3de0` → `0x141fec8f0`: a given height is used, 0x80000000 = corners' middle).
+5. **Mirror seams** (`0x142025440`), then, after the subgraph (`0x142044f30`), the **outer ground**
+   (`0x14201db80`) over the subgraph's view (`0x141ffb6c0`): the layout inside the outer buffer, not the buffer.
+   Vertices with flag 1 get flag 2. When the outer ground's .gt has flag 1 (or master +0x161), every empty entry
+   takes its first fill tile at orientation 0, no draw. Otherwise the heights are fixed: row by row an empty entry
+   with a flag-2 corner is ready at its corners' middle (max − (max − min) / 2; `0x14201ec30` / `0x14201e930`), the
+   rest wait; the ready ones are laid (`0x14201e4f0`: all four vertices take the height and flag 2, then the tile)
+   and the waiting ones tried again. For a w × h fill tile only entries on its grid settle ((x + a) % w = 0 and
+   (y + a) % h = 0 in view coordinates; a = 1 for a 3 × 3 tile when the view's origin and size are all 1 mod 3, the
+   grid then starting one entry out), by their own four corners; a ready one is laid only where the tile fits on free
+   entries inside the view (one entry more each side when a = 1, `0x141d84e10`), all (w + 1) × (h + 1) vertices
+   taking the height, and joins the outer tiles either way ("Could not fix heights in dungeon" when none settles); then up to 15 rounds over
+   every outer tile (those the fill laid too) compute all moves to the corners' middle first and apply them
+   (`0x14201ed90`, `0x141d82d00`), stopping after a round with no move larger than one level.
+6. **Outer buffer** (`0x14201ffa0`, `OuterBuffer.cs` as for tile graphs) around that view: the inner border's
+   vertices spread outwards and the buffer is tiled. Then StoreyHeight scales every origin's height (`0x14204cbd0`).
+
+Not ported on this path (no draws in the cave): `0x1420f4010` / `0x1420f4ae0` (RoomOverlap), `0x1420f7960`,
+`0x1420f1590` / `0x1420f2340` / `0x1420f3100` (unique, chest, pre-unique rooms), the overlay passes, `0x1420f8f20`.
+**The Fetid Pool `1_1_3a` seed 1 (`fetid_3.dgr`, trace recorded 2026-10-23) generates tile for tile: all 3 060
+entries, tile hash 401409093, all 910 draws up to the doodads** (directional door types, fill rooms, slot corners,
+3 × 3 outer tiles). Oracle stops on `.dgr` areas (2026-10-23): `.tgr` subgraphs (117, MapWorldsGorge's glacier
+graphs), node kinds (80 "node …": 50 the extra room pool, 26 description passes, 4 template nodes), overlap tiles
+(28, `0x1420f5fb0` fallbacks), door tiles without RoomOverlap (19), numbered special rooms (15),
+DungeonFillRoomHeightOverride (10); 182 run to the end with another hash.
+
+## 3c3. Composite maps: subgraph nodes (`DungeonTiler.Composite`, `DungeonLayout.PlaceSubgraphNode`)
+
+A `.dgr` whose nodes are tagged "graph" is a frame for other graphs. **The Prison's second level (`1_1_7_2` seeds 1,
+2512127042; `prisonmain_1_1.dgr`, 115 × 45 units of 1, OuterBufferSize 5) generates tile for tile: all 6 875
+entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of its three layouts.**
+
+- **Records** (`0x1420457f0`, 0x98 bytes, generator +0x30 → +0x10): graph path (+0x20), rectangle (+0x40 x, +0x44
+  y, +0x48 w, +0x4c h), master (+0x50, the graph's MasterFile), flags (+0x90, bit 0 .dgr), parent (+0x92),
+  orientation (+0x97). For a .dgr: w × h = (RoomUnitSize − RoomOverlap) × the graph's Size + RoomOverlap, swapped for
+  an odd orientation, plus the margins. The margins are OuterBufferSize's up to four numbers (`0x142a06390`): top
+  (+0x170), right (+0x171, else top), bottom (+0x172, else top), left (+0x173, else right). The top graph is record
+  0 at (0, 0); the tile map is its size.
+- **Graph nodes** (`0x142105a70` → `0x1421052e0`): descriptions = graph (.dgr / .tgr) or FileGroups group, width,
+  height ("Could not parse special graph node", "Bad special graph node size" over 1000; swapped for an odd graph
+  orientation). A group (.fgp, master FileGroups: a quoted name, then its files) draws `Next(count)`; when this
+  layout already took files of the group (layout +0x40), those are left out and, if any are left, `Next(left)` draws
+  again; the file replaces the first description. The node takes a roomless kind-1 entry of w × h at its anchor
+  (`0x1421062e0`).
+- **Driver** (`0x142049d10`): records in order (the list grows while it runs), each with the view set to its
+  rectangle (`0x1420452e0`): .dgr → `0x14203c900` (layout at the view's corner inside the margins), .tgr →
+  `0x14203f890`; then `0x14203ece0`, `0x14203e1f0`. At the end of `0x14203c900`, `0x14204f030`: every roomless entry
+  with descriptions adds the record of its first description at its corner (cell × step + the view's corner;
+  orientation 0 has no offset), parent = this record, orientation = this one's. After all records, last first: each
+  one's outer ground over its view and its outer buffer (`0x142044f30`); then StoreyHeight (`0x14204cbd0`, the top
+  master's).
+- Not ported: .tgr subgraphs on a shared map, turned subgraphs (orientation ≠ 0), the outer buffer of a subgraph that
+  is not the whole map, and the rest of `0x1420457f0` (`.tgr` records, oversize-feature / telepad-injector records).
+
+## 3d. Tile graphs (`.tgr`): first stages (`TileGraph.cs`, `FortuneVoronoi.cs`, `VoronoiCells.cs`)
+
+`0x1420452e0` sends `.tgr` subgraphs to `0x14203f890`, then `0x142116600` lays them out. Ported so far (The Twilight
+Strand seed 1: the first 83 draws match the trace, including all 21 cell-area totals):
+
+1. **Parse** (`0x142a157c0`; header `0x142bb2a10`): version, `Size:` (tiles), [`Resolution:`], `MasterFile:`,
+   `Nodes:`, `Edges:`, [`EnvironmentOverride:`], then three quoted grounds (default, bottom, top). Node record
+   (`0x142bb34c0`): x y (cells; versions below 0x13 scale them), edge count (≤ 4) and 0-based edge indexes, "tag",
+   orientation word ("(any)" = 8), description count and descriptions, exist %, height, then priority and deletion
+   (version > 0x15), lock orientation (> 0x17), random offset rectangle (> 0x18), x / y lock. Edge record
+   (`0x142bb3f20`): node a, node b, internal point count and points, exist %, chirality (version ≥ 0xf), priority
+   (> 0x15), "edge type .et", min width, max width (and a ground side below 0xf). The instance (`0x142126b40`,
+   `0x142126c40`) keeps each node's edge slots in the order its record lists them (`0x142126550`): node +0x58..+0x70
+   edges, +0x44 exist, +0x48 height, +0x4c position, +0x8b / +0x8c x / y lock; edge +0x20 / +0x28 nodes, +8 points,
+   +0x30 exist, +0x38 type.
+2. **Prepare** (`0x14203f890`): random offsets (`0x14203a600`, none in v19), a tag "a,b,c" keeps one alternative
+   (`0x14203a480`, `Next(count)`), labyrinth / sub-area / league description passes (not ported: they throw), tag
+   "league" → exist 0. **Vaal side areas** (`0x142032320`, `SideAreas`): nodes with a description "sidearea<N>" (the
+   first such; N from '1', none = 1) are side area entrances, grouped by N (The Coast: `sidevalley` "sidearea3",
+   `cave1` "sidearea2" / "sidearea1", each also "unique1"). When the area rolled its Vaal side area (generator +0xa,
+   §3b) one survives: `Next(groups)`, `Next(group size)` (unused), the group shuffled (`0x141f4fb80`), its first node
+   loses its "unique…" descriptions, gets exist 100 and "accessible", and +0xa is cleared (with no groups the
+   generator adds the VaalSideArea feature row instead, not ported). Every other grouped node gets exist 0 and its
+   descriptions cleared (`0x142037f50`). **Exist rolls** (`0x142031390`): every node, then every edge: a node with exist 1..99 rolls
+   `Next(100) < exist` to stay (0 = always removed, 100 = no draw); an edge with exist ≠ 0 always draws `Next(100)`
+   and stays below exist. Failed edges are removed (`0x141f4f130`), then failed nodes (`0x142036640`): a node between
+   two edges of the same type whose far ends share its height is merged away (`0x1420371a0`: the first edge takes the
+   second's far node; the node's position and the second edge's points become internal points of the first edge).
+   Any other node with two or more edges and a tag stays as a plain node: tag and descriptions cleared, orientation
+   any (8). Otherwise every edge at the node moves that end to its nearest internal point (a new node there,
+   `0x141d94560`) or, without points, is removed, and the node goes. Shuffle groups (descriptions "shuffle…", `0x14203a720`) are not ported. Nodes are then stably sorted by priority
+   (`0x142003bc0`).
+3. **Voronoi** (`0x141f230e0`): sites are the node positions then every edge's internal points. The diagram is
+   Steven Fortune's sweep2 in 32-bit integers (`0x141f27200`; lines `dx·x − (−dy)·y = c` unnormalised, integer square
+   root `0x141937840`, integer hash buckets that are almost always the first or last), clipped to [0, cell width] ×
+   [0, cell height] (`0x141f26d70`; output prepended, so newest first). Vertices with one or three clipped segments
+   become graph nodes; each segment is attached to the nearest nodes (`0x141f4f4b0` with `0x141f5bf30`: exact
+   match, else smallest squared distance; rounding moves segment ends off their vertices) and appended to both
+   sites' cell lists. The four corners are added; border nodes (at most two edges, x = 0 / ≥ width − 1, y = 0 /
+   ≥ height − 1) are sorted along each border, corners take a site from their neighbour (`0x141f22e50`) and border
+   pieces join consecutive border nodes, each appended to the cell on its inner side by a cross-product test
+   (`0x141f227c0`). Site sets per node are ordered by x · 65536 + y.
+4. **Jitter** (`0x141f22460`): for each node (list order) a random point of its cell (`0x141f21dd0`): the cell's
+   edges fan around the node into triangles weighted by area / 2 (`0x141f21c00`; a node in the first column, first
+   row, last column or last row whose cell has an edge along that border picks that edge alone, weight 1),
+   `Next(total)`, then `Next(128)` twice (reflected if their sum is above 128) for a point in the triangle, scaled by
+   1/160 (80 %). The node moves unless locked on that axis (most nodes with edges are locked; free nodes move); the
+   draws happen either way. Then each edge's internal points the same way, in edge order.
+
+## 3e. Tile graphs: special nodes and edge routing (`SpecialNodes.cs`, `EdgeRouter.cs`)
+
+After the jitter `0x142116600` continues (The Twilight Strand seed 1: 2 145 draws match, the three rooms' 211 grid
+entries equal the client's final grid):
+
+1. **Edge types** (`.et`, parser `0x1429f78f0`, builders `0x141d7b3b0` / `0x141d7b570` / `0x141d7b6e0`; `EdgeType` in
+   `TerrainCache.cs`): line 1 `Name [#colour]`, two grounds (path or `wildcard`; +0x20 / +0x28), `n0 size n2` (+0x4c,
+   +0x4b = 1 or 3, flag 8), then either `virtual` (flag 4) with two `sub-edge chirality` lines (+0x38 / +0x40) and
+   the default min / max width (+0x49 / +0x4a), or wiggle (+0x4d), `can_end` (0x10), `force_height_zero` (0x40) and a
+   centre ground (+0x30). Flag 0x80: the name starts with "Wildcard" (left out of edge keys; such edges leave the
+   graph after the special nodes).
+2. **Lists** (`0x14211f100`, per node in graph order): tagged nodes are special; untagged ones go by degree and by
+   whether an edge is virtual (+0x89): degree 0 with descriptions; degree 1 virtual and not within its edge's size of
+   the border (`0x14211f2b0`), else plain; degree 2 of one edge type in no list; others virtual or plain.
+3. **Edge key** (`0x14212b5f0` / `0x1421299f0`): each edge takes the side (0 up, 1 right, 2 down, 3 left) its
+   direction to the next point points to (|dx| > |dy| → right / left); while a side holds two edges, the move of one
+   edge to a neighbouring side holding none (then one) with the smallest angle `0x14299d730` is made (integer cosine
+   through the acos table `0x142fe0b10`, side vectors `0x142fc00f8` × 10). The key's edges are the types per side.
+4. **Candidates** (`0x14211f3c0`): for a tagged node, some tile or room of its tag must have the key (`0x14211ce90` /
+   `0x14211d240`; a two-edge key may move its first edge to the free neighbouring side). Rooms come from the master's
+   RoomSet index (+0x1f8): per tag, every room in list order in orientations 0..7 with its own key's edges turned
+   (weight from the list, 1 by default); a variant whose four edges are the key's adds the room turned by the node's
+   orientation (`0x14211fb20`; a symmetric room adds it twice). Any-orientation nodes (`0x14211fcc0`) and tile
+   candidates are not ported.
+5. **Pick** (`0x1421203f0`): `Next(total weight)` at `0x1421207cd`; the pick is centred on the node's tile (even sizes
+   by the placement table), snapped to the alignment (`align<n>` description, else the largest edge size;
+   `0x14202ecc0`), clamped to the graph, and must fit the map (`0x141d84e10`, entries free; `0x14211c820`, edge points
+   lining up with placed neighbours); a pick that does not fit is dropped and the pick repeats. Then the position
+   keeps room for each edge (`0x14211d6b0`) and the sides are fitted to the key (`0x142110020` / `0x14210fc70`).
+   Tagged nodes first (one that fails is fatal), then the virtual list (its failures are exploded later). The map is
+   the graph's size plus OuterBufferSize on every side.
+6. **Rooms** (`0x142121610` → `0x142120fa0` → `0x141fea780`): the room is snapped again, then must find room
+   (`0x142121380`, `FindRoomForTiles`): its footprint plus a margin per edge side (the align on the top and left, the
+   edge type's size +0x4b on the right and bottom) inside the graph and free, and its corners suiting the map
+   (`0x141ffba10`: no real edge on a side touching the map border; each corner ground equal to a written vertex's, or
+   both null or flag 8, `0x141d85570`). Else a spiral (`0x142121210`: runs of 1, 1, 2, 2 … 9, 9 steps of the align,
+   turning up, right, down, left through the orientation's table) moves the margin's corner until margin and corners
+   fit (`0x142132b80`), then, from the room's position, the bare footprint (`0x142132a50`); "Overlapping node tiles"
+   when neither does. The Coast seed 1 needs it: `stairs_high.arm`'s margin overlaps the `lgcliff_smcliff_2.arm`
+   room tilised before it, and the room moves 3 tiles right and down. Then it is tilised column by column:
+   'k' and 'f' slots ("f N" is a 1 × 1 key with tag N and no edge points, e.g. `forcedblank`); a plain slot remembers
+   its ground for the fill, any other picks from the TileSet store (`Next(total)` at `0x141feadce`). Then internal
+   points inside the room go (`0x14211d420`), each edge's end offset becomes its side's direction and its exit is the
+   key's edge point on that side (`0x14211d830`; points at 3, 11, 19 of each tile side, `0x142fa09b8`; virtual edges
+   keep two end points, `0x14211e540`), and the node moves to its first edge's exit while every other edge gets a new
+   node there (`0x142126310`).
+7. **Explode** (`0x142122d90`): the virtual list's failures and plain nodes with more than two edges: points within 46
+   of the node go (`0x14211e860`), each edge gets a point one tile out on its side.
+8. **Edge routing** (`0x142124600`, `0x142125790`): a cost grid of one cell per graph tile; every cell `Next(1024)`
+   (`0x1421257cc`, which also clears the corridor counts), border cells + 1024; then every edge's straight corridors
+   are marked (`0x142125eb0` → `0x142124920`: Bresenham; the cell's corridor count + 1 and the cells beside it, up to
+   the corridor width away (size + 2; virtual: max width / 23 + 3), cost + (w − k + 1) · 2000 / w); cells under placed
+   tiles are blocked. Each edge (`0x142124fc0`) takes away a segment's corridor and searches it from its end back to
+   its start (`0x142124c70`: A* over four neighbours; a cell costs 100 + its cost, the client does not add the path so
+   far; estimate 100 per Manhattan cell; open set ordered by g + h, then cell index; corridor and blocked cells are
+   closed except the goal); the path's cells get the corridor, and every sixth cell becomes a new internal point
+   (`Next(min(23, …))` twice, `0x1421255ce` / `0x1421255fb`). Edges that fail are retried until a round fixes none.
+
+Before the rooms are tilised, `0x1421239d0` relaxes the graph (no draws; `Relax` in `SpecialNodes.cs`): every
+placed room is a rectangle grown by its edges' room (size × 2 for a virtual edge, `0x142123000`); each node and then
+each internal point is pushed away from every rectangle (`0x142123310`: inside, out through the side nearer the
+room's node; outside, a push falling off over 138 positions from a side or corner), a node also toward the map
+centre from its own room's four border probes (`0x142124210`); pushes are applied unless the axis is locked and
+clamped to the map (`0x142124480`, `0x1421327c0`), and each room is centred on its node again where it still fits.
+This is what moves the free nodes after the jitter.
+
+## 3f. Tile graphs: corners, virtual edges, plain nodes (`EdgeShaping.cs`, `EdgeSplitting.cs`, `LinkMerge.cs`)
+
+After the routing (The Twilight Strand seed 1: 2 180 draws match; the graph equals the client's at all eight stage
+snapshots below; all 247 grid entries placed so far equal the client's final grid):
+
+1. **Corners** (`0x142114f00`, no draws): a virtual edge with an end offset (it leaves a room) that leaves its node
+   at more than 30° to the offset bends into an arc of a circle tangent to the offset, one point per 45°
+   (`0x14212a340` at the first node, inserted in front; `0x14212ac40` at the second, appended reversed; up to five
+   rounds while one bends). The sine helper `0x14299d820` (table `0x142fe0a10`, 127 = 1) interpolates with the two
+   weights swapped (sin 0 reads 3/127). Then corner rounding (`0x14210aeb0` → `0x14210a240`, up to five rounds while
+   something changes): from every node with one edge, then every node with more, each edge not yet done is walked from
+   that end and on through nodes with two edges (visited sets of edges and nodes); a corner sharper than
+   cos > −0.76 is cut by two points √((s1 − d02)/(d02 − s2)) · (max width + 10) along its segments, or moved to the
+   middle / removed (`0x142109fb0`; a node next to the far node takes over the nearest point) when its segments are too
+   short; points closer than 16 to each other are not split.
+2. **Tile-less virtual nodes** (`0x14211e9b0`, per node of the virtual list that got no room): with three or more
+   edges, points within the largest max width go (`0x14211e860`), then around the node each pair of neighbouring edges
+   with a virtual one draws that edge's width (`Next(max − min + 1) + min`, `0x14211ece2` / `0x14211edf2`) for a virtual
+   end point toward the other edge (`0x14211e100`) or, between two virtual edges, the corner point (`0x14211e1d0`).
+   The node then splits into one node per edge, neighbouring ends with a virtual edge becoming logical links
+   (`0x14211dbc0`, node +0x90 / +0x94 link indexes, the generator's list of 0x20-byte links).
+3. **Split** (`0x142113c10`): virtual ends on the map border get their two end points along the border
+   (`0x142111880`, `Next(width range)` at `0x142111948`); each chain of virtual edges is split from an end with end
+   points (`0x142112d00`): the edge is copied (`0x141d942e0`), the original keeps one sub-edge type and the copy the
+   other with chirality from the type's flags 1 / 2 (`0x142112600`; the symmetric-type case `0x141d7bcf0` is not
+   ported), the end nodes move to the two end points (the original's at the end's first point at the start, at the
+   second at the far end; new nodes at the others), the internal points move apart by `Next(width range)` either side
+   of their middle path (`0x142111f60` at `0x1421121be`, `0x142111170` for the pair of offset points, clamped to the
+   map), the chain's start draws its width at `0x142112e52`, and at inner joints `0x142111590` decides by segment
+   crossings and distances which copy joins the new node.
+4. **Link merge** (`0x1421148c0`): each link's live end nodes on one spot are joined (`0x142113ec0`, `0x142114aa0`), a
+   link without such a pair reconnects its lone end to the nearer of the split pair (`0x142114270`); nodes with more
+   than two edges join the plain list, emptied nodes are removed.
+5. **Plain nodes** (`0x142122970`, after a priority sort and another corner rounding): every node of the plain list
+   not on the border with one edge gets a room or tile (`0x1421203f0`; fatal if none). Any-orientation nodes keep a room
+   variant (`0x14211fcc0`) or tile (`0x142120090`) only if its turned key passes the strict side check
+   (`0x14210fc70` with heights: the corners' rise must equal the far node's height above this one), else the loose
+   one; tiles come from the TileSet store's sizes per (tag, edges) (`0x141d811c0`) and its tiles of any tag per (edges,
+   size) (`0x141d82280`, size swapped as a fallback), filtered by tag. After the pick, `0x142121910` turns an
+   any-orientation placement a quarter either way when that lowers the side cost (`0x1421102d0`: Σ angle between each
+   edge's side and direction, in degrees) without pointing an edge off a map border it touches. A tile is placed whole
+   (height 0); a 1 × 1 tile for a node without edges or tag only on an empty entry. Border nodes with one edge move off
+   the map (x or y −1, or the map size × 23) and their edge's end offset points back in. Then the relaxation (nodes with
+   one edge left out) and the tilising with exits as for the special nodes.
+
+Snapshots (`walkmaps.js` `hookGraphStages`, compared by `levelgen generate`): `relax` (0x1421239d0 in, also its
+placement records as `relaxRecords`: node position, room position, size, slot sides, align), `special` (0x1421225d0 out),
+`beforeRoute` / `route` (0x142125790), `corners` (0x142114f00), `virtualNode` (each 0x14211e9b0), `split`
+(0x142113c10), `merge` (0x1421148c0).
+
+## 3g. Tile graphs: edge tiling to the finished grid (`EdgeTiling.cs` … `OuterBuffer.cs`)
+
+After the plain nodes, slot compaction (`0x142114ea0`) and another corner rounding, the rest of `0x142116600` and
+`0x142044f30` place every remaining tile. **The Twilight Strand seed 1 now generates on the server tile for tile:
+all 3 276 entries, tile hash 266153788, every one of the 3 772 draws up to the finished grid** (the next client draws
+are the doodads, `0x142042fae`).
+
+1. **Edge tiling** (`EdgeTiling.cs`, `0x14210de80`): a grid of one cell per graph tile (cost, blocked under placed
+   tiles, `0x141f247e0`); `Prepare` (`0x14210db90`) adds end offsets as points and raises the cost along every edge
+   (+80 per block crossed, `0x141f25c90`); edges with a placed end go first. `Distribute`: `Next(list1.Count)` (unused),
+   a forward shuffle with `Uniform`, a stable sort by edge priority and a stable partition (split edges first); each
+   chain of two-edge nodes becomes a path (`0x14210b950`), its cells found by a best-first search from the later
+   points (`0x14210c600` → `0x141f24d60`: `Next(0x4000) + 20000` twice as weights A, B; step g = (block cost +
+   ((x+1)A + (y+1)B) mod 707 / 101 + size) × 100 + g; backtracking deques), then one tile per cell (`0x14210f470`): the
+   key has the type on the sides to the previous and next cell (`0x14210ee30`), points from a placed neighbour
+   (`0x141ffbf40`, reading its opposite side) or the path's Bézier curve (`0x14210e9f0` / `0x14210f0f0`), or 3s/2 for
+   types with flag 8; corner grounds from the type (`0x14210f2b0` / `0x14210f1b0`); `Next(total)` among untagged
+   tiles. Tiles of an edge type listed in the FillTiles object (master +0x218, +0x140) are recorded for step 3.
+2. **Lonely nodes** (no edges, with descriptions): a room or tile as for the special nodes, tilised when one fits.
+3. **Vertex grounds** (`TileGrid` corners, `GroundStages.cs`). The map keeps (w + 1) × (h + 1) vertices (+0x50,
+   3 bytes: ground index into the map's ground list +0x68, height, flags 1 = ground written, 2 = height written, 4 =
+   locked, 8 = outside). Placing a tile (`0x141d833e0`) writes its `.tdt` vertex grounds (`0x141d85640`: with map
+   +0x10 on, or the vertex locked, a different ground goes in only null/flag-8 over null/flag-8 or between grounds
+   without flags 1 and 4, else "Mismatching ground types") and, where the ground is null or flag 1, the height.
+   `0x142116600` then locks written vertices, floods (`0x142110a20` → `0x142110630`) every flag-2 ground from each
+   tile's border breadth first over unwritten vertices, never across a tile edge (`0x1420281e0`: `0x142027df0` vertex
+   inside a tile, `0x142027bd0` an edge point on that entry's side), sets the height levels (below), paints the
+   levels and gives every still-unwritten vertex the graph's third ground (+0xb0, `0x142110d60`), fills the open
+   sides of the step-1 edge tiles (`0x141feed20`, none on the Strand) and unlocks. `.tdt` vertex grounds sit after the
+   packed sub-tile data (`0x1429f59a0`, not ported); the port finds the block by a validated scan from the file's end
+   (`TerrainCache.VertexBlock`; `levelgen vertices` checks a tile set). Whether a tile has vertex grounds and heights
+   is the u16 after its key (`0x1429f31a0`, file offset 58 after the string table for a tile without a base tile: bit
+   2 grounds, bit 1 heights); guessing it from the bytes dropped heights that start with zeros. The block is
+   (w + 1) × (h + 1) u32 ground strings (bit 2), then as many i8 heights (bit 1), then two u32 strings and a byte. A
+   tile can have heights without grounds (e.g. `dunes_concave_v01_06.tdt`, flags 0x4c5: a ramp whose key heights are
+   1, 1, 0, 1); `TerrainCache.HeightBlock` finds that block by the same kind of scan (the four corners equal the
+   key's corner heights, two string offsets after). Read as all-zero heights, such a tile left the Northern Forest's
+   holes between a level-1 wall and the dune with two candidate heights ("Mismatched heights").
+
+   **Height levels** (`HeightLevels.cs`, `0x142118470`; state `0x1421173d0`: bit sets of done vertices and entries).
+   Row by row, every tile origin not yet done starts a breadth-first walk (`0x142118100`, a deque). Each tile's
+   candidate heights (`0x1421176c0`): an empty entry takes the heights of its done vertices whose map ground is null
+   or flag 1 (`0x142117e10`), several of them being fatal ("Mismatched heights found during height fix-ups"); a tile
+   takes, for each done border vertex where its own (turned) ground is null or flag 1, the vertex height less its own
+   vertex height (`0x142117fb0`; `0x141d7ff50` / `0x141d80030` read a turned tile's vertex through the inverse code
+   table 0x142fb7f98); with none, for each real edge whose entry across the edge point is done, that tile's offset plus
+   the step between the two tiles' vertex heights at the edge point; with none, its done corners; several keep the
+   lowest (`0x142c65290`, signed min). The tile takes the height (`0x1421174f0` → `0x141d82d00`: every entry's offset,
+   every vertex = offset + the tile's vertex height; an empty entry is 1 × 1) and is done, then queues the tiles it
+   is open to (`0x14211b4a0`, a set ordered by x · 65536 + y: an empty entry's four neighbours; a tile's neighbours
+   beside each side cell whose two side vertices have an open ground on the tile, and the entry across each real
+   edge). With any height in the view (+0x20), every vertex and tile is lowered by the lowest tile offset, then
+   vertices not done take a lone done neighbour's height until nothing changes (`0x142118790` / `0x142118d50`);
+   `0x142118900` gives each room the height of one of its tiles (room +0x18, not ported, nothing reads it yet).
+   `0x142110d60` then paints, where no ground is written, the graph's first ground (+0xa0) on the highest level and
+   its second (+0xa8) on the lowest (`0x142110f70`; the levels are master +0x146 / +0x144 when set, else the view's
+   highest / lowest vertex height, `0x141ffc700` / `0x141ffc7d0`). Heights are counted in levels (storeys) until
+   `0x14204cbd0` multiplies them by the master's StoreyHeight after the layout (step 8). The `paint` trace confirms the graph's ground lines: +0xa0 = line 1 (top), +0xa8 = line 3
+   (bottom), +0xb0 = line 2 (default). Just before the overlays `0x142116600` stores the two levels (+0x90 / +0x94);
+   from then on the fill object's tile listener `0x141fef240` runs after every tile that room tilising
+   (`0x141fea780`) and the fill (`0x141feb970`, `0x141fe89e0`, `0x141fed640`) place: with heights, a highest level
+   other than 0 and a top or bottom ground, each vertex of the tile with no ground or a flag-8 one takes the top
+   ground at or above the highest level, else the bottom ground at or below the lowest
+   (`GroundStages.LevelPainter`).
+
+   **Room vertex grounds.** An `.arm` file ends with a line of (w − 1) × (h − 1) dictionary indices (`0x142a0f3a0`
+   reads numbers to the end of the file; 0 = none): the grounds of the room's inner vertices, row by row (room data
+   +0xe8; `RoomDef.VertexGrounds`). Room tilising ends with `0x141ffbd70`: each inner vertex with a ground takes it
+   unchecked (`0x141d85840`), turned like a tile's vertex. The Coast's camp writes `sandscorched` this way, the town
+   entrance `stream_edge`, the area transition room its `NextLevel` column.
+4. **Overlays** (`Overlays.cs`, `0x141ffe240` / `0x141fff1a0` pass 1, pass 2 after the fill). The master's `.toy`
+   (`0x141ffca30`): a pass line (up to three "0"/"1" for the passes, `SizeOrder` / `FileOrder` / `Random`, ±flags of
+   `OverlayTileOverlays OverlayFeatureTiles OverlayFeatureRooms OverlayFeatureRoomOverlap OverlayDescriptionNodes
+   OverlayExtraFeatures MatchAllTileKeys`, default 0x18), then "weight path [args]" rooms (`limit=`, `required=`,
+   orientation names, `!condition`). Each room in each allowed orientation adds its key to the group with that key and
+   flags; the same room again only ORs in the orientation bit. An exclusion grid marks rooms of nodes with
+   descriptions (0x10), rooms (4 shrunk by RoomOverlap, 8), tagged tiles (2), extra features (0x20) and placed
+   overlays (1); a cell takes an overlay only if the group's flags have every bit set there. Per group (FileOrder),
+   every view position (every third when a key edge has size 3) where it fits (`0x141ffef60`: no excluded bits, the
+   area holds tiles lying inside it (`0x141d850b0`); `0x141ffa7b0`: the four corner grounds match (`0x141ffa470`), the
+   heights agree, each side inside the map matches the edges across it (`0x141ffa390` / `0x141ff9cb0` /
+   `0x141ff9ee0`)) is a spot of the group's weight. `0x141fffb70` draws spots (`Next(total)`), a group that still fits
+   (`Next`), a room under its limit padded to 100 with nothing (`Next`; nothing closes the spot), its orientation
+   (`Next(840)`), removes the tiles and vertex grounds there and tilises the room (`0x141fea780`).
+5. **Fill** (`Fill.cs`, `0x141fef070`): map +0x10 off; every empty entry, row by row, gets a fill for the ground of its
+   top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"): tiles only → `Next(total)` and the
+   orientation (`0x141fecd00`: fixed; square `Next(8)` where it fits; else `Next(840)` over the fitting codes), a failed
+   choice leaving the list; with rooms, tiles and rooms together (`0x141fed100`, rooms `0x141fecf80` / `0x141fece90`).
+   A fill room (`0x141fe89e0`) tilises column by column: an empty fill slot ('s' slots and plain 'k' slots) takes a
+   fill tile of its ground that fits the room's fill slots (`0x141fea4d0`, `0x141fe8660`), turned by the room; other
+   slots take a TileSet tile (up to five draws until one fits); the room's groundless vertices take the fill ground.
+   Old `.arm` versions (≤ 18) have 23 numbers per key (no "extra").
+5b. **Storeys** (`Storeys.cs`, `0x1421193d0`, after the second overlay pass, on the height levels' view and state):
+   the plain tiles take their heights from the tiles around them. A tile is plain for ground g (`0x142119260`) with
+   no tag, no real edge (none or wildcard, edge type +0x48 bit 7) and g on all four key corners (a ground with flag
+   0x10 counting as none); `0x142119060` takes g from the first corner. Every cell of a tile that is not plain is
+   marked done. `0x142119600`: row by row, stepping by the width of the tile at each cell, a plain tile whose ground g
+   is not none or flag 1 collects (a set) the heights its non-plain neighbours offer: the tile left of the cell (its
+   turned key's top-right / bottom-right corners), right of the tile (top-left / bottom-left), above the cell
+   (bottom-left / bottom-right) and below the tile (top-left / top-right); a corner counts when its ground is g and it
+   lies along this tile's side, giving the neighbour's offset plus the corner's height. One distinct height: the tile
+   takes it (`0x1421174f0` → `0x141d82d00`) and is done. `0x14211aca0` then sweeps until nothing changes: a plain tile
+   not done takes the one distinct offset of its done neighbours (left of the cell, right of the tile, above, below)
+   that are plain for its ground. No draws (The Coast seed 1: 252 entries).
+6. **Mirror seams** (`Seams.cs`, `0x142025440` on the view): as for the towns (§3c), and tiles touching vertices rooms
+   mark (room data +0xe8, the inner vertex grounds; the skip is not ported) are skipped; when no replacement exists and the tile is outside rooms, the
+   edge-point fallback `0x142026bc0` runs: per other side with a non-virtual edge whose neighbour has the same size and
+   no tag, every other edge point gives the tiles of the changed key making no seam up or left; `Next(total)` picks
+   one, which stands when the neighbour with the meeting point has tiles making no seam at all (`Next(total)`); both
+   are replaced (`0x1420264b0`, which gives vertices the new tile leaves groundless the most common ground nearby).
+7b. **Post-unique tiles** (`PostUniqueTiles.cs`, `0x14203ece0`, after the seams): each `postunique` tile of the
+   TileSet (master +0x228) replaces one placed tile. Row by row over the view, every tile origin without a tag (tile
+   data +0x10 is the length of the tag string at +0, `0x141d7d260`; not a mesh), with a corner vertex in the map and
+   walkable, whose turned key equals the tile's key under an allowed orientation is a candidate; its orientation is
+   drawn among the matching ones (`0x14203f560`, `Next(count)`, usually `n(1)`). `Next(candidates)` picks the place;
+   the tile goes in at the old tile's height; none is fatal ("Failed to place post-unique tile"). The Coast:
+   `beach_karuistone1.tdt` over one of 114 `Blank.tdt`. The walkability pass's "tile without a tag" test
+   (`0x142028510`) reads the same field.
+7. **Outer buffer** (`OuterBuffer.cs`, `0x142044f30` → `0x14201ffa0`; `0x14201db80` only with OuterGroundType): the
+   border vertices' grounds and heights spread outward (vertical, then horizontal); then passes top, bottom, left and
+   right walk the border: where a tile edge crosses outward (`0x14201d890`) an edge tile with the point continued is
+   drawn (`Next(total)`) and repeated to the map edge; elsewhere, where the step's two border vertices agree
+   (`0x141d77670`), the ground's first fill tile (`0x141feffb0`) is repeated outward at orientation 0. Fill tiles go
+   in at the height of the step's first border vertex; an edge tile at the lower of its two border vertices, its key
+   carrying each corner's height above that (`0x141ffb870`, not forced).
+8. **Storey height** (`0x14204cbd0`, after the layout `0x142049d10`): row by row, every tile origin with a height
+   offset has it multiplied by the master's StoreyHeight (+0x14a, a byte, default 0; The Coast 24), its entries
+   taking the product and its vertices the product plus the tile's vertex height times the storey (`0x141d83060`).
+   The first loop also scales the rooms' +0x18 heights (not ported). The tile hash reads these heights.
+
+Also from the oracle: the extra-feature league rolls (`0x14204a310` → `0x141ea1f50` / `0x141ea1c80` →
+`0x141ea2400`, each roll `0x142054a50`: `Next(100)` only for 0 < chance < 100; CoreLeagues +0x8a most per area,
++0x8e needs a chance, +0xa0 skipped; repeat chance for shrines etc.), three-edge key turning (`0x14211ce90`), the
+store lookup's height fallback (`0x141d81f70`: corners whose ground lacks flag 1 drop their height), `.arm` keys
+(`0x142a0e2a0`: heights relative to the lowest corner, which is the slot's height; the last number is "corner",
+not the height) and symmetric virtual edge splits (`0x141d7bcf0`, `0x142112600`) are ported.
+
+Not ported (they throw): overlay pass-2 placements, SizeOrder overlay passes, MatchAllTileKeys, overlay room
+conditions, room heights (`0x142118900`), FillTiles edge lists,
+OuterGroundType, the seams' skip of room +0xe8 vertices, outer buffers of `.dgr` layouts. The Twilight Strand seed 2 needs overlay
+pass 2; seeds 3 and 7 stop with "Could not tilise edge", which the client answers by retrying with another seed
+("Retrying with seed", §1) — not done by the port yet.
+
+## 4. Files the generator reads (client parsers)
+
+| File | Parser | Notes |
+|---|---|---|
+| .tgr / .dgr graph | `0x142bb2a10` (header: version, Size, Resolution, MasterFile, Nodes, Edges, EnvironmentOverride), `0x1429f8c30` (records) | `GraphFile` in `TerrainFiles.cs` is a heuristic reader; the port needs the client's exact fields |
+| .tsi master | `0x142a06390` | keys RoomSet, TileSet, FileGroups, EdgeCombination, GroundCombination, FillTiles, OuterGroundType, OuterBufferSize, RoomUnitSize, … |
+| .arm room | `0x142a0f3a0` (version ≥ 11) | dictionary, unit size, exits, spawns, doodads, decals, sectors |
+| .et edge types | `0x142a0c0a0`, `0x1429f78f0` | default %, branching, voidness, split edges |
+| .tdt tile | `0x1429f31a0` | size, hull planes, UniqueMesh; vertex grounds / heights after the packed sub-tiles |
+| .toy overlays | `0x141ffca30` | passes and overlay rooms (§3g) |
+| .gft fill tiles | FillTiles (master +0x218) | per ground name: tiles and rooms with weights |
+| .fgp file groups | `0x14204c520`, `0x1421052e0` | random subgraphs ("graph" nodes) |
+
+## 5. Not yet mapped in detail
+
+The rest of the room/tile solver (`0x1420f7960` outer edge, `0x14202e6c0` chisel, `0x14201db80` fix heights, the
+height stages), doodads (`0x1420425d0`), and how the walkability grid
+(`0x1410ddcfd`, [03](../protocol/03-area-and-world.md) §7) is built from the placed tiles.
+
+The busiest draw sites in the traces (§8): `0x142042fae`/`0x142042fbc` (doodads, ~2 per tile), `0x1421257cc`,
+`0x14152e730`/`0x14152e73a` and `0x141530658` (outside the generator range: tile mesh variation), `0x141febf93` /
+`0x141febfcf` (fill tile pick: `Next(1)` then `Next(8)` — orientation), `0x1420437eb`, `0x1420efc0c` (room tiling).
+Draws after the tile grid is final (doodads, meshes) do not change the tile hash but do change the stream for
+anything later, so the port follows the client's order to the end.
+
+## 6. Tile hash (`TileHash.cs`)
+
+`0x141d8a460`: for each grid entry, column by column (x outer, y inner), skipping empty entries and entries with
++0x34 / +0x35 set (the offset of the entry inside a multi-tile tile), one u32 = MurmurHash2 (seed 0xf36b12) of
+`[i32 height (+0x30, i16), u32 rotation code (+0x36), x, y, MurmurHash2(.tdt path as UTF-16)]`; the hash is
+MurmurHash2 (seed 0xf36b12) of that u32 array (`0x140df8570`; `0x1406db330` is the same over a wide string). Entry +8
+→ the tile definition, whose +8 is the .tdt path (`std::wstring`).
+
+Checked against four live traces (seed 1): Lioneye's Watch 1139181677, The Twilight Strand 266153788, The Coast
+695393902, HideoutForest 3482012158 — all match (`levelgen hash`). The client log (`Client/logs/Client.txt`) has
+"Generating level … with seed …" / "Tile hash" pairs for ~560 (area, seed) loads, an oracle for any seed.
+
+## 7. What the server will use
+
+From the generated grid: the walkability and projectile grids, heights, area transitions and waypoints (tile .tmd
+records, as the walk-map recorder computes them today), and room points (rooms placed). Until the port reaches an
+area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
+
+## 8. Tooling
+
+- **Trace:** `live.ps1 -Walkmaps` also hooks the generator (`scripts/walkmaps/walkmaps.js`, `hookGeneration`) and
+  writes `data/walkability/<area>_seed<seed>.gen.json`: every draw on the generating thread as
+  `[kind, caller VA, argument, result]` (`n` = `Next`, `u` = `Uniform` called directly, `r` = raw draw from elsewhere,
+  `l` = LCG bits) and every grid entry `[x, y, .tdt, height, rotation, +0x34, +0x35]`, plus the seeds and tile hash.
+  Traces of 2026-10-22: town 496 draws (30 × 18 tiles), Twilight Strand 30 586 (78 × 42), The Coast 46 706 (75 × 75),
+  HideoutForest 2 818 (33 × 33). Since the second Strand trace of 2026-10-22 a trace also holds `graphs`: the tile
+  graph (nodes, edges with points, virtual end points, end offsets, widths) at each layout stage boundary (§3f).
+- **Check:** `dotnet run --project scripts/re/levelgen -- hash <trace.gen.json>…` recomputes the tile hash from a
+  traced grid. `… generate <area> <seed> [trace.gen.json]` runs the port and, with a trace, compares draw by draw
+  (kind, argument, result; the first difference names the client's caller) and entry by entry, also when the port
+  stops at a part that is not ported, and graph by graph at each recorded stage. `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key. Traces also record the area level
+  (world +0xd4).
+- **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
+  (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  2026-10-23 (The Fetid Pool): 35 of 561 match (new: `1_1_3a` seed 1).
+  2026-10-23 (composite maps): 34 of 561 match (new: `1_1_7_2` seeds 1, 2512127042; `1_3_3_1` seed 1055960378;
+  `1_5_4` seed 1). Before: 30 of 560 (new then: the Prison `1_1_7_1` seeds 1, 1898277627, 4162278830; `1_3_3_1` seeds 1,
+  2000385416; `1_4_3_1` seed 1109898802; `1_2_10` seed 615157463). 2026-10-22: 23 of 559 (The Ship Graveyard Cave `1_1_9a` seed 1; Lioneye's Watch; The Twilight Strand seeds 1, 965262086, 2073986762, 3200638083; The
+  Coast seeds 1, 370918376, 1029867915; The Tidal Island seed 1; The Mud Flats seed 222312849; `1_1_6` seed 1;
+  The Northern Forest (`1_2_8`) seeds 1, 602433223; The City of Sarn (`1_3_1`) seeds 1, 149738592; `1_4_7` seed
+  2326754436; `2_6_town`; four ChayulaLeague seeds; MapAtlasHarbingerLow seed 1); the most common stops are
+  multi-node `.dgr` dungeons and "Mismatching ground types" (7); 57 run to the end with another hash; The Boiling
+  Lake (`2_9_6`) asks for a fill room `Rooms/Fills/pools_00.arm` that the game files lack. The Northern Forest seed
+  1 matches every draw up to the doodads (10 562), every vertex and tile, and the tile hash (2500166236). The Coast seed 1 matches
+  every tile-stage draw (8 178, up to the doodads), every vertex at the painting and as the fill starts (`levelgen`
+  compares the trace's `paint.after` and `fillVertices`), every tile and the tile hash.
+  `Game_SEED=<n>` (Auth) pins non-town seeds for traces of one seed; `LEVELGEN_AROUND=<n>` prints the draws around the first
+  difference (a composite map's layouts are compared one by one: the trace's `dungeons`, every layout of the load,
+  and `subgraphs`, each record as 0x1420452e0 starts it); `LEVELGEN_DUMP=<file>` writes the port's grid as the trace's `tiles` (to line it up with the client's,
+  e.g. to find where rooms land).
+- **Probe:** candidate lists can be read live by hooking `0x141d902d0` (list: begin, end of 0x18-byte entries: tile
+  handle (+8 → path), u8 orientation, i32 weight; +0x18 total weight) and `0x142005ee0` (fill lists, same layout)
+  on the generating thread.

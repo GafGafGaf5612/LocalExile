@@ -188,7 +188,25 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   ([11](docs/protocol/11-skills.md) §5).
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch
   use the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
-- **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
+- **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map. The
+  port of the client's level generator has started ([re/011](docs/re/011-level-generation.md)): the RNG, the tile hash,
+  the extra-terrain-feature rolls and the topology pick match the live client, and Lioneye's Watch generates tile for
+  tile (`scripts/re/levelgen generate 1_1_town 1`), and so does The Twilight Strand at seed 1: tile graphs (`.tgr`)
+  are ported from the Voronoi jitter through edge tiling, vertex grounds, overlays, fill, mirror seams and the outer
+  buffer (all 3 276 entries, tile hash 266153788, all 3 772 tile-stage draws; `levelgen generate 1_1_1 1`). Other
+  seeds and areas still reach unported cases (re/011 §3g: overlay pass 2, the client's seed retry, the height levels;
+  The Coast seed 1 matches tile for tile and by tile hash (695393902), with Vaal side area entrances, the room
+  position search, the height levels, the level painting, room vertex grounds, the walkability pass, post-unique
+  tiles, the storeys stage, outer-buffer heights and the StoreyHeight scaling ported; The Northern Forest seed 1 also
+  matches by hash (2500166236); the oracle matches 35 of 561 logged seeds, three Coast seeds, The Tidal Island, The Mud
+  Flats, The Northern Forest and The City of Sarn among them); multi-node `.dgr` dungeons are ported (The Ship Graveyard Cave seed 1
+  and the Prison `1_1_7_1` seeds 1, 1898277627, 4162278830 match by tile hash, re/011 §3c2: untagged nodes, special
+  rooms, door tiles, the outer ground's height fixing and the outer buffer; composite maps of `.dgr` subgraphs too:
+  the Prison's second level `1_1_7_2` seeds 1, 2512127042 match, re/011 §3c3; `.tgr` subgraphs are not ported; The
+  Fetid Pool `1_1_3a` seed 1 matches tile for tile (401409093) with door types with a direction, fill rooms, slot
+  corners and 3 × 3 outer tiles), the
+  one-node `.dgr` path (hideouts) lacks the outer buffer, doodads are not ported, and the Gateway does not use the port
+  yet.
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
   stop it ([11](docs/protocol/11-skills.md) §10).

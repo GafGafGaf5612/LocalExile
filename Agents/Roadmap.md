@@ -46,6 +46,40 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Start:** a dev command that walks the WorldAreas list with `/goto` and waits for each capture.
 - **Done when:** every act area has its seed-1 capture, and every waypoint area its waypoint in it.
 
+### Server-side level generation (random seeds)
+- **Known:** [re/011](docs/re/011-level-generation.md) maps the client's generator (`0x14204d820`): order of the
+  stages, the RNG (`LevelRandom`, matches the live client), the topology pick, the file parsers, and the tile hash
+  (`TileHash`, matches four live areas). `live.ps1 -Walkmaps` writes a generation trace per load
+  (`<area>_seed<seed>.gen.json`: every draw with its caller, the tile grid); `scripts/re/levelgen hash` checks a grid.
+  The client log has ~560 (area, seed) → tile hash pairs. The atlas (08 §6) already resolves transitions per
+  topology; it needs the generated layout to place them.
+- **Done so far:** RNG, tile hash, extra-terrain-feature rolls (no area stats), topology pick, one-room fixed
+  layouts: Lioneye's Watch matches tile for tile (re/011 §3b–3c); `.tgr` graphs to the finished grid (re/011 §3d–3g):
+  The Twilight Strand seed 1 and The Coast seed 1 match tile for tile (hashes 266153788, 695393902) and every draw
+  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 35 of 561 logged seeds.
+  Multi-node `.dgr` dungeons (`DungeonLayout.cs`, `DungeonTiler`, re/011 §3c2): The Ship Graveyard Cave seed 1
+  (hash 3341726258) and the Prison `1_1_7_1` seed 1 (1542354689, two more seeds by the oracle) match tile for tile;
+  composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863).
+- **Start:** the `.dgr` oracle stops (re/011 §3c2, §3c3): `.tgr` subgraphs on a shared map (117, MapWorldsGorge; the
+  tile graph generator needs the view origin `DungeonTiler` now has), overlap tiles (`0x1420f5fb0` fallbacks, 28),
+  182 seeds that run to the end with another hash (each needs a trace), door tiles without RoomOverlap (19), numbered special rooms (15),
+  DungeonFillRoomHeightOverride (10), node kinds (80 "node …": the extra room pool `0x141d8b750` for the
+  Labyrinth's `secret` rooms, description passes, template nodes `0x142107840`, orientation 9), the outer buffer of
+  an inner subgraph (`1_2_14_2`),
+  `1_1_7_2` seed 287067221 (a mismatch: needs a trace); then the parts no trace has exercised yet (`0x142108dc0`, numbered special rooms, the fallbacks of
+  `0x1420f5fb0`, door tiles without RoomOverlap), each checked with a trace of a dungeon
+  that needs it (`1_1_7_2` `prisonmain_1_1.dgr`, the Labyrinth); then more seeds and areas, each checked with a trace (`live.ps1 -Walkmaps`, then
+  `scripts/re/levelgen generate <area> <seed> <trace>`): Strand seed 2 needs overlay pass 2 (`0x141fffb70` after the
+  fill); seeds 3 and 7 fail edge tiling, which the client answers with "Retrying with seed" (`0x14204d820`, find the
+  retry seed); the 57 oracle seeds that run to the end with another hash (`levelgen oracle`, e.g. `1_1_3` seed 1,
+  `1_2_1`, The Wetlands `1_2_12`, The Beacon `2_6_14`) each need a trace; The Boiling Lake (`2_9_6`) asks for a
+  missing fill room `pools_00.arm` (find how the client resolves it);
+  HideoutForest needs the outer buffer on the one-node `.dgr` path (`DungeonTiler`; the multi-node path has it). Then the walkability
+  grid from the placed tiles, and doodads (`0x1420425d0`).
+- **Done when:** the server's tile hash equals the client's 0x7d hash for a random seed in every act area, and
+  non-town, non-hideout instances get a random seed without a walk-map capture (Auth's `SeedFor`, Gateway's
+  `AreaLayouts`).
+
 ### Area transitions without a walk-map run
 - **Known:** every area gets its area transitions and destinations, but a generated area only has them once
   `live.ps1 -Walkmaps` captured its layout for that seed ([08](docs/protocol/08-area-transitions.md) §7). 11 atlas
