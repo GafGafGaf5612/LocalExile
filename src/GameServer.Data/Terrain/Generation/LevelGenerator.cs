@@ -8,10 +8,13 @@ public sealed record TopologyInfo(string Graph, IReadOnlyList<int> Orientations,
 /// (Agents/docs/re/011-level-generation.md §1): +0x14 town, +0x2a HASH16, +0x68 topologies, +0xe4 map area, +0x14e
 /// randomness off (hideouts), +0x1e4 area type, +0x22a league chances (a WorldAreaLeagueChances row, read by byte
 /// offset), and the Hideouts row discoverable in it (+0x42 enabled, +0x43 chance in 10 000). <see cref="League"/> is a
-/// CoreLeagues row by index: +0x8a most per area, +0x8e needs a chance, +0xa0 not rolled here.</summary>
+/// CoreLeagues row by index: +0x8a most per area, +0x8e needs a chance, +0xa0 not rolled here. <see cref="HideoutClaim"/>
+/// is that Hideouts row's claim subarea (+0x2a, a WorldAreas id), <see cref="SubArea"/> the topologies of a WorldAreas
+/// row by id (a graph node's "subarea=…").</summary>
 public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo> Topologies, bool RandomnessDisabled = false,
     ushort Hash16 = 0, bool IsMapArea = false, int AreaType = 0, int Level = 1, Func<int, int>? LeagueChance = null,
-    (bool Enabled, int Chance)? DiscoverableHideout = null, Func<int, (int Max, bool NeedsChance, bool Skip)>? League = null)
+    (bool Enabled, int Chance)? DiscoverableHideout = null, Func<int, (int Max, bool NeedsChance, bool Skip)>? League = null,
+    string? HideoutClaim = null, Func<string, IReadOnlyList<TopologyInfo>?>? SubArea = null)
 {
     /// <summary>The area's row and the rows it points to, from the game's tables.</summary>
     public static AreaInfo Load(Func<string, byte[]?> read, string areaId, int level)
@@ -21,8 +24,9 @@ public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo
         var topologies = Dat("Topologies");
         int row = areas.Find(r => areas.String(r, 0) == areaId);
         if (row < 0) throw new ArgumentException($"no WorldAreas row {areaId}");
-        var tops = areas.RefList(row, 0x68)
+        List<TopologyInfo> Tops(int r) => areas.RefList(r, 0x68)
             .Select(t => new TopologyInfo(topologies.String(t, 8), topologies.I32List(t, 0x1c), topologies.I32(t, 0x2c))).ToList();
+        var tops = Tops(row);
         int chancesRow = areas.Ref(row, 0x22a);
         Func<int, int>? chance = null;
         if (chancesRow >= 0)
@@ -33,9 +37,12 @@ public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo
         var leagues = Dat("CoreLeagues");
         var hideouts = Dat("Hideouts");
         int hideout = hideouts.Find(h => hideouts.RefList(h, 0x1a).Contains(row));
+        int claim = hideout < 0 ? -1 : hideouts.Ref(hideout, 0x2a);
         return new AreaInfo(areaId, areas.Bool(row, 0x14), tops, areas.Bool(row, 0x14e), areas.U16(row, 0x2a), areas.Bool(row, 0xe4),
             areas.I32(row, 0x1e4), level, chance, hideout < 0 ? null : (hideouts.Bool(hideout, 0x42), hideouts.I32(hideout, 0x43)),
-            i => (leagues.I32(i, 0x8a), leagues.Bool(i, 0x8e), leagues.Bool(i, 0xa0)));
+            i => (leagues.I32(i, 0x8a), leagues.Bool(i, 0x8e), leagues.Bool(i, 0xa0)),
+            claim < 0 ? null : areas.String(claim, 0),
+            id => areas.Find(r => areas.String(r, 0) == id) is var r and >= 0 ? Tops(r) : null);
     }
 }
 
@@ -75,10 +82,7 @@ public static class LevelGenerator
         if (features.Count > 0) notes.Add("extra terrain features: " + string.Join(", ", features.Select(f => $"{f.Name} x{f.Count}")));
 
         // 0x142046c60 → 0x142027a20: the area's topologies of this variant, else those of 60, else of 1.
-        var choices = area.Topologies.Where(t => t.Variant == topologyVariant).ToList();
-        if (choices.Count == 0) choices = area.Topologies.Where(t => t.Variant == 60).ToList();
-        if (choices.Count == 0) choices = area.Topologies.Where(t => t.Variant == 1).ToList();
-        if (choices.Count == 0) throw new InvalidOperationException($"no topologies for {area.Id}");
+        var choices = Choices(area.Topologies, topologyVariant, area.Id);
         // 0x142046a70: the index, then the orientation from the picked topology's list (same LCG seed).
         var (index, orientation) = rng.PickIndexAndOrientation(choices.Count, i => LevelRandom.OrientationMask(choices[i].Orientations));
         var topology = choices[index];
@@ -86,11 +90,62 @@ public static class LevelGenerator
 
         // 0x14204a570's adds: the rolled features' rows wait in the extra room pool (generator +0x40).
         var pool = ExtraRoomPool.Create(files.Raw, features);
-        var grid = topology.Graph.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase)
-            ? new DungeonTiler(files, rng, notes, pool).Generate(topology.Graph, orientation)
-            : new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage)
+        bool hideout = features.Any(f => f.Name == ExtraTerrainFeatures.DiscoverableHideout);
+        var secondaries = SubAreas(files, area, topology.Graph, hideout, topologyVariant, rng, notes);
+        bool dgr = topology.Graph.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase);
+        if (!dgr && secondaries.Count != 0)
+            throw new NotSupportedException($"{topology.Graph}: sub-area subgraphs beside a tile graph (0x142047540) are not ported");
+        var grid = dgr
+            ? new DungeonTiler(files, rng, notes, pool) { Hideout = hideout, Secondaries = secondaries }.Generate(topology.Graph, orientation)
+            : new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage) { Hideout = hideout }
                 .Generate(topology.Graph, orientation);
         return new GenerationResult(grid, rng, topology, notes);
+    }
+
+    static List<TopologyInfo> Choices(IReadOnlyList<TopologyInfo> topologies, int variant, string areaId)
+    {
+        var choices = topologies.Where(t => t.Variant == variant).ToList();
+        if (choices.Count == 0) choices = topologies.Where(t => t.Variant == 60).ToList();
+        if (choices.Count == 0) choices = topologies.Where(t => t.Variant == 1).ToList();
+        if (choices.Count == 0) throw new InvalidOperationException($"no topologies for {areaId}");
+        return choices;
+    }
+
+    /// <summary>The sub-areas' subgraphs (graph, orientation). <c>0x1420457f0</c> → <c>0x14204f590</c> on the primary
+    /// graph, before the records are counted: a node description "subarea=X" (case-insensitive prefix) queues the world
+    /// area X (generator +0x1f0; "Unknown sub world area"); "subarea=hideout" queues the hideout's claim subarea
+    /// (Hideouts +0x2a) when the discoverable hideout rolled, else skips the node's remaining descriptions. Then
+    /// <c>0x142047540</c> → <c>0x142047090</c> → <c>0x142046340</c> for each in order: its topologies (chosen as the
+    /// area's), <c>Next(count)</c>, then <c>Next(840)</c> → <c>0x14299da50</c> with the picked topology's orientation
+    /// mask. The node filter <c>0x142036490</c> (league= nodes) is left to <see cref="TileGraphGenerator.Prepare"/>,
+    /// which stops on them.</summary>
+    static List<(string Graph, int Orientation)> SubAreas(TerrainCache files, AreaInfo area, string graphPath, bool hideout, int variant,
+        LevelRandom rng, List<string> notes)
+    {
+        var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
+        var ids = new List<string>();
+        foreach (var n in graph.Nodes)
+            foreach (var d in n.Descriptions)
+            {
+                if (d.Length < 8 || !d.StartsWith("subarea=", StringComparison.OrdinalIgnoreCase)) continue;
+                string id = d[8..];
+                if (id == "hideout")
+                {
+                    if (!hideout) break;
+                    ids.Add(area.HideoutClaim ?? throw new InvalidOperationException("Cannot find Hideout claim subarea"));
+                }
+                else ids.Add(id);
+            }
+        var result = new List<(string, int)>();
+        foreach (var id in ids)
+        {
+            var choices = Choices(area.SubArea?.Invoke(id) ?? throw new InvalidOperationException($"Unknown sub world area: {id}"), variant, id);
+            var topology = choices[(int)rng.Next((uint)choices.Count)];
+            int orientation = LevelRandom.OrientationFromMask(LevelRandom.OrientationMask(topology.Orientations), rng.Next(840u));
+            notes.Add($"sub-area {id}: {topology.Graph}, orientation {orientation}");
+            result.Add((topology.Graph, orientation));
+        }
+        return result;
     }
 }
 
@@ -99,6 +154,12 @@ public static class LevelGenerator
 /// border slots, the fill, <c>0x142025440</c> seams), then the outer ground (<c>0x14201db80</c>).</summary>
 sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> notes, ExtraRoomPool pool)
 {
+    /// <summary>The discoverable hideout rolled (generator +0xb).</summary>
+    public bool Hideout { get; init; }
+
+    /// <summary>The sub-areas' subgraphs (graph, orientation), placed beside the primary (<c>0x142047e50</c>).</summary>
+    public List<(string Graph, int Orientation)> Secondaries { get; init; } = [];
+
     TileGrid _grid = null!;
     TileStore _store = null!;
     Dictionary<string, List<(int Weight, string Path)>> _fills = null!;
@@ -170,7 +231,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     public TileGrid Generate(string graphPath, int graphOrientation)
     {
         var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
-        if (graph.Nodes.Count != 1) return Composite(graphPath, graphOrientation);
+        if (graph.Nodes.Count != 1 || Secondaries.Count != 0) return Composite(graphPath, graphOrientation);
         string masterPath = TerrainText.Resolve(graphPath, graph.MasterFile);
         var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
@@ -207,7 +268,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     TileGrid Composite(string graphPath, int graphOrientation)
     {
         var records = new List<Subgraph> { Record(graphPath, 0, 0, graphOrientation, -1) };
-        var grid = new TileGrid(records[0].W, records[0].H) { CheckGrounds = false, GroundFlags = g => files.Ground(g)?.Flags ?? 0 };
+        var (gw, gh) = PlaceSecondaries(records);
+        var grid = new TileGrid(gw, gh) { CheckGrounds = false, GroundFlags = g => files.Ground(g)?.Flags ?? 0 };
         var outers = new List<Action>();
         // 0x142049d10: with rows in the pool, the weight to share them by is the sum of the subgraphs' masters' +0x152
         // (0x14204bfa0); +0x152 is taken to default to 0 (no trace drew 0x141d8bba0's remainder roll), and a master
@@ -226,14 +288,14 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             {
                 // The tile graph's special nodes do not take the pool's rows (not ported).
                 if (pool.Share != 0) throw new NotSupportedException($"{r.Path}: extra feature rooms in a tile graph subgraph are not ported");
-                var gen = new TileGraphGenerator(files, rng, notes, false);
+                var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout };
                 gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
                 store = gen.Store;
                 outers.Add(() => OuterTileGraph(r));
             }
             else
             {
-                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool);
+                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout };
                 t.Tilise(r, grid, records, i);
                 store = t._store;
                 outers.Add(() => t.Outer(r));
@@ -255,6 +317,43 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         return grid;
     }
 
+    /// <summary><c>0x142047e50</c>: each secondary record (parent +0x92 = its index) goes to the corner, among those
+    /// right of (x + w + 1, y) and below (x, y + h + 1) each earlier record, that keeps a tile clear of every placed
+    /// rectangle (<c>0x1420487f0</c>) and gives the smallest bounding area: max(threshold, map width, its right) ×
+    /// max(threshold, map height, its bottom), the first of equals (a stable sort). The threshold is 0, or with more
+    /// than 10 records 4/5 of the integer square root of their total area (<c>0x141937840</c>). Returns the map's size
+    /// (<c>gen[5]</c> vtable +8).</summary>
+    (int W, int H) PlaceSecondaries(List<Subgraph> records)
+    {
+        for (int i = 0; i < Secondaries.Count; i++)
+            records.Add(Record(Secondaries[i].Graph, 0, 0, Secondaries[i].Orientation, i + 1));
+        int threshold = records.Count > 10 ? (int)Math.Sqrt(records.Sum(r => r.W * r.H)) * 4 / 5 : 0;
+        var placed = new List<(int X0, int Y0, int X1, int Y1)> { (records[0].X, records[0].Y, records[0].X + records[0].W, records[0].Y + records[0].H) };
+        int mw = records[0].W, mh = records[0].H;
+        for (int i = 1; i < records.Count; i++)
+        {
+            var r = records[i];
+            var candidates = new List<(long Score, int X, int Y)>();
+            void Try(int cx, int cy)
+            {
+                if (placed.Any(p => p.X0 < cx + r.W + 1 && cx - 1 < p.X1 && p.Y0 < cy + r.H + 1 && cy - 1 < p.Y1)) return;
+                long w = Math.Max(threshold, Math.Max(mw, cx + r.W)), h = Math.Max(threshold, Math.Max(mh, cy + r.H));
+                candidates.Add((w * h, cx, cy));
+            }
+            for (int j = 0; j < i; j++)
+            {
+                Try(records[j].X + records[j].W + 1, records[j].Y);
+                Try(records[j].X, records[j].Y + records[j].H + 1);
+            }
+            var best = candidates.OrderBy(c => c.Score).First();
+            records[i] = r = r with { X = best.X, Y = best.Y };
+            placed.Add((r.X, r.Y, r.X + r.W, r.Y + r.H));
+            mw = Math.Max(mw, r.X + r.W);
+            mh = Math.Max(mh, r.Y + r.H);
+        }
+        return (mw, mh);
+    }
+
     /// <summary><c>0x14203c900</c> for one subgraph of several nodes on the shared map: the layout, at the record's
     /// corner inside its margins; the rooms tilised; then each room without a room but with descriptions (a graph
     /// node's, <c>0x14204f030</c> → <c>0x1420468e0</c>) adds the subgraph its first description names, at the room's
@@ -267,7 +366,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         _store = new TileStore(files, files.TileList(TerrainText.Resolve(masterPath, master["TileSet"])));
         _fills = master.TryGetValue("FillTiles", out var gft) ? files.FillTiles(TerrainText.Resolve(masterPath, gft)) : [];
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
-        var map = Layout(r.Path, r.Orientation, masterPath, master, unit);
+        var map = Layout(r.Path, r.Orientation, masterPath, master, unit, index == 0);
         // Room k starts at the view's corner plus (unit − overlap) × its cell.
         int step = unit - map.Overlap;
         _ox = r.X + r.Margins.Left;
@@ -351,10 +450,10 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary><c>0x14203c900</c> for a graph of several nodes: the exist rolls (as for tile graphs), then the rooms
     /// on a grid of the graph's size in room units (<c>0x1421038d0</c>).</summary>
-    DungeonMap Layout(string graphPath, int graphOrientation, string masterPath, Dictionary<string, string> master, int unit)
+    DungeonMap Layout(string graphPath, int graphOrientation, string masterPath, Dictionary<string, string> master, int unit, bool primary)
     {
         var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
-        TileGraphGenerator.Prepare(graph, rng, false);
+        TileGraphGenerator.Prepare(graph, rng, false, Hideout, primary);
         string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
         _graphGrounds = (Ground(graph.TopGround), Ground(graph.BottomGround), Ground(graph.DefaultGround));
         notes.Add($"dungeon graph {graphPath}: {graph.Nodes.Count} nodes, {graph.Edges.Count} edges after exist rolls");

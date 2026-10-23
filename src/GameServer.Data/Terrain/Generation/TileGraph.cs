@@ -239,7 +239,9 @@ public sealed class TileGraph
                 }
                 d.ExtraDoor = Int();
                 if (g.Version < 0x11) d.ExtraDoor = 0;
-                else if (g.Version > 0x13) d.ExtraDoorType = Next().Text;
+                // An empty type ("") is read over the default; the client then holds rooms.et for it (taken from
+                // 2_8_5 seed 1: exit_1.arm's extra door into a rooms.et exit).
+                else if (g.Version > 0x13 && Next().Text is { Length: > 0 } extraType) d.ExtraDoorType = extraType;
                 d.Fuzzy = Int();
                 d.Bias = Int();
                 d.Impenetrable = Word("I", "P", "impenetrable");

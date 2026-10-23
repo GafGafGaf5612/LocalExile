@@ -127,6 +127,12 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
     readonly List<Info> _info = [];
     readonly Dictionary<string, List<PathRecord>> _paths = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The void edges and the other edges by priority (three slots each, each slot's edges in lists by key
+    /// in key order), as <see cref="Run"/> sorts them (<c>0x142002b50</c>); a template node takes its edges out of
+    /// them, leaving its key's list (empty, it still draws).</summary>
+    readonly List<GraphEdge> _voids = [];
+    readonly SortedDictionary<sbyte, List<List<GraphEdge>>[]> _groups = [];
+
     /// <summary>A room entry as levelgen prints the trace's <c>dungeon.rooms</c>: room, position, size, orientation,
     /// level, kind, flags and exits (type, height, chirality).</summary>
     internal static string RoomText(DungeonPlacement r) =>
@@ -147,19 +153,25 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         map.Directional = t => Directional(t);
         // 0x1420127e0 → 0x142002b50: void edges to their own list, every other edge into the group of its priority:
         // rooms.et edges in its third slot, edges whose type has one room size in the first, the rest in the second.
-        var voids = new List<GraphEdge>();
-        var groups = new SortedDictionary<sbyte, List<GraphEdge>[]>();
+        var voids = _voids;
+        var groups = _groups;
         foreach (var e in graph.Edges)
         {
             if (e.Dungeon!.Void) { voids.Add(e); continue; }
             var key = (sbyte)e.Priority;
             if (!groups.TryGetValue(key, out var slots)) groups[key] = slots = [[], [], []];
             int slot = e.Type.Equals(DungeonRoomSet.Rooms, StringComparison.OrdinalIgnoreCase) ? 2 : roomSet.Sizes(e.Type).Count == 1 ? 0 : 1;
-            slots[slot].Add(e);
+            var k = ListKey(e);
+            int at = slots[slot].FindIndex(l => CompareKeys(ListKey(l[0]), k) >= 0);
+            if (at < 0) slots[slot].Add([e]);
+            else if (CompareKeys(ListKey(slots[slot][at][0]), k) == 0) slots[slot][at].Add(e);
+            else slots[slot].Insert(at, [e]);
         }
         if (groups.Count > 1) throw new NotSupportedException("dungeon edges of several priorities (0x1420039e0's order) are not ported");
         // 0x142002790: the void edges by priority (a stable insertion sort).
-        voids = [.. voids.OrderBy(e => (sbyte)e.Priority)];
+        var byPriority = voids.OrderBy(e => (sbyte)e.Priority).ToList();
+        voids.Clear();
+        voids.AddRange(byPriority);
         // 0x142104710 → 0x142002460: each void edge's line through its points reserves its cells.
         foreach (var e in voids) Reserve(e);
         // 0x142101890: the tagged nodes, then the untagged ones, each by priority (highest first), take their rooms.
@@ -167,12 +179,26 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
                      .Concat(graph.Nodes.Where(n => n.Tag.Length == 0).OrderByDescending(n => n.Priority)).ToList())
             PlaceNode(n);
         Teleports();
-        if (groups.Values.Any(s => s.Any(l => l.Count != 0))) Connections(groups);
+        if (groups.Values.Any(s => s.Any(lists => lists.Any(l => l.Count != 0)))) Connections(groups);
         Finish();
     }
 
+    /// <summary><c>0x1420014a0</c> (<c>0x142002ca0</c>): a slot keys its edges by impenetrable (I) first, then the bias
+    /// (+0x5c, the number before I/P; descending, unsigned), then the door type's n0 (.et +0x4c; descending), then the
+    /// type's path (<c>0x142006570</c>, ordinal); edges with the same key share a list, lists in key order.</summary>
+    (bool Impenetrable, uint Bias, byte N0, string Type) ListKey(GraphEdge e) =>
+        (e.Dungeon!.Impenetrable, (uint)e.Dungeon.Bias, (byte)Edge(e.Type).N0, e.Type);
+
+    static int CompareKeys((bool Impenetrable, uint Bias, byte N0, string Type) a, (bool Impenetrable, uint Bias, byte N0, string Type) b)
+    {
+        if (a.Impenetrable != b.Impenetrable) return a.Impenetrable ? -1 : 1;
+        if (a.Bias != b.Bias) return b.Bias.CompareTo(a.Bias);
+        if (a.N0 != b.N0) return b.N0.CompareTo(a.N0);
+        return string.CompareOrdinal(a.Type, b.Type);
+    }
+
     /// <summary><c>0x1421038d0</c> from the fill's state to the room picks (skipped when no edge is left to join).</summary>
-    void Connections(SortedDictionary<sbyte, List<GraphEdge>[]> groups)
+    void Connections(SortedDictionary<sbyte, List<List<GraphEdge>>[]> groups)
     {
 
         // 0x1420fb310: the fill's state for the rooms so far, all of them on a path; their blanks get flag 8.
@@ -182,24 +208,17 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
             _info[k].Used = true;
             if ((map.Rooms[k].Flags & 4) == 0 && map.Rooms[k].Room is null) map.Rooms[k].Flags |= 8;
         }
-        // 0x1420028c0: every edge list (per group, slot and key) shuffled, then by priority (0x142012820). A slot keys
-        // its edges by 0x1420014a0 (0x142002ca0): impenetrable (I) first, then the bias (+0x5c, the number before I/P;
-        // descending, unsigned), then the door type's n0 (.et +0x4c; descending), then the type's path (0x142006570,
-        // ordinal); edges with the same key share a list, lists in key order.
+        // 0x1420028c0: every edge list (per group, slot and key; an emptied one too) shuffled, then by priority
+        // (0x142012820).
         var lists = new List<List<GraphEdge>>();
         foreach (var slots in groups.Values)
             foreach (var slot in slots)
-            {
-                foreach (var byKey in slot.GroupBy(e => (e.Dungeon!.Impenetrable, Bias: (uint)e.Dungeon.Bias, Edge(e.Type).N0, e.Type))
-                             .OrderBy(g => g.Key.Impenetrable ? 0 : 1).ThenByDescending(g => g.Key.Bias)
-                             .ThenByDescending(g => (byte)g.Key.N0).ThenBy(g => g.Key.Type, StringComparer.Ordinal))
+                foreach (var list in slot)
                 {
-                    var list = byKey.ToList();
                     rng.Next((uint)list.Count);
                     rng.Shuffle(list);
                     lists.Add([.. list.OrderBy(e => (sbyte)e.Priority)]);
                 }
-            }
         // 0x1420f9f00 → 0x1421040c0 per list.
         foreach (var list in lists) Group(list);
         Branches();
@@ -246,9 +265,7 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
             if (pool.Rows.Any(r => r.Oversize) && roomSet.All.Any(r => r.Tag.StartsWith("telepad_injector", StringComparison.Ordinal)))
                 throw new NotSupportedException("oversize extra features in telepad injector rooms (0x142101e50) are not ported");
             Inject();
-            // 0x142103490: with shrines rolled (pool +0x148), the room set's shrine rooms (+0x118), not ported.
-            if (pool.Shrines != 0 && roomSet.All.Any(r => r.Tag == "shrine"))
-                throw new NotSupportedException("shrine rooms (0x142103490) are not ported");
+            ShrineRooms();
         }
         // Reserved cells become free; then the fill rooms once more.
         for (int i = 0; i < map.Cells.Length; i++)
@@ -485,6 +502,25 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
             return true;
         }
     }
+
+    /// <summary><c>0x142103490</c>: with shrines rolled (pool +0x148), as many tries as the count: the room set's
+    /// "shrine" rooms (+0x118) of the layout's unit size (master +0x149), any orientation, go to
+    /// <see cref="PlaceSpecial"/>; a placed room with a shrine object (room data +0x70, the object type taken to be
+    /// Metadata/Shrines/Shrine) counts a shrine placed (<c>0x141d8b9a0</c>).</summary>
+    void ShrineRooms()
+    {
+        var rooms = roomSet.All.Where(r => r.Tag == "shrine").ToList();
+        if (rooms.Count == 0 || pool!.Shrines == 0) return;
+        var list = rooms.Where(r => r.Unit == map.Unit).Select(r => (r, 0)).ToList();
+        if (list.Count == 0) return;
+        for (int i = 0, n = pool.Shrines; i < n; i++)
+            if (PlaceSpecial(list) is { Room: { } room } && HasShrine(room.Path)) pool.ShrinePlaced();
+    }
+
+    /// <summary>The .arm's objects (its last section: x, y, …, .ao, object type) hold a shrine.</summary>
+    bool HasShrine(string path) =>
+        TerrainText.Lines(files.Text(path) ?? "").Select(TerrainText.Tokenize)
+            .Any(l => l.Count > 2 && l[^1].Text == "Metadata/Shrines/Shrine");
 
     /// <summary><c>0x141ff6960</c>'s count for a "mission" room: its 'k' slots tagged "missiontile".</summary>
     static int MissionTiles(RoomDef def)
@@ -1154,7 +1190,11 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         if (n.Placed) return;
         var edges = n.Slots.Where(e => e is not null).Select(e => e!).ToList();
         bool flag2 = n.Tag.Length != 0 || n.Descriptions.Count != 0 || edges.Any(e => e.Dungeon!.Impenetrable);
-        if (n.Descriptions.Contains("template")) throw new NotSupportedException($"{n}: template nodes (0x142107840) are not ported");
+        if (n.Descriptions.Contains("template"))
+        {
+            PlaceTemplate(n, edges, flag2);
+            return;
+        }
         if (n.Tag.Length == 0)
         {
             PlaceBlank(n, edges, flag2);
@@ -1207,6 +1247,151 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         byte b10 = (byte)edges.Select(e => e.Dungeon!.ExtraDoor).DefaultIfEmpty(0).Max();
         var p = map.Place(null, 0, w, h, ax, ay, (sbyte)n.Height, descriptions, null, Accessible(n, edges), flag2, 1, b10, NodeDoorType(n));
         notes.Add($"dungeon node {n}: subgraph {descriptions[0]} {p}");
+    }
+
+    /// <summary><c>0x142107840</c>: a "template" node takes a blank of a room's size with that room's exits. Each slot
+    /// edge goes to a side (<see cref="TemplateSides"/>); a side's exit is its edge's type at height 0, with the
+    /// direction of <see cref="NodeExits"/> (<c>0x141ff2ee0</c>), or no door. An edge whose type is not the default
+    /// (rooms.et, layout +0x20) leaves the void and connection lists (the room stands for it) and its type joins the
+    /// layout's types (<c>0x142127400</c>, ordered by the handle's address; slot order here). The node's
+    /// tag's room-set entries with that exit on every side (<c>0x141ff81b0</c> → <c>0x142012ab0</c>), kept to a
+    /// "size:" description's size, else all of one size ("Multiple room sizes found for template node");
+    /// <c>Next(total weight)</c> picks one, anchored as a room (<c>0x1421062e0</c>), then the node door type. The blank
+    /// (<c>0x142100650</c>: no room, orientation 8, kind 0, type +0x40 the first such type or rooms.et, flag 4) takes
+    /// the picked room's exits whose being rooms.et matches the type's. A node without edges (a fixed-size blank at
+    /// its clamped corner, <c>0x1421069d0</c>) is not ported.</summary>
+    void PlaceTemplate(GraphNode n, List<GraphEdge> edges, bool flag2)
+    {
+        if (edges.Count == 0) throw new NotSupportedException($"{n}: template nodes without edges (0x142107840) are not ported");
+        var sides = TemplateSides(n) ?? throw new InvalidOperationException($"Failed to calculate edge layout for template node at location {n}");
+        var template = new RoomExit[4];
+        var types = new List<string>();
+        for (int k = 0; k < 4; k++)
+        {
+            if (sides[k] >= 4) continue;
+            var e = n.Slots[k]!;
+            template[sides[k]] = new RoomExit(e.Type, 0, Directional(e.Type) && ((e.A == n) ^ (e.Chirality != 0)));
+            if (e.Type.Equals(DungeonRoomSet.Rooms, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!_voids.Remove(e))
+                foreach (var list in _groups.Values.SelectMany(s => s).SelectMany(l => l)) list.Remove(e);
+            if (!types.Contains(e.Type, StringComparer.OrdinalIgnoreCase)) types.Add(e.Type);
+        }
+        // Several types: the client keeps them ordered by handle address; slot order is taken (1_3_18_2 seed 1 agrees
+        // either way up to its stop).
+        string type40 = types.Count == 0 ? DungeonRoomSet.Rooms : types[0];
+        var entries = roomSet.Variants(n.Tag, t => Directional(t)).Where(v => SidesHold(v.Exits, v.W, v.H, template)).ToList();
+        if (entries.Count == 0) throw new InvalidOperationException($"No matching rooms found for template node at location {n}");
+        if (SizeDescription(n) is { } size)
+        {
+            entries.RemoveAll(v => v.W != size.W || v.H != size.H);
+            if (entries.Count == 0) throw new InvalidOperationException($"No matching rooms of size {size.W}x{size.H} found for template node at location {n}");
+        }
+        else if (entries.Any(v => v.W != entries[0].W || v.H != entries[0].H))
+            throw new InvalidOperationException($"Multiple room sizes found for template node at location {n}");
+        int pick = (int)rng.Next((uint)entries.Sum(v => v.Room.Weight)), i = 0;
+        while (i < entries.Count - 1 && pick >= entries[i].Room.Weight) pick -= entries[i++].Room.Weight;
+        var chosen = entries[i];
+        var (x, y) = Cell(n.X, n.Y);
+        var (ax, ay) = Anchor(graphOrientation, x, y, chosen.W, chosen.H);
+        string doorType = NodeDoorType(n);
+        byte b10 = (byte)edges.Select(e => e.Dungeon!.ExtraDoor).DefaultIfEmpty(0).Max();
+        var p = map.Place(null, 8, chosen.W, chosen.H, ax, ay, (sbyte)n.Height, [], type40, Accessible(n, edges), flag2, 0, b10, doorType);
+        p.Flags |= 4;
+        bool rooms = type40.Equals(DungeonRoomSet.Rooms, StringComparison.OrdinalIgnoreCase);
+        for (int k = 0; k < p.Exits.Length; k++)
+        {
+            var x2 = chosen.Exits[k];
+            if (rooms != string.Equals(x2.Type, DungeonRoomSet.Rooms, StringComparison.OrdinalIgnoreCase)) continue;
+            p.Exits[k] = new DungeonDoor { Type = x2.Type, Height = x2.Height, Chirality = x2.Chirality };
+        }
+        notes.Add($"dungeon node {n}: template {Path.GetFileName(chosen.Room.Path)} o{chosen.Orientation} {p}");
+    }
+
+    /// <summary><c>0x142012ab0</c>: every side (top w exits, right h, bottom w, left h) has an exit equal to the
+    /// template's for that side (type, height and direction; no door where the template has none).</summary>
+    static bool SidesHold(RoomExit[] exits, int w, int h, RoomExit[] template)
+    {
+        int[] bounds = [0, w, w + h, 2 * w + h, exits.Length];
+        for (int s = 0; s < 4; s++)
+        {
+            var t = template[s];
+            bool found = false;
+            for (int k = bounds[s]; k < bounds[s + 1] && !found; k++)
+                found = string.Equals(exits[k].Type, t.Type, StringComparison.OrdinalIgnoreCase) && exits[k].Height == t.Height && exits[k].Chirality == t.Chirality;
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    /// <summary><c>0x1421299f0</c>: the side (0 top, 1 right, 2 bottom, 3 left) of each edge slot, 4 for none. A slot's
+    /// edge, unless its type is a wildcard (.et flag 0x80), goes to the side its direction leans to: towards its first
+    /// internal point from this end (the other node without points), the larger of |dx| and |dy| deciding, a tie
+    /// vertical. While a side holds two or more, a slot of it may move to a neighbouring side holding none
+    /// (<c>0x142129d80</c> with 0), else one (with 1): of all such moves the one whose direction is nearest the new
+    /// side's (<c>0x14299d730</c>, the first of equals; the side before then the side after, slots in side order).
+    /// Null when a side is still shared.</summary>
+    int[]? TemplateSides(GraphNode n)
+    {
+        var bySide = new List<int>[4];
+        for (int s = 0; s < 4; s++) bySide[s] = [];
+        (int X, int Y) Direction(int k)
+        {
+            var e = n.Slots[k]!;
+            var (px, py) = e.A == n ? (e.Points.Count == 0 ? (e.B.X, e.B.Y) : e.Points[0]) : (e.Points.Count == 0 ? (e.A.X, e.A.Y) : e.Points[^1]);
+            return (px - n.X, py - n.Y);
+        }
+        for (int k = 0; k < 4; k++)
+        {
+            if (n.Slots[k] is not { } e || Edge(e.Type).Wildcard) continue;
+            var (dx, dy) = Direction(k);
+            int side = Math.Abs(dy) < Math.Abs(dx) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+            bySide[side].Add(k);
+        }
+        (int X, int Y)[] axes = [(0, -1), (1, 0), (0, 1), (-1, 0)];
+        while (true)
+        {
+            var moves = Moves(0);
+            if (moves.Count == 0) moves = Moves(1);
+            if (moves.Count == 0) break;
+            var best = moves[0];
+            foreach (var m in moves)
+                if (m.Closeness > best.Closeness) best = m;
+            bySide[best.To].Add(best.Slot);
+            bySide[best.From].Remove(best.Slot);
+        }
+        var sides = new[] { 4, 4, 4, 4 };
+        for (int s = 0; s < 4; s++)
+        {
+            if (bySide[s].Count > 1) return null;
+            if (bySide[s].Count == 1) sides[bySide[s][0]] = s;
+        }
+        return sides;
+
+        List<(int Closeness, int From, int To, int Slot)> Moves(int holding)
+        {
+            var moves = new List<(int, int, int, int)>();
+            for (int s = 0; s < 4; s++)
+            {
+                if (bySide[s].Count < 2) continue;
+                foreach (int k in bySide[s])
+                    foreach (int to in (ReadOnlySpan<int>)[(s + 3) & 3, (s + 1) & 3])
+                        if (bySide[to].Count == holding)
+                            moves.Add((Closeness(axes[to].X * 10, axes[to].Y * 10, Direction(k)), s, to, k));
+            }
+            return moves;
+        }
+
+        // 0x14299d730: the index into its arc-cosine table (255 steps, 0 = opposite, 254 = the same direction); the
+        // table falls with the index, so the smallest angle is the largest index.
+        static int Closeness(int ax, int ay, (int X, int Y) b)
+        {
+            if ((ax == 0 && ay == 0) || (b.X == 0 && b.Y == 0)) return 254;
+            int la = ax * ax + ay * ay, lb = b.X * b.X + b.Y * b.Y;
+            int root = (int)FortuneVoronoi.IntSqrt((uint)(lb * la));
+            if (root == 0) root = 1;
+            int v = (sbyte)((lb - (b.Y - ay) * (b.Y - ay) - (b.X - ax) * (b.X - ax) + la) * 0x7f / root / 2) + 0x7f;
+            return Math.Clamp(v, 0, 0xfe);
+        }
     }
 
     /// <summary><c>0x142107130</c>: an untagged node takes a blank (kind 3, no room yet) of one of its door type's room

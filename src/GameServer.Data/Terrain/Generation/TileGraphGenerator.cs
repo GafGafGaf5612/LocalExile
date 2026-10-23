@@ -9,6 +9,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
 {
     public TileGraph Graph { get; private set; } = null!;
 
+    /// <summary>The discoverable hideout rolled (generator +0xb).</summary>
+    public bool Hideout { get; init; }
+
     TileGrid? _grid;
     int _ox, _oy;
 
@@ -83,7 +86,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     {
         Graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         if (orientation != 0) throw new NotSupportedException($"turning a tile graph (orientation {orientation}) is not ported");
-        Prepare(Graph, rng, vaalSideArea);
+        Prepare(Graph, rng, vaalSideArea, Hideout, primary);
         notes.Add($"graph {graphPath}: {Graph.Nodes.Count} nodes, {Graph.Edges.Count} edges after exist rolls");
         var cells = new VoronoiCells(Graph);
         cells.Jitter(rng);
@@ -198,18 +201,20 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         return (masterPath, master, fills);
     }
 
-    /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws).</summary>
-    internal static void Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea)
+    /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws), for
+    /// the subgraph record <paramref name="primary"/> says is the first (the passes that take the record index).</summary>
+    internal static void Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea, bool hideout, bool primary)
     {
         foreach (var n in graph.Nodes)
         {
             // 0x14203a600: a random offset inside the node's rectangle.
             if (n.OffsetX1 != n.OffsetX2 || n.OffsetY1 != n.OffsetY2 || n.OffsetX1 != 0 || n.OffsetY1 != 0)
                 throw new NotSupportedException("node random offsets (0x14203a600) are not ported");
-            if (n.Descriptions.Any(d => d.StartsWith("subarea", StringComparison.OrdinalIgnoreCase) ||
-                                        d.StartsWith("league=", StringComparison.OrdinalIgnoreCase) ||
-                                        d.StartsWith("shuffle", StringComparison.Ordinal)))
-                throw new NotSupportedException($"{n}: description-driven node passes are not ported");
+            // 0x14203a180 → 0x142036490: a node whose "league=" names another league than the instance's (world
+            // +0xd0) is dropped; the port has no instance league. "shuffle…" and "unique…" are read after the exist
+            // rolls (ShuffleGroups, UniqueGroups), "subarea=…" when the record is added (LevelGenerator.SubAreas).
+            if (n.Descriptions.Any(d => d.StartsWith("league=", StringComparison.OrdinalIgnoreCase)))
+                throw new NotSupportedException($"{n}: league= nodes (0x142036490, the instance's league) are not ported");
             if (n.Tag == "league") n.Exist = 0;
         }
         // 0x14203a480: a tag listing alternatives "a,b,c" keeps one of them.
@@ -220,6 +225,17 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             if (parts.Length > 1) n.Tag = parts[(int)rng.Next((uint)parts.Length)];
         }
         SideAreas(graph, rng, vaalSideArea);
+        // 0x142035350 / 0x142034e60, for the first record only: a node with "subarea=hideout…" or
+        // "subareatype=Hideout…" is dropped (exist 0, no descriptions) when no discoverable hideout rolled; with one,
+        // that description names the hideout's claim subarea instead (Hideouts.dat; no draw or tile reads it, left as
+        // it is).
+        if (primary && !hideout)
+            foreach (var n in graph.Nodes)
+                if (n.Descriptions.Any(d => d.StartsWith("subarea=hideout", StringComparison.Ordinal) || d.StartsWith("subareatype=Hideout", StringComparison.Ordinal)))
+                {
+                    n.Exist = 0;
+                    n.Descriptions.Clear();
+                }
         // 0x142031390: exist rolls, nodes then edges; failed edges go first, then failed nodes.
         var nodesOut = new List<GraphNode>();
         foreach (var n in graph.Nodes)
@@ -236,8 +252,90 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             if (e.Exist == 0 || rng.Next(100u) >= (uint)e.Exist) edgesOut.Add(e);
         foreach (var e in edgesOut) graph.RemoveEdge(e);
         foreach (var n in nodesOut) graph.RemoveNode(n);
+        ShuffleGroups(graph, rng);
+        UniqueGroups(graph, rng);
         // 0x142003bc0: stable sort by priority, highest first.
         graph.Nodes = [.. graph.Nodes.OrderByDescending(n => n.Priority)];
+    }
+
+    /// <summary><c>0x142030790</c> after the exist rolls, with <c>0x14203a720</c>: a node's first description starting
+    /// "shuffle" puts it in group N (the number after it, none = 0; not a number or below 0: no group). Per group in
+    /// order of N, while it holds two or more: <c>Next(size)</c> twice, both nodes leave the group, and two different
+    /// nodes swap tags (+0x20) and descriptions (+8).</summary>
+    static void ShuffleGroups(TileGraph graph, LevelRandom rng)
+    {
+        var groups = new List<List<GraphNode>>();
+        foreach (var n in graph.Nodes)
+        {
+            var d = n.Descriptions.FirstOrDefault(d => d.StartsWith("shuffle", StringComparison.Ordinal));
+            if (d is null) continue;
+            int g = d.Length == 7 ? 0 : LeadingInt(d[7..]) ?? -1;
+            if (g < 0) continue;
+            while (groups.Count <= g) groups.Add([]);
+            groups[g].Add(n);
+        }
+        foreach (var group in groups)
+            while (group.Count > 1)
+            {
+                var a = group[(int)rng.Next((uint)group.Count)];
+                var b = group[(int)rng.Next((uint)group.Count)];
+                group.Remove(a);
+                group.Remove(b);
+                if (a == b) continue;
+                (a.Tag, b.Tag) = (b.Tag, a.Tag);
+                (a.Descriptions, b.Descriptions) = (b.Descriptions, a.Descriptions);
+            }
+    }
+
+    /// <summary><c>0x142030790</c> after the shuffle groups, with <c>0x142031100</c> / <c>0x142035c70</c>: a node's first
+    /// description starting "unique" reads "unique[letter][N][#count]" (none = group 0, count 1; N not a number: no
+    /// group; a count that is not a number: 1). Per group in order of N, keeping the largest count: with more nodes than
+    /// the count, <c>Next(size)</c> takes one to keep, count times, and the nodes left are removed
+    /// (<c>0x142035f10</c>, as a failed node). Lettered groups (keep count of the letter's N groups, shared across the
+    /// level's records) are not ported.</summary>
+    static void UniqueGroups(TileGraph graph, LevelRandom rng)
+    {
+        var groups = new List<(int Count, List<GraphNode> Nodes)>();
+        foreach (var n in graph.Nodes)
+        {
+            var d = n.Descriptions.FirstOrDefault(d => d.StartsWith("unique", StringComparison.Ordinal));
+            if (d is null) continue;
+            int count = 1, g = 0;
+            if (d.Length > 6)
+            {
+                string rest = d[6..];
+                if (char.IsAsciiLetter(rest[0])) throw new NotSupportedException($"{n}: lettered unique groups ('{d}', 0x142030790) are not ported");
+                int hash = rest.IndexOf('#');
+                if (hash >= 0)
+                {
+                    if (hash + 1 < rest.Length) count = LeadingInt(rest[(hash + 1)..]) ?? 1;
+                    rest = rest[..hash];
+                }
+                if (LeadingInt(rest) is not { } v || v < 0) continue;
+                g = v;
+            }
+            while (groups.Count <= g) groups.Add((0, []));
+            groups[g] = (Math.Max(groups[g].Count, count), groups[g].Nodes);
+            groups[g].Nodes.Add(n);
+        }
+        foreach (var (count, nodes) in groups)
+        {
+            if (count >= nodes.Count) continue;
+            for (int k = 0; k < count; k++) nodes.RemoveAt((int)rng.Next((uint)nodes.Count));
+            foreach (var n in nodes) graph.RemoveNode(n);
+        }
+    }
+
+    /// <summary>A number as <c>std::wistream &gt;&gt; int</c> reads it: leading blanks, a sign, digits; null when none.</summary>
+    static int? LeadingInt(string s)
+    {
+        int i = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        int start = i;
+        if (i < s.Length && (s[i] == '-' || s[i] == '+')) i++;
+        int digits = i;
+        while (i < s.Length && char.IsAsciiDigit(s[i])) i++;
+        return i > digits && int.TryParse(s[start..i], out int v) ? v : null;
     }
 
     /// <summary><c>0x142032320</c>: nodes with a description "sidearea&lt;N&gt;" (the first such, N from '1'; none = 1) are

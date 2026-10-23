@@ -20,8 +20,11 @@ sealed class ExtraRoomPool
     public readonly List<(DungeonRoom Room, int Orientation, ExtraFeatureRow Row)> Injected = [];
     public int Total, Share;
 
-    /// <summary>The shrine count the features rolled (generator +0x188 / pool +0x148).</summary>
+    /// <summary>The shrine count the features rolled (generator +0x188 / pool +0x148), less the shrines placed.</summary>
     public int Shrines;
+
+    /// <summary>The shrines placed (+0x14a).</summary>
+    public int ShrinesPlaced;
 
     readonly RawDat? _table;
 
@@ -51,13 +54,19 @@ sealed class ExtraRoomPool
         _table.I32List(row, 0x39), _table.Ref8(row, 0x49), _table.Bool(row, 0x61));
 
     /// <summary><c>0x141d8ae40</c>: <paramref name="count"/> copies of the row at the end of the list (its tiles go to the
-    /// pool's own tile store, +0x90), then the row it links to, as many times. The Shrine row's cap (+0x148) is not
-    /// ported.</summary>
+    /// pool's own tile store, +0x90), then the row it links to, as many times. The Shrine row is capped by the shrine
+    /// count: with the Shrine rows already waiting or injected (<c>0x141d8ace0</c>), at most that many; none, and the
+    /// link is not added either.</summary>
     void Add(ExtraFeatureRow row, int count)
     {
         if (count == 0) return;
         if (row.Rooms.Count == 0) return;
-        if (row.Name == "Shrine") throw new NotSupportedException("the Shrine row's cap (0x141d8ae40, pool +0x148) is not ported");
+        if (row.Name == Shrine)
+        {
+            int have = Rows.Count(r => r.Name == Shrine) + Injected.Count(i => i.Row.Name == Shrine);
+            if (Shrines < have + count) count = Math.Max(0, Shrines - have);
+            if (count == 0) return;
+        }
         for (int i = 0; i < count; i++) Rows.Add(row);
         if (row.Link >= 0) Add(Row(row.Link), count);
     }
@@ -91,6 +100,19 @@ sealed class ExtraRoomPool
         Rows.Remove(row);
         if (counted && Share != 0) Share--;
     }
+
+    /// <summary><c>0x141d8b9a0</c>: a shrine room was placed. The shrine count drops by one (not below 0), the placed
+    /// count goes up, and the first Shrine row leaves the list (the share stays). The shrine's position goes to the
+    /// pool's placed rooms (<c>0x141d8abb0</c>), which nothing in the layout reads; left out.</summary>
+    public void ShrinePlaced()
+    {
+        if (Shrines != 0) Shrines--;
+        ShrinesPlaced++;
+        int i = Rows.FindIndex(r => r.Name == Shrine);
+        if (i >= 0) Rows.RemoveAt(i);
+    }
+
+    const string Shrine = "Shrine";
 
     /// <summary><c>0x141d8b450</c>: an injected room whose turned size is w × h, <c>Next(count)</c> among them (in list
     /// order); it leaves the list. Null when none fits.</summary>

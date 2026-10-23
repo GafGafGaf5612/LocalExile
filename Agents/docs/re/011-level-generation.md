@@ -76,6 +76,26 @@ masters with `Next`), size from the graph (+0x40 / +0x48) scaled by the master's
 master's outer buffer (+0x170..+0x173), and the orientation's placement code (`0x142fa04b0`, as in
 [08](../protocol/08-area-transitions.md) §5).
 
+**Sub-areas** (`LevelGenerator.SubAreas`): while the records are not yet counted (generator +0x30 +9 = 0),
+`0x1420457f0` runs `0x14204f590` on each new record's graph: every node passing the league filter (`0x142036490`)
+whose description starts "subarea=" (case-insensitive) queues a world area at generator +0x1f0 — "subarea=hideout"
+the claim subarea of the area's Hideouts row (+0x2a, "Cannot find Hideout claim subarea") when the discoverable
+hideout rolled (generator +0xb), else the node's remaining descriptions are skipped; any other "subarea=X" the
+WorldAreas row X ("Unknown sub world area"). A description starting "teleport" sets the record's +0x91 bit 1. Slot 1
+(`0x142047540`) takes the queue and, for each, `0x142047090` → `0x142046340` with no topology: the world area's
+topologies as in §3 (`0x142027a20`), `Next(count)`, then `Next(840)` → `0x14299da50` with the picked topology's
+orientation mask; `0x1420457f0` adds its record. `2_8_5` (The Bath House) seed 1: the hideout's
+`hideout_baths_claim.dgr` is record 1 (draws #7, #8). Sub-areas of a `.tgr` primary are not ported (the Act 9
+`oasis_foothills_*.tgr`).
+
+**Secondary records** (`0x142047e50`, `DungeonTiler.PlaceSecondaries`): each record after the first gets parent
++0x92 = its index ("Secondary graph: {}") and goes to a corner among those right of (x + w + 1, y) and below (x,
+y + h + 1) each earlier record that keeps a tile clear of every placed rectangle (`0x1420487f0`); the score is
+max(threshold, map width, its right) × max(threshold, map height, its bottom), and a stable sort (`0x142051070`)
+takes the first lowest. The threshold is 0, or with more than 10 records 4/5 of the integer square root
+(`0x141937840`) of their total area. The map is sized to the bounding box (`gen[5]` vtable +8): `2_8_5` 63 × 63 and
+27 × 27 at (64, 0) → 91 × 63. Their parent is not 0, so they take no share of the extra room pool.
+
 ## 3b. Extra terrain features (`ExtraTerrainFeatures.cs`)
 
 `0x14204a570` returns at once for towns, areas with randomness off (WorldAreas +0x14e, hideouts), area type
@@ -93,8 +113,9 @@ is the `.datc64` row, so `AreaInfo.Load` reads these offsets from the file (`Raw
 **The extra room pool** (generator +0x40, `ExtraRoomPool.cs`). Each rolled feature that is an `ExtraTerrainFeatures`
 row (`0x141f28aa0`: by id; the Vaal side area flag, the discoverable hideout and the shrine count are not rows) goes
 into the pool in roll order (`0x141d8ae40`: count copies at the end of +0x48, the row's `.tdt` / `.tst` tiles into the
-pool's own tile store +0x90, then the linked row +0x49 as many times; the Shrine row is capped by the shrine count
-+0x148, not ported). Row layout (0x66 bytes): id +0, rooms +8 (.arm), tiles +0x18, a bool +0x28, a string list
+pool's own tile store +0x90, then the linked row +0x49 as many times). The Shrine row is capped by the shrine count
++0x148: with the Shrine rows already waiting or injected (`0x141d8ace0`) at most that many go in, and with none the
+linked row is not added either. Row layout (0x66 bytes): id +0, rooms +8 (.arm), tiles +0x18, a bool +0x28, a string list
 +0x29, room orientations +0x39 (8 = any), linked row +0x49 (8 bytes), WorldAreas +0x51, oversize flag +0x61 (rooms
 for telepad injectors, `0x142101e50`), an i32 +0x62. Before the records (`0x142049d10`), with rows in the pool,
 +0x140 = `0x14204bfa0` of the top graph: the sum of its subgraphs' masters' +0x152 (taken to be ExtraFeatureWeight,
@@ -189,7 +210,8 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   by priority, take a room of their tag (see "Node rooms" below); teleport flags (`0x142100be0`); then, edge list
   by edge list (`0x1420028c0`: per priority group and slot, the slot's edges keyed by `0x1420014a0`: I first, then
   bias descending (unsigned), then the door type's n0 (.et +0x4c) descending, then the type's path in ordinal order
-  (`0x142006570`); one list per key in key order; each `Next(count)` + shuffle, by priority), `0x1421040c0`:
+  (`0x142006570`); one list per key in key order, built as the edges are grouped (`0x142002b50`), so a list a
+  template node emptied stays; each `Next(count)` + shuffle, by priority), `0x1421040c0`:
   1. **Fill** (`0x1420fd4e0`): row by row each free cell gets a blank of one of the type's sizes (≤ 5
      `Next(total)` tries, else the first size, else 1 × 1); the row then moves on by the size's width, the first
      size's after a 1 × 1 (so the cell after it stays free: `1_5_5`); new rooms draw their `Next(128)` (`0x1420fd1f0`).
@@ -231,8 +253,29 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
 - **Node door type** (`0x142003740`, after the room pick of `0x142106b00`, and in `0x142107130` once a blank's
   rectangle fits): the node's four edge slots (+0x58) with an extra door % (+0x54) are weighted by it, `Next(total)`
   picks one, and its extra door type (+0x70) becomes the room's +0x48 type; with none, no draw and the default
-  (rooms.et). The room's extra door chance (+0x10) is the largest of the slots' +0x54. Missing until 2026-10-23
+  (rooms.et). An edge whose extra door type is `""` (the parser reads it over the default) holds rooms.et too: in
+  `2_8_5` seed 1 `exit_1.arm`'s extra door goes through a rooms.et exit, which an empty type would not allow (the
+  port kept `""` until 2026-10-23). The room's extra door chance (+0x10) is the largest of the slots' +0x54. Missing until 2026-10-23
   (session 3o): every `.dgr` whose node edges had an extra door % lost the draw (Act 5, Act 10 and others).
+- **Template nodes** (`0x142107840`, `DungeonLayout.PlaceTemplate`; nodes with the description "template", before
+  the tag test; the Sceptre of God `1_3_18_*` corners and sides): each slot edge whose type is not a wildcard (.et
+  flag 0x80) goes to a side (`0x1421299f0`): towards its first internal point from this end (the other node without
+  points), |dy| < |dx| → right / left, else down / up (0 top, 1 right, 2 bottom, 3 left). While a side holds two, its
+  slots may move to a neighbouring side holding none (`0x142129d80` with 0), else one (with 1): of all such moves
+  (sides in order, the side before then the side after) the one nearest the new side's direction (`0x14299d730`:
+  2·a·b·127 / isqrt(|a|²|b|²) / 2 as a signed byte + 127 into an arc-cosine table at `0x142fe0b10`, the first
+  lowest); "Failed to calculate edge layout" if a side still holds two. The side's exit is (edge type, height 0,
+  direction as for node rooms `0x141ff2ee0`), no door where no edge. An edge of another type than rooms.et
+  (layout +0x20) leaves the void list or its key list (`0x142002e40`; the emptied key list stays and still draws
+  `Next(0)` in `0x1420028c0`, so the key lists are built when the edges are grouped), and its type joins the
+  layout's set (`0x142127400`, ordered by handle address: with two types, as in `_city_tower3_3.dgr`, the port takes
+  slot order; `1_3_18_2` seed 1 agrees either way up to its stop). The tag's room-set entries whose four sides each
+  hold that exit (`0x141ff81b0` → `0x142012ab0`), kept to a "size:" size ("No matching rooms of size"), else all of
+  one size ("Multiple room sizes found"); `Next(total weight)`, the anchor (`0x1421062e0`), the node door type, and
+  `0x142100650` places a blank: no room, orientation 8, kind 0, +0x40 = the first set type (else rooms.et), flag 4,
+  with the picked room's turned exits whose being rooms.et matches +0x40's. A template node without edges (a "size:"
+  blank at its clamped corner) is not ported. `1_3_18_1` seed 1: twelve template nodes, every draw (2 453) up to the
+  numbered special rooms matches.
 - **Untagged nodes** (`0x142107130`): blank kind 3; its sizes from the first slot edge whose type is not the
   default rooms.et (layout +0x20), else rooms.et (`roomSet.Sizes`, `0x142106db0`; the port took the first slot's
   type until 2026-10-23, which with the node door type draw broke the Templar Courts `1_5_4`, "size:" description filter `0x142127f90`), `Next(total)`, anchored at the graph-oriented corner (not
@@ -246,8 +289,14 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   that can end may be missing), kept by entry index (`0x142127a50`, sorted) with each listed room that fits;
   `Next(entries)`, then `Next(that entry's rooms)` (`0x141f4f970`, weight 1 each); the entry takes room and
   orientation, kind 8. Not ported: numbered lists, placement over several rooms (`0x1420ffcf0`), injector rooms,
-  room data +9 / +0x13a, `0x142101e50` (oversize rows into telepad injector rooms) and `0x142103490` (shrine rooms,
-  room set +0x118, when shrines rolled).
+  room data +9 / +0x13a and `0x142101e50` (oversize rows into telepad injector rooms).
+- **Shrine rooms** (`0x142103490`, `DungeonLayout.ShrineRooms`): with shrines rolled (pool +0x148), as many tries as
+  the count: the room set's "shrine" rooms (+0x118) of the layout's unit size, any orientation, go to `0x1420ff140`;
+  a placed room with a shrine object (room data +0x70, taken to be a `Metadata/Shrines/Shrine` object in the `.arm`)
+  counts a shrine placed (`0x141d8b9a0`: the count drops by one, +0x14a rises, the first Shrine row leaves the pool;
+  the position goes to `0x141d8abb0`, which nothing in the layout reads). The 48 shrine seeds of the oracle all
+  generate since 2026-10-23; most run to another hash, so this needs a trace of a shrine seed (`Game_SEED`, e.g.
+  `2_10_7` seed 3117172586).
 - **Mission rooms** (`0x142102170`, after `0x142101aa0` / `0x142101e50`): the room set's "mission" rooms by their
   count n of 'k' slots tagged "missiontile" (room set +0x130, `0x141ff6960`, ascending; "contains no mission tiles"
   for none), those of the layout's unit size. While the subgraph's share (a copy of pool +0x144) lasts, each pool
@@ -430,8 +479,8 @@ entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of 
   doodads** (with the Village row in `mission_4_1.arm`, §3c2). One view vertex differs at the fill (18, 45): flag 2 in
   the client, not in the port; heights and tiles are equal.
 - Not ported: turned subgraphs (orientation ≠ 0), the outer buffer of a subgraph that is not the whole map, the pool's
-  rows in a `.tgr` subgraph's special nodes, and the rest of `0x1420457f0` (oversize-feature / telepad-injector
-  records).
+  rows in a `.tgr` subgraph's special nodes, sub-area records beside a `.tgr` primary (§3), and the rest of
+  `0x1420457f0` (oversize-feature / telepad-injector records).
 
 ## 3d. Tile graphs (`.tgr`): first stages (`TileGraph.cs`, `FortuneVoronoi.cs`, `VoronoiCells.cs`)
 
@@ -449,7 +498,8 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    edges, +0x44 exist, +0x48 height, +0x4c position, +0x8b / +0x8c x / y lock; edge +0x20 / +0x28 nodes, +8 points,
    +0x30 exist, +0x38 type.
 2. **Prepare** (`0x14203f890`): random offsets (`0x14203a600`, none in v19), a tag "a,b,c" keeps one alternative
-   (`0x14203a480`, `Next(count)`), labyrinth / sub-area / league description passes (not ported: they throw), tag
+   (`0x14203a480`, `Next(count)`), labyrinth and league description passes (not ported: league= nodes throw; the
+   hideout nodes of `0x142035350` / `0x142034e60` are dropped without a discoverable hideout), tag
    "league" → exist 0. **Vaal side areas** (`0x142032320`, `SideAreas`): nodes with a description "sidearea<N>" (the
    first such; N from '1', none = 1) are side area entrances, grouped by N (The Coast: `sidevalley` "sidearea3",
    `cave1` "sidearea2" / "sidearea1", each also "unique1"). When the area rolled its Vaal side area (generator +0xa,
@@ -463,7 +513,16 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    second's far node; the node's position and the second edge's points become internal points of the first edge).
    Any other node with two or more edges and a tag stays as a plain node: tag and descriptions cleared, orientation
    any (8). Otherwise every edge at the node moves that end to its nearest internal point (a new node there,
-   `0x141d94560`) or, without points, is removed, and the node goes. Shuffle groups (descriptions "shuffle…", `0x14203a720`) are not ported. Nodes are then stably sorted by priority
+   `0x141d94560`) or, without points, is removed, and the node goes. **Shuffle groups** (`0x142030790` with
+   `0x14203a720`; the keyword is compared as inline UTF-16 constants, so no string search finds it): a node's first
+   description starting "shuffle" puts it in group N (the number after it, none = 0; not a number: no group). Per
+   group in order, while it holds two or more: `Next(size)` twice, both nodes leave it, and two different nodes swap
+   tag (+0x20) and descriptions (+8); the orientation (+0x40) stays. **Unique groups** (next, `0x142031100` /
+   `0x142035c70`): a node's first description starting "unique" reads `unique[letter][N][#count]` (none = group 0,
+   count 1). Per group in order, keeping the largest count: with more nodes than the count, `Next(size)` picks one to
+   keep, count times; the rest are removed as failed nodes (`0x142035f10`, a copy of `0x142036640`). With a letter,
+   the letter's count picks which of its N groups stay (`Next(count)`, then `0x142037ea0`), shared across the level's
+   records; not ported. These were the early `0x142030de5` differences of `1_4_2` and `2_8_5`. Nodes are then stably sorted by priority
    (`0x142003bc0`).
 3. **Voronoi** (`0x141f230e0`): sites are the node positions then every edge's internal points. The diagram is
    Steven Fortune's sweep2 in 32-bit integers (`0x141f27200`; lines `dx·x − (−dy)·y = c` unnormalised, integer square
@@ -800,6 +859,15 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
+  extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
+  1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds
+  973365745, 2084366798, 2637803820, `2_7_8`, `2_8_10`, `2_9_10_1` seed 1); of the seed-1 traces 61 match by hash
+  (was 54), none lost, no trace matches fewer draws. `2_8_5` seed 1 (hideout rolled) matches every draw up to its
+  stop (3 373, door tiles without RoomOverlap) and `1_3_18_1` seed 1 every draw up to its stop (2 453, numbered
+  special rooms). The 48 shrine seeds generate. Most common stops: 350 run to the end with another hash, node kinds
+  (73: the Labyrinth's `secret` rooms 62, `labyrinth_final_boss` 11), numbered special rooms (35), door tiles
+  without RoomOverlap (29), DungeonFillRoomHeightOverride (17), "Mismatching ground types" (11), breaches.
   2026-10-23 (session 3r: `.tgr` subgraphs on a shared map, the extra room pool and mission rooms): 90 of 710 match
   (was 88; new: MapWorldsGorge seed 1, MapWorldsToxicSewer seed 1); of the seed-1 traces 54 match by hash (was 52),
   none lost, no trace matches fewer draws. The 118 glacier subgraph stops are gone: Gorge's other seeds run to the

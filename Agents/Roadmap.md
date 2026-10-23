@@ -56,22 +56,25 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done so far:** RNG, tile hash, extra-terrain-feature rolls (no area stats), topology pick, one-room fixed
   layouts: Lioneye's Watch matches tile for tile (re/011 §3b–3c); `.tgr` graphs to the finished grid (re/011 §3d–3g):
   The Twilight Strand seed 1 and The Coast seed 1 match tile for tile (hashes 266153788, 695393902) and every draw
-  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 90 of 710 logged seeds.
+  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 104 of 710 logged seeds.
   Multi-node `.dgr` dungeons (`DungeonLayout.cs`, `DungeonTiler`, re/011 §3c2): The Ship Graveyard Cave seed 1
   (hash 3341726258) and the Prison `1_1_7_1` seed 1 (1542354689, two more seeds by the oracle) match tile for tile;
   composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863); The Slave Pens `1_5_1`
   seed 1 (3415378844, with the overlap tile fallbacks of `0x1420f5fb0`); `.tgr` subgraphs on the shared map and the
-  extra room pool's mission rooms (re/011 §3b, §3c2, §3c3): MapWorldsGorge seed 1 (3320701478); 54 of the 197
+  extra room pool's mission rooms (re/011 §3b, §3c2, §3c3): MapWorldsGorge seed 1 (3320701478); shrine rooms,
+  sub-area records beside the primary (the discoverable hideout's claim subarea, re/011 §3), shuffle and unique node
+  groups and template nodes (re/011 §3c2, §3d): `1_4_2`, `1_4_6_*`, `2_7_8`, `2_8_10`, `2_9_10_1`; 61 of the 197
   seed-1 traces match by hash
   (The Reliquary `1_5_7`, The Ossuary `1_5_5`, `1_5_2`, The Mud Flats `1_1_3` and more, re/011 §3c2).
 - **Start:** the seed-1 traces of 186 areas are recorded (`data/walkability/<area>_seed1.gen.json`): run `levelgen
-  generate <area> 1 <trace>` and take the first difference. Known next: `1_4_2` #50 and `1_1_9` #27 (early draws, `0x142030de5` /
-  `0x1420319e5`); `1_2_1` #5874, `1_2_7` #11347. Then the `.dgr` oracle
-  stops (re/011 §8): shrine rooms (`0x142103490`, 48), 317 seeds that run to the end with another hash (100 of them
-  Gorge seeds, which need traces), door tiles without RoomOverlap (23), numbered special rooms (25),
-  DungeonFillRoomHeightOverride (12), node kinds (115 "node …": the extra room pool `0x141d8b750` for the
-  Labyrinth's `secret` rooms, description passes, template nodes `0x142107840`, orientation 9), the outer buffer of
-  an inner subgraph (`1_2_14_2`),
+  generate <area> 1 <trace>` and take the first difference. Known next: `1_1_9` #96 (`0x1421207cd`), `1_2_1`
+  #5874, `1_2_7` #11347; `2_8_5` and `1_3_18_*` match every draw up to their stops. A trace of a shrine seed
+  (`Game_SEED`, e.g. `2_10_7` seed 3117172586): the 48 shrine seeds generate but most run to another hash. Then the
+  `.dgr` oracle stops (re/011 §8): 350 seeds that run to the end with another hash (many of them Gorge seeds, which
+  need traces), door tiles without RoomOverlap (29), numbered special rooms (35), DungeonFillRoomHeightOverride (17),
+  node kinds (73: the extra room pool `0x141d8b750` for the Labyrinth's `secret` and `labyrinth_final_boss` rooms,
+  which the server's Labyrinth layout decides), sub-areas beside a `.tgr` primary (the Act 9 `oasis_foothills`),
+  lettered unique groups, template nodes without edges, the outer buffer of an inner subgraph (`1_2_14_2`),
   `1_1_7_2` seed 287067221 (a mismatch: needs a trace); then the parts no trace has exercised yet (`0x142108dc0`, numbered special rooms,
   door tiles without RoomOverlap), each checked with a trace of a dungeon
   that needs it (`1_1_7_2` `prisonmain_1_1.dgr`, the Labyrinth); then more seeds and areas, each checked with a trace (`live.ps1 -Walkmaps`, then

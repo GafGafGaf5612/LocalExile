@@ -11,6 +11,9 @@ public static class ExtraTerrainFeatures
     /// <summary>The Vaal side area roll (generator +0xa), which the tile graph's side area nodes use.</summary>
     public const string VaalSideArea = "(vaal side area)";
 
+    /// <summary>The discoverable hideout roll (generator +0xb), which the hideout nodes use.</summary>
+    public const string DiscoverableHideout = "(discoverable hideout)";
+
     public static List<Feature> Roll(AreaInfo area, LevelRandom rng)
     {
         var features = new List<Feature>();
@@ -28,7 +31,7 @@ public static class ExtraTerrainFeatures
         if (!special)
         {
             // Data/Hideouts.dat: the hideout discoverable here, by its chance in 10 000.
-            if (area.DiscoverableHideout is { Enabled: true } h && rng.Chance(h.Chance, 10000)) features.Add(new("(discoverable hideout)", 1));
+            if (area.DiscoverableHideout is { Enabled: true } h && rng.Chance(h.Chance, 10000)) features.Add(new(DiscoverableHideout, 1));
             // CoreLeagues 1 (shrines): the count goes to generator +0x188 / +0x189, no feature.
             int shrines = Category(area, rng, 1);
             if (shrines != 0) features.Add(new("(shrines)", shrines));

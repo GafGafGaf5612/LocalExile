@@ -216,7 +216,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   overlap tile fallbacks; The Reliquary `1_5_7`, The Ossuary `1_5_5` and eight more seed-1 traces since the plain
   room slots, room grounds, seam tests, `s`-keyed fill rooms and dungeon post-unique tiles, and `2_10_2`, `2_10_5`,
   `2_10_6`, `2_9_10_2` since the dungeon seams' edge-point fallback, MapWorldsGorge and MapWorldsToxicSewer since the
-  `.tgr` subgraphs and mission rooms: 54 of the 197 seed-1 traces; the oracle matches 90 of 710 logged seeds), the
+  `.tgr` subgraphs and mission rooms, `1_4_2`, `1_4_6_*`, `2_7_8`, `2_8_10` and `2_9_10_1` since the shrine rooms,
+  the sub-area records (a rolled discoverable hideout's claim area beside the map: `2_8_5` matches every draw up to
+  its stop), the shuffle and unique node groups and the template nodes (`1_3_18_1` likewise): 61 of the 197 seed-1
+  traces; the oracle matches 104 of 710 logged seeds), the
   one-node `.dgr` path (hideouts) lacks the outer buffer, doodads are not ported, and the Gateway does not use the port
   yet.
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
