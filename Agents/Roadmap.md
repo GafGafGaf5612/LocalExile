@@ -56,15 +56,17 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done so far:** RNG, tile hash, extra-terrain-feature rolls (no area stats), topology pick, one-room fixed
   layouts: Lioneye's Watch matches tile for tile (re/011 §3b–3c); `.tgr` graphs to the finished grid (re/011 §3d–3g):
   The Twilight Strand seed 1 and The Coast seed 1 match tile for tile (hashes 266153788, 695393902) and every draw
-  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 63 of 710 logged seeds.
+  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 84 of 710 logged seeds.
   Multi-node `.dgr` dungeons (`DungeonLayout.cs`, `DungeonTiler`, re/011 §3c2): The Ship Graveyard Cave seed 1
   (hash 3341726258) and the Prison `1_1_7_1` seed 1 (1542354689, two more seeds by the oracle) match tile for tile;
   composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863); The Slave Pens `1_5_1`
-  seed 1 (3415378844, with the overlap tile fallbacks of `0x1420f5fb0`).
+  seed 1 (3415378844, with the overlap tile fallbacks of `0x1420f5fb0`); 48 of the 197 seed-1 traces match by hash
+  (The Reliquary `1_5_7`, The Ossuary `1_5_5`, `1_5_2`, The Mud Flats `1_1_3` and more, re/011 §3c2).
 - **Start:** the seed-1 traces of 186 areas are recorded (`data/walkability/<area>_seed1.gen.json`): run `levelgen
-  generate <area> 1 <trace>` and take the first difference. Known next: `1_5_7` draw #1754 (a shared slot at (14, 12)
-  whose wall-side corners the client keys at the floor's heights, H[0,1,1,0], where the port has 0: before the merge
-  `0x1420ee240`, which matches); `1_5_2` #2474 (a fill pick, `0x141febd7f`); `1_5_5` #285. Then the `.dgr` oracle
+  generate <area> 1 <trace>` and take the first difference. Known next: `1_4_2` and other dungeons whose seams find
+  no replacement (the edge-point fallback `0x142026bc0` exists in `Seams.cs` for tile graphs, not in the dungeon
+  path's `SeamRepair`: merge the two); `1_4_2` #50 and `1_1_9` #27 (early draws, `0x142030de5` /
+  `0x1420319e5`); `1_2_1` #5874, `1_2_7` #11347. Then the `.dgr` oracle
   stops (re/011 §8): `.tgr` subgraphs on a shared map (118, MapWorldsGorge; the
   tile graph generator needs the view origin `DungeonTiler` now has),
   258 seeds that run to the end with another hash, door tiles without RoomOverlap (23), numbered special rooms (25),
@@ -77,8 +79,7 @@ Items are in rough priority order within each section. "Known" says what is alre
   `scripts/re/levelgen generate <area> <seed> <trace>`): Strand seed 2 needs overlay pass 2 (`0x141fffb70` after the
   fill); seeds 3 and 7 fail edge tiling, which the client answers with "Retrying with seed" (`0x14204d820`, find the
   retry seed); the 57 oracle seeds that run to the end with another hash (`levelgen oracle`, e.g. `1_1_3` seed 1,
-  `1_2_1`, The Wetlands `1_2_12`, The Beacon `2_6_14`) each need a trace; The Boiling Lake (`2_9_6`) asks for a
-  missing fill room `pools_00.arm` (find how the client resolves it);
+  `1_2_1`, The Wetlands `1_2_12`, The Beacon `2_6_14`) each need a trace;
   HideoutForest needs the outer buffer on the one-node `.dgr` path (`DungeonTiler`; the multi-node path has it). Then the walkability
   grid from the placed tiles, and doodads (`0x1420425d0`).
 - **Done when:** the server's tile hash equals the client's 0x7d hash for a random seed in every act area, and

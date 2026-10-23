@@ -212,7 +212,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   the Prison's second level `1_1_7_2` seeds 1, 2512127042 match, re/011 §3c3; `.tgr` subgraphs are not ported; The
   Fetid Pool `1_1_3a` seed 1 matches tile for tile (401409093) with door types with a direction, fill rooms, slot
   corners and 3 × 3 outer tiles; The Slave Pens `1_5_1` seed 1 by hash (3415378844) with the node door types and the
-  overlap tile fallbacks; the oracle matches 63 of 710 logged seeds), the
+  overlap tile fallbacks; The Reliquary `1_5_7`, The Ossuary `1_5_5` and eight more seed-1 traces since the plain
+  room slots, room grounds, seam tests, `s`-keyed fill rooms and dungeon post-unique tiles, 48 of the 197 seed-1
+  traces; the oracle matches 84 of 710 logged seeds), the
   one-node `.dgr` path (hideouts) lacks the outer buffer, doodads are not ported, and the Gateway does not use the port
   yet.
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the

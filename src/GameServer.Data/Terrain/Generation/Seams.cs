@@ -1,12 +1,12 @@
 namespace GameServer.Data.Terrain.Generation;
 
 /// <summary>The mirror seams of a tile graph layout (<c>0x142025440</c> on the view, after the overlays): row by row, a
-/// tile larger than one entry, without a tag and not a plain fill tile, outside the vertices rooms mark (room data
-/// +0xe8, not ported: none assumed), whose neighbour one tile size away is the same tile mirrored is re-picked among
+/// tile larger than one entry, without a tag and not a plain fill tile, none of whose vertices took a room's own
+/// vertex ground (room data +0xe8, <c>0x142025fb0</c>), whose neighbour one tile size away is the same tile mirrored is re-picked among
 /// its key's tiles that make no seam with their up and left neighbours (<c>0x142027670</c>). With none, outside rooms,
 /// a neighbour's shared edge point moves instead (<c>0x142026bc0</c>).</summary>
 sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offset, int width, int height, TileStore store,
-    IReadOnlyList<PlacedRoom> rooms, (string? A0, string? A8, string? B0) grounds, List<string> notes)
+    IReadOnlyList<PlacedRoom> rooms, IReadOnlySet<(int X, int Y)> roomVertices, (string? A0, string? A8, string? B0) grounds, List<string> notes)
 {
     readonly bool[] _roomCells = new bool[width * height];
 
@@ -29,6 +29,7 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
                 var (w, h) = Size(e);
                 if (w == 1 && h == 1) continue;
                 if (e.Tile.Tag.Length != 0 || PlainFill(e.Tile.Key)) continue;
+                if (TouchesRoomVertex(roomVertices, x + offset, y + offset, w, h)) continue;
                 for (int d = 0; d < 4; d++)
                 {
                     var (dx, dy) = Orientation.Directions[d];
@@ -41,8 +42,20 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
         grid.CheckGrounds = check;
     }
 
-    // 0x14201d800: no edge types and one ground on every corner.
-    static bool PlainFill(TileKey key) => key.Edges.All(e => e is null) && key.Grounds.Distinct().Count() == 1;
+    /// <summary><c>0x142025fb0</c>: some vertex of the w × h area at map (x, y) took a room's own vertex ground.</summary>
+    internal static bool TouchesRoomVertex(IReadOnlySet<(int X, int Y)> roomVertices, int x, int y, int w, int h)
+    {
+        for (int v = y; v <= y + h; v++)
+            for (int u = x; u <= x + w; u++)
+                if (roomVertices.Contains((u, v))) return true;
+        return false;
+    }
+
+    // 0x14201d800: no edge types but wildcard ones (.et +0x48 bit 7) and one ground on every corner.
+    bool PlainFill(TileKey key) => PlainFill(files, key);
+
+    internal static bool PlainFill(TerrainCache files, TileKey key) =>
+        key.Edges.All(e => e is null || files.Edge(e)?.Wildcard == true) && key.Grounds.Distinct().Count() == 1;
 
     /// <summary><c>0x142025e60</c>: some entry of the area belongs to a tilised room.</summary>
     bool InRoom(int x, int y, int w, int h)

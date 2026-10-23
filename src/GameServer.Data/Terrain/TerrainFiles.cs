@@ -177,7 +177,8 @@ public sealed record RoomFile(int Version, IReadOnlyList<string> Dictionary, str
             int n = lines[at][0].Int; at++;
             for (int k = 0; k < n && at < lines.Length; k++, at++) dict.Add(lines[at].Count > 0 ? lines[at][0].Text : "");
         }
-        // The room's tag: the first line that is a single quoted string; the room key: the first "k" line after it.
+        // The room's tag: the first line that is a single quoted string; the room key: the first slot line after it
+        // (0x142a0e2a0 reads any slot: "k" with its values, or a 1 × 1 "s" (nothing) or "f N" (tag N) in fill rooms).
         string tag = "";
         for (int k = at; k < lines.Length; k++)
             if (lines[k].Count == 1 && lines[k][0].Quoted) { tag = lines[k][0].Text; at = k + 1; break; }
@@ -189,6 +190,14 @@ public sealed record RoomFile(int Version, IReadOnlyList<string> Dictionary, str
                 var v = lines[at].Skip(1).TakeWhile(x => x.IsNumber).Select(x => x.Int).ToList();
                 keyValues = v.Count;
                 roomKey = TileKey.From(v);
+                at++;
+                break;
+            }
+            else if ((lines[at].Count == 1 && lines[at][0].Text == "s") ||
+                     (lines[at].Count == 2 && lines[at][0].Text == "f" && lines[at][1].IsNumber))
+            {
+                roomKey = new TileKey(1, 1, new int[4], [3, 3, 3, 3, 3, 3, 3, 3], new int[4], new int[4],
+                    lines[at].Count == 2 ? lines[at][1].Int : 0, []);
                 at++;
                 break;
             }

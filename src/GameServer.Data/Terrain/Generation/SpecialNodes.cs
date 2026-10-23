@@ -36,6 +36,9 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
     public readonly List<NodePlacement> Placed = [];
     /// <summary>The rooms tilised, in order (the layout context's +0x58 list, <c>0x141fea780</c>), in map entries.</summary>
     public readonly List<PlacedRoom> Rooms = [];
+    /// <summary>The map vertices that took a room's own inner vertex ground (<c>0x141ffbd70</c>); the seams leave tiles
+    /// touching them alone.</summary>
+    public readonly HashSet<(int X, int Y)> RoomVertices = [];
 
     /// <summary>The listeners <c>0x141fea780</c> calls after each slot tile (tile, orientation, view x, y).</summary>
     public Action<TileDef, int, int, int>? TilePlaced;
@@ -1202,6 +1205,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
                     {
                         var (dx, dy) = Orientation.MapVertex(o, u, v, room.Width, room.Height);
                         grid.ForceGround(x0 + dx + offset, y0 + dy + offset, g);
+                        RoomVertices.Add((x0 + dx + offset, y0 + dy + offset));
                     }
         grid.CheckGrounds = check;
         var (w, h) = Orientation.Size(o, room.Width, room.Height);

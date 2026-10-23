@@ -356,8 +356,11 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         int w = file.Width, h = file.Height, at = -1;
         // Values per key: as many as the room's own key line has (24; 23 in older versions, without the extra).
         int values = lines.FirstOrDefault(l => l.Count > 3 && l[0].Text == "k")?.Skip(1).TakeWhile(x => x.IsNumber).Count() ?? 24;
-        // The slot grid: the first run of h lines that each hold exactly w slots (as RoomFile finds it).
-        for (int k = 0; k + h <= lines.Length && at < 0; k++)
+        // The slot grid: the first run of h lines that each hold exactly w slots after the room's own key line (the
+        // first slot line after the tag, as RoomFile finds it; a 1 × 1 room's "s" key line would pass as a grid).
+        int tagLine = Array.FindIndex(lines, l => l.Count == 1 && l[0].Quoted);
+        int keyLine = Array.FindIndex(lines, tagLine + 1, l => l.Count > 0 && !l[0].Quoted && l[0].Text is "k" or "n" or "s" or "f" or "o");
+        for (int k = keyLine + 1; k + h <= lines.Length && at < 0; k++)
             if (lines[k].Count > 0 && !lines[k][0].Quoted && lines[k][0].Text is "k" or "n" or "s" or "f" or "o" && Grid(lines, k, w, h, values) is not null)
                 at = k;
         if (at < 0) return null;

@@ -122,7 +122,9 @@ For a one-node graph (towns, hideouts):
    "weight path") for its ground's name (.gt first line): `Next(total weight)`, then for a square tile `Next(8)` as
    its orientation (`0x141fecd00`; non-square tiles use `Next(840)` and a mask, not ported).
 6. **Mirror seams** (`0x142025440`, after `0x1420f8f20`, which draws only when +0xb0 lists cells): row by row, a
-   placed tile larger than one entry, without a tag and not a plain fill tile, whose neighbour one tile size away
+   placed tile larger than one entry, without a tag and not a plain fill tile (`0x14201d800`: no edges but wildcard
+   ones, .et +0x48 bit 7, and one ground on all four corners), none of whose vertices took a room's own vertex ground
+   (`0x142025fb0`), whose neighbour one tile size away
    (up, right, down, left) is the same tile in the mirrored orientation (left/right: 0↔4, 1↔7, 2↔6, 3↔5; up/down:
    0↔6, 1↔5, 2↔4, 3↔7) is re-picked (`0x142027670`) among its key's candidates that make no such seam with their up
    and left neighbours (`0x142026100`) and do not mirror that neighbour: `Next(total weight)`. With none left, the
@@ -156,7 +158,9 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   (+0x61), accessible (+0x62). (The reader stores them in this order; the port had +0x54 and +0x5c swapped until
   2026-10-23.)
 - **Room set** (`0x141ff7930`, `.arm` header `0x142a0f3a0`): unit, size in units, tag, unique, the room's own key
-  line (any slot, read by `0x142a0e2a0`: `k`, or `s` in `shrine_1_1.arm`), then 2(w + h) exits clockwise (top left → right, right top → bottom, bottom right → left, left bottom → top):
+  line (any slot, read by `0x142a0e2a0`: `k`, or `s` in `shrine_1_1.arm`; every `.arm` reads it so, and fill rooms
+  such as `bodies_02.arm`, `pools_00.arm` and `bellyplant_01.arm` are 1 × 1 rooms keyed `s` whose slot grid comes after
+  that line), then 2(w + h) exits clockwise (top left → right, right top → bottom, bottom right → left, left bottom → top):
   door type, height, chirality. Per door type a size table (`0x141ff5760` / `0x141ff6350`, the fill's sizes: the
   weights of the rooms filed under the type, at the sizes some room allows: a room that is not unique, room data +6,
   and, for rooms.et, whose exits all have a door at height 0). `0x141ff6960` files a room under each distinct door
@@ -174,7 +178,8 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   bias descending (unsigned), then the door type's n0 (.et +0x4c) descending, then the type's path in ordinal order
   (`0x142006570`); one list per key in key order; each `Next(count)` + shuffle, by priority), `0x1421040c0`:
   1. **Fill** (`0x1420fd4e0`): row by row each free cell gets a blank of one of the type's sizes (≤ 5
-     `Next(total)` tries, else the first size, else 1 × 1); new rooms draw their `Next(128)` (`0x1420fd1f0`).
+     `Next(total)` tries, else the first size, else 1 × 1); the row then moves on by the size's width, the first
+     size's after a 1 × 1 (so the cell after it stays free: `1_5_5`); new rooms draw their `Next(128)` (`0x1420fd1f0`).
   2. **Connect** (`0x1420facb0`): A* over rooms (`0x1420fb720`: step = half the centre distance in half units,
      estimate = half distance × (100 − fuzzy) + bias × 128 / 100 + fuzzy × the room's `Next(128)`), then from the far
      end every room joins the path at the edge's level and each step opens a door (`0x142001e80`: the possible doors
@@ -265,7 +270,8 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
 1. **Grid:** (unit − overlap) × size + overlap tiles plus OuterBufferSize on every side (cave: 6 × 9 + 1 + 8 = 63,
    6 × 6 + 1 + 8 = 45); room k at buffer + (unit − overlap) × its cell.
 2. **Rooms** (`0x1420ef310`, map order): slot by slot as for the towns (`k`, `f` and `s` slots; height = slot height +
-   room level). A key's last number (slot +0x73, "corner": 0 top left, 1 top right, 2 bottom right, 3 bottom left) is
+   room level). A slot without a tag whose key has no edges, no heights and one ground goes to the fill
+   (`0x1420eec10`) before anything else, even on the room's outer row or column, so it is never shared. A key's last number (slot +0x73, "corner": 0 top left, 1 top right, 2 bottom right, 3 bottom left) is
    the corner at the slot's cell: the key moves by 1 − w when corner % 3 ≠ 0 and by 1 − h when corner > 1, in the
    room's unturned cells, before the orientation (`RoomSlot.ShiftX` / `ShiftY`; also for tile-graph rooms and the
    fill's slots). Each tile is placed (`0x141ffb870`) and then set to the slot height (`0x141d82d00`): its vertices take
@@ -278,7 +284,7 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    `0x1420ee580` / `0x1420f9880`; one edge stays, two without an entry give none) and the side is marked shared
    (`0x1420ee900`); then the key's heights are made to start at 0.
 3. **Shared slots** (`0x1420f6b70`, by x then y): without tags and with a plain key (`0x1420ee9e0`) they go to the
-   fill; else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
+   fill (with the slot's accessible bit, +0x5c bit 0); else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
    store (`0x1420f5fb0`: `Next(total weight)`). A 1 × 1 slot placed with tag "door", and an untagged shared tile with a 3 × 3 or passage-shaped
    key (end of `0x1420f6b70`), become doorways (`0x1420edf80`; non-1 × 1 ones apart).
    **Without a match** `0x1420f5fb0` tries, in order, until the store (`0x141d81f70`) has tiles:
@@ -304,11 +310,18 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    sizes from the store's "door" sizes for its edges, `Next(n)` + shuffle, the key resized with points at none, the
    middle of the unit for odd units else `Next(len − size + 1)`, `Next(total)`; `0x1420f4ae0` for the big ones.
    Without RoomOverlap (`0x1420edd50` / `0x1420f4d90`) not ported.
-4. **Room vertex grounds** (`0x141ffbd70` per room), then the **fill**: the recorded cells (`0x1420eec10`, which also
+4. **Room vertex grounds** (`0x141ffbd70` per room), then the **room grounds** (`0x1420f0e10` per room, map +0x10
+   off): every vertex of the room without a ground (flag 1 clear, or a null ground) takes the graph's DefaultGround
+   (tiler +0x20 = graph +0xb0); TopGround (+0x30 = +0xa0) instead when its height is the highest of the view
+   (`0x141ffc700`), else BottomGround (+0x28 = +0xa8) when the lowest (`0x141ffc7d0`), both only when set and the
+   default is not impassable_ground.gt. With RoomOverlap a room leaves out its left / top vertex column / row unless
+   its cell is at x / y 0, and its right / bottom one unless its cell x / y is the map's last (cell, not cell + size).
+   Not ported: room data +0xa with +0x13a (the room's own ground instead of the default, taken as clear) and the
+   master's level overrides +0x146 / +0x144. Then the **fill**: the recorded cells (`0x1420eec10`, which also
    gives the footprint's vertices the height and flag 2) sorted by (x, y), each still empty one filled by
    `0x141feb970` (as for tile graphs) for its ground, or its top-left vertex's ground when that vertex has flag 1,
    at the record's height (`0x1420f3de0` → `0x141fec8f0`: a given height is used, 0x80000000 = corners' middle).
-5. **Mirror seams** (`0x142025440`), then, after the subgraph (`0x142044f30`), the **outer ground**
+5. **Mirror seams** (`0x142025440`, as in §3c), then, after the subgraph (`0x142044f30`), the **outer ground**
    (`0x14201db80`) over the subgraph's view (`0x141ffb6c0`): the layout inside the outer buffer, not the buffer.
    Vertices with flag 1 get flag 2. When the outer ground's .gt has flag 1 (or master +0x161), every empty entry
    takes its first fill tile at orientation 0, no draw. Otherwise the heights are fixed: row by row an empty entry
@@ -329,7 +342,11 @@ Not ported on this path (no draws in the cave): `0x1420f4010` / `0x1420f4ae0` (R
 **The Fetid Pool `1_1_3a` seed 1 (`fetid_3.dgr`, trace recorded 2026-10-23) generates tile for tile: all 3 060
 entries, tile hash 401409093, all 910 draws up to the doodads** (directional door types, fill rooms, slot corners,
 3 × 3 outer tiles). **The Slave Pens `1_5_1` seed 1 matches by tile hash (3415378844)** with the node door type and
-the overlap fallbacks. Oracle stops on `.dgr` areas: see the oracle line in §8.
+the overlap fallbacks. **The Reliquary `1_5_7`, `1_5_2`, The Ossuary `1_5_5`, `2_10_4`, `2_10_7`, `2_10_8`, `2_8_2_2`,
+`2_7_5_map`, `2_9_6` and The Mud Flats `1_1_3` (seed 1 each) match by tile hash** with the plain slots before the
+shared-slot test, the room grounds `0x1420f0e10`, the seams' plain-tile and room-vertex tests, the shared slots'
+accessible bit, the `s`-keyed fill rooms, the layout fill's step after a 1 × 1 blank and the post-unique tiles per
+subgraph. Oracle stops on `.dgr` areas: see the oracle line in §8.
 
 ## 3c3. Composite maps: subgraph nodes (`DungeonTiler.Composite`, `DungeonLayout.PlaceSubgraphNode`)
 
@@ -351,7 +368,8 @@ entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of 
   (`0x1421062e0`).
 - **Driver** (`0x142049d10`): records in order (the list grows while it runs), each with the view set to its
   rectangle (`0x1420452e0`): .dgr → `0x14203c900` (layout at the view's corner inside the margins), .tgr →
-  `0x14203f890`; then `0x14203ece0`, `0x14203e1f0`. At the end of `0x14203c900`, `0x14204f030`: every roomless entry
+  `0x14203f890`; then `0x14203ece0` (the post-unique tiles over the record's view, as for tile graphs, §7b; The
+  Ossuary `1_5_5`'s stained-glass glyphs), `0x14203e1f0` (not ported). At the end of `0x14203c900`, `0x14204f030`: every roomless entry
   with descriptions adds the record of its first description at its corner (cell × step + the view's corner;
   orientation 0 has no offset), parent = this record, orientation = this one's. After all records, last first: each
   one's outer ground over its view and its outer buffer (`0x142044f30`); then StoreyHeight (`0x14204cbd0`, the top
@@ -628,8 +646,8 @@ are the doodads, `0x142042fae`).
    takes it (`0x1421174f0` → `0x141d82d00`) and is done. `0x14211aca0` then sweeps until nothing changes: a plain tile
    not done takes the one distinct offset of its done neighbours (left of the cell, right of the tile, above, below)
    that are plain for its ground. No draws (The Coast seed 1: 252 entries).
-6. **Mirror seams** (`Seams.cs`, `0x142025440` on the view): as for the towns (§3c), and tiles touching vertices rooms
-   mark (room data +0xe8, the inner vertex grounds; the skip is not ported) are skipped; when no replacement exists and the tile is outside rooms, the
+6. **Mirror seams** (`Seams.cs`, `0x142025440` on the view): as for the towns (§3c), tiles touching a vertex that
+   took a room's own vertex ground (room data +0xe8, `0x142025fb0`) included; when no replacement exists and the tile is outside rooms, the
    edge-point fallback `0x142026bc0` runs: per other side with a non-virtual edge whose neighbour has the same size and
    no tag, every other edge point gives the tiles of the changed key making no seam up or left; `Next(total)` picks
    one, which stands when the neighbour with the meeting point has tiles making no seam at all (`Next(total)`); both
@@ -726,6 +744,13 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  2026-10-23 (session 3p: plain room slots before the shared-slot test, room grounds `0x1420f0e10`, seam tests
+  `0x14201d800` / `0x142025fb0`, the shared slots' accessible bit, `s`-keyed `.arm` rooms, the layout fill's step,
+  post-unique tiles on dungeons): 84 of 710 match; of the seed-1 traces 48 match by hash (was 38; new: `1_1_3`,
+  `1_5_2`, `1_5_5`, `1_5_7`, `2_10_4`, `2_10_7`, `2_10_8`, `2_7_5_map`, `2_8_2_2`, `2_9_6`), none lost, no trace
+  matches fewer draws. Most common stops: 250 run to the end with another hash, node kinds (115), glacier `.tgr`
+  subgraphs (118), numbered special rooms (25), door tiles without RoomOverlap (23), DungeonFillRoomHeightOverride
+  (12), "Mismatching ground types" (10).
   2026-10-23 (session 3o: node door type, the untagged node's door type, exitless rooms out of the size tables, the
   overlap fallbacks): 63 of 710 match; of the seed-1 traces 38 match by hash (was 31; new: `1_4_3_2`, The Slave Pens
   `1_5_1`, `1_5_6`, `2_6_7_2`, `2_7_9`, `2_7_10`, `2_10_3`), none lost, no trace matches fewer draws. Most common
@@ -744,7 +769,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   The Northern Forest (`1_2_8`) seeds 1, 602433223; The City of Sarn (`1_3_1`) seeds 1, 149738592; `1_4_7` seed
   2326754436; `2_6_town`; four ChayulaLeague seeds; MapAtlasHarbingerLow seed 1); the most common stops are
   multi-node `.dgr` dungeons and "Mismatching ground types" (7); 57 run to the end with another hash; The Boiling
-  Lake (`2_9_6`) asks for a fill room `Rooms/Fills/pools_00.arm` that the game files lack. The Northern Forest seed
+  Lake (`2_9_6`) stopped at its fill room `Rooms/Fills/pools_00.arm`, a 1 × 1 room keyed `s` the port could not read
+  then (it matches since 2026-10-23). The Northern Forest seed
   1 matches every draw up to the doodads (10 562), every vertex and tile, and the tile hash (2500166236). The Coast seed 1 matches
   every tile-stage draw (8 178, up to the doodads), every vertex at the painting and as the fill starts (`levelgen`
   compares the trace's `paint.after` and `fillVertices`), every tile and the tile hash.

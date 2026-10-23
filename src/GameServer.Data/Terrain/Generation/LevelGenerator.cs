@@ -186,7 +186,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
         TiliseRoom(room, code, 0, 0);
         Fill();
-        new SeamRepair(_grid, _store, rng, notes).Run();
+        new SeamRepair(files, _grid, _store, rng, notes).Run();
         return _grid;
     }
 
@@ -206,6 +206,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             var t = i == 0 ? this : new DungeonTiler(files, rng, notes);
             notes.Add($"subgraph {i}: {r.Path} at ({r.X}, {r.Y}) {r.W}x{r.H}");
             t.Tilise(r, grid, records, i);
+            // 0x1420452e0 after the layout: the TileSet's post-unique tiles over the subgraph's view (0x14203ece0).
+            PostUniqueTiles.Run(rng, grid, r.X + r.Margins.Left, r.Y + r.Margins.Top, r.W - r.Margins.Left - r.Margins.Right,
+                r.H - r.Margins.Top - r.Margins.Bottom, t._store, notes);
             tilers.Add(t);
         }
         for (int i = records.Count - 1; i >= 0; i--) tilers[i].Outer(records[i]);
@@ -262,6 +265,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         }
         else if (_doorTiles && map.Rooms.Any(p => p.Room is not null))
             throw new NotSupportedException("door tiles without RoomOverlap (0x1420edd50, 0x1420f4d90) are not ported");
+        var roomVertices = new HashSet<(int X, int Y)>();
         foreach (var p in map.Rooms)
             if (p.Room?.Def is { VertexGrounds.Length: > 0 } def)
                 for (int v = 1; v < def.Height; v++)
@@ -270,10 +274,12 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                         {
                             var (dx, dy) = Orientation.MapVertex(p.Orientation, u, v, def.Width, def.Height);
                             _grid.ForceGround(_ox + step * p.X + dx, _oy + step * p.Y + dy, g);
+                            roomVertices.Add((_ox + step * p.X + dx, _oy + step * p.Y + dy));
                         }
+        RoomGrounds(map, step);
         FillRecords(master, masterPath);
         // 0x1420f8f20 (draws only when +0xb0 lists cells, not ported), then the mirror seams (0x142025440).
-        new SeamRepair(_grid, _store, rng, notes).Run();
+        new SeamRepair(files, _grid, _store, rng, notes, roomVertices).Run();
         foreach (var p in map.Rooms)
             if (p.Room is null && p.Descriptions.Count != 0)
                 records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index));
@@ -297,6 +303,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     {
         var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         TileGraphGenerator.Prepare(graph, rng, false);
+        string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
+        _graphGrounds = (Ground(graph.TopGround), Ground(graph.BottomGround), Ground(graph.DefaultGround));
         notes.Add($"dungeon graph {graphPath}: {graph.Nodes.Count} nodes, {graph.Edges.Count} edges after exist rolls");
         var roomSet = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
         var map = new DungeonMap(graph.Width, graph.Height, unit, int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
@@ -367,17 +375,6 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 y += originY;
                 // Slot height (+0x72) plus the room's level (+0x12).
                 short height = (short)(slot.Height + level);
-                // 0x1420f0a70: with RoomOverlap, a key of odd size centred on the room's outer row or column is shared
-                // with the neighbour (not for "missiontile").
-                int lx = x - originX, ly = y - originY;
-                int bx = lx < 1 ? 1 : roomW <= lx + w ? 2 : 0, by = ly < 1 ? 1 : roomH <= ly + h ? 2 : 0;
-                if (_overlap != 0 && slot.Tag != "missiontile" &&
-                    ((bx == 1 && w % 2 == 1 && lx + w / 2 == 0) || (bx == 2 && w % 2 == 1 && lx + w / 2 == roomW - 1) ||
-                     (by == 1 && h % 2 == 1 && ly + h / 2 == 0) || (by == 2 && h % 2 == 1 && ly + h / 2 == roomH - 1)))
-                {
-                    Border(x, y, bx, by, height, key.Rotate(code), slot.Tag, accessible, descriptions);
-                    continue;
-                }
                 if (slot.Tag.Length == 0 && key.Edges.All(e => e is null) && key.Heights.All(v => v == 0) &&
                     key.Grounds.Distinct().Count() == 1)
                 {
@@ -389,6 +386,18 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                     for (int dy = 0; dy < h; dy++)
                         for (int dx = 0; dx < w; dx++)
                             _pendingFills.Add((x + dx, y + dy, key.Grounds[0], height));
+                    continue;
+                }
+                // 0x1420f0a70, after the plain test (a plain slot goes to the fill even on the room's outer row): with
+                // RoomOverlap, a key of odd size centred on the room's outer row or column is shared with the neighbour
+                // (not for "missiontile").
+                int lx = x - originX, ly = y - originY;
+                int bx = lx < 1 ? 1 : roomW <= lx + w ? 2 : 0, by = ly < 1 ? 1 : roomH <= ly + h ? 2 : 0;
+                if (_overlap != 0 && slot.Tag != "missiontile" &&
+                    ((bx == 1 && w % 2 == 1 && lx + w / 2 == 0) || (bx == 2 && w % 2 == 1 && lx + w / 2 == roomW - 1) ||
+                     (by == 1 && h % 2 == 1 && ly + h / 2 == 0) || (by == 2 && h % 2 == 1 && ly + h / 2 == roomH - 1)))
+                {
+                    Border(x, y, bx, by, height, key.Rotate(code), slot.Tag, accessible, descriptions);
                     continue;
                 }
                 var list = _store.Candidates(slot.Tag, key.Rotate(code));
@@ -436,7 +445,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             var key = b.Key;
             if (b.Tags.Count == 0 && Plain(key))
             {
-                PendingFill(x, y, key, b.Height);
+                PendingFill(x, y, key, b.Height, (b.Flags & 1) != 0);
                 continue;
             }
             int taken = 0;
@@ -460,7 +469,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             if (placed) continue;
             if (Plain(key))
             {
-                PendingFill(x, y, key, b.Height);
+                PendingFill(x, y, key, b.Height, (b.Flags & 1) != 0);
                 continue;
             }
             if (!PlaceOverlap(key, "", x, y, b.Height)) throw new InvalidOperationException($"Could not find matching overlap tile at ({x}, {y})");
@@ -760,6 +769,63 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 if (_grid[x, y] is { IsOrigin: true }) _grid.SetHeight(x, y, (short)h);
             if (settled) break;
         }
+    }
+
+    /// <summary>The graph's grounds (+0xa0 top, +0xa8 bottom, +0xb0 default), the tiler's +0x30 / +0x28 / +0x20.</summary>
+    (string? Top, string? Bottom, string? Default) _graphGrounds;
+
+    /// <summary><c>0x1420f0e10</c> per room, after the room vertex grounds: every vertex of the room (with RoomOverlap,
+    /// not its left or top column when the room is not at the map's left or top, nor its right or bottom column when
+    /// its cell is not the map's last) without a ground takes the graph's default ground; the top ground instead when
+    /// its height is the highest of the layout (<c>0x141ffc700</c>), else the bottom ground when the lowest
+    /// (<c>0x141ffc7d0</c>), unless the default is impassable_ground.gt. Written without the ground checks
+    /// (<c>0x141d85640</c> with map +0x10 clear). Not ported: room data +0xa with +0x13a (the room's own ground in place
+    /// of the default; taken as clear) and the master's level overrides +0x146 / +0x144.</summary>
+    void RoomGrounds(DungeonMap map, int step)
+    {
+        const string impassable = "Metadata/Terrain/impassable_ground.gt";
+        int x1 = _ox + step * map.Width + map.Overlap, y1 = _oy + step * map.Height + map.Overlap;
+        int hi = int.MinValue, lo = int.MaxValue;
+        for (int y = _oy; y <= y1; y++)
+            for (int x = _ox; x <= x1; x++)
+            {
+                int h = _grid.InsideCorners(x, y) ? _grid.Corner(x, y).Height : 0;
+                hi = Math.Max(hi, h);
+                lo = Math.Min(lo, h);
+            }
+        bool check = _grid.CheckGrounds;
+        _grid.CheckGrounds = false;
+        var (top, bottom, fallback) = _graphGrounds;
+        foreach (var p in map.Rooms)
+        {
+            if (p.Room?.Def is not { } def) continue;
+            var (w, h) = Orientation.Size(p.Orientation, def.Width, def.Height);
+            int x0 = 0, y0 = 0, xn = w + 1, yn = h + 1;
+            if (map.Overlap != 0)
+            {
+                x0 = p.X != 0 ? 1 : 0;
+                y0 = p.Y != 0 ? 1 : 0;
+                xn -= p.X < map.Width - 1 ? 1 : 0;
+                yn -= p.Y < map.Height - 1 ? 1 : 0;
+            }
+            int ox = _ox + step * p.X, oy = _oy + step * p.Y;
+            for (int v = y0; v < yn; v++)
+                for (int u = x0; u < xn; u++)
+                {
+                    int x = ox + u, y = oy + v;
+                    if (!_grid.InsideCorners(x, y)) continue;
+                    ref var c = ref _grid.Corner(x, y);
+                    if ((c.Flags & 1) != 0 && c.Ground is not null) continue;
+                    string? g = fallback;
+                    if (!string.Equals(g, impassable, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (top is not null && c.Height == hi) g = top;
+                        else if (bottom is not null && c.Height == lo) g = bottom;
+                    }
+                    _grid.SetGround(x, y, g);
+                }
+        }
+        _grid.CheckGrounds = check;
     }
 
     /// <summary><c>0x1420f3480</c>'s fill: the records sorted by (x, y) (<c>0x14212d520</c>); each still-empty one is
@@ -1130,8 +1196,9 @@ sealed class TileStore
 
 /// <summary><c>0x142025440</c>: row by row, a placed tile larger than one entry whose neighbour (up, right, down,
 /// left, one tile size away) is the same tile mirrored across their shared edge is replaced (<c>0x142027670</c>) by a
-/// candidate for its key that makes no such seam with its up and left neighbours.</summary>
-sealed class SeamRepair(TileGrid grid, TileStore store, LevelRandom rng, List<string> notes)
+/// candidate for its key that makes no such seam with its up and left neighbours. A tile touching a vertex that took a
+/// room's own vertex ground stays (<c>0x142025fb0</c>).</summary>
+sealed class SeamRepair(TerrainCache files, TileGrid grid, TileStore store, LevelRandom rng, List<string> notes, IReadOnlySet<(int X, int Y)>? roomVertices = null)
 {
     public void Run()
     {
@@ -1141,7 +1208,8 @@ sealed class SeamRepair(TileGrid grid, TileStore store, LevelRandom rng, List<st
                 if (grid[x, y] is not { IsOrigin: true } e) continue;
                 var (w, h) = Orientation.Size(e.Orientation, e.Tile.Width, e.Tile.Height);
                 if (w == 1 && h == 1) continue;
-                if (e.Tile.Tag.Length != 0 || PlainFill(e.Tile.Key)) continue;
+                if (e.Tile.Tag.Length != 0 || Seams.PlainFill(files, e.Tile.Key)) continue;
+                if (roomVertices is not null && Seams.TouchesRoomVertex(roomVertices, x, y, w, h)) continue;
                 for (int d = 0; d < 4; d++)
                 {
                     var (dx, dy) = Orientation.Directions[d];
@@ -1153,9 +1221,6 @@ sealed class SeamRepair(TileGrid grid, TileStore store, LevelRandom rng, List<st
                 }
             }
     }
-
-    // 0x14201d800: no edge types and one ground on every corner.
-    static bool PlainFill(TileKey key) => key.Edges.All(e => e is null) && key.Grounds.Distinct().Count() == 1;
 
     void Repair(int x, int y, TileEntry e, int direction, TileEntry neighbour)
     {

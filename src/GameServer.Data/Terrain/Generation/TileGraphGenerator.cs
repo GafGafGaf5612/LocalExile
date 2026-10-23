@@ -128,10 +128,10 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays.Run(pass, afterFill: true);
         // 0x1421193d0 (storeys: plain tiles take their neighbours' heights), then the mirror seams (0x142025440).
         new Storeys(grid, buffer, Graph.Width, Graph.Height, files).Run();
-        new Seams(files, rng, grid, buffer, Graph.Width, Graph.Height, store, special.Rooms,
+        new Seams(files, rng, grid, buffer, Graph.Width, Graph.Height, store, special.Rooms, special.RoomVertices,
             (GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), GraphGround(Graph.DefaultGround)), notes).Run();
         // 0x14203ece0: the TileSet's post-unique tiles.
-        PostUniqueTiles.Run(rng, grid, buffer, Graph.Width, Graph.Height, store, notes);
+        PostUniqueTiles.Run(rng, grid, buffer, buffer, Graph.Width, Graph.Height, store, notes);
         // 0x142049d10 → 0x142044f30: per subgraph the outer ground (0x14201db80, needs the master's OuterGroundType) and
         // the outer buffer (0x14201ffa0).
         if (master.ContainsKey("OuterGroundType")) throw new NotSupportedException("OuterGroundType (0x14201db80) is not ported");

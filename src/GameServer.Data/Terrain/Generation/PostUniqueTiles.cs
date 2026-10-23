@@ -8,7 +8,7 @@ namespace GameServer.Data.Terrain.Generation;
 /// in there at the old tile's height. No candidate is fatal.</summary>
 static class PostUniqueTiles
 {
-    public static void Run(LevelRandom rng, TileGrid grid, int offset, int width, int height, TileStore store, List<string> notes)
+    public static void Run(LevelRandom rng, TileGrid grid, int x0, int y0, int width, int height, TileStore store, List<string> notes)
     {
         bool Open(int x, int y) => x >= 0 && y >= 0 && x <= grid.Width && y <= grid.Height && (grid.Corner(x, y).Flags & 8) == 0;
         foreach (var (tile, mask) in store.PostUnique)
@@ -17,8 +17,8 @@ static class PostUniqueTiles
             for (int o = 0; o < 8; o++)
                 if ((mask & 1 << o) != 0) keys[o] = tile.Key.Rotate(o);
             var found = new List<(short Height, int Orientation, int X, int Y)>();
-            for (int y = offset; y < offset + height; y++)
-                for (int x = offset; x < offset + width; x++)
+            for (int y = y0; y < y0 + height; y++)
+                for (int x = x0; x < x0 + width; x++)
                 {
                     if (grid[x, y] is not { IsOrigin: true } e || e.Tile.Tag.Length != 0) continue;
                     var key = e.Tile.Key.Rotate(e.Orientation);

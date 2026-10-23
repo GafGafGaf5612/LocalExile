@@ -1313,7 +1313,8 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
     }
 
     /// <summary><c>0x1420fd4e0</c>: row by row, each free cell gets a blank of one of the type's room sizes: up to five
-    /// <c>Next(total weight)</c> picks until one fits, else the first size, else 1 × 1 (with flag 2).</summary>
+    /// <c>Next(total weight)</c> picks until one fits, else the first size, else 1 × 1 (with flag 2). The column then
+    /// moves on by the size's width, the first size's for the 1 × 1 (so the cell after it stays free).</summary>
     void Fill(string type)
     {
         var sizes = roomSet.Sizes(type);
@@ -1338,7 +1339,7 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
                 }
                 var (w, h) = chosen.Value;
                 map.Place(null, 0, w, h, x, y, 0, [], type, false, small, 3, 0, DungeonRoomSet.Rooms);
-                x += w;
+                x += small ? sizes[0].W : w;
             }
     }
 
