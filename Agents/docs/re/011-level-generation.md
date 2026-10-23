@@ -874,9 +874,9 @@ value, so the order does not matter.
 
 Checked with `levelgen walk` against the seed-1 captures (`data/walkability/<area>_seed1.bin`, `.projectile.bin`;
 `LEVELGEN_NODOODADS` leaves the doodads out, `LEVELGEN_CAPTURED_DOODADS` stamps the captured ones instead of the
-generated): of the 61 captures whose tile hash matches, **47 match both grids cell for cell** with the generated
+generated): of the 61 captures whose tile hash matches, **58 match both grids cell for cell** with the generated
 doodads (without doodads: none; median 99.44% walk, 99.89% projectile). The dungeon forced-blank slots (`1_5_2`
-93.9%, `2_10_2` 93.2% before) were doodad collision, not a walkability rule. The 14 left: §6c.
+93.9%, `2_10_2` 93.2% before) were doodad collision, not a walkability rule. The 3 left: §6c.
 
 ## 6c. Doodads (`DoodadStage.cs`, `DoodadHull.cs`)
 
@@ -885,7 +885,10 @@ bytes; `GenerationResult.Records`: rectangle +0x40…+0x4c, master +0x50, placed
 y, +0x18 height, +0x1b orientation code). Order:
 
 1. **Room doodads** of every record's rooms, in placing order (`0x142040770`). A `.tgr` record's rooms are the special
-   nodes', overlays' and fill rooms (`special.Rooms`), a dungeon's the layout's placed rooms. Per room line (`.arm`
+   nodes', overlays' and fill rooms (`special.Rooms`), a dungeon's the layout's placed rooms and then the rooms its
+   fill picked (`0x1420f3de0` → `0x141feb970`: a `.gft` line naming an `.arm`, e.g. The Dried Lake's
+   `Fills/plants*.arm` and `tent1.arm`, small rooms of forced-blank tiles with doodad lines; their place in the list is
+   taken as after the layout's, which only matters for draws, and none was seen). Per room line (`.arm`
    reader `0x142a0f3a0`: `x y [has position, x y](v ≥ 34) angle [quaternion](v ≥ 17) flip [wake group](v > 24)
    has-fixed-height [height] [scale](v > 13) "file.ao" "type"`, then links and decals): `0x14202ede0` resolves the .ao
    with no random angle (no draw without AOSet); filters type +0x2ac ∈ {60, generator +0xd0}, a per-line orientation
@@ -929,19 +932,18 @@ later walk checks (`walk < 5` in the random loop) see earlier doodads: this is w
 before.
 
 Results: The Twilight Strand matches every doodad-stage draw (to #25 151, then the mesh variation `0x141530658`) and
-places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 52
-other captures' (53 of the 61 with a matching tile hash; 47 before the tile objects and the type rules; new: `1_4_7`,
-`2_6_15`, `2_7_10`, `2_9_2`, `2_9_6`, ChayulaLeague; `2_8_10` is 6 cells off). Left:
+places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 57
+other captures' (58 of the 61 with a matching tile hash; 47 before the tile objects and the type rules, 53 before the
+dungeon fill rooms; the fill rooms brought `1_4_2`, `1_5_1`, `2_7_5_map`, `2_10_5`, `2_10_6`: their missing
+collision was also what made `2_7_5_map`'s first random loop run longer). Left:
 - **AOSet** (`0x14202ede0`: `AOSet` component, weighted children +0x10 / total +0x28 picked by `Next(total)` while the
   fixed list +0x30 is empty; angle range +0x48/+0x4c, orientation mask +0x5c with `Next(840)`, scale range
   +0x50/+0x54, offset radius +0x58: two `Next(512)`): skipped with a note (`1_1_6` `lioneye_swords_hill_set.ao`,
-  `1_1_3` toxic lights).
-- **`1_4_2`'s plants** (197 captured doodads on forced-blank cells inside rooms, e.g. `largepoppyplant_01.ao` at
-  (430, 793); every stage draw matches; 18 279 walk cells off): not tile objects and not lines of any room the port
-  places. Next: which rooms the client places there.
+  194 walk cells; `1_1_3` toxic lights).
 - The per-sub-tile lists of `0x141d7eda0` (tiles with +0x16d bit 1).
-- `2_7_5_map`: the first random loop ends later in the port (#24 268, the client starts the next record);
-  `2_10_6`: the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing.
+- `2_9_5` (1 908 walk cells, 610 projectile), `2_8_10` (6 walk cells).
+- `2_10_6`: grids exact, but the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing, and 2 of
+  the 1 639 captured doodads are not placed.
 
 ## 7. What the server will use
 
@@ -961,7 +963,9 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
 - **Check:** `dotnet run --project scripts/re/levelgen -- hash <trace.gen.json>…` recomputes the tile hash from a
   traced grid. `… generate <area> <seed> [trace.gen.json]` runs the port and, with a trace, compares draw by draw
   (kind, argument, result; the first difference names the client's caller) and entry by entry, also when the port
-  stops at a part that is not ported, and graph by graph at each recorded stage. `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key. Traces also record the area level
+  stops at a part that is not ported, and graph by graph at each recorded stage. `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key, `… ls <regex>` the game paths
+  that match (e.g. every `.arm` of a folder, to find rooms no room set lists). `… doodads <area> <seed>` compares the
+  placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.

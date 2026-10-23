@@ -456,6 +456,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             }
         new Seams(files, rng, _grid, _ox, _oy, step * map.Width + map.Overlap, step * map.Height + map.Overlap, _store, placed, roomVertices,
             _graphGrounds, notes).Run();
+        // The fill's rooms (.gft lines naming an .arm) join the record's rooms after the layout's, for the doodad stage.
+        placed.AddRange(_fillRooms);
         foreach (var p in map.Rooms)
             if (p.Room is null && p.Descriptions.Count != 0)
                 records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index));
@@ -901,6 +903,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     }
 
     readonly List<(int X, int Y, string? Ground, short Height, bool Accessible)> _fillRecords = [];
+    readonly List<PlacedRoom> _fillRooms = [];
 
     /// <summary><c>0x142044f30</c> → <c>0x14201db80</c>: with the master's OuterGroundType, the vertices with a ground
     /// get flag 2, then the empty entries take that ground's first fill tile (<c>0x141feffb0</c>; "any" orientation
@@ -1092,7 +1095,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     void FillRecords(Dictionary<string, string> master, string masterPath)
     {
         if (!master.TryGetValue("FillTiles", out var gft)) return;
-        var fill = new Fill(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, files.FillTiles(TerrainText.Resolve(masterPath, gft)), [], notes);
+        var fill = new Fill(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes);
         foreach (var (x, y, ground, height, accessible) in _fillRecords.OrderBy(r => r.X).ThenBy(r => r.Y))
         {
             if (_grid[x, y] is not null) continue;

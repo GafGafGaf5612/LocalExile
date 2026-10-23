@@ -20,6 +20,14 @@ switch (args.FirstOrDefault())
             foreach (var path in args.Skip(1))
                 Console.WriteLine(fs.TryReadFile(path, out var data) ? $"== {path}\n{TerrainText.Decode(data)}" : $"== {path}: not found");
         break;
+    case "ls":
+        // ls <regex>: the game paths matching a regex (case-insensitive).
+        using (var fs = OpenGame())
+        {
+            var pattern = new System.Text.RegularExpressions.Regex(args[1], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            foreach (var path in fs.EnumeratePaths().Where(p => pattern.IsMatch(p)).Order()) Console.WriteLine(path);
+        }
+        break;
     case "raw":
         // raw <game path> <out file>: a game file's bytes as they are.
         using (var fs = OpenGame())
@@ -235,8 +243,9 @@ static void Doodads(string areaId, uint seed)
     foreach (var p in placed.Where(p => !capturedSet.Contains((p.Model, p.X, p.Y))).OrderBy(p => DoodadHull.Load(files.Text, p.Model)?.IsEmpty ?? true).Take(8))
         Console.WriteLine($"  port only: {Path.GetFileName(p.Model)} ({p.X}, {p.Y}) {p.A:0.###}");
     var placedSet = placed.Select(p => (p.Model, p.X, p.Y)).ToHashSet();
-    foreach (var c in captured.Where(c => !placedSet.Contains((c.Model, c.X, c.Y))).Take(12))
-        Console.WriteLine($"  capture only: {Path.GetFileName(c.Model)} ({c.X}, {c.Y}) {c.A:0.###}");
+    int shown = Environment.GetEnvironmentVariable("LEVELGEN_ALL") is { Length: > 0 } ? int.MaxValue : 12;
+    foreach (var c in captured.Where(c => !placedSet.Contains((c.Model, c.X, c.Y))).Take(shown))
+        Console.WriteLine($"  capture only: {Path.GetFileName(c.Model)} ({c.X}, {c.Y}) {c.A:0.###} tile ({c.X / 23}, {c.Y / 23})");
 }
 
 static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string areaId, uint seed, bool verbose)
