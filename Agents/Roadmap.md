@@ -202,8 +202,10 @@ data is in [19](docs/protocol/19-gems.md).
   experience at the first level the character does not meet, socketing is refused below it, and a gem the character is
   below (after `/set_level` down) makes its item inactive: red on the client, its mods and gems not counting, its skill
   gone from the list so it cannot be cast, and an inactive weapon falls back to the unarmed attack (Status "Gem level
-  requirements"). Left open: the client still draws an inactive item worn (red wand in hand) — whether the real game
-  does, and whether to move it out of the row instead, is to decide ([13](docs/protocol/13-items.md) §2d).
+  requirements"). Left open: the client still draws an inactive item worn (red wand in hand) — check with the official
+  client what it does there, and whether to move the item out of the row instead ([13](docs/protocol/13-items.md) §2d);
+  the state is reachable in the real game with a +attribute ring put on to meet a gem's requirement, the gem socketed,
+  the ring taken off, which needs the attribute formula first.
 - **Start:** check part (b) live (a level 20 Fireball's damage and cost, a quality aura, Ice Nova of Frostbolts, a Vaal
   gem's two skills). Then the rest of (c), the attribute requirements: fit their formula (the client computes them in
   `0x14246fff0`; the anchors in [19](docs/protocol/19-gems.md) §2 don't fit a plain percentage of the level curve;

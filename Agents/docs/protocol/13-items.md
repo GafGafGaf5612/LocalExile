@@ -173,8 +173,11 @@ either: the default attack falls back to the class's unarmed hit (`WeaponFor`) a
 (`WeaponProfileFor`).
 
 Open: the client still draws an inactive item on the character (a red wand stays in hand), and the server leaves it
-where it is — what the real game does is not observable, since nothing in it takes a level or an attribute away from an
-equipped item; moving the item out of the row is the only way to take the visual away (Roadmap "Gems 1").
+where it is. The state is reachable in the real game — a ring's +intelligence makes a gem's requirement met, the gem
+goes in, the ring comes off — so what the official client does then (the gem red, and whether the item holding it stops
+counting too) is to check there; reproducing it here needs the gem attribute requirement formula
+([19](19-gems.md) §2 "Requirements"). Moving the item out of its row is the only way to take its visual away
+(Roadmap "Gems 1").
 
 **Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).
