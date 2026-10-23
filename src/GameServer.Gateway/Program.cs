@@ -6531,9 +6531,12 @@ static async Task SetTabAffinities(string remote, NetworkStream stream, Connecti
 static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
-    var weapon = Skills.UnarmedFor(classRow);
     var cls = Skills.ClassFor(classRow);
     var stats = CharacterPlayerStats(conn);
+    // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:
+    // before, every area started with the class's unarmed attack, so a weapon's added damage and attack speed showed only
+    // after taking it off and putting it back. After the stats, which mark the inactive items WeaponFor skips.
+    var weapon = WeaponFor(conn);
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
     var weaponStats = weapon.Stats(stats).ToList();
