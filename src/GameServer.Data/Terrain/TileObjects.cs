@@ -62,9 +62,10 @@ public static partial class TileObjectFile
 
 public static partial class TileObjectFile
 {
-    /// <summary>The older text form (UTF-16, "version 8"): one record per line, <c>cellX cellY n worldX worldY a … "" "name"
-    /// "mesh" "type" ["ao"]</c>. Cell and world x/y agree (world / (250/23) = cell); the height is not derived from this
-    /// form (Z is NaN) and the angle is taken as the value after world y (≈ 0 in every record seen).</summary>
+    /// <summary>The older text form (UTF-16, "version 8"): one record per line, <c>cellX cellY hasPos [worldX worldY] z
+    /// angle qx qy qz qw ? scale "ao" "name" "mesh" "type" [n]</c> (every one of the 3 345 records in the game files).
+    /// Cell and world x/y agree (world / (250/23) = cell); without a world position the cell's middle is used. An empty
+    /// "ao" is none.</summary>
     public static IReadOnlyList<TileObject> ParseText(string text)
     {
         var lines = TerrainText.Lines(text);
@@ -75,9 +76,14 @@ public static partial class TileObjectFile
             var t = TerrainText.Tokenize(line);
             if (t.Count == 0) continue;
             int q = t.FindIndex(x => x.Quoted);
-            if (q < 6 || t.Count < q + 4) throw new InvalidDataException($"text .tmd record: {line}");
-            objects.Add(new TileObject(t[3].Float, t[4].Float, float.NaN, 0, t[5].Float, t[q + 1].Text, t[q + 2].Text, t[q + 3].Text,
-                t.Count > q + 4 && t[q + 4].Text.Length > 0 ? t[q + 4].Text : null));
+            bool hasPos = q > 2 && t[2].Float != 0;
+            if (q != (hasPos ? 13 : 11) || t.Count < q + 4) throw new InvalidDataException($"text .tmd record: {line}");
+            var (x, y) = hasPos
+                ? (t[3].Float, t[4].Float)
+                : ((t[0].Float + 0.5f) * TilePlacement.WorldPerCell, (t[1].Float + 0.5f) * TilePlacement.WorldPerCell);
+            int z = hasPos ? 5 : 3;
+            objects.Add(new TileObject(x, y, t[z].Float, 0, t[z + 1].Float, t[q + 1].Text, t[q + 2].Text, t[q + 3].Text,
+                t[q].Text.Length > 0 ? t[q].Text : null));
         }
         return objects;
     }

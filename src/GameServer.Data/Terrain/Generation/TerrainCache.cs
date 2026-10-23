@@ -229,7 +229,13 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         int slash = p.LastIndexOf('/');
         if (slash < 0) return null;
         var data = read(p[..(slash + 1)] + "alttiles/" + reskin + "/" + reskin + "_" + p[(slash + 1)..^4] + ".tmd");
-        return data is null ? null : TileObjectFile.Parse(data);
+        if (data is null) return null;
+        // The copy's records are named "<reskin>_<name>"; the client keys their virtual .ao by the original name (the
+        // captures place "<.tdt folder>/<name>.ao", whose Hull the reskinned name would miss).
+        string prefix = reskin + "_";
+        return TileObjectFile.Parse(data)
+            .Select(o => o.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? o with { Name = o.Name[prefix.Length..] } : o)
+            .ToList();
     }
 
     bool IsTransitionType(string type)

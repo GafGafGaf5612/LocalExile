@@ -917,7 +917,11 @@ y, +0x18 height, +0x1b orientation code). Order:
    tiles' own objects**: row by row, every tile origin (+0x34 / +0x35 zero) whose tile data has +0x178 or +0x180;
    the record is the last one holding the tile (`0x141d77a90`, else the first). `0x141d7eda0`: a tile without
    sub-tiles (+0x16d bit 1 clear) → `0x141d7f700`: with the record master's `Reskin` (master +0x80), the file
-   `<dir>/alttiles/<reskin>/<reskin>_<name>.tmd` beside the tile (`0x141d88810`) when it exists, else +0x178. +0x178
+   `<dir>/alttiles/<reskin>/<reskin>_<name>.tmd` beside the tile (`0x141d88810`) when it exists, else +0x178. The
+   copy is loaded under the key `<copy>;<middle of +0x178's key>;<reskin>` (`0x141d801b0` takes the part between the
+   first and last `;`); its records are named `<reskin>_<name>`, and the client's virtual `.ao` is the original
+   `<.tdt folder>/<name>.ao` (the captures of `1_1_3`, `1_1_6`, `2_9_5`; the port strips the prefix — the loader
+   that does it was not found, `.tmd` is not a string in the decompile). +0x178
    is the tile's `.tmd` (`0x141d7fb60` at load: the `.tdt` / `.tgt` name with `.tmd`, last existing one; none when
    the flags word has bit 3), +0x180 a `.tmd` named by the `.tdt` reader (none seen). Each 0x58-byte entry goes
    through `0x1420415e0` = the room-line path with the tile's size (+0x60 / +0x61), the entry's origin and
@@ -932,12 +936,16 @@ later walk checks (`walk < 5` in the random loop) see earlier doodads: this is w
 before.
 
 Results: The Twilight Strand matches every doodad-stage draw (to #25 151, then the mesh variation `0x141530658`) and
-places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 58
-other captures' (59 of the 61 with a matching tile hash; 47 before the tile objects and the type rules, 53 before the
+places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 59
+other captures' (60 of the 61 with a matching tile hash; 47 before the tile objects and the type rules, 53 before the
 dungeon fill rooms; the fill rooms brought `1_4_2`, `1_5_1`, `2_7_5_map`, `2_10_5`, `2_10_6`: their missing
-collision was also what made `2_7_5_map`'s first random loop run longer; AOSet then brought `1_1_6`). Left:
+collision was also what made `2_7_5_map`'s first random loop run longer; AOSet then brought `1_1_6`, and the
+reskinned names above `2_9_5`, whose `foothills_*` ramp planes and blocker had found no `.ao` and so no Hull).
+Text `.tmd` records (version 8) carry the `.ao` as their first quoted field and z before the angle (08 §6); the
+waypoint effect of `beach_waypoint_v01_01.tmd` is `waypoint_idle.ao` at angle 0. Every doodad of `1_1_3`, `1_1_6`
+and `2_9_5` now has the captured name. Left:
 - The per-sub-tile lists of `0x141d7eda0` (tiles with +0x16d bit 1).
-- `2_9_5` (1 908 walk cells, 610 projectile), `2_8_10` (6 walk cells).
+- `2_8_10` (6 walk cells; the random loop places 29 doodads the capture lacks and misses 15).
 - `2_10_6`: grids exact, but the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing, and 2 of
   the 1 639 captured doodads are not placed.
 
