@@ -366,6 +366,14 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         }
         else if (id == InstancePause.RequestId)
             await SetPaused(remote, stream, ciphers, conn, InstancePause.ReadRequest(bytes));
+        else if (id == InstanceMicrotransactions.RequestId)
+        {
+            var asked = InstanceMicrotransactions.ReadRequest(bytes);
+            Console.WriteLine($"[gateway] {remote} <= 0x01f2 microtransaction lists asked: {asked}");
+            await AnswerMtxRequest(remote, stream, ciphers, asked);
+        }
+        else if (id == InstanceMicrotransactions.SlotId)
+            await PickCosmetic(remote, stream, ciphers, conn, InstanceMicrotransactions.ReadSlot(bytes));
         else if (id == InstanceProtocol.UseInstantSkillId)
         {
             // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,
@@ -667,11 +675,13 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SendWaypoints(remote, stream, ciphers, conn);
                 uint gold = PersonalStashOf(conn).Gold;
                 await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
+                // The worn cosmetics (S→C 0x1f3): the client's worn table starts empty with every instance connection.
+                await SendWornCosmetics(remote, stream, ciphers, conn, "entering the area");
                 // The saved skill bar (S→C 0x53), right after the player and the area.
                 await SendSkillBar(remote, stream, ciphers, conn);
                 // The equipment again (S→C 0x02ba), as after an equip: the player object's own list does not set how a
                 // two-handed weapon is held, the update does (live 2026-10-22: it was held one-handed after every load).
-                var worn = ItemsOf(conn).Equipped(LookOf);
+                var worn = Looks(conn, ItemsOf(conn));
                 await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, worn),
                     $"0x02ba player equipment on entering: {string.Join(", ", worn.Select(e => $"slot {e.Slot} stance {e.Stance}"))}");
                 await PopulateArea(remote, stream, ciphers, conn);
@@ -2018,6 +2028,7 @@ static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
     foreach (var (k, v) in WeaponFor(conn).Stats(stats)) stats[k] = v;
+    foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     return stats.Select(kv => (kv.Key, kv.Value));
 }
 
@@ -4332,6 +4343,76 @@ static async Task SetPaused(string remote, NetworkStream stream, ConnectionCiphe
     await Send(remote, stream, ciphers, InstancePause.State(pause), $"0x01d3 {(pause ? "paused" : "resumed")} (C→S 0x01d4 {(pause ? 1 : 0)})");
 }
 
+// The Microtransactions panel, the store and the hideout picker ask for their lists with C→S 0x1f2 and show "Loading…"
+// until each one arrives (23-microtransactions.md). Every account owns every microtransaction; the hideout and guild
+// lists go out empty, which is enough to load the panels that wait on them.
+static async Task AnswerMtxRequest(string remote, NetworkStream stream, ConnectionCiphers ciphers, InstanceMicrotransactions.Lists asked)
+{
+    var owned = Mtx.Owned;
+    if (asked.HasFlag(InstanceMicrotransactions.Lists.Records))
+        await Send(remote, stream, ciphers, InstanceMicrotransactions.Added(owned, InstanceMicrotransactions.Records),
+            $"0x01f4 microtransactions: {owned.Count} owned (the panel's records)");
+    if (asked.HasFlag(InstanceMicrotransactions.Lists.StoreOwned))
+        await Send(remote, stream, ciphers, InstanceMicrotransactions.Added(owned, InstanceMicrotransactions.StoreOwned),
+            $"0x01f4 microtransactions: {owned.Count} owned (the store's list)");
+    if (asked.HasFlag(InstanceMicrotransactions.Lists.GuildStore))
+        await Send(remote, stream, ciphers, InstanceMicrotransactions.Added([], InstanceMicrotransactions.StoreSecond),
+            "0x01f4 microtransactions: the guild's list, empty");
+    if (asked.HasFlag(InstanceMicrotransactions.Lists.Hideouts))
+        await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts([]), "0x01f5 unlocked hideouts: none");
+    if (asked.HasFlag(InstanceMicrotransactions.Lists.GuildHideouts))
+        await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts([], guild: true), "0x01f5 guild hideouts: none");
+}
+
+// The Cosmetics tab (K) wears what S→C 0x1f3 lists, all slots at once (23-microtransactions.md). Saved picks first; a
+// portal effect set with /cosmetic and no Portal slot saved shows in that slot too.
+// Read from the save once per connection (the stats ask for it on every hit); a pick clears it.
+static List<InstanceMicrotransactions.Equipped> WornCosmetics(ClientState conn)
+{
+    if (conn.WornCosmetics is { } cached) return cached;
+    var worn = new Dictionary<byte, CharacterSaves.SavedCosmetic>(CharacterSaves.Cosmetics(CharacterName(conn)));
+    if (!worn.ContainsKey(InstanceMicrotransactions.PortalSlot) && conn.CosmeticPortalVariation != 0
+        && Cosmetics.Portals.FirstOrDefault(p => p.Index == conn.CosmeticPortalVariation) is { Hash: not 0 } portal
+        && Mtx.ByHash(portal.Hash) is { } record)
+        worn[InstanceMicrotransactions.PortalSlot] = new CharacterSaves.SavedCosmetic(record.Id);
+    return conn.WornCosmetics = Mtx.Equipped(worn);
+}
+
+static async Task SendWornCosmetics(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
+{
+    var worn = WornCosmetics(conn);
+    await Send(remote, stream, ciphers, InstanceMicrotransactions.Purchased([], worn),
+        $"0x01f3 worn cosmetics ({why}): {(worn.Count == 0 ? "none" : string.Join(", ", worn.Select(w => $"slot {w.Slot} = record {w.Id}")))}");
+}
+
+// C→S 0x1f9: a pick in the Cosmetics tab's slot flyout (record 0 empties the slot). Saved per character, then the whole
+// worn table goes back in 0x1f3, which is what the client wears. The Portal slot also sets the portals' own variation
+// (the same one /cosmetic portal sets), so the map device's portals show the picked effect.
+static async Task PickCosmetic(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (byte Slot, uint RecordId, byte Option) pick)
+{
+    var record = pick.RecordId == 0 ? null : Mtx.Find(pick.RecordId);
+    if (pick.Slot == 0 || pick.Slot >= InstanceMicrotransactions.SlotCount || (pick.RecordId != 0 && record is null))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x01f9 cosmetic pick: slot {pick.Slot}, record {pick.RecordId}: not a slot or not a record, ignored");
+        return;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x01f9 cosmetic pick: slot {pick.Slot}, record {pick.RecordId} (hash 0x{record?.MtxTypeHash ?? 0:x8}), option {pick.Option}");
+    string character = CharacterName(conn);
+    CharacterSaves.SetCosmetic(character, pick.Slot, record is null ? null : new CharacterSaves.SavedCosmetic(record.Id, pick.Option));
+    conn.WornCosmetics = null;
+    if (pick.Slot == InstanceMicrotransactions.PortalSlot)
+    {
+        ushort variation = record is not null && Cosmetics.Portals.FirstOrDefault(p => p.Hash == record.MtxTypeHash) is { } portal ? (ushort)portal.Index : (ushort)0;
+        conn.CosmeticPortalVariation = variation;
+        CharacterSaves.SetPortalCosmetic(character, variation);
+        conn.WornCosmetics = null;
+        await ResendMapPortals(remote, stream, ciphers, conn);
+    }
+    await SendWornCosmetics(remote, stream, ciphers, conn, "after the pick");
+    // The model and the stats: skins, attachments, character effects, footprints, apparitions.
+    await SendEquipment(remote, stream, ciphers, conn, ItemsOf(conn));
+}
+
 static async Task WhilePaused(ClientState conn)
 {
     while (conn.Paused && !conn.Closed) await Task.Delay(100);
@@ -4632,11 +4713,45 @@ static PlayerInventories.Shape? ShapeOf(Item i) => Items.ByHash(i.TypeHash) is {
 static VisibleItem? LookOf(Item i) => Items.ByHash(i.TypeHash) is { } t
     ? new VisibleItem(0, t.VisualIdentity, t.Stance, t.ClassRow is >= 0 and < 255 ? (byte)(t.ClassRow + 1) : (byte)1) : null;
 
+// What the model wears: the equipped items, dressed in the worn cosmetics (CosmeticEffects). A skin replaces the item's
+// art in its entry's first reference and a weapon effect fills the second; attachments and character effects fill the
+// model slots no item uses, which go out empty when nothing is worn there so taking one off clears it.
+static IReadOnlyList<VisibleItem> Looks(ClientState conn, PlayerInventories items)
+{
+    var looks = items.Equipped(LookOf).ToList();
+    var cosmeticSlots = CosmeticEffects.CosmeticOnlySlots.ToDictionary(s => s, VisibleItem.Empty);
+    foreach (var worn in WornCosmetics(conn))
+    {
+        if (MtxEffects.SlotOf(worn.Slot) is not { ModelSlot: byte model } slot || MtxEffects.Of(worn.MtxTypeHash) is not { } fx) continue;
+        if (cosmeticSlots.ContainsKey(model))
+        {
+            if (fx.Visual != 0)
+                cosmeticSlots[model] = new VisibleItem(model, fx.Visual) { SkinVisual = fx.Visual, SkinHash = worn.MtxTypeHash };
+            continue;
+        }
+        int at = looks.FindIndex(l => l.Slot == model);
+        if (at < 0 || looks[at].VisualIdentity == 0) continue;   // nothing equipped there to dress
+        if (slot.IsWeaponEffect && fx.WeaponEffect != 0)
+            looks[at] = looks[at] with { EffectVisual = fx.WeaponEffect, EffectHash = worn.MtxTypeHash };
+        else if (!slot.IsWeaponEffect && fx.Visual != 0)
+            looks[at] = looks[at] with { SkinVisual = fx.Visual, SkinHash = worn.MtxTypeHash };
+    }
+    return [.. looks, .. cosmeticSlots.Values];
+}
+
+// The stats worn cosmetics give the character (footprints, apparitions, …), summed per stat. A pet is the stat the client
+// spawns it from: pet_slot1 for the first Pet slot (MicrotransactionSlot 18), pet_slot2 for the second (19).
+// Skill Gem Effect (slot 49) is left out: its skill_art_variation belongs to one skill's stats, not the character's.
+static IEnumerable<(uint Stat, int Value)> CosmeticStats(ClientState conn) =>
+    WornCosmetics(conn).Where(w => w.Slot != 49).SelectMany(w => MtxEffects.Of(w.MtxTypeHash) is not { } fx ? [] :
+            fx.Pet != 0 && Stats.Key(w.Slot == 19 ? "pet_slot2" : "pet_slot1") is uint pet ? [.. fx.Stats, (pet, fx.Pet)] : fx.Stats)
+        .GroupBy(s => s.Stat, s => s.Value).Select(g => (g.Key, g.Sum()));
+
 // What the player wears changed (an item went into or out of a visible equipment row): 0x2ba Inventories for the model,
 // then the Actor skill list again, since the gems socketed in the equipment grant skills.
 static async Task SendEquipment(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PlayerInventories items)
 {
-    var equipped = items.Equipped(LookOf);
+    var equipped = Looks(conn, items);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, equipped),
         $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
     conn.Pools = PoolsFor(conn, conn.Pools.Level);
@@ -5942,6 +6057,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var weapon = Skills.UnarmedFor(classRow);
     var cls = Skills.ClassFor(classRow);
     var stats = CharacterPlayerStats(conn);
+    foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
     var weaponStats = weapon.Stats(stats).ToList();
     // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
@@ -5952,7 +6068,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         Experience: conn.Experience,
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
-        Equipped: PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).Equipped(LookOf),
+        Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
         QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)]);
     conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
@@ -6076,6 +6192,10 @@ sealed partial class Program
     internal static readonly StatCatalog Stats = new();
     // The shop's portal effects the server can apply itself (/cosmetic): the visual of the player's own portals.
     internal static readonly CosmeticCatalog Cosmetics = new();
+    // Every MtxTypes row as an owned microtransaction (23-microtransactions.md); loaded with the first 0x1f2.
+    internal static readonly MtxCatalog Mtx = new();
+    // What worn cosmetics do on the model and in the stats (ItemisedVisualEffect); loaded with the first equipment sent.
+    internal static readonly CosmeticEffects MtxEffects = new();
     // Per character: the ids of worn items whose requirements are not met (CharacterStatSources).
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<uint>> InactiveItems = new(StringComparer.OrdinalIgnoreCase);
     // The character panel's Spell Suppression chance stats (the client reads the final value).
@@ -6607,6 +6727,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// <summary>The portal cosmetic: the MicrotransactionPortalVariations row every portal is listed with (0x008f +0x26),
     /// 0 for the base effect. Applied to portals already standing as well as to new ones.</summary>
     public ushort CosmeticPortalVariation;
+    /// <summary>The worn cosmetics as 0x1f3 lists them (WornCosmetics), read from the save on first use; null after a
+    /// pick, so the next use reads it again.</summary>
+    public List<InstanceMicrotransactions.Equipped>? WornCosmetics;
     /// <summary>How map portals are turned around the vertical axis (degrees; Positioned rotation). Dev: /portal_rotation,
     /// which rebuilds the portals that already stand.</summary>
     public float PortalRotationDegrees;

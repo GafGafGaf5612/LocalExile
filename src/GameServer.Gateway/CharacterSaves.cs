@@ -28,6 +28,9 @@ static class CharacterSaves
 
     public sealed record SavedPlacement(uint Id, byte X, byte Y, SavedItem Item);
 
+    /// <summary>A worn cosmetic: the record picked (a MtxTypes row + 1) and the 0x1f9 option byte it was picked with.</summary>
+    public sealed record SavedCosmetic(uint Record, byte Option = 0);
+
     /// <summary>Skill bar: slot index → a GrantedEffects Id (skill ids change with the socketed gems, effects do not),
     /// "Action/&lt;ActionTypes Id&gt;" for a basic action ("Action/Move") or "" for a cleared slot. Experience: the
     /// character's total (its level is the account's; a save from another level is ignored). Passives: the allocated
@@ -36,12 +39,13 @@ static class CharacterSaves
     /// (QuestFlags.dat Ids, 12-quests.md §5). Gold: only in older saves, see <see cref="TakeGold"/>. StartWeapon: the
     /// class's start weapon while it waits on the ground for the character to pick it up (<see cref="PlayerInventories.StartWeapon"/>).
     /// PortalCosmetic: the MicrotransactionPortalVariations row the character's portals use (null = the base effect), so a
-    /// /cosmetic portal choice survives a relog.</summary>
+    /// /cosmetic portal choice survives a relog. Cosmetics: what the Cosmetics tab (K) wears, MicrotransactionSlot Id →
+    /// the picked record (<see cref="MtxCatalog"/>: a MtxTypes row + 1).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
-        SavedItem? StartWeapon = null, ushort? PortalCosmetic = null)
+        SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -97,6 +101,18 @@ static class CharacterSaves
     /// effect, which is stored as no field so an older save keeps reading as the default.</summary>
     public static void SetPortalCosmetic(string character, ushort variation) =>
         Update(character, s => s with { PortalCosmetic = variation == 0 ? null : variation });
+
+    /// <summary>Records what a Cosmetics tab slot wears (null empties it), keeping the rest of the save.</summary>
+    public static void SetCosmetic(string character, byte slot, SavedCosmetic? worn) => Update(character, s =>
+    {
+        var cosmetics = s.Cosmetics is null ? new Dictionary<byte, SavedCosmetic>() : new Dictionary<byte, SavedCosmetic>(s.Cosmetics);
+        if (worn is null) cosmetics.Remove(slot); else cosmetics[slot] = worn;
+        return s with { Cosmetics = cosmetics.Count == 0 ? null : cosmetics };
+    });
+
+    /// <summary>The character's worn cosmetics by MicrotransactionSlot Id; empty when none are saved.</summary>
+    public static IReadOnlyDictionary<byte, SavedCosmetic> Cosmetics(string character) =>
+        Load(character)?.Cosmetics ?? new Dictionary<byte, SavedCosmetic>();
 
     /// <summary>The character's portal cosmetic, 0 (the base effect) when none is saved.</summary>
     public static ushort PortalCosmetic(string character) => Load(character)?.PortalCosmetic ?? 0;

@@ -5,7 +5,7 @@ namespace GameServer.Core.Protocol.Instance;
 
 /// <summary>
 /// The owned-microtransaction list the client's store and cosmetics panel are fed from
-/// (Agents/docs/protocol/22-microtransactions.md). S→C 0x1f3 is the full list: the client appends every record to its
+/// (Agents/docs/protocol/23-microtransactions.md). S→C 0x1f3 is the full list: the client appends every record to its
 /// model (<c>hub+0xd600</c>), fires the panel's add/update events and builds the rows itself.
 /// </summary>
 public static class InstanceMicrotransactions
@@ -16,7 +16,7 @@ public static class InstanceMicrotransactions
     /// <summary>
     /// One owned microtransaction, in wire order. <paramref name="MtxTypeHash"/> lands at +0x04 and is the key the
     /// panel's row build resolves in the UI context's catalogue (<c>0x142222170</c>, a <c>MtxTypes</c> HASH32): a value
-    /// that is not in it leaves a null and the row layout faults (live 2026-10-22, §4). <paramref name="Id"/> is the
+    /// that is not in it leaves a null and the row layout faults (live 2026-10-22). <paramref name="Id"/> is the
     /// record's own id at +0x00, the key the model upserts and removes by, so it has to be unique per record.
     /// <paramref name="Qword"/> lands at +0x10 (carried into the row's display item) and
     /// <paramref name="Flags8"/>/<paramref name="Flags9"/> at +0x08/+0x09 (unknown).
@@ -28,16 +28,34 @@ public static class InstanceMicrotransactions
     public const byte DefaultFlags = 1;
 
     /// <summary>
-    /// S→C 0x1f3 (class 0x1435dc3e0, read 0x1421aa830, dispatcher case 0x92): the owned list. The three further lists
-    /// the reader also takes (message +0x28/+0x40/+0x58, §3 of the doc) are sent empty — their element semantics are not
-    /// known — and the flags byte keeps the client's own default.
+    /// One worn cosmetic: the <c>MicrotransactionSlot</c> Id it fills (1–49; 20 = Portal) and the owned record in it.
+    /// The client keeps a 50-entry table at session +0xd118, 24 bytes per slot: <paramref name="Id"/> (+0x00, the
+    /// record's id), <paramref name="MtxTypeHash"/> (+0x04, the <c>MTXTypeGameSpecific</c> HASH32 its visuals resolve,
+    /// 0x140ce0b30 and 0x141573790), <paramref name="Qword"/> (+0x08) and <paramref name="Option"/> (+0x10, the last
+    /// byte of the 0x1f9 that picked it).
     /// </summary>
-    public static byte[] Purchased(IReadOnlyList<Record> records)
+    public sealed record Equipped(byte Slot, uint Id, uint MtxTypeHash, ulong Qword = 0, byte Option = 0);
+
+    /// <summary>Slots the client's table holds (dispatcher case 0x92 skips a key from 50 up).</summary>
+    public const int SlotCount = 50;
+
+    /// <summary>
+    /// S→C 0x1f3 (class 0x1435dc3e0, read 0x1421aa830, dispatcher case 0x92 at 0x142150ef2): records the client appends
+    /// to its owned list, then the worn cosmetics. The handler first resets the whole 50-slot worn table, then fills a
+    /// slot per <paramref name="equipped"/> entry (u8 slot, u32 BE id, u32 BE hash, raw u64, u8), so every 0x1f3 carries
+    /// all of them: a slot left out is emptied. The two lists after it (message +0x40, +0x58) are sent empty, their
+    /// elements are not modelled, and the flags byte keeps the client's own default.
+    /// </summary>
+    public static byte[] Purchased(IReadOnlyList<Record> records, IReadOnlyList<Equipped>? equipped = null)
     {
+        equipped ??= [];
         if (records.Count > byte.MaxValue) throw new ArgumentOutOfRangeException(nameof(records), records.Count, "0x1f3 counts records in one byte");
+        if (equipped.Count > byte.MaxValue) throw new ArgumentOutOfRangeException(nameof(equipped), equipped.Count, "0x1f3 counts worn slots in one byte");
         var w = new LoginWriter().U16(PurchasedId).U8((byte)records.Count);
         foreach (var r in records) WriteRecord(w, r);
-        return w.U8(0).U8(0).U8(0).U8(DefaultFlags).ToArray();
+        w.U8((byte)equipped.Count);
+        foreach (var e in equipped) w.U8(e.Slot).U32(e.Id).U32(e.MtxTypeHash).RawU64(e.Qword).U8(e.Option);
+        return w.U8(0).U8(0).U8(DefaultFlags).ToArray();
     }
 
     static void WriteRecord(LoginWriter w, Record r) =>
@@ -52,15 +70,61 @@ public static class InstanceMicrotransactions
             .U8(0);  // no variant at +0x120 (+0x188 = 0)
 
     /// <summary>
-    /// The 0x1f4 flags byte: which of the hub's three lists the message replaces (dispatcher case 0x93 reads the byte as
-    /// <c>+0x28</c> and <c>+0x29</c>, bit 0 and bit 1 in order, so the branches are exclusive — one message fills one
-    /// list). <see cref="Records"/> is the list the Microtransactions panel shows; <see cref="StoreOwned"/> is the store's
-    /// owned list, which is what puts <c>ALREADY OWNED</c> on a shop tile (live 2026-10-22, §8);
-    /// <see cref="StoreSecond"/> fills the store's second list, which no visible page has shown yet.
+    /// The 0x1f4 flags byte: which of the hub's three lists the message replaces. Dispatcher case 0x93
+    /// (<c>0x142151a1c</c>) tests bit 0 first, then bit 1, so one message fills one list, and each list has its own
+    /// "loaded" flag the panels wait on (session offsets; the dispatcher's r13 is the session + 8):
+    /// <see cref="Records"/> (0) → list +0xd600, loaded +0xcd3c: the Microtransactions panel's records;
+    /// <see cref="StoreOwned"/> (1) → list +0xd618, loaded +0xcd40: the store's owned list, which is what puts
+    /// <c>ALREADY OWNED</c> on a shop tile; <see cref="StoreSecond"/> (3) → list +0xd630, loaded +0xcd3e: the guild's
+    /// list, which the client asks for only when the character is in a guild.
     /// </summary>
     public const byte Records = 0;
     public const byte StoreOwned = 1;
     public const byte StoreSecond = 3;
+
+    /// <summary>
+    /// C→S 0x1f2 (3 bytes, class vtable 0x1435c0000, write 0x141f9bd10): the client asks for the lists it has not got
+    /// yet, one bit each, and shows "Loading…" until the answer sets that list's loaded flag. The Microtransactions panel
+    /// asks for <see cref="Lists.Records"/> when it opens (0x14216d470), the store for its owned lists (0x14216d4d0),
+    /// the hideout picker for <see cref="Lists.Hideouts"/> (0x140bba230). A bit is asked once per session: the client
+    /// sets its "requested" flag (+0xcd3d/+0xcd41/+0xcd45/+0xcd3f/+0xcd43) and never asks again.
+    /// </summary>
+    public const ushort RequestId = 0x1f2;
+    public const int RequestLength = 3;
+
+    /// <summary>The 0x1f2 bits: which list each one asks for, and the message that answers it.</summary>
+    [Flags]
+    public enum Lists : byte
+    {
+        /// <summary>0x1f4 with <see cref="InstanceMicrotransactions.Records"/>.</summary>
+        Records = 1,
+        /// <summary>0x1f4 with <see cref="InstanceMicrotransactions.StoreOwned"/>.</summary>
+        StoreOwned = 2,
+        /// <summary>0x1f5 without the guild bit.</summary>
+        Hideouts = 4,
+        /// <summary>0x1f4 with <see cref="InstanceMicrotransactions.StoreSecond"/>.</summary>
+        GuildStore = 8,
+        /// <summary>0x1f5 with the guild bit.</summary>
+        GuildHideouts = 0x10,
+    }
+
+    public static Lists ReadRequest(ReadOnlySpan<byte> m) => (Lists)(m[2] & 0x1f);
+
+    /// <summary>
+    /// S→C 0x1f5 (class 0x1435dc740, read 0x1421aaee0, dispatcher case 0x94 at 0x142151c26): the unlocked hideouts. u8
+    /// flags (bit 0: the guild's list, +0xd648 and loaded flag +0xcd42, else the character's, +0xd660 and +0xcd44; bit 1
+    /// is read but not modelled), a compact count, then one byte per hideout: a <c>Hideouts.dat</c> row index. It
+    /// replaces the list and sets its loaded flag, which is what takes the hideout picker off "Loading…".
+    /// </summary>
+    public const ushort HideoutsId = 0x1f5;
+
+    public static byte[] Hideouts(IReadOnlyList<byte> rows, bool guild = false)
+    {
+        var w = new LoginWriter().U16(HideoutsId).U8(guild ? (byte)1 : (byte)0);
+        InstanceProtocol.CompactUInt(w, (uint)rows.Count);
+        foreach (byte row in rows) w.U8(row);
+        return w.ToArray();
+    }
 
     /// <summary>
     /// S→C 0x1f4 (class 0x1435dc580, read 0x1421aac00, dispatcher case 0x93): the record list again, but this one
@@ -68,7 +132,7 @@ public static class InstanceMicrotransactions
     /// <see cref="Records"/> the panel's reset, which is what makes it rebuild its rows (live 2026-10-22 it is the
     /// message that takes the panel off its "Loading…" placeholder and shows the records as tiles); for
     /// <see cref="StoreOwned"/> the store's "the owned list changed" event, after which its open window marks the tiles
-    /// (22-microtransactions.md §8). Its count is a <c>u32</c>.
+    /// (23-microtransactions.md §1). Its count is a <c>u32</c>.
     /// </summary>
     public static byte[] Added(IReadOnlyList<Record> records, byte flags = Records)
     {
@@ -78,36 +142,34 @@ public static class InstanceMicrotransactions
     }
 
     /// <summary>
-    /// C→S 0x1f9, the cosmetic slot's pick: the COSMETICS tab's slot flyout sends it when an entry is clicked (live
-    /// 2026-10-22, §9). 8 bytes, no length prefix: the u16 id, a u32 <c>MicrotransactionSlot</c> row Id (20 = "Portal",
-    /// the frame at the panel's bottom right) and a u16 selection — for the portal slot, the
-    /// <c>MicrotransactionPortalVariations</c> <c>Index</c> (<c>11</c> for "Arctic Portal Effect"), which is the same
-    /// number the catalogue and the 0x1f4 records key by. A 0 selection means the base effect.
+    /// C→S 0x1f9 (class vtable 0x1435c0690, write 0x141f9be90), the Cosmetics tab's pick: the slot flyout sends it when
+    /// an entry is clicked (0x140cdc2b0) and with record 0 when a slot is emptied (0x140cdef80). 8 bytes, no length
+    /// prefix: the u16 id, u8 the <c>MicrotransactionSlot</c> Id (20 = "Portal"), u32 BE the picked record's
+    /// <see cref="Record.Id"/> and a u8 option (0 in every pick seen). The client changes nothing itself: the slot is
+    /// worn once a 0x1f3 says so. Live 2026-10-22, a click on Arctic Portal Effect: <c>01F9 14 0000000B 00</c>.
+    /// Opening a slot's flyout sends nothing; it lists the records 0x1f4 gave.
     /// </summary>
     public const ushort SlotId = 0x1f9;
     public const int SlotLength = 8;
 
     /// <summary>The <c>MicrotransactionSlot</c> row of the portal effect slot (Id 20, ShopTag 85, Name "Portal").</summary>
-    public const uint PortalSlot = 20;
+    public const byte PortalSlot = 20;
 
-    /// <summary>
-    /// Parses an 0x1f9: which slot (a <c>MicrotransactionSlot</c> row Id) and what was picked. The id is big-endian
-    /// like every message id, the two fields after it are plain little-endian (live bytes <c>14 00 00 00 0B 00</c>).
-    /// </summary>
-    public static (uint SlotRow, ushort Selection) ReadSlot(ReadOnlySpan<byte> m)
+    /// <summary>Parses an 0x1f9: the slot, the picked record's id (0: empty the slot) and the option byte.</summary>
+    public static (byte Slot, uint RecordId, byte Option) ReadSlot(ReadOnlySpan<byte> m)
     {
         if (m.Length < SlotLength) throw new InvalidDataException($"0x1f9 is {m.Length} bytes, not {SlotLength}");
         ushort id = BinaryPrimitives.ReadUInt16BigEndian(m);
         if (id != SlotId) throw new InvalidDataException($"not an 0x1f9: {m[0]:x2}{m[1]:x2}");
-        return (BinaryPrimitives.ReadUInt32LittleEndian(m[2..]), BinaryPrimitives.ReadUInt16LittleEndian(m[6..]));
+        return (m[2], BinaryPrimitives.ReadUInt32BigEndian(m[3..]), m[7]);
     }
 
-    /// <summary>An 0x1f3 as read back: the records and the counts of the three lists this codec does not model.</summary>
-    public sealed record PurchasedList(IReadOnlyList<Record> Records, byte CountA, byte CountB, byte CountC, byte Flags);
+    /// <summary>An 0x1f3 as read back: the records, the worn slots and the flags byte.</summary>
+    public sealed record PurchasedList(IReadOnlyList<Record> Records, IReadOnlyList<Equipped> Equipped, byte Flags);
 
     /// <summary>
-    /// Parses an 0x1f3 (with its u16 id) the way the client's reader does. Throws when the lists at +0x28/+0x40/+0x58
-    /// are not empty, because their elements are only partly known (§3).
+    /// Parses an 0x1f3 (with its u16 id) the way the client's reader does. Throws when the lists at +0x40/+0x58 are not
+    /// empty, because their elements are only partly known.
     /// </summary>
     public static PurchasedList ReadPurchased(ReadOnlySpan<byte> m)
     {
@@ -124,14 +186,18 @@ public static class InstanceMicrotransactions
             string name = r.WStr();
             string description = r.WStr();
             byte flags9 = r.U8();
-            if (r.U8() != 0) throw new InvalidDataException($"record {i} carries a variation list; 22-microtransactions.md §4");
-            if (r.U8() != 0) throw new InvalidDataException($"record {i} carries a +0x120 variant; 22-microtransactions.md §4");
+            if (r.U8() != 0) throw new InvalidDataException($"record {i} carries a variation list; 23-microtransactions.md §1");
+            if (r.U8() != 0) throw new InvalidDataException($"record {i} carries a +0x120 variant; 23-microtransactions.md §1");
             if (r.Short) break;
             records.Add(new Record(typeHash, id, name, description, qword, flags8, flags9));
         }
-        byte a = r.U8(), b = r.U8(), c = r.U8(), flags = r.U8();
+        int worn = r.U8();
+        var equipped = new List<Equipped>(worn);
+        for (int i = 0; i < worn && !r.Short; i++)
+            equipped.Add(new Equipped(r.U8(), r.U32(), r.U32(), r.RawU64(), r.U8()));
+        byte b = r.U8(), c = r.U8(), flags = r.U8();
         if (r.Short) throw new InvalidDataException("0x1f3 is incomplete");
-        if (a != 0 || b != 0 || c != 0) throw new InvalidDataException($"0x1f3 lists +0x28/+0x40/+0x58 are {a}/{b}/{c}, not empty; 22-microtransactions.md §3");
-        return new PurchasedList(records, a, b, c, flags);
+        if (b != 0 || c != 0) throw new InvalidDataException($"0x1f3 lists +0x40/+0x58 are {b}/{c}, not empty");
+        return new PurchasedList(records, equipped, flags);
     }
 }
