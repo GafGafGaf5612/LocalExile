@@ -11,8 +11,11 @@ public enum CharacterClass { Scion, Marauder, Ranger, Witch, Duelist, Templar, S
 /// <param name="LastTown">WorldAreas Id of the last town the character entered (Auth records it when the Gateway resolves
 /// a town ticket). Every official login starts there, as in the real game; null = never entered a town, which logs in at
 /// <see cref="AccountService.StartingArea"/>.</param>
+/// <param name="Portrait">The worn portrait (a MicrotransactionCharacterPortraitVariations variation, 0 = the class's):
+/// the character list shows it (the Gateway reports picks with "set_portrait").</param>
 public sealed record Character(
     Guid Id, Guid AccountId, string Name, CharacterClass Class, int Level,
-    string League, string AreaId, DateTimeOffset CreatedUtc, DateTimeOffset LastPlayedUtc, string? LastTown = null);
+    string League, string AreaId, DateTimeOffset CreatedUtc, DateTimeOffset LastPlayedUtc, string? LastTown = null,
+    ushort Portrait = 0);
 
 public sealed record Session(string Token, Guid AccountId, DateTimeOffset IssuedUtc, DateTimeOffset ExpiresUtc);

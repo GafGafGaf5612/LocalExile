@@ -65,13 +65,16 @@ public static class InstanceEntities
     /// plays while it lasts.
     /// </summary>
     public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
-        IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null)
+        IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null, ushort? visual = null)
     {
-        // flags bit1: u32 +0x68; bit7: f32 +0x6c (read right after bit1's field).
-        byte flags = (byte)((u68 is null ? 0 : 0x02) | (f6c is null ? 0 : 0x80));
+        // flags bit1: u32 +0x68; bit7: f32 +0x6c (read right after bit1's field); bit4: u16 BE a BuffVisuals row in place
+        // of the BuffDefinitions row's (+0x38; read after bits 2 and 3, a row past the table keeps none): a skill
+        // effect's art (BuffVisualsArtVariations).
+        byte flags = (byte)((u68 is null ? 0 : 0x02) | (f6c is null ? 0 : 0x80) | (visual is null ? 0 : 0x10));
         var w = new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(flags);
         if (u68 is { } a) w.U32(a);
         if (f6c is { } f) w.U32(BitConverter.SingleToUInt32Bits(f));
+        if (visual is { } v) w.U16(v);
         return w.Bytes([.. (values ?? []).SelectMany(v => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v })]).U32(0).ToArray();
     }
 
@@ -258,6 +261,15 @@ public static class InstanceEntities
         PlayerObject.WriteFlagSet(w, flags);
         return ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, w.ToArray());
     }
+
+    /// <summary>
+    /// The player's portrait (0x2ba to the Player component, reader 0x141e7ee30): u16 flags, bit6 (0x40) = u16 → +0x1aa,
+    /// the <c>MicrotransactionCharacterPortraitVariations</c> variation (its <c>__col1</c>; 0 = the class's own). The
+    /// character panel and the other in-game portraits build their art from it (0x14081e730 → 0x142426b00:
+    /// Art/2DArt/UIImages/Common/PortraitVariations/…).
+    /// </summary>
+    public static byte[] PlayerPortraitUpdate(uint playerId, ushort portrait) =>
+        ComponentUpdate(playerId, PlayerObject.PlayerComponentIndex, new BlobWriter().U16(0x40).U16(portrait).ToArray());
 
     public const ushort GoldId = 0x2a9;
 
@@ -522,8 +534,52 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 
     private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
 
+
     /// <summary>ObjectMagicProperties flags bit 3: identified (+0x78); bit 7: a custom name follows.</summary>
     const ushort Identified = 0x08, CustomName = 0x80;
+}
+
+/// <summary>
+/// A cosmetic pet (`Metadata/Pet/…`, a <c>Pet.dat</c> row's Id): the .ot chain <c>Metadata/Pet/Pet</c> deserializes
+/// Positioned, Stats, Pathfinding, Buffs, Life, Animated, Actor, PetAi (object-types.json). Written as a monster's, with
+/// the player's team, no data for Pathfinding, the type's own animated object, and PetAi (slot 20 0x141e7d410): u32 the
+/// owner's object id (→ +0x44), which the client resolves to the entity the pet follows (0x141e7cfb0). About one pet type
+/// in seven adds components after PetAi: StateMachine (its .ot shared states and timers, <see cref="StateMachineData"/>;
+/// left out, the client read past the blob: "Buffer underflow", live 2026-10-23 with TencentGirl03), Functions and
+/// BaseEvents (no data). Types with anything else are not written (<see cref="CanSerialize"/>).
+/// </summary>
+public sealed record PetObject(int GridX, int GridY, uint Owner, IReadOnlyList<string>? Components = null, StateMachineData? StateMachine = null)
+{
+    public static readonly string[] BaseComponents = ["Positioned", "Stats", "Pathfinding", "Buffs", "Life", "Animated", "Actor", "PetAi"];
+
+    static readonly HashSet<string> Extras = ["StateMachine", "Functions", "BaseEvents"];
+
+    /// <summary>Whether <see cref="Blob"/> can write a pet type with these deserialized components (null: the base list).</summary>
+    public static bool CanSerialize(IReadOnlyList<string>? components, bool haveStateMachine) =>
+        components is null || components.Count >= BaseComponents.Length && components.Take(BaseComponents.Length).SequenceEqual(BaseComponents)
+            && components.Skip(BaseComponents.Length).All(c => Extras.Contains(c) && (c != "StateMachine" || haveStateMachine));
+
+    public byte[] Blob()
+    {
+        if (!CanSerialize(Components, StateMachine is not null)) throw new ArgumentException($"unsupported pet components: {string.Join(", ", Components!)}");
+        var w = new BlobWriter();
+        w.U8(0).U8(0);                                                        // object flags, base data entries
+        // Positioned: team 0 (the player's), shown, and flags1 0x08 with 1 (→ +0x1e6 bit 0x40), which the client's object
+        // collision test (0x141e61540) skips: walkers, the player's own included, pass through the pet.
+        w.I32(GridX).I32(GridY).U32(0).U16(0).U8(0).U8(0x0a).U8(0).U8(1).U8(1);
+        w.Stats([]).U32(0).U32(0).U8(0);                                      // Stats
+        w.U16(0);                                                             // Buffs
+        Pool(w, 1); Pool(w, 0); Pool(w, 0); w.U8(0);                          // Life: alive
+        w.U8(0);                                                              // Animated: the type's own
+        w.WStr32("").U16(0).U8(0).U32(0).U32(0).U8(0).U8(0);                  // Actor: no skills
+        w.U32(Owner);                                                         // PetAi
+        foreach (string c in (Components ?? BaseComponents).Skip(BaseComponents.Length))
+            if (c == "StateMachine") StateMachine!.Write(w);                  // Functions, BaseEvents: no data
+        w.U8(0);                                                              // tasks
+        return w.ToArray();
+    }
+
+    private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
 }
 
 /// <summary>
@@ -574,16 +630,25 @@ public sealed record EffectObject(int GridX, int GridY, string AnimatedObject)
 
     /// <summary>Positioned flags0 0x80 (→ +0x1e6 bit 2): the object keeps its rotation while it glides (0x1ba); without it
     /// a glide turns it to face the move (live 2026-10-21, Righteous Fire's ring). The only flags0 bits taken here are
-    /// those that read no further data (0x01, 0x80).</summary>
+    /// those that read no further data (0x01, 0x80); 0x20 comes with <see cref="Scale"/>.</summary>
     public const byte FixedRotation = 0x80;
 
     public byte Flags0 { get; init; }
 
+    /// <summary>The art's size; 1 sends none. Positioned flags0 0x20 reads f32 +0x2b0, +0x2a8, +0x2ac: +0x2b0 is the
+    /// uniform scale (× the object type's own; "Scale" in the component's info dump 0x141e33310) and +0x2a8 / +0x2ac
+    /// stretch x and y on top of it (the local-to-world transform 0x141e361b0 multiplies x by +0x2a8 × +0x2b0), so the
+    /// scale goes in the first and the stretches stay 1: all three at s drew the ring at s² (live 2026-10-23).
+    /// Righteous Fire's ring is scaled to the skill's radius.</summary>
+    public float Scale { get; init; } = 1;
+
     public byte[] Blob()
     {
         var w = new BlobWriter();
+        bool scaled = Scale != 1;
         w.U8(0).U8(0);                                              // object flags, base data entry count
-        w.I32(GridX).I32(GridY).F32(0).U16(0).U8((byte)(Flags0 & 0x81)).U8(0x02);   // Positioned: on the terrain, shown
+        w.I32(GridX).I32(GridY).F32(0).U16(0).U8((byte)((Flags0 & 0x81) | (scaled ? 0x20 : 0))).U8(0x02);   // Positioned: on the terrain, shown
+        if (scaled) w.F32(Scale).F32(1).F32(1);                     // uniform scale, x and y stretch
         w.U8(0).U8(1);
         w.U8(1).WStr32(AnimatedObject);                             // Animated: bit0 + the .ao path
         w.U8(0);                                                    // tasks
@@ -596,7 +661,8 @@ public sealed record EffectObject(int GridX, int GridY, string AnimatedObject)
 /// walls), components Positioned, BaseEvents, Animated, TriggerableBlockage, Transitionable (12-quests.md §6).
 /// TriggerableBlockage (0x141e44290): u8 blocked, then only while blocked a u8 count and that many u8 (none here); the
 /// client blocks the cells of the model's own footprint where the object stands (0x141d876e0), so the room's scale
-/// matters: Positioned flags0 0x20 adds f32 z, x, y scale (the room gives the Strand's wall 2.7). TriggerableBlockage
+/// matters: Positioned flags0 0x20's uniform scale (the room gives the Strand's wall 2.7; the x / y stretches stay 1, see
+/// <see cref="EffectObject.Scale"/>: 2.7 in all three drew it 7.3 times as wide). TriggerableBlockage
 /// has no update reader: the wall goes with the object (0x2bb).
 /// </summary>
 public sealed record BlockerObject(int GridX, int GridY, float Rotation, float Scale = 1)
@@ -607,7 +673,7 @@ public sealed record BlockerObject(int GridX, int GridY, float Rotation, float S
         w.U8(0).U8(0);                                                              // object flags, base data entry count
         bool scaled = Scale != 1;
         w.I32(GridX).I32(GridY).F32(Rotation).U16(0).U8((byte)(scaled ? 0x20 : 0)).U8(0x02);
-        if (scaled) w.F32(Scale).F32(Scale).F32(Scale);                             // scale z, x, y
+        if (scaled) w.F32(Scale).F32(1).F32(1);                                     // uniform scale, x and y stretch
         w.U8(0).U8(1);                                                              // shown
         w.U8(0);                                                                    // Animated: the type's own
         w.U8(1).U8(0);                                                              // TriggerableBlockage: blocked
@@ -710,7 +776,8 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     uint Life, uint Mana, uint EnergyShield = 0, uint Experience = 0, bool Shown = true, string? AnimatedObject = null,
     IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null,
     IReadOnlyList<VisibleItem>? Equipped = null, IReadOnlyCollection<int>? QuestFlags = null,
-    uint ManaReserved = 0, ushort Hideout = 0, ushort Hideout2 = 0, IReadOnlyCollection<int>? LeagueQuestFlags = null)
+    uint ManaReserved = 0, ushort Hideout = 0, ushort Hideout2 = 0, IReadOnlyCollection<int>? LeagueQuestFlags = null,
+    ushort Portrait = 0)
 {
     /// <summary>The Player component's index in the player object's component order (04 §3).</summary>
     public const byte PlayerComponentIndex = 6;
@@ -767,7 +834,8 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
         w.WStr32(Name)
          .U8(ClassIndex)     // Characters.dat row; bit5 and bits6-7 are the ascendancy (0x142156d80)
          .U32(Experience)    // 0x141e7f6b0 → +0x18c; the level is derived from it (+0x1ac)
-         .U32(0).U16(0).U16(0)
+         .U32(0).U16(0)
+         .U16(Portrait)      // +0x1aa: the portrait variation (MicrotransactionCharacterPortraitVariations __col1, 0 = the class's)
          ;
         WriteFlagSet(w, QuestFlags);   // the quest flags (+0x1b8, 0x141e83340)
         // The league quest flags (+0x1d0, same layout; WorldAreas __col60 values − 1): bit = id − 1 of the client's built-in

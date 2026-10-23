@@ -343,12 +343,13 @@ sealed class PlayerInventories
     /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
     public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem() => [.. SocketedGemPlaces().Select(g => (g.ItemId, g.Gem))];
 
-    /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in and its socket.</summary>
-    public IReadOnlyList<(uint ItemId, int Socket, Item Gem)> SocketedGemPlaces()
+    /// <summary><see cref="SocketedGems"/> with the row and id of the item each gem is in and its socket.</summary>
+    public IReadOnlyList<(byte Row, uint ItemId, int Socket, Item Gem)> SocketedGemPlaces()
     {
         lock (_lock)
-            return [.. VisibleSlots.Keys.Order().SelectMany(r => _items.TryGetValue(r, out var l) ? l : [])
-                .SelectMany(i => i.Item.Sockets.Select((s, socket) => (i.Id, socket, s.Gem)).Where(g => g.Gem is not null).Select(g => (g.Id, g.socket, g.Gem!)))];
+            return [.. VisibleSlots.Keys.Order().SelectMany(r => (_items.TryGetValue(r, out var l) ? l : []).Select(i => (Row: r, Item: i)))
+                .SelectMany(x => x.Item.Item.Sockets.Select((s, socket) => (x.Row, x.Item.Id, socket, s.Gem)).Where(g => g.Gem is not null)
+                    .Select(g => (g.Row, g.Id, g.socket, g.Gem!)))];
     }
 
     /// <summary>

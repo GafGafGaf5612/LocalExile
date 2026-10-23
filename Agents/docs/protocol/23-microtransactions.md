@@ -83,16 +83,72 @@ Cosmetics tab slot dresses: the item slots (Weapon1 0, Offhand1 1, BodyArmour1 2
 entry, a weapon effect in the second, and sends the cosmetic-only slots as entries of their own (empty when nothing is
 worn there). A skin needs an item in its slot.
 
-**Stats.** The worn cosmetics' stats join the player's (0x1b3 and the player object). Pets have no
-ItemisedVisualEffect row: the client spawns the pet itself from the player's `pet_slot1` / `pet_slot2` stat
-(`0x1401093a0`), a `Pet.dat` row + 1 (`0x14010f530`); each Pet row names its MtxTypeGameSpecific row.
+**Stats.** The worn cosmetics' stats join the player's (0x1b3 and the player object).
+
+**Pets.** Pets have no ItemisedVisualEffect row; each `Pet.dat` row names its MtxTypeGameSpecific row and its object
+type (`Id`, e.g. `Metadata/Pet/Kiwi/Basic`). `pet_slot1` / `pet_slot2` (a Pet row + 1, `0x1401093a0` → `0x14010f530`)
+alone spawns nothing (live 2026-10-23): the server creates the pet (0x2b9, `PetObject`). Its .ot chain
+`Metadata/Pet/Pet` deserializes Positioned, Stats, Pathfinding, Buffs, Life, Animated, Actor, PetAi; PetAi (slot 20,
+`0x141e7d410`) is a u32, the owner's object id (→ +0x44), which the client resolves to the entity the pet follows
+(`0x141e7cfb0`). About one pet type in seven adds StateMachine (its shared states and timers from object-types.json),
+Functions or BaseEvents after PetAi; left out, the client reads past the blob ("Buffer underflow", live 2026-10-23
+with a Daughter of Sin pet, `TencentGirl03`). The Gateway spawns the worn pets (slots 18 and 19) on area entry and
+after a pick, one on each side of the player, and walks them after the player with 0x1ab Move (as monsters move)
+when they fall more than 12 cells behind, to a spot 6 cells beside the player. Pets do not block walkers: their
+Positioned sends flags1 0x08 with 1 (+0x1e6 bit 0x40), which the client's object collision test (`0x141e61540`)
+skips, as the .ot's `blocking = false` intends.
+
+**The Goblin Troupe's song** (`Metadata/Pet/GoblinBand/GoblinBandLeader`) is a sound event of its IdleRelaxed
+animation: the .act maps IdleRelaxed (`Animation.dat` row 100) to `Idle_bassoon_01`, whose SoundEvents play
+`Audio/Sound Effects/Pet/GoblinBand/Music/IdleRandom`. The client's PetAi only parses the idle-relaxed options
+(`0x141e7c280`: `disable_idle_relaxed_repeat` looks up the Actor's animation 100) and resolves the owner
+(`0x141e7cfb0`); nothing found on the client starts IdleRelaxed, and the client has a `ServerPetAi` counterpart, so
+the server is expected to start it. The leader's functions (`IdleRelaxed`, `EnterTown`, `LevelUp` …) also call
+`band_members` / `band1` / `band2`, the Drums and Lyre goblins (`GoblinBandDrums`, `GoblinBandLyre`: no Pet.dat
+rows), which the server spawns. Neither is done yet.
+
+**The portrait.** MicrotransactionSlot 16; `MicrotransactionCharacterPortraitVariations.__col1` is the variation. In
+the world: the Player component's u16 at +0x1aa (the player object, and 0x2ba with flags bit6, reader `0x141e7ee30`);
+the character panel builds its art from it (`0x14081e730` → `0x142426b00`). On the character selection screen: the
+list entry's U46 (`0x14082e210`), which Auth keeps per character (control op `set_portrait`).
+
+**Skill effects.** The Cosmetics tab's skill slots are 0x1f3's second list (message +0x40 → session +0xd5c8, 40 bytes
+each, sorted by key): raw u32 key, a target variant, u32 BE record id, u32 BE MtxTypeGameSpecific hash, raw u64. The
+target's index 1 is one socketed gem (`0x1424ada40`): u8 Inventories.dat row → +4, u8 socket → +8, u8 effect slot type
+→ +9, u32 BE the gem's BaseItemTypes HASH32 → +0. The panel looks the gem item up itself (`0x141f8c860`: the player's
+inventory of that row, the item whose socket holds a gem of that hash); that item names the slot, and without it every
+effect is refused with "type mismatch" (`0x1424eb7b0`, 0xb27; live 2026-10-23 with row and socket sent as 0). An effect
+fits the slot (`0x1424ac1e0`) when its MtxTypeGameSpecific `__col4` and ItemisedVisualEffect `__col8` hold 27, its
+`EffectSlotType` is the slot's type (`MicrotransactionSkillGemEffectSlotTypes`: 0 PrimaryVisuals, 1 TotemSkin; a gem's
+types are its SkillGems `MtxSlotTypes`), and its `BaseItemTypes` and `ItemClasses` lists hold the gem's or are empty.
+**A skill effect's art.** The effect's `skill_art_variation` (its ItemisedVisualEffect stats) selects the skill's
+art: `SkillArtVariations` names the variants (Righteous Fire: Default, NoRing, White, …, Zana), and
+`MiscAnimatedArtVariations` / `BuffVisualsArtVariations` give the MiscAnimated object and the BuffVisuals row per
+(Id, Variant). For server-made art the server picks them: Righteous Fire's ring (`righteous_fire_ring`: the AO, none
+for NoRing) and its buffs' visuals (`righteous_fire_buff_visual`, `righteous_fire_aura_visual`), sent as 0x1c1's
+BuffVisuals override (flags bit4, [11](11-skills.md) §12). **A pick in a skill slot** is not 0x1f9: it is **C→S 0x1fa** (10 bytes): u16 id, the slot's raw u32 key as 0x1f3
+sent it, u32 BE the record id (0 empties the slot). Live 2026-10-23: `01FA 33000000 00000172` (key 51, record 370) and
+`01FA 33000000 00000000`. Before the Gateway knew it, the read loop stopped at it as unknown and the pick was lost, so
+no effect could be put on a gem. The Gateway sends one slot per active gem type and slot type (keys from 50), saves
+picks per gem type and slot type (`SkillCosmetics`, `PickSkillCosmetic`), sends 0x1f3 again (the slot shows the effect)
+and the skill list, which puts the worn effect's stats (`skill_art_variation` …) in that gem's skill only.
+**Server-made art follows the variation:** Righteous Fire's ring and buff visuals (a burning fire is lit again at
+once), and a projectile skill's projectile and explosion: `ProjectilesArtVariations` gives the projectile object for
+(Id, Variant), found by its variant 0 (Fireball: `fireball` → `Metadata/Projectiles/StygianFireball` …; the object has
+no .ot, the client builds it from its Projectiles.dat row and its AOFiles, sounds included), and
+`MiscAnimatedArtVariations` the explosion in place of the default .ao (`fireball_standard`: `explode_new2.ao` →
+`stygian/aoe.ao` …). A variation with no row there keeps the default.
 
 Verified live 2026-10-23: skins, attachments, character effects, footprints, portals, cursors and flask skins.
 
 ## 4. Open
 
-- Pets did not appear with `pet_slot1` set (live 2026-10-23).
-- The portrait (MicrotransactionSlot 16, `MicrotransactionCharacterPortraitVariations`) shows neither on the character
-  panel nor on the character selection screen.
-- Skill effects: `skill_art_variation` belongs to one skill's stats, not the character's; the Cosmetics tab shows no
-  skill slots yet.
+- Pets, the portrait and skill effects are built as above and await live verification (skill picks: 0x1fa seen live,
+  its handling not yet).
+- The pets' idle-relaxed animations (the Goblin Troupe's song) and the troupe's band members: which server message
+  starts IdleRelaxed is not found yet.
+- Skill art for other skills: Righteous Fire's and the projectiles' server-made art follows the variation; skills
+  whose art the client draws from the skill's stats need nothing more, others are untested. Other worn-effect stats
+  (`ignite_art_variation`, `damage_hit_effect_index`, `skill_surge_type_override`) ride on the skill but are not acted
+  on by the server.
+- Skill slots are per gem type (the first socket holding it), not per socketed gem.

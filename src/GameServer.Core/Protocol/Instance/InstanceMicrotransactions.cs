@@ -40,22 +40,44 @@ public static class InstanceMicrotransactions
     public const int SlotCount = 50;
 
     /// <summary>
+    /// A skill slot of the Cosmetics tab (0x1f3's second list, message +0x40 → session +0xd5c8, 40 bytes each, kept
+    /// sorted by <paramref name="Key"/>): the panel makes one slot per entry (0x140cdd530 → 0x140ce0c70). Wire: raw u32
+    /// key, then the target, a variant (0x1424aca00): u8 index 1 = one socketed skill gem (0x1424ada40: u8
+    /// <paramref name="Inventory"/> → +4, u8 <paramref name="Socket"/> → +8, u8 <paramref name="SlotType"/> → +9, u32 BE
+    /// <paramref name="GemHash"/> → +0), then u32 BE the worn record's id, u32 BE its MTXTypeGameSpecific hash (0 = none
+    /// worn; the slot's art, 0x140cde190 → 0x140cdfb60) and a raw u64. The panel finds the gem item itself
+    /// (0x141f8c860): the player's inventory of Inventories.dat row <paramref name="Inventory"/>, the item there whose
+    /// socket <paramref name="Socket"/> holds a gem of BaseItemTypes HASH32 <paramref name="GemHash"/>; that item gives
+    /// the slot its name, and without it every effect is refused as "type mismatch" (0x1424eb7b0: 0xb27). An effect
+    /// fits (0x1424ac1e0) when its ItemisedVisualEffect row's EffectSlotType is <paramref name="SlotType"/> (a
+    /// MicrotransactionSkillGemEffectSlotTypes row, one of the gem's SkillGems MtxSlotTypes) and its BaseItemTypes and
+    /// ItemClasses lists hold the gem's (or are empty).
+    /// </summary>
+    public sealed record SkillSlot(uint Key, uint GemHash, byte Inventory, byte Socket, byte SlotType = 0, uint RecordId = 0, uint MtxTypeHash = 0);
+
+    /// <summary>
     /// S→C 0x1f3 (class 0x1435dc3e0, read 0x1421aa830, dispatcher case 0x92 at 0x142150ef2): records the client appends
     /// to its owned list, then the worn cosmetics. The handler first resets the whole 50-slot worn table, then fills a
     /// slot per <paramref name="equipped"/> entry (u8 slot, u32 BE id, u32 BE hash, raw u64, u8), so every 0x1f3 carries
-    /// all of them: a slot left out is emptied. The two lists after it (message +0x40, +0x58) are sent empty, their
-    /// elements are not modelled, and the flags byte keeps the client's own default.
+    /// all of them: a slot left out is emptied. The skill slots follow (<see cref="SkillSlot"/>); the list after them
+    /// (message +0x58) is sent empty, its elements are not modelled, and the flags byte keeps the client's own default.
     /// </summary>
-    public static byte[] Purchased(IReadOnlyList<Record> records, IReadOnlyList<Equipped>? equipped = null)
+    public static byte[] Purchased(IReadOnlyList<Record> records, IReadOnlyList<Equipped>? equipped = null,
+        IReadOnlyList<SkillSlot>? skills = null)
     {
         equipped ??= [];
+        skills ??= [];
+        if (skills.Count > byte.MaxValue) throw new ArgumentOutOfRangeException(nameof(skills), skills.Count, "0x1f3 counts skill slots in one byte");
         if (records.Count > byte.MaxValue) throw new ArgumentOutOfRangeException(nameof(records), records.Count, "0x1f3 counts records in one byte");
         if (equipped.Count > byte.MaxValue) throw new ArgumentOutOfRangeException(nameof(equipped), equipped.Count, "0x1f3 counts worn slots in one byte");
         var w = new LoginWriter().U16(PurchasedId).U8((byte)records.Count);
         foreach (var r in records) WriteRecord(w, r);
         w.U8((byte)equipped.Count);
         foreach (var e in equipped) w.U8(e.Slot).U32(e.Id).U32(e.MtxTypeHash).RawU64(e.Qword).U8(e.Option);
-        return w.U8(0).U8(0).U8(DefaultFlags).ToArray();
+        w.U8((byte)skills.Count);
+        foreach (var s in skills.OrderBy(s => s.Key))
+            w.RawU32(s.Key).U8(SkillGemTarget).U8(s.Inventory).U8(s.Socket).U8(s.SlotType).U32(s.GemHash).U32(s.RecordId).U32(s.MtxTypeHash).RawU64(0);
+        return w.U8(0).U8(DefaultFlags).ToArray();
     }
 
     static void WriteRecord(LoginWriter w, Record r) =>
@@ -164,8 +186,31 @@ public static class InstanceMicrotransactions
         return (m[2], BinaryPrimitives.ReadUInt32BigEndian(m[3..]), m[7]);
     }
 
-    /// <summary>An 0x1f3 as read back: the records, the worn slots and the flags byte.</summary>
-    public sealed record PurchasedList(IReadOnlyList<Record> Records, IReadOnlyList<Equipped> Equipped, byte Flags);
+    /// <summary>
+    /// C→S 0x1fa, the Cosmetics tab's pick in a skill slot (<see cref="SkillSlot"/>): 10 bytes, no length prefix: the u16
+    /// id, the slot's raw u32 <see cref="SkillSlot.Key"/> as 0x1f3 sent it and u32 BE the picked record's
+    /// <see cref="Record.Id"/> (0: empty the slot). Like 0x1f9 it changes nothing on the client until a 0x1f3 says so.
+    /// Live 2026-10-23, picks in the slot keyed 51: <c>01FA 33000000 00000172</c>, and <c>01FA 33000000 00000000</c> to
+    /// empty it. Unknown to the Gateway before, the read loop stopped at it and the pick was lost.
+    /// </summary>
+    public const ushort SkillPickId = 0x1fa;
+    public const int SkillPickLength = 10;
+
+    /// <summary>Parses an 0x1fa: the skill slot's key and the picked record's id (0: empty the slot).</summary>
+    public static (uint Key, uint RecordId) ReadSkillPick(ReadOnlySpan<byte> m)
+    {
+        if (m.Length < SkillPickLength) throw new InvalidDataException($"0x1fa is {m.Length} bytes, not {SkillPickLength}");
+        ushort id = BinaryPrimitives.ReadUInt16BigEndian(m);
+        if (id != SkillPickId) throw new InvalidDataException($"not an 0x1fa: {m[0]:x2}{m[1]:x2}");
+        return (BinaryPrimitives.ReadUInt32LittleEndian(m[2..]), BinaryPrimitives.ReadUInt32BigEndian(m[6..]));
+    }
+
+    /// <summary>The skill slots' target variant index for a skill gem (0x1424aca00's table 0x14363abb8: 0 empty, 1 a skill
+    /// gem, 2 two u32s).</summary>
+    public const byte SkillGemTarget = 1;
+
+    /// <summary>An 0x1f3 as read back: the records, the worn slots, the skill slots and the flags byte.</summary>
+    public sealed record PurchasedList(IReadOnlyList<Record> Records, IReadOnlyList<Equipped> Equipped, IReadOnlyList<SkillSlot> Skills, byte Flags);
 
     /// <summary>
     /// Parses an 0x1f3 (with its u16 id) the way the client's reader does. Throws when the lists at +0x40/+0x58 are not
@@ -195,9 +240,19 @@ public static class InstanceMicrotransactions
         var equipped = new List<Equipped>(worn);
         for (int i = 0; i < worn && !r.Short; i++)
             equipped.Add(new Equipped(r.U8(), r.U32(), r.U32(), r.RawU64(), r.U8()));
-        byte b = r.U8(), c = r.U8(), flags = r.U8();
+        int skillCount = r.U8();
+        var skills = new List<SkillSlot>(skillCount);
+        for (int i = 0; i < skillCount && !r.Short; i++)
+        {
+            uint key = r.RawU32();
+            if (r.U8() != SkillGemTarget) throw new InvalidDataException($"skill slot {i}: only skill gem targets are modelled");
+            byte inventory = r.U8(), socket = r.U8(), slotType = r.U8();
+            skills.Add(new SkillSlot(key, r.U32(), inventory, socket, slotType, r.U32(), r.U32()));
+            r.RawU64();
+        }
+        byte c = r.U8(), flags = r.U8();
         if (r.Short) throw new InvalidDataException("0x1f3 is incomplete");
-        if (b != 0 || c != 0) throw new InvalidDataException($"0x1f3 lists +0x40/+0x58 are {b}/{c}, not empty");
-        return new PurchasedList(records, equipped, flags);
+        if (c != 0) throw new InvalidDataException($"0x1f3 list +0x58 has {c} entries, not modelled");
+        return new PurchasedList(records, equipped, skills, flags);
     }
 }

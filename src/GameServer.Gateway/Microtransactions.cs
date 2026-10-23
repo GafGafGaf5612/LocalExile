@@ -75,7 +75,19 @@ sealed class CosmeticEffects(string folder = "data")
 {
     /// <summary>One cosmetic's effect: ItemVisualIdentity / ItemVisualEffect HASH16s (0 for none), its stats (Stats
     /// row + 1, value) and, for a pet, its <c>Pet.dat</c> row + 1 (0 otherwise).</summary>
-    public sealed record Effect(ushort Visual, ushort WeaponEffect, IReadOnlyList<(uint Stat, int Value)> Stats, int Pet = 0);
+    public sealed record Effect(ushort Visual, ushort WeaponEffect, IReadOnlyList<(uint Stat, int Value)> Stats, int Pet = 0)
+    {
+        /// <summary>The pet's object type (its Pet.dat Id, e.g. Metadata/Pet/Kiwi/Basic), the object the server spawns.</summary>
+        public string? PetType { get; init; }
+
+        /// <summary>The pet type's deserialized components and StateMachine defaults (object-types.json), for its blob.</summary>
+        public IReadOnlyList<string>? PetComponents { get; init; }
+        public StateMachineData? PetStates { get; init; }
+
+        /// <summary>A portrait's variation (MicrotransactionCharacterPortraitVariations <c>__col1</c>), 0 otherwise: the
+        /// Player component's u16 at +0x1aa and the character list's U46.</summary>
+        public ushort Portrait { get; init; }
+    }
 
     /// <summary>A Cosmetics tab slot: its name and the model slot it dresses (null: none).</summary>
     public sealed record Slot(string Name, byte? ModelSlot)
@@ -117,20 +129,53 @@ sealed class CosmeticEffects(string folder = "data")
                     if (key.TryGetInt32(out int stat) && value.TryGetInt32(out int v)) stats.Add(((uint)stat + 1, v));
             effects.TryAdd(hash, new Effect(visual, effect, stats));
         }
-        // Pets have no ItemisedVisualEffect row: the client spawns the pet itself from the player's pet_slot1 / pet_slot2
-        // stat, a Pet.dat row + 1 (0x1401093a0 → 0x14010f530), and each Pet row names its MtxTypeGameSpecific row.
+        // Pets have no ItemisedVisualEffect row; each Pet row names its MtxTypeGameSpecific row. The server spawns the
+        // pet object (PetObject); the player's pet_slot1 / pet_slot2 stat (a Pet.dat row + 1) is what the client's
+        // talking-pet audio reads (0x1401093a0 → 0x14010f530).
+        var petTypes = PetTypes(folder);
         int petRow = 0;
         foreach (var row in Rows(Path.Combine(dir, "Pet.json")))
         {
             petRow++;
             if (Int(row, "MtxTypeGameSpecificKey") is int mtx && mtx >= 0 && mtx < gameSpecific.Count && gameSpecific[mtx] is uint hash)
-                effects[hash] = (effects.GetValueOrDefault(hash) ?? new Effect(0, 0, [])) with { Pet = petRow };
+            {
+                string? type = row.TryGetProperty("Id", out var id) ? id.GetString() : null;
+                var (components, states) = type is not null && petTypes.TryGetValue(type, out var t) ? t : (null, null);
+                effects[hash] = (effects.GetValueOrDefault(hash) ?? new Effect(0, 0, [])) with
+                {
+                    Pet = petRow, PetType = type, PetComponents = components, PetStates = states,
+                };
+            }
         }
+        foreach (var row in Rows(Path.Combine(dir, "MicrotransactionCharacterPortraitVariations.json")))
+            if (Int(row, "MtxTypeGameSpecific") is int mtx && mtx >= 0 && mtx < gameSpecific.Count && gameSpecific[mtx] is uint hash
+                && Int(row, "__col1") is int variation and > 0 and <= ushort.MaxValue)
+                effects[hash] = (effects.GetValueOrDefault(hash) ?? new Effect(0, 0, [])) with { Portrait = (ushort)variation };
         foreach (var row in Rows(Path.Combine(dir, "MicrotransactionSlot.json")))
             if (Int(row, "Id") is int id and > 0 and < InstanceMicrotransactions.SlotCount)
                 slots[(byte)id] = new Slot(row.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "",
                     Int(row, "__col7") is int model and >= 0 and < 17 ? (byte)model : null);
         return (effects, slots);
+    }
+
+    /// <summary>The Metadata/Pet/ types' deserialized components and StateMachine defaults, as MonsterCatalog reads them.</summary>
+    static Dictionary<string, (IReadOnlyList<string>?, StateMachineData?)> PetTypes(string folder)
+    {
+        var types = new Dictionary<string, (IReadOnlyList<string>?, StateMachineData?)>();
+        string path = Path.Combine(folder, "object-types.json");
+        if (!File.Exists(path)) return types;
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var t in doc.RootElement.GetProperty("types").EnumerateArray())
+        {
+            string type = t.GetProperty("type").GetString() ?? "";
+            if (!type.StartsWith("Metadata/Pet/", StringComparison.Ordinal)) continue;
+            int read = t.GetProperty("read").GetInt32();
+            StateMachineData? states = t.TryGetProperty("shared_states", out var ss) && t.TryGetProperty("shared_timers", out var st)
+                ? new([.. ss.EnumerateArray().Select(e => e[1].GetInt32())], st.GetArrayLength(), [.. ss.EnumerateArray().Select(e => e[0].GetString() ?? "")])
+                : null;
+            types[type] = ([.. t.GetProperty("components").EnumerateArray().Take(read).Select(c => c.GetString()!)], states);
+        }
+        return types;
     }
 
     static int? Int(JsonElement row, string name) =>
@@ -139,6 +184,100 @@ sealed class CosmeticEffects(string folder = "data")
     static List<ushort>? Hash16s(string path) => File.Exists(path)
         ? [.. Rows(path).Select(r => Int(r, "HASH16") is int h ? (ushort)h : (ushort)0)]
         : null;
+
+    static List<JsonElement> Rows(string path)
+    {
+        if (!File.Exists(path)) return [];
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+        return [.. doc.RootElement.EnumerateArray().Select(e => e.Clone())];
+    }
+}
+
+/// <summary>
+/// A skill's art variations: <c>skill_art_variation</c>, which a worn skill effect sets (its ItemisedVisualEffect
+/// stats; SkillArtVariations' Variants names them), picks the MiscAnimated object (MiscAnimatedArtVariations) and the
+/// BuffVisuals row (BuffVisualsArtVariations) the skill shows in place of its default, by the variation tables' Id and
+/// Variant (Righteous Fire: <c>righteous_fire_ring</c>, <c>righteous_fire_buff_visual</c>, <c>righteous_fire_aura_visual</c>),
+/// and the projectile (ProjectilesArtVariations: Fireball's <c>fireball</c> → Metadata/Projectiles/StygianFireball …).
+/// </summary>
+sealed class SkillArt(string folder = "data")
+{
+    readonly Lazy<(Dictionary<(string, int), string> Animated, Dictionary<(string, int), ushort> BuffVisuals,
+        Dictionary<(string, int), string> Projectiles)> _data = new(() => Load(folder));
+    readonly Lazy<Dictionary<string, int>> _radii = new(() => Radii(folder));
+
+    /// <summary>
+    /// The radius an area art is drawn at, at scale 1, in world units: MiscAnimated <c>__col4</c> of the rows drawing
+    /// that .ao (RighteousFireRing 400, RighteousFireRingWhite 200, the league avatars' blue ring 380, the Vaal rings
+    /// 500; 0 for art that is not scaled to an area), or null. It matches the meshes: rifire.sm's BoundingBox is
+    /// ±463 with its flames at 380, rifire_white.sm's half that.
+    /// </summary>
+    public int? ArtRadius(string ao) => _radii.Value.TryGetValue(ao, out int r) ? r : null;
+
+    static Dictionary<string, int> Radii(string folder)
+    {
+        var radii = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in Rows(Path.Combine(folder, "tables", "MiscAnimated.json")))
+            if (Int(row, "__col4") is int r and > 0 && row.GetProperty("AOFile").GetString() is { Length: > 0 } ao)
+                radii[ao] = Math.Max(r, radii.GetValueOrDefault(ao));
+        return radii;
+    }
+
+    /// <summary>The .ao this MiscAnimatedArtVariations Id draws for the variation, or null when it has no row (the
+    /// variation draws nothing there, e.g. Righteous Fire's NoRing).</summary>
+    public string? Animated(string id, int variation) => _data.Value.Animated.GetValueOrDefault((id, variation));
+
+    /// <summary>The BuffVisuals row this BuffVisualsArtVariations Id shows for the variation, or null for the buff's own.</summary>
+    public ushort? BuffVisual(string id, int variation) =>
+        _data.Value.BuffVisuals.TryGetValue((id, variation), out ushort row) ? row : null;
+
+    /// <summary>The projectile object a variation flies in place of <paramref name="projectile"/> (a Projectiles.dat Id):
+    /// the ProjectilesArtVariations Id whose variant 0 is that projectile, at the variation; the projectile itself when
+    /// the variation has no row there.</summary>
+    public string Projectile(string projectile, int variation)
+    {
+        if (variation == 0) return projectile;
+        var all = _data.Value.Projectiles;
+        foreach (var ((id, v), p) in all)
+            if (v == 0 && p == projectile && all.TryGetValue((id, variation), out var swapped)) return swapped;
+        return projectile;
+    }
+
+    /// <summary>The .ao a variation draws in place of <paramref name="ao"/>, an art's default (variant 0) .ao, e.g.
+    /// Fireball's explosion (<c>fireball_standard</c>); the default itself when the variation has no row there.</summary>
+    public string AnimatedInPlaceOf(string ao, int variation)
+    {
+        if (variation == 0) return ao;
+        var all = _data.Value.Animated;
+        foreach (var ((id, v), a) in all)
+            if (v == 0 && string.Equals(a, ao, StringComparison.OrdinalIgnoreCase) && all.TryGetValue((id, variation), out var swapped)) return swapped;
+        return ao;
+    }
+
+    static (Dictionary<(string, int), string>, Dictionary<(string, int), ushort>, Dictionary<(string, int), string>) Load(string folder)
+    {
+        var animated = new Dictionary<(string, int), string>();
+        var buffs = new Dictionary<(string, int), ushort>();
+        var projectiles = new Dictionary<(string, int), string>();
+        var projectileRows = Rows(Path.Combine(folder, "tables", "Projectiles.json"));
+        foreach (var row in Rows(Path.Combine(folder, "tables", "ProjectilesArtVariations.json")))
+            if (Int(row, "Variant") is int v && row.GetProperty("Projectiles") is { ValueKind: JsonValueKind.Array } pa && pa.GetArrayLength() > 0
+                && pa[0].GetInt32() is int pr && pr < projectileRows.Count && projectileRows[pr].GetProperty("Id").GetString() is { Length: > 0 } pid)
+                projectiles.TryAdd((row.GetProperty("Id").GetString() ?? "", v), pid);
+        string dir = Path.Combine(folder, "tables"), miscPath = Path.Combine(dir, "MiscAnimated.json");
+        var misc = File.Exists(miscPath) ? Rows(miscPath) : [];
+        foreach (var row in Rows(Path.Combine(dir, "MiscAnimatedArtVariations.json")))
+            if (Int(row, "Variant") is int v && row.GetProperty("Animation") is { ValueKind: JsonValueKind.Array } a && a.GetArrayLength() > 0
+                && a[0].GetInt32() is int m && m < misc.Count && misc[m].GetProperty("AOFile").GetString() is { Length: > 0 } ao)
+                animated.TryAdd((row.GetProperty("Id").GetString() ?? "", v), ao);
+        foreach (var row in Rows(Path.Combine(dir, "BuffVisualsArtVariations.json")))
+            if (Int(row, "__col2") is int v && row.GetProperty("BuffVisual") is { ValueKind: JsonValueKind.Array } b && b.GetArrayLength() > 0)
+                buffs.TryAdd((row.GetProperty("Buff").GetString() ?? "", v), (ushort)b[0].GetInt32());
+        return (animated, buffs, projectiles);
+    }
+
+    static int? Int(JsonElement row, string name) =>
+        row.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number && p.TryGetInt32(out int v) ? v : null;
 
     static List<JsonElement> Rows(string path)
     {

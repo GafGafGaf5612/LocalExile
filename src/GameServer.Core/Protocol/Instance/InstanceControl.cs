@@ -46,7 +46,8 @@ public static class InstanceControl
 /// Ops: "resolve" (Ticket) → the ticket's area, seed, instance, character; "list" (Ticket, Area) → live instances of
 /// Area; "transfer" (Ticket, Area, Instance = 0 for the default choice, New = true for a fresh instance) → Auth moves
 /// the ticket's player and returns the destination's new Ticket; "leave" (Ticket) → the player left its instance (expiry starts);
-/// "set_level" (Ticket, Level) → the ticket's character gets that level (1 to 100) in the account store.
+/// "set_level" (Ticket, Level) → the ticket's character gets that level (1 to 100) in the account store;
+/// "set_portrait" (Ticket, Portrait) → the ticket's character's worn portrait, which the character list shows.
 /// </summary>
 public sealed record ControlRequest
 {
@@ -56,6 +57,7 @@ public sealed record ControlRequest
     public ulong Instance { get; init; }
     public bool New { get; init; }
     public int Level { get; init; }
+    public ushort Portrait { get; init; }
 }
 
 public sealed record ControlResponse
