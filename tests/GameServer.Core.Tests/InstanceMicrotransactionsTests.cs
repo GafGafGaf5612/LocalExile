@@ -86,6 +86,23 @@ public class InstanceMicrotransactionsTests
     }
 
     [Fact]
+    public void Skill_slots_follow_the_worn_table_sorted_by_key()
+    {
+        // The Cosmetics tab's skill slots (message +0x40 → session +0xd5c8): raw u32 key, target variant 1 (a socketed
+        // skill gem: u8 Inventories.dat row, u8 socket, u8 effect slot type, u32 BE the gem's BaseItemTypes HASH32),
+        // u32 BE record, u32 BE hash, raw u64.
+        byte[] m = InstanceMicrotransactions.Purchased([], [],
+            [new(51, 0xAABBCCDD, 1, 0, SlotType: 1), new(50, 0x11223344, 2, 3, RecordId: 7, MtxTypeHash: 0xB63B39AE)]);
+        Assert.Equal("01F3" + "00" + "00" + "02" +
+            "32000000" + "01" + "020300" + "11223344" + "00000007" + "B63B39AE" + "0000000000000000" +
+            "33000000" + "01" + "010001" + "AABBCCDD" + "00000000" + "00000000" + "0000000000000000" +
+            "00" + "01", Convert.ToHexString(m));
+        var read = InstanceMicrotransactions.ReadPurchased(m);
+        Assert.Equal([new InstanceMicrotransactions.SkillSlot(50, 0x11223344, 2, 3, RecordId: 7, MtxTypeHash: 0xB63B39AE),
+            new(51, 0xAABBCCDD, 1, 0, SlotType: 1)], read.Skills);
+    }
+
+    [Fact]
     public void The_list_request_asks_one_bit_per_list()
     {
         // C→S 0x1f2 (write 0x141f9bd10): live 2026-10-22, 01F201 from the Microtransactions panel and 01F206 (the store's
@@ -129,6 +146,23 @@ public class InstanceMicrotransactionsTests
         var single = Assert.Single(framed);
         Assert.Equal(InstanceMicrotransactions.SlotId, single.Id);
         Assert.Equal("01F9140000000B00", Convert.ToHexString(single.Bytes));
+    }
+
+    [Fact]
+    public void A_skill_slot_pick_is_the_slot_key_and_the_record()
+    {
+        // A pick in a skill slot is its own message, 10 bytes (live 2026-10-23): u16 id, the slot's raw u32 key as 0x1f3
+        // sent it (51), u32 BE the record (370); record 0 empties the slot.
+        var pick = InstanceMicrotransactions.ReadSkillPick(Convert.FromHexString("01FA3300000000000172"));
+        Assert.Equal(51u, pick.Key);
+        Assert.Equal(370u, pick.RecordId);
+        Assert.Equal(0u, InstanceMicrotransactions.ReadSkillPick(Convert.FromHexString("01FA3300000000000000")).RecordId);
+        Assert.Throws<InvalidDataException>(() => InstanceMicrotransactions.ReadSkillPick(Convert.FromHexString("01F93300000000000172")));
+
+        // Framed as a fixed 10-byte message: unknown, the read loop stopped at it and the pick was lost.
+        var framed = InstanceProtocol.SplitClientMessages(Convert.FromHexString("01FA3300000000000172" + "01F9140000000B00"), out _, out byte[] unknown);
+        Assert.Empty(unknown);
+        Assert.Equal([InstanceMicrotransactions.SkillPickId, InstanceMicrotransactions.SlotId], framed.Select(f => f.Id));
     }
 
     [Fact]

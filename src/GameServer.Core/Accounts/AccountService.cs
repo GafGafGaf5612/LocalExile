@@ -148,6 +148,20 @@ public sealed class AccountService(IAccountStore store, TimeProvider? clock = nu
         }
     }
 
+    /// <summary>Records the character's worn portrait variation (0 = the class's own), found by name.</summary>
+    public Result<Character> SetPortrait(string characterName, ushort portrait)
+    {
+        lock (_gate)
+        {
+            var c = store.FindCharacter(characterName);
+            if (c is null) return Result<Character>.Fail(AuthError.NotFound);
+            if (c.Portrait == portrait) return Result<Character>.Success(c);
+            var u = c with { Portrait = portrait };
+            store.UpdateCharacter(u);
+            return Result<Character>.Success(u);
+        }
+    }
+
     /// <summary>Records the last town a character entered (a WorldAreas Id), found by name.</summary>
     public Result<Character> SetLastTown(string characterName, string townId)
     {

@@ -241,5 +241,6 @@ public sealed class LoginServerSession(AccountService accounts)
     private ListEntry15[] CharacterEntries() =>
         Session is null ? [] :
         [.. accounts.Characters(Session.AccountId).Select(c =>
-            new ListEntry15(c.Name, c.League, 0, 0, (byte)Math.Clamp(c.Level, 0, 255), 0, (byte)c.Class, 0, 0, 0, 0))];
+            // U46 (+0x46) is the portrait variation the character screen draws (0x14082e210 → 0x142426b00).
+            new ListEntry15(c.Name, c.League, 0, 0, (byte)Math.Clamp(c.Level, 0, 255), 0, (byte)c.Class, 0, c.Portrait, 0, 0))];
 }

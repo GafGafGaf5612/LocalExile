@@ -127,13 +127,13 @@ Offsets are inside the component object. "If bN" means that bit of the component
 | f32 rotation | +0x29c | radians; turns the object's model (the Coast exit's arch uses π/2, [08](08-area-transitions.md) §5) |
 | u16 | +0x1e0 | |
 | u8 flags0, u8 flags1 | | |
-| if f0 & 0x20: f32 +0x2b0, f32 +0x2a8, f32 +0x2ac | | scale (z, x, y); the constructor sets 1.0 |
+| if f0 & 0x20: f32 +0x2b0, f32 +0x2a8, f32 +0x2ac | | +0x2b0 the uniform scale (× the object type's own, type `+0x5c`; "Scale" in the info dump `0x141e33310`; setter `0x141e35d10`, skipped when `+0x1e6` bit 4 "locked scale"), +0x2a8 / +0x2ac an x / y stretch on top of it: the local-to-world transform `0x141e361b0` takes x × +0x2a8 × +0x2b0, y × +0x2ac × +0x2b0, z × +0x2b0. The constructor sets 1.0. Sending s in all three draws at s² in x and y (Righteous Fire's ring, live 2026-10-23) |
 | if f1 & 0x04: f32 +0x2d8, +0x2dc, +0x2e0, +0x2e4 | | probably a rotation quaternion (copied as one block) |
 | if f0 & 0x04: i32 +0x290, f32 +0x2b4 | | **fixed height**: whole steps of 7.8125 and the world z; when `+0x290` ≠ `0x7fffffff` the z is used instead of the terrain height (`0x141e35800`) |
 | if f0 & 0x40: f32 +0x2b8, f32 +0x2bc | else derived from x/y | world x, y (else `(grid + 0.5) × 250/23`) |
 | if f1 & 0x01: u32, u32, u32, u8, u32, u8 | | movement (`0x141e34120`) |
 | if f1 & 0x02: u8, u8 | | visibility toggles |
-| if f1 & 0x08: u8 | | `+0x1e6` bit 0x40 |
+| if f1 & 0x08: u8 | | `+0x1e6` bit 0x40: the object blocks no walker (the collision test `0x141e61540` skips it; pets) |
 | if f1 & 0x10: u32 +0x2a0 | | |
 
 Other bits only set flags: f0 0x01 → `+0x1e5|0x10`, f0 0x80 → `+0x1e6|2` (the object keeps its rotation while it glides with 0x1ba: Righteous Fire's ring, live 2026-10-21), f0 0x02 → mount/parent lookups (stat keys

@@ -151,9 +151,11 @@ The `washedup` room also has a force wall of its own (`Tutorial_Blocker_1`), the
   reads areas' own mods and a Portal Scroll there does nothing and is not spent.
 
 **The force wall** (live 2026-10-21): created at the room fit's place with the room's angle and scale (Positioned flags0
-0x20: f32 z, x, y scale; `BlockerObject`); `data/room-points.json` (version 2) carries each server object's angle and
+0x20's uniform scale, the x / y stretches at 1: [04](04-player-entity.md) §4.0; `BlockerObject`); `data/room-points.json` (version 2) carries each server object's angle and
 scale. The client blocks cells from the wall model's own footprint where the object stands (`0x141d876e0`, through the
-Animated model), so without the 2.7 scale the wall was a third of its size, standing beside the gap (2026-10-19).
+Animated model), so without the 2.7 scale the wall was a third of its size, standing beside the gap (2026-10-19). Until 2026-10-23 the 2.7 went into all three scale floats, which the client
+multiplies, so the wall was drawn 7.3 times as wide (and blocked that footprint); now only the uniform scale carries
+it (not yet seen live).
 TriggerableBlockage has no update reader: the Gateway removes the object (0x2bb) when Hillock dies.
 
 The client blocks the wall by itself, but the server's walk estimate did not: it walked on through the wall, and the

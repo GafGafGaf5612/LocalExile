@@ -377,7 +377,8 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 
 Only projectile skills (Fireball) and Righteous Fire dealt damage: every other gem skill logged "no projectile". Now
 `AreaSkillHit` gives them one hit, after half the attack time (attacks) or the cast (spells), on every living monster
-within the skill's `active_skill_base_area_of_effect_radius` (halved to cells, at least 3; else 12 cells) of the aimed
+within the skill's `active_skill_base_area_of_effect_radius` (in cells, else 12, grown by area of effect as Righteous
+Fire's: `SkillArea`; halved before 2026-10-23, which the units do not support) of the aimed
 point, or of the player when a melee skill is aimed too far. Attacks use the default attack's hit (`WeaponFor`: the
 weapon in the hand by its WeaponTypes row with its local physical damage, added physical damage and attack speed mods,
 else the class's unarmed attack; the player's stats on top), spells `SkillCatalog.HitDamage` with the player's stats; both convert and crit.
@@ -526,7 +527,7 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
 - **S→C 0x1c1** (world group, class `0x1435ddb78`, read `0x141fdf870`, world handler case 0x1c1 → Buffs component
   `0x141e11720`): object header (u32 id, u32, u16), u16 buff instance (+0x20), u16 BuffDefinitions row, u32 +0x64 (the
   source object), u16 +0x60 (the source skill), u8 flags (bit0: u8 u32 u8 u16; bit1: u32 +0x68; bit2: u16 stacks,
-  default 1; bit3: u16 u16; bit4: u16 BuffVisuals override, default the row's; bit5: u8 +0x80, default 2; bit6 → +0x81;
+  default 1; bit3: u16 u16; bit4: u16 BE BuffVisuals row override, default the row's, read after bit3's fields (a row past the table gives none); bit5: u8 +0x80, default 2; bit6 → +0x81;
   bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set (`__col44` in the vendored schema), one u32
   per GrantedStats entry when the row's `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. A row with either
   flag needs those fields, or the client misreads the message and the ones after it (the flask buffs, rows 5 and 9:
@@ -538,21 +539,44 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   `righteous_fire_aura` (row 13, BuffVisuals 19: the ignite flames, and for a player model EPKFiles2
   `ri_fire/player.epk`, the burning hands). Every 250 ms the player loses 90% of maximum life per second
   (`base_nonlethal_fire_damage_%_of_maximum_life_taken_per_minute` 5400; nonlethal, it stops at 1) and every hostile
-  monster within 18 cells plus its size loses 70% of the player's maximum life per second
+  monster within its radius plus its size loses 70% of the player's maximum life per second
   (`base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute` 4200) and carries `righteous_fire_aura` while
-  inside. It ends at death; casting it again does nothing.
+  inside. It ends at death; casting it again does nothing. **The radius** is `active_skill_base_area_of_effect_radius`
+  (18 at level 1; one unit is one cell) plus `active_skill_base_radius_+`, scaled as Path of Building's calcRadius:
+  floor(base × floor(100 × √(area modifier)) / 100), where the modifier is (1 + `base_skill_area_of_effect_+%` +
+  `skill_area_of_effect_+%` + `spell_area_of_effect_+%`) × each `…area_of_effect_+%_final`, then
+  × (1 + `active_skill_area_of_effect_radius_+%_final`), from the player's stats under the skill's (`SkillArea`).
+  Conditional area stats (per charge, per attribute, "recently") are not modelled.
+- **A worn Righteous Fire effect** (its `skill_art_variation`, [23](23-microtransactions.md) §3) swaps both buffs'
+  visuals through 0x1c1's BuffVisuals override and the ring's AO (`SkillArt`), also on the enemies' aura; NoRing
+  draws no ring. A pick while the fire burns lights it again with the new art (casting again while it burns does
+  nothing, so before 2026-10-23 a pick showed only after the fire ended).
 - **The big burning circle** is not a buff visual: it is MiscAnimated `RighteousFireRing`
   (`Metadata/Effects/Spells/ri_fire/rifire.ao`), an effect object of its own. The client's effect script
   (`0x142087910`) makes MiscAnimated effects as `Metadata/Effects/Effect`, `ServerEffect`, `PermanentServerEffect` …
   objects; `PermanentServerEffect` is Positioned, BaseEvents, Animated (Render client-only), so the Gateway creates one
   (`EffectObject`: the projectile's Positioned, Animated bit0 + the .ao path) under the player and glides it with 0x1ba
-  to where each move ends (`FollowRighteousFire`). It is created with Positioned flags0 0x80
+  every 100 ms to where the player will be 100 ms later along its path (`FollowRighteousFire`, `RunRingFollow`;
+  before 2026-10-23 it glided once per ground click to that walk's end, so a walk to a stash or an item, which comes as
+  C→S 0x24, left it behind, and the straight glide cut the path's corners). It is created with Positioned flags0 0x80
   (`EffectObject.FixedRotation`): without it each glide turned the ring to face the move, so it spun as the player
-  turned (live 2026-10-21). 0x2bb removes it when the fire ends. Live 2026-10-18: with only the
-  buffs the player had just the small ring at its feet; with the effect object the big circle shows at the right size
-  and follows the player, and monsters around burn to death.
-- **`/god`** toggles 1000% increased attack and cast speed, life and mana regeneration (below), +10 000
-  maximum life and +1000 to each attribute (`GodStats`, `PoolsFor`); `RunPlayerTick` applies the regeneration. Life
+  turned (live 2026-10-21). It is also scaled to the radius: Positioned flags0 0x20's uniform scale (+0x2b0, the
+  x / y stretches left at 1, [04](04-player-entity.md) §4.0). The art is drawn for the radius in its MiscAnimated row's
+  `__col4`, in world units (RighteousFireRing 400, RighteousFireRingWhite 200, the league avatars' blue ring 380, the
+  Vaal rings 500; 0 for art not scaled to an area); the meshes agree (`rifire.sm` ±463 with its flames at 380,
+  `rifire_white.sm` half that). Scale = radius × 250/23 / `__col4`: 0.49 for the default ring at 18 cells (1.8 m), 0.98
+  for the white one. Verified against a screenshot of the real game at level 1 (2026-10-23): with the health bar as the
+  ruler, the outer ring is about twice the inner flame ring (the `righteous_fire` buff's `bot_02.ao`). Before, all
+  three scale floats carried the scale, so the ring was drawn at its square (0.24) and hid under the inner ring.
+- **Units.** A radius stat is in cells (one cell = 250/23 world units), and the client's tooltip shows it as metres at
+  10 per metre (Righteous Fire's 18: "1.8 metres"). A world unit is about a centimetre (the Marauder's mesh,
+  `Warrior.sm`, is 190 tall), so 18 cells ≈ 196 world units ≈ 1.8–2 m. Live 2026-10-18: with only the
+  buffs the player had just the small ring at its feet; with the effect object the big circle shows and follows the
+  player, and monsters around burn to death.
+- **`/god`** toggles 1000% increased attack and cast speed, 200% increased area of effect
+  (`base_skill_area_of_effect_+%`), life and mana regeneration (below), +10 000
+  maximum life and +1000 to each attribute (`GodStats`, `PoolsFor`); `/set_aoe <percent> | off` sets the character's
+  increased area of effect in place of it (a burning Righteous Fire is lit again with the new radius); `RunPlayerTick` applies the regeneration. Life
   regenerates 100% of maximum life per second (`life_regeneration_rate_per_minute_%` 6000), not a flat 10 000: Righteous
   Fire burns 90% per second, which outran a flat 10 000 once passives raised life above 11 111.
 - **Resistances** (`CharacterStats`, `DamageModel`): the passives' `base_resist_all_elements_%` and

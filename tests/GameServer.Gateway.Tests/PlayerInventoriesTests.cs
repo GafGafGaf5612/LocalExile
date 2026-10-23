@@ -448,7 +448,7 @@ public class PlayerInventoriesTests
     }
 
     [Fact]
-    public void Socketed_gems_come_with_their_item_and_socket()
+    public void Socketed_gems_come_with_their_row_item_and_socket()
     {
         var items = NewInventories();
         var fireball = new Item(0x11111111, ["Base", "SkillGem"], 0x1111);
@@ -459,7 +459,7 @@ public class PlayerInventoriesTests
         });
         items.Add(PlayerInventories.MainInventory, 0, 0, Wand() with { Sockets = [new(SocketColour.Blue, fireball)] });
 
-        Assert.Equal([(wand.Id, 0, fireball), (wand.Id, 2, clarity)], items.SocketedGemPlaces());
+        Assert.Equal([(PlayerInventories.Weapon1, wand.Id, 0, fireball), (PlayerInventories.Weapon1, wand.Id, 2, clarity)], items.SocketedGemPlaces());
     }
 
     [Fact]

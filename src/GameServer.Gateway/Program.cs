@@ -374,6 +374,8 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         }
         else if (id == InstanceMicrotransactions.SlotId)
             await PickCosmetic(remote, stream, ciphers, conn, InstanceMicrotransactions.ReadSlot(bytes));
+        else if (id == InstanceMicrotransactions.SkillPickId)
+            await PickSkillCosmetic(remote, stream, ciphers, conn, InstanceMicrotransactions.ReadSkillPick(bytes));
         else if (id == InstanceProtocol.UseInstantSkillId)
         {
             // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,
@@ -685,6 +687,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, worn),
                     $"0x02ba player equipment on entering: {string.Join(", ", worn.Select(e => $"slot {e.Slot} stance {e.Stance}"))}");
                 await PopulateArea(remote, stream, ciphers, conn);
+                await SpawnPets(remote, stream, ciphers, conn);
                 await SendGroundItems(remote, stream, ciphers, conn);
                 await PlaceStartWeapon(remote, stream, ciphers, conn);
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
@@ -1660,7 +1663,7 @@ static async Task<bool> CastGemSkill(string remote, NetworkStream stream, Connec
         return true;
     }
     if (gem.Name is not null && IsRighteousFire(gem.Effect))
-        await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality);
+        await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
     else
         await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId);
     return true;
@@ -1756,7 +1759,11 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     double release = Animations.SpellRelease(Skills.ClassFor(conn.ClassRow).AnimatedObject);
     await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, CastMs(conn, gem.Effect) * release)));
     if (conn.ActionCount != action || conn.Closed) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
-    await FlyProjectile(remote, stream, ciphers, conn, projectile, from, to, m =>
+    // A worn skill effect (its skill_art_variation) flies its own projectile and explodes in its own art (SkillArt).
+    int variation = SkillArtVariation(conn, gem.Gem);
+    projectile = (Art.Projectile(projectile.Id, variation), projectile.Speed);
+    string impact = Art.AnimatedInPlaceOf(DefaultProjectileImpactAo, variation);
+    await FlyProjectile(remote, stream, ciphers, conn, projectile, from, to, impact: impact, damageTo: m =>
     {
         // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
         // types separate so conversion and per-type mitigation apply.
@@ -1775,12 +1782,12 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
 
 // A gem skill without a projectile (strikes, slams, area spells): a first, simple hit (2026-10-23). It lands once, after
 // half the attack time (attacks) or the cast (spells), on every living monster within the skill's area radius
-// (active_skill_base_area_of_effect_radius, else AreaSkillRadius cells) of the aimed point, or of the player for a
+// (active_skill_base_area_of_effect_radius, else AreaSkillRadius cells, grown by area of effect: SkillArea) of the aimed point, or of the player for a
 // point too far for a melee skill. Attacks deal the weapon's hit as the default attack does, spells their own damage
 // (SkillCatalog.HitDamage) with the player's stats; both convert, crit and roll per monster. Not modelled yet: damage
 // effectiveness, the skills' own shapes (waves, cones, chains), stun, and the attack's accuracy roll.
 static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality) gem, (int X, int Y) from, (int X, int Y) to,
+    ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
     bool immediate = false)
 {
     const int AreaSkillRadius = 12;   // cells, for a skill without its own area stat
@@ -1792,7 +1799,12 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     var weapon = WeaponFor(conn);
     double delay;
     lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0 : weapon.AttackSeconds(CharacterPlayerStats(conn)) / 2;
-    int radius = Stat("active_skill_base_area_of_effect_radius") is int r and > 0 ? Math.Max(3, r / 2) : AreaSkillRadius;
+    // The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23; it was
+    // halved here before), grown by the player's area of effect stats under the skill's own (SkillArea).
+    var areaStats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+    foreach (var (k, v) in skillStats) areaStats[k] = v;
+    int radius = SkillArea.Radius(Stat("active_skill_base_area_of_effect_radius") is int r and > 0 ? r : AreaSkillRadius,
+        name => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0, spell);
     // A melee skill aimed far away still lands in front of the player.
     var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
     int action = conn.ActionCount;
@@ -1829,7 +1841,7 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
 // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
 static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     (string Id, int Speed) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)> damageTo,
-    bool log = true)
+    bool log = true, string? impact = null)
 {
     uint id = conn.NextObjectId++;
     double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
@@ -1907,7 +1919,7 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
     // The impact: on a monster or a wall the projectile's model becomes the explosion (Game_PROJECTILE_IMPACT_AO overrides
     // it; "none" turns it off), which plays its default animation; the object goes 1.5 s later. At the end of its range it
     // just goes.
-    string impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? "Metadata/Effects/Spells/fireball/explode_new2.ao";
+    impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
     if ((hitId != 0 || hitWall) && impact != "none")
     {
         await Send(remote, stream, ciphers, InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
@@ -2182,12 +2194,17 @@ static IEnumerable<(uint, int)> ClassAttributes(int classRow, CharacterStats.Poo
 static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint, int)>? player = null)
 {
     var playerStats = player?.ToList() ?? [];
-    foreach (var (id, effect, name, level, quality) in GemSkillEffects(character))
+    var skillCosmetics = CharacterSaves.SkillCosmetics(string.IsNullOrEmpty(character) ? "Exile" : character);
+    foreach (var (id, effect, name, level, quality, gem) in GemSkillEffects(character))
     {
         var stats = new Dictionary<uint, int>();
         foreach (var (k, v) in playerStats) stats[k] = v;
         var own = Skills.EffectStats(effect, level, quality);
         foreach (var (k, v) in own) stats[k] = v;
+        // The skill effects worn in the gem's Cosmetics tab slots: their stats (skill_art_variation …) on this skill only.
+        foreach (var (key, worn) in skillCosmetics)
+            if (CharacterSaves.SkillCosmeticGem(key) == gem && Mtx.Find(worn.Record) is { } record && MtxEffects.Of(record.MtxTypeHash) is { } fx)
+                foreach (var (k, v) in fx.Stats) stats[k] = v;
         // Increased cast speed shortens the cast the client plays (the final values: 11-skills.md §4).
         if (CastSpeedPct(stats) is int castSpeed and not 0 && Skills.CastMs(effect) is int castMs and > 0)
         {
@@ -2282,7 +2299,7 @@ static string CharacterName(ClientState conn) => string.IsNullOrEmpty(conn.Chara
 // name, and the gem's level (from its experience) and quality. A transfigured or Trarthan gem grants its variant's skill, a
 // Vaal gem its Vaal skill and its base skill (ItemCatalog.GemEffects). Each skill keeps its id while its gem stays socketed
 // (GemSkillIds): the client binds skill bar keys by skill id.
-static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality)> GemSkillEffects(string? character)
+static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)> GemSkillEffects(string? character)
 {
     string name = string.IsNullOrEmpty(character) ? "Exile" : character;
     var inactive = InactiveItems.GetValueOrDefault(name);
@@ -2293,7 +2310,7 @@ static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality)>
     // Gems in an inactive item grant nothing, but keep their id.
     for (int i = 0; i < gems.Count; i++)
         if (ids[i] is ushort id && inactive?.Contains(gems[i].ItemId) != true)
-            yield return (id, gems[i].Effect, Items.GemName(gems[i].Gem), Items.GemLevel(gems[i].Gem), gems[i].Gem.Quality);
+            yield return (id, gems[i].Effect, Items.GemName(gems[i].Gem), Items.GemLevel(gems[i].Gem), gems[i].Gem.Quality, gems[i].Gem.TypeHash);
 }
 
 static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
@@ -2964,7 +2981,8 @@ static async Task DropLoot(string remote, NetworkStream stream, ConnectionCipher
 }
 
 // /god: what it adds on top of the character's stats (GodStats) and pools (PoolsFor): 1000% increased attack and cast
-// speed, 100% of maximum life and 10 000 mana regenerated per second, +10 000 maximum life and +1000 to each attribute.
+// speed, 100% of maximum life and 10 000 mana regenerated per second, 200% increased area of effect, +10 000 maximum
+// life and +1000 to each attribute.
 
 static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool on)
 {
@@ -3047,21 +3065,60 @@ static int CastSpeedPct(IReadOnlyDictionary<uint, int> stats) =>
 // and carry the righteous_fire_aura buff (row 13). It ends at death or on leaving the area; casting it again does nothing.
 static bool IsRighteousFire(int effect) => Skills.EffectId(effect) == "RighteousFire";
 
-// Righteous Fire's ring follows the player: after each move order it glides (0x1ba) to where the walk ends, arriving with
-// the player.
+// The skill_art_variation of the skill effects worn in a gem type's Cosmetics tab slots (0: none), which picks the
+// skill's art (SkillArt).
+static int SkillArtVariation(ClientState conn, uint gem) =>
+    Stats.Key("skill_art_variation") is not uint key ? 0
+    : CharacterSaves.SkillCosmetics(CharacterName(conn)).Where(kv => CharacterSaves.SkillCosmeticGem(kv.Key) == gem)
+        .SelectMany(kv => Mtx.Find(kv.Value.Record) is { } r && MtxEffects.Of(r.MtxTypeHash) is { } fx ? fx.Stats : [])
+        .Where(st => st.Stat == key).Select(st => st.Value).FirstOrDefault();
+
+// Righteous Fire's ring stays on the player. It is an object of its own, which the client moves only when the server
+// says so, so every RingFollowMs (RunRingFollow) and after each move order it glides (0x1ba) to where the player will be
+// RingFollowMs later, along the walk's path. Before 2026-10-23 it glided once per ground click to where that walk
+// ended: a walk started any other way (a click on a stash or an item, C→S 0x24 → Walk.Approach) never moved it, and
+// the straight glide cut the path's corners.
 static async Task FollowRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    if (conn.RighteousFire is not { } rf) return;
-    double now = conn.Clock.Elapsed.TotalSeconds, arrives = conn.Walk.ArrivesAt;
-    var to = conn.Walk.Position(Math.Max(now, arrives));
-    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(rf.Ring, to.X, to.Y, (float)Math.Max(0.05, arrives - now), u28: TerrainHeight), null);
+    if (conn.RighteousFire is not { Ring: uint ring } rf) return;
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var to = conn.Walk.Position(now + RingFollowMs / 1000.0);
+    if (rf.RingAt == to) return;
+    rf.RingAt = to;
+    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(ring, to.X, to.Y, RingFollowMs / 1000f, u28: TerrainHeight), null);
+}
+
+// The ring's follow loop, while its fire burns.
+static async Task RunRingFollow(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, RighteousFireState rf)
+{
+    try
+    {
+        while (!conn.Closed && conn.RighteousFire == rf)
+        {
+            await Task.Delay(RingFollowMs);
+            if (!conn.Paused && conn.RighteousFire == rf) await FollowRighteousFire(remote, stream, ciphers, conn);
+        }
+    }
+    catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+    {
+        // The connection closed while sending.
+    }
 }
 
 static async Task ActivateRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, ushort skillId,
-    int effect, int level, int quality)
+    int effect, int level, int quality, uint gem)
 {
     ushort buff, aura;
     uint ring;
+    // A worn skill effect's art (SkillArt): the two buffs' visuals and the ring, which some variations leave out.
+    int variation = SkillArtVariation(conn, gem);
+    ushort? buffVisual = Art.BuffVisual("righteous_fire_buff_visual", variation), auraVisual = Art.BuffVisual("righteous_fire_aura_visual", variation);
+    string? ringAo = Art.Animated("righteous_fire_ring", variation) ?? (variation == 0 ? RighteousFireRingAo : null);
+    // The radius takes the player's area of effect stats (passives, items, gem quality) under the skill's own (SkillArea).
+    var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+    foreach (var (k, v) in Skills.EffectStats(effect, level, quality)) stats[k] = v;
+    int Get(string name, int fallback) => Stats.Key(name) is uint k && stats.TryGetValue(k, out int v) ? v : fallback;
+    int radius = SkillArea.Radius(Get("active_skill_base_area_of_effect_radius", 18), name => Get(name, 0), spell: true);
     (int X, int Y) at;
     lock (conn.Monsters)
     {
@@ -3070,27 +3127,35 @@ static async Task ActivateRighteousFire(string remote, NetworkStream stream, Con
         aura = conn.NextBuff++;
         ring = conn.NextObjectId++;
         at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
-        var stats = Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int Get(string name, int fallback) => Stats.Key(name) is uint k && stats.TryGetValue(k, out int v) ? v : fallback;
-        conn.RighteousFire = new RighteousFireState(buff, aura, ring, skillId,
+        conn.RighteousFire = new RighteousFireState(buff, aura, ringAo is null ? null : ring, skillId,
             DamagePctPerMinute: Get("base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute", 4200),
             BurnPctPerMinute: Get("base_nonlethal_fire_damage_%_of_maximum_life_taken_per_minute", 5400),
-            Radius: Get("active_skill_base_area_of_effect_radius", 18));
+            Radius: radius) { AuraVisual = auraVisual };
     }
-    await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, buff, RighteousFireBuffRow, PlayerId, skillId),
+    await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, buff, RighteousFireBuffRow, PlayerId, skillId, visual: buffVisual),
         $"0x01c1 player buff {buff}: righteous_fire (BuffDefinitions row {RighteousFireBuffRow}) from skill 0x{skillId:x4}, " +
+        $"art variation {variation} (BuffVisuals {buffVisual?.ToString() ?? "the row's"} / {auraVisual?.ToString() ?? "the row's"}, ring {ringAo ?? "none"}), " +
         $"radius {conn.RighteousFire!.Radius}, {conn.RighteousFire.DamagePctPerMinute / 60.0:0.#}% of life per second to enemies, {conn.RighteousFire.BurnPctPerMinute / 60.0:0.#}% to the player");
     // The caster burns in its own fire: righteous_fire_aura too, whose BuffVisuals (19) give a player model the
     // flaming hands (EPKFiles2 ri_fire/player.epk) and the ignite flames; the first buff only draws the ring at its feet.
-    await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, aura, RighteousFireAuraBuffRow, PlayerId, skillId),
+    await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, aura, RighteousFireAuraBuffRow, PlayerId, skillId, visual: auraVisual),
         $"0x01c1 player buff {aura}: righteous_fire_aura (BuffDefinitions row {RighteousFireAuraBuffRow})");
     // The big burning circle is not a buff visual: it is MiscAnimated RighteousFireRing, an effect object of its own
     // (EffectObject), kept under the player as it walks (FollowRighteousFire).
     // FixedRotation: the glides that keep it under the player must not turn it (it spun as the player turned).
-    var ringObject = new EffectObject(at.X, at.Y, RighteousFireRingAo) { Flags0 = EffectObject.FixedRotation };
+    if (ringAo is null) return;
+    // Scale: the art is drawn for a radius of MiscAnimated __col4 world units (RighteousFireRing 400, about 37 cells of
+    // 250/23 units, where the skill's base radius is 18), so it is scaled to the radius the fire burns in.
+    float scale = (float)(radius * (250.0 / 23) / (Art.ArtRadius(ringAo) ?? 400));
+    var ringObject = new EffectObject(at.X, at.Y, ringAo) { Flags0 = EffectObject.FixedRotation, Scale = scale };
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(ring, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), ringObject.Blob()),
-        $"0x02b9 create effect 0x{ring:x} {RighteousFireRingAo} at ({at.X}, {at.Y})");
+        $"0x02b9 create effect 0x{ring:x} {ringAo} at ({at.X}, {at.Y}), scale {scale:0.###} for radius {radius}");
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(ring), null);
+    if (conn.RighteousFire is { } burning)
+    {
+        burning.RingAt = at;
+        _ = RunRingFollow(remote, stream, ciphers, conn, burning);
+    }
 }
 
 static async Task EndRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
@@ -3106,7 +3171,8 @@ static async Task EndRighteousFire(string remote, NetworkStream stream, Connecti
     if (rf is null) return;
     await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, rf.Buff), $"0x01c2 player buff {rf.Buff}: righteous_fire ends ({why})");
     await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, rf.SelfAura), null);
-    await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(rf.Ring), $"0x02bb remove effect 0x{rf.Ring:x} (Righteous Fire's ring)");
+    if (rf.Ring is uint ring)
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(ring), $"0x02bb remove effect 0x{ring:x} (Righteous Fire's ring)");
     foreach (var (monster, buff) in auras)
         await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(monster, buff), null);
 }
@@ -3285,7 +3351,7 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
         }
     }
     foreach (var (id, buff) in entered)
-        await Send(remote, stream, ciphers, InstanceEntities.AddBuff(id, buff, RighteousFireAuraBuffRow, PlayerId, rf.Skill), null);
+        await Send(remote, stream, ciphers, InstanceEntities.AddBuff(id, buff, RighteousFireAuraBuffRow, PlayerId, rf.Skill, visual: rf.AuraVisual), null);
     foreach (var (id, buff) in left)
         await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(id, buff), null);
     foreach (var (id, m, life, damage) in hits)
@@ -3993,11 +4059,27 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev block hit)");
         await conn.Commands!.Reply($"{(spell ? "Spell" : "Attack")} hit: {amount} → {dealt}; {(blocked ? "blocked" : "not blocked")} ({chance}% chance); life {life}/{conn.PlayerMaxLife}.");
     })
-    .Add("god", "/god (toggles: 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 attributes)", async _ =>
+    .Add("god", "/god (toggles: 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, 200% increased area of effect, +10 000 life, +1000 attributes)", async _ =>
     {
         bool on = !conn.God;
         await SetGod(remote, stream, ciphers, conn, on);
+        // A burning Righteous Fire takes its radius when lit: light it again with the new area.
+        await RelightRighteousFire(remote, stream, ciphers, conn, "/god");
         await conn.Commands!.Reply(on ? "God mode on." : "God mode off.");
+    })
+    .Add("set_aoe", "/set_aoe <percent> | off (dev: the character's increased area of effect, base_skill_area_of_effect_+%, in place of what passives, items and /god give)", async args =>
+    {
+        if (args.Length == 0) throw new ArgumentException("percent or off");
+        if (Stats.Key("base_skill_area_of_effect_+%") is not uint stat) throw new ArgumentException("no area of effect stat in the data");
+        bool off = args[0].Equals("off", StringComparison.OrdinalIgnoreCase);
+        int value = off ? 0 : int.Parse(args[0]);
+        lock (conn.Monsters) { if (off) conn.PlayerStats.Remove(stat); else conn.PlayerStats[stat] = value; }
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            $"0x01b3 stats: base_skill_area_of_effect_+% = {(off ? "the character's own" : value)}");
+        await SendSkills(remote, stream, ciphers, conn);
+        bool relit = await RelightRighteousFire(remote, stream, ciphers, conn, "/set_aoe");
+        await conn.Commands!.Reply((off ? "Increased area of effect: the character's own" : $"Increased area of effect: {value}%")
+            + (relit ? ", Righteous Fire relit" : ""));
     })
     .Add("heal", "/heal (full life; also revives: 0x1b1 from 0 runs the client's revive)", async _ =>
     {
@@ -4381,8 +4463,69 @@ static List<InstanceMicrotransactions.Equipped> WornCosmetics(ClientState conn)
 static async Task SendWornCosmetics(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
 {
     var worn = WornCosmetics(conn);
-    await Send(remote, stream, ciphers, InstanceMicrotransactions.Purchased([], worn),
-        $"0x01f3 worn cosmetics ({why}): {(worn.Count == 0 ? "none" : string.Join(", ", worn.Select(w => $"slot {w.Slot} = record {w.Id}")))}");
+    var skills = SkillSlots(conn);
+    await Send(remote, stream, ciphers, InstanceMicrotransactions.Purchased([], worn, skills),
+        $"0x01f3 worn cosmetics ({why}): {(worn.Count == 0 ? "none" : string.Join(", ", worn.Select(w => $"slot {w.Slot} = record {w.Id}")))}; " +
+        $"{skills.Count} skill slot(s){string.Concat(skills.Where(s => s.RecordId != 0).Select(s => $", key {s.Key} = record {s.RecordId}"))}");
+}
+
+// The Cosmetics tab's skill slots: one per active gem type socketed in the equipment (a gem that grants a skill) and
+// effect slot type it takes (SkillGems MtxSlotTypes: the skill's effect, a totem skin), naming the first socket that
+// holds it (the panel finds the gem item there), keyed from 50 up (past the 49 MicrotransactionSlot rows), each with
+// what its gem type wears there. The keys are remembered on the connection for the pick (0x1fa names the key).
+static List<InstanceMicrotransactions.SkillSlot> SkillSlots(ClientState conn)
+{
+    string character = CharacterName(conn);
+    var places = PlayerInventories.For(character, Items).SocketedGemPlaces()
+        .Where(g => Items.GemEffects(g.Gem).Any()).DistinctBy(g => g.Gem.TypeHash)
+        .SelectMany(g => (Items.ByHash(g.Gem.TypeHash) is { } t && Items.Gem(t) is { MtxSlotTypes.Count: > 0 } gem ? gem.MtxSlotTypes : [0])
+            .Select(slotType => (g.Row, g.Socket, Gem: g.Gem.TypeHash, SlotType: (byte)slotType)))
+        .Take(byte.MaxValue).ToList();
+    var worn = CharacterSaves.SkillCosmetics(character);
+    var slots = new List<InstanceMicrotransactions.SkillSlot>();
+    conn.SkillSlots = [];
+    foreach (var (place, i) in places.Select((p, i) => (p, i)))
+    {
+        uint key = (uint)(InstanceMicrotransactions.SlotCount + i);
+        conn.SkillSlots[key] = (place.Gem, place.SlotType);
+        var slot = new InstanceMicrotransactions.SkillSlot(key, place.Gem, place.Row, (byte)place.Socket, place.SlotType);
+        slots.Add(worn.TryGetValue(CharacterSaves.SkillCosmeticKey(place.Gem, place.SlotType), out var w) && Mtx.Find(w.Record) is { } record
+            ? slot with { RecordId = record.Id, MtxTypeHash = record.MtxTypeHash } : slot);
+    }
+    return slots;
+}
+
+// C→S 0x1fa: a pick in one of the Cosmetics tab's skill slots (record 0 empties it). Saved for the slot's gem type and
+// effect slot type, then the skill slots again (what the client shows worn) and the skill list, so the gem's skill
+// carries the effect's stats (skill_art_variation: the art the client draws from the skill, and Righteous Fire's
+// server-made art the next time it is cast).
+static async Task PickSkillCosmetic(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (uint Key, uint RecordId) pick)
+{
+    var record = pick.RecordId == 0 ? null : Mtx.Find(pick.RecordId);
+    if (!conn.SkillSlots.TryGetValue(pick.Key, out var slot) || (pick.RecordId != 0 && record is null))
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x01fa skill cosmetic pick: key {pick.Key}, record {pick.RecordId}: not a skill slot or not a record, ignored");
+        return;
+    }
+    Console.WriteLine($"[gateway] {remote} <= 0x01fa skill cosmetic pick: key {pick.Key} (gem 0x{slot.Gem:x8}, slot type {slot.SlotType}), " +
+        $"record {pick.RecordId} (hash 0x{record?.MtxTypeHash ?? 0:x8}, stats {string.Join(", ", (record is null ? null : MtxEffects.Of(record.MtxTypeHash))?.Stats.Select(st => $"{Stats.Name(st.Stat)} {st.Value}") ?? [])})");
+    CharacterSaves.SetSkillCosmetic(CharacterName(conn), slot.Gem, slot.SlotType, record is null ? null : new CharacterSaves.SavedCosmetic(record.Id, 0));
+    await SendWornCosmetics(remote, stream, ciphers, conn, "after the skill pick");
+    await SendSkills(remote, stream, ciphers, conn);
+    // A Righteous Fire already burning from this gem takes the new art at once: casting again while it burns does
+    // nothing, so it is lit again with the new ring and buff visuals.
+    await RelightRighteousFire(remote, stream, ciphers, conn, "restyled by the skill pick", slot.Gem);
+}
+
+// Ends a burning Righteous Fire and lights it again from its gem (only from the gem of type `gem`, when given), so a
+// change of art or ring size shows at once. False when none burns.
+static async Task<bool> RelightRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why, uint? gem = null)
+{
+    if (conn.RighteousFire is not { } rf || GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == rf.Skill) is not { Name: not null } skill
+        || (gem is uint type && skill.Gem != type)) return false;
+    await EndRighteousFire(remote, stream, ciphers, conn, why);
+    await ActivateRighteousFire(remote, stream, ciphers, conn, skill.Id, skill.Effect, skill.Level, skill.Quality, skill.Gem);
+    return true;
 }
 
 // C→S 0x1f9: a pick in the Cosmetics tab's slot flyout (record 0 empties the slot). Saved per character, then the whole
@@ -4411,6 +4554,91 @@ static async Task PickCosmetic(string remote, NetworkStream stream, ConnectionCi
     await SendWornCosmetics(remote, stream, ciphers, conn, "after the pick");
     // The model and the stats: skins, attachments, character effects, footprints, apparitions.
     await SendEquipment(remote, stream, ciphers, conn, ItemsOf(conn));
+    if (pick.Slot is 18 or 19) await SpawnPets(remote, stream, ciphers, conn);
+    if (pick.Slot == PortraitSlot)
+    {
+        ushort portrait = WornPortrait(conn);
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerPortraitUpdate(PlayerId, portrait), $"0x02ba player portrait {portrait}");
+        // The character screen's list comes from Auth's account store.
+        var told = await InstanceControl.CallAsync(new ControlRequest { Op = "set_portrait", Ticket = conn.Ticket, Portrait = portrait });
+        if (!told.Ok) Console.WriteLine($"[gateway] {remote} set_portrait {portrait}: {told.Error}");
+    }
+}
+
+// The worn portrait's variation (the Player component's +0x1aa), 0 for the class's own.
+static ushort WornPortrait(ClientState conn) =>
+    WornCosmetics(conn).FirstOrDefault(w => w.Slot == PortraitSlot) is { } worn ? MtxEffects.Of(worn.MtxTypeHash)?.Portrait ?? 0 : (ushort)0;
+
+// The worn pets (Pet slots 18 and 19): one PetObject each beside the player, owned by it (PetAi). A pick removes the
+// old ones first. RunPetFollow walks them after the player.
+static async Task SpawnPets(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    List<uint> old;
+    lock (conn.Pets) { old = [.. conn.Pets.Keys]; conn.Pets.Clear(); }
+    foreach (uint id in old)
+        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x{InstanceProtocol.RemoveObjectId:x4} remove pet 0x{id:x}");
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (px, py) = conn.Walk.Position(now);
+    foreach (var worn in WornCosmetics(conn).Where(w => w.Slot is 18 or 19))
+    {
+        if (MtxEffects.Of(worn.MtxTypeHash) is not { PetType: { Length: > 0 } type } fx) continue;
+        if (!PetObject.CanSerialize(fx.PetComponents, fx.PetStates is not null))
+        {
+            Console.WriteLine($"[gateway] {remote} pet {type}: components {string.Join(", ", fx.PetComponents ?? [])} not supported, not spawned");
+            continue;
+        }
+        var (x, y) = PetSpot(conn, (px, py), worn.Slot == 18 ? 1 : -1);
+        uint id = conn.NextObjectId++;
+        var pet = new PetObject(x, y, PlayerId, fx.PetComponents, fx.PetStates);
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(type), pet.Blob()),
+            $"0x02b9 create pet 0x{id:x} {type} at ({x}, {y})");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 pet 0x{id:x} enters wake zone");
+        lock (conn.Pets) conn.Pets[id] = new SpawnedPet(conn.NewWalk(x, y, conn.Walk.Speed), worn.Slot == 18 ? 1 : -1);
+    }
+    if (!conn.PetFollowRunning) { conn.PetFollowRunning = true; _ = RunPetFollow(remote, stream, ciphers, conn); }
+}
+
+// Where a pet stands by the player: PetDistance cells to the player's side (side +1 or −1, the two Pet slots), on the
+// walk map; the player's own cell if that side is blocked.
+static (int X, int Y) PetSpot(ClientState conn, (int X, int Y) player, int side)
+{
+    (int X, int Y) spot = (player.X + side * PetDistance, player.Y + PetDistance / 2);
+    return conn.Layout.Walkable is { } w && !w(spot.X, spot.Y) ? player : spot;
+}
+
+// Pets follow the player: when one is farther than PetFollowRange from the player it walks (0x1ab Move, as monsters do)
+// to its spot beside the player, which keeps it near but never on top of the player. Ends with the connection.
+static async Task RunPetFollow(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    const ushort Move = 0x2909;
+    try
+    {
+        while (!conn.Closed)
+        {
+            await Task.Delay(PlayerTickMs);
+            if (conn.Paused) continue;
+            double now = conn.Clock.Elapsed.TotalSeconds;
+            var player = conn.Walk.Position(now);
+            var orders = new List<(uint Id, (int X, int Y) From, (int X, int Y) To)>();
+            lock (conn.Pets)
+                foreach (var (id, pet) in conn.Pets)
+                {
+                    var here = pet.Walk.Position(now);
+                    if (Dist(here, player) <= PetFollowRange) continue;
+                    var to = PetSpot(conn, player, pet.Side);
+                    if (pet.Target is { } last && Dist(last, to) < 3) continue;   // already on its way there
+                    pet.Target = to;
+                    pet.Walk.SetSpeed(Math.Max(conn.Walk.Speed, 1), now);
+                    orders.Add((id, pet.Walk.Order(to.X, to.Y, now), to));
+                }
+            foreach (var (id, from, to) in orders)
+                await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, to.X, to.Y, Move, 0xffff, 0x0408), null);
+        }
+    }
+    catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+    {
+        // The connection closed while sending.
+    }
 }
 
 static async Task WhilePaused(ClientState conn)
@@ -4754,6 +4982,8 @@ static async Task SendEquipment(string remote, NetworkStream stream, ConnectionC
     var equipped = Looks(conn, items);
     await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, equipped),
         $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
+    // The socketed gems may have changed: the Cosmetics tab's skill slots follow them.
+    await SendWornCosmetics(remote, stream, ciphers, conn, "equipment changed");
     conn.Pools = PoolsFor(conn, conn.Pools.Level);
     lock (conn.Monsters) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
     await SendSkills(remote, stream, ciphers, conn);
@@ -6069,7 +6299,8 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
-        QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)]);
+        QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
+        Portrait: WornPortrait(conn));
     conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
@@ -6196,6 +6427,10 @@ sealed partial class Program
     internal static readonly MtxCatalog Mtx = new();
     // What worn cosmetics do on the model and in the stats (ItemisedVisualEffect); loaded with the first equipment sent.
     internal static readonly CosmeticEffects MtxEffects = new();
+    // What a worn skill effect's skill_art_variation draws (MiscAnimated and BuffVisuals art variations).
+    internal static readonly SkillArt Art = new();
+    // The Cosmetics tab's Portrait slot (MicrotransactionSlot 16).
+    internal const byte PortraitSlot = 16;
     // Per character: the ids of worn items whose requirements are not met (CharacterStatSources).
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<uint>> InactiveItems = new(StringComparer.OrdinalIgnoreCase);
     // The character panel's Spell Suppression chance stats (the client reads the final value).
@@ -6251,13 +6486,22 @@ sealed partial class Program
     internal static bool FlaskBuffs => Environment.GetEnvironmentVariable("Game_FLASK_BUFFS") != "0";
     // MiscAnimated RighteousFireRing: the big burning circle around a Righteous Fire caster.
     internal const string RighteousFireRingAo = "Metadata/Effects/Spells/ri_fire/rifire.ao";
+    // The projectiles' explosion (Fireball's, MiscAnimatedArtVariations fireball_standard variant 0).
+    internal const string DefaultProjectileImpactAo = "Metadata/Effects/Spells/fireball/explode_new2.ao";
     // The player's own tick (RunPlayerTick): regeneration and damage over time.
     internal const int PlayerTickMs = 250;
+    // How often Righteous Fire's ring is moved to the player (RunRingFollow), and how far ahead it aims (our own number).
+    internal const int RingFollowMs = 100;
+    // Pets (RunPetFollow): how far beside the player a pet stands, and how far it may fall behind before it walks after
+    // the player (cells; our own numbers).
+    internal const int PetDistance = 6;
+    internal const double PetFollowRange = 12;
     internal static readonly (string Stat, int Value)[] GodStats =
     [
         ("attack_speed_+%", 1000), ("base_cast_speed_+%", 1000), ("cast_speed_+%", 1000),
         ("life_regeneration_rate_per_minute_%", GodLifeRegenPctPerSecond * 60),
         ("base_mana_regeneration_rate_per_minute", GodRegenPerSecond * 60), ("mana_regeneration_rate_per_minute", GodRegenPerSecond * 60),
+        ("base_skill_area_of_effect_+%", 200),
     ];
 
     internal static readonly double ExperienceRange =
@@ -6623,9 +6867,13 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
 
 // A running Righteous Fire: the player's buff instance, the skill, its damage (percent of maximum life per minute, to
 // enemies and to the player), its radius in cells, and the aura buff instance on each monster inside it.
-sealed record RighteousFireState(ushort Buff, ushort SelfAura, uint Ring, ushort Skill, int DamagePctPerMinute, int BurnPctPerMinute, int Radius)
+sealed record RighteousFireState(ushort Buff, ushort SelfAura, uint? Ring, ushort Skill, int DamagePctPerMinute, int BurnPctPerMinute, int Radius)
 {
     public readonly Dictionary<uint, ushort> Auras = [];
+    /// <summary>The worn skill effect's righteous_fire_aura visual (BuffVisuals row; null: the row's own), on the enemies too.</summary>
+    public ushort? AuraVisual { get; init; }
+    /// <summary>Where the ring was last sent (FollowRighteousFire).</summary>
+    public (int X, int Y)? RingAt;
 }
 
 // The last instance list shown (0xae); 0xaf picks a row of it.
@@ -6730,6 +6978,12 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// <summary>The worn cosmetics as 0x1f3 lists them (WornCosmetics), read from the save on first use; null after a
     /// pick, so the next use reads it again.</summary>
     public List<InstanceMicrotransactions.Equipped>? WornCosmetics;
+    /// <summary>The Cosmetics tab's skill slots last sent (SkillSlots): key (50 up, what 0x1fa names) → gem BaseItemTypes HASH32 and
+    /// effect slot type.</summary>
+    public Dictionary<uint, (uint Gem, byte SlotType)> SkillSlots = [];
+    /// <summary>The worn pets by object id (SpawnPets), replaced when a Pet slot changes; RunPetFollow walks them.</summary>
+    public readonly Dictionary<uint, SpawnedPet> Pets = [];
+    public bool PetFollowRunning;
     /// <summary>How map portals are turned around the vertical axis (degrees; Positioned rotation). Dev: /portal_rotation,
     /// which rebuilds the portals that already stand.</summary>
     public float PortalRotationDegrees;
@@ -6885,4 +7139,13 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
         new(x, y, Math.Max(1, speed), Layout.Walkable, Layout.GridW > 0 ? Layout.GridW : 4096, Layout.GridH > 0 ? Layout.GridH : 4096);
 
     public (int X, int Y) SpawnNear((int X, int Y) at) => Layout.Near(at);
+}
+
+/// <summary>A worn pet the server walks after the player (RunPetFollow): its walk estimate, which side of the player it
+/// keeps (+1 or −1) and where it was last sent.</summary>
+sealed class SpawnedPet(WalkEstimator walk, int side)
+{
+    public WalkEstimator Walk { get; } = walk;
+    public int Side { get; } = side;
+    public (int X, int Y)? Target { get; set; }
 }

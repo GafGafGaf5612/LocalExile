@@ -40,12 +40,15 @@ static class CharacterSaves
     /// class's start weapon while it waits on the ground for the character to pick it up (<see cref="PlayerInventories.StartWeapon"/>).
     /// PortalCosmetic: the MicrotransactionPortalVariations row the character's portals use (null = the base effect), so a
     /// /cosmetic portal choice survives a relog. Cosmetics: what the Cosmetics tab (K) wears, MicrotransactionSlot Id →
-    /// the picked record (<see cref="MtxCatalog"/>: a MtxTypes row + 1).</summary>
+    /// the picked record (<see cref="MtxCatalog"/>: a MtxTypes row + 1). SkillCosmetics: the Cosmetics tab's skill
+    /// slots, <see cref="SkillCosmeticKey"/> (a gem's BaseItemTypes HASH32 and effect slot type) → the picked record
+    /// (every gem of that type wears it).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
-        SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null)
+        SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null,
+        Dictionary<string, SavedCosmetic>? SkillCosmetics = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -109,6 +112,26 @@ static class CharacterSaves
         if (worn is null) cosmetics.Remove(slot); else cosmetics[slot] = worn;
         return s with { Cosmetics = cosmetics.Count == 0 ? null : cosmetics };
     });
+
+    /// <summary>A skill cosmetic's save key: the gem's BaseItemTypes HASH32 (hex) / its effect slot type
+    /// (MicrotransactionSkillGemEffectSlotTypes row).</summary>
+    public static string SkillCosmeticKey(uint gem, byte slotType) => $"{gem:x8}/{slotType}";
+
+    /// <summary>The gem HASH32 of a <see cref="SkillCosmeticKey"/>, or null for a key it did not write.</summary>
+    public static uint? SkillCosmeticGem(string key) =>
+        key.Split('/') is [var gem, _] && uint.TryParse(gem, System.Globalization.NumberStyles.HexNumber, null, out uint g) ? g : null;
+
+    /// <summary>Records what a gem type's skill slot wears (null empties it), keeping the rest of the save.</summary>
+    public static void SetSkillCosmetic(string character, uint gem, byte slotType, SavedCosmetic? worn) => Update(character, s =>
+    {
+        var skills = s.SkillCosmetics is null ? new Dictionary<string, SavedCosmetic>() : new Dictionary<string, SavedCosmetic>(s.SkillCosmetics);
+        if (worn is null) skills.Remove(SkillCosmeticKey(gem, slotType)); else skills[SkillCosmeticKey(gem, slotType)] = worn;
+        return s with { SkillCosmetics = skills.Count == 0 ? null : skills };
+    });
+
+    /// <summary>The character's skill cosmetics by <see cref="SkillCosmeticKey"/>; empty when none are saved.</summary>
+    public static IReadOnlyDictionary<string, SavedCosmetic> SkillCosmetics(string character) =>
+        Load(character)?.SkillCosmetics ?? new Dictionary<string, SavedCosmetic>();
 
     /// <summary>The character's worn cosmetics by MicrotransactionSlot Id; empty when none are saved.</summary>
     public static IReadOnlyDictionary<byte, SavedCosmetic> Cosmetics(string character) =>

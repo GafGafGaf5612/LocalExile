@@ -165,6 +165,14 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
                 Console.WriteLine($"[auth] {info.Character} set to level {req.Level}");
                 return new ControlResponse { Ok = true, Character = info.Character, Level = req.Level };
             }
+            case "set_portrait":
+            {
+                if (accounts is null) return new ControlResponse { Ok = false, Error = "no account store" };
+                var r = accounts.SetPortrait(info.Character, req.Portrait);
+                if (!r.Ok) return new ControlResponse { Ok = false, Error = r.Error.ToString() };
+                Console.WriteLine($"[auth] {info.Character}: portrait {req.Portrait}");
+                return new ControlResponse { Ok = true, Character = info.Character };
+            }
             case "leave":
                 if (_latest.TryGetValue(info.Character, out uint latest) && latest != req.Ticket
                     && _tickets.TryGetValue(latest, out var now) && now.Instance == info.Instance)
