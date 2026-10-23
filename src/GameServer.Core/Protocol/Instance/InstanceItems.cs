@@ -212,11 +212,12 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
 /// <summary>
 /// An equipped item as the player's model shows it (Inventories component entry, 0x141e1ee30 → 0x1424f44e0). u8 slot
 /// (Inventories.dat column 7: Weapon1 0, Offhand1 1, BodyArmour1 2, Helm1 4, Gloves1 5, Boots1 6, Ring1 8, Ring2 9,
-/// Belt1 10, Amulet1 11), then the record: u8 tag (0 = empty, nothing else), two (u16 ItemVisualIdentity HASH16, u32
+/// Belt1 10, Amulet1 11), then the record: u8 the item's type (0 = empty, nothing else; else its ItemClasses row + 1:
+/// the client's weapon type for skill weapon restrictions, 0x1424f44e0 → entry +8, read by 0x141e1f310), two (u16 ItemVisualIdentity HASH16, u32
 /// TieredMicrotransactions key, u8) references (0x1424f3fc0, 0x1424f4250), u8 ItemStances row (0x1424f4b10; Wand = 2),
 /// u16 ItemVisualIdentity HASH16 (0x1424f4730), u8 (+0x1e).
 /// </summary>
-public sealed record VisibleItem(byte Slot, ushort VisualIdentity, byte Stance = 0xff)
+public sealed record VisibleItem(byte Slot, ushort VisualIdentity, byte Stance = 0xff, byte Type = 1)
 {
     /// <summary>An empty slot (tag 0): what clears an unequipped item from the model. A slot left out of the list keeps
     /// whatever the model showed before.</summary>
@@ -225,7 +226,7 @@ public sealed record VisibleItem(byte Slot, ushort VisualIdentity, byte Stance =
     public void Write(BlobWriter w)
     {
         if (VisualIdentity == 0) { w.U8(Slot).U8(0); return; }
-        w.U8(Slot).U8(1).U16(VisualIdentity).U32(0).U8(0).U16(0).U32(0).U8(0).U8(Stance).U16(VisualIdentity).U8(0);
+        w.U8(Slot).U8(Type).U16(VisualIdentity).U32(0).U8(0).U16(0).U32(0).U8(0).U8(Stance).U16(VisualIdentity).U8(0);
     }
 }
 

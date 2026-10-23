@@ -90,7 +90,10 @@ foreach ($s in 'Patch', 'Gateway', 'Auth') {
 # The patch server must read the GGPK root hash before the client locks the file.
 if ($servers -contains 'Patch') {
     $deadline = (Get-Date).AddSeconds(30)
-    while (-not (Select-String -Path (Join-Path $out 'live-patch.log') -Pattern 'patching protocol on' -Quiet -ErrorAction SilentlyContinue)) {
+    # The log appears a moment after the server starts: until then there is nothing to read (with $ErrorActionPreference
+    # Stop, Select-String on a missing file would end the script even with -ErrorAction SilentlyContinue).
+    $patchLog = Join-Path $out 'live-patch.log'
+    while (-not ((Test-Path $patchLog) -and (Select-String -Path $patchLog -Pattern 'patching protocol on' -Quiet))) {
         if ((Get-Date) -gt $deadline) {
             $err = Get-Content (Join-Path $out 'live-patch.err') -Raw -ErrorAction SilentlyContinue
             throw "patch server did not start (logs\live-patch.err):`n$err"

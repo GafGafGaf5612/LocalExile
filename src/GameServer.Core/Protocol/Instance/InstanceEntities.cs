@@ -661,7 +661,13 @@ public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int Share
 /// ActiveSkill → ActionTypes HASH16). Rows are GrantedEffectsPerLevel and GrantedEffectStatSetsPerLevel indices.
 /// CooldownMs is the skill's cooldown, which the client takes from the record, not from the data.</summary>
 public sealed record GrantedSkill(ushort Id, uint EffectsPerLevelRow, uint StatSetsPerLevelRow,
-    IReadOnlyList<(uint Key, int Value)>? Stats = null, uint CooldownMs = 0);
+    IReadOnlyList<(uint Key, int Value)>? Stats = null, uint CooldownMs = 0)
+{
+    /// <summary>The effect's additional stat sets (GrantedEffects StatSet2, e.g. Volcanic Fissure's), in order: each one's
+    /// GrantedEffectStatSetsPerLevel row and stats. The record must carry one of each per set, or the client misreads it
+    /// (and crashed, live 2026-10-23).</summary>
+    public IReadOnlyList<(uint Row, IReadOnlyList<(uint Key, int Value)> Stats)> ExtraStatSets { get; init; } = [];
+}
 
 /// <summary>ObjectMagicProperties rarity (flags bits 0-2 → +0x7c).</summary>
 public enum MonsterRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
@@ -792,7 +798,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     /// <summary>Actor slot 20, f0 0x40 (0x142197b10): u8 n × skill (0x142196ce0), u8 m × (u32 row, u32, u32), u32 k ×
     /// (u16 skill id, u32 c × 4 u32). Each skill: u16 id (+0x40), the GrantedEffectsPerLevel reference (0x1424a0dc0:
     /// u8 → +0x10, u32 GEPL row, then a GrantedEffectStatSetsPerLevel reference 0x1424a0990: u8 a [u8 if a], u32 GESSPL
-    /// row; then one more stat-set reference per entry of the effect's additional stat sets, none for these skills), u8
+    /// row; then one more stat-set reference per entry of the effect's additional stat sets, GrantedSkill.ExtraStatSets), u8
     /// flags (bit0 → u32 parent object id + u16), u8 support count × (GEPL reference, u32), u32, u32, u32, u8, then the
     /// skill's stats (compact count × compact key, compact value) and one such stat list per additional stat set.</summary>
     /// <summary>The Actor's index in the player object's component order (04 §3).</summary>
@@ -806,17 +812,21 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     }
 
     /// <summary>One skill record (<c>0x142196ce0</c>), as the 0x40 list and the 0x20 update carry it.</summary>
-    internal static void WriteSkillRecord(BlobWriter w, GrantedSkill s) =>
+    internal static void WriteSkillRecord(BlobWriter w, GrantedSkill s)
+    {
         w.U16(s.Id)
          .U8(0).U32(s.EffectsPerLevelRow)      // GEPL reference
-         .U8(0).U32(s.StatSetsPerLevelRow)     // its stat set
-         .U8(0)                                // flags: no parent object
+         .U8(0).U32(s.StatSetsPerLevelRow);    // its stat set
+        foreach (var (row, _) in s.ExtraStatSets) w.U8(0).U32(row);   // one more stat-set reference per additional set
+        w.U8(0)                                // flags: no parent object
          .U8(0)                                // supports
          // → skill +0xc0, +0xc4, +0xc8, +0xcc (0x141ee73d0). +0xc8 is the cooldown in ms: with it and the stat
          // virtual_total_cooldown_count the client keeps the skill's cooldown and shows it on the skill bar
          // (0x141eea6a0 creates the cooldown record only when it is not 0; live 2026-10-21).
          .U32(0).U32(0).U32(s.CooldownMs).U8(0)
          .Stats(s.Stats);                      // the skill's own stats
+        foreach (var (_, stats) in s.ExtraStatSets) w.Stats(stats);   // and one stat list per additional set
+    }
 
     /// <summary>One Life pool (0x141e6be70): u32 +0x30 current, u32 +0x10 reserved (flat), i16 +0x14 (reserved percent?),
     /// u32 +0x28, u32 +0x40. The maximum is not in the blob: the client computes it from stats (Witch level 1: life 50,
