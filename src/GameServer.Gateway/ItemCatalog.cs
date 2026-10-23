@@ -42,6 +42,10 @@ sealed class ItemCatalog
         /// <summary>BaseItemTypes ModDomain: the Mods.dat Domain its affixes come from (1 items, 2 flasks, …).</summary>
         public int ModDomain { get; init; } = 1;
 
+        /// <summary>Its ItemClasses row (-1 unknown): the worn item's weapon type the client checks skills against is this
+        /// row + 1 (11-skills.md "Weapon restrictions").</summary>
+        public int ClassRow { get; init; } = -1;
+
         public bool Supported => Components.Count > 0 && Item.CanSerialize(Components);
         /// <summary>Several of the type share one cell (a Stack component and a CurrencyItems StackSize above 1).</summary>
         public bool Stackable => MaxStack > 1;
@@ -426,6 +430,7 @@ sealed class ItemCatalog
                     Tags = new HashSet<string>([.. itemTags.GetValueOrDefault(id) ?? [],
                         .. r.GetProperty("TagsKeys").EnumerateArray().Select(k => k.GetInt32()).Where(k => k < tagIds.Count).Select(k => tagIds[k])]),
                     ModDomain = r.GetProperty("ModDomain").GetInt32(),
+                    ClassRow = r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } cr ? cr.GetInt32() : -1,
                 });
             }
         }

@@ -127,6 +127,14 @@ static class CurrencyEffects
     public static Item? Mirror(Item item) =>
         item.Corrupted || item.Mirrored || !item.Components.Contains("Mods") ? null : item with { Mirrored = true };
 
+    public const string GemcuttersPrism = "Metadata/Items/Currency/CurrencyGemQuality";
+
+    /// <summary>Gemcutter's Prism: +1% quality on a gem (active or support) that is not corrupted, up to 20%. Refused for
+    /// other items, corrupted gems or at 20%.</summary>
+    public static Item? Gemcutter(Item item) =>
+        !item.Components.Contains("SkillGem") || !item.Components.Contains("Quality") || item.Corrupted || item.Quality >= MaximumQuality ? null
+            : item with { Quality = (byte)(item.Quality + 1) };
+
     public const string OrbOfChance = "Metadata/Items/Currency/CurrencyUpgradeRandomly";
 
     /// <summary>Orb of Chance (this server's rule, not the official one): a normal weapon or armour piece becomes rare

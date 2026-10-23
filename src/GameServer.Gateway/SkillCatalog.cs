@@ -18,6 +18,46 @@ sealed class SkillCatalog(string folder = "data")
     private readonly Lazy<Tables?> _tables = new(() => Tables.Load(folder));
     private readonly StatCatalog _stats = new(folder);
 
+    /// <summary>Each GrantedEffects row's additional stat sets (StatSet2), when it has any.</summary>
+    private readonly Lazy<Dictionary<int, int[]>> _extraSets = new(() =>
+    {
+        var result = new Dictionary<int, int[]>();
+        string path = Path.Combine(folder, "tables", "GrantedEffects.json");
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        int row = 0;
+        foreach (var r in d.RootElement.EnumerateArray())
+        {
+            if (r.TryGetProperty("StatSet2", out var v) && v.ValueKind == JsonValueKind.Array && v.GetArrayLength() > 0)
+                result[row] = [.. v.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number).Select(x => x.GetInt32())];
+            row++;
+        }
+        return result;
+    });
+
+    /// <summary>A skill with its effect's additional stat sets: each set's per-level row at this level (the closest one
+    /// otherwise) and its stats (implicit 1s, constants, then the level's stats). Null when a set has no row at all: a
+    /// record without it would make the client misread it.</summary>
+    GrantedSkill? WithExtraSets(GrantedSkill skill, Tables t, int effectRow, int level)
+    {
+        if (!_extraSets.Value.TryGetValue(effectRow, out var sets)) return skill;
+        var extra = new List<(uint, IReadOnlyList<(uint, int)>)>();
+        foreach (int set in sets)
+        {
+            int row = PickLevel(t.StatSetsPerLevel, set, level);
+            if (row < 0) return null;
+            var stats = new Dictionary<uint, int>();
+            if (set >= 0 && set < t.StatSetBase.Count)
+            {
+                foreach (int s in t.StatSetBase[set].Implicit) stats[(uint)s + 1] = 1;
+                foreach (var (s, v) in t.StatSetBase[set].Constant) stats[(uint)s + 1] = v;
+            }
+            foreach (var (s, v) in t.StatSetLevelStats[row]) stats[(uint)s + 1] = stats.GetValueOrDefault((uint)s + 1) + v;
+            extra.Add(((uint)row, [.. stats.Select(kv => (kv.Key, kv.Value))]));
+        }
+        return skill with { ExtraStatSets = extra };
+    }
+
     /// <summary>Skill ids for the server's skills from <see cref="FirstSkillId"/> on, skipping every id an ActionType's
     /// HASH16 masks to (0x3fff): 0x0106, 0x010a and 0x0114 are basic actions in 3.29.3b, and a gem skill numbered after
     /// the default attack would replace one.</summary>
@@ -186,13 +226,21 @@ sealed class SkillCatalog(string folder = "data")
     /// Righteous Fire). An instant skill is used while moving, without an action of its own.</summary>
     public bool IsInstant(int effectRow) => _instantEffects.Value.Contains(effectRow);
 
-    private readonly Lazy<HashSet<int>> _instantEffects = new(() =>
+    /// <summary>A movement skill (ActiveSkillType Movement: Leap Slam, Whirling Blades, Flame Dash …): the player ends
+    /// where it was aimed.</summary>
+    public bool IsMovement(int effectRow) => _movementEffects.Value.Contains(effectRow);
+
+    private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
+    private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
+
+    /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>
+    static HashSet<int> EffectsOfType(string folder, string typeId)
     {
         string TablePath(string name) => Path.Combine(folder, "tables", name + ".json");
         if (!File.Exists(TablePath("GrantedEffects")) || !File.Exists(TablePath("ActiveSkills")) || !File.Exists(TablePath("ActiveSkillType"))) return [];
         using var types = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkillType")));
         int instant = types.RootElement.EnumerateArray().Select((r, i) => (Id: r.GetProperty("Id").GetString(), i))
-            .FirstOrDefault(t => t.Id == "Instant", (null, -1)).i;
+            .FirstOrDefault(t => t.Id == typeId, (null, -1)).i;
         if (instant < 0) return [];
         using var active = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkills")));
         var instantSkills = active.RootElement.EnumerateArray().Select((r, i) => (r, i))
@@ -203,6 +251,21 @@ sealed class SkillCatalog(string folder = "data")
         return [.. effects.RootElement.EnumerateArray().Select((r, i) => (r, i))
             .Where(e => e.r.TryGetProperty("ActiveSkill", out var a) && a.ValueKind == JsonValueKind.Number && instantSkills.Contains(a.GetInt32()))
             .Select(e => e.i)];
+    }
+
+    /// <summary>A weapon base's WeaponTypes row by its BaseItemTypes row: attack time (ms), physical damage, range.</summary>
+    public (int AttackMs, int Min, int Max, int Range)? WeaponBase(int baseRow) => _weaponTypes.Value.TryGetValue(baseRow, out var w) ? w : null;
+
+    private readonly Lazy<Dictionary<int, (int, int, int, int)>> _weaponTypes = new(() =>
+    {
+        string path = Path.Combine(folder, "tables", "WeaponTypes.json");
+        var result = new Dictionary<int, (int, int, int, int)>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+            result.TryAdd(r.GetProperty("BaseItemTypesKey").GetInt32(), (r.GetProperty("Speed").GetInt32(), r.GetProperty("DamageMin").GetInt32(),
+                r.GetProperty("DamageMax").GetInt32(), r.GetProperty("RangeMax").GetInt32()));
+        return result;
     });
 
     /// <summary>A projectile type for an effect: the Projectiles.dat row whose Id is Metadata/Projectiles/(GrantedEffects
@@ -243,6 +306,10 @@ sealed class SkillCatalog(string folder = "data")
         return best >= 0 ? best : low;
     }
 
+    /// <summary>A GrantedEffects row's cast time in ms (CastTime; 0 unknown).</summary>
+    public int CastTimeMs(int effectRow) =>
+        _tables.Value is { } t && effectRow >= 0 && effectRow < t.Effects.Count ? t.Effects[effectRow].CastTime : 0;
+
     public GrantedSkill? Find(ushort id, string effect, int level, IReadOnlyList<(uint, int)>? stats = null)
     {
         if (_tables.Value is not { } t)
@@ -250,7 +317,7 @@ sealed class SkillCatalog(string folder = "data")
         if (!t.EffectRows.TryGetValue(effect, out var ge)) return null;
         int gepl = t.PerLevel.FindIndex(r => r.Effect == ge.Row && r.Level == level);
         int gesspl = t.StatSetsPerLevel.FindIndex(r => r.StatSet == ge.StatSet && r.Level == level);
-        return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms);
+        return gepl < 0 || gesspl < 0 ? null : WithExtraSets(new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms), t, ge.Row, level);
     }
 
     /// <summary>
@@ -263,7 +330,7 @@ sealed class SkillCatalog(string folder = "data")
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count || t.StatSets[effectRow] < 0) return null;
         int statSet = t.StatSets[effectRow];
         int gepl = PickLevel(t.PerLevel, effectRow, level), gesspl = PickLevel(t.StatSetsPerLevel, statSet, level);
-        return gepl < 0 || gesspl < 0 ? null : new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms);
+        return gepl < 0 || gesspl < 0 ? null : WithExtraSets(new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms), t, effectRow, level);
     }
 
     /// <summary>The player's default skills: the default attack, with the class's unarmed weapon stats.</summary>

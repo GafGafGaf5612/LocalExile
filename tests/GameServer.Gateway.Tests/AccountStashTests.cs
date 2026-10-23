@@ -42,6 +42,44 @@ public class AccountStashTests : IDisposable
     }
 
     [Fact]
+    public void A_premium_tabs_name_and_colour_are_kept_across_a_restart_and_normal_tabs_refuse_them()
+    {
+        var stash = Open();
+        int premium = stash.Records(null).First(t => t.Type == 1).Index, normal = stash.Records(null).First(t => t.Type == 0).Index;
+        Assert.True(stash.Rename(premium, " Maps "));
+        Assert.True(stash.SetColour(premium, 0x00ff8000));
+        Assert.False(stash.Rename(normal, "Nope"));
+        Assert.False(stash.SetColour(normal, 1));
+        Restart();
+        var tab = Open().Records(null).First(t => t.Index == premium);
+        Assert.Equal("Maps", tab.Name);
+        Assert.Equal(0x00ff8000u, tab.U2c);
+    }
+
+    [Fact]
+    public void The_tab_settings_rename_and_colour_messages_are_read()
+    {
+        var rename = new GameServer.Core.Protocol.Login.LoginWriter().U16(0xcd).U8(0).U16(3).U32(0).U32(0).WStr("Карты").ToArray();
+        Assert.Equal(rename.Length, InstanceStash.RenameTabLength(rename));
+        Assert.Equal(((byte)0, (ushort)3, "Карты"), InstanceStash.ReadRenameTab(rename));
+        byte[] colour = [0x00, 0xce, 0x01, 0x00, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x11, 0x22, 0x33];
+        Assert.Equal(((byte)1, (ushort)2, 0x00112233u), InstanceStash.ReadColourTab(colour));
+    }
+
+    [Fact]
+    public void The_tab_order_the_panel_sends_is_kept_across_a_restart()
+    {
+        var stash = Open();
+        Assert.Equal(2, stash.SetPositions([(0, 1), (1, 0)]));
+        Assert.Equal(0, stash.SetPositions([(0, 1)]));
+        Restart();
+        var positions = Open().Records(null).ToDictionary(t => t.Index, t => t.Position);
+        Assert.Equal(1, positions[0]);
+        Assert.Equal(0, positions[1]);
+        Assert.Equal(2, positions[2]);
+    }
+
+    [Fact]
     public void Gold_changed_concurrently_is_saved_as_it_ends()
     {
         var stash = Open();

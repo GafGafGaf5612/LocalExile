@@ -9,8 +9,9 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class PlayerInventories
 {
+    public const byte Weapon2 = 14, Offhand2 = 15;
     public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
-        Boots = 9, Flask = 11, MapDevice = 13, Cursor = InstanceInventories.CursorRow;
+        Boots = 9, Flask = 11, MapDevice = 13, Weapon2 = 14, Offhand2 = 15, Cursor = InstanceInventories.CursorRow;
 
     private static readonly ConcurrentDictionary<string, PlayerInventories> ByCharacter = new(StringComparer.OrdinalIgnoreCase);
 
@@ -351,6 +352,41 @@ sealed class PlayerInventories
                 .SelectMany(i => i.Item.Sockets.Select((s, socket) => (i.Id, socket, s.Gem)).Where(g => g.Gem is not null).Select(g => (g.Id, g.socket, g.Gem!)))];
     }
 
+    /// <summary>
+    /// Changes the gems socketed in the <see cref="GemExperienceRows"/> items in one step (a gem moved meanwhile is never
+    /// changed with another's values), without saving it now (like <see cref="ChangeUnsaved"/>). <paramref name="change"/>
+    /// gets the item's id and the gem and returns the changed gem, or null to keep it. Returns each changed item once, as
+    /// it is now, with its row and each changed gem before and after. Only for persistent values of a socketed gem, its
+    /// experience.
+    /// </summary>
+    public IReadOnlyList<(byte Row, InventoryItem Item, IReadOnlyList<(Item Before, Item After)> Gems)> ChangeSocketedGems(
+        Func<uint, Item, Item?> change)
+    {
+        var changed = new List<(byte, InventoryItem, IReadOnlyList<(Item, Item)>)>();
+        lock (_lock)
+            foreach (var row in GemExperienceRows)
+            {
+                if (!_items.TryGetValue(row, out var items)) continue;
+                for (int at = 0; at < items.Count; at++)
+                {
+                    if (items[at].Item.Sockets is not { Count: > 0 } held) continue;
+                    var sockets = held.ToArray();
+                    var gems = new List<(Item, Item)>();
+                    for (int socket = 0; socket < sockets.Length; socket++)
+                        if (sockets[socket].Gem is { } gem && change(items[at].Id, gem) is { } after)
+                        {
+                            gems.Add((gem, after));
+                            sockets[socket] = sockets[socket] with { Gem = after };
+                        }
+                    if (gems.Count == 0) continue;
+                    _unsaved = true;
+                    items[at] = items[at] with { Item = items[at].Item with { Sockets = sockets } };
+                    changed.Add((row, items[at], gems));
+                }
+            }
+        return changed;
+    }
+
     static readonly string[] OneHand = ["Claw", "Dagger", "Wand", "One Hand Sword", "Thrusting One Hand Sword", "One Hand Axe", "One Hand Mace", "Sceptre", "Rune Dagger"];
     static readonly string[] TwoHand = ["Bow", "Staff", "Two Hand Sword", "Two Hand Axe", "Two Hand Mace", "Warstaff", "FishingRod"];
 
@@ -379,6 +415,9 @@ sealed class PlayerInventories
         [1] = 2, [2] = 0, [3] = 1, [4] = 4, [5] = 11, [6] = 8, [7] = 9, [8] = 5, [9] = 6, [10] = 10,
     };
 
+    /// <summary>The rows whose socketed gems gain experience: the visible equipment rows and the second weapon set.</summary>
+    static readonly byte[] GemExperienceRows = [.. VisibleSlots.Keys.Order(), Weapon2, Offhand2];
+
     public static bool ShowsOnModel(byte row) => VisibleSlots.ContainsKey(row);
 
     /// <summary>What the player's model wears: every visible equipment slot (Weapon1, Offhand1, armour …), with its item
@@ -388,6 +427,25 @@ sealed class PlayerInventories
         lock (_lock)
             return [.. VisibleSlots.OrderBy(e => e.Value).Select(e =>
                 _items.TryGetValue(e.Key, out var l) && l.Count > 0 && look(l[0].Item) is { } v ? v with { Slot = e.Value } : VisibleItem.Empty(e.Value))];
+    }
+
+    /// <summary>Which weapon set is in the hands: 0 the first, 1 the second (the 0x21 / 0xde flag the panel's I / II tab
+    /// shows). Kept for the character while the server runs (C→S 0xdd, 13-items.md "Weapon swap").</summary>
+    public byte WeaponSet { get; set; }
+
+    /// <summary>The weapon swap: the hands' rows (Weapon1, Offhand1) and the other set's (Weapon2, Offhand2, rows 14, 15)
+    /// trade their items, keeping ids and cells, as the client shows the active set in the hands' rows. Saved.</summary>
+    public void SwapWeaponSets()
+    {
+        lock (_lock)
+            foreach (var (hand, other) in new[] { (Weapon1, Weapon2), (Offhand1, Offhand2) })
+            {
+                var inHand = _items.TryGetValue(hand, out var a) ? a : [];
+                var away = _items.TryGetValue(other, out var b) ? b : [];
+                _items[hand] = away;
+                _items[other] = inHand;
+            }
+        Persist();
     }
 
     /// <summary>A free cell for an item of this size in a grid inventory, row by row; null when it is full.</summary>
