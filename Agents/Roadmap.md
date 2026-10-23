@@ -56,18 +56,23 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done so far:** RNG, tile hash, extra-terrain-feature rolls (no area stats), topology pick, one-room fixed
   layouts: Lioneye's Watch matches tile for tile (re/011 §3b–3c); `.tgr` graphs to the finished grid (re/011 §3d–3g):
   The Twilight Strand seed 1 and The Coast seed 1 match tile for tile (hashes 266153788, 695393902) and every draw
-  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 35 of 561 logged seeds.
+  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 63 of 710 logged seeds.
   Multi-node `.dgr` dungeons (`DungeonLayout.cs`, `DungeonTiler`, re/011 §3c2): The Ship Graveyard Cave seed 1
   (hash 3341726258) and the Prison `1_1_7_1` seed 1 (1542354689, two more seeds by the oracle) match tile for tile;
-  composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863).
-- **Start:** the `.dgr` oracle stops (re/011 §3c2, §3c3): `.tgr` subgraphs on a shared map (117, MapWorldsGorge; the
-  tile graph generator needs the view origin `DungeonTiler` now has), overlap tiles (`0x1420f5fb0` fallbacks, 28),
-  182 seeds that run to the end with another hash (each needs a trace), door tiles without RoomOverlap (19), numbered special rooms (15),
-  DungeonFillRoomHeightOverride (10), node kinds (80 "node …": the extra room pool `0x141d8b750` for the
+  composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863); The Slave Pens `1_5_1`
+  seed 1 (3415378844, with the overlap tile fallbacks of `0x1420f5fb0`).
+- **Start:** the seed-1 traces of 186 areas are recorded (`data/walkability/<area>_seed1.gen.json`): run `levelgen
+  generate <area> 1 <trace>` and take the first difference. Known next: `1_5_7` draw #1754 (a shared slot at (14, 12)
+  whose wall-side corners the client keys at the floor's heights, H[0,1,1,0], where the port has 0: before the merge
+  `0x1420ee240`, which matches); `1_5_2` #2474 (a fill pick, `0x141febd7f`); `1_5_5` #285. Then the `.dgr` oracle
+  stops (re/011 §8): `.tgr` subgraphs on a shared map (118, MapWorldsGorge; the
+  tile graph generator needs the view origin `DungeonTiler` now has),
+  258 seeds that run to the end with another hash, door tiles without RoomOverlap (23), numbered special rooms (25),
+  DungeonFillRoomHeightOverride (12), node kinds (115 "node …": the extra room pool `0x141d8b750` for the
   Labyrinth's `secret` rooms, description passes, template nodes `0x142107840`, orientation 9), the outer buffer of
   an inner subgraph (`1_2_14_2`),
-  `1_1_7_2` seed 287067221 (a mismatch: needs a trace); then the parts no trace has exercised yet (`0x142108dc0`, numbered special rooms, the fallbacks of
-  `0x1420f5fb0`, door tiles without RoomOverlap), each checked with a trace of a dungeon
+  `1_1_7_2` seed 287067221 (a mismatch: needs a trace); then the parts no trace has exercised yet (`0x142108dc0`, numbered special rooms,
+  door tiles without RoomOverlap), each checked with a trace of a dungeon
   that needs it (`1_1_7_2` `prisonmain_1_1.dgr`, the Labyrinth); then more seeds and areas, each checked with a trace (`live.ps1 -Walkmaps`, then
   `scripts/re/levelgen generate <area> <seed> <trace>`): Strand seed 2 needs overlay pass 2 (`0x141fffb70` after the
   fill); seeds 3 and 7 fail edge tiling, which the client answers with "Retrying with seed" (`0x14204d820`, find the

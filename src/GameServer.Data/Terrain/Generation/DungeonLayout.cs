@@ -1076,8 +1076,9 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
             throw new InvalidOperationException($"Non-feature node out-of-bounds at room ({x}, {y})");
         if (map[x, y] == 1) map[x, y] = 0;
         if (map[x, y] != 0) throw new InvalidOperationException($"Non-feature node overlapping another node at room ({x}, {y})");
-        // 0x142106db0: param_1[4] when no slot has an edge; taken to be rooms.et.
-        string type = n.Slots.FirstOrDefault(e => e is not null)?.Type ?? DungeonRoomSet.Rooms;
+        // 0x142106db0: the first slot edge whose type is not the default (layout +0x20, rooms.et), else the default.
+        string type = n.Slots.FirstOrDefault(e => e is not null && !e.Type.Equals(DungeonRoomSet.Rooms, StringComparison.OrdinalIgnoreCase))?.Type ??
+            DungeonRoomSet.Rooms;
         var sizes = roomSet.Sizes(type).ToList();
         if (SizeDescription(n) is { } only) sizes = [.. sizes.Where(s => s.W == only.W && s.H == only.H)];
         if (sizes.Count == 0) throw new InvalidOperationException($"No rooms found for non-feature node with edge type {type} at room ({x}, {y})");
@@ -1123,8 +1124,21 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         edges.Any(e => e.Dungeon!.Accessible) || n.Descriptions.Any(d => d is "accessible" or "default" ||
             d.StartsWith("entrance", StringComparison.Ordinal) || d.StartsWith("sideentrance", StringComparison.Ordinal));
 
-    /// <summary><c>0x142003740</c> (the node room's +0x48 door type): not ported beyond rooms.et.</summary>
-    static string NodeDoorType(GraphNode n) => DungeonRoomSet.Rooms;
+    /// <summary><c>0x142003740</c> (the node room's +0x48 door type): the node's edge slots (+0x58) with an extra door
+    /// chance (+0x54), weighted by it, <c>Next(total)</c> picks one's extra door type (+0x70). With none, no draw and
+    /// the default (the client's global string, taken as rooms.et).</summary>
+    string NodeDoorType(GraphNode n)
+    {
+        var slots = n.Slots.Where(e => e?.Dungeon is { ExtraDoor: not 0 }).Select(e => e!.Dungeon!).ToList();
+        if (slots.Count == 0) return DungeonRoomSet.Rooms;
+        int r = (int)rng.Next((uint)slots.Sum(d => d.ExtraDoor));
+        foreach (var d in slots)
+        {
+            if (r < d.ExtraDoor) return d.ExtraDoorType;
+            r -= d.ExtraDoor;
+        }
+        return slots[^1].ExtraDoorType;
+    }
 
     /// <summary><c>0x142105a70</c>: the room set's (room, orientation) entries of the node's tag whose exits hold the
     /// node's edges (<c>0x142104990</c> → <c>0x141ff8ff0</c>); of those, the ones in the node's orientation (any for

@@ -793,18 +793,136 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     }
 
     /// <summary><c>0x1420f5fb0</c>: the tiles of the key and tag, <c>Next(total weight)</c>, placed at the slot's height
-    /// and then set to it (<c>0x141d82d00</c>, vertices included).
-    /// Without a direct match the client tries moved edge points and flattened heights (<c>0x1420f69c0</c>,
-    /// <c>0x1420f6ab0</c>), not ported.</summary>
-    bool PlaceOverlap(TileKey key, string tag, int x, int y, int height)
+    /// and then set to it (<c>0x141d82d00</c>, vertices included). Without a direct match, in order until one is found:
+    /// the movable sides' points go to the middle one side at a time (<c>0x1420f69c0</c>; a side is movable when its
+    /// edge is not virtual (.et flag 4) nor N2 (flag 8), its point is not the middle (3 × length / 2) and the slot
+    /// beyond it, at y − size, x + w, y + h or x − size (.et +0x4b), is a shared border slot (master +0x162 taken as
+    /// clear)); then, when the key has a height, from the key again: one corner whose ground lacks flag 1 at a time at
+    /// height 0 (<c>0x1420f6ab0</c>), the points again, both again; all those corners at 0, the points again; and when
+    /// the other corners have one height, all at 0 with that height added to the tile's. A tile placed with moved
+    /// points (or for a neighbour) is forced; then the neighbours across the moved sides take the middle point too
+    /// (<c>0x1420f5b20</c>). <paramref name="adjacent"/> is that call's flag: no point moves, no neighbours.
+    /// Not ported: the descriptions' objects (<c>0x141d83f10</c>) and the edge-type records of <c>0x1420f8df0</c>.</summary>
+    bool PlaceOverlap(TileKey key, string tag, int x, int y, int height, bool adjacent = false)
     {
-        var list = _store.Candidates(tag, key);
-        if (list.Count == 0)
-            throw new NotSupportedException($"overlap tile at ({x}, {y}) tag '{tag}' {key}: the fallbacks of 0x1420f5fb0 are not ported");
-        var (tile, orientation) = Weighted(list, (int)rng.Next((uint)list.Sum(c => c.Weight)));
-        _grid.Place(tile, orientation, x, y, (short)height);
+        var work = key.Clone();
+        var moved = new List<int>();
+        var found = _store.Candidates(tag, work);
+        if (found.Count == 0)
+        {
+            byte[] middle = [(byte)(key.Width * 3 >> 1), (byte)(key.Height * 3 >> 1)];
+            var movable = new List<int>();
+            for (int i = 0; i < 4; i++)
+            {
+                if (files.Edge(key.Edges[i]) is not { } et || et.Virtual || et.N2 || key.PointA[i] == middle[i & 1]) continue;
+                var (nx, ny) = Beyond(key, i, x, y, et.Size);
+                if ((nx, ny) == (x, y) || !_borders.ContainsKey((nx, ny))) continue;
+                movable.Add(i);
+            }
+            bool canMove = movable.Count != 0 && !adjacent;
+            bool Flag1(string? g) => g is null || ((files.Ground(g)?.Flags ?? 0) & 1) != 0;
+            bool MovePoints()
+            {
+                foreach (int i in movable)
+                {
+                    work.PointA[i] = middle[i & 1];
+                    moved.Add(i);
+                    if ((found = _store.Candidates(tag, work)).Count != 0) return true;
+                }
+                return false;
+            }
+            bool FlattenOne()
+            {
+                for (int c = 0; c < 4; c++)
+                {
+                    if (Flag1(work.Grounds[c])) continue;
+                    var old = work.Heights[c];
+                    work.Heights[c] = 0;
+                    if ((found = _store.Candidates(tag, work)).Count != 0) return true;
+                    work.Heights[c] = old;
+                }
+                return false;
+            }
+            if (canMove) MovePoints();
+            if (found.Count == 0 && key.Heights.Any(h => h != 0))
+            {
+                work = key.Clone();
+                moved.Clear();
+                bool ok = FlattenOne();
+                if (!ok && canMove)
+                {
+                    ok = MovePoints() || FlattenOne();
+                    if (!ok)
+                    {
+                        work = key.Clone();
+                        moved.Clear();
+                    }
+                }
+                if (!ok)
+                {
+                    var heights = new SortedSet<sbyte>();
+                    for (int c = 0; c < 4; c++)
+                        if (Flag1(work.Grounds[c])) heights.Add(work.Heights[c]);
+                        else work.Heights[c] = 0;
+                    found = _store.Candidates(tag, work);
+                    if (found.Count == 0 && canMove) MovePoints();
+                    if (found.Count == 0 && heights.Count == 1)
+                    {
+                        Array.Clear(work.Heights);
+                        height += heights.Min;
+                        found = _store.Candidates(tag, work);
+                    }
+                }
+            }
+            if (found.Count == 0) return false;
+        }
+        var (tile, orientation) = Weighted(found, (int)rng.Next((uint)found.Sum(c => c.Weight)));
+        _grid.Place(tile, orientation, x, y, (short)height, force: moved.Count != 0 || adjacent);
         _grid.SetHeight(x, y, (short)height);
+        if (!adjacent) Adjacent(work, x, y, moved);
         return true;
+    }
+
+    /// <summary>The slot beyond side i of a key at (x, y) (<c>0x1420f5fb0</c>, <c>0x1420f5b20</c>): above and to the
+    /// left by the edge's size, to the right and below by the key's.</summary>
+    static (int X, int Y) Beyond(TileKey key, int side, int x, int y, int size) => side switch
+    {
+        0 => (x, y - size),
+        1 => (x + key.Width, y),
+        2 => (x, y + key.Height),
+        _ => (x - size, y),
+    };
+
+    /// <summary><c>0x1420f5b20</c>: for each side whose point moved, the slot beyond it: a shared border slot not
+    /// placed untagged (flag 0x20) takes the middle point on its facing side when that side has the same edge and
+    /// length; else a placed tile there whose turned key has them and another point is placed again with the middle
+    /// point (grounds left out of keys dropped, its tag, its height, forced, <see cref="PlaceOverlap"/> with the flag),
+    /// or "Could not find matching adjacent tile".</summary>
+    void Adjacent(TileKey key, int x, int y, List<int> moved)
+    {
+        foreach (int i in moved)
+        {
+            if (key.Edges[i] is not { } edge) continue;
+            var (nx, ny) = Beyond(key, i, x, y, files.Edge(edge)?.Size ?? 0);
+            if (!_grid.Inside(nx, ny)) continue;
+            int facing = (i + 2) & 3, length = (i & 1) == 0 ? key.Width : key.Height;
+            byte middle = (byte)(length * 3 >> 1);
+            bool Same(TileKey k) => ((facing & 1) == 0 ? k.Width : k.Height) == length &&
+                string.Equals(k.Edges[facing], edge, StringComparison.OrdinalIgnoreCase);
+            if (_borders.TryGetValue((nx, ny), out var b) && (b.Flags & 0x20) == 0)
+            {
+                if (Same(b.Key)) b.Key.PointA[facing] = middle;
+                continue;
+            }
+            if (_grid[nx, ny] is not { } e) continue;
+            var turned = e.Tile.Key.Rotate(e.Orientation);
+            if (!Same(turned) || turned.PointA[facing] == middle) continue;
+            for (int c = 0; c < 4; c++)
+                if (files.Ground(turned.Grounds[c]) is { IgnoredInKeys: true }) turned.Grounds[c] = null;
+            turned.PointA[facing] = middle;
+            if (!PlaceOverlap(turned, e.Tile.Tag, nx, ny, e.HeightOffset, adjacent: true))
+                throw new InvalidOperationException($"Could not find matching adjacent tile at ({nx}, {ny})");
+        }
     }
 
     /// <summary><c>0x1420ee240</c>: the stored key with the new slot's parts where the new room covers them. A corner

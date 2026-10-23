@@ -159,7 +159,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   line (any slot, read by `0x142a0e2a0`: `k`, or `s` in `shrine_1_1.arm`), then 2(w + h) exits clockwise (top left → right, right top → bottom, bottom right → left, left bottom → top):
   door type, height, chirality. Per door type a size table (`0x141ff5760` / `0x141ff6350`, the fill's sizes: the
   weights of the rooms filed under the type, at the sizes some room allows: a room that is not unique, room data +6,
-  and, for rooms.et, whose exits all have a door at height 0); per tag
+  and, for rooms.et, whose exits all have a door at height 0). `0x141ff6960` files a room under each distinct door
+  type of its exits other than the default (the global string at 0x1445c0fa8, rooms.et), else under room data
+  +0x180: taken to be rooms.et for a room with a rooms.et exit and none for a room with no exits (`1_5_7`, Reliquary
+  rooms: its exitless fills, `abyss_forceblank` and `vault_blocked_01` are in no size table, 1 × 1 2100 and
+  2 × 2 2100 as the trace, not 2207 / 2203); per tag
   every room in every orientation of its mask (the "" list: untagged rooms); per size every room that is not unique
   and not of a special tag (shrine, mission, stonecircle, preunique, injectors), in every orientation that gives that
   size. Turning exits (`0x141ff2ca0`, `0x141d75a50`): exit i → (j + a·w + b·h) mod 2(w + h), a = 0 0 1 1 1 1 2 2,
@@ -206,8 +210,14 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   `Next(total)`, the anchor (`0x1421062e0`, graph orientation), and once more when a side neighbour holds that room
   (`0x142108920`). Orientation 9 (`0x142104990`'s first branch: the slot edges sorted by the direction to their next
   point, `0x141ff81b0`) is not ported.
-- **Untagged nodes** (`0x142107130`): blank kind 3; its sizes from the first slot edge's type (`roomSet.Sizes`,
-  `0x142106db0`, "size:" description filter `0x142127f90`), `Next(total)`, anchored at the graph-oriented corner (not
+- **Node door type** (`0x142003740`, after the room pick of `0x142106b00`, and in `0x142107130` once a blank's
+  rectangle fits): the node's four edge slots (+0x58) with an extra door % (+0x54) are weighted by it, `Next(total)`
+  picks one, and its extra door type (+0x70) becomes the room's +0x48 type; with none, no draw and the default
+  (rooms.et). The room's extra door chance (+0x10) is the largest of the slots' +0x54. Missing until 2026-10-23
+  (session 3o): every `.dgr` whose node edges had an extra door % lost the draw (Act 5, Act 10 and others).
+- **Untagged nodes** (`0x142107130`): blank kind 3; its sizes from the first slot edge whose type is not the
+  default rooms.et (layout +0x20), else rooms.et (`roomSet.Sizes`, `0x142106db0`; the port took the first slot's
+  type until 2026-10-23, which with the node door type draw broke the Templar Courts `1_5_4`, "size:" description filter `0x142127f90`), `Next(total)`, anchored at the graph-oriented corner (not
   clamped); the rectangle must be free cells with no other node's cell (`0x1421069d0` → `0x142133340`), else that
   size is dropped and the pick redrawn.
 - **Special rooms** (room data tags starting "special": .arm flag +8, number after "special" at +4 else −1, chance +5
@@ -269,9 +279,26 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    (`0x1420ee900`); then the key's heights are made to start at 0.
 3. **Shared slots** (`0x1420f6b70`, by x then y): without tags and with a plain key (`0x1420ee9e0`) they go to the
    fill; else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
-   store (`0x1420f5fb0`: `Next(total weight)`; its fallbacks for keys without a match, `0x1420f69c0` / `0x1420f6ab0`,
-   are not ported). A 1 × 1 slot placed with tag "door", and an untagged shared tile with a 3 × 3 or passage-shaped
+   store (`0x1420f5fb0`: `Next(total weight)`). A 1 × 1 slot placed with tag "door", and an untagged shared tile with a 3 × 3 or passage-shaped
    key (end of `0x1420f6b70`), become doorways (`0x1420edf80`; non-1 × 1 ones apart).
+   **Without a match** `0x1420f5fb0` tries, in order, until the store (`0x141d81f70`) has tiles:
+   - the movable sides' points moved to the middle (3 × length / 2), one side at a time and cumulatively
+     (`0x1420f69c0`). A side is movable when it has an edge that is not virtual (.et +0x48 flag 4) nor N2 (flag 8),
+     its point A (key +0x46) is not the middle, and the slot beyond it is a shared slot: at (x, y − size),
+     (x + w, y), (x, y + h), (x − size, y) for top, right, bottom, left, size = .et +0x4b (a size of 0 above or to the
+     left means no slot; master +0x162 set would drop the shared-slot test, taken as clear);
+   - when the key has any height, from the key again: one corner whose ground is set and lacks .gt flag 1 at height 0
+     at a time (`0x1420f6ab0`); then the points, then the corners once more; failing all, the key again;
+   - every such corner at 0 at once (the others keep theirs), then the points;
+   - when the remaining corners have one height, all corners at 0 and that height added to the tile's.
+
+   A tile placed with moved points is forced (`0x141ffb870` flag: grounds forced); then `0x1420f5b20` visits the
+   slot beyond each moved side: a shared slot not placed untagged (flag 0x20) whose facing side has the same edge and
+   length takes the middle point there; else a placed tile there (its turned key, `0x141d80480`) with that edge and
+   length and another point is placed again (grounds left out of keys dropped, the middle point, its tag and height,
+   `0x1420f5fb0` with the flag that stops the point moves and this step), or "Could not find matching adjacent tile".
+   Not ported: the description objects (`0x141d83f10`) and `0x1420f8df0` (records of master +0x218's edge types
+   that 1 to 3 of the key's edges have, tiler +0x40).
 3b. **Door tiles** (TileSet has "door" tiles, tiler +0x38; with RoomOverlap): `0x1420ed9f0` marks each room's exits
    (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots; `0x1420f4010`: per doorway the orientation, the
    sizes from the store's "door" sizes for its edges, `Next(n)` + shuffle, the key resized with points at none, the
@@ -301,10 +328,8 @@ Not ported on this path (no draws in the cave): `0x1420f4010` / `0x1420f4ae0` (R
 `0x1420f1590` / `0x1420f2340` / `0x1420f3100` (unique, chest, pre-unique rooms), the overlay passes, `0x1420f8f20`.
 **The Fetid Pool `1_1_3a` seed 1 (`fetid_3.dgr`, trace recorded 2026-10-23) generates tile for tile: all 3 060
 entries, tile hash 401409093, all 910 draws up to the doodads** (directional door types, fill rooms, slot corners,
-3 × 3 outer tiles). Oracle stops on `.dgr` areas (2026-10-23): `.tgr` subgraphs (117, MapWorldsGorge's glacier
-graphs), node kinds (80 "node …": 50 the extra room pool, 26 description passes, 4 template nodes), overlap tiles
-(28, `0x1420f5fb0` fallbacks), door tiles without RoomOverlap (19), numbered special rooms (15),
-DungeonFillRoomHeightOverride (10); 182 run to the end with another hash.
+3 × 3 outer tiles). **The Slave Pens `1_5_1` seed 1 matches by tile hash (3415378844)** with the node door type and
+the overlap fallbacks. Oracle stops on `.dgr` areas: see the oracle line in §8.
 
 ## 3c3. Composite maps: subgraph nodes (`DungeonTiler.Composite`, `DungeonLayout.PlaceSubgraphNode`)
 
@@ -701,6 +726,12 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  2026-10-23 (session 3o: node door type, the untagged node's door type, exitless rooms out of the size tables, the
+  overlap fallbacks): 63 of 710 match; of the seed-1 traces 38 match by hash (was 31; new: `1_4_3_2`, The Slave Pens
+  `1_5_1`, `1_5_6`, `2_6_7_2`, `2_7_9`, `2_7_10`, `2_10_3`), none lost, no trace matches fewer draws. Most common
+  stops now: 258 run to the end with another hash, node kinds (115), glacier `.tgr` subgraphs (118), numbered special
+  rooms (25), door tiles without RoomOverlap (23), DungeonFillRoomHeightOverride (12), "Mismatching ground types"
+  (10), "Cannot combine tile keys of different sizes" (10).
   2026-10-23 (seed-1 traces of 186 areas, `data/walkability/<area>_seed1.gen.json`): 51 of 710 match (new, all
   seed 1: `1_1_4_0`, `1_2_5_2`, `1_4_3_1`, `1_4_7`, `1_5_4b`, `2_6_2`, `2_6_7_1`, `2_6_8`, `2_6_15`, `2_7_4`,
   `2_9_2`, `2_9_5`, `2_9_7`, ChayulaLeague, MapWorldsBoneCrypt); 238 run to the end with another hash; the most

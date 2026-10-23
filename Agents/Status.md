@@ -205,13 +205,14 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   The Coast seed 1 matches tile for tile and by tile hash (695393902), with Vaal side area entrances, the room
   position search, the height levels, the level painting, room vertex grounds, the walkability pass, post-unique
   tiles, the storeys stage, outer-buffer heights and the StoreyHeight scaling ported; The Northern Forest seed 1 also
-  matches by hash (2500166236); the oracle matches 35 of 561 logged seeds, three Coast seeds, The Tidal Island, The Mud
+  matches by hash (2500166236); three Coast seeds, The Tidal Island, The Mud
   Flats, The Northern Forest and The City of Sarn among them); multi-node `.dgr` dungeons are ported (The Ship Graveyard Cave seed 1
   and the Prison `1_1_7_1` seeds 1, 1898277627, 4162278830 match by tile hash, re/011 §3c2: untagged nodes, special
   rooms, door tiles, the outer ground's height fixing and the outer buffer; composite maps of `.dgr` subgraphs too:
   the Prison's second level `1_1_7_2` seeds 1, 2512127042 match, re/011 §3c3; `.tgr` subgraphs are not ported; The
   Fetid Pool `1_1_3a` seed 1 matches tile for tile (401409093) with door types with a direction, fill rooms, slot
-  corners and 3 × 3 outer tiles), the
+  corners and 3 × 3 outer tiles; The Slave Pens `1_5_1` seed 1 by hash (3415378844) with the node door types and the
+  overlap tile fallbacks; the oracle matches 63 of 710 logged seeds), the
   one-node `.dgr` path (hideouts) lacks the outer buffer, doodads are not ported, and the Gateway does not use the port
   yet.
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the

@@ -48,7 +48,9 @@ sealed class DungeonRoomSet
                 throw new NotSupportedException($"{r.Path}: room set tag '{r.Tag}' (0x141ff6960) is not ported");
             var types = r.Exits.Select(e => e.Type).Where(t => t is not null && !t.Equals(Rooms, StringComparison.OrdinalIgnoreCase))
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            if (types.Count == 0) types.Add(Rooms);
+            // Room data +0x180, taken to be rooms.et for a room with a rooms.et exit and none for a room without
+            // exits: 1_5_7's exitless fills, abyss_forceblank and vault_blocked_01 are in no size table.
+            if (types.Count == 0 && r.Exits.Any(e => e.Type is not null)) types.Add(Rooms);
             foreach (var t in types) File(r, t!, weights, allowed);
         }
         // 0x141ff6350: a door type's sizes are those with a weight that some room of the type allows.
