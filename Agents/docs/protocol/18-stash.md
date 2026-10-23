@@ -155,6 +155,11 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   EssenceStashTabLayout / FragmentStashTabLayout `FirstSlotIndex` (a currency slot also takes its `StoredItem`: the Eldritch Embers and Ichors rows keep old Ids, CurrencyCleansingFireOrb1-4 and CurrencyGreatTangleOrb1-4, SlotGroup 1 = the Atlas page; a fragment slot also takes its `StoredItems`). The
   client shows slot n as cell (n, 0) and sends it so (live 2026-10-20: a Scroll of Wisdom dropped at (54, 0), (12, 0) and
   (1, 0); its slot is 1). An item dropped anywhere on such a tab goes into its own slot, onto what is there.
+- **Crafting slot.** The currency tab's big cell in the middle is CurrencyStashTabLayout row `CraftingSlot` (no
+  `StoredItem`, `FirstSlotIndex` 28, 2 × 4). The client drops onto it as (28, 0) (live 2026-10-23, a weapon). It takes
+  any item, where dropped (`StashRules.TakesAnything`), at the item's own stack size; an item dropped on it swaps with the
+  one there; the load-time repair leaves it. Ctrl + click never puts anything there. The 14 `Generic1`–`Generic14` cells
+  under it (slots 30–34, 40–48) are not handled yet: they take nothing.
 - **Stack sizes.** Every slot of a slotted tab (currency, essence, fragment, delve, blight) holds 5000 of its item
   (`StashRules.SlotStack`, our own number since 2026-10-22; before, CurrencyItems `CurrencyTab_StackSize` for currency
   and the item's own stack elsewhere, so essences stopped at 10). The Delve (StashType 12, DelveStashTabLayout) and
