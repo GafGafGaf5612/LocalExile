@@ -1,14 +1,19 @@
 namespace GameServer.Data.Terrain.Generation;
 
 /// <summary>A tile graph (.tgr) subgraph: <c>0x14203f890</c> prepares the graph (tag choices, exist rolls, removals),
-/// then <c>0x142116600</c> lays it out (Voronoi jitter first). Ported in client order, stage by stage; the next stage
-/// that is not ported throws <see cref="NotSupportedException"/>.</summary>
+/// then <c>0x142116600</c> lays it out (Voronoi jitter first) on a view of the tile map: the primary subgraph on a map
+/// of its own, a dungeon's subgraph at its record's corner on the shared map. Ported in client order, stage by stage;
+/// the next stage that is not ported throws <see cref="NotSupportedException"/>.</summary>
 sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string> notes, bool vaalSideArea,
     Action<string, TileGraph>? onStage = null)
 {
     public TileGraph Graph { get; private set; } = null!;
 
     TileGrid? _grid;
+    int _ox, _oy;
+
+    /// <summary>The subgraph's TileSet store (master +0x228), for the stages after the layout.</summary>
+    public TileStore Store { get; private set; } = null!;
 
     /// <summary>The ground <c>0x1420289a0</c> floods the unwalkable border with (the string at 0x1435c4c50).</summary>
     const string ImpassableGround = "Metadata/Terrain/impassable_ground.gt";
@@ -27,7 +32,54 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         }
     }
 
+    /// <summary>The primary subgraph on a tile map of its own: the graph's size plus the outer buffer on every side,
+    /// graph positions at the buffer; after the layout the post-unique tiles, the outer buffer and StoreyHeight.</summary>
     TileGrid Layout(string graphPath, int orientation)
+    {
+        var (_, master, fills) = Stages(graphPath, orientation, null, 0, 0, primary: true);
+        var grid = _grid!;
+        int buffer = _ox;
+        // 0x14203ece0: the TileSet's post-unique tiles.
+        PostUniqueTiles.Run(rng, grid, buffer, buffer, Graph.Width, Graph.Height, Store, notes);
+        // 0x142049d10 → 0x142044f30: per subgraph the outer ground (0x14201db80, needs the master's OuterGroundType) and
+        // the outer buffer (0x14201ffa0).
+        if (master.ContainsKey("OuterGroundType")) throw new NotSupportedException("OuterGroundType (0x14201db80) is not ported");
+        if (buffer != 0)
+            new OuterBuffer(files, rng, grid, buffer, buffer, buffer + Graph.Width, buffer + Graph.Height, Store, fills, notes).Run();
+        // 0x14204cbd0 (after the layout 0x142049d10): every tile origin with a height offset has it multiplied by the
+        // master's StoreyHeight (+0x14a, default 0), row by row (0x141d83060). Levels become the client's units here.
+        int storey = int.Parse(master.GetValueOrDefault("StoreyHeight", "0"));
+        for (int y = 0; y < grid.Height; y++)
+            for (int x = 0; x < grid.Width; x++)
+                if (grid[x, y] is { IsOrigin: true, HeightOffset: not 0 }) grid.ScaleHeight(x, y, storey);
+        // The tile grid is final here (0x1420289a0 / 0x142028870 set grounds and entry flags only); the doodads
+        // (0x1420425d0) are not ported, as for the towns.
+        return grid;
+    }
+
+    /// <summary><c>0x14203f890</c> for a subgraph on a shared tile map (a dungeon's graph node, <c>0x14204f030</c>): the
+    /// layout on the view at (<paramref name="x"/>, <paramref name="y"/>) of the graph's size. Map +0x10 (ground checks)
+    /// goes on first. The walkability pass runs for the primary subgraphs and for a master that sets CountAsPrimary
+    /// (taken to be +0x164). The post-unique tiles, outer ground and buffer and StoreyHeight are the caller's
+    /// (<c>0x1420452e0</c>, <c>0x142044f30</c>, <c>0x14204cbd0</c>).</summary>
+    internal (string MasterPath, Dictionary<string, string> Master, Dictionary<string, List<(int Weight, string Path)>> Fills) Subgraph(
+        string graphPath, int orientation, TileGrid grid, int x, int y, bool primary)
+    {
+        grid.CheckGrounds = true;
+        try
+        {
+            return Stages(graphPath, orientation, grid, x, y, primary);
+        }
+        catch (NotSupportedException e) when (e is not PartialGenerationException)
+        {
+            throw new PartialGenerationException(e.Message, grid);
+        }
+    }
+
+    /// <summary><c>0x14203f890</c> → <c>0x142116600</c> on the view at (<paramref name="x"/>, <paramref name="y"/>) of
+    /// <paramref name="shared"/>, or on a grid of its own (the view at the outer buffer) when null.</summary>
+    (string MasterPath, Dictionary<string, string> Master, Dictionary<string, List<(int Weight, string Path)>> Fills) Stages(
+        string graphPath, int orientation, TileGrid? shared, int x, int y, bool primary)
     {
         Graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         if (orientation != 0) throw new NotSupportedException($"turning a tile graph (orientation {orientation}) is not ported");
@@ -38,18 +90,30 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
 
         string masterPath = TerrainText.Resolve(graphPath, Graph.MasterFile);
         var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
-        // The tile map has the graph's size plus the outer buffer on every side; graph positions sit at the buffer.
-        int buffer = int.Parse(master.GetValueOrDefault("OuterBufferSize", "0"));
-        var grid = new TileGrid(Graph.Width + 2 * buffer, Graph.Height + 2 * buffer) { GroundFlags = g => files.Ground(g)?.Flags ?? 0 };
+        TileGrid grid;
+        if (shared is null)
+        {
+            // The tile map has the graph's size plus the outer buffer on every side; graph positions sit at the buffer.
+            int buffer = int.Parse(master.GetValueOrDefault("OuterBufferSize", "0"));
+            grid = new TileGrid(Graph.Width + 2 * buffer, Graph.Height + 2 * buffer) { GroundFlags = g => files.Ground(g)?.Flags ?? 0 };
+            (_ox, _oy) = (buffer, buffer);
+        }
+        else
+        {
+            grid = shared;
+            (_ox, _oy) = (x, y);
+            if (x < 0 || y < 0 || x + Graph.Width > grid.Width || y + Graph.Height > grid.Height)
+                throw new InvalidOperationException($"Subgraph {graphPath} extends outside the TileMap!");
+        }
         _grid = grid;
-        var store = new TileStore(files, files.TileList(TerrainText.Resolve(masterPath, master["TileSet"])));
+        var store = Store = new TileStore(files, files.TileList(TerrainText.Resolve(masterPath, master["TileSet"])));
         var rooms = new RoomSetIndex(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
-        var special = new SpecialNodes(files, rng, notes, Graph, grid, buffer, store, rooms) { BeforeRelax = () => onStage?.Invoke("relax", Graph) };
+        var special = new SpecialNodes(files, rng, notes, Graph, grid, _ox, _oy, store, rooms) { BeforeRelax = () => onStage?.Invoke("relax", Graph) };
         special.Run();
         onStage?.Invoke("special", Graph);
         // Edges whose type is a wildcard leave the graph (0x141f4f130).
         foreach (var e in Graph.Edges.Where(e => files.Edge(e.Type)?.Wildcard == true).ToList()) Graph.RemoveEdge(e);
-        var router = new EdgeRouter(Graph, grid, buffer, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type));
+        var router = new EdgeRouter(Graph, grid, _ox, _oy, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type));
         // 0x142122d90: the special stage's failed nodes, then plain nodes with more than two edges, are exploded.
         foreach (var n in special.Failed) special.Explode(n);
         foreach (var n in special.Plain.Where(n => n.Degree > 2)) special.Explode(n);
@@ -88,24 +152,24 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         if (gftPath is not null && (files.Text(gftPath) ?? "").Contains(".et\"", StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException($"{gftPath}: fill tiles with edge types (FillTiles +0x140, 0x141feed20) are not ported");
         List<EdgePoint> edgePoints = [];
-        var tiling = new EdgeTiling(Graph, grid, buffer, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type), files, store, notes, edgePoints);
+        var tiling = new EdgeTiling(Graph, grid, _ox, _oy, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type), files, store, notes, edgePoints);
         tiling.Run();
         special.RunLonely();
         // The vertex grounds (0x142110a20, 0x142118470 heights, 0x142110d60, 0x141feed20).
-        var grounds = new GroundStages(grid, buffer, Graph.Width, Graph.Height, files);
+        var grounds = new GroundStages(grid, _ox, _oy, Graph.Width, Graph.Height, files);
         grounds.Lock();
         grounds.Flood();
-        var heights = new HeightLevels(grid, buffer, Graph.Width, Graph.Height, files);
+        var heights = new HeightLevels(grid, _ox, _oy, Graph.Width, Graph.Height, files);
         heights.Run();
-        // 0x1420289a0 (the primary subgraph; the only kind ported).
-        grounds.Walkability(ImpassableGround, files.HasTransition);
+        // 0x1420289a0: the primary subgraphs (generator +0x30 +9) and those whose master has +0x164.
+        if (primary || master.ContainsKey("CountAsPrimary")) grounds.Walkability(ImpassableGround, files.HasTransition);
         // 0x142110d60's levels: the master's +0x146 / +0x144 when set (not ported: no ported master sets them), else
         // the view's highest and lowest vertex heights, 0 without heights.
         var levels = grid.HasHeights ? heights.Range() : (0, 0);
         string? GraphGround(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
         // The graph's top ground (+0xa0) goes on the highest level, its bottom ground (+0xa8) on the lowest, its
         // default ground (+0xb0) on every vertex still without one.
-        LevelGenerator.PaintStarting?.Invoke(grid, buffer);
+        LevelGenerator.PaintStarting?.Invoke(grid, _ox, _oy, Graph.Width, Graph.Height);
         grounds.FillUnset(GraphGround(Graph.DefaultGround), GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), levels);
         grounds.EdgePoints(tiling.EdgePointTiles, edgePoints);
         grounds.Unlock();
@@ -117,35 +181,21 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         // (pre-unique rooms): none draws for the ported areas; not ported.
         // 0x141ffe240, then the first overlay pass (0x141fff1a0 with bit 1).
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
-        var overlays = new Overlays(files, rng, notes, grid, buffer, Graph.Width, Graph.Height, special, [.. special.Rooms],
+        var overlays = new Overlays(files, rng, notes, grid, _ox, _oy, Graph.Width, Graph.Height, special, [.. special.Rooms],
             int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
         foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays.Run(pass, afterFill: false);
         onStage?.Invoke("overlays", Graph);
         // 0x141fef070, then the second overlay pass (bit 2, after the fill).
         if (gftPath is null) throw new InvalidOperationException("Cannot tilise blank: Fill tile list is not specified");
-        LevelGenerator.FillStarting?.Invoke(grid, buffer);
-        new Fill(files, rng, grid, buffer, Graph.Width, Graph.Height, store, files.FillTiles(gftPath), special.Rooms, notes) { TilePlaced = painter }.Run();
+        LevelGenerator.FillStarting?.Invoke(grid, _ox, _oy, Graph.Width, Graph.Height);
+        var fills = files.FillTiles(gftPath);
+        new Fill(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store, fills, special.Rooms, notes) { TilePlaced = painter }.Run();
         foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays.Run(pass, afterFill: true);
         // 0x1421193d0 (storeys: plain tiles take their neighbours' heights), then the mirror seams (0x142025440).
-        new Storeys(grid, buffer, Graph.Width, Graph.Height, files).Run();
-        new Seams(files, rng, grid, buffer, buffer, Graph.Width, Graph.Height, store, special.Rooms, special.RoomVertices,
+        new Storeys(grid, _ox, _oy, Graph.Width, Graph.Height, files).Run();
+        new Seams(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store, special.Rooms, special.RoomVertices,
             (GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), GraphGround(Graph.DefaultGround)), notes).Run();
-        // 0x14203ece0: the TileSet's post-unique tiles.
-        PostUniqueTiles.Run(rng, grid, buffer, buffer, Graph.Width, Graph.Height, store, notes);
-        // 0x142049d10 → 0x142044f30: per subgraph the outer ground (0x14201db80, needs the master's OuterGroundType) and
-        // the outer buffer (0x14201ffa0).
-        if (master.ContainsKey("OuterGroundType")) throw new NotSupportedException("OuterGroundType (0x14201db80) is not ported");
-        if (buffer != 0)
-            new OuterBuffer(files, rng, grid, buffer, buffer, buffer + Graph.Width, buffer + Graph.Height, store, files.FillTiles(gftPath), notes).Run();
-        // 0x14204cbd0 (after the layout 0x142049d10): every tile origin with a height offset has it multiplied by the
-        // master's StoreyHeight (+0x14a, default 0), row by row (0x141d83060). Levels become the client's units here.
-        int storey = int.Parse(master.GetValueOrDefault("StoreyHeight", "0"));
-        for (int y = 0; y < grid.Height; y++)
-            for (int x = 0; x < grid.Width; x++)
-                if (grid[x, y] is { IsOrigin: true, HeightOffset: not 0 }) grid.ScaleHeight(x, y, storey);
-        // The tile grid is final here (0x1420289a0 / 0x142028870 set grounds and entry flags only); the doodads
-        // (0x1420425d0) are not ported, as for the towns.
-        return grid;
+        return (masterPath, master, fills);
     }
 
     /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws).</summary>

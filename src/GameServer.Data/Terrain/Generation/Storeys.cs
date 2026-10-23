@@ -11,12 +11,12 @@ namespace GameServer.Data.Terrain.Generation;
 /// offset plus the corner's height. One distinct height: the tile takes it (<c>0x1421174f0</c>) and is done. Then
 /// (<c>0x14211aca0</c>), until a sweep changes nothing, each plain tile not done takes the one distinct offset of the
 /// done neighbours (left, right, above, below) plain for its ground. No draws.</summary>
-sealed class Storeys(TileGrid grid, int offset, int width, int height, TerrainCache files)
+sealed class Storeys(TileGrid grid, int offsetX, int offsetY, int width, int height, TerrainCache files)
 {
     // +0x38: the entries given a height (or not plain).
     readonly bool[] _done = new bool[width * height];
 
-    TileEntry? Entry(int x, int y) => grid[x + offset, y + offset];
+    TileEntry? Entry(int x, int y) => grid[x + offsetX, y + offsetY];
 
     static (int W, int H) Size(TileEntry? e) => e is { } t ? Orientation.Size(t.Orientation, t.Tile.Width, t.Tile.Height) : (1, 1);
 
@@ -59,7 +59,7 @@ sealed class Storeys(TileGrid grid, int offset, int width, int height, TerrainCa
         var (w, h) = Size(e);
         int ox = x - (e?.OffsetX ?? 0), oy = y - (e?.OffsetY ?? 0);
         grid.MarkHeights(value != 0);
-        grid.SetHeight(ox + offset, oy + offset, (short)value);
+        grid.SetHeight(ox + offsetX, oy + offsetY, (short)value);
         MarkDone(ox, oy, w, h);
     }
 

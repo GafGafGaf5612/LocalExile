@@ -118,6 +118,9 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
 
     public string? Text(string path) => Get("text", path, TerrainText.Decode);
 
+    /// <summary>A file's bytes as they are (tables), uncached.</summary>
+    public byte[]? Raw(string path) => read(path);
+
     public GroundType? Ground(string? path) => path is null ? null : Get("gt", path, d =>
     {
         var lines = TerrainText.Lines(TerrainText.Decode(d)).Where(l => l.Trim().Length > 0).ToArray();

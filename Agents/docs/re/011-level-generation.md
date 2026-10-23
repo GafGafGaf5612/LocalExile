@@ -90,6 +90,19 @@ which is why the traces of The Twilight Strand and The Coast start with the topo
 league-mechanic chance (`0x141ea1c80`, which mixes in stats) are not ported and throw. The WorldAreas row in memory
 is the `.datc64` row, so `AreaInfo.Load` reads these offsets from the file (`RawDat`).
 
+**The extra room pool** (generator +0x40, `ExtraRoomPool.cs`). Each rolled feature that is an `ExtraTerrainFeatures`
+row (`0x141f28aa0`: by id; the Vaal side area flag, the discoverable hideout and the shrine count are not rows) goes
+into the pool in roll order (`0x141d8ae40`: count copies at the end of +0x48, the row's `.tdt` / `.tst` tiles into the
+pool's own tile store +0x90, then the linked row +0x49 as many times; the Shrine row is capped by the shrine count
++0x148, not ported). Row layout (0x66 bytes): id +0, rooms +8 (.arm), tiles +0x18, a bool +0x28, a string list
++0x29, room orientations +0x39 (8 = any), linked row +0x49 (8 bytes), WorldAreas +0x51, oversize flag +0x61 (rooms
+for telepad injectors, `0x142101e50`), an i32 +0x62. Before the records (`0x142049d10`), with rows in the pool,
++0x140 = `0x14204bfa0` of the top graph: the sum of its subgraphs' masters' +0x152 (taken to be ExtraFeatureWeight,
+default 0: no trace drew the roll below). Each subgraph whose parent is record 0 (`0x14203c900` / `0x14203f890`)
+takes its share (`0x141d8bba0`, +0x144): all rows when +0x140 is 0, else rows × weight / +0x140 plus one when
+`Next(+0x140)` falls below the remainder, and +0x140 drops by the weight. The layout's mission rooms take the rows
+(§3c2 "Mission rooms"); `0x141d8b2c0` removes a row (and counts the share down).
+
 ## 3c. Fixed layouts: one room (`LevelGenerator.cs`, `DungeonTiler`)
 
 The `.dgr` path of `0x1420452e0` is `0x14203c900`: rooms placed by `0x1421038d0`, then `0x1420f3480` tilises.
@@ -227,12 +240,30 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   size is dropped and the pick redrawn.
 - **Special rooms** (room data tags starting "special": .arm flag +8, number after "special" at +4 else −1, chance +5
   default 100; filed apart, `DungeonRoomSet.Apart`, so out of the size tables): `0x142101aa0` → `0x1420ed7a0` →
-  `0x1420ff140`: each unnumbered special room by its chance; candidates are the accessible placed rooms with a room,
-  not special, empty tag, whose size and exits fit some allowed orientation (the first, `0x1420ffb90`; exits by
-  `0x1420feff0`, door types that can end may be missing); `Next(count)` over them, `Next(1)`; the entry takes room
-  and orientation, kind 8. Not ported: numbered lists, placement over several rooms (`0x1420ffcf0`), injector rooms,
-  room data +9 / +0x13a, `0x142101e50` / `0x142102170` / `0x142103490`.
-- **End** (0x142103f31): door counts (`0x142100910`); fill rooms (`0x142108dc0`, below); the special rooms;
+  `0x1420ff140`: each unnumbered special room by its chance. `0x1420ff140` takes a list of rooms (with orientation
+  masks, 0 = any): candidates are the accessible placed rooms with a room, not special, empty tag, whose size and
+  exits fit some allowed orientation of a listed room (the first, `0x1420ffb90`; exits by `0x1420feff0`, door types
+  that can end may be missing), kept by entry index (`0x142127a50`, sorted) with each listed room that fits;
+  `Next(entries)`, then `Next(that entry's rooms)` (`0x141f4f970`, weight 1 each); the entry takes room and
+  orientation, kind 8. Not ported: numbered lists, placement over several rooms (`0x1420ffcf0`), injector rooms,
+  room data +9 / +0x13a, `0x142101e50` (oversize rows into telepad injector rooms) and `0x142103490` (shrine rooms,
+  room set +0x118, when shrines rolled).
+- **Mission rooms** (`0x142102170`, after `0x142101aa0` / `0x142101e50`): the room set's "mission" rooms by their
+  count n of 'k' slots tagged "missiontile" (room set +0x130, `0x141ff6960`, ascending; "contains no mission tiles"
+  for none), those of the layout's unit size. While the subgraph's share (a copy of pool +0x144) lasts, each pool
+  row that is not oversize offers its room (several: `Next(count)` + shuffle, the first that goes; `0x142102ed0`):
+  with mission rooms present a 3 × 3 room (room data +0x138 / +0x139, tiles) waits for a mission tile; any other
+  room of the unit size replaces a placed room through `0x1420ff140` (its row then leaves the pool, `0x141d8abb0`
+  records it by position, not ported). The waiting rooms (more than the share: shuffled and cut, `0x14212dec0`, not
+  ported) then need mission rooms: per count n in order, k = min(left, waiting / n) … waiting / n mission rooms
+  from a copy of the layout (each `Next(list)` + shuffle `0x142129610` and `0x1420ff140`); for what is left, counts
+  below n from the largest down while one places, then any count from the smallest up; when every waiting room has a
+  tile, each gets `0x14299da50(mask, Next(840))` and goes to the pool's injected list (+0, 0x28 bytes: room,
+  orientation, row), its row leaving the pool. With no full placement the last try stays and as many waiting rooms
+  as it placed tiles for go. MapWorldsGorge seed 1: Village (`ore_node.arm`, 3 × 3) into `mission_4_1.arm` (one
+  mission tile), `Next(1)`, shuffle, `Next(25)`, `Next(1)`, `Next(840)`.
+- **End** (0x142103f31): door counts (`0x142100910`); fill rooms (`0x142108dc0`, below); the special rooms,
+  oversize rows, mission rooms and shrine rooms (`0x142101aa0`, `0x142101e50`, `0x142102170`, `0x142103490`);
   reserved cells become free; fill rooms again.
 - **Fill rooms** (`0x142108dc0` → `0x142108f70` while it places one, first for grounds with .gt flag 2, then the
   rest): every placed room (those placed in the pass too) whose two corner grounds along a side are the same (room
@@ -282,7 +313,15 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    is merged (`0x1420ee240`): corners both of whose sides it covers take its ground and height (`0x1420ee460`), sides
    it covers take its edge, or, covered twice, the two edges combined by the master's EdgeCombination (.ecf,
    `0x1420ee580` / `0x1420f9880`; one edge stays, two without an entry give none) and the side is marked shared
-   (`0x1420ee900`); then the key's heights are made to start at 0.
+   (`0x1420ee900`); then the key's heights are made to start at 0. A slot tagged "missiontile" without a tile in the
+   store (`0x141d81f70`) takes an injected room of its turned size from the pool (`0x141d8b450`: `Next(count)` over
+   the injected rooms that fit, in list order): its w × h vertices take the slot height and flag 2, then
+   `0x141fe89e0` tilises the room there, column by column: each 'k' / 'f' / 's' slot whose entry is still empty takes
+   a tile of its tag and key (`Next(total)`, up to five tries until `0x141ffbbe0` lets it fit) at slot height + the
+   mission tile's; then the room's vertex grounds, and every vertex of it still without a ground takes the ground at
+   the mission tile's corner. Not ported there: plain slots (fill rooms through master FillTiles), nested mission
+   tiles, the pool's own tiles (+0x90, "Could not find matching feature tile"), the description and rectangle
+   records (`0x141d83f10`, tiler +0x18 +0x30 / +0x60).
 3. **Shared slots** (`0x1420f6b70`, by x then y): without tags and with a plain key (`0x1420ee9e0`) they go to the
    fill (with the slot's accessible bit, +0x5c bit 0); else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
    store (`0x1420f5fb0`: `Next(total weight)`). A 1 × 1 slot placed with tag "door", and an untagged shared tile with a 3 × 3 or passage-shaped
@@ -375,10 +414,24 @@ entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of 
   Ossuary `1_5_5`'s stained-glass glyphs), `0x14203e1f0` (not ported). At the end of `0x14203c900`, `0x14204f030`: every roomless entry
   with descriptions adds the record of its first description at its corner (cell × step + the view's corner;
   orientation 0 has no offset), parent = this record, orientation = this one's. After all records, last first: each
-  one's outer ground over its view and its outer buffer (`0x142044f30`); then StoreyHeight (`0x14204cbd0`, the top
-  master's).
-- Not ported: .tgr subgraphs on a shared map, turned subgraphs (orientation ≠ 0), the outer buffer of a subgraph that
-  is not the whole map, and the rest of `0x1420457f0` (`.tgr` records, oversize-feature / telepad-injector records).
+  one's outer ground over its view and its outer buffer (`0x142044f30`); then StoreyHeight (`0x14204cbd0`): every
+  origin with a height takes the StoreyHeight of the last record whose rectangle holds it (`0x141d77a90`), else
+  record 0's (map +0x104 is set per subgraph and reset to 1 there; room heights +0x58 scale by their record's).
+- **`.tgr` subgraphs** (`0x14203f890` on the shared map): the record's size is the graph's `Size` (+0x40 / +0x48)
+  plus its master's margins; the view is the record's corner inside the margins (left +0x173, top +0x170), "Subgraph
+  … extends outside the TileMap!" past the map. Map +0x104 = the master's StoreyHeight, map +0x10 (ground checks) on,
+  then the whole tile-graph pipeline (`0x142116600`, §3d–3g) on that view over the tiles already there; the
+  walkability pass (`0x1420289a0`) only for the first generator +0x30 +9 records (taken to be 1) or a master with
+  +0x164 (taken to be CountAsPrimary); the post-unique tiles and the outer stages are the driver's, as for `.dgr`
+  records (a `.tgr` record's outer ground and margins are not ported). All stages take separate x and y offsets now
+  (`SpecialNodes`, `EdgeRouter`, `EdgeTiling`, `GroundStages`, `HeightLevels`, `Overlays`, `Fill`, `Storeys`).
+  **MapWorldsGorge seed 1 (`mapglacier_01.dgr`, 14 × 14 units of 5, its "graph" node at (0, 0) 5 × 11 units taking
+  `_glacier_vertical_01.tgr`, 36 × 57) generates tile for tile: tile hash 3320701478 and all 4 778 draws up to the
+  doodads** (with the Village row in `mission_4_1.arm`, §3c2). One view vertex differs at the fill (18, 45): flag 2 in
+  the client, not in the port; heights and tiles are equal.
+- Not ported: turned subgraphs (orientation ≠ 0), the outer buffer of a subgraph that is not the whole map, the pool's
+  rows in a `.tgr` subgraph's special nodes, and the rest of `0x1420457f0` (oversize-feature / telepad-injector
+  records).
 
 ## 3d. Tile graphs (`.tgr`): first stages (`TileGraph.cs`, `FortuneVoronoi.cs`, `VoronoiCells.cs`)
 
@@ -747,6 +800,12 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  2026-10-23 (session 3r: `.tgr` subgraphs on a shared map, the extra room pool and mission rooms): 90 of 710 match
+  (was 88; new: MapWorldsGorge seed 1, MapWorldsToxicSewer seed 1); of the seed-1 traces 54 match by hash (was 52),
+  none lost, no trace matches fewer draws. The 118 glacier subgraph stops are gone: Gorge's other seeds run to the
+  end (100 with another hash, which need traces), 17 stop at shrine rooms (`0x142103490`), 4 at a breach. Most
+  common stops: 317 run to the end with another hash, node kinds (115), shrine rooms (48, which before ran to a wrong
+  hash), numbered special rooms (25), door tiles without RoomOverlap (20), DungeonFillRoomHeightOverride (12).
   2026-10-23 (session 3q: the dungeon seams run `Seams.cs` on the layout's view with the edge-point fallback): 88 of
   710 match (was 84); of the seed-1 traces 52 match by hash (was 48; new: `2_10_2`, `2_10_5`, `2_10_6`,
   `2_9_10_2`), none lost, no trace matches fewer draws.

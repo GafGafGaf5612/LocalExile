@@ -8,7 +8,7 @@ sealed class EdgeRouter
     const int Cell = 23;
     readonly TileGraph _graph;
     readonly TileGrid _grid;
-    readonly int _offset;
+    readonly int _offsetX, _offsetY;
     readonly LevelRandom _rng;
     public readonly int Width, Height;
     /// <summary>Per cell (row by row, 12 bytes in the client): cost, corridor count, occupied by a placed tile.</summary>
@@ -18,12 +18,13 @@ sealed class EdgeRouter
 
     readonly Func<GraphEdge, EdgeType> _type;
 
-    public EdgeRouter(TileGraph graph, TileGrid grid, int offset, LevelRandom rng, Func<GraphEdge, EdgeType> type)
+    public EdgeRouter(TileGraph graph, TileGrid grid, int offsetX, int offsetY, LevelRandom rng, Func<GraphEdge, EdgeType> type)
     {
         _type = type;
         _graph = graph;
         _grid = grid;
-        _offset = offset;
+        _offsetX = offsetX;
+        _offsetY = offsetY;
         _rng = rng;
         Width = graph.CellWidth / Cell;
         Height = graph.CellHeight / Cell;
@@ -54,7 +55,7 @@ sealed class EdgeRouter
         foreach (var e in _graph.Edges) Mark(e);
         for (int y = 0; y < _graph.Height; y++)
             for (int x = 0; x < _graph.Width; x++)
-                Occupied[y * Cell / Cell * Width + x * Cell / Cell] = _grid[x + _offset, y + _offset] is not null;
+                Occupied[y * Cell / Cell * Width + x * Cell / Cell] = _grid[x + _offsetX, y + _offsetY] is not null;
     }
 
     /// <summary><c>0x142125790</c>: the cost grid is prepared (<see cref="Prepare"/>), then every edge routed (<see cref="Route"/>); edges that fail are marked again and retried until a round fixes none.</summary>

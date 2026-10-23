@@ -1,19 +1,19 @@
 namespace GameServer.Data.Terrain.Generation;
 
 /// <summary>The vertex ground stages of <c>0x142116600</c> between the edge tiling and the overlays, on the map's
-/// view (the graph's area, <paramref name="offset"/> in from the map's edge): written vertices are locked, the grounds
+/// view (the graph's area, <paramref name="offsetX"/>, <paramref name="offsetY"/> in from the map's corner): written vertices are locked, the grounds
 /// of placed tiles flood out over unwritten vertices (<c>0x142110a20</c>), the vertices still unwritten take the
 /// graph's ground (<c>0x142110d60</c>), and the edge tiles of types listed with the fill tiles get their open sides
 /// filled (<c>0x141feed20</c>); then the locks go.</summary>
-sealed class GroundStages(TileGrid grid, int offset, int width, int height, TerrainCache files)
+sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, int height, TerrainCache files)
 {
     static readonly (int X, int Y)[] Dir = [(0, -1), (1, 0), (0, 1), (-1, 0)];
 
     int Flags(string? g) => files.Ground(g)?.Flags ?? 0;
 
-    ref TileCorner Corner(int x, int y) => ref grid.Corner(x + offset, y + offset);
+    ref TileCorner Corner(int x, int y) => ref grid.Corner(x + offsetX, y + offsetY);
 
-    TileEntry? Entry(int x, int y) => (uint)x < (uint)width && (uint)y < (uint)height ? grid[x + offset, y + offset] : null;
+    TileEntry? Entry(int x, int y) => (uint)x < (uint)width && (uint)y < (uint)height ? grid[x + offsetX, y + offsetY] : null;
 
     static (int W, int H) Size(TileEntry e) => Orientation.Size(e.Orientation, e.Tile.Width, e.Tile.Height);
 
@@ -76,7 +76,7 @@ sealed class GroundStages(TileGrid grid, int offset, int width, int height, Terr
             var (vx, vy, vd) = queue.Dequeue();
             ref var c = ref Corner(vx, vy);
             if ((c.Flags & 1) != 0 && !(wild && c.Ground is null)) continue;
-            grid.SetGround(vx + offset, vy + offset, ground);
+            grid.SetGround(vx + offsetX, vy + offsetY, ground);
             Push(vx, vy, vd);
             Push(vx, vy, (vd + 1) & 3);
             Push(vx, vy, (vd - 1) & 3);
@@ -140,7 +140,7 @@ sealed class GroundStages(TileGrid grid, int offset, int width, int height, Terr
             for (int x = 0; x <= width; x++)
             {
                 ref var c = ref Corner(x, y);
-                if ((c.Flags & 1) == 0 || c.Ground is null) grid.SetGround(x + offset, y + offset, ground);
+                if ((c.Flags & 1) == 0 || c.Ground is null) grid.SetGround(x + offsetX, y + offsetY, ground);
             }
     }
 
@@ -191,7 +191,7 @@ sealed class GroundStages(TileGrid grid, int offset, int width, int height, Terr
                 if (visited[i]) continue;
                 visited[i] = true;
                 ref var c = ref Corner(x, y);
-                if (c.Ground is null || (c.Flags & 1) == 0) grid.SetGround(x + offset, y + offset, impassable);
+                if (c.Ground is null || (c.Flags & 1) == 0) grid.SetGround(x + offsetX, y + offsetY, impassable);
                 Flag(x, y);
                 Step(x, y, d);
                 Step(x, y, (d - 1) & 3);
@@ -299,9 +299,9 @@ sealed class GroundStages(TileGrid grid, int offset, int width, int height, Terr
                 {
                     var g = Corner(x + u, y + v).Ground;
                     if (g is not null && (Flags(g) & 8) == 0) continue;
-                    int at = grid.HeightAt(x + u + offset, y + v + offset);
-                    if (at >= levels.High && high is not null) grid.SetGround(x + u + offset, y + v + offset, high);
-                    else if (at <= levels.Low && low is not null) grid.SetGround(x + u + offset, y + v + offset, low);
+                    int at = grid.HeightAt(x + u + offsetX, y + v + offsetY);
+                    if (at >= levels.High && high is not null) grid.SetGround(x + u + offsetX, y + v + offsetY, high);
+                    else if (at <= levels.Low && low is not null) grid.SetGround(x + u + offsetX, y + v + offsetY, low);
                 }
         };
     }
@@ -311,9 +311,9 @@ sealed class GroundStages(TileGrid grid, int offset, int width, int height, Terr
         for (int y = 0; y <= height; y++)
             for (int x = 0; x <= width; x++)
             {
-                if (grid.HeightAt(x + offset, y + offset) != level) continue;
+                if (grid.HeightAt(x + offsetX, y + offsetY) != level) continue;
                 ref var c = ref Corner(x, y);
-                if ((c.Flags & 1) == 0 || c.Ground is null) grid.SetGround(x + offset, y + offset, ground);
+                if ((c.Flags & 1) == 0 || c.Ground is null) grid.SetGround(x + offsetX, y + offsetY, ground);
             }
     }
 

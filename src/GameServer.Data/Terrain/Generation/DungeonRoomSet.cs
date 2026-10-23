@@ -184,7 +184,7 @@ sealed class DungeonRoomSet
     /// flag (after version 15), the room's own key line, then the exits: door type index (0 = none; version 11 has a
     /// flag for rooms.et), height, and later the height override flag (after version 29) and, for a type with a
     /// direction, the chirality (from version 21) and its override flag (after version 29).</summary>
-    static DungeonRoom? Parse(TerrainCache files, string path, int weight, int mask)
+    internal static DungeonRoom? Parse(TerrainCache files, string path, int weight, int mask)
     {
         var lines = TerrainText.Lines(files.Text(path) ?? "").Select(TerrainText.Tokenize).Where(l => l.Count > 0).ToList();
         if (lines.Count == 0) return null;

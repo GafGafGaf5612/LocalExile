@@ -1,24 +1,24 @@
 namespace GameServer.Data.Terrain.Generation;
 
 /// <summary><c>0x142118470</c> (the state built by <c>0x1421173d0</c>): the height fix-ups of the map's view (the
-/// graph's area, <paramref name="offset"/> in from the map's edge). Every tile not yet reached starts a breadth-first
+/// graph's area, <paramref name="offsetX"/>, <paramref name="offsetY"/> in from the map's corner). Every tile not yet reached starts a breadth-first
 /// walk (<c>0x142118100</c>) that gives each tile a height offset agreeing with the tiles already done around it
 /// (<see cref="Candidates"/>), writes it (<c>0x1421174f0</c>) and goes on to the tiles it is open to
 /// (<see cref="Neighbours"/>). With any height in the view, everything is then lowered to the lowest tile offset, the
 /// vertices still without a height take a lone done neighbour's (<c>0x142118790</c>). No draws.</summary>
-sealed class HeightLevels(TileGrid grid, int offset, int width, int height, TerrainCache files)
+sealed class HeightLevels(TileGrid grid, int offsetX, int offsetY, int width, int height, TerrainCache files)
 {
     // Bit sets +0x18 (vertices, (width + 1) × (height + 1)) and +0x38 (entries, width × height): already given a height.
     readonly bool[] _vertexDone = new bool[(width + 1) * (height + 1)];
     readonly bool[] _tileDone = new bool[width * height];
 
-    TileEntry? Entry(int x, int y) => grid[x + offset, y + offset];
+    TileEntry? Entry(int x, int y) => grid[x + offsetX, y + offsetY];
 
     (int X, int Y) Origin(int x, int y) => Entry(x, y) is { } e ? (x - e.OffsetX, y - e.OffsetY) : (x, y);
 
     static (int W, int H) Size(TileEntry? e) => e is { } t ? Orientation.Size(t.Orientation, t.Tile.Width, t.Tile.Height) : (1, 1);
 
-    int VertexHeight(int x, int y) => grid.HeightAt(x + offset, y + offset);
+    int VertexHeight(int x, int y) => grid.HeightAt(x + offsetX, y + offsetY);
 
     bool VertexDone(int x, int y) => _vertexDone[y * (width + 1) + x];
 
@@ -51,7 +51,7 @@ sealed class HeightLevels(TileGrid grid, int offset, int width, int height, Terr
             {
                 int v = VertexHeight(x, y) - lowest;
                 grid.MarkHeights(v != 0);
-                ref var c = ref grid.Corner(x + offset, y + offset);
+                ref var c = ref grid.Corner(x + offsetX, y + offsetY);
                 c.Flags |= 2;
                 c.Height = unchecked((sbyte)v);
             }
@@ -66,7 +66,7 @@ sealed class HeightLevels(TileGrid grid, int offset, int width, int height, Terr
                 if (e.IsOrigin)
                 {
                     grid.MarkHeights(e.HeightOffset != lowest);
-                    grid.SetHeight(x + offset, y + offset, (short)(e.HeightOffset - lowest));
+                    grid.SetHeight(x + offsetX, y + offsetY, (short)(e.HeightOffset - lowest));
                 }
                 x += Size(e).W;
             }
@@ -118,7 +118,7 @@ sealed class HeightLevels(TileGrid grid, int offset, int width, int height, Terr
         {
             // 0x142117e10.
             foreach (var (dx, dy) in new[] { (0, 0), (0, 1), (1, 0), (1, 1) })
-                if (VertexDone(ox + dx, oy + dy) && Open(grid.Corner(ox + dx + offset, oy + dy + offset).Ground))
+                if (VertexDone(ox + dx, oy + dy) && Open(grid.Corner(ox + dx + offsetX, oy + dy + offsetY).Ground))
                     AddDistinct(VertexHeight(ox + dx, oy + dy));
             return list;
         }
@@ -190,7 +190,7 @@ sealed class HeightLevels(TileGrid grid, int offset, int width, int height, Terr
         var (ox, oy) = Origin(x, y);
         var (w, ht) = Size(Entry(ox, oy));
         grid.MarkHeights(h != 0);
-        grid.SetHeight(ox + offset, oy + offset, (short)h);
+        grid.SetHeight(ox + offsetX, oy + offsetY, (short)h);
         for (int v = 0; v <= ht; v++)
             for (int u = 0; u <= w; u++)
                 if (ox + u <= width && oy + v <= height) _vertexDone[(oy + v) * (width + 1) + ox + u] = true;
@@ -269,7 +269,7 @@ sealed class HeightLevels(TileGrid grid, int offset, int width, int height, Terr
                     if (y < height && VertexDone(x, y + 1)) found.Add(VertexHeight(x, y + 1));
                     if (found.Count != 1) continue;
                     grid.MarkHeights(found[0] != 0);
-                    ref var c = ref grid.Corner(x + offset, y + offset);
+                    ref var c = ref grid.Corner(x + offsetX, y + offsetY);
                     c.Flags |= 2;
                     c.Height = unchecked((sbyte)found[0]);
                     _vertexDone[y * (width + 1) + x] = true;

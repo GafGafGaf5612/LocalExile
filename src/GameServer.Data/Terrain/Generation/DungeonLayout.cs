@@ -106,7 +106,7 @@ sealed class DungeonMap(int width, int height, int unit, int overlap)
 /// Ported in client order; the next part that is not ported throws <see cref="NotSupportedException"/>.</summary>
 sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> notes, TileGraph graph, DungeonRoomSet roomSet,
     DungeonMap map, int graphOrientation, (string? From, string? To) swapDoors, Action<string, int, int[]>? onCells = null,
-    Func<string, IReadOnlyList<string>?>? fileGroup = null, string? outerGround = null)
+    Func<string, IReadOnlyList<string>?>? fileGroup = null, string? outerGround = null, ExtraRoomPool? pool = null)
 {
     /// <summary>The layout's +0x40: per file group, the files its graph nodes took (<c>0x1421052e0</c>).</summary>
     readonly Dictionary<string, List<string>> _groupsUsed = [];
@@ -240,7 +240,16 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         // 0x142101aa0, 0x142101e50, 0x142102170, 0x142103490: the special rooms. Only 0x142101aa0's unnumbered
         // "special" rooms are ported; the others drew nothing in the 1_1_9a and 1_1_7_1 traces.
         SpecialRooms();
-        if (roomSet.HasSpecialRooms) notes.Add("dungeon layout: shrine, mission and pre-unique rooms (0x142101e50 …) are not ported");
+        if (pool is not null)
+        {
+            // 0x142101e50: oversize rows go into the room set's telepad injector rooms (+0x190), not ported.
+            if (pool.Rows.Any(r => r.Oversize) && roomSet.All.Any(r => r.Tag.StartsWith("telepad_injector", StringComparison.Ordinal)))
+                throw new NotSupportedException("oversize extra features in telepad injector rooms (0x142101e50) are not ported");
+            Inject();
+            // 0x142103490: with shrines rolled (pool +0x148), the room set's shrine rooms (+0x118), not ported.
+            if (pool.Shrines != 0 && roomSet.All.Any(r => r.Tag == "shrine"))
+                throw new NotSupportedException("shrine rooms (0x142103490) are not ported");
+        }
         // Reserved cells become free; then the fill rooms once more.
         for (int i = 0; i < map.Cells.Length; i++)
             if (map.Cells[i] == 1) map.Cells[i] = 0;
@@ -364,43 +373,178 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         foreach (var r in special)
         {
             if (r.Chance < 100 && (r.Chance == 0 || rng.Next(100u) >= r.Chance)) continue;
-            if (!PlaceSpecial(r)) throw new InvalidOperationException($"Failed to place special room {r.Path}");
+            if (PlaceSpecial([(r, r.Mask)]) is null) throw new InvalidOperationException($"Failed to place special room {r.Path}");
         }
     }
 
-    /// <summary><c>0x1420ff140</c> for one room of the set (with its .rs orientations): an accessible placed room of
-    /// no tag whose room is not special can take it when one of its orientations has the same size and exits
-    /// (<c>0x1420ffb90</c>, the first such orientation). <c>Next(count)</c> over those rooms (by index), then
-    /// <c>Next(1)</c> for the orientation; the entry takes the room and orientation, kind 8. Without one, the room
-    /// would go over several rooms at their corners (<c>0x1420ffcf0</c>), not ported. Room data +9 (rooms paired by
-    /// +0x13a) is taken to be clear.</summary>
-    bool PlaceSpecial(DungeonRoom r)
+    /// <summary><c>0x142102170</c>: the pool's rows (not oversize) while the subgraph's share lasts. A row's room (one of
+    /// its rooms: <c>Next(count)</c> and a shuffle when it has several, the first that goes, <c>0x142102ed0</c>) of 3 × 3
+    /// tiles waits for a mission room when the room set has some (+0x130: "mission" rooms by their count of
+    /// "missiontile" slots, ascending, those of the layout's unit size); any other room of the unit size replaces a
+    /// placed room as a special room. Then the waiting rooms (at most the share; more is not ported) need mission rooms:
+    /// per mission tile count n in turn, k = 1 … waiting / n of them (each <c>Next(count)</c>, a shuffle and
+    /// <see cref="PlaceSpecial"/>) from the layout as it was, then smaller counts from the largest down and any count
+    /// from the smallest up for the rest, until every waiting room has a mission tile; each then gets an orientation
+    /// (<c>Next(840)</c>) and goes to the pool's injected rooms. Without such a placement, the last try's rooms stay and
+    /// as many waiting rooms as it had tiles for go.</summary>
+    void Inject()
     {
-        if (r.Tag.Contains("injector", StringComparison.Ordinal)) throw new NotSupportedException($"{r.Path}: injector special rooms are not ported");
-        var replace = new List<(int Index, int Orientation)>();
-        for (int i = 0; i < map.Rooms.Count; i++)
+        var groups = roomSet.All.Where(r => r.Tag == "mission" && r.Unit == map.Unit && r.Def is not null)
+            .GroupBy(r => MissionTiles(r.Def!)).OrderBy(g => g.Key).Select(g => (N: g.Key, Rooms: g.Select(r => (r, r.Mask)).ToList())).ToList();
+        if (groups.Any(g => g.N == 0)) throw new InvalidDataException($"{groups.First(g => g.N == 0).Rooms[0].r.Path} contains no mission tiles");
+        var waiting = new List<(DungeonRoom Room, int Mask, ExtraFeatureRow Row)>();
+        var used = new List<ExtraFeatureRow>();
+        // A copy of the share (local_res20) counts the rooms placed here; removing a row counts the pool's own down.
+        int share = pool!.Share;
+        foreach (var row in pool.Rows.ToList())
         {
-            var p = map.Rooms[i];
-            if ((p.Flags & 1) == 0 || p.Room is null || p.Room.Special || p.Room.Tag.Length != 0) continue;
-            for (int o = 0; o < 8; o++)
+            if (share == 0) break;
+            if (row.Oversize) continue;
+            var arms = row.Rooms.ToList();
+            if (arms.Count > 1)
             {
-                if (r.Mask != 0 && (r.Mask >> o & 1) == 0) continue;
-                var (w, h) = o % 2 == 1 ? (r.Height, r.Width) : (r.Width, r.Height);
-                if (w != p.Width || h != p.Height) continue;
-                if (!ExitsFit(p.Exits, DungeonRoomSet.TurnExits(r.Exits, r.Width, r.Height, o, Directional))) continue;
-                replace.Add((i, o));
-                break;
+                rng.Next((uint)arms.Count);
+                rng.Shuffle(arms);
+            }
+            foreach (var arm in arms)
+                if (Feature(arm, row)) break;
+        }
+        foreach (var row in used) pool.Remove(row, true);
+        if (waiting.Count == 0 || share == 0) return;
+        if (share < waiting.Count) throw new NotSupportedException("more extra feature rooms than the share (0x14212dec0's shuffle) is not ported");
+        if (waiting.Any(w => w.Row.Tiles.Count != 0)) throw new NotSupportedException("extra feature tiles (the pool's tile store, +0x90) are not ported");
+
+        var saved = Save();
+        int left = waiting.Count;
+        foreach (var g in groups)
+        {
+            int most = waiting.Count / g.N;
+            for (int k = Math.Min(left, most); k <= most; k++)
+            {
+                Restore(saved);
+                left = waiting.Count;
+                bool ok = true;
+                for (int i = 0; i < k && left >= g.N; i++)
+                {
+                    if (!PlaceMission(g.Rooms)) { ok = false; break; }
+                    left -= g.N;
+                }
+                // The rest: smaller counts from the largest down while one goes, then any count from the smallest up.
+                while (left != 0 && g.N > 1)
+                {
+                    int j = groups.FindLastIndex(o => o.N <= left && o.N <= g.N - 1 && PlaceMission(o.Rooms));
+                    if (j < 0) break;
+                    left -= groups[j].N;
+                }
+                while (left != 0)
+                {
+                    int j = groups.FindIndex(o => o.N <= left && PlaceMission(o.Rooms));
+                    if (j < 0) break;
+                    left -= groups[j].N;
+                }
+                if (left == 0)
+                {
+                    Commit(waiting.Count);
+                    return;
+                }
+                if (!ok) break;
             }
         }
-        if (replace.Count == 0) throw new NotSupportedException($"{r.Path}: special rooms over several rooms (0x1420ffcf0) are not ported");
-        var (index, orientation) = replace[(int)rng.Next((uint)replace.Count)];
-        rng.Next(1u);
+        Commit(waiting.Count - left);
+
+        bool PlaceMission(List<(DungeonRoom, int)> rooms)
+        {
+            rng.Next((uint)rooms.Count);
+            rng.Shuffle(rooms);
+            return PlaceSpecial(rooms) is not null;
+        }
+
+        void Commit(int count)
+        {
+            foreach (var (room, mask, row) in waiting.Take(count))
+            {
+                pool.Injected.Add((room, OrientationOf(mask, rng.Next(840u)), row));
+                pool.Remove(row, true);
+            }
+        }
+
+        // 0x142102ed0.
+        bool Feature(string arm, ExtraFeatureRow row)
+        {
+            var room = DungeonRoomSet.Parse(files, arm, 1, row.Mask) ?? throw new FileNotFoundException(arm);
+            if (groups.Count != 0 && room.Def is { Width: 3, Height: 3 })
+            {
+                waiting.Add((room, row.Mask, row));
+                return true;
+            }
+            if (room.Unit != map.Unit) return false;
+            if (PlaceSpecial([(room, row.Mask)]) is null) return false;
+            // 0x141d8abb0 (the pool's placed rooms, by position) is left out: nothing in the layout reads it.
+            used.Add(row);
+            share--;
+            return true;
+        }
+    }
+
+    /// <summary><c>0x141ff6960</c>'s count for a "mission" room: its 'k' slots tagged "missiontile".</summary>
+    static int MissionTiles(RoomDef def)
+    {
+        int n = 0;
+        foreach (var slot in def.Slots)
+            if (slot is { Kind: 'k', Tag: "missiontile" }) n++;
+        return n;
+    }
+
+    /// <summary>The layout as <c>0x142102170</c> copies it before each try (the entries' room, orientation and kind, the
+    /// entry count and cells).</summary>
+    (List<(DungeonRoom? Room, int Orientation, byte Kind)> Entries, int[] Cells) Save() =>
+        (map.Rooms.Select(p => (p.Room, p.Orientation, p.Kind)).ToList(), (int[])map.Cells.Clone());
+
+    void Restore((List<(DungeonRoom? Room, int Orientation, byte Kind)> Entries, int[] Cells) saved)
+    {
+        map.Rooms.RemoveRange(saved.Entries.Count, map.Rooms.Count - saved.Entries.Count);
+        for (int i = 0; i < saved.Entries.Count; i++)
+            (map.Rooms[i].Room, map.Rooms[i].Orientation, map.Rooms[i].Kind) = saved.Entries[i];
+        saved.Cells.CopyTo(map.Cells, 0);
+    }
+
+    /// <summary><c>0x1420ff140</c> for a list of rooms (with their orientation masks, 0 = any): an accessible placed
+    /// room of no tag whose room is not special can take one when one of its orientations has the same size and exits
+    /// (<c>0x1420ffb90</c>, the first such orientation). The candidates are kept by entry index (each entry with the
+    /// rooms that fit it, in list order); <c>Next(entries)</c>, then <c>Next(its rooms)</c>; the entry takes the room
+    /// and orientation, kind 8. Without one, the room would go over several rooms at their corners
+    /// (<c>0x1420ffcf0</c>), not ported. Room data +9 (rooms paired by +0x13a) is taken to be clear.</summary>
+    DungeonPlacement? PlaceSpecial(IReadOnlyList<(DungeonRoom Room, int Mask)> rooms)
+    {
+        var candidates = new SortedDictionary<int, List<(DungeonRoom Room, int Orientation)>>();
+        foreach (var (r, mask) in rooms)
+        {
+            if (r.Tag.Contains("injector", StringComparison.Ordinal)) throw new NotSupportedException($"{r.Path}: injector special rooms are not ported");
+            for (int i = 0; i < map.Rooms.Count; i++)
+            {
+                var p = map.Rooms[i];
+                if ((p.Flags & 1) == 0 || p.Room is null || p.Room.Special || p.Room.Tag.Length != 0) continue;
+                for (int o = 0; o < 8; o++)
+                {
+                    if (mask != 0 && (mask >> o & 1) == 0) continue;
+                    var (w, h) = o % 2 == 1 ? (r.Height, r.Width) : (r.Width, r.Height);
+                    if (w != p.Width || h != p.Height) continue;
+                    if (!ExitsFit(p.Exits, DungeonRoomSet.TurnExits(r.Exits, r.Width, r.Height, o, Directional))) continue;
+                    if (!candidates.TryGetValue(i, out var list)) candidates[i] = list = [];
+                    list.Add((r, o));
+                    break;
+                }
+            }
+        }
+        if (candidates.Count == 0) throw new NotSupportedException($"{rooms[0].Room.Path}: special rooms over several rooms (0x1420ffcf0) are not ported");
+        var (index, options) = candidates.ElementAt((int)rng.Next((uint)candidates.Count));
+        var (room, orientation) = options[(int)rng.Next((uint)options.Count)];
         var q = map.Rooms[index];
-        q.Room = r;
+        q.Room = room;
         q.Orientation = orientation;
         q.Kind = 8;
         notes.Add($"dungeon special room: {q} o{orientation}");
-        return true;
+        return q;
     }
 
     /// <summary><c>0x1420feff0</c>: every exit of the room equals the entry's, except that where the room's door type

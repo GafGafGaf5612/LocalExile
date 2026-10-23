@@ -30,15 +30,15 @@ sealed class Overlays
     readonly LevelRandom _rng;
     readonly List<string> _notes;
     readonly TileGrid _grid;
-    readonly int _offset, _width, _height;
+    readonly int _offsetX, _offsetY, _width, _height;
     readonly SpecialNodes _special;
     readonly byte[] _excluded;
     readonly Dictionary<OverlayRoom, int> _placed = [];
 
-    public Overlays(TerrainCache files, LevelRandom rng, List<string> notes, TileGrid grid, int offset, int width, int height,
+    public Overlays(TerrainCache files, LevelRandom rng, List<string> notes, TileGrid grid, int offsetX, int offsetY, int width, int height,
         SpecialNodes special, IReadOnlyList<PlacedRoom> rooms, int roomOverlap)
     {
-        (_files, _rng, _notes, _grid, _offset, _width, _height, _special) = (files, rng, notes, grid, offset, width, height, special);
+        (_files, _rng, _notes, _grid, _offsetX, _offsetY, _width, _height, _special) = (files, rng, notes, grid, offsetX, offsetY, width, height, special);
         // 0x141ffe240: rooms of nodes with descriptions 0x10; rooms 4 (shrunk by the master's RoomOverlap when the room's
         // own overlap, room data +1, is the same) and 8; tiles with a tag 2; extra features 0x20 (none in the ported areas).
         _excluded = new byte[width * height];
@@ -59,11 +59,11 @@ sealed class Overlays
                 if (Entry(x, y) is { IsOrigin: true } e && e.Tile.Tag.Length != 0)
                 {
                     var (w, h) = Size(e);
-                    Mark(x + offset, y + offset, x + offset + w, y + offset + h, 2);
+                    Mark(x + offsetX, y + offsetY, x + offsetX + w, y + offsetY + h, 2);
                 }
     }
 
-    TileEntry? Entry(int x, int y) => (uint)x < (uint)_width && (uint)y < (uint)_height ? _grid[x + _offset, y + _offset] : null;
+    TileEntry? Entry(int x, int y) => (uint)x < (uint)_width && (uint)y < (uint)_height ? _grid[x + _offsetX, y + _offsetY] : null;
 
     static (int W, int H) Size(TileEntry e) => Orientation.Size(e.Orientation, e.Tile.Width, e.Tile.Height);
 
@@ -72,8 +72,8 @@ sealed class Overlays
     /// <summary><c>0x141ffe650</c>: a rectangle of map entries, clamped to the view, gets a bit.</summary>
     void Mark(int x0, int y0, int x1, int y1, byte bit)
     {
-        x0 = Math.Clamp(x0 - _offset, 0, _width); x1 = Math.Clamp(x1 - _offset, 0, _width);
-        y0 = Math.Clamp(y0 - _offset, 0, _height); y1 = Math.Clamp(y1 - _offset, 0, _height);
+        x0 = Math.Clamp(x0 - _offsetX, 0, _width); x1 = Math.Clamp(x1 - _offsetX, 0, _width);
+        y0 = Math.Clamp(y0 - _offsetY, 0, _height); y1 = Math.Clamp(y1 - _offsetY, 0, _height);
         for (int y = y0; y < y1; y++)
             for (int x = x0; x < x1; x++) _excluded[y * _width + x] |= bit;
     }
@@ -256,25 +256,25 @@ sealed class Overlays
             var chosen = rooms[k];
             if (chosen is null)
             {
-                Mark(spot.X + _offset, spot.Y + _offset, spot.X + _offset + kw, spot.Y + _offset + kh, 1);
+                Mark(spot.X + _offsetX, spot.Y + _offsetY, spot.X + _offsetX + kw, spot.Y + _offsetY + kh, 1);
                 continue;
             }
             int o = LevelRandom.OrientationFromMask(chosen.OrientationMask, _rng.Next(840u));
             if (!Height(chosen.Room, spot.X, spot.Y, o)) continue;
             if (afterFill) throw new NotSupportedException("overlays after the fill (0x141fffb70 pass 2) are not ported");
             for (int y = spot.Y; y < spot.Y + kh; y++)
-                for (int x = spot.X; x < spot.X + kw; x++) _grid.Remove(x + _offset, y + _offset);
+                for (int x = spot.X; x < spot.X + kw; x++) _grid.Remove(x + _offsetX, y + _offsetY);
             for (int v = 0; v <= kh; v++)
                 for (int u = 0; u <= kw; u++)
                 {
-                    ref var c = ref _grid.Corner(spot.X + u + _offset, spot.Y + v + _offset);
+                    ref var c = ref _grid.Corner(spot.X + u + _offsetX, spot.Y + v + _offsetY);
                     c.Ground = null;
                     c.Flags &= unchecked((byte)~1);
                 }
             _special.TiliseRoom(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, []);
-            Mark(spot.X + _offset, spot.Y + _offset, spot.X + _offset + kw, spot.Y + _offset + kh, 1);
+            Mark(spot.X + _offsetX, spot.Y + _offsetY, spot.X + _offsetX + kw, spot.Y + _offsetY + kh, 1);
             _placed[chosen] = _placed.GetValueOrDefault(chosen) + 1;
-            _notes.Add($"overlay {Path.GetFileName(chosen.Room.Path)} o{o} at ({spot.X + _offset}, {spot.Y + _offset})");
+            _notes.Add($"overlay {Path.GetFileName(chosen.Room.Path)} o{o} at ({spot.X + _offsetX}, {spot.Y + _offsetY})");
         }
     }
 
@@ -296,7 +296,7 @@ sealed class Overlays
             for (int u = 0; u <= room.Width; u++)
             {
                 var (dx, dy) = Orientation.MapVertex(o, u, v, room.Width, room.Height);
-                if (_grid.Corner(x + dx + _offset, y + dy + _offset).Height != 0)
+                if (_grid.Corner(x + dx + _offsetX, y + dy + _offsetY).Height != 0)
                     throw new NotSupportedException("overlay height offsets (0x141ffe7e0) are not ported");
             }
         return true;
@@ -312,7 +312,7 @@ sealed class Overlays
         for (int v = y; v < y + kh; v++)
             for (int u = x; u < x + kw; u++)
                 if ((_excluded[v * _width + u] & ~flags) != 0) return false;
-        int ax = x + _offset, ay = y + _offset;
+        int ax = x + _offsetX, ay = y + _offsetY;
         if (ax + kw > _grid.Width || ay + kh > _grid.Height) return false;
         return TilesInside(ax, ay, kw, kh) && KeyMatch(ax, ay, g.Key) == 0;
     }

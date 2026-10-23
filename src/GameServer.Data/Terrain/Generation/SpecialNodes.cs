@@ -27,7 +27,7 @@ sealed class NodePlacement
 sealed record PlacedRoom(RoomDef Room, int X, int Y, int Width, int Height, IReadOnlyList<string> Descriptions);
 
 sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> notes, TileGraph graph, TileGrid grid,
-    int offset, TileStore store, RoomSetIndex rooms)
+    int offsetX, int offsetY, TileStore store, RoomSetIndex rooms)
 {
     // 0x14211f100's lists (the layout object's +0, +0x18, +0x30, +0x48).
     public readonly List<GraphNode> Virtual = [], Plain = [], Tagged = [], Lonely = [];
@@ -220,7 +220,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
             y = Math.Min(Math.Max(y, 0), graph.Height - p.Key.Height);
             (x, y) = Snap(x, y, p.Align, GraphOrientation);
             if (x < graph.Width && x + p.Key.Width <= graph.Width && y < graph.Height && y + p.Key.Height <= graph.Height &&
-                CellsFree(x + offset, y + offset, p.Key.Width, p.Key.Height))
+                CellsFree(x + offsetX, y + offsetY, p.Key.Width, p.Key.Height))
                 (p.X, p.Y) = (x, y);
             (p.X, p.Y) = KeepEdgesInside(p.X, p.Y, p.Align, p.Key);
         }
@@ -651,7 +651,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
             x = Math.Min(Math.Max(x, 0), graph.Width - w);
             y = Math.Min(Math.Max(y, 0), graph.Height - h);
             if (x < graph.Width && x + w <= graph.Width && y < graph.Height && y + h <= graph.Height &&
-                CellsFree(x + offset, y + offset, w, h) && !Misaligned(x, y, c.Key))
+                CellsFree(x + offsetX, y + offsetY, w, h) && !Misaligned(x, y, c.Key))
             {
                 int size = n.Slots.Where(e => e is not null).Select(e => Type(e!).Size).DefaultIfEmpty(0).Max();
                 (x, y) = KeepEdgesInside(x, y, size, c.Key);
@@ -755,7 +755,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
 
     // The placed tile at a graph position, its key turned by its orientation, and the entry's offset inside it.
     (TileKey Key, int OffsetX, int OffsetY)? Neighbour(int x, int y) =>
-        grid[x + offset, y + offset] is { } e ? (e.Tile.Key.Rotate(e.Orientation), e.OffsetX, e.OffsetY) : null;
+        grid[x + offsetX, y + offsetY] is { } e ? (e.Tile.Key.Rotate(e.Orientation), e.OffsetX, e.OffsetY) : null;
 
     /// <summary><c>0x14211d6b0</c>: keeps room on each side that has an edge for the edge (its size, twice for a virtual
     /// edge).</summary>
@@ -967,8 +967,8 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
         {
             // A 1 × 1 tile for a node without edges or tag goes only on an empty entry.
             var n = p.Node;
-            if (p.Key.Width >= 2 || p.Key.Height >= 2 || n.Degree != 0 || n.Tag.Length != 0 || grid[p.X + offset, p.Y + offset] is null)
-                grid.Place(tile, p.Orientation, p.X + offset, p.Y + offset, 0);
+            if (p.Key.Width >= 2 || p.Key.Height >= 2 || n.Degree != 0 || n.Tag.Length != 0 || grid[p.X + offsetX, p.Y + offsetY] is null)
+                grid.Place(tile, p.Orientation, p.X + offsetX, p.Y + offsetY, 0);
         }
         else TiliseRoom(p.Room!, p.X, p.Y, p.Orientation, fillGrounds: true, p.Node.Descriptions);
         TrimPoints(p);
@@ -987,7 +987,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
         int left = k.Edges[3] is not null ? p.Align : 0, top = k.Edges[0] is not null ? p.Align : 0;
         int w = k.Width + (files.Edge(k.Edges[1])?.Size ?? 0) + left, h = k.Height + (files.Edge(k.Edges[2])?.Size ?? 0) + top;
         bool Free(int x, int y, int fw, int fh) =>
-            x < graph.Width && x + fw <= graph.Width && y < graph.Height && y + fh <= graph.Height && CellsFree(x + offset, y + offset, fw, fh);
+            x < graph.Width && x + fw <= graph.Width && y < graph.Height && y + fh <= graph.Height && CellsFree(x + offsetX, y + offsetY, fw, fh);
         int mx = Math.Max(p.X - left, 0), my = Math.Max(p.Y - top, 0);
         if (Free(mx, my, w, h) && CornersFit(p.X, p.Y, k)) return true;
         bool Spiral(int x, int y, Func<int, int, bool> at)
@@ -1022,7 +1022,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
         bool Loose(string? g) => g is null || (files.Ground(g)?.Flags & 8) != 0;
         bool Fits(int vx, int vy, string? g)
         {
-            ref var c = ref grid.Corner(vx + offset, vy + offset);
+            ref var c = ref grid.Corner(vx + offsetX, vy + offsetY);
             return (c.Flags & 1) == 0 || c.Ground == g || (Loose(g) && Loose(c.Ground));
         }
         return Fits(x, y, k.Grounds[0]) && Fits(x + k.Width, y, k.Grounds[1]) &&
@@ -1204,12 +1204,12 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
                     if (room.VertexGrounds[(v - 1) * (room.Width - 1) + u - 1] is { } g)
                     {
                         var (dx, dy) = Orientation.MapVertex(o, u, v, room.Width, room.Height);
-                        grid.ForceGround(x0 + dx + offset, y0 + dy + offset, g);
-                        RoomVertices.Add((x0 + dx + offset, y0 + dy + offset));
+                        grid.ForceGround(x0 + dx + offsetX, y0 + dy + offsetY, g);
+                        RoomVertices.Add((x0 + dx + offsetX, y0 + dy + offsetY));
                     }
         grid.CheckGrounds = check;
         var (w, h) = Orientation.Size(o, room.Width, room.Height);
-        Rooms.Add(new PlacedRoom(room, x0 + offset, y0 + offset, w, h, descriptions));
+        Rooms.Add(new PlacedRoom(room, x0 + offsetX, y0 + offsetY, w, h, descriptions));
     }
 
     void TiliseSlots(RoomDef room, int x0, int y0, int o, bool fillGrounds)
@@ -1230,7 +1230,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
                     if (fillGrounds && key.Grounds[0] is { } ground)
                         for (int v = 0; v <= key.Height; v++)
                             for (int u = 0; u < key.Width; u++)
-                                grid.SetGround(x + u + offset, y + v + offset, ground);
+                                grid.SetGround(x + u + offsetX, y + v + offsetY, ground);
                     continue;
                 }
                 var list = store.Candidates(slot.Tag, key);
@@ -1243,7 +1243,7 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
                     if (r < c.Weight) { pick = c; break; }
                     r -= c.Weight;
                 }
-                grid.Place(pick.Tile, pick.Orientation, x + offset, y + offset, (short)slot.Height);
+                grid.Place(pick.Tile, pick.Orientation, x + offsetX, y + offsetY, (short)slot.Height);
                 TilePlaced?.Invoke(pick.Tile, pick.Orientation, x, y);
             }
     }

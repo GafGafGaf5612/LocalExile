@@ -168,17 +168,18 @@ static void Generate(string areaId, uint seed, string? tracePath)
     TileGrid? partial = null;
     var stages = new List<(string Name, int Draws, List<string> Nodes, List<string> Edges)>();
     void OnStage(string name, TileGraph g) => stages.Add((name, rng.Log!.Count, g.Nodes.Select(n => NodeText(g, n)).ToList(), g.Edges.Select(e => EdgeText(g, e)).ToList()));
-    static List<(string? Ground, int Height, int Flags)> ViewVertices(TileGrid g, int off)
+    // The view's (w + 1) x (h + 1) vertices, row by row (as the trace's ox, oy, w, h).
+    static List<(string? Ground, int Height, int Flags)> ViewVertices(TileGrid g, int ox, int oy, int w, int h)
     {
         var list = new List<(string?, int, int)>();
-        for (int y = off; y < g.Height - off + 1; y++)
-            for (int x = off; x < g.Width - off + 1; x++)
+        for (int y = oy; y <= oy + h; y++)
+            for (int x = ox; x <= ox + w; x++)
                 list.Add((g.Corner(x, y).Ground, g.HeightAt(x, y), g.Corner(x, y).Flags));
         return list;
     }
     List<(string? Ground, int Height, int Flags)>? fillCopy = null, paintCopy = null;
-    LevelGenerator.FillStarting = (g, off) => fillCopy ??= ViewVertices(g, off);
-    LevelGenerator.PaintStarting = (g, off) => paintCopy ??= ViewVertices(g, off);
+    LevelGenerator.FillStarting = (g, ox, oy, w, h) => fillCopy ??= ViewVertices(g, ox, oy, w, h);
+    LevelGenerator.PaintStarting = (g, ox, oy, w, h) => paintCopy ??= ViewVertices(g, ox, oy, w, h);
     // Per layout (a composite map has one per subgraph): its stages, and its rooms once picked (which ends it).
     var dungeonLayouts = new List<(List<(string Name, int Draws, int[] Cells)> Stages, List<string>? Rooms)> { ([], null) };
     LevelGenerator.DungeonStage = (name, draws, cells) => dungeonLayouts[^1].Stages.Add((name, draws, cells));

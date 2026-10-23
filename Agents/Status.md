@@ -209,13 +209,14 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   Flats, The Northern Forest and The City of Sarn among them); multi-node `.dgr` dungeons are ported (The Ship Graveyard Cave seed 1
   and the Prison `1_1_7_1` seeds 1, 1898277627, 4162278830 match by tile hash, re/011 §3c2: untagged nodes, special
   rooms, door tiles, the outer ground's height fixing and the outer buffer; composite maps of `.dgr` subgraphs too:
-  the Prison's second level `1_1_7_2` seeds 1, 2512127042 match, re/011 §3c3; `.tgr` subgraphs are not ported; The
+  the Prison's second level `1_1_7_2` seeds 1, 2512127042 match, re/011 §3c3; `.tgr` subgraphs on the shared map and
+  the extra room pool's mission rooms too: MapWorldsGorge seed 1 matches tile for tile (3320701478); The
   Fetid Pool `1_1_3a` seed 1 matches tile for tile (401409093) with door types with a direction, fill rooms, slot
   corners and 3 × 3 outer tiles; The Slave Pens `1_5_1` seed 1 by hash (3415378844) with the node door types and the
   overlap tile fallbacks; The Reliquary `1_5_7`, The Ossuary `1_5_5` and eight more seed-1 traces since the plain
   room slots, room grounds, seam tests, `s`-keyed fill rooms and dungeon post-unique tiles, and `2_10_2`, `2_10_5`,
-  `2_10_6`, `2_9_10_2` since the dungeon seams' edge-point fallback: 52 of the 197 seed-1 traces; the oracle matches
-  88 of 710 logged seeds), the
+  `2_10_6`, `2_9_10_2` since the dungeon seams' edge-point fallback, MapWorldsGorge and MapWorldsToxicSewer since the
+  `.tgr` subgraphs and mission rooms: 54 of the 197 seed-1 traces; the oracle matches 90 of 710 logged seeds), the
   one-node `.dgr` path (hideouts) lacks the outer buffer, doodads are not ported, and the Gateway does not use the port
   yet.
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the

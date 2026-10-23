@@ -37,7 +37,17 @@ public sealed class RawDat
         return v == 0xfefefefefefefefe || v > int.MaxValue ? -1 : (int)v;
     }
 
+    /// <summary>A row of the same table (8 bytes: u64 index): the index, or -1 for none.</summary>
+    public int Ref8(int row, int at)
+    {
+        ulong v = BinaryPrimitives.ReadUInt64LittleEndian(Row(row)[at..]);
+        return v > int.MaxValue ? -1 : (int)v;
+    }
+
     public string String(int row, int at) => StringAt(BinaryPrimitives.ReadUInt64LittleEndian(Row(row)[at..]));
+
+    /// <summary>A list (u64 count, u64 offset) of strings.</summary>
+    public string[] StringList(int row, int at) => List(row, at, 8, (d, i) => BinaryPrimitives.ReadUInt64LittleEndian(d[i..])).Select(StringAt).ToArray();
 
     string StringAt(ulong offset)
     {

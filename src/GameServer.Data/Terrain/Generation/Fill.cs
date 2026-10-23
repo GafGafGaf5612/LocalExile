@@ -3,7 +3,7 @@ namespace GameServer.Data.Terrain.Generation;
 /// <summary>The fill of <c>0x142116600</c> (<c>0x141fef070</c>): every empty entry of the view, row by row, gets a fill
 /// tile or fill room for the ground of its top-left vertex from the master's FillTiles (.gft, master +0x218: per ground
 /// name, tiles and rooms with weights; no ground or one left out of keys is "default"), <c>0x141feb970</c>.</summary>
-sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset, int width, int height, TileStore store,
+sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offsetX, int offsetY, int width, int height, TileStore store,
     Dictionary<string, List<(int Weight, string Path)>> fills, List<PlacedRoom> rooms, List<string> notes)
 {
     /// <summary>A fill choice: a tile or a room, its orientation (8 = any) and weight (0x18 / 0x20-byte entries).</summary>
@@ -15,7 +15,7 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
     /// x, y).</summary>
     public Action<TileDef, int, int, int>? TilePlaced { get; init; }
 
-    TileEntry? Entry(int x, int y) => grid[x + offset, y + offset];
+    TileEntry? Entry(int x, int y) => grid[x + offsetX, y + offsetY];
 
     public void Run()
     {
@@ -24,9 +24,9 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
             for (int x = 0; x < width; x++)
             {
                 if (Entry(x, y) is not null) continue;
-                string? g = grid.Corner(x + offset, y + offset).Ground;
+                string? g = grid.Corner(x + offsetX, y + offsetY).Ground;
                 // Param 5: the vertex has no ground or a flag-4 one, and is not unwalkable (vertex flag 8).
-                bool open = (g is null || (Flags(g) & 4) != 0) && (grid.Corner(x + offset, y + offset).Flags & 8) == 0;
+                bool open = (g is null || (Flags(g) & 4) != 0) && (grid.Corner(x + offsetX, y + offsetY).Flags & 8) == 0;
                 x += FillEntry(x, y, g, open);
             }
         grid.CheckGrounds = true;
@@ -115,13 +115,13 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
         if (chosen.Tile is { } tile)
         {
             var (w, h) = Orientation.Size(o, tile.Width, tile.Height);
-            grid.Place(tile, o, x + offset, y + offset, height ?? AreaHeight(x, y, w, h));
+            grid.Place(tile, o, x + offsetX, y + offsetY, height ?? AreaHeight(x, y, w, h));
             TilePlaced?.Invoke(tile, o, x, y);
             return w - 1;
         }
         var room = chosen.Room!;
         var (rw, rh) = Orientation.Size(o, room.Width, room.Height);
-        notes.Add($"fill room {Path.GetFileName(room.Path)} o{o} at ({x + offset}, {y + offset})");
+        notes.Add($"fill room {Path.GetFileName(room.Path)} o{o} at ({x + offsetX}, {y + offsetY})");
         FillRoom(room, x, y, o, height ?? AreaHeight(x, y, rw, rh), ground, open);
         return Entry(x, y) is null ? FillEntry(x, y, ground, open, height) : 0;
     }
@@ -152,7 +152,7 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
     {
         var heights = new List<int>();
         foreach (var (vx, vy) in new[] { (x, y), (x + w, y), (x, y + h), (x + w, y + h) })
-            if ((grid.Corner(vx + offset, vy + offset).Flags & 2) != 0) heights.Add(grid.HeightAt(vx + offset, vy + offset));
+            if ((grid.Corner(vx + offsetX, vy + offsetY).Flags & 2) != 0) heights.Add(grid.HeightAt(vx + offsetX, vy + offsetY));
         if (heights.Count == 0) return 0;
         int lo = heights.Min(), hi = heights.Max();
         return (short)(hi - (hi - lo) / 2);
@@ -175,7 +175,7 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
     {
         var (w, h) = Orientation.Size(o, tile.Width, tile.Height);
         if (x < -1 || y < -1 || x + w > width + 1 || y + h > height + 1) return false;
-        return AreaFree(x + offset, y + offset, w, h);
+        return AreaFree(x + offsetX, y + offsetY, w, h);
     }
 
     /// <summary><c>0x141d84e10</c>: inside the map and every entry empty.</summary>
@@ -202,7 +202,7 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
     bool RoomFits(RoomDef room, int x, int y, int o)
     {
         var (w, h) = Orientation.Size(o, room.Width, room.Height);
-        return x < width && x + w <= width && y < height && y + h <= height && AreaFree(x + offset, y + offset, w, h);
+        return x < width && x + w <= width && y < height && y + h <= height && AreaFree(x + offsetX, y + offsetY, w, h);
     }
 
     // 0x141fea4d0's per-orientation shift of a tile in a slot by (1 − w, 1 − h).
@@ -251,14 +251,14 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
                             var (tw, th) = Orientation.Size(to, tile.Width, tile.Height);
                             var (tx, ty) = Shift(o, tw, th);
                             int px = x + gx + tx, py = y + gy + ty;
-                            grid.Place(tile, placed, px + offset, py + offset, h);
+                            grid.Place(tile, placed, px + offsetX, py + offsetY, h);
                             TilePlaced?.Invoke(tile, placed, px, py);
                             for (int v = 0; v <= th; v++)
                                 for (int u = 0; u <= tw; u++)
                                 {
-                                    ref var c = ref grid.Corner(px + u + offset, py + v + offset);
+                                    ref var c = ref grid.Corner(px + u + offsetX, py + v + offsetY);
                                     if ((c.Flags & 1) == 0 || c.Ground == g || (Wild(c.Ground) && Wild(g)))
-                                        grid.SetGround(px + u + offset, py + v + offset, g);
+                                        grid.SetGround(px + u + offsetX, py + v + offsetY, g);
                                 }
                             row += th - 1;
                             continue;
@@ -282,14 +282,14 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
                     if (TileFits(c.Tile, bx, by, c.Orientation)) pick = c;
                 }
                 if (pick is not { } p) throw new InvalidOperationException($"No tile could fit at ({bx}, {by}) for the fill room here");
-                grid.Place(p.Tile, p.Orientation, bx + offset, by + offset, h);
+                grid.Place(p.Tile, p.Orientation, bx + offsetX, by + offsetY, h);
                 TilePlaced?.Invoke(p.Tile, p.Orientation, bx, by);
             }
         var (rw, rh) = Orientation.Size(o, room.Width, room.Height);
-        rooms.Add(new PlacedRoom(room, x + offset, y + offset, rw, rh, []));
+        rooms.Add(new PlacedRoom(room, x + offsetX, y + offsetY, rw, rh, []));
         for (int v = 0; v <= rh; v++)
             for (int u = 0; u <= rw; u++)
-                if (grid.Corner(x + u + offset, y + v + offset).Ground is null) grid.SetGround(x + u + offset, y + v + offset, fillGround);
+                if (grid.Corner(x + u + offsetX, y + v + offsetY).Ground is null) grid.SetGround(x + u + offsetX, y + v + offsetY, fillGround);
         grid.CheckGrounds = check;
     }
 

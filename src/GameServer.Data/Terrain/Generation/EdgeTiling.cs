@@ -6,7 +6,7 @@ namespace GameServer.Data.Terrain.Generation;
 /// (<c>0x14210b950</c>), its cells are found by a best-first search from the path's later points back to its current
 /// one (<c>0x14210c600</c> → <c>0x141f24d60</c>, with backtracking), and one tile is picked per cell for the key the
 /// path asks there (<c>0x14210f470</c>).</summary>
-sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offset, LevelRandom rng, Func<GraphEdge, EdgeType> type,
+sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offsetX, int offsetY, LevelRandom rng, Func<GraphEdge, EdgeType> type,
     TerrainCache files, TileStore store, List<string> notes, IReadOnlyList<EdgePoint> edgePoints)
 {
     /// <summary>The edge tiles placed for an edge type of the master's EdgePoints (edge tiling +0xa8): cell and the
@@ -65,7 +65,7 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offset, LevelRandom 
         Distribute();
     }
 
-    TileEntry? Entry(int x, int y) => (uint)x < (uint)W && (uint)y < (uint)H ? grid[x + offset, y + offset] : null;
+    TileEntry? Entry(int x, int y) => (uint)x < (uint)W && (uint)y < (uint)H ? grid[x + offsetX, y + offsetY] : null;
 
     static (int W, int H) Dims(TileEntry e) =>
         (e.Orientation & 1) == 0 || e.Orientation > 7 ? (e.Tile.Width, e.Tile.Height) : (e.Tile.Height, e.Tile.Width);
@@ -535,7 +535,7 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offset, LevelRandom 
     {
         for (int v = 0; v < s; v++)
             for (int u = 0; u < s; u++)
-                if (grid[c.X + u + offset, c.Y + v + offset] is not null) return false;
+                if (grid[c.X + u + offsetX, c.Y + v + offsetY] is not null) return false;
         return true;
     }
 
@@ -621,7 +621,7 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offset, LevelRandom 
     // 0x141f256c0.
     List<(int X, int Y)> Neighbours((int X, int Y) c, int s)
     {
-        var (w, h) = grid[c.X + offset, c.Y + offset] is { } e ? Dims(e) : (s, s);
+        var (w, h) = grid[c.X + offsetX, c.Y + offsetY] is { } e ? Dims(e) : (s, s);
         var list = new List<(int X, int Y)>();
         for (int x = 0; x < w; x += s)
         {
@@ -735,7 +735,7 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offset, LevelRandom 
                 if (pick < c.Weight) { chosen = c; break; }
                 pick -= c.Weight;
             }
-            grid.Place(chosen.Tile, chosen.Orientation, cell.X + offset, cell.Y + offset, 0);
+            grid.Place(chosen.Tile, chosen.Orientation, cell.X + offsetX, cell.Y + offsetY, 0);
             if (pointIndex >= 0) EdgePointTiles.Add((cell.X, cell.Y, pointIndex));
         }
     }
