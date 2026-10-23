@@ -25,6 +25,14 @@ sealed class StashRules
     readonly Dictionary<int, HashSet<byte>> _heldBy = [];             // affinity → StashType rows
     readonly Dictionary<byte, Dictionary<uint, int>> _slots = [];     // StashType row → item type → slot
     readonly Dictionary<uint, ushort> _currencyTabStack = [];  // a slot's own limit (tests); else SlotStack
+    readonly Dictionary<byte, HashSet<int>> _anySlots = [];          // StashType row → slots that take any item
+
+    /// <summary>
+    /// Whether cell (x, y) of a tab type is a slot that takes any item: the currency tab's crafting slot
+    /// (CurrencyStashTabLayout row CraftingSlot, slot 28, the big cell in the middle; the client drops onto it as (28, 0),
+    /// live 2026-10-23). An item there keeps its own stack size.
+    /// </summary>
+    public bool TakesAnything(byte tabType, int x, int y) => y == 0 && _anySlots.TryGetValue(tabType, out var s) && s.Contains(x);
 
     /// <summary>False without the tables: then every tab holds anything (there is nothing to check against).</summary>
     public bool Loaded { get; private set; }
@@ -96,6 +104,11 @@ sealed class StashRules
             foreach (var r in d.RootElement.EnumerateArray())
             {
                 int slot = r.GetProperty("FirstSlotIndex").GetInt32();
+                if (r.GetProperty("Id").GetString() == "CraftingSlot")
+                {
+                    (rules._anySlots.TryGetValue(tabType, out var any) ? any : rules._anySlots[tabType] = []).Add(slot);
+                    continue;
+                }
                 var types = new List<uint>();
                 if (byId.TryGetValue(r.GetProperty("Id").GetString() ?? "", out uint own)) types.Add(own);
                 // The currency layout names its item in StoredItem: for the Eldritch Embers and Ichors the row's Id is an old
@@ -133,13 +146,15 @@ sealed class StashRules
 
     /// <summary>Rules from given data (tests).</summary>
     internal static StashRules For(Dictionary<uint, HashSet<int>> affinities, Dictionary<int, HashSet<byte>> heldBy,
-        Dictionary<byte, Dictionary<uint, int>> slots, Dictionary<uint, ushort>? currencyTabStack = null)
+        Dictionary<byte, Dictionary<uint, int>> slots, Dictionary<uint, ushort>? currencyTabStack = null,
+        Dictionary<byte, HashSet<int>>? anySlots = null)
     {
         var rules = new StashRules { Loaded = true };
         foreach (var (k, v) in affinities) rules._affinities[k] = v;
         foreach (var (k, v) in heldBy) rules._heldBy[k] = v;
         foreach (var (k, v) in slots) rules._slots[k] = v;
         foreach (var (k, v) in currencyTabStack ?? []) rules._currencyTabStack[k] = v;
+        foreach (var (k, v) in anySlots ?? []) rules._anySlots[k] = v;
         return rules;
     }
 }
