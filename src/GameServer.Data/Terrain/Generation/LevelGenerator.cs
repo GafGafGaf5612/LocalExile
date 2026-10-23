@@ -186,8 +186,13 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
         TiliseRoom(room, code, 0, 0);
         Fill();
-        new SeamRepair(files, _grid, _store, rng, notes).Run();
+        // 0x142025440 over the whole map, the room in its room list (its vertex grounds are not ported here).
+        var (rw, rh) = Orientation.Size(code, room.Width, room.Height);
+        var tg = TileGraph.Parse(files.Text(graphPath)!);
+        new Seams(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, [new PlacedRoom(room, 0, 0, rw, rh, [])], new HashSet<(int X, int Y)>(),
+            (Ground(tg.TopGround), Ground(tg.BottomGround), Ground(tg.DefaultGround)), notes).Run();
         return _grid;
+        string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
     }
 
     /// <summary><c>0x142049d10</c>: the subgraph records in order, each laid out and tilised on one tile map
@@ -278,8 +283,17 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                         }
         RoomGrounds(map, step);
         FillRecords(master, masterPath);
-        // 0x1420f8f20 (draws only when +0xb0 lists cells, not ported), then the mirror seams (0x142025440).
-        new SeamRepair(files, _grid, _store, rng, notes, roomVertices).Run();
+        // 0x1420f8f20 (draws only when +0xb0 lists cells, not ported), then the mirror seams (0x142025440) over the
+        // layout's view, with the placed rooms as its room list.
+        var placed = new List<PlacedRoom>();
+        foreach (var p in map.Rooms)
+            if (p.Room?.Def is { } def)
+            {
+                var (w, h) = Orientation.Size(p.Orientation, def.Width, def.Height);
+                placed.Add(new PlacedRoom(def, _ox + step * p.X, _oy + step * p.Y, w, h, p.Descriptions));
+            }
+        new Seams(files, rng, _grid, _ox, _oy, step * map.Width + map.Overlap, step * map.Height + map.Overlap, _store, placed, roomVertices,
+            _graphGrounds, notes).Run();
         foreach (var p in map.Rooms)
             if (p.Room is null && p.Descriptions.Count != 0)
                 records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index));
@@ -1192,68 +1206,6 @@ sealed class TileStore
     /// <summary><c>0x141d82280</c>: every tile of any tag, in each orientation, with these edges and this size.</summary>
     public List<(TileDef Tile, int Orientation, int Weight)>? ByEdgesAndSize(string?[] edges, int w, int h) =>
         _bySize.TryGetValue((edges[0], edges[1], edges[2], edges[3], w, h), out var l) ? l : null;
-}
-
-/// <summary><c>0x142025440</c>: row by row, a placed tile larger than one entry whose neighbour (up, right, down,
-/// left, one tile size away) is the same tile mirrored across their shared edge is replaced (<c>0x142027670</c>) by a
-/// candidate for its key that makes no such seam with its up and left neighbours. A tile touching a vertex that took a
-/// room's own vertex ground stays (<c>0x142025fb0</c>).</summary>
-sealed class SeamRepair(TerrainCache files, TileGrid grid, TileStore store, LevelRandom rng, List<string> notes, IReadOnlySet<(int X, int Y)>? roomVertices = null)
-{
-    public void Run()
-    {
-        for (int y = 0; y < grid.Height; y++)
-            for (int x = 0; x < grid.Width; x++)
-            {
-                if (grid[x, y] is not { IsOrigin: true } e) continue;
-                var (w, h) = Orientation.Size(e.Orientation, e.Tile.Width, e.Tile.Height);
-                if (w == 1 && h == 1) continue;
-                if (e.Tile.Tag.Length != 0 || Seams.PlainFill(files, e.Tile.Key)) continue;
-                if (roomVertices is not null && Seams.TouchesRoomVertex(roomVertices, x, y, w, h)) continue;
-                for (int d = 0; d < 4; d++)
-                {
-                    var (dx, dy) = Orientation.Directions[d];
-                    int nx = x + w * dx, ny = y + h * dy;
-                    if (grid[nx, ny] is not { IsOrigin: true } n || n.Tile != e.Tile) continue;
-                    if (Orientation.MirrorAcross(e.Orientation, d) != n.Orientation) continue;
-                    Repair(x, y, e, d, n);
-                    break;
-                }
-            }
-    }
-
-    void Repair(int x, int y, TileEntry e, int direction, TileEntry neighbour)
-    {
-        var key = e.Tile.Key.Rotate(e.Orientation);
-        var list = new List<(TileDef Tile, int Orientation, int Weight)>();
-        foreach (var c in store.Candidates("", key))
-        {
-            if (Seam(x, y, c.Tile, c.Orientation, allDirections: false)) continue;
-            if (c.Tile == neighbour.Tile && Orientation.MirrorAcross(c.Orientation, direction) == neighbour.Orientation) continue;
-            if (c.Weight != 0) list.Add(c);
-        }
-        if (list.Count == 0)
-        {
-            notes.Add($"seam at ({x}, {y}): no replacement; the edge-point fallback (0x142026bc0) is not ported");
-            return;
-        }
-        int r = (int)rng.Next((uint)list.Sum(c => c.Weight));
-        var pick = list.First(c => (r -= c.Weight) < 0);
-        grid.Place(pick.Tile, pick.Orientation, x, y, e.HeightOffset);
-    }
-
-    // 0x142026100: the tile at (x, y) would face a mirrored copy of itself (up and left only, unless all).
-    bool Seam(int x, int y, TileDef tile, int o, bool allDirections)
-    {
-        var (w, h) = Orientation.Size(o, tile.Width, tile.Height);
-        foreach (int d in allDirections ? [0, 1, 2, 3] : new[] { 0, 3 })
-        {
-            var (dx, dy) = Orientation.Directions[d];
-            if (grid[x + w * dx, y + h * dy] is { IsOrigin: true } n && n.Tile == tile && n.Orientation == Orientation.MirrorAcross(o, d))
-                return true;
-        }
-        return false;
-    }
 }
 
 /// <summary>A master's EdgeCombination (.ecf, <c>0x1420f9880</c>'s map at master +0x208): what two edge types on one

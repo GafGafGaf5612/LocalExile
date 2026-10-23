@@ -128,7 +128,7 @@ For a one-node graph (towns, hideouts):
    (up, right, down, left) is the same tile in the mirrored orientation (left/right: 0↔4, 1↔7, 2↔6, 3↔5; up/down:
    0↔6, 1↔5, 2↔4, 3↔7) is re-picked (`0x142027670`) among its key's candidates that make no such seam with their up
    and left neighbours (`0x142026100`) and do not mirror that neighbour: `Next(total weight)`. With none left, the
-   edge-point fallback `0x142026bc0` (not ported; it found nothing in the town either). This is why every
+   edge-point fallback `0x142026bc0` (§5 step 6; it found nothing in the town). This is why every
    symmetric edge tile of Lioneye's Watch ends in orientation 4 or 6 whatever its first pick.
 
 Lioneye's Watch (seed 1): topology (MT draw + 10 LCG bits), room `Next(1)`, 11 keyed slots, 82 fills, 3 seam
@@ -321,7 +321,10 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    gives the footprint's vertices the height and flag 2) sorted by (x, y), each still empty one filled by
    `0x141feb970` (as for tile graphs) for its ground, or its top-left vertex's ground when that vertex has flag 1,
    at the record's height (`0x1420f3de0` → `0x141fec8f0`: a given height is used, 0x80000000 = corners' middle).
-5. **Mirror seams** (`0x142025440`, as in §3c), then, after the subgraph (`0x142044f30`), the **outer ground**
+5. **Mirror seams** (`0x142025440`, the same pass as for tile graphs, `Seams.cs`, with the fallback `0x142026bc0`):
+   `0x1420f3480` calls it on the layout's view (its corner to step × size + overlap) with the placed rooms as the room
+   list, so tiles inside a room never take the fallback and tiles touching a room's vertex ground stay. The one-node
+   path runs it on the whole map with its one room. Then, after the subgraph (`0x142044f30`), the **outer ground**
    (`0x14201db80`) over the subgraph's view (`0x141ffb6c0`): the layout inside the outer buffer, not the buffer.
    Vertices with flag 1 get flag 2. When the outer ground's .gt has flag 1 (or master +0x161), every empty entry
    takes its first fill tile at orientation 0, no draw. Otherwise the heights are fixed: row by row an empty entry
@@ -744,6 +747,9 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  2026-10-23 (session 3q: the dungeon seams run `Seams.cs` on the layout's view with the edge-point fallback): 88 of
+  710 match (was 84); of the seed-1 traces 52 match by hash (was 48; new: `2_10_2`, `2_10_5`, `2_10_6`,
+  `2_9_10_2`), none lost, no trace matches fewer draws.
   2026-10-23 (session 3p: plain room slots before the shared-slot test, room grounds `0x1420f0e10`, seam tests
   `0x14201d800` / `0x142025fb0`, the shared slots' accessible bit, `s`-keyed `.arm` rooms, the layout fill's step,
   post-unique tiles on dungeons): 84 of 710 match; of the seed-1 traces 48 match by hash (was 38; new: `1_1_3`,

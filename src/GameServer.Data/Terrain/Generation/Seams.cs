@@ -1,16 +1,17 @@
 namespace GameServer.Data.Terrain.Generation;
 
-/// <summary>The mirror seams of a tile graph layout (<c>0x142025440</c> on the view, after the overlays): row by row, a
+/// <summary>The mirror seams (<c>0x142025440</c> on the view: a tile graph's after the overlays, a dungeon's after its
+/// fill, <c>0x1420f3480</c>, with its placed rooms as the room list): row by row, a
 /// tile larger than one entry, without a tag and not a plain fill tile, none of whose vertices took a room's own
 /// vertex ground (room data +0xe8, <c>0x142025fb0</c>), whose neighbour one tile size away is the same tile mirrored is re-picked among
 /// its key's tiles that make no seam with their up and left neighbours (<c>0x142027670</c>). With none, outside rooms,
 /// a neighbour's shared edge point moves instead (<c>0x142026bc0</c>).</summary>
-sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offset, int width, int height, TileStore store,
+sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offsetX, int offsetY, int width, int height, TileStore store,
     IReadOnlyList<PlacedRoom> rooms, IReadOnlySet<(int X, int Y)> roomVertices, (string? A0, string? A8, string? B0) grounds, List<string> notes)
 {
     readonly bool[] _roomCells = new bool[width * height];
 
-    TileEntry? Entry(int x, int y) => (uint)x < (uint)width && (uint)y < (uint)height ? grid[x + offset, y + offset] : null;
+    TileEntry? Entry(int x, int y) => (uint)x < (uint)width && (uint)y < (uint)height ? grid[x + offsetX, y + offsetY] : null;
 
     static (int W, int H) Size(TileEntry e) => Orientation.Size(e.Orientation, e.Tile.Width, e.Tile.Height);
 
@@ -19,7 +20,7 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
         foreach (var r in rooms)
             for (int y = r.Y; y < r.Y + r.Height; y++)
                 for (int x = r.X; x < r.X + r.Width; x++)
-                    if ((uint)(x - offset) < (uint)width && (uint)(y - offset) < (uint)height) _roomCells[(y - offset) * width + x - offset] = true;
+                    if ((uint)(x - offsetX) < (uint)width && (uint)(y - offsetY) < (uint)height) _roomCells[(y - offsetY) * width + x - offsetX] = true;
         bool check = grid.CheckGrounds;
         grid.CheckGrounds = false;
         for (int y = 0; y < height; y++)
@@ -29,7 +30,7 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
                 var (w, h) = Size(e);
                 if (w == 1 && h == 1) continue;
                 if (e.Tile.Tag.Length != 0 || PlainFill(e.Tile.Key)) continue;
-                if (TouchesRoomVertex(roomVertices, x + offset, y + offset, w, h)) continue;
+                if (TouchesRoomVertex(roomVertices, x + offsetX, y + offsetY, w, h)) continue;
                 for (int d = 0; d < 4; d++)
                 {
                     var (dx, dy) = Orientation.Directions[d];
@@ -165,7 +166,7 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
                 Replace(x, y, ch.Tile, ch.Orientation);
                 var pick = Pick(list, (int)rng.Next((uint)list.Sum(c => c.Weight)));
                 Replace(nx, ny, pick.Tile, pick.Orientation);
-                notes.Add($"seam at ({x + offset}, {y + offset}): edge point fallback, side {ch.Side}");
+                notes.Add($"seam at ({x + offsetX}, {y + offsetY}): edge point fallback, side {ch.Side}");
                 return;
             }
             for (int i = choices.Count - 1; i >= 0; i--)
@@ -224,10 +225,10 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
             for (int vx = x; vx <= x + w; vx++)
             {
                 if (!Unowned(vx, vy, x, y)) continue;
-                if (VertexAt(old.Tile, old.Orientation, vx - x, vy - y) is null) Count(grid.Corner(vx + offset, vy + offset).Ground);
+                if (VertexAt(old.Tile, old.Orientation, vx - x, vy - y) is null) Count(grid.Corner(vx + offsetX, vy + offsetY).Ground);
                 else if (VertexAt(tile, o, vx - x, vy - y) is null) lost.Add((vx, vy));
             }
-        grid.Place(tile, o, x + offset, y + offset, old.HeightOffset);
+        grid.Place(tile, o, x + offsetX, y + offsetY, old.HeightOffset);
         if (lost.Count != 0 && !any)
             foreach (var (vx, vy) in lost)
                 foreach (var (dx, dy) in Orientation.Directions)
@@ -235,17 +236,17 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
                     int nx = vx + dx, ny = vy + dy;
                     bool outside = nx < x || nx >= x + w + 1 || ny < y || ny >= y + h + 1;
                     if (outside && nx >= 0 && nx < width + 1 && ny >= 0 && ny < height + 1 && Unowned(nx, ny, x, y))
-                        Count(grid.Corner(nx + offset, ny + offset).Ground);
+                        Count(grid.Corner(nx + offsetX, ny + offsetY).Ground);
                 }
         foreach (var (vx, vy) in lost)
         {
             string? g = best;
             if (!any)
             {
-                int vh = grid.Corner(vx + offset, vy + offset).Height;
+                int vh = grid.Corner(vx + offsetX, vy + offsetY).Height;
                 g = grounds.A0 is not null && vh >= 0 ? grounds.A0 : grounds.A8 is not null && vh <= 0 ? grounds.A8 : grounds.B0;
             }
-            grid.ForceGround(vx + offset, vy + offset, g);
+            grid.ForceGround(vx + offsetX, vy + offsetY, g);
         }
     }
 }
