@@ -226,13 +226,21 @@ sealed class SkillCatalog(string folder = "data")
     /// Righteous Fire). An instant skill is used while moving, without an action of its own.</summary>
     public bool IsInstant(int effectRow) => _instantEffects.Value.Contains(effectRow);
 
-    private readonly Lazy<HashSet<int>> _instantEffects = new(() =>
+    /// <summary>A movement skill (ActiveSkillType Movement: Leap Slam, Whirling Blades, Flame Dash …): the player ends
+    /// where it was aimed.</summary>
+    public bool IsMovement(int effectRow) => _movementEffects.Value.Contains(effectRow);
+
+    private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
+    private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
+
+    /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>
+    static HashSet<int> EffectsOfType(string folder, string typeId)
     {
         string TablePath(string name) => Path.Combine(folder, "tables", name + ".json");
         if (!File.Exists(TablePath("GrantedEffects")) || !File.Exists(TablePath("ActiveSkills")) || !File.Exists(TablePath("ActiveSkillType"))) return [];
         using var types = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkillType")));
         int instant = types.RootElement.EnumerateArray().Select((r, i) => (Id: r.GetProperty("Id").GetString(), i))
-            .FirstOrDefault(t => t.Id == "Instant", (null, -1)).i;
+            .FirstOrDefault(t => t.Id == typeId, (null, -1)).i;
         if (instant < 0) return [];
         using var active = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkills")));
         var instantSkills = active.RootElement.EnumerateArray().Select((r, i) => (r, i))
@@ -243,6 +251,21 @@ sealed class SkillCatalog(string folder = "data")
         return [.. effects.RootElement.EnumerateArray().Select((r, i) => (r, i))
             .Where(e => e.r.TryGetProperty("ActiveSkill", out var a) && a.ValueKind == JsonValueKind.Number && instantSkills.Contains(a.GetInt32()))
             .Select(e => e.i)];
+    }
+
+    /// <summary>A weapon base's WeaponTypes row by its BaseItemTypes row: attack time (ms), physical damage, range.</summary>
+    public (int AttackMs, int Min, int Max, int Range)? WeaponBase(int baseRow) => _weaponTypes.Value.TryGetValue(baseRow, out var w) ? w : null;
+
+    private readonly Lazy<Dictionary<int, (int, int, int, int)>> _weaponTypes = new(() =>
+    {
+        string path = Path.Combine(folder, "tables", "WeaponTypes.json");
+        var result = new Dictionary<int, (int, int, int, int)>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in d.RootElement.EnumerateArray())
+            result.TryAdd(r.GetProperty("BaseItemTypesKey").GetInt32(), (r.GetProperty("Speed").GetInt32(), r.GetProperty("DamageMin").GetInt32(),
+                r.GetProperty("DamageMax").GetInt32(), r.GetProperty("RangeMax").GetInt32()));
+        return result;
     });
 
     /// <summary>A projectile type for an effect: the Projectiles.dat row whose Id is Metadata/Projectiles/(GrantedEffects

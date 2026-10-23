@@ -373,6 +373,26 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
+## 9a. Gem skills without a projectile (first version, 2026-10-23)
+
+Only projectile skills (Fireball) and Righteous Fire dealt damage: every other gem skill logged "no projectile". Now
+`AreaSkillHit` gives them one hit, after half the attack time (attacks) or the cast (spells), on every living monster
+within the skill's `active_skill_base_area_of_effect_radius` (halved to cells, at least 3; else 12 cells) of the aimed
+point, or of the player when a melee skill is aimed too far. Attacks use the default attack's hit (`WeaponFor`: the
+weapon in the hand by its WeaponTypes row with its local physical damage, added physical damage and attack speed mods,
+else the class's unarmed attack; the player's stats on top), spells `SkillCatalog.HitDamage` with the player's stats; both convert and crit.
+`base_deal_no_damage` skills (Portal) deal none. Not modelled: damage effectiveness, the skills' shapes (waves, cones,
+chains, leaps), stun, the accuracy roll. Being tested live.
+
+**Movement skills** (ActiveSkillType Movement: Leap Slam, Whirling Blades …): the server puts the player at the aimed
+cell when the skill starts (`SkillCatalog.IsMovement`); it kept the starting cell before, and a later resync pulled the
+player back there (live 2026-10-23).
+
+**Channelled skills** (Cyclone): after the skill's 0x1ab start the client sends **C→S 0x197** (10 bytes: u32 BE x,
+u32 BE y, the player's cell) every few frames while the button is held, and **C→S 0x199** (2 bytes) when it is let go
+(read from live captures 2026-10-23). The Gateway moves the player there and, once per attack time, runs
+`AreaSkillHit` around it at once (`ClientState.ChannelSkill`, `NextChannelHitAt`).
+
 ## 10. Projectiles (experimental)
 
 The server creates and moves the projectile. The client's Projectile component (vtable `0x1435a0d10`, 0x20 bytes) does
