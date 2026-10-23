@@ -332,11 +332,21 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             double at = conn.ClockAt(readAt);   // when the client applied the click, not when this handler runs
             // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
             bool cast = Skills.IsGemSkill(use.SkillId);
+            var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
+            // A disabled gem's skill is not confirmed: the client animates the cast and sends the use anyway (it only reds
+            // the gem), so without the 0x1ab the action does not run. No projectile, mana or cooldown either.
+            if (cast && gem.Name is not null && GemDisabled(conn, gem.Effect) is { } disabled)
+            {
+                Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name}: {disabled} (disabled, action not started)");
+                // The client paid the cast before the server heard of it: the pool again gives the cost back.
+                await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (disabled skill, cost back)");
+                continue;
+            }
             var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
             if (cast) conn.Walk.Order(px, py, at);
             // A movement skill (Leap Slam …) takes the player to the aimed point: the server keeps the position the
             // client will have, or a later resync would pull the player back to where the skill started.
-            if (cast && GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) is { Name: not null } moving && Skills.IsMovement(moving.Effect)
+            if (gem.Name is not null && Skills.IsMovement(gem.Effect)
                 && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
                 conn.Walk.Teleport(use.X, use.Y, at);
             await Send(remote, stream, ciphers,
@@ -1620,6 +1630,15 @@ static async Task<bool> CastGemSkill(string remote, NetworkStream stream, Connec
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0)
 {
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+    // A gem whose requirements the character's level does not meet is disabled: its skill stays on the skill bar but
+    // cannot be used (the client shows the gem red but still sends the use; the server withholds the action, see
+    // OnClientMessages). Attributes are not checked yet: their formula is not fitted (19-gems.md "Open").
+    if (gem.Name is not null && GemDisabled(conn, gem.Effect) is { } disabled)
+    {
+        Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {disabled} (disabled)");
+        await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (disabled skill, cost back)");
+        return false;
+    }
     // Vaal souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill never has the souls it needs.
     if (gem.Name is not null && Skills.VaalSouls(gem.Effect, gem.Level) is int souls and > 0)
     {
@@ -2021,7 +2040,10 @@ static async Task ShowBossLifeBar(string remote, NetworkStream stream, Connectio
 }
 
 // The player's granted skills: the default attack with the unarmed weapon's stats and every stat the server set on the
-// player since (a skill's stats include the character's; the client reads the skill's).
+// player since (a skill's stats include the character's; the client reads the skill's). A gem whose requirements the
+// character does not meet makes its item inactive (CharacterStatSources) like a worn item the character is too low for,
+// so GemSkillEffects leaves its skill out: the client has nothing to cast. A use that arrives anyway (a stale client) is
+// refused (GemDisabled).
 static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
 {
     var player = FinalPlayerStats(conn).ToList();
@@ -2298,15 +2320,70 @@ static string? LevelTooLow(ClientState conn, byte row, Item? held)
     return conn.Pools.Level < needs ? $"{t.Name} requires level {needs} (character is {conn.Pools.Level})" : null;
 }
 
+// Why a gem may not go into a socket: the character's level is below the gem's level requirement (GrantedEffectStatSetsPerLevel
+// PlayerLevelReq at the gem's level) or an attribute requirement is not met. The client checks both (0x14246fff0 for the
+// level, 0x14246fc40 per attribute) and refuses the move itself, but the server does not trust that.
+static string? GemRequirementsUnmet(ClientState conn, Item? gem)
+{
+    if (gem is null || Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is not { } type) return null;
+    int level = Items.GemLevel(gem);
+    int effect = type.Variant(gem.GemVariant).Effect;
+    if (effect < 0) return null;
+    string name = Items.GemName(gem);
+    if (Skills.PlayerLevelReq(effect, level) is int needs and > 0 && conn.Pools.Level < needs)
+        return $"{name} at level {level} requires level {needs} (character is {conn.Pools.Level})";
+    // A gem's attributes come from its percentage shares and the level requirement, at the gem's level clamped to its cap
+    // (a corrupted level 21 gem keeps level 20's requirement; 0x14246fc40). The client checks them against
+    // virtual_*_for_requirements, which are the attributes unless something overrides them (/set_stat).
+    var (str, dex, intel) = GemAttributeRequirements(gem, type, effect);
+    foreach (var (need, attr, has) in new[] { (str, "strength", RequirementAttribute(conn, "strength", conn.Pools.Strength)),
+        (dex, "dexterity", RequirementAttribute(conn, "dexterity", conn.Pools.Dexterity)),
+        (intel, "intelligence", RequirementAttribute(conn, "intelligence", conn.Pools.Intelligence)) })
+        if (need > 0 && has < need)
+            return $"{name} at level {level} requires {need} {attr} (character has {has})";
+    return null;
+}
+
+// A gem's attribute requirements at its level: each SkillGems percentage through SkillCatalog.GemAttributeRequirement.
+static (int Str, int Dex, int Int) GemAttributeRequirements(Item gem, ItemCatalog.GemType type, int effect)
+{
+    int level = Math.Clamp(Items.GemLevel(gem), 1, Math.Max(1, type.MaxLevel));
+    int needs = Skills.PlayerLevelReq(effect, level);
+    return (SkillCatalog.GemAttributeRequirement(type.StrengthPercent, needs, type.IsSupport),
+        SkillCatalog.GemAttributeRequirement(type.DexterityPercent, needs, type.IsSupport),
+        SkillCatalog.GemAttributeRequirement(type.IntelligencePercent, needs, type.IsSupport));
+}
+
+// The value the client's requirement checks compare (virtual_*_for_requirements, 13-items.md §2d): what /set_stat set,
+// else the character's attribute.
+static int RequirementAttribute(ClientState conn, string attribute, int value)
+{
+    lock (conn.Monsters)
+        return Stats.Key($"virtual_{attribute}_for_requirements") is uint key && conn.PlayerStats.TryGetValue(key, out int set) ? set : value;
+}
+
+// Why a gem skill may not be used: the character's level or an attribute is below the gem's requirement of its own level.
+// The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
+// Null when no gem granting the effect is below its requirement.
+static string? GemDisabled(ClientState conn, int effect)
+{
+    foreach (var place in PlayerInventories.For(CharacterName(conn), Items).SocketedGemPlaces())
+        if (Items.GemEffects(place.Gem).Contains(effect) && GemRequirementsUnmet(conn, place.Gem) is { } missing)
+            return missing;
+    return null;
+}
+
 // A worn item whose requirements are not met (CharacterStatSources): its mods and gems do nothing.
 static bool IsInactive(ClientState conn, uint itemId) => InactiveItems.GetValueOrDefault(CharacterName(conn))?.Contains(itemId) == true;
 
 static string CharacterName(ClientState conn) => string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character;
 
 // The skills of the active gems socketed in the equipped items in skill-list order: skill id, GrantedEffects row, gem
-// name, and the gem's level (from its experience) and quality. A transfigured or Trarthan gem grants its variant's skill, a
-// Vaal gem its Vaal skill and its base skill (ItemCatalog.GemEffects). Each skill keeps its id while its gem stays socketed
-// (GemSkillIds): the client binds skill bar keys by skill id.
+// name, the gem's own level (from its experience; the experience stalls at the character's level requirement instead,
+// GainGemExperience) and quality. A transfigured or Trarthan gem grants its variant's skill, a Vaal gem its Vaal skill and
+// its base skill (ItemCatalog.GemEffects). Each skill keeps its id while its gem stays socketed (GemSkillIds): the client
+// binds skill bar keys by skill id. A gem whose requirements the character does not meet makes its item inactive
+// (CharacterStatSources), so it grants nothing here; a use that still arrives is refused (GemDisabled).
 static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)> GemSkillEffects(string? character)
 {
     string name = string.IsNullOrEmpty(character) ? "Exile" : character;
@@ -2479,10 +2556,22 @@ static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<
     var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
     var inactive = ItemModStats.Inactive(worn, (c.Strength + ps + god, c.Dexterity + pd + god, c.Intelligence + pi + god),
         level ?? conn.Pools.Level, i => ItemModStats.Attributes(i, Items.Mods), before);
+    // A gem socketed in a worn item whose requirements the character does not meet makes the whole item inactive, as an
+    // item the character is too low for: the client shows it red (the gem's level requirement), and the item's mods and
+    // its gems do nothing — a disabled gem's skill is not in the skill list at all, so it cannot be cast.
+    var gemDisabled = new Dictionary<uint, string>();
+    foreach (var place in items.SocketedGemPlaces())
+        if (GemRequirementsUnmet(conn, place.Gem) is { } why)
+        {
+            inactive.Add(place.ItemId);
+            gemDisabled[place.ItemId] = why;
+        }
     InactiveItems[CharacterName(conn)] = inactive;
     if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
         Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
-            string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w => $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+            string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w => gemDisabled.TryGetValue(w.Id, out var gem)
+                ? $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} ({gem})"
+                : $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
     var active = worn.Where(w => !inactive.Contains(w.Id)).Select(w => w.Item);
     return ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
 }
@@ -2891,8 +2980,11 @@ static async Task GainExperience(string remote, NetworkStream stream, Connection
 }
 
 // A kill's experience goes to the gems too: every one socketed in an equipped item, in either weapon set, gains 10% of the
-// player's gain (support gems too, a gem in an inactive item, at its last level or over its cap nothing), up to the last
-// level's threshold, written into the gem item inside the socket list — the equipped
+// player's gain (support gems too, a gem in an inactive item, at its last level or over its cap nothing), up to the
+// threshold of the first level whose requirement the character does not meet — the gem's level stalls there, as the
+// game's does (the client would level the gem to whatever its experience says, so the experience stops just below that
+// threshold; a gem already past it, after /set_level down, keeps its level and experience and is disabled instead) and
+// the last level's threshold. Written into the gem item inside the socket list — the equipped
 // item's own component has no skill gems. Sent as the socket's equipment row 0x00bf item change, the same item id removed
 // and added again (the replace idiom: an addition of a known id alone is dropped as a duplicate, so the client would keep
 // the stale gem), so the client's gem XP bar and tooltip follow; the next save keeps it.
@@ -2905,7 +2997,8 @@ static async Task GainGemExperience(string remote, NetworkStream stream, Connect
     {
         if (IsInactive(conn, itemId) || Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is not { } type) return null;
         // -1 is a corrupted gem over its cap (GemType.Level), and at its last level's threshold a gem gains no more.
-        int cap = type.ExperienceFor(type.MaxLevel);
+        int lastLevel = Math.Min(Skills.MaxLevelAt(type.Variant(gem.GemVariant).Effect, conn.Pools.Level), type.MaxLevel);
+        int cap = lastLevel < type.MaxLevel ? type.ExperienceFor(lastLevel + 1) - 1 : type.ExperienceFor(type.MaxLevel);
         if (gem.GemExperience < 0 || gem.GemExperience >= cap) return null;
         return gem with { GemExperience = (int)Math.Min((long)gem.GemExperience + share, cap) };
     });
@@ -3518,6 +3611,10 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
         int value = int.Parse(args[1]);
         lock (conn.Monsters) conn.PlayerStats[stat] = value;
+        // The client's requirement checks (gear and gems) read virtual_strength/dexterity/intelligence_for_requirements,
+        // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
+        if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
+            lock (conn.Monsters) conn.PlayerStats[requirement] = value;
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
             $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
         // Skills compute with their own stats (the attack and the character panel read those), so send them again.
@@ -4883,7 +4980,10 @@ static (Dictionary<string, int> Main, Dictionary<string, int> Off) HandLocalStat
 static WeaponProfile WeaponProfileFor(ClientState conn)
 {
     var items = ItemsOf(conn);
-    ItemCatalog.BaseType? At(byte row) => items.Items(row).Select(i => Items.ByHash(i.Item.TypeHash)).FirstOrDefault(t => t is not null);
+    // An inactive weapon (requirements not met) is not there at all: the class is unarmed, as the default attack's
+    // unarmed fallback (WeaponFor) is.
+    ItemCatalog.BaseType? At(byte row) => items.Items(row).Where(i => !IsInactive(conn, i.Id))
+        .Select(i => Items.ByHash(i.Item.TypeHash)).FirstOrDefault(t => t is not null);
     static bool OneHandMelee(ItemCatalog.BaseType t) => t.Class is "Claw" or "Dagger" or "Rune Dagger"
         or "One Hand Sword" or "Thrusting One Hand Sword" or "One Hand Axe" or "One Hand Mace" or "Sceptre";
     static bool OneHand(ItemCatalog.BaseType t) => OneHandMelee(t) || t.Class == "Wand";
@@ -5036,6 +5136,11 @@ static async Task<InventoryItem?> TakeHeld(string remote, NetworkStream stream, 
 static async Task SocketGem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.SocketGem s)
 {
     var items = ItemsOf(conn);
+    if (items.Items(PlayerInventories.Cursor) is [var held, ..] && GemRequirementsUnmet(conn, held.Item) is { } missing)
+    {
+        Console.WriteLine($"[gateway] {remote} <= 0x0030 socket {s}: refused ({missing})");
+        return;
+    }
     string why = "unknown inventory";
     var done = PlayerInventories.Row(s.InventoryId) is byte row ? items.Socket(row, s.ItemId, (int)s.Socket, ShapeOf, items.NewItemId, out why) : null;
     if (done is not var (item, before, now) || PlayerInventories.Row(s.InventoryId) is not byte r)

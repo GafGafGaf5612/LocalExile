@@ -197,22 +197,31 @@ data is in [19](docs/protocol/19-gems.md).
 - **Known:** each socketed gem keeps its skill id while it stays socketed, and an aura or Righteous Fire ends with its
   gem (part (a)). Part (b): a gem's skill uses its level (from its experience) and quality, transfigured, Trarthan and
   Vaal gems grant their skills, the variant is the SkillGem data's u32, and `/gem` makes any gem
-  ([19](docs/protocol/19-gems.md) §1, §3); not yet checked with the real client.
+  ([19](docs/protocol/19-gems.md) §1, §3); not yet checked with the real client. Part (c), the requirements, is in:
+  the level is `PlayerLevelReq` (Haste 24 at gem level 1 … 70 at 20, as the client's tooltips) and the attributes are
+  the client's own formula, fitted from `0x14246fc40` and checked against 570 poedb tooltip cells with no mismatch
+  (`trunc((3·level_req + 11)·(percent/100)^0.9·k + 0.5)`, `k` 0.5 for supports and 0.7 for skills, none below 14). The
+  level stops a gem's experience at the first one the character does not meet; socketing below either is refused, and a
+  gem the character is below (after `/set_level` down) makes its item inactive: red on the client, its mods and gems not
+  counting, its skill gone from the list so it cannot be cast, and an inactive weapon falls back to the unarmed attack
+  (Status "Gem requirements"). Checked live 2026-10-23 for the level and the attributes (`/set_stat intelligence` above
+  and below the 155 a level 20 Fireball needs: at 130 the client reds the gem and the wand's mods stop counting). Left
+  open: the client still draws an inactive item worn (red wand in hand) — check with the official client what it does
+  there, and whether to move the item out of the row instead ([13](docs/protocol/13-items.md) §2d).
 - **Start:** check part (b) live (a level 20 Fireball's damage and cost, a quality aura, Ice Nova of Frostbolts, a Vaal
-  gem's two skills). Then (c) requirements: the level and attribute requirements, refusing to socket, and the disabled
-  state.
+  gem's two skills).
 - **Done when:** a `/gem` gem of any level and quality casts with that level's numbers, transfigured and Vaal gems grant
   the right skills, skill ids don't change when other gems move, and requirements match the tooltips and are enforced.
 
 ### Gems 2: gem experience and levelling (#63)
-- **Known:** saves keep each gem's experience; character experience arrives in one place (`GainExperience`). In this
-  change: gems in equipped items already gain 10% of every kill's experience, saved with the character, sent as 0x00bf
-  item changes and levelled by the client itself ([19](docs/protocol/19-gems.md) §1, Status "Gem experience from
-  kills").
-- **Start:** whether `PlayerLevelReq` should stall the skill's level (the level against the character's). Then the
-  panel: research first the panel's client messages and where the lock is kept; level up, level all, lock (right click),
-  the locked list under the inventory (right click levels, Shift + right click unlocks), greyed when the requirements
-  aren't met.
+- **Known:** saves keep each gem's experience; character experience arrives in one place (`GainExperience`). Gems in
+  equipped items gain 10% of every kill's experience, saved with the character and sent as 0x00bf item changes
+  ([19](docs/protocol/19-gems.md) §1, Status "Gem experience from kills"). Checked live 2026-10-23: the client updates
+  the XP bar in real time and levels the gem itself at the threshold (no click), and the level's numbers are stalled by
+  the gem's level requirement (Gems 1 (c)).
+- **Start:** the panel: research first the panel's client messages and where the lock is kept; level up, level all,
+  lock (right click), the locked list under the inventory (right click levels, Shift + right click unlocks), greyed when
+  the requirements aren't met.
 - **Done when:** killing monsters levels socketed gems the way the real game does, and locked gems stay locked across
   logins.
 
