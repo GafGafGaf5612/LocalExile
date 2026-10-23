@@ -219,10 +219,20 @@ static void Doodads(string areaId, uint seed)
     var captured = dd.RootElement.GetProperty("doodads").EnumerateArray()
         .Select(d => (Model: models[d[0].GetInt32()].ToLowerInvariant(), X: d[1].GetInt32(), Y: d[2].GetInt32(), A: d[3].GetSingle())).ToList();
     var placed = stage.Placed.Select(p => (Model: p.Model.ToLowerInvariant(), p.X, p.Y, A: p.Angle)).ToList();
+    if (Environment.GetEnvironmentVariable("LEVELGEN_NEAR") is { Length: > 0 } near && near.Split(',').Select(int.Parse).ToArray() is [var nx, var ny, var nr])
+        foreach (var p in placed.Where(p => Math.Abs(p.X - nx) <= nr && Math.Abs(p.Y - ny) <= nr))
+            Console.WriteLine($"  near: {p.Model} ({p.X}, {p.Y}) {p.A:0.###} hull {!(DoodadHull.Load(files.Text, p.Model)?.IsEmpty ?? true)}");
     var capturedSet = captured.Select(c => (c.Model, c.X, c.Y)).ToHashSet();
     int found = placed.Count(p => capturedSet.Contains((p.Model, p.X, p.Y)));
     Console.WriteLine($"doodads: port {placed.Count}, {found} of them captured; capture {captured.Count}");
-    foreach (var p in placed.Where(p => !capturedSet.Contains((p.Model, p.X, p.Y))).Take(8))
+    // Matched doodads whose angle is not the captured one (mod 2π).
+    var capturedAngles = captured.GroupBy(c => (c.Model, c.X, c.Y)).ToDictionary(g => g.Key, g => g.Select(c => c.A).ToList());
+    var turned = placed.Where(p => capturedAngles.TryGetValue((p.Model, p.X, p.Y), out var a) &&
+        !a.Any(c => MathF.Abs(MathF.IEEERemainder(c - p.A, MathF.PI * 2)) < 0.01f)).ToList();
+    Console.WriteLine($"  {turned.Count} of them at another angle");
+    foreach (var p in turned.Take(6))
+        Console.WriteLine($"  angle: {Path.GetFileName(p.Model)} ({p.X}, {p.Y}) port {p.A:0.###} capture {string.Join("/", capturedAngles[(p.Model, p.X, p.Y)].Select(a => a.ToString("0.###")))}");
+    foreach (var p in placed.Where(p => !capturedSet.Contains((p.Model, p.X, p.Y))).OrderBy(p => DoodadHull.Load(files.Text, p.Model)?.IsEmpty ?? true).Take(8))
         Console.WriteLine($"  port only: {Path.GetFileName(p.Model)} ({p.X}, {p.Y}) {p.A:0.###}");
     var placedSet = placed.Select(p => (p.Model, p.X, p.Y)).ToHashSet();
     foreach (var c in captured.Where(c => !placedSet.Contains((c.Model, c.X, c.Y))).Take(12))

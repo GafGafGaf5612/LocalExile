@@ -201,14 +201,35 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
     public bool HasTransition(TileDef tile)
     {
         if (_transitionTiles.TryGetValue(tile.Path, out bool known)) return known;
+        return _transitionTiles[tile.Path] = TileObjects(tile).Any(o => IsTransitionType(o.Type));
+    }
+
+    readonly Dictionary<string, IReadOnlyList<TileObject>> _tileObjects = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Tile data +0x178 (<c>0x141d7fb60</c>): the tile's objects, from the .tmd next to its .tgt, else next to
+    /// the .tdt; none when the flags word has bit 3.</summary>
+    public IReadOnlyList<TileObject> TileObjects(TileDef tile)
+    {
+        if (_tileObjects.TryGetValue(tile.Path, out var known)) return known;
         IReadOnlyList<TileObject>? Objects(string? p)
         {
             if (p is null || !p.EndsWith(p.EndsWith(".tgt", StringComparison.OrdinalIgnoreCase) ? ".tgt" : ".tdt", StringComparison.OrdinalIgnoreCase)) return null;
             var data = read(p[..^4] + ".tmd");
             return data is null ? null : TileObjectFile.Parse(data);
         }
-        var objects = Objects(tile.Mesh) ?? Objects(tile.Path) ?? [];
-        return _transitionTiles[tile.Path] = objects.Any(o => IsTransitionType(o.Type));
+        var objects = (TileFlags(tile.Path) & 8) != 0 ? [] : Objects(tile.Mesh) ?? Objects(tile.Path) ?? [];
+        return _tileObjects[tile.Path] = objects;
+    }
+
+    /// <summary><c>0x141d7f700</c> with a master's Reskin: the tile's .tmd under "alttiles/&lt;reskin&gt;/&lt;reskin&gt;_"
+    /// beside it (<c>0x141d88810</c>), null when there is none.</summary>
+    public IReadOnlyList<TileObject>? ReskinObjects(TileDef tile, string reskin)
+    {
+        string? p = tile.Mesh is { } m && m.EndsWith(".tgt", StringComparison.OrdinalIgnoreCase) ? m : tile.Path;
+        int slash = p.LastIndexOf('/');
+        if (slash < 0) return null;
+        var data = read(p[..(slash + 1)] + "alttiles/" + reskin + "/" + reskin + "_" + p[(slash + 1)..^4] + ".tmd");
+        return data is null ? null : TileObjectFile.Parse(data);
     }
 
     bool IsTransitionType(string type)

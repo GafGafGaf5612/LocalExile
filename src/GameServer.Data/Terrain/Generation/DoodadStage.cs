@@ -225,9 +225,58 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
 
     readonly Dictionary<string, DoodadHull?> _hulls = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The object type of a client doodad. Room objects of other types (NPCs, monsters, blockers) are server
-    /// objects (<c>0x14202f640</c> → <c>0x142041ac0</c>) or filtered out (type +0x2a8 not 0 or 1, vtable +0x98).</summary>
-    const string DoodadType = "Metadata/MiscellaneousObjects/Doodad";
+    readonly Dictionary<string, (bool Created, bool Static)> _clientTypes = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Whether a room or tile line's object type is created as a client object (<c>0x142041960</c>,
+    /// <c>0x1420415e0</c>, vtable +0x98 = <c>0x14152d680</c>): the type (<c>0x141ec1360</c>) takes its BaseEvents
+    /// flags, +0x2a4 serialised (no <c>no_serialise</c>), +0x2a8 1 for <c>client_only</c> / 2 for <c>server_only</c>,
+    /// +0x2ac <c>league_category</c> (60 without one, else it must be the generator's +0xd0). So: not serialised or
+    /// client only, not server only. Across the captures this holds for every type but <c>DoodadNoBlocking</c>, whose
+    /// lines are virtual models without a file (so without collision either way). Types with a league category are
+    /// taken as another league's. The MiscObjects.dat rows <c>DoodadNoOverlap</c> / <c>DoodadNoOverlap3</c> /
+    /// <c>TileUpperDoodadNoOverlap</c> (<c>0x14202f640</c> → <c>0x142041ac0</c>) and <c>DoodadLayerDoodad</c>
+    /// (<c>0x14202f530</c> → world vtable +0x60) go elsewhere: not ported, left out. Static: the type's Positioned has
+    /// <c>static = true</c> (<c>Doodad</c>, <c>DoodadInvisible</c>); only those stamp their Hull. The others
+    /// (<c>HangingSlave</c>, <c>BellyGrassClusterTrigger</c>, the <c>FlowBlocking</c> objects) are created without
+    /// collision, as the captured grids show.</summary>
+    (bool Created, bool Static) ClientType(string type)
+    {
+        if (_clientTypes.TryGetValue(type, out var known)) return known;
+        bool? noSerialise = null, clientOnly = null, serverOnly = null;
+        bool league = false, found = false, isStatic = false;
+        string? t = type;
+        // The .ot and the ones it extends, nearest first: the first value of a key wins.
+        for (int depth = 0; t is { Length: > 0 } && t != "nothing" && depth < 16; depth++)
+        {
+            var text = files.Text(t + ".ot");
+            if (text is null) break;
+            found = true;
+            var lines = TerrainText.Lines(text).Select(l => l.Trim()).ToList();
+            // A component is a top-level block (the client section's blocks are one level down).
+            int braces = 0;
+            string block = "";
+            foreach (var l in lines)
+            {
+                if (braces == 0 && l.Length > 0 && l != "{" && l != "}") block = l;
+                if (braces == 1 && block == "Positioned" && l.Replace(" ", "").Replace("\t", "") == "static=true") isStatic = true;
+                braces += l.Count(c => c == '{') - l.Count(c => c == '}');
+            }
+            foreach (var l in lines.Select(l => l.Replace(" ", "").Replace("\t", "")))
+            {
+                if (l.StartsWith("no_serialise=", StringComparison.Ordinal)) noSerialise ??= l.EndsWith("=true", StringComparison.Ordinal);
+                else if (l.StartsWith("client_only=", StringComparison.Ordinal)) clientOnly ??= l.EndsWith("=true", StringComparison.Ordinal);
+                else if (l.StartsWith("server_only=", StringComparison.Ordinal)) serverOnly ??= l.EndsWith("=true", StringComparison.Ordinal);
+                else if (l.StartsWith("league_category=", StringComparison.Ordinal)) league = true;
+            }
+            t = lines.Where(l => l.StartsWith("extends ", StringComparison.Ordinal))
+                .Select(l => TerrainText.Tokenize(l).Skip(1).FirstOrDefault().Text).FirstOrDefault();
+        }
+        string name = type[(type.LastIndexOf('/') + 1)..];
+        bool routed = name is "DoodadNoOverlap" or "TileUpperDoodadNoOverlap" or "DoodadLayerDoodad";
+        bool created = found && !routed && !league && (noSerialise == true || clientOnly == true) && serverOnly != true &&
+            !name.Equals("DoodadNoBlocking", StringComparison.OrdinalIgnoreCase);
+        return _clientTypes[type] = (created, isStatic);
+    }
 
     public void Run(IReadOnlyList<DoodadRecord> records)
     {
@@ -250,6 +299,50 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             }
             if (ddt.AllGroups.Count != 0 || ddt.DefaultFixed.Count != 0 || ddt.Fixed.Count != 0) VertexDoodads(records, index, ddt);
         }
+        // Generator vtable +0x20 (0x142041200), after the stage and +0x50: the placed tiles' own objects.
+        TileDoodads(records);
+    }
+
+    /// <summary><c>0x142041200</c>: row by row, every tile origin's objects (its .tmd, or the record master's Reskin
+    /// copy of it, <c>0x141d7eda0</c> → <c>0x141d7f700</c>), each placed as a room line (<c>0x1420415e0</c> →
+    /// <c>0x14202f1c0</c>) with the tile's size, origin and orientation. Not ported: tiles made of sub-tiles (tile data
+    /// +0x16d bit 1, the per-sub-tile lists of <c>0x141d7eda0</c>) and the second list (+0x180).</summary>
+    void TileDoodads(IReadOnlyList<DoodadRecord> records)
+    {
+        for (int y = 0; y < grid.Height; y++)
+            for (int x = 0; x < grid.Width; x++)
+            {
+                if (grid[x, y] is not { IsOrigin: true } e) continue;
+                var tile = e.Tile;
+                var objects = files.TileObjects(tile);
+                // 0x141d77a90: the last record holding the tile, else the first.
+                int index = 0;
+                for (int k = 0; k < records.Count; k++)
+                    if (x >= records[k].X && x < records[k].X + records[k].W && y >= records[k].Y && y < records[k].Y + records[k].H) index = k;
+                if (records.Count != 0 && records[index].Master.GetValueOrDefault("Reskin") is { Length: > 0 } reskin)
+                    objects = files.ReskinObjects(tile, reskin) ?? objects;
+                if (objects.Count == 0) continue;
+                if ((files.TileFlags(tile.Path) & 0x200) != 0)
+                {
+                    notes.Add($"tile doodads of {tile.Path}: sub-tile lists (0x141d7eda0) are not ported");
+                    continue;
+                }
+                foreach (var o in objects)
+                {
+                    var (created, isStatic) = ClientType(o.Type);
+                    if (!created) continue;
+                    string model = o.Animation ?? o.VirtualModel(tile.Path);
+                    var text = files.Text(model);
+                    if (text is not null && text.Contains("AOSet", StringComparison.Ordinal))
+                    {
+                        notes.Add($"tile doodad {model}: AOSet (0x14202ede0) is not ported");
+                        continue;
+                    }
+                    var (cx, cy) = Orientation.Map(e.Orientation, o.CellX, o.CellY, tile.Width * 23, tile.Height * 23);
+                    bool mirrors = e.Orientation is >= 4 and < 8;
+                    Create(new PlacedDoodad(model, x * 23 + cx, y * 23 + cy, TilePlacement.Angle(e.Orientation, o.Angle), 1, mirrors), isStatic);
+                }
+            }
     }
 
     /// <summary><c>0x141d77c60</c>: the tile is in record <paramref name="index"/> and in no later one.</summary>
@@ -376,7 +469,8 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
         int code = room.Orientation;
         foreach (var d in room.Room.Doodads)
         {
-            if (!d.Type.Equals(DoodadType, StringComparison.OrdinalIgnoreCase)) continue;
+            var (created, isStatic) = ClientType(d.Type);
+            if (!created) continue;
             var text = files.Text(d.Model);
             if (text is null) continue;
             if (text.Contains("AOSet", StringComparison.Ordinal))
@@ -391,16 +485,17 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             angle += (code & 3) * (MathF.PI / 2);
             while (angle < 0) angle += MathF.PI * 2;
             while (angle > MathF.PI * 2) angle -= MathF.PI * 2;
-            Create(new PlacedDoodad(d.Model, room.X * 23 + cx, room.Y * 23 + cy, angle, d.Scale, mirrors ^ d.Flip));
+            Create(new PlacedDoodad(d.Model, room.X * 23 + cx, room.Y * 23 + cy, angle, d.Scale, mirrors ^ d.Flip), isStatic);
         }
     }
 
-    /// <summary><c>0x142042360</c> (nothing outside the map) and the world add: the doodad and its collision
-    /// (<c>0x141d876e0</c>).</summary>
-    void Create(PlacedDoodad d)
+    /// <summary><c>0x142042360</c> (nothing outside the map) and the world add: the doodad and, for a static type
+    /// (random and vertex doodads are <c>Doodad</c>s), its collision (<c>0x141d876e0</c>).</summary>
+    void Create(PlacedDoodad d, bool isStatic = true)
     {
         if (d.X < 0 || d.Y < 0 || d.X >= grid.Width * 23 || d.Y >= grid.Height * 23) return;
         Placed.Add(d);
+        if (!isStatic) return;
         if (!_hulls.TryGetValue(d.Model, out var hull)) _hulls[d.Model] = hull = DoodadHull.Load(files.Text, d.Model);
         if (hull is { IsEmpty: false }) walk.Stamp(hull, d);
     }

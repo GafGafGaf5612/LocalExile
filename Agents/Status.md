@@ -223,11 +223,13 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   one-node `.dgr` path (hideouts) lacks the outer buffer, and the Gateway does not use the port yet. The walkability
   and projectile grids are built from the generated tiles and doodads (re/011 §6b / §6c, `Walkability.cs`,
   `DoodadStage.cs`, `DoodadHull.cs`, `levelgen walk`): the doodad stage places room doodads, the .ddt's random and
-  vertex doodads and stamps each one's `.ao` Hull as it goes. On the 61 seed-1 captures whose tile hash matches, 47
-  areas now match the client's walk and projectile grids cell for cell (The Twilight Strand, The Coast, The Prison,
-  the dungeons with forced-blank slots such as `1_5_2` and `2_10_2`, …). The Twilight Strand matches every doodad-stage
-  draw. Left: AOSet doodads, tile doodad lists, and the record-loop differences in `1_4_2`, `2_7_5_map`, `2_10_6`
-  (re/011 §6c).
+  vertex doodads, then every placed tile's own objects (its `.tmd`), and stamps the Hull of each static one's `.ao`
+  as it goes; which room and tile lines are client objects follows their type's BaseEvents flags. On the 61 seed-1
+  captures whose tile hash matches, 53 areas now match the client's walk and projectile grids cell for cell (The
+  Twilight Strand, The Coast, The Prison, the dungeons with forced-blank slots such as `1_5_2` and `2_10_2`, Chayula's
+  monastery, …). The Twilight Strand matches every doodad-stage draw and places all 250 captured doodads. Left: AOSet
+  doodads, tiles made of sub-tiles, the plants of `1_4_2` (from no room line the port places), and the record-loop
+  differences in `2_7_5_map`, `2_10_6` (re/011 §6c).
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
   stop it ([11](docs/protocol/11-skills.md) §10).
