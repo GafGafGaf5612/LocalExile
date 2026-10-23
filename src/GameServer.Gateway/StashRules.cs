@@ -34,6 +34,17 @@ sealed class StashRules
     /// </summary>
     public bool TakesAnything(byte tabType, int x, int y) => y == 0 && _anySlots.TryGetValue(tabType, out var s) && s.Contains(x);
 
+    readonly Dictionary<byte, List<int>> _overflowSlots = [];   // StashType row → spare slots, in screen order
+
+    /// <summary>
+    /// The spare slots of a tab type, left to right and top to bottom on screen: the currency tab's 14 cells under the
+    /// crafting slot (CurrencyStashTabLayout rows Generic1–Generic14, slots 30–34 and 40–48). They take any item the tab
+    /// holds; Ctrl + click puts there what its own slot has no room for.
+    /// </summary>
+    public IReadOnlyList<int> OverflowSlots(byte tabType) => _overflowSlots.TryGetValue(tabType, out var s) ? s : [];
+
+    public bool IsOverflowSlot(byte tabType, int x, int y) => y == 0 && _overflowSlots.TryGetValue(tabType, out var s) && s.Contains(x);
+
     /// <summary>False without the tables: then every tab holds anything (there is nothing to check against).</summary>
     public bool Loaded { get; private set; }
 
@@ -100,13 +111,20 @@ sealed class StashRules
         void Layout(string table, byte tabType, int affinity)
         {
             var slots = rules._slots[tabType] = [];
+            var spare = new List<(int Y, int X, int Slot)>();
             using var d = JsonDocument.Parse(File.ReadAllBytes(Table(table)));
             foreach (var r in d.RootElement.EnumerateArray())
             {
                 int slot = r.GetProperty("FirstSlotIndex").GetInt32();
-                if (r.GetProperty("Id").GetString() == "CraftingSlot")
+                string id = r.GetProperty("Id").GetString() ?? "";
+                if (id == "CraftingSlot")
                 {
                     (rules._anySlots.TryGetValue(tabType, out var any) ? any : rules._anySlots[tabType] = []).Add(slot);
+                    continue;
+                }
+                if (id.StartsWith("Generic", StringComparison.Ordinal) && r.TryGetProperty("XOffset", out var x) && r.TryGetProperty("YOffset", out var y))
+                {
+                    spare.Add((y.GetInt32(), x.GetInt32(), slot));
                     continue;
                 }
                 var types = new List<uint>();
@@ -123,6 +141,9 @@ sealed class StashRules
                     Give(hash, affinity);
                 }
             }
+            // Screen order: rows by YOffset (the two rows are 680 and 770, the cells of a row within a few pixels), then X.
+            if (spare.Count > 0)
+                rules._overflowSlots[tabType] = [.. spare.OrderBy(s => s.Y / 40).ThenBy(s => s.X).Select(s => s.Slot)];
         }
         Layout("CurrencyStashTabLayout", Currency, CurrencyItems);
         Layout("EssenceStashTabLayout", Essence, Essences);
@@ -147,7 +168,7 @@ sealed class StashRules
     /// <summary>Rules from given data (tests).</summary>
     internal static StashRules For(Dictionary<uint, HashSet<int>> affinities, Dictionary<int, HashSet<byte>> heldBy,
         Dictionary<byte, Dictionary<uint, int>> slots, Dictionary<uint, ushort>? currencyTabStack = null,
-        Dictionary<byte, HashSet<int>>? anySlots = null)
+        Dictionary<byte, HashSet<int>>? anySlots = null, Dictionary<byte, List<int>>? overflowSlots = null)
     {
         var rules = new StashRules { Loaded = true };
         foreach (var (k, v) in affinities) rules._affinities[k] = v;
@@ -155,6 +176,7 @@ sealed class StashRules
         foreach (var (k, v) in slots) rules._slots[k] = v;
         foreach (var (k, v) in currencyTabStack ?? []) rules._currencyTabStack[k] = v;
         foreach (var (k, v) in anySlots ?? []) rules._anySlots[k] = v;
+        foreach (var (k, v) in overflowSlots ?? []) rules._overflowSlots[k] = v;
         return rules;
     }
 }

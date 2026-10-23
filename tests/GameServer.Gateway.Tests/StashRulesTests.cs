@@ -22,15 +22,18 @@ public class StashRulesTests : IDisposable
     }
 
     /// <summary>Scrolls have the currency affinity and slot 1 (a currency tab slot holds 50 of them), maps the map
-    /// affinity; orbs and wands neither. The currency tab's crafting slot takes anything.</summary>
+    /// affinity; orbs and wands neither. The currency tab's crafting slot takes anything; two spare slots (the first two of
+    /// Generic1–14) take its overflow.</summary>
     internal static StashRules Rules() => StashRules.For(
         new() { [ScrollType] = [3], [MapType] = [5] },
         new() { [3] = [0, 1, 7, 10, 3], [5] = [0, 1, 7, 10, 5] },
         new() { [StashRules.Currency] = new() { [ScrollType] = 1 } },
         new() { [ScrollType] = 50 },
-        new() { [StashRules.Currency] = [CraftingSlot] });
+        new() { [StashRules.Currency] = [CraftingSlot] },
+        new() { [StashRules.Currency] = [SpareSlot1, SpareSlot2] });
 
     internal const int CraftingSlot = 28;   // CurrencyStashTabLayout CraftingSlot
+    internal const int SpareSlot1 = 30, SpareSlot2 = 31;   // Generic1, Generic2
 
     internal static PlayerInventories.Shape? Shapes(Item i) => i.TypeHash switch
     {
@@ -85,6 +88,45 @@ public class StashRulesTests : IDisposable
         // The load-time repair leaves it there (it would move an item a special tab can't show).
         AccountStash.Forget(_account);
         Assert.Equal((CraftingSlot, 0), Open().Inventory(Currency).Items.Select(i => ((int)i.X, (int)i.Y)).Single());
+    }
+
+    [Fact]
+    public void What_its_own_slot_has_no_room_for_goes_into_the_spare_slots_in_order()
+    {
+        var stash = Open();
+        stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(40)), Shapes, out _);   // the own slot holds 50
+
+        var stacked = stash.AddStacked(Currency, Scrolls(70), Shapes, out _)!;   // 10 + 50 + 10
+
+        Assert.Equal(0, stacked.Left);
+        Assert.Equal([(SpareSlot1, 50), (SpareSlot2, 10)], stacked.Added.Select(i => ((int)i.X, (int)i.Item.StackSize)));
+        // Next time the spare slot with room is topped up before anything new.
+        var again = stash.AddStacked(Currency, Scrolls(5), Shapes, out _)!;
+        Assert.Equal((SpareSlot2, 15), ((int)again.Changed.Single().X, (int)again.Changed.Single().Item.StackSize));
+        Assert.Equal(3, Open().Inventory(Currency).Items.Count);
+    }
+
+    [Fact]
+    public void When_every_spare_slot_is_full_the_rest_stays_out()
+    {
+        var stash = Open();
+
+        var stacked = stash.AddStacked(Currency, Scrolls(170), Shapes, out _)!;   // own 50 + two spare 50 each
+
+        Assert.Equal(20, stacked.Left);
+        Assert.Equal(3, stacked.Added.Count);
+    }
+
+    [Fact]
+    public void Currency_dropped_on_a_spare_slot_stays_there_and_other_items_are_refused()
+    {
+        var stash = Open();
+
+        var placed = stash.Place(Currency, SpareSlot2, 0, new InventoryItem(1, 0, 0, Scrolls(10)), Shapes, out _)!.Value.Placed;
+
+        Assert.Equal((SpareSlot2, 0), ((int)placed.X, (int)placed.Y));
+        Assert.Null(stash.Place(Currency, SpareSlot1, 0, new InventoryItem(2, 0, 0, Wand()), Shapes, out string why));   // not a currency
+        Assert.Contains("doesn't hold", why);
     }
 
     [Fact]

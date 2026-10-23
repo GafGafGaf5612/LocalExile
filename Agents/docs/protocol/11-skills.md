@@ -382,6 +382,9 @@ Fire's: `SkillArea`; halved before 2026-10-23, which the units do not support) o
 point, or of the player when a melee skill is aimed too far. Attacks use the default attack's hit (`WeaponFor`: the
 weapon in the hand by its WeaponTypes row with its local physical damage, added physical damage and attack speed mods,
 else the class's unarmed attack; the player's stats on top), spells `SkillCatalog.HitDamage` with the player's stats; both convert and crit.
+The player object of every area (`SendPlayer`) carries the same weapon attack, so the character panel's DPS includes the
+weapon's local mods from the start (until 2026-10-23 it started with the unarmed attack, and only an equipment change,
+`SendSkills`, brought the weapon's numbers).
 `base_deal_no_damage` skills (Portal) deal none. Not modelled: damage effectiveness, the skills' shapes (waves, cones,
 chains, leaps), stun, the accuracy roll. Being tested live.
 

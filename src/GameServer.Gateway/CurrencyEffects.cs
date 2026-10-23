@@ -11,6 +11,7 @@ static class CurrencyEffects
     public const string OrbOfAlchemy = "Metadata/Items/Currency/CurrencyUpgradeToRare";
     public const string ChaosOrb = "Metadata/Items/Currency/CurrencyRerollRare";
     public const string DivineOrb = "Metadata/Items/Currency/CurrencyModValues";
+    public const string BlessedOrb = "Metadata/Items/Currency/CurrencyRerollImplicit";
     public const string OrbOfScouring = "Metadata/Items/Currency/CurrencyConvertToNormal";
     public const string OrbOfTransmutation = "Metadata/Items/Currency/CurrencyUpgradeToMagic";
     public const string OrbOfAlteration = "Metadata/Items/Currency/CurrencyRerollMagic";

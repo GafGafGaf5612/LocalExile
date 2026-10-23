@@ -123,7 +123,10 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
   (2026-10-20, Scroll of Wisdom, Armourer's Scrap, Orbs of Alteration and Transmutation, the Currency tab at index 5):
   u32 BE item id, u8 flags, u8, u16 token (raw), u8 n, n × (u16 BE tab, u8 affinity); `00E1 00000008 00 00 225E 01 0005
   03`, 14 bytes with one entry (the static notes said n × 4, the bytes say 3). The Gateway moves the item into that tab
-  like 0xe0.
+  like 0xe0. **Flags 0x02 = Ctrl + right click** (Ctrl + left click sends 0; live 2026-10-23, one Ctrl + right click on an
+  orb: `00E1 000037D5 02 00 6A7D 01 0005 03`; `InstanceStash.MoveAllOfType`): the Gateway moves every stack of that item
+  type in the same inventory into the tab, the clicked one first, each as one Ctrl + click (its own transaction and 0xbf
+  pair), so a full slot stops only what doesn't fit.
 - **0xe2** (u16, u8; `0x142168d00`, the unique / special pages) is not seen yet.
 
 ## 6. The server's stash
@@ -158,8 +161,12 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
 - **Crafting slot.** The currency tab's big cell in the middle is CurrencyStashTabLayout row `CraftingSlot` (no
   `StoredItem`, `FirstSlotIndex` 28, 2 × 4). The client drops onto it as (28, 0) (live 2026-10-23, a weapon). It takes
   any item, where dropped (`StashRules.TakesAnything`), at the item's own stack size; an item dropped on it swaps with the
-  one there; the load-time repair leaves it. Ctrl + click never puts anything there. The 14 `Generic1`–`Generic14` cells
-  under it (slots 30–34, 40–48) are not handled yet: they take nothing.
+  one there; the load-time repair leaves it. Ctrl + click never puts anything there. Currency (from its slot or the inventory) works on the item there: 0x71 / 0x72 name the tab as the target inventory ([13](13-items.md) §4b). 
+- **Spare slots.** The 14 cells under the crafting slot are rows `Generic1`–`Generic14` (no `StoredItem`, slots 30–34
+  and 40–48; two rows on screen, YOffset 680 and 770). They take any item the currency tab holds, where dropped, up to
+  the slot size (5000). Ctrl + click (and Ctrl + right click, 0xe1 flags 0x02) puts into them what the item's own slot has
+  no room for: first onto a spare slot of that type with room, then into the first free one, left to right and top to
+  bottom (`StashRules.OverflowSlots`, `AccountStash.AddStacked`); what still doesn't fit stays in the inventory.
 - **Stack sizes.** Every slot of a slotted tab (currency, essence, fragment, delve, blight) holds 5000 of its item
   (`StashRules.SlotStack`, our own number since 2026-10-22; before, CurrencyItems `CurrencyTab_StackSize` for currency
   and the item's own stack elsewhere, so essences stopped at 10). The Delve (StashType 12, DelveStashTabLayout) and

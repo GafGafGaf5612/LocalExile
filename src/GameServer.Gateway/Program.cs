@@ -618,7 +618,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         else if (id == InstanceStash.MoveToTabId)
             await MoveToStash(remote, stream, ciphers, conn, InstanceStash.ReadMoveToTab(bytes));
         else if (id == InstanceStash.MoveToAffinityTabId)
-            await MoveToAffinityTab(remote, stream, ciphers, conn, InstanceStash.ReadMoveToAffinityTab(bytes));
+            await MoveToAffinityTab(remote, stream, ciphers, conn, InstanceStash.ReadMoveToAffinityTab(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceStash.SetAffinitiesId)
             await SetTabAffinities(remote, stream, ciphers, conn, InstanceStash.ReadSetAffinities(bytes));
         else if (id == InstanceNpcs.CtrlBuyId)
@@ -3678,8 +3678,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         var items = ItemsOf(conn);
         if (type.Stackable)
         {
-            // A stackable type: [count] is how many, onto the stacks already there first (up to 20 full stacks).
-            int amount = Math.Clamp(requested, 1, type.MaxStack * 20);
+            // A stackable type: [count] is how many, onto the stacks already there first, then into every free cell (at most
+            // a full main inventory, 12 × 5 stacks); what doesn't fit is reported.
+            int amount = Math.Clamp(requested, 1, type.MaxStack * 60);
             var stacked = items.AddStacked(PlayerInventories.MainInventory, ItemCatalog.Create(type) with { StackSize = (ushort)Math.Min(amount, ushort.MaxValue) }, ShapeOf);
             if (!stacked.Any) { await conn.Commands!.Reply("No room in the inventory"); return; }
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
@@ -5693,15 +5694,21 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
     byte usedRow = stashTab is null && items.RowOf(use.ItemId) is byte row ? row : (byte)0;
     var used = stashTab is int fromTab ? stash.Inventory(fromTab).Items.FirstOrDefault(i => i.Id == use.ItemId)
         : items.RowOf(use.ItemId) is not null ? items.Items(usedRow).FirstOrDefault(i => i.Id == use.ItemId) : null;
-    if (used is null || items.RowOf(use.TargetId) is not byte targetRow || items.Items(targetRow).FirstOrDefault(i => i.Id == use.TargetId) is not { } target)
+    // The target can be in a stash tab too (the currency tab's crafting slot, live 2026-10-23), decided the same way.
+    int? targetTab = stash.TabOf(use.TargetInventoryId);
+    byte targetRow = targetTab is null && items.RowOf(use.TargetId) is byte tRow ? tRow : (byte)0;
+    var target = targetTab is int toTab ? stash.Inventory(toTab).Items.FirstOrDefault(i => i.Id == use.TargetId)
+        : items.RowOf(use.TargetId) is not null ? items.Items(targetRow).FirstOrDefault(i => i.Id == use.TargetId) : null;
+    if (used is null || target is null)
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x0071 use item on item {use}: no such item" + (stashTab is int t ? $" (currency in stash tab {t})" : "") + $": {hex}");
+        Console.WriteLine($"[gateway] {remote} <= 0x0071 use item on item {use}: no such item" + (stashTab is int t ? $" (currency in stash tab {t})" : "")
+            + (targetTab is int tt ? $" (target in stash tab {tt})" : "") + $": {hex}");
         return;
     }
     var type = Items.ByHash(used.Item.TypeHash);
     if (type?.Id == CurrencyEffects.MirrorOfKalandra)
     {
-        if (stashTab is not null) { Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra from the stash: not handled, take it to the inventory first"); return; }
+        if (stashTab is not null || targetTab is not null) { Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra with the stash: not handled, use it in the inventory"); return; }
         await MirrorItem(remote, stream, ciphers, conn, items, usedRow, used, target);
         return;
     }
@@ -5719,6 +5726,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         CurrencyEffects.OrbOfAlchemy => CurrencyEffects.Alchemy(target.Item, Rolls, Random.Shared),
         CurrencyEffects.ChaosOrb => CurrencyEffects.Chaos(target.Item, Rolls, Random.Shared),
         CurrencyEffects.DivineOrb => Rolls.Reforge(target.Item, Random.Shared),
+        CurrencyEffects.BlessedOrb => Rolls.Bless(target.Item, Random.Shared),
         CurrencyEffects.OrbOfScouring => CurrencyEffects.Scouring(target.Item),
         CurrencyEffects.OrbOfTransmutation => CurrencyEffects.Transmutation(target.Item, Rolls, Random.Shared),
         CurrencyEffects.OrbOfAlteration => CurrencyEffects.Alteration(target.Item, Rolls, Random.Shared),
@@ -5742,23 +5750,35 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
                 $"sockets {target.Item.Sockets.Count}, roll cap {CurrencyEffects.MaximumSockets(target.Item, refusedType)}, " +
                 $"base cap {CurrencyEffects.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
         Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
-            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
+            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
                 ? "target refused (corrupted / mirrored / identified / wrong rarity / no explicit mods / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
         return;
     }
     // The currency and the changed item are saved together.
     InventoryItem identified;
     uint targetInventory = PlayerInventories.InventoryId(targetRow);
-    if (stashTab is int tab)
+    if (stashTab is not null || targetTab is not null)
     {
-        if (ItemMoves.UseFromStashOn(stash, tab, used.Id, items, targetRow, target.Id, _ => result) is not var (stashLeft, changedFromStash)) return;
-        identified = changedFromStash;
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(use.InventoryId, stash.NextRevision(tab), [used.Id],
-            stashLeft is { } inTab ? [inTab] : [], stash.IsGuild ? InstanceStash.GuildManager : (byte)0),
-            stashLeft is null ? $"0x00bf stash tab {tab}: {type!.Name} used, stack gone" : $"0x00bf stash tab {tab}: {type!.Name} used, {stashLeft.Item.StackSize} left");
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [target.Id], [identified]),
-            $"0x00bf inventory {targetInventory}: item {target.Id} changed");
-        if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
+        // The stash is in it (currency from a tab, or the target in one): one transaction, then one 0xbf per place changed
+        // (one for both when they share it), removing and adding the same ids as the client needs.
+        if (ItemMoves.UseAcross(items, stash, new(stashTab, usedRow, used.Id), new(targetTab, targetRow, target.Id), _ => result)
+            is not var (left, changedItem)) return;
+        identified = changedItem;
+        byte manager = stash.IsGuild ? InstanceStash.GuildManager : (byte)0;
+        async Task SendPlace(int? tab, byte row, List<uint> gone, List<InventoryItem> now, string what) =>
+            await Send(remote, stream, ciphers, tab is int t
+                ? InstanceItems.InventoryChange(stash.InventoryOf(t), stash.NextRevision(t), gone, now, manager)
+                : InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), gone, now),
+                $"0x00bf {(tab is int st ? $"stash tab {st}" : $"inventory {PlayerInventories.InventoryId(row)}")}: {what}");
+        List<InventoryItem> usedNow = left is { } l ? [l] : [];
+        if (stashTab == targetTab && (stashTab is not null || usedRow == targetRow))
+            await SendPlace(targetTab, targetRow, [used.Id, target.Id], [.. usedNow, identified], $"item {target.Id} changed, {type!.Name} used");
+        else
+        {
+            await SendPlace(stashTab, usedRow, [used.Id], usedNow, $"{type!.Name} used" + (left is null ? ", stack gone" : $", {left.Item.StackSize} left"));
+            await SendPlace(targetTab, targetRow, [target.Id], [identified], $"item {target.Id} changed");
+            if (targetTab is null && PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
+        }
     }
     else
     {
@@ -5778,7 +5798,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
             if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
         }
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
+    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
         ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
         : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}; link groups {string.Join(",", identified.Item.Links ?? [])}"));
 }
@@ -6421,11 +6441,22 @@ static async Task MoveToStash(string remote, NetworkStream stream, ConnectionCip
 
 // C→S 0xe1: Ctrl + click on an inventory item that has an affinity tab (currency …): into the tab the client picked for it
 // (StashTabAffinities), whichever tab is shown.
-static async Task MoveToAffinityTab(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToAffinityTab move)
+static async Task MoveToAffinityTab(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToAffinityTab move, string hex)
 {
     if (move.Tabs is not [var (tab, affinity), ..])
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x00e1 move item {move.ItemId} to its affinity tab: refused (no tab named) ({move})");
+        Console.WriteLine($"[gateway] {remote} <= 0x00e1 move item {move.ItemId} to its affinity tab: refused (no tab named): {hex}");
+        return;
+    }
+    // Ctrl + right click: every stack of that type in the same inventory goes, the clicked one first; each stack is one
+    // Ctrl + click (its own transaction), so a full slot stops only what doesn't fit.
+    var items = ItemsOf(conn);
+    if ((move.Flags & InstanceStash.MoveAllOfType) != 0 && items.RowOf(move.ItemId) is byte row
+        && items.Items(row).FirstOrDefault(i => i.Id == move.ItemId) is { } clicked)
+    {
+        uint[] ids = [clicked.Id, .. items.Items(row).Where(i => i.Item.TypeHash == clicked.Item.TypeHash && i.Id != clicked.Id).Select(i => i.Id)];
+        foreach (uint id in ids)
+            await CtrlClickToStash(remote, stream, ciphers, conn, tab, id, $"0x00e1 Ctrl + right click, all {ids.Length} stacks (affinity {affinity})");
         return;
     }
     await CtrlClickToStash(remote, stream, ciphers, conn, tab, move.ItemId, $"0x00e1 (affinity {affinity})");
@@ -6507,9 +6538,12 @@ static async Task SetTabAffinities(string remote, NetworkStream stream, Connecti
 static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
-    var weapon = Skills.UnarmedFor(classRow);
     var cls = Skills.ClassFor(classRow);
     var stats = CharacterPlayerStats(conn);
+    // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:
+    // before, every area started with the class's unarmed attack, so a weapon's added damage and attack speed showed only
+    // after taking it off and putting it back. After the stats, which mark the inactive items WeaponFor skips.
+    var weapon = WeaponFor(conn);
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
     var weaponStats = weapon.Stats(stats).ToList();
