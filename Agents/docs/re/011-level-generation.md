@@ -748,7 +748,10 @@ are the doodads, `0x142042fae`).
    choice leaving the list; with rooms, tiles and rooms together (`0x141fed100`, rooms `0x141fecf80` / `0x141fece90`).
    A fill room (`0x141fe89e0`) tilises column by column: an empty fill slot ('s' slots and plain 'k' slots) takes a
    fill tile of its ground that fits the room's fill slots (`0x141fea4d0`, `0x141fe8660`), turned by the room; other
-   slots take a TileSet tile (up to five draws until one fits); the room's groundless vertices take the fill ground.
+   slots take a TileSet tile (up to five draws until one fits); then map +0x10 goes on, the room's own inner vertex
+   grounds go in (`0x141ffbd70`, forced, turned with the room; e.g. Act 8 `farm_fill_04.arm`'s `trims2.gt` ring around
+   its mound tiles) and the room's groundless vertices take the fill ground. The doodad stage reads these grounds
+   (§6c: a flag-4 ground with no `.ddt` group still draws `Next(1024)` and `Next(default total)`).
    Old `.arm` versions (≤ 18) have 23 numbers per key (no "extra").
 5b. **Storeys** (`Storeys.cs`, `0x1421193d0`, after the second overlay pass, on the height levels' view and state):
    the plain tiles take their heights from the tiles around them. A tile is plain for ground g (`0x142119260`) with
@@ -945,7 +948,11 @@ Text `.tmd` records (version 8) carry the `.ao` as their first quoted field and 
 waypoint effect of `beach_waypoint_v01_01.tmd` is `waypoint_idle.ao` at angle 0. Every doodad of `1_1_3`, `1_1_6`
 and `2_9_5` now has the captured name. Left:
 - The per-sub-tile lists of `0x141d7eda0` (tiles with +0x16d bit 1).
-- `2_8_10` (6 walk cells; the random loop places 29 doodads the capture lacks and misses 15).
+- `2_8_10`: its doodads now match (every doodad-stage draw up to the mesh variation, all 1 083 captured doodads; the
+  random loop had taken the grass group at vertices the fill room's `.arm` grounds make `trims2.gt`, §3g step 5).
+  6 walk cells remain: `forest_slumscliffwater_v03_01.tdt` sub-tile 5 stores 1 at its cells (22, 7..9) beside the
+  hull-less `slum_ledge_v04_01.tdt`; the client has 0 there (two corners with vertex flag 8; the lay-over in
+  `0x141d85970` is the suspect, no doodad is near).
 - `2_10_6`: grids exact, but the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing, and 2 of
   the 1 639 captured doodads are not placed.
 
@@ -1053,7 +1060,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   The official server must give the client only seeds that generate; ours pins 1, so such an area cannot be entered
   (or traced) until the server rerolls failing seeds.
   `Game_SEED=<n>` (Auth) pins non-town seeds for traces of one seed; `LEVELGEN_AROUND=<n>` prints the draws around the first
-  difference (a composite map's layouts are compared one by one: the trace's `dungeons`, every layout of the load,
+  difference (also in `levelgen doodads`; `LEVELGEN_HULL_RAW` with `LEVELGEN_HULL` in `levelgen walk` prints the
+  sub-tile's whole plane as stored, border included; a composite map's layouts are compared one by one: the trace's `dungeons`, every layout of the load,
   and `subgraphs`, each record as 0x1420452e0 starts it); `LEVELGEN_DUMP=<file>` writes the port's grid as the trace's `tiles` (to line it up with the client's,
   e.g. to find where rooms land).
 - **Probe:** candidate lists can be read live by hooking `0x141d902d0` (list: begin, end of 0x18-byte entries: tile

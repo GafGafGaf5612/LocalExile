@@ -231,8 +231,10 @@ static void Doodads(string areaId, uint seed)
     int same = 0;
     while (same < theirs.Count && same < mine.Count && theirs[same].Kind == mine[same].Kind && theirs[same].Arg == mine[same].Arg && theirs[same].Result == mine[same].Result) same++;
     Console.WriteLine($"draws: {same} of {theirs.Count} match (port made {mine.Count}, {mine.Count - before} in the doodad stage)");
+    // LEVELGEN_AROUND=n widens the window to n draws before and after the first difference.
+    int window = int.TryParse(Environment.GetEnvironmentVariable("LEVELGEN_AROUND"), out int around) ? around : 0;
     if (same < theirs.Count)
-        for (int i = same; i < Math.Min(same + 6, theirs.Count); i++)
+        for (int i = Math.Max(0, same - window); i < Math.Min(same + Math.Max(6, window), theirs.Count); i++)
             Console.WriteLine($"  #{i}: client {theirs[i].Kind}({theirs[i].Arg}) = {theirs[i].Result} {theirs[i].Caller}" +
                 (i < mine.Count ? $"  port {mine[i].Kind}({mine[i].Arg}) = {mine[i].Result}" : "  port -"));
     // Placements against the capture (model, x, y).
@@ -369,6 +371,10 @@ static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string 
         for (int v = 0; v < 23; v++)
             Console.WriteLine("  " + string.Concat(Enumerable.Range(0, 23).Select(u => capture[(hy * 23 + v) * grid.Width * 23 + hx * 23 + u].ToString())) +
                 "  " + string.Concat(Enumerable.Range(0, 23).Select(u => (buf[(v - sub.Y0) * sub.HullWidth + u - sub.X0] & 0xf).ToString())));
+        // The whole plane as stored (hex), border included.
+        if (Environment.GetEnvironmentVariable("LEVELGEN_HULL_RAW") is not null)
+            for (int v = 0; v < sub.HullHeight; v++)
+                Console.WriteLine("  raw " + string.Join(" ", Enumerable.Range(0, sub.HullWidth).Select(u => buf[v * sub.HullWidth + u].ToString("x2"))));
     }
     // LEVELGEN_WALK=<file>: the port's walk grid, one byte per cell (as the capture's .bin).
     if (Environment.GetEnvironmentVariable("LEVELGEN_WALK") is { Length: > 0 } walkOut) File.WriteAllBytes(walkOut, walk.Walk);

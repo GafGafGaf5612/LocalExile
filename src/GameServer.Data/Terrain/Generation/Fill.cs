@@ -221,8 +221,9 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
     /// <summary><c>0x141fe89e0</c>: a fill room's slots, column by column: a fill slot (no tag or edges, one ground) on an
     /// empty entry takes a fill tile for its ground that fits the map and the room's fill slots (<c>0x141fea4d0</c>,
     /// <c>0x141fe8660</c>), turned by the room, its vertices taking the slot's ground; any other slot (or a fill slot with
-    /// no fitting tile) takes a tile from the TileSet for its key and tag (up to five draws until one fits). Then every
-    /// vertex of the room without a ground takes the fill ground.</summary>
+    /// no fitting tile) takes a tile from the TileSet for its key and tag (up to five draws until one fits). Then the
+    /// room's own vertex grounds go in (<c>0x141ffbd70</c>) and every vertex of the room without a ground takes the fill
+    /// ground.</summary>
     void FillRoom(RoomDef room, int x, int y, int o, short h0, string? fillGround, bool open)
     {
         bool check = grid.CheckGrounds;
@@ -287,6 +288,15 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
             }
         var (rw, rh) = Orientation.Size(o, room.Width, room.Height);
         rooms.Add(new PlacedRoom(room, x + offsetX, y + offsetY, rw, rh, [], o));
+        // 0x141ffbd70: the room's own inner vertex grounds (the .arm's), turned with it, before the fill ground.
+        if (room.VertexGrounds.Length > 0)
+            for (int v = 1; v < room.Height; v++)
+                for (int u = 1; u < room.Width; u++)
+                    if (room.VertexGrounds[(v - 1) * (room.Width - 1) + u - 1] is { } vg)
+                    {
+                        var (dx, dy) = Orientation.MapVertex(o, u, v, room.Width, room.Height);
+                        grid.ForceGround(x + dx + offsetX, y + dy + offsetY, vg);
+                    }
         for (int v = 0; v <= rh; v++)
             for (int u = 0; u <= rw; u++)
                 if (grid.Corner(x + u + offsetX, y + v + offsetY).Ground is null) grid.SetGround(x + u + offsetX, y + v + offsetY, fillGround);

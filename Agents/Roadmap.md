@@ -85,7 +85,8 @@ Items are in rough priority order within each section. "Known" says what is alre
   HideoutForest needs the outer buffer on the one-node `.dgr` path (`DungeonTiler`; the multi-node path has it). The
   walkability grids are built from the placed tiles and doodads (re/011 §6b, §6c: 60 of 61 captures exact); left
   there: the per-sub-tile lists of tiles made of sub-tiles
-  (`0x141d7eda0`, tile data +0x16d bit 1), `2_8_10` (6 walk cells), the `DoodadNoOverlap` path
+  (`0x141d7eda0`, tile data +0x16d bit 1), `2_8_10`'s 6 walk cells (`forest_slumscliffwater_v03_01.tdt` beside a
+  hull-less tile, the lay-over in `0x141d85970`), the `DoodadNoOverlap` path
   `0x142041ac0` and `DoodadLayerDoodad` (world vtable +0x60), the random loop's entity exclusion circles and
   `Next(10000)` falloff (`0x1420425d0` lines 274–550), `0x14154c2d0`, the tile no-doodad bitmask (+0x150), the
   deferred list `0x142041d40`, the `2_10_6` draw difference, the order of fill rooms in a record's room list (taken
