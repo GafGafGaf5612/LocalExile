@@ -261,7 +261,7 @@ tables; it changes nothing itself, the server's 0xbf does.
   Scroll of Wisdom, 20 shards → their orb, 100 splinters → their Breachstone or Emblem …). A stack that reaches its max
   by a merge or an add turns into one of that item in the same cell, with the same id (`PlayerInventories.Completed`).
 - **Adding** (`PlayerInventories.AddStacked`): items picked up from the ground into the main inventory, `/item <type>
-  <count>` (count = how many, up to 20 full stacks) and the sell window's reward go onto the stacks of their type first
+  <count>` (count = how many, up to a full main inventory: 60 stacks; the rest is reported as no room) and the sell window's reward go onto the stacks of their type first
   (fullest first), then as new stacks of at most the max in free cells. A ground stack is picked up only when all of it
   fits (`Fits`).
 

@@ -3678,8 +3678,9 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         var items = ItemsOf(conn);
         if (type.Stackable)
         {
-            // A stackable type: [count] is how many, onto the stacks already there first (up to 20 full stacks).
-            int amount = Math.Clamp(requested, 1, type.MaxStack * 20);
+            // A stackable type: [count] is how many, onto the stacks already there first, then into every free cell (at most
+            // a full main inventory, 12 × 5 stacks); what doesn't fit is reported.
+            int amount = Math.Clamp(requested, 1, type.MaxStack * 60);
             var stacked = items.AddStacked(PlayerInventories.MainInventory, ItemCatalog.Create(type) with { StackSize = (ushort)Math.Min(amount, ushort.MaxValue) }, ShapeOf);
             if (!stacked.Any) { await conn.Commands!.Reply("No room in the inventory"); return; }
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
