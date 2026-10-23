@@ -91,14 +91,31 @@ the experience and the variant (`GemExperience`, `GemVariant`).
   `InactiveItems`): its mods and its gems do nothing and its skills leave the Actor skill list, so the client has
   nothing to cast (`GemSkillEffects`); a use that arrives anyway is refused before the action is started — no 0x1ab so
   the cast does not run, and the mana pool goes out again so the cost comes back (`GemDisabled`, logged "(disabled,
-  action not started)"). Socketing a gem the character is too low for is refused (0x30, `GemLevelTooLow`), and a gem's
-  level stalls at the first one the character cannot meet by stopping its experience (`SkillCatalog.MaxLevelAt`, §1).
+  action not started)"). Socketing a gem the character is too low for is refused (0x30, `GemRequirementsUnmet`), and a
+  gem's level stalls at the first one the character cannot meet by stopping its experience (`SkillCatalog.MaxLevelAt`, §1).
   Anchors from the client's
   tooltips (poedb, 3.26 data, matching GrantedEffectStatSetsPerLevel): Haste level 1 needs character level 24 and
   58 Dex, level 20 needs 70 and 155; Clarity level 1 needs 10 and 22 Int, level 20 needs 70 and 119; Fireball level 20
-  needs 70 and 155 Int. The attribute
-  requirements still need their formula: the SkillGems percentages alone don't give them (58 at 100% for a level-24
-  requirement, but 22 at 75% for a level-10 one, and the same level-70 requirement gives 155 at 100% and 119 at 75%).
+  needs 70 and 155 Int.
+- **Attribute requirements** are the client's computation in `0x14246fc40` (per attribute; `0x14246fff0` is the level
+  requirement and clamps the level the same way): for one attribute at the gem's level, with `g` the level requirement
+  of that level (`PlayerLevelReq`) and `p` the gem's SkillGems share in percent
+  (Strength/Dexterity/IntelligenceRequirementPercent),
+
+  ```
+  value = (3 g + 11) * (p / 100) ^ 0.9 * k + 0.5     (truncated; k = 0.5 for a support, 0.7 for a skill)
+  value < 14 ? 0 : value
+  ```
+
+  The client then scales by (100 + the requirement modifiers)/100 (none on gems today). The level is the gem's, clamped
+  to its cap (a corrupted level 21 gem keeps level 20's requirement). Checked against poedb over 570 tooltip cells
+  (Haste, Fireball, Arc, Wrath, Grace, Discipline, Determination, Clarity, Anger, Hatred, Enfeeble, Flammability, the
+  transforms' 60/40 and 33/33/34 splits, and five supports) with no mismatch: 100% at 70 is 155, 75% 119, 60%/40%
+  98/68, a support at 70 is 111 and at 8 is 18, and low-level gems fall under 14 and show none. The server checks the
+  same values at socketing and for worn items (`GemAttributeRequirements`, `GemRequirementsUnmet`), against
+  `virtual_strength/dexterity/intelligence_for_requirements` as the client does. Checked live 2026-10-23: a level 20
+  Fireball socketed at `/set_stat intelligence 200`, then 130 — at 130 the client reds the gem, the wand's mods stop
+  counting, and a use is refused.
 - **Supports:** GrantedEffects holds what a support applies to (`AllowedActiveSkillTypes`, `ExcludedActiveSkillTypes`,
   `AddedActiveSkillTypes`, `SupportsGemsOnly`) and its skill-bar letter (`SupportGemLetter`); a skill's types come from
   its ActiveSkills row.
@@ -152,13 +169,11 @@ the experience and the variant (`GemExperience`, `GemVariant`).
 - Not checked with the real client yet: a gem of a higher level or with quality, a transfigured gem's tooltip and skill,
   a Vaal gem's two skills, and how the client shows a Vaal skill without souls and a skill on cooldown. Checked
   2026-10-23: the level requirement (a level 20 gem red at character level 10; the client still sends its use, the
-  server refusing the action) and the socketing refusal; the attribute requirements are the client's check only (next
-  item).
+  server refusing the action) and the socketing refusal; the attribute requirements were fitted and checked live on
+  2026-10-23 (`/set_stat intelligence 200`, then 130, under a level 20 Fireball).
 - "Ready to level": how the client shows a gem that can level up when it derives the level from experience; the
   level-up panel's messages; where a gem's lock is kept. The server's kill experience leaves this visible immediately:
   a gem that crossed a threshold may show or apply the level without a click (checked live 2026-10-23: a monster kill's
   share levels the gem itself).
-- The attribute requirement formula (the client computes it in `0x14246fff0` from the SkillGem component; the anchors
-  in §2 don't fit a plain percentage of a level curve). Until it is fitted the server checks the level requirement only.
 - A disabled gem's supports still apply, and its aura still runs: supports are not modelled yet (Roadmap "Gems 3").
 - The support list's layout in the skill record, and supports in the 0x20 update.

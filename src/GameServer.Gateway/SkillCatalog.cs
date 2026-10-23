@@ -195,6 +195,19 @@ sealed class SkillCatalog(string folder = "data")
         return req;
     }
 
+    /// <summary>A gem's requirement for one attribute at a level (0x14246fc40): the level requirement of that level
+    /// (PlayerLevelReq) through the client's curve (3 x requirement + 11), the gem's percentage share (SkillGems
+    /// Strength/Dexterity/IntelligenceRequirementPercent) raised to the power 0.9, and 0.5 for a support or 0.7 for a
+    /// skill, truncated. Below 14 the client hides it and the requirement is 0. Anchors from the client's tooltips:
+    /// 100% at requirement level 70 is 155 (Haste, Fireball), 75% is 119 (Clarity), 60%/40% are 98/68 (Anger), and a
+    /// support at 8 is 18 (Added Fire Damage Support).</summary>
+    public static int GemAttributeRequirement(int percent, int playerLevelReq, bool support)
+    {
+        if (percent <= 0) return 0;
+        int requirement = (int)((3 * playerLevelReq + 11) * MathF.Pow(percent / 100f, 0.9f) * (support ? 0.5f : 0.7f) + 0.5f);
+        return requirement < 14 ? 0 : requirement;
+    }
+
     /// <summary>The ActionTypes Id of a basic action's skill id (HASH16 &amp; 0x3fff: Move 0x2909), or null.</summary>
     public string? ActionName(ushort skillId) => _actions.Value.FirstOrDefault(a => a.Id == skillId).Name;
 

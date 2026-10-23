@@ -197,19 +197,19 @@ data is in [19](docs/protocol/19-gems.md).
 - **Known:** each socketed gem keeps its skill id while it stays socketed, and an aura or Righteous Fire ends with its
   gem (part (a)). Part (b): a gem's skill uses its level (from its experience) and quality, transfigured, Trarthan and
   Vaal gems grant their skills, the variant is the SkillGem data's u32, and `/gem` makes any gem
-  ([19](docs/protocol/19-gems.md) §1, §3); not yet checked with the real client. Part (c), the level requirement, is
-  in and checked live: `PlayerLevelReq` (Haste 24 at gem level 1 … 70 at 20, as the client's tooltips) stops a gem's
-  experience at the first level the character does not meet, socketing is refused below it, and a gem the character is
-  below (after `/set_level` down) makes its item inactive: red on the client, its mods and gems not counting, its skill
-  gone from the list so it cannot be cast, and an inactive weapon falls back to the unarmed attack (Status "Gem level
-  requirements"). Left open: the client still draws an inactive item worn (red wand in hand) — check with the official
-  client what it does there, and whether to move the item out of the row instead ([13](docs/protocol/13-items.md) §2d);
-  the state is reachable in the real game with a +attribute ring put on to meet a gem's requirement, the gem socketed,
-  the ring taken off, which needs the attribute formula first.
+  ([19](docs/protocol/19-gems.md) §1, §3); not yet checked with the real client. Part (c), the requirements, is in:
+  the level is `PlayerLevelReq` (Haste 24 at gem level 1 … 70 at 20, as the client's tooltips) and the attributes are
+  the client's own formula, fitted from `0x14246fc40` and checked against 570 poedb tooltip cells with no mismatch
+  (`trunc((3·level_req + 11)·(percent/100)^0.9·k + 0.5)`, `k` 0.5 for supports and 0.7 for skills, none below 14). The
+  level stops a gem's experience at the first one the character does not meet; socketing below either is refused, and a
+  gem the character is below (after `/set_level` down) makes its item inactive: red on the client, its mods and gems not
+  counting, its skill gone from the list so it cannot be cast, and an inactive weapon falls back to the unarmed attack
+  (Status "Gem requirements"). Checked live 2026-10-23 for the level and the attributes (`/set_stat intelligence` above
+  and below the 155 a level 20 Fireball needs: at 130 the client reds the gem and the wand's mods stop counting). Left
+  open: the client still draws an inactive item worn (red wand in hand) — check with the official client what it does
+  there, and whether to move the item out of the row instead ([13](docs/protocol/13-items.md) §2d).
 - **Start:** check part (b) live (a level 20 Fireball's damage and cost, a quality aura, Ice Nova of Frostbolts, a Vaal
-  gem's two skills). Then the rest of (c), the attribute requirements: fit their formula (the client computes them in
-  `0x14246fff0`; the anchors in [19](docs/protocol/19-gems.md) §2 don't fit a plain percentage of the level curve;
-  Fireball level 20 needs 155 Int, Clarity 75% 119, Haste 100% 155), and enforce them with the level one.
+  gem's two skills).
 - **Done when:** a `/gem` gem of any level and quality casts with that level's numbers, transfigured and Vaal gems grant
   the right skills, skill ids don't change when other gems move, and requirements match the tooltips and are enforced.
 

@@ -157,7 +157,8 @@ damage (11-skills.md §9).
   sent through `Item.LevelRequirementOf`): 0 for types with the flag at type data +0xcb; else
   `local_level_requirement_override` if non-zero; else max(the type's level, Mods.dat Level × 4 / 5 for every mod in all
   five lists) + `local_level_requirement_+`, at least 0. Gems send 0: their requirement comes from the SkillGem
-  component (`0x14246fff0`). The server also refuses 0x2a / 0x4a into equipment rows below it (`LevelTooLow`).
+  component (`0x14246fff0` for the level, `0x14246fc40` per attribute; [19](19-gems.md) §2). The server also refuses
+  0x2a / 0x4a into equipment rows below it (`LevelTooLow`).
 
 **Inactive items** (`ItemModStats.Inactive`): a worn item whose requirements stop being met (an attribute item taken
 off, a lower level) stays on but does nothing: no mod stats, no local weapon mods, no gem skills (their skill ids are
@@ -165,19 +166,19 @@ kept). After each change, items that fall short are switched off one at a time, 
 active item including their own, until all active items are satisfied; an inactive item comes back when the character
 and the other active items meet its requirement without its own attributes.
 
-A gem socketed in a worn item whose level requirement the character no longer meets makes that item inactive as well
-(`CharacterStatSources`: the gem's requirement is checked per socket with `GemLevelTooLow`), so the item counts for
-nothing and the Actor skill list leaves its gems out: with no skill, there is nothing for the client to cast
-([19](19-gems.md) §2 "Requirements"). An inactive main-hand weapon is not there for the attack or for the weapon shape
-either: the default attack falls back to the class's unarmed hit (`WeaponFor`) and the shape passives read as unarmed
-(`WeaponProfileFor`).
+A gem socketed in a worn item whose level or attribute requirement the character no longer meets makes that item
+inactive as well (`CharacterStatSources`: the gem's requirements are checked per socket with `GemRequirementsUnmet`),
+so the item counts for nothing and the Actor skill list leaves its gems out: with no skill, there is nothing for the
+client to cast ([19](19-gems.md) §2 "Requirements"). An inactive main-hand weapon is not there for the attack or for
+the weapon shape either: the default attack falls back to the class's unarmed hit (`WeaponFor`) and the shape passives
+read as unarmed (`WeaponProfileFor`).
 
 Open: the client still draws an inactive item on the character (a red wand stays in hand), and the server leaves it
 where it is. The state is reachable in the real game — a ring's +intelligence makes a gem's requirement met, the gem
-goes in, the ring comes off — so what the official client does then (the gem red, and whether the item holding it stops
-counting too) is to check there; reproducing it here needs the gem attribute requirement formula
-([19](19-gems.md) §2 "Requirements"). Moving the item out of its row is the only way to take its visual away
-(Roadmap "Gems 1").
+goes in, the ring comes off — the server now reproduces it (attributes included, checked live 2026-10-23 with
+`/set_stat intelligence` above and below a gem's requirement: the client reds the gem and the wand's mods stop
+counting, [19](19-gems.md) §2 "Requirements"). What the official client draws then is still to check there (the gem
+red, the wand still in hand). Moving the item out of its row is the only way to take its visual away (Roadmap "Gems 1").
 
 **Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).
@@ -501,7 +502,9 @@ component by `0x141e80340`; `global_no_attribute_requirements` (0x2ee3) skips th
 `global_item_attribute_requirements_+%` (0x51a) scales it. The character panel shows `strength` / `dexterity` /
 `intelligence` (575 / 581 / 578), which a UI cache (`0x141e802d0`) reads when it is built. With only those three the
 panel said 32 Int while "Requires 14 Int" stayed red. The Gateway sends all six from Characters.dat (BaseStrength …), in
-the creation blob and again as 0x1b3 after entering.
+the creation blob and again as 0x1b3 after entering. A gem's attribute requirement is not the item curve: it is the
+client's own formula from the SkillGem component (`0x14246fc40`, [19](19-gems.md) §2), checked against the same three
+stats (the socket check at `0x1402ce738`).
 
 **The class byte** of the Player component is Characters.dat **IntegerId** (Marauder 1, Witch 3), not the row: with row
 1 the panel showed Marauder.

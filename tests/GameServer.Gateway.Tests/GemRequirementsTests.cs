@@ -65,4 +65,52 @@ public class GemRequirementsTests
         Assert.Equal(40, skills.MaxLevelAt(-1, 1));
         Assert.Equal(0, skills.PlayerLevelReq(-1, 1));
     }
+
+    [Fact]
+    public void Attribute_requirements_follow_the_clients_curve()
+    {
+        // The level requirement through (3 x it + 11), the percentage share to the power 0.9, 0.7 for a skill.
+        Assert.Equal(155, SkillCatalog.GemAttributeRequirement(100, 70, support: false));
+        Assert.Equal(119, SkillCatalog.GemAttributeRequirement(75, 70, support: false));
+        Assert.Equal(98, SkillCatalog.GemAttributeRequirement(60, 70, support: false));
+        Assert.Equal(68, SkillCatalog.GemAttributeRequirement(40, 70, support: false));
+        // A support's share is 0.5: Added Fire Damage Support at requirement level 8 is 18, at 70 it is 111.
+        Assert.Equal(18, SkillCatalog.GemAttributeRequirement(100, 8, support: true));
+        Assert.Equal(111, SkillCatalog.GemAttributeRequirement(100, 70, support: true));
+        // A requirement below 14 is hidden (0), and a gem with no share has none.
+        Assert.Equal(0, SkillCatalog.GemAttributeRequirement(100, 1, support: false));
+        Assert.Equal(0, SkillCatalog.GemAttributeRequirement(0, 70, support: false));
+    }
+
+    [Fact]
+    public void The_table_driven_requirements_match_the_tooltips()
+    {
+        var items = new ItemCatalog(Data());
+        var skills = new SkillCatalog(Data());
+
+        // Level, strength, dexterity, intelligence from poedb (3.26 data): Haste 24/58 … 70/155, Clarity 75% int
+        // 10/22 … 70/119, Anger 60% str 40% int 24/37/25 … 70/98/68, Fireball level 4 (requirement level 7) 22.
+        (int, int, int) At(string name, int level)
+        {
+            var (type, variant) = items.FindGem(name)!.Value;
+            var gem = ItemCatalog.Create(type) with { GemExperience = items.Gem(type)!.ExperienceFor(level), GemVariant = variant.Index };
+            var t = items.Gem(type)!;
+            int effect = t.Variant(variant.Index).Effect;
+            int lr = skills.PlayerLevelReq(effect, Math.Min(items.GemLevel(gem), t.MaxLevel));
+            return (SkillCatalog.GemAttributeRequirement(t.StrengthPercent, lr, t.IsSupport),
+                SkillCatalog.GemAttributeRequirement(t.DexterityPercent, lr, t.IsSupport),
+                SkillCatalog.GemAttributeRequirement(t.IntelligencePercent, lr, t.IsSupport));
+        }
+
+        Assert.Equal((0, 58, 0), At("Haste", 1));
+        Assert.Equal((0, 113, 0), At("Haste", 10));
+        Assert.Equal((0, 155, 0), At("Haste", 20));
+        Assert.Equal((0, 0, 22), At("Clarity", 1));
+        Assert.Equal((0, 0, 119), At("Clarity", 20));
+        Assert.Equal((37, 0, 25), At("Anger", 1));
+        Assert.Equal((98, 0, 68), At("Anger", 20));
+        Assert.Equal((0, 0, 22), At("Fireball", 4));
+        Assert.Equal((18, 0, 0), At("Added Fire Damage Support", 1));
+        Assert.Equal((111, 0, 0), At("Added Fire Damage Support", 20));
+    }
 }

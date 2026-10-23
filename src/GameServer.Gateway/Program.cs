@@ -2320,26 +2320,55 @@ static string? LevelTooLow(ClientState conn, byte row, Item? held)
     return conn.Pools.Level < needs ? $"{t.Name} requires level {needs} (character is {conn.Pools.Level})" : null;
 }
 
-// Why a gem may not go into a socket: the character's level is below the gem's level requirement
-// (GrantedEffectStatSetsPerLevel PlayerLevelReq at the gem's level). The client checks it too (0x14246fff0) and refuses
-// the move itself, but the server does not trust that. The attribute part of that check is not implemented yet: the
-// formula is not fitted (19-gems.md "Open").
-static string? GemLevelTooLow(ClientState conn, Item? gem)
+// Why a gem may not go into a socket: the character's level is below the gem's level requirement (GrantedEffectStatSetsPerLevel
+// PlayerLevelReq at the gem's level) or an attribute requirement is not met. The client checks both (0x14246fff0 for the
+// level, 0x14246fc40 per attribute) and refuses the move itself, but the server does not trust that.
+static string? GemRequirementsUnmet(ClientState conn, Item? gem)
 {
     if (gem is null || Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is not { } type) return null;
     int level = Items.GemLevel(gem);
-    return type.Variant(gem.GemVariant).Effect is int effect and >= 0
-        && Skills.PlayerLevelReq(effect, level) is int needs and > 0 && conn.Pools.Level < needs
-        ? $"{Items.GemName(gem)} at level {level} requires level {needs} (character is {conn.Pools.Level})" : null;
+    int effect = type.Variant(gem.GemVariant).Effect;
+    if (effect < 0) return null;
+    string name = Items.GemName(gem);
+    if (Skills.PlayerLevelReq(effect, level) is int needs and > 0 && conn.Pools.Level < needs)
+        return $"{name} at level {level} requires level {needs} (character is {conn.Pools.Level})";
+    // A gem's attributes come from its percentage shares and the level requirement, at the gem's level clamped to its cap
+    // (a corrupted level 21 gem keeps level 20's requirement; 0x14246fc40). The client checks them against
+    // virtual_*_for_requirements, which are the attributes unless something overrides them (/set_stat).
+    var (str, dex, intel) = GemAttributeRequirements(gem, type, effect);
+    foreach (var (need, attr, has) in new[] { (str, "strength", RequirementAttribute(conn, "strength", conn.Pools.Strength)),
+        (dex, "dexterity", RequirementAttribute(conn, "dexterity", conn.Pools.Dexterity)),
+        (intel, "intelligence", RequirementAttribute(conn, "intelligence", conn.Pools.Intelligence)) })
+        if (need > 0 && has < need)
+            return $"{name} at level {level} requires {need} {attr} (character has {has})";
+    return null;
 }
 
-// Why a gem skill may not be used: the character's level is below the level requirement of the gem's own level
-// (PlayerLevelReq). The client reds the gem but still sends the use, so this is the backstop for a client whose item is
-// not inactive yet. Null when no gem granting the effect is below its requirement.
+// A gem's attribute requirements at its level: each SkillGems percentage through SkillCatalog.GemAttributeRequirement.
+static (int Str, int Dex, int Int) GemAttributeRequirements(Item gem, ItemCatalog.GemType type, int effect)
+{
+    int level = Math.Clamp(Items.GemLevel(gem), 1, Math.Max(1, type.MaxLevel));
+    int needs = Skills.PlayerLevelReq(effect, level);
+    return (SkillCatalog.GemAttributeRequirement(type.StrengthPercent, needs, type.IsSupport),
+        SkillCatalog.GemAttributeRequirement(type.DexterityPercent, needs, type.IsSupport),
+        SkillCatalog.GemAttributeRequirement(type.IntelligencePercent, needs, type.IsSupport));
+}
+
+// The value the client's requirement checks compare (virtual_*_for_requirements, 13-items.md §2d): what /set_stat set,
+// else the character's attribute.
+static int RequirementAttribute(ClientState conn, string attribute, int value)
+{
+    lock (conn.Monsters)
+        return Stats.Key($"virtual_{attribute}_for_requirements") is uint key && conn.PlayerStats.TryGetValue(key, out int set) ? set : value;
+}
+
+// Why a gem skill may not be used: the character's level or an attribute is below the gem's requirement of its own level.
+// The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
+// Null when no gem granting the effect is below its requirement.
 static string? GemDisabled(ClientState conn, int effect)
 {
     foreach (var place in PlayerInventories.For(CharacterName(conn), Items).SocketedGemPlaces())
-        if (Items.GemEffects(place.Gem).Contains(effect) && GemLevelTooLow(conn, place.Gem) is { } missing)
+        if (Items.GemEffects(place.Gem).Contains(effect) && GemRequirementsUnmet(conn, place.Gem) is { } missing)
             return missing;
     return null;
 }
@@ -2532,7 +2561,7 @@ static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<
     // its gems do nothing — a disabled gem's skill is not in the skill list at all, so it cannot be cast.
     var gemDisabled = new Dictionary<uint, string>();
     foreach (var place in items.SocketedGemPlaces())
-        if (GemLevelTooLow(conn, place.Gem) is { } why)
+        if (GemRequirementsUnmet(conn, place.Gem) is { } why)
         {
             inactive.Add(place.ItemId);
             gemDisabled[place.ItemId] = why;
@@ -5107,7 +5136,7 @@ static async Task<InventoryItem?> TakeHeld(string remote, NetworkStream stream, 
 static async Task SocketGem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceItems.SocketGem s)
 {
     var items = ItemsOf(conn);
-    if (items.Items(PlayerInventories.Cursor) is [var held, ..] && GemLevelTooLow(conn, held.Item) is { } missing)
+    if (items.Items(PlayerInventories.Cursor) is [var held, ..] && GemRequirementsUnmet(conn, held.Item) is { } missing)
     {
         Console.WriteLine($"[gateway] {remote} <= 0x0030 socket {s}: refused ({missing})");
         return;
