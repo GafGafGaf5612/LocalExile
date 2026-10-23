@@ -472,7 +472,15 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             var items = ItemsOf(conn);
             byte[] rows = [PlayerInventories.MainInventory, .. Enumerable.Range(0, InstanceInventories.PlayerDefaults.Length).Select(r => (byte)r)];
             var stack = rows.Select(r => (Row: r, Item: items.Items(r).FirstOrDefault(i => i.Item.TypeHash == again.TypeHash))).FirstOrDefault(s => s.Item is not null);
-            if (stack.Item is null) Console.WriteLine($"[gateway] {remote} <= 0x0072 use type 0x{again.TypeHash:x8} again: none left");
+            // None in the inventories: the currency was taken from the open stash, so use a stack of it from a stash tab.
+            var stash = StashOf(conn);
+            (int Tab, InventoryItem Item)? inStash = null;
+            for (int t = 0; stack.Item is null && inStash is null && t < stash.Count; t++)
+                if (stash.Inventory(t).Items.FirstOrDefault(i => i.Item.TypeHash == again.TypeHash) is { } found) inStash = (t, found);
+            if (inStash is var (stashTab, stashItem))
+                await UseItemOn(remote, stream, ciphers, conn, new InstanceItems.UseItemOn(stash.InventoryOf(stashTab), stashItem.Id,
+                    again.TargetInventoryId, again.TargetId), Convert.ToHexString(bytes));
+            else if (stack.Item is null) Console.WriteLine($"[gateway] {remote} <= 0x0072 use type 0x{again.TypeHash:x8} again: none left");
             else await UseItemOn(remote, stream, ciphers, conn, new InstanceItems.UseItemOn(PlayerInventories.InventoryId(stack.Row), stack.Item.Id,
                 again.TargetInventoryId, again.TargetId), Convert.ToHexString(bytes));
         }
@@ -5257,15 +5265,22 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
 {
     const string Wisdom = "Metadata/Items/Currency/CurrencyIdentification";
     var items = ItemsOf(conn);
-    if (items.RowOf(use.ItemId) is not byte usedRow || items.Items(usedRow).FirstOrDefault(i => i.Id == use.ItemId) is not { } used ||
-        items.RowOf(use.TargetId) is not byte targetRow || items.Items(targetRow).FirstOrDefault(i => i.Id == use.TargetId) is not { } target)
+    var stash = StashOf(conn);
+    // The currency can come from a stash tab (right-click it in the open stash, then click an item in the inventory): the
+    // message names the tab's inventory. Decided by the inventory, not the item id: stash and character ids can be equal.
+    int? stashTab = stash.TabOf(use.InventoryId);
+    byte usedRow = stashTab is null && items.RowOf(use.ItemId) is byte row ? row : (byte)0;
+    var used = stashTab is int fromTab ? stash.Inventory(fromTab).Items.FirstOrDefault(i => i.Id == use.ItemId)
+        : items.RowOf(use.ItemId) is not null ? items.Items(usedRow).FirstOrDefault(i => i.Id == use.ItemId) : null;
+    if (used is null || items.RowOf(use.TargetId) is not byte targetRow || items.Items(targetRow).FirstOrDefault(i => i.Id == use.TargetId) is not { } target)
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x0071 use item on item {use}: no such item: {hex}");
+        Console.WriteLine($"[gateway] {remote} <= 0x0071 use item on item {use}: no such item" + (stashTab is int t ? $" (currency in stash tab {t})" : "") + $": {hex}");
         return;
     }
     var type = Items.ByHash(used.Item.TypeHash);
     if (type?.Id == CurrencyEffects.MirrorOfKalandra)
     {
+        if (stashTab is not null) { Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra from the stash: not handled, take it to the inventory first"); return; }
         await MirrorItem(remote, stream, ciphers, conn, items, usedRow, used, target);
         return;
     }
@@ -5311,19 +5326,36 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         return;
     }
     // The currency and the changed item are saved together.
-    if (ItemMoves.UseOn(items, usedRow, used.Id, targetRow, target.Id, _ => result) is not var (taken, identified)) return;
-    // Remove and add the same ids: the client replaces an item only that way (see UseItem).
-    uint usedInventory = PlayerInventories.InventoryId(usedRow), targetInventory = PlayerInventories.InventoryId(targetRow);
-    if (usedRow == targetRow)
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [used.Id, target.Id],
-            taken.Left is { } left ? [left, identified] : [identified]), $"0x00bf inventory {targetInventory}: item {target.Id} changed, {type!.Name} used");
-    else
+    InventoryItem identified;
+    uint targetInventory = PlayerInventories.InventoryId(targetRow);
+    if (stashTab is int tab)
     {
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(usedInventory, items.NextRevision(usedRow), [used.Id],
-            taken.Left is { } left ? [left] : []), $"0x00bf inventory {usedInventory}: {type!.Name} used");
+        if (ItemMoves.UseFromStashOn(stash, tab, used.Id, items, targetRow, target.Id, _ => result) is not var (stashLeft, changedFromStash)) return;
+        identified = changedFromStash;
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(use.InventoryId, stash.NextRevision(tab), [used.Id],
+            stashLeft is { } inTab ? [inTab] : [], stash.IsGuild ? InstanceStash.GuildManager : (byte)0),
+            stashLeft is null ? $"0x00bf stash tab {tab}: {type!.Name} used, stack gone" : $"0x00bf stash tab {tab}: {type!.Name} used, {stashLeft.Item.StackSize} left");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [target.Id], [identified]),
             $"0x00bf inventory {targetInventory}: item {target.Id} changed");
         if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
+    }
+    else
+    {
+        if (ItemMoves.UseOn(items, usedRow, used.Id, targetRow, target.Id, _ => result) is not var (taken, changed)) return;
+        identified = changed;
+        // Remove and add the same ids: the client replaces an item only that way (see UseItem).
+        uint usedInventory = PlayerInventories.InventoryId(usedRow);
+        if (usedRow == targetRow)
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [used.Id, target.Id],
+                taken.Left is { } left ? [left, identified] : [identified]), $"0x00bf inventory {targetInventory}: item {target.Id} changed, {type!.Name} used");
+        else
+        {
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(usedInventory, items.NextRevision(usedRow), [used.Id],
+                taken.Left is { } left ? [left] : []), $"0x00bf inventory {usedInventory}: {type!.Name} used");
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(targetInventory, items.NextRevision(targetRow), [target.Id], [identified]),
+                $"0x00bf inventory {targetInventory}: item {target.Id} changed");
+            if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
+        }
     }
     Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
         ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
