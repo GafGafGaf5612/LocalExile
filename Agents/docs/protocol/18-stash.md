@@ -123,7 +123,10 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
   (2026-10-20, Scroll of Wisdom, Armourer's Scrap, Orbs of Alteration and Transmutation, the Currency tab at index 5):
   u32 BE item id, u8 flags, u8, u16 token (raw), u8 n, n × (u16 BE tab, u8 affinity); `00E1 00000008 00 00 225E 01 0005
   03`, 14 bytes with one entry (the static notes said n × 4, the bytes say 3). The Gateway moves the item into that tab
-  like 0xe0.
+  like 0xe0. **Flags 0x02 = Ctrl + right click** (Ctrl + left click sends 0; live 2026-10-23, one Ctrl + right click on an
+  orb: `00E1 000037D5 02 00 6A7D 01 0005 03`; `InstanceStash.MoveAllOfType`): the Gateway moves every stack of that item
+  type in the same inventory into the tab, the clicked one first, each as one Ctrl + click (its own transaction and 0xbf
+  pair), so a full slot stops only what doesn't fit.
 - **0xe2** (u16, u8; `0x142168d00`, the unique / special pages) is not seen yet.
 
 ## 6. The server's stash

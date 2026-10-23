@@ -618,7 +618,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         else if (id == InstanceStash.MoveToTabId)
             await MoveToStash(remote, stream, ciphers, conn, InstanceStash.ReadMoveToTab(bytes));
         else if (id == InstanceStash.MoveToAffinityTabId)
-            await MoveToAffinityTab(remote, stream, ciphers, conn, InstanceStash.ReadMoveToAffinityTab(bytes));
+            await MoveToAffinityTab(remote, stream, ciphers, conn, InstanceStash.ReadMoveToAffinityTab(bytes), Convert.ToHexString(bytes));
         else if (id == InstanceStash.SetAffinitiesId)
             await SetTabAffinities(remote, stream, ciphers, conn, InstanceStash.ReadSetAffinities(bytes));
         else if (id == InstanceNpcs.CtrlBuyId)
@@ -6414,11 +6414,22 @@ static async Task MoveToStash(string remote, NetworkStream stream, ConnectionCip
 
 // C→S 0xe1: Ctrl + click on an inventory item that has an affinity tab (currency …): into the tab the client picked for it
 // (StashTabAffinities), whichever tab is shown.
-static async Task MoveToAffinityTab(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToAffinityTab move)
+static async Task MoveToAffinityTab(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceStash.MoveToAffinityTab move, string hex)
 {
     if (move.Tabs is not [var (tab, affinity), ..])
     {
-        Console.WriteLine($"[gateway] {remote} <= 0x00e1 move item {move.ItemId} to its affinity tab: refused (no tab named) ({move})");
+        Console.WriteLine($"[gateway] {remote} <= 0x00e1 move item {move.ItemId} to its affinity tab: refused (no tab named): {hex}");
+        return;
+    }
+    // Ctrl + right click: every stack of that type in the same inventory goes, the clicked one first; each stack is one
+    // Ctrl + click (its own transaction), so a full slot stops only what doesn't fit.
+    var items = ItemsOf(conn);
+    if ((move.Flags & InstanceStash.MoveAllOfType) != 0 && items.RowOf(move.ItemId) is byte row
+        && items.Items(row).FirstOrDefault(i => i.Id == move.ItemId) is { } clicked)
+    {
+        uint[] ids = [clicked.Id, .. items.Items(row).Where(i => i.Item.TypeHash == clicked.Item.TypeHash && i.Id != clicked.Id).Select(i => i.Id)];
+        foreach (uint id in ids)
+            await CtrlClickToStash(remote, stream, ciphers, conn, tab, id, $"0x00e1 Ctrl + right click, all {ids.Length} stacks (affinity {affinity})");
         return;
     }
     await CtrlClickToStash(remote, stream, ciphers, conn, tab, move.ItemId, $"0x00e1 (affinity {affinity})");

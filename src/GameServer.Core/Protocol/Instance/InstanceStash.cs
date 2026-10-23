@@ -224,6 +224,10 @@ public static class InstanceStash
     /// <summary>The length of a C→S 0xe1 at the start of <paramref name="m"/>, or null until its count arrived.</summary>
     public static int? MoveToAffinityTabLength(ReadOnlySpan<byte> m) => m.Length < 11 ? null : 11 + 3 * m[10];
 
+    /// <summary>C→S 0xe1 flags bit: Ctrl + right click (Ctrl + left click sends 0). Live 2026-10-23, one Ctrl + right click on
+    /// an orb: <c>00E1 000037D5 02 00 6A7D 01 0005 03</c>. The server moves every stack of that type, as the player asked.</summary>
+    public const byte MoveAllOfType = 0x02;
+
     /// <summary>C→S 0xd3: the tab settings' affinities, confirmed (the window's check mark).</summary>
     public sealed record SetAffinities(ushort Tab, byte Kind, IReadOnlyList<(byte Affinity, bool On)> Changes);
 
