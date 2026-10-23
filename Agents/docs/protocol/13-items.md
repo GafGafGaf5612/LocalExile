@@ -237,7 +237,12 @@ instead and sends nothing unless Destroy is chosen (0x16 command 9).
 Rules the Gateway applies (`PlayerInventories.Place`): grids need the item inside the grid. When exactly one item is in
 the way it is swapped onto the cursor; two or more refuse. Single-item slots take the item at (0, 0) when its class fits
 (`Accepts`: the ItemClasses Id per equipment row; flasks only in the flask bar). A one-handed weapon put into an empty
-main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there.
+main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there. The two
+hands of a weapon set must fit together (`PlayerInventories.HandConflict`, 2026-10-23): a bow goes with an empty off hand
+or a quiver, another two-handed weapon only with an empty off hand; a quiver goes with a bow or an empty main hand, never
+with a one-handed weapon; a shield or a one-handed weapon not with a two-handed weapon. A drop that breaks this is
+refused (the item stays held). Before, only the class per row was checked, so a bow could go next to a shield or a
+sword and a one-handed weapon next to a quiver.
 
 ## 4a. Stacks
 
