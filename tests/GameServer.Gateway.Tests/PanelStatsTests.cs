@@ -197,4 +197,49 @@ public class PanelStatsTests
         var panel = Compute(("attacks_impale_on_hit_%_chance", 20));
         Assert.Equal(20, panel["impale_on_hit_%_chance"]);
     }
+
+    static Dictionary<string, int> Recovery(params (string Stat, int Value)[] stats) =>
+        Recovery(1000, 500, stats);
+
+    static Dictionary<string, int> Recovery(uint maxLife, uint maxMana, params (string Stat, int Value)[] stats)
+    {
+        var given = stats.ToDictionary(s => s.Stat, s => s.Value);
+        return PanelStats.Recovery(n => given.GetValueOrDefault(n), maxLife, maxMana)
+            .ToDictionary(s => s.Stat, s => s.Value);
+    }
+
+    [Fact]
+    public void Regeneration_rows_are_the_per_minute_totals()
+    {
+        // 60 flat per minute plus 2% of 1000 maximum life; the client divides by 60 for the per-second row.
+        var panel = Recovery(("base_life_regeneration_rate_per_minute", 60), ("life_regeneration_rate_per_minute_%", 2));
+        Assert.Equal(80, panel["total_life_recovery_per_minute_from_regeneration"]);
+        // Character.ot's 105% of maximum mana per minute with no other source.
+        Assert.Equal(525, panel["total_mana_recovery_per_minute_from_regeneration"]);
+    }
+
+    [Fact]
+    public void Mana_recovery_adds_the_flat_rate_and_the_increase()
+    {
+        var panel = Recovery(("base_mana_regeneration_rate_per_minute", 1200), ("mana_regeneration_rate_per_minute_%", 20),
+            ("mana_regeneration_rate_+%", 40));
+        // (105 + 20)% of 500 + 1200 flat = 1825, raised by 40%.
+        Assert.Equal(2555, panel["total_mana_recovery_per_minute_from_regeneration"]);
+    }
+
+    [Fact]
+    public void Without_a_life_regeneration_source_the_row_is_absent()
+    {
+        Assert.False(Recovery().ContainsKey("total_life_recovery_per_minute_from_regeneration"));
+    }
+
+    [Fact]
+    public void Regeneration_rows_exist_in_Stats_dat()
+    {
+        foreach (var name in new[] { "total_life_recovery_per_minute_from_regeneration",
+            "total_mana_recovery_per_minute_from_regeneration", "base_life_regeneration_rate_per_minute",
+            "life_regeneration_rate_per_minute_%", "base_mana_regeneration_rate_per_minute",
+            "mana_regeneration_rate_per_minute_%", "mana_regeneration_rate_+%" })
+            Assert.NotNull(Stats.Value.Key(name));
+    }
 }

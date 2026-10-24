@@ -2101,7 +2101,8 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
     var (mainLocal, offLocal) = HandLocalStats(conn);
     foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
-        .Concat(PanelStats.FromPools(Get, conn.Pools)))
+        .Concat(PanelStats.FromPools(Get, conn.Pools))
+        .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana)))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
     // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
@@ -3111,13 +3112,13 @@ static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers 
     await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. BaseStats(conn)]), "0x01b3 player attributes");
 }
 
-// The player's life per second from regeneration: the stats' flat life regeneration per minute (/god, /set_stat).
+// The player's life per second from regeneration: the flat life regeneration per minute (/god, /set_stat) plus a
+// percentage of maximum life, from the row PanelStats.Recovery sends to the character panel.
 static double LifeRegenPerSecond(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
-    // flat life per minute plus a percentage of maximum life per minute (/god: 6000 = 100% per second)
-    return (Get("base_life_regeneration_rate_per_minute") + conn.PlayerMaxLife * Get("life_regeneration_rate_per_minute_%") / 100.0) / 60;
+    return PanelStats.LifePerMinute(Get, conn.Pools.Life) / 60;
 }
 
 // The player's mana per second from regeneration: Character.ot's mana_regeneration_rate_per_minute_% (105: 1.75% of
@@ -3127,9 +3128,7 @@ static double ManaRegenPerSecond(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
     int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
-    double perMinute = conn.Pools.Mana * (BaseManaRegenPctPerMinute + Get("mana_regeneration_rate_per_minute_%")) / 100.0
-        + Get("base_mana_regeneration_rate_per_minute");
-    return perMinute * (1 + Get("mana_regeneration_rate_+%") / 100.0) / 60;
+    return PanelStats.ManaPerMinute(Get, conn.Pools.Mana) / 60;
 }
 
 // The mana the running auras reserve, and what is left for casting and regeneration.
@@ -6746,8 +6745,6 @@ sealed partial class Program
     internal const int GodRegenPerSecond = 10_000;
     // /god regenerates 100% of maximum life per second (more than Righteous Fire's 90% burn).
     internal const int GodLifeRegenPctPerSecond = 100;
-    // Character.ot mana_regeneration_rate_per_minute_%: every character regenerates 1.75% of its mana per second.
-    internal const int BaseManaRegenPctPerMinute = 105;
     // S→C 0x1b1's pool byte for mana (0 life, 1 mana, 2 energy shield).
     internal const byte ManaPool = 1;
     // When a spell's projectile leaves (the class's spell animation's contact keyframe).
