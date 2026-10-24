@@ -400,12 +400,14 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
 
     /// <summary>A tile list (.tst, <c>0x1429f7040</c>): per line an optional weight (1), the .tdt and orientation
     /// words (I, R90, FR180, …) as a mask of allowed orientations (none: all, 0xff); nested lists through "include"
-    /// lines.</summary>
+    /// lines. A line starting with "//" is a comment (<c>0x1429f7040</c>, and the .rs reader <c>0x142a0d950</c>):
+    /// 94 room sets comment rooms out as <c>//!100 "…"</c>.</summary>
     public List<(int Weight, string Path, int Mask)> TileList(string path)
     {
         var result = new List<(int, string, int)>();
         foreach (var line in TerrainText.Lines(Text(path) ?? ""))
         {
+            if (line.TrimStart().StartsWith("//", StringComparison.Ordinal)) continue;
             var t = TerrainText.Tokenize(line);
             int q = t.FindIndex(x => x.Quoted);
             if (q < 0) continue;

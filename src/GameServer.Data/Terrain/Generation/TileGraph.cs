@@ -256,10 +256,21 @@ public sealed class TileGraph
             }
             g.Edges.Add(e);
         }
-        // 0x142126550: each node's edge slots in the order its record lists them.
-        for (int i = 0; i < nodes; i++)
-            for (int k = 0; k < 4; k++)
-                g.Nodes[i].Slots[k] = slots[i][k] == 0 ? null : g.Edges[slots[i][k] - 1];
+        if (g.IsDungeon)
+            // 0x142003300 → 0x1420035a0: a .dgr ignores the node records' edge lists; each edge in file order takes the
+            // first free slot of both its nodes (1_5_3 node 12 lists "34 33 6" and holds 6, 33, 34).
+            foreach (var e in g.Edges)
+                foreach (var n in (ReadOnlySpan<GraphNode>)[e.A, e.B])
+                {
+                    int k = Array.IndexOf(n.Slots, null);
+                    if (k < 0) throw new InvalidDataException($"Too many edges for node at ({n.X}, {n.Y})");
+                    n.Slots[k] = e;
+                }
+        else
+            // 0x142126550: each node's edge slots in the order its record lists them.
+            for (int i = 0; i < nodes; i++)
+                for (int k = 0; k < 4; k++)
+                    g.Nodes[i].Slots[k] = slots[i][k] == 0 ? null : g.Edges[slots[i][k] - 1];
         return g;
     }
 

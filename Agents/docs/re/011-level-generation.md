@@ -141,7 +141,9 @@ For a one-node graph (towns, hideouts):
    (`0x141d81f70`): `Next(total weight)` over the candidate list (`0x141d902d0`), placed at the turned footprint's
    top-left corner with the picked orientation (`0x141d833e0`; entries +0x34/+0x35 = offset inside the tile).
 4. **Tile store** (`0x141d81590`): the master's TileSet (.tst, `0x1429f7040`: optional weight, quoted path,
-   orientation words `I`, `R90`, `FR180`, … as a mask, none = all; `include`); every tile is filed for each
+   orientation words `I`, `R90`, `FR180`, … as a mask, none = all; `include`; a line starting with `//` is a comment,
+   as in the RoomSet reader `0x142a0d950`: 94 room sets comment rooms out as `//!100 "…"`, which the port read as
+   weight-1 rooms until 2026-10-24); every tile is filed for each
    orientation of its mask (and of the tile's own restriction mask, tile data +0x171, not ported) under (tag, key
    turned by that orientation), in list order. Tiles tagged `postunique` are not filed: they go to the TileSet's +0x80
    list (step 7b). A tile whose key is
@@ -517,7 +519,10 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    (version > 0x15), lock orientation (> 0x17), random offset rectangle (> 0x18), x / y lock. Edge record
    (`0x142bb3f20`): node a, node b, internal point count and points, exist %, chirality (version ≥ 0xf), priority
    (> 0x15), "edge type .et", min width, max width (and a ground side below 0xf). The instance (`0x142126b40`,
-   `0x142126c40`) keeps each node's edge slots in the order its record lists them (`0x142126550`): node +0x58..+0x70
+   `0x142126c40`) keeps each node's edge slots in the order its record lists them (`0x142126550`; a **.dgr** ignores
+   the records' lists: its edge callback `0x142003300` → `0x1420035a0` puts each edge, in file order, into the first
+   free slot of both its nodes, so `1_5_3` node 12, listing "34 33 6", holds 6, 33, 34; the slot order picks an
+   untagged node's door type, `0x142106db0`): node +0x58..+0x70
    edges, +0x44 exist, +0x48 height, +0x4c position, +0x8b / +0x8c x / y lock; edge +0x20 / +0x28 nodes, +8 points,
    +0x30 exist, +0x38 type.
 2. **Prepare** (`0x14203f890`): random offsets (`0x14203a600`, none in v19), a tag "a,b,c" keeps one alternative
