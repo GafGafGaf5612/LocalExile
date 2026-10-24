@@ -3322,6 +3322,7 @@ static async Task ContinueTour(string remote, NetworkStream stream, ConnectionCi
     if (!CaptureTour.Active(character)) return;
     if (!starting && CaptureTour.IsCurrent(character, conn.Layout.Id, conn.Seed))
     {
+        CaptureTour.MarkArrived(character);
         bool ok = await CaptureTour.WaitForCapture(character, conn.Layout.Id, conn.Seed);
         Console.WriteLine($"[gateway] {remote} tour: {conn.Layout.Id} seed {conn.Seed} {(ok ? "captured" : "NOT captured (120 s; is live.ps1 -Walkmaps running?)")}");
     }
@@ -3333,6 +3334,15 @@ static async Task ContinueTour(string remote, NetworkStream stream, ConnectionCi
         return;
     }
     await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, true, AtSpawn: true) { Seed = seed }, $"tour: {area} seed {seed}");
+    // A seed the client itself cannot generate ("Critical Terrain Generation Error", Client/logs/Client.txt): the client
+    // shows the exception and closes. After 60 s without arriving the stop goes to tour-failures.txt (levelgen tourlist
+    // leaves it out next time); while this connection is still open, the tour tries the next stop from here.
+    await Task.Delay(TimeSpan.FromSeconds(60));
+    if (CaptureTour.NotArrived(character, area, seed))
+    {
+        Console.WriteLine($"[gateway] {remote} tour: {area} seed {seed} NOT reached (the client's generation failed?)" + (conn.Closed ? "" : "; next"));
+        if (!conn.Closed) await ContinueTour(remote, stream, ciphers, conn, starting: true);
+    }
 }
 
 // Auth moves the player and issues the destination ticket; 0x27 sends the client there (it reconnects to this Gateway).
@@ -4093,7 +4103,8 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         string path = string.Join(' ', args);
         if (!File.Exists(path)) { await conn.Commands!.Reply($"No file {path} (relative to the Gateway's directory, the repository root)."); return; }
         await conn.Commands!.Reply(CaptureTour.Start(character, path));
-        await ContinueTour(remote, stream, ciphers, conn, starting: true);
+        // Not awaited: a step waits up to 60 s for the client to arrive.
+        _ = ContinueTour(remote, stream, ciphers, conn, starting: true);
     })
     .Add("league_flag", "/league_flag [<id> [off]] (dev: list, set or clear league quest flags by the client's id, e.g. /league_flag 350)", async args =>
     {
@@ -6299,6 +6310,7 @@ static class CaptureTour
         public int Total { get; init; }
         public int Captured { get; set; }
         public int Missed { get; set; }
+        public bool Arrived { get; set; }
     }
 
     static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Tour> Tours = new(StringComparer.OrdinalIgnoreCase);
@@ -6335,6 +6347,23 @@ static class CaptureTour
     public static bool IsCurrent(string character, string area, uint seed) =>
         Tours.TryGetValue(character, out var t) && t.Current is var (a, s) && s == seed && a.Equals(area, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The client reported the current stop generated (0x7d).</summary>
+    public static void MarkArrived(string character)
+    {
+        if (Tours.TryGetValue(character, out var t)) t.Arrived = true;
+    }
+
+    /// <summary>The client did not arrive at the stop (its own generation failed: it shows the exception, then closes).
+    /// Counted as missed and listed in data/walkability/tour-failures.txt; true when it was the current stop.</summary>
+    public static bool NotArrived(string character, string area, uint seed)
+    {
+        if (!Tours.TryGetValue(character, out var t) || t.Arrived || t.Current is not var (a, s) || s != seed || a != area) return false;
+        t.Missed++;
+        try { File.AppendAllText("data/walkability/tour-failures.txt", $"{DateTime.Now:s} {area} {seed}: the client did not arrive (see Client/logs/Client.txt)\n"); }
+        catch (IOException) { }
+        return true;
+    }
+
     /// <summary>Waits until scripts/walkmaps has written this load's files: the generation trace and the walk map
     /// (written after the step started), then the doodads unchanged for 3 s. False after 120 s.</summary>
     public static async Task<bool> WaitForCapture(string character, string area, uint seed)
@@ -6366,6 +6395,7 @@ static class CaptureTour
         var next = t.Left.Dequeue();
         t.Current = (next.Area, next.Seed);
         t.StepStarted = DateTime.UtcNow;
+        t.Arrived = false;
         return next;
     }
 

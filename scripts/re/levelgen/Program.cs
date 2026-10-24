@@ -199,11 +199,17 @@ static void TourList(string outFile, int randomSeeds)
     using var doc = JsonDocument.Parse(File.ReadAllText(latest));
     var lines = new List<string> { $"# levelgen tourlist {DateTime.Now:s}: logged seeds the port does not match, without a trace" };
     int wrong = 0, random = 0;
+    // Seeds the client itself failed to generate on an earlier tour (the Gateway's data/walkability/tour-failures.txt).
+    string failures = Path.Combine(root, "data", "walkability", "tour-failures.txt");
+    var failed = File.Exists(failures)
+        ? File.ReadLines(failures).Select(l => l.Split(' ')).Where(f => f.Length > 2).Select(f => $"{f[1]} {f[2].TrimEnd(':')}").ToHashSet()
+        : [];
     foreach (var check in doc.RootElement.EnumerateObject())
     {
         var key = check.Name.Split(' ');
         if (key[0] != "oracle" || check.Value.GetProperty("Hash").GetString() == "match") continue;
         if (File.Exists(Path.Combine(root, "data", "walkability", $"{key[1]}_seed{key[2]}.gen.json"))) continue;
+        if (failed.Contains($"{key[1]} {key[2]}")) continue;
         lines.Add($"{key[1]} {key[2]}  # {check.Value.GetProperty("Hash").GetString()}");
         wrong++;
     }
