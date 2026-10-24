@@ -3559,6 +3559,16 @@ static int MaxResistance(ClientState conn, DamageType type) => type switch
     _ => DamageModel.DefaultMaxResistance,
 };
 
+// Damage immunities as the damage model sees them, from the same sources the panel's "Immune to X" rows use.
+static HashSet<DamageType> PlayerImmunities(ClientState conn)
+{
+    var baseStats = new Dictionary<uint, int>();
+    foreach (var (key, value) in BaseStats(conn)) baseStats[key] = value;
+    lock (conn.Monsters)
+        foreach (var (key, value) in conn.PlayerStats) baseStats[key] = baseStats.GetValueOrDefault(key) + value;
+    return DamageImmunities.From(name => Stats.Key(name) is uint key ? baseStats.GetValueOrDefault(key) : 0);
+}
+
 // Spell Suppression: chance in 0..100 with the conditional passives that hold now (full life, moving, an enemy hit in the
 // last 4 s: PoB's "recently"), the damage reduction on a successful suppress (40% by default) and its lucky or unlucky
 // roll (PoB's suppressRolls).
@@ -3966,12 +3976,15 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
         int resistance = Resistance(conn, type);
         int maxResistance = MaxResistance(conn, type);
-        int dealt = type == DamageType.Physical
+        bool immune = PlayerImmunities(conn).Contains(type);
+        int dealt = immune ? 0 : type == DamageType.Physical
             ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
             : DamageModel.Mitigate(amount, resistance, maxResistance);
-        string mitigation = type == DamageType.Physical
-            ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
-            : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
+        string mitigation = immune
+            ? "immunity"
+            : type == DamageType.Physical
+                ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
+                : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
         uint life;
         bool wasDead;
         lock (conn.Monsters)
@@ -4080,12 +4093,15 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
         if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
         int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
-        int dealt = type == DamageType.Physical
+        bool immune = PlayerImmunities(conn).Contains(type);
+        int dealt = immune ? 0 : type == DamageType.Physical
             ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
             : DamageModel.Mitigate(amount, resistance, maxResistance);
-        string mitigation = type == DamageType.Physical
-            ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
-            : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
+        string mitigation = immune
+            ? "immunity"
+            : type == DamageType.Physical
+                ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
+                : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
         var (chance, effect, lucky, unlucky) = Suppression(conn);
         bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100), lucky, unlucky);
         if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
@@ -4158,12 +4174,15 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         int chance = spell ? conn.Pools.SpellBlockChance : conn.Pools.BlockChance;
         bool lucky = spell ? conn.Pools.SpellBlockLucky : conn.Pools.AttackBlockLucky;
         bool blocked = DamageModel.Blocks(chance, Random.Shared.NextDouble() * 100, lucky);
-        int dealt = blocked ? 0 : type == DamageType.Physical
+        bool immune = PlayerImmunities(conn).Contains(type);
+        int dealt = immune || blocked ? 0 : type == DamageType.Physical
             ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
             : DamageModel.Mitigate(amount, resistance, maxResistance);
-        string mitigation = type == DamageType.Physical
-            ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
-            : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
+        string mitigation = immune
+            ? "immunity"
+            : type == DamageType.Physical
+                ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
+                : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
         uint life, mana, manaBefore;
         bool wasDead;
         lock (conn.Monsters)
@@ -4824,11 +4843,12 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         var rolled = a.Damage.Roll(Random.Shared);
         var mitigated = DamageModel.Mitigate(rolled, type =>
             new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)));
+        var immune = PlayerImmunities(conn);
         rawDamage = (int)Math.Round(rolled[DamageType.Physical].Min);
         damage = 0;
         foreach (var (type, range) in mitigated.Components)
         {
-            int value = (int)Math.Round(range.Min);
+            int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
             damage += type == DamageType.Physical
                 ? DamageModel.MitigatePhysical(value, conn.Pools.Armour)
                 : value;
