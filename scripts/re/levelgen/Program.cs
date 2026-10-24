@@ -250,7 +250,9 @@ static void Hash(string path)
 
 static void Oracle(string filter)
 {
-    var pairs = LoggedHashes(out var version, out int otherVersions);
+    // LEVELGEN_ORACLE_VERSION=3.27.0.8.2 runs another version's loads, to compare only (re/011 §8).
+    var pairs = LoggedHashes(out var version, out int otherVersions,
+        Environment.GetEnvironmentVariable("LEVELGEN_ORACLE_VERSION") is { Length: > 0 } v ? v : null);
     Console.WriteLine($"client {version}: {pairs.Count} logged (area, seed) pairs ({otherVersions} loads by other versions left out)");
     var fs = OpenGame();
     var files = Files();

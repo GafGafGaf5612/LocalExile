@@ -177,8 +177,8 @@ A `.dgr` graph with more than one node goes through `TileGraphGenerator.Prepare`
 graph) and the layout `0x1421038d0` on a grid of the graph's `Size` in room units (a `DungeonMap`: cell 0 free, 1
 reserved, k ≥ 2 = room k − 2). **The Ship Graveyard Cave (`1_1_9a` seed 1, `shipdungeon1_4.dgr`, 9 × 6 units of 7
 tiles) generates tile for tile: all 2 835 entries, tile hash 3341726258, all 2 076 draws up to the doodads** (the
-225 layout draws, the cells at every recorded stage and all 17 rooms included). So does **the Prison (`1_1_7_1` seeds
-1, 1898277627, 4162278830; `prisonlower_4_1.dgr`, 12 × 8 units of 5, buffer 5, 59 × 43): seed 1 all 2 537 entries,
+225 layout draws, the cells at every recorded stage and all 17 rooms included). So does **the Prison (`1_1_7_1` seed
+1; seeds 1898277627, 4162278830 match only 3.27 hashes, §8; `prisonlower_4_1.dgr`, 12 × 8 units of 5, buffer 5, 59 × 43): seed 1 all 2 537 entries,
 tile hash 1542354689, all 1 962 draws up to the doodads, all 13 rooms** (untagged nodes, special rooms, door tiles).
 
 The master's **RoomOverlap defaults to 1** (Lioneye's Watch sets 0; the cave and the tile-graph masters set nothing):
@@ -297,9 +297,10 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   the count: the room set's "shrine" rooms (+0x118) of the layout's unit size, any orientation, go to `0x1420ff140`;
   a placed room with a shrine object (room data +0x70, taken to be a `Metadata/Shrines/Shrine` object in the `.arm`)
   counts a shrine placed (`0x141d8b9a0`: the count drops by one, +0x14a rises, the first Shrine row leaves the pool;
-  the position goes to `0x141d8abb0`, which nothing in the layout reads). The 48 shrine seeds of the oracle all
-  generate since 2026-10-23; most run to another hash, so this needs a trace of a shrine seed (`Game_SEED`, e.g.
-  `2_10_7` seed 3117172586).
+  the position goes to `0x141d8abb0`, which nothing in the layout reads). The 48 shrine seeds the oracle had all
+  generate since 2026-10-23, but they were 3.27 loads (§8): no 3.29 trace draws in `0x142103490`, so the shrine rooms
+  are checked by no hash yet and need a trace of a 3.29 shrine seed (`Game_SEED`; `2_10_7` seed 3117172586 rolled one
+  in the port, a 3.27 seed).
 - **Mission rooms** (`0x142102170`, after `0x142101aa0` / `0x142101e50`): the room set's "mission" rooms by their
   count n of 'k' slots tagged "missiontile" (room set +0x130, `0x141ff6960`, ascending; "contains no mission tiles"
   for none), those of the layout's unit size. While the subgraph's share (a copy of pool +0x144) lasts, each pool
@@ -448,8 +449,8 @@ subgraph. Oracle stops on `.dgr` areas: see the oracle line in §8.
 
 ## 3c3. Composite maps: subgraph nodes (`DungeonTiler.Composite`, `DungeonLayout.PlaceSubgraphNode`)
 
-A `.dgr` whose nodes are tagged "graph" is a frame for other graphs. **The Prison's second level (`1_1_7_2` seeds 1,
-2512127042; `prisonmain_1_1.dgr`, 115 × 45 units of 1, OuterBufferSize 5) generates tile for tile: all 6 875
+A `.dgr` whose nodes are tagged "graph" is a frame for other graphs. **The Prison's second level (`1_1_7_2` seed 1 and
+the 3.29 load 287067221; 2512127042 matches a 3.27 hash only, §8; `prisonmain_1_1.dgr`, 115 × 45 units of 1, OuterBufferSize 5) generates tile for tile: all 6 875
 entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of its three layouts.**
 
 - **Records** (`0x1420457f0`, 0x98 bytes, generator +0x30 → +0x10): graph path (+0x20), rectangle (+0x40 x, +0x44
@@ -862,7 +863,8 @@ MurmurHash2 (seed 0xf36b12) of that u32 array (`0x140df8570`; `0x1406db330` is t
 
 Checked against four live traces (seed 1): Lioneye's Watch 1139181677, The Twilight Strand 266153788, The Coast
 695393902, HideoutForest 3482012158 — all match (`levelgen hash`). The client log (`Client/logs/Client.txt`) has
-"Generating level … with seed …" / "Tile hash" pairs for ~560 (area, seed) loads, an oracle for any seed.
+"Generating level … with seed …" / "Tile hash" pairs for every load; only the local 3.29 client's loads are an
+oracle (262 (area, seed) pairs on 2026-10-24; §8).
 
 ## 6b. Walkability and projectile grids (`Walkability.cs`)
 
@@ -1070,12 +1072,25 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (`Client/logs/Client.txt`) and reports match / mismatch / where the port stops, with a summary. **Only loads of the
   local client's version count** (since 2026-10-24): each client start logs its patch root (`Web root:
   https://patch.poecdn.com/3.29.3.3/`), and the log also holds the official game's 3.27.0.8.2 (February) and 3.28.0.8
-  (April) sessions. Their hashes are no oracle for 3.29.3b: all 46 (area, seed, level) triples logged by both 3.27
-  and 3.29 have different hashes (game data changed between patches), and 3.29 cannot generate `1_3_8_1` seed
-  2339687786 at level 27 at all ("Could not find matching overlap tile at (41, 35)", in the client), which 3.27 did.
-  The counts below before 2026-10-24 mix versions (448 of the 710 loads were 3.27 / 3.28). 2026-10-24, 3.29.3.3 loads
-  only: **105 of 262 match**; 9 seeds the port had "missed" match the 3.29 hashes the capture tour logged (`1_1_3`
-  seed 4012328457, `1_1_4_0` 944417618, `1_1_7_2` 287067221, `1_2_1` 1534834767, `1_2_10` 1723802332, …).
+  (April) sessions. Their hashes are no oracle for 3.29.3b: of the 78 (area, seed, level) triples logged by both 3.27
+  and 3.29 (the capture tour replayed 3.27 seeds), 46 have different hashes and 32 the same (the towns, two hideouts
+  and 17 ordinary seeds), mixed within one area (`1_2_6_2`: two seeds the same, one not), so the change is per seed,
+  not per area (changed rooms or tiles that only some seeds pick, or league rolls; not found). 3.29 also cannot
+  generate `1_3_8_1` seed 2339687786 at level 27 ("Could not find matching overlap tile at (41, 35)", in the client),
+  which 3.27 did. The port matches the 3.27 hash on none of the 46. `LEVELGEN_ORACLE_VERSION=3.27.0.8.2` (with
+  `LEVELGEN_LOCAL=1`; the gate ignores it) runs the oracle on another version's loads, to compare only: 47 of 526 match, 341 run to another hash (2026-10-24).
+  **The counts below before 2026-10-24 mix versions** (448 of the 710 loads were 3.27 / 3.28): "N of 710", "350 run
+  to the end with another hash" and the stop counts include those loads, and a seed listed as matching that has no
+  3.29 load (the Prison `1_1_7_1` seeds 1898277627 and 4162278830, `1_1_7_2` 2512127042, `1_1_9a` 3101637759, the
+  `1_4_2`, `1_4_6_3`, `1_5_5`, `1_3_3_1`, `1_4_3_1`, `1_2_10` 615157463, Strand, Coast, Mud Flats, `1_2_8`, `1_3_1`
+  and `1_4_7` seeds other than 1) matched a 3.27 hash only: the port reproduces the 3.27 client there, so 3.29 very
+  likely agrees, but no 3.29 hash says so. The breach (13), shrine (48) and MapWorldsGorge seeds were all 3.27 loads
+  too. 2026-10-24, 3.29.3.3 loads only: **105 of 262 match**, 65 another hash; 9 seeds the port had "missed" match
+  the 3.29 hashes the capture tour logged (`1_1_3` seed 4012328457, `1_1_4_0` 944417618, `1_1_7_2` 287067221,
+  `1_2_1` 1534834767, `1_2_10` 1723802332, …). Stops on 3.29 (traces / oracle loads): numbered special rooms 11 / 28,
+  DungeonFillRoomHeightOverride 6 / 8, door tiles without RoomOverlap 6 / 6, "no tile for slot" in a room 6 / 12,
+  outer buffer of an inner subgraph 5 / 7, "Mismatching ground types" 5 / 5, overlap tile over a placed tile 3 / 4,
+  FinalBoss pick 3 / 3, breach 1 / 1.
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds

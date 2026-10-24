@@ -60,12 +60,12 @@ static class Shared
     /// <summary>The (area, seed) → (level, tile hash) pairs the client logged (Client/logs/Client.txt), only from the
     /// sessions of the local client's version: each client start logs its patch root ("Web root:
     /// https://patch.poecdn.com/3.29.3.3/"), and the log's last session is the local client. Older versions' hashes are
-    /// no oracle: the log holds 3.27 (February) and 3.28 (April) sessions of the official game, and every (area, seed,
-    /// level) logged by both 3.27 and 3.29 has another hash (game data changed between patches; 3.29 cannot even
-    /// generate 1_3_8_1 seed 2339687786, which 3.27 did).</summary>
+    /// no oracle: the log holds 3.27 (February) and 3.28 (April) sessions of the official game, and 46 of the 78 (area,
+    /// seed, level) logged by both 3.27 and 3.29 have another hash (per seed, not per area; 3.29 cannot even generate
+    /// 1_3_8_1 seed 2339687786, which 3.27 did).</summary>
     public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes() => LoggedHashes(out _, out _);
 
-    public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes(out string? version, out int otherVersions)
+    public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes(out string? version, out int otherVersions, string? only = null)
     {
         // The running client keeps its log open for writing.
         string path = Path.Combine(Root(), "Client", "logs", "Client.txt");
@@ -75,6 +75,8 @@ static class Shared
         using (var scan = Open())
             for (string? line; (line = scan.ReadLine()) is not null;)
                 if (webRoot.Match(line) is { Success: true } v) version = v.Groups[1].Value;
+        // Another version's loads only to compare (the oracle's LEVELGEN_ORACLE_VERSION), never as an answer.
+        if (only is not null) version = only;
         var pairs = new SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)>();
         (string, uint, int)? cur = null;
         string? session = null;
