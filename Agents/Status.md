@@ -237,7 +237,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   and gain-as-extra. DoT is a single type with fractional tick carry, and `Ailments` has the ignite/bleed/poison base
   formulas. The default attack, Fireball and monster melee build packets and read the player's/skill's conversion
   stats; packet mitigation applies each type's own resistance, and the physical part then goes through armour.
-  Righteous Fire's burn uses the DoT tick model. Not yet: energy shield, penetration/exposure, added damage,
+  Righteous Fire's burn uses the DoT tick model. A damage-type immunity (`*_immunity`, `elemental_damage_immunity`)
+  zeroes that type on the player's hits, from the same sources the panel's Immune rows use (`DamageImmunities.cs`).
+  Not yet: energy shield, penetration/exposure, added damage,
   increased/more support modifiers, ailment application/duration and monster resistances
   ([20](docs/protocol/20-damage.md)).
 
