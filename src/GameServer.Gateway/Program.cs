@@ -1815,14 +1815,17 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
 // half the attack time (attacks) or the cast (spells), on every living monster within the skill's area radius
 // (active_skill_base_area_of_effect_radius, else AreaSkillRadius cells, grown by area of effect: SkillArea) of the aimed point, or of the player for a
 // point too far for a melee skill. Attacks deal the weapon's hit as the default attack does, spells their own damage
-// (SkillCatalog.HitDamage) with the player's stats; both convert, crit and roll per monster. Not modelled yet: damage
-// effectiveness, the skills' own shapes (waves, cones, chains), stun, and the attack's accuracy roll.
+// (SkillCatalog.HitDamage) with the player's stats; both convert, crit and roll per monster. An attack's hit carries
+// the skill's damage effectiveness (SkillCatalog.DamageEffectiveness). Not modelled yet: the skills' own shapes (waves,
+// cones, chains), stun, and the attack's accuracy roll.
 static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
     bool immediate = false)
 {
     const int AreaSkillRadius = 12;   // cells, for a skill without its own area stat
     var skillStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+    // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
+    int effectiveness = Skills.DamageEffectiveness(gem.Effect, gem.Level);
     int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
     if (Stat("base_deal_no_damage") != 0) return;
     var spellBase = Skills.HitDamage(gem.Effect, gem.Level, gem.Quality);
@@ -1858,7 +1861,8 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
         DamagePacket hit = spell
             ? SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
                 .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false))
-            : weapon.HitDamage(player).Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true));
+            : SpellDamage.WithEffectiveness(weapon.HitDamage(player), effectiveness)
+                .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true));
         int damage = hit.RollTotal(Random.Shared);
         int chance = spell ? conn.Pools.SpellCriticalStrikeChance : conn.Pools.AttackCriticalStrikeChance;
         bool critical = chance > 0 && Random.Shared.Next(10_000) < chance;

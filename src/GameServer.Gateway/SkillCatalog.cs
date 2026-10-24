@@ -195,6 +195,19 @@ sealed class SkillCatalog(string folder = "data")
         return req;
     }
 
+    /// <summary>
+    /// A skill's damage effectiveness at a level (GrantedEffectStatSetsPerLevel DamageEffectiveness, permyriad: Flicker
+    /// Strike 7730 at level 1, 30890 at 20, 69600 at 40): an attack's share of the weapon's damage, the gem's "Deals
+    /// 77.3% of base Attack Damage" line. 0 when its row has none (the default attack) or carries a negative one, which a
+    /// few skills do; callers scale nothing then. A spell's own base damage is already final (see SpellDamage).
+    /// </summary>
+    public int DamageEffectiveness(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 0;
+        int row = PickLevel(t.StatSetsPerLevel, t.StatSets[effectRow], level);
+        return row >= 0 && row < t.Effectiveness.Count ? Math.Max(0, t.Effectiveness[row]) : 0;
+    }
+
     /// <summary>A gem's requirement for one attribute at a level (0x14246fc40): the level requirement of that level
     /// (PlayerLevelReq) through the client's curve (3 x requirement + 11), the gem's percentage share (SkillGems
     /// Strength/Dexterity/IntelligenceRequirementPercent) raised to the power 0.9, and 0.5 for a support or 0.7 for a
@@ -526,6 +539,7 @@ sealed class SkillCatalog(string folder = "data")
     // StatSets: each GrantedEffects row's StatSet1 (-1 when none). Effects: per GrantedEffects row its StatSet1 and CastTime.
     // StatSetBase: per GrantedEffectStatSets row its ImplicitStats and (ConstantStats, ConstantStatsValues).
     // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
+    // Effectiveness: per GESSPL row its DamageEffectiveness (permyriad, the attack's share of the weapon's damage).
     // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
     // Reservations: per GEPL row the ManaReservationFlat and ManaReservationPercent (permyriad), parallel to PerLevel.
     // Cooldowns: per GEPL row its Cooldown (ms) and StoredUses, parallel to PerLevel. VaalSouls: per GEPL row its VaalSouls.
@@ -535,7 +549,7 @@ sealed class SkillCatalog(string folder = "data")
         List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
         List<(int, int)[]> StatSetLevelStats, List<(int StatSet, int GemLevel, int PlayerLevelReq)> GemLevelReqs, List<int> ManaCost,
         List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
-        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality)
+        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness)
     {
         public static Tables? Load(string folder)
         {
@@ -594,17 +608,19 @@ sealed class SkillCatalog(string folder = "data")
                     quality.TryAdd(Int(r, "GrantedEffectsKey"), Pairs(Ints(r, "StatsKeys"), Ints(r, "StatsValuesPermille")));
             }
             var setLevels = new List<(int, int)>();
+            var effectiveness = new List<int>();
             var levelStats = new List<(int, int)[]>();
             var levelReqs = new List<(int, int, int)>();
             foreach (var r in s.RootElement.EnumerateArray())
             {
                 setLevels.Add((Int(r, "StatSet"), Int(r, "GemLevel")));
+                effectiveness.Add(Int(r, "DamageEffectiveness"));
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
                     .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
                 if (Int(r, "PlayerLevelReq") is >= 0 and var req) levelReqs.Add((Int(r, "StatSet"), Int(r, "GemLevel"), req));
             }
             return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, levelReqs, mana, reservations, cooldowns,
-                vaalSouls, quality);
+                vaalSouls, quality, effectiveness);
         }
     }
 }
