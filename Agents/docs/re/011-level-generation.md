@@ -780,7 +780,9 @@ are the doodads, `0x142042fae`).
    `beach_karuistone1.tdt` over one of 114 `Blank.tdt`. The walkability pass's "tile without a tag" test
    (`0x142028510`) reads the same field.
 7. **Outer buffer** (`OuterBuffer.cs`, `0x142044f30` → `0x14201ffa0`; `0x14201db80` only with OuterGroundType): the
-   border vertices' grounds and heights spread outward (vertical, then horizontal); then passes top, bottom, left and
+   border vertices' grounds and heights spread outward (vertical, then horizontal; each spread also sets vertex flag 8,
+   `0x141ffbd30`, on its source vertex and on every buffer vertex on that side, written ones included, so the whole
+   buffer is unwalkable for the walkability pass after it); then passes top, bottom, left and
    right walk the border: where a tile edge crosses outward (`0x14201d890`) an edge tile with the point continued is
    drawn (`Next(total)`) and repeated to the map edge; elsewhere, where the step's two border vertices agree
    (`0x141d77670`), the ground's first fill tile (`0x141feffb0`) is repeated outward at orientation 0. Fill tiles go
@@ -877,9 +879,11 @@ value, so the order does not matter.
 
 Checked with `levelgen walk` against the seed-1 captures (`data/walkability/<area>_seed1.bin`, `.projectile.bin`;
 `LEVELGEN_NODOODADS` leaves the doodads out, `LEVELGEN_CAPTURED_DOODADS` stamps the captured ones instead of the
-generated): of the 61 captures whose tile hash matches, **59 match both grids cell for cell** with the generated
+generated): **all 61 captures whose tile hash matches match both grids cell for cell** with the generated
 doodads (without doodads: none; median 99.44% walk, 99.89% projectile). The dungeon forced-blank slots (`1_5_2`
-93.9%, `2_10_2` 93.2% before) were doodad collision, not a walkability rule. The 2 left: §6c.
+93.9%, `2_10_2` 93.2% before) were doodad collision, not a walkability rule. The last one, `2_8_10`'s 6 cells, was
+the outer buffer's vertex flag 8 (§3g step 7): a buffer tile with a hull cell of 1 and only the two corners the pass
+had flagged; with all four flagged it lays a blocked patch.
 
 ## 6c. Doodads (`DoodadStage.cs`, `DoodadHull.cs`)
 
@@ -939,8 +943,8 @@ later walk checks (`walk < 5` in the random loop) see earlier doodads: this is w
 before.
 
 Results: The Twilight Strand matches every doodad-stage draw (to #25 151, then the mesh variation `0x141530658`) and
-places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 59
-other captures' (60 of the 61 with a matching tile hash; 47 before the tile objects and the type rules, 53 before the
+places all 250 captured doodads (its torches and waterfalls are tile objects); its grids match cell for cell, as 60
+other captures' (all 61 with a matching tile hash; 60 before the outer buffer's flag 8, 47 before the tile objects and the type rules, 53 before the
 dungeon fill rooms; the fill rooms brought `1_4_2`, `1_5_1`, `2_7_5_map`, `2_10_5`, `2_10_6`: their missing
 collision was also what made `2_7_5_map`'s first random loop run longer; AOSet then brought `1_1_6`, and the
 reskinned names above `2_9_5`, whose `foothills_*` ramp planes and blocker had found no `.ao` and so no Hull).
@@ -948,11 +952,6 @@ Text `.tmd` records (version 8) carry the `.ao` as their first quoted field and 
 waypoint effect of `beach_waypoint_v01_01.tmd` is `waypoint_idle.ao` at angle 0. Every doodad of `1_1_3`, `1_1_6`
 and `2_9_5` now has the captured name. Left:
 - The per-sub-tile lists of `0x141d7eda0` (tiles with +0x16d bit 1).
-- `2_8_10`: its doodads now match (every doodad-stage draw up to the mesh variation, all 1 083 captured doodads; the
-  random loop had taken the grass group at vertices the fill room's `.arm` grounds make `trims2.gt`, §3g step 5).
-  6 walk cells remain: `forest_slumscliffwater_v03_01.tdt` sub-tile 5 stores 1 at its cells (22, 7..9) beside the
-  hull-less `slum_ledge_v04_01.tdt`; the client has 0 there (two corners with vertex flag 8; the lay-over in
-  `0x141d85970` is the suspect, no doodad is near).
 - `2_10_6`: grids exact, but the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing, and 2 of
   the 1 639 captured doodads are not placed.
 

@@ -37,6 +37,9 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, TileGrid grid, int
 
     bool Marked(int x, int y) => (grid.Corner(x, y).Flags & 2) != 0;
 
+    // 0x141ffbd30: vertex flag 8 (unwalkable).
+    void Flag(int x, int y) => grid.Corner(x, y).Flags |= 8;
+
     // Spreads the ground and height of vertex (fx, fy) to every vertex in the list without a ground.
     void Spread(int fx, int fy, IEnumerable<(int X, int Y)> to)
     {
@@ -54,16 +57,22 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, TileGrid grid, int
     static IEnumerable<(int, int)> Column(int x, int y0, int y1) { for (int y = y0; y < y1; y++) yield return (x, y); }
     static IEnumerable<(int, int)> Row(int y, int x0, int x1) { for (int x = x0; x < x1; x++) yield return (x, y); }
 
+    // Each spread also flags its source vertex and every buffer vertex on that side of the column or row, written or
+    // not: the whole outer buffer becomes unwalkable for the walkability pass after it.
     void SpreadVertical()
     {
         for (int x = left; x <= right; x++)
         {
             int y = bottom;
             while (y < H && Marked(x, y + 1)) y++;
+            Flag(x, y);
+            foreach (var (cx, cy) in Column(x, bottom + 1, H + 1)) Flag(cx, cy);
             Spread(x, y, Column(x, y + 1, H + 1));
             y = top;
             while (y != 0 && Marked(x, y - 1)) y--;
+            Flag(x, y);
             Spread(x, y, Column(x, 0, y));
+            foreach (var (cx, cy) in Column(x, 0, top)) Flag(cx, cy);
         }
     }
 
@@ -73,9 +82,13 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, TileGrid grid, int
         {
             int x = left;
             while (x != 0 && Marked(x - 1, y)) x--;
+            Flag(x, y);
             Spread(x, y, Row(y, 0, x));
+            foreach (var (cx, cy) in Row(y, 0, left)) Flag(cx, cy);
             x = right;
             while (x < W && Marked(x + 1, y)) x++;
+            Flag(x, y);
+            foreach (var (cx, cy) in Row(y, right + 1, W + 1)) Flag(cx, cy);
             Spread(x, y, Row(y, x + 1, W + 1));
         }
     }

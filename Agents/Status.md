@@ -226,13 +226,14 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   vertex doodads, then every placed tile's own objects (its `.tmd`), and stamps the Hull of each static one's `.ao`
   as it goes; which room and tile lines are client objects follows their type's BaseEvents flags. The rooms a dungeon's
   fill picks from its `.gft` (`Fills/plants*.arm`, `tent1.arm`: forced-blank tiles with doodad lines) count among the
-  record's rooms. On the 61 seed-1 captures whose tile hash matches, 60 areas now match the client's walk and
+  record's rooms. On the 61 seed-1 captures whose tile hash matches, all 61 areas now match the client's walk and
   projectile grids cell for cell (The Twilight Strand, The Coast, The Prison, the dungeons with forced-blank slots such
   as `1_5_2` and `2_10_2`, The Dried Lake `1_4_2`, Chayula's monastery, …). The Twilight Strand matches every
   doodad-stage draw and places all 250 captured doodads. AOSet doodads (`1_1_6`) and the objects of reskinned tiles
   (`2_9_5`) are in. A fill room's own `.arm` vertex grounds now go in, so `2_8_10` matches every doodad-stage draw and
-  places all 1 083 captured doodads. Left: tiles made of sub-tiles, `2_8_10`'s 6 walk cells (a tile's lay-over, not
-  doodads) and the record-loop difference in `2_10_6` (re/011 §6c).
+  places all 1 083 captured doodads; its grids match since the outer buffer flags its vertices unwalkable (vertex
+  flag 8, as the client's spread does). Left: tiles made of sub-tiles and the record-loop difference in `2_10_6`
+  (re/011 §6c).
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
   stop it ([11](docs/protocol/11-skills.md) §10).
