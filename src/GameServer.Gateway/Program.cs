@@ -326,9 +326,9 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
     {
         if (id == InstanceProtocol.UseSkillAtLocationId)
         {
-            // Echo the action so the client runs it (Move on a ground click). The server does no validation yet.
+            // Echo the action so the client runs it (Move on a ground click); an attack gem is paced and may be movement
+            // (below). The client starts the action itself and waits for this echo before sending the next one.
             var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);
-            Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
             double at = conn.ClockAt(readAt);   // when the client applied the click, not when this handler runs
             // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
             bool cast = Skills.IsGemSkill(use.SkillId);
@@ -342,6 +342,36 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (disabled skill, cost back)");
                 continue;
             }
+            // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an
+            // attack-move: the client walks to the aimed point itself and sends no C→S 0x25 Move for that walk, so the
+            // server walks its own estimate after it and echoes from there. A point with a living monster on it is a
+            // swing (the client aims at the cell, not at the object); an empty point is movement only, so running costs
+            // no mana. Before 2026-10-25 every use swung, which paid the cost at the click and echoed the server's stale
+            // position, and the client snapped the player back onto it (live trace: up to 98 cells).
+            bool attack = cast && gem.Name is not null && Skills.IsAttack(gem.Effect);
+            if (attack && (use.Flags & 0x1) == 0 && !Skills.IsMovement(gem.Effect))
+            {
+                var here = conn.Walk.Position(at);
+                if (!MonsterAtAim(conn, gem, use.X, use.Y, at) || Dist(here, (use.X, use.Y)) > WeaponFor(conn).Range)
+                {
+                    Interlocked.Increment(ref conn.ActionCount);
+                    conn.Walk.Order(use.X, use.Y, at);
+                    conn.ChannelSkill = 0;
+                    await Send(remote, stream, ciphers,
+                        InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
+                        $"0x01ab {gem.Name}: attack-move to ({use.X}, {use.Y}) from ({here.X}, {here.Y}) (t={at:0.000})");
+                    continue;
+                }
+            }
+            // An attack gem swings with the weapon's attack time, while the client keeps aiming it for as long as the
+            // button is held. A use before the next attack is not a new action: it must not cancel the swing in progress
+            // (its pending hit), pay its cost or get a 0x1ab (live 2026-10-25).
+            if (attack && !AttackReady(conn, out double attackSeconds))
+            {
+                Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name}: ignored, the previous attack is still running (attack time {attackSeconds:0.00} s) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
+                continue;
+            }
+            Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
             var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
             if (cast) conn.Walk.Order(px, py, at);
             // A movement skill (Leap Slam …) takes the player to the aimed point: the server keeps the position the
@@ -1497,6 +1527,16 @@ static async Task TravelByWaypoint(string remote, NetworkStream stream, Connecti
     else await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(travel.AreaHash16, 0, false, AtWaypoint: true), $"waypoint to {entry!.Name}");
 }
 
+// Whether an attack may start now: the shared attack timer (the default attack and the attack gem skills) is over, or
+// the use is no more than a quarter of an attack early (the client's jitter). Does not reserve the timer: an attack used
+// on a monster waits for the walk into reach, and CastGemSkill reserves it when the swing starts.
+static bool AttackReady(ClientState conn, out double seconds)
+{
+    seconds = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    lock (conn.Monsters) return AttackTiming.Ready(now, conn.NextAttackAt, seconds);
+}
+
 // The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). The client walks into range
 // first, so the server walks its estimate too (WalkEstimator.Approach, reach = the weapon's MaxAttackDistance in cells,
 // centre to centre) and only then starts the swing: it echoes the action aimed at the monster (0x1ab, flags | 0x80 +
@@ -1514,7 +1554,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
     // full attack time, so accept it up to a quarter of an attack early.
     lock (conn.Monsters)
-        if (now < conn.NextAttackAt - duration / 4)
+        if (!AttackTiming.Ready(now, conn.NextAttackAt, duration))
         {
             Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} ignored: {conn.NextAttackAt - now:0.000} s before the next attack");
             return;
@@ -1531,7 +1571,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     lock (conn.Monsters)
     {
         target = m.Walk.Position(now);
-        conn.NextAttackAt = Math.Max(now, conn.NextAttackAt) + duration;
+        conn.NextAttackAt = AttackTiming.After(now, conn.NextAttackAt, duration);
     }
     if (Dist(stop, target) > weapon.Range + 2)
     {
@@ -1610,22 +1650,62 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, use.TargetId, m);
 }
 
-// A gem skill used on a monster (C→S 0x24 with a skill id other than the default attack's): echo the action from where the
-// player stands, aimed at the monster, so the client plays the cast. CastGemSkill then pays the cost and runs the
-// skill's effect (projectile, aura or self-cast).
+// A gem skill used on a monster (C→S 0x24 with a skill id other than the default attack's). A spell stops and casts from
+// where the player stands: the server echoes the action from there, aimed at the monster, so the client plays the cast.
+// An attack gem (Holy Strike, Ground Slam …) is used like the default attack (see Attack): the client walks into reach
+// first, so the server walks its estimate too and only echoes the swing — and pays the skill's cost — on arrival. Before
+// 2026-10-25 the attack cast at the click from out of reach: the mana was gone at once and the hit landed around the
+// player, hitting nothing. CastGemSkill pays the cost and runs the skill's effect (projectile, area hit, aura, self-cast).
 static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
 {
+    var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId);
+    // A movement attack (Flicker Strike, Leap Slam) closes the distance itself, and an attack used with "always attack
+    // without moving" (Flags bit 0) swings from where the player stands: both keep the immediate cast.
+    if (gem.Name is not null && Skills.IsAttack(gem.Effect) && !Skills.IsMovement(gem.Effect) && (use.Flags & 0x1) == 0)
+    {
+        if (!AttackReady(conn, out double attackSeconds))
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x}: ignored, the previous attack is still running (attack time {attackSeconds:0.00} s) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
+            return;
+        }
+        var weapon = WeaponFor(conn);
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        int action = Interlocked.Increment(ref conn.ActionCount);
+        (int X, int Y) target;
+        lock (conn.Monsters) target = m.Walk.Position(now);
+        var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+        Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
+            $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s (t={now:0.000})");
+        if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+        if (conn.ActionCount != action)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x} cancelled before the swing");
+            return;
+        }
+        now = conn.Clock.Elapsed.TotalSeconds;
+        lock (conn.Monsters) target = m.Walk.Position(now);
+        if (Dist(stop, target) > weapon.Range + 2)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x} out of reach: {Dist(stop, target):0.0} > {weapon.Range}");
+            return;
+        }
+        await Send(remote, stream, ciphers,
+            InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
+            $"0x01ab player skill 0x{use.SkillId:x4} {gem.Name} on monster 0x{use.TargetId:x} ({m.Label}) from ({stop.X}, {stop.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4} (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
+        _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stop, target, use.TargetId);
+        return;
+    }
     Interlocked.Increment(ref conn.ActionCount);
-    double now = conn.Clock.Elapsed.TotalSeconds;
-    (int X, int Y) target;
-    lock (conn.Monsters) target = m.Walk.Position(now);
-    var here = conn.Walk.Position(now);
-    conn.Walk.Order(here.X, here.Y, now);
+    double castAt = conn.Clock.Elapsed.TotalSeconds;
+    (int X, int Y) aim;
+    lock (conn.Monsters) aim = m.Walk.Position(castAt);
+    var stand = conn.Walk.Position(castAt);
+    conn.Walk.Order(stand.X, stand.Y, castAt);
     await Send(remote, stream, ciphers,
-        InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
-        $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({here.X}, {here.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4}");
-    _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, here, target, use.TargetId);
+        InstanceProtocol.ActionStarted(PlayerId, stand.X, stand.Y, aim.X, aim.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
+        $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({stand.X}, {stand.Y}) to ({aim.X}, {aim.Y}), flags 0x{use.Flags:x4}");
+    _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stand, aim, use.TargetId);
 }
 
 // A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one). False when
@@ -1664,6 +1744,27 @@ static async Task<bool> CastGemSkill(string remote, NetworkStream stream, Connec
             return false;
         }
     }
+    // An attack gem swings with the weapon's attack time, like the default attack (see Attack): while the button is held
+    // the client keeps aiming it, and every use used to pay its cost and start a swing (live 2026-10-25: Holy Strike on
+    // the right mouse button, twelve swings a second at 6 mana each). The timer is shared with the default attack, so
+    // two attacks cannot start at once either.
+    if (gem.Name is not null && Skills.IsAttack(gem.Effect))
+    {
+        double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+        double now = conn.Clock.Elapsed.TotalSeconds, next;
+        bool ready;
+        lock (conn.Monsters)
+        {
+            next = conn.NextAttackAt;
+            ready = AttackTiming.Ready(now, next, duration);
+            if (ready) conn.NextAttackAt = AttackTiming.After(now, next, duration);
+        }
+        if (!ready)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: ignored, {next - now:0.000} s before the next attack (t={now:0.000})");
+            return false;
+        }
+    }
     if (gem.Name is not null && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
     {
         await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, gem.Level, gem.Quality);
@@ -1678,7 +1779,7 @@ static async Task<bool> CastGemSkill(string remote, NetworkStream stream, Connec
         }
         if (cost > 0)
             await SendPlayerMana(remote, stream, ciphers, conn,
-                $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name})");
+                $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
     // The Portal skill: a town portal, as the Portal Scroll's, once its cast (2.5 s) is over.
     if (gem.Name is not null && Skills.EffectId(gem.Effect) == "Portal")
@@ -1811,6 +1912,31 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
     });
 }
 
+// The radius in cells of a gem skill's hit around its aimed point (AreaSkillHit): its own
+// active_skill_base_area_of_effect_radius, else 12, grown by the player's area of effect stats under the skill's own
+// (SkillArea). The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23).
+static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell)
+{
+    const int AreaSkillRadius = 12;
+    int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
+    var areaStats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+    foreach (var (k, v) in skillStats) areaStats[k] = v;
+    return SkillArea.Radius(Stat("active_skill_base_area_of_effect_radius") is int r and > 0 ? r : AreaSkillRadius,
+        name => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0, spell);
+}
+
+// Whether a living monster stands within a gem attack's hit radius of a ground point. The client sends a point with a
+// monster on it as C→S 0x25 (not C→S 0x24 on the object), so an attack-move at such a point has to become a swing.
+static bool MonsterAtAim(ClientState conn, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem,
+    int x, int y, double at)
+{
+    var stats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+    int radius = SkillRadius(conn, stats, spell: false);
+    lock (conn.Monsters)
+        return conn.Monsters.Any(m => !m.Value.Dead && m.Value.Life > 0
+            && Dist(m.Value.Walk.Position(at), (x, y)) <= radius);
+}
+
 // A gem skill without a projectile (strikes, slams, area spells): a first, simple hit (2026-10-23). It lands once, after
 // half the attack time (attacks) or the cast (spells), on every living monster within the skill's area radius
 // (active_skill_base_area_of_effect_radius, else AreaSkillRadius cells, grown by area of effect: SkillArea) of the aimed point, or of the player for a
@@ -1822,7 +1948,6 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
     bool immediate = false)
 {
-    const int AreaSkillRadius = 12;   // cells, for a skill without its own area stat
     var skillStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
     // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
     int effectiveness = Skills.DamageEffectiveness(gem.Effect, gem.Level);
@@ -1833,12 +1958,7 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     var weapon = WeaponFor(conn);
     double delay;
     lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0 : weapon.AttackSeconds(CharacterPlayerStats(conn)) / 2;
-    // The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23; it was
-    // halved here before), grown by the player's area of effect stats under the skill's own (SkillArea).
-    var areaStats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-    foreach (var (k, v) in skillStats) areaStats[k] = v;
-    int radius = SkillArea.Radius(Stat("active_skill_base_area_of_effect_radius") is int r and > 0 ? r : AreaSkillRadius,
-        name => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0, spell);
+    int radius = SkillRadius(conn, skillStats, spell);
     // A melee skill aimed far away still lands in front of the player.
     var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
     int action = conn.ActionCount;
@@ -1869,7 +1989,7 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
         if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
         await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}");
     }
-    Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y})");
+    Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
 }
 
 // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
