@@ -1049,7 +1049,14 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   no monsters are spawned on the way. `/tour status`, `/tour stop`. `lg.ps1 tourlist [file] [--random N]` writes the
   list from the last gate run: every logged (area, seed) the port does not match and that has no trace yet (their
   client hashes are known, so each trace finds its first difference), and with `--random N` new seeds for the areas
-  that match at seed 1.
+  that match at seed 1 (never towns: they always get seed 1). A seed the client cannot generate: the client logs
+  "Terrain generation failed" in `Client/logs/Client.txt`, shows the exception and hangs. The Gateway reads that line
+  (every 2 s while the client has not arrived), adds the stop with the client's message to
+  `data/walkability/tour-failures.txt` (which `tourlist` leaves out) and waits; it sends nothing more to the hung
+  client. What is left is kept in `data/tour-left.txt` (character, counts, the stop under way, the rest), so after a
+  restart (`live.ps1 -Walkmaps -NoBuild -NoExtract`, log in) the tour resumes at the first area load: a stop under
+  way is skipped when the client logged its failure, else tried again. A list's areas must be known to the
+  transition catalog (`AreaTransitionCatalog.HashOf`; the Labyrinth areas are not yet).
 - **Running levelgen:** `scripts/re/levelgen/lg.ps1 <command> …` (not `dotnet run`, which costs ~12 s a call): it
   builds into `bin/lg` only when a source changed and hands the command to the levelgen server (`levelgen serve`,
   started on first use from a copy of the build, replaced after a rebuild), which keeps the game files and the
@@ -1166,7 +1173,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   ground types), `2_7_9` 596252631 and 959702815 ("Non-feature node overlapping another node at room (10, 0)", both
   at room (10, 0) on two topologies, `dread_thicket_01` / `_02.dgr`; the third `2_7_9` seed generated), `2_8_12_2`
   2082813800 (overlap tile), `2_9_6` 1024190913 (special node "sidearea": no room or tile matches its TileEdgeKey).
-  After such a failure the client shows the exception and hangs (not responding); `live.ps1` restarts it.
+  After such a failure the client shows the exception and hangs (not responding); `live.ps1` restarts it and the tour
+  resumes (§8 capture tour).
 
   The official server must give the client only seeds that generate; ours pins 1, so such an area cannot be entered
   (or traced) until the server rerolls failing seeds.
