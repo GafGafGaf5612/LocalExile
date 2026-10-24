@@ -524,7 +524,8 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    tag (`0x1420393f0`); the first takes LabyrinthSecrets "GoldDoor" +8 (`gold_door`) as its tag, exist 100 and a
    "secret1" description (+0x6d, an "entrance<N>" description, is clear in that row); none collected: "Not enough
    secret nodes in …" is logged. The nodes still collected then lose their descriptions too; the exist rolls remove
-   them, or blank one with two or more edges (§ exist rolls). **Vaal side areas** (`0x142032320`, `SideAreas`): nodes with a description "sidearea<N>" (the
+   them, or blank one with two or more edges (§ exist rolls). **Vaal side areas** (`0x142032320`, `SideAreas`; dungeon graphs: `0x142031d10` from `0x14203c900`, the same grouping
+   `0x14203a410`, and the first graph that keeps an entrance clears +0xa): nodes with a description "sidearea<N>" (the
    first such; N from '1', none = 1) are side area entrances, grouped by N (The Coast: `sidevalley` "sidearea3",
    `cave1` "sidearea2" / "sidearea1", each also "unique1"). When the area rolled its Vaal side area (generator +0xa,
    §3b) one survives: `Next(groups)`, `Next(group size)` (unused), the group shuffled (`0x141f4fb80`), its first node
@@ -1111,7 +1112,10 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   782 match** (216 of 260). First differences of the rest: `0x142031e88` 12 more (31 in all), `0x1420f24d2` 5 (9),
   `0x14211532d` 4 (13, and 4 seed-1 traces), breaches 7 (21); and `0x14210fa5f` 6: the port stops with "Mismatching
   ground types" where the client draws on (`1_2_1`, `2_6_8`, `2_6_14`, `2_9_2`, MapAtlasTropicalIsland; the same
-  caller as the seed-1 traces `1_1_5`, `1_4_4_3`, `2_6_11`, `2_6_6`), a port bug.
+  caller as the seed-1 traces `1_1_5`, `1_4_4_3`, `2_6_11`, `2_6_6`), a port bug. 2026-10-24, the Vaal side area
+  pick on dungeon graphs (`0x142031d10`, the `0x142031e88` cluster): **553 of 782 match** (+30, none lost): 28 of its
+  31 seeds match their tile hash; `2_8_13` 1984502362 and `2_9_10_1` 96082475 now stop at "a Vaal side area without
+  sidearea nodes" (the VaalSideArea feature row, not ported), `2_8_2_2` 698178759 at a door later on.
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds

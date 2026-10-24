@@ -104,7 +104,11 @@ public static class LevelGenerator
         IReadOnlyList<DoodadRecord> records;
         if (dgr)
         {
-            var tiler = new DungeonTiler(files, rng, notes, pool) { Hideout = hideout, Labyrinth = labyrinth, Secondaries = secondaries };
+            var tiler = new DungeonTiler(files, rng, notes, pool)
+            {
+                Hideout = hideout, Labyrinth = labyrinth, Secondaries = secondaries,
+                VaalSideArea = features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea),
+            };
             grid = tiler.Generate(topology.Graph, orientation);
             records = tiler.Records;
         }
@@ -174,6 +178,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary>The Labyrinth's graph pass, for a Labyrinth area.</summary>
     public LabyrinthPass? Labyrinth { get; init; }
+
+    /// <summary>A Vaal side area rolled and no graph has kept its entrance yet (generator +0xa).</summary>
+    public bool VaalSideArea { get; set; }
 
     /// <summary>The sub-areas' subgraphs (graph, orientation), placed beside the primary (<c>0x142047e50</c>).</summary>
     public List<(string Graph, int Orientation)> Secondaries { get; init; } = [];
@@ -493,7 +500,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     DungeonMap Layout(string graphPath, int graphOrientation, string masterPath, Dictionary<string, string> master, int unit, bool primary)
     {
         var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
-        TileGraphGenerator.Prepare(graph, rng, false, Hideout, primary, Labyrinth);
+        // 0x142031d10: the Vaal side area pick, as on tile graphs; the first graph that keeps an entrance clears it.
+        if (TileGraphGenerator.Prepare(graph, rng, VaalSideArea, Hideout, primary, Labyrinth)) VaalSideArea = false;
         string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
         _graphGrounds = (Ground(graph.TopGround), Ground(graph.BottomGround), Ground(graph.DefaultGround));
         notes.Add($"dungeon graph {graphPath}: {graph.Nodes.Count} nodes, {graph.Edges.Count} edges after exist rolls");

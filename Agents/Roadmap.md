@@ -56,7 +56,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done so far:** RNG, tile hash, extra-terrain-feature rolls (no area stats), topology pick, one-room fixed
   layouts: Lioneye's Watch matches tile for tile (re/011 §3b–3c); `.tgr` graphs to the finished grid (re/011 §3d–3g):
   The Twilight Strand seed 1 and The Coast seed 1 match tile for tile (hashes 266153788, 695393902) and every draw
-  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 523 of the 782 seeds the 3.29.3 client logged (re/011 §8: older versions' loads are no oracle).
+  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 553 of the 782 seeds the 3.29.3 client logged (re/011 §8: older versions' loads are no oracle).
   Multi-node `.dgr` dungeons (`DungeonLayout.cs`, `DungeonTiler`, re/011 §3c2): The Ship Graveyard Cave seed 1
   (hash 3341726258) and the Prison `1_1_7_1` seed 1 (1542354689; two more seeds match 3.27 hashes only) match tile for tile;
   composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863); The Slave Pens `1_5_1`
@@ -69,8 +69,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Start:** the seed-1 traces of 186 areas are recorded (`data/walkability/<area>_seed1.gen.json`): run `levelgen
   generate <area> 1 <trace>` and take the first difference. Known next: `1_1_9` #96 (`0x1421207cd`), `1_2_1`
   #5874, `1_2_7` #11347; `2_8_5` and `1_3_18_*` match every draw up to their stops. From the capture tour (re/011 §8):
-  the client's `FUN_142031d10` step after the topology pick (`Next(1)`, `Next(4)`, a shuffle of 4; 19 tour seeds on
-  topologies other than seed 1's; 31 tour seeds), breaches (21), `0x14211532d` (13), "Mismatching ground types" at
+  a Vaal side area without sidearea nodes (the VaalSideArea feature row's tiles and rooms, `0x14203c900` /
+  `0x142032320`; `2_8_13`, `2_9_10_1`), breaches (21), `0x14211532d` (13), "Mismatching ground types" at
   `0x14210fa5f` where the client goes on (6 tour seeds, 4 seed-1 traces), `0x1420f24d2` (9). A trace of a 3.29 shrine seed
   (`Game_SEED`; the 48 shrine seeds and the Gorge seeds the oracle had were 3.27 loads, no answer). Then the
   stops on 3.29 data (`gate.ps1 -NoTests`, re/011 §8; traces / oracle loads): numbered special rooms (11 / 28),

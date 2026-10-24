@@ -217,8 +217,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     }
 
     /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws), for
-    /// the subgraph record <paramref name="primary"/> says is the first (the passes that take the record index).</summary>
-    internal static void Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea, bool hideout, bool primary, LabyrinthPass? labyrinth = null)
+    /// the subgraph record <paramref name="primary"/> says is the first (the passes that take the record index). True
+    /// when a Vaal side area entrance was kept (the generator's +0xa is then cleared).</summary>
+    internal static bool Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea, bool hideout, bool primary, LabyrinthPass? labyrinth = null)
     {
         foreach (var n in graph.Nodes)
         {
@@ -239,7 +240,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             var parts = n.Tag.Split(',');
             if (parts.Length > 1) n.Tag = parts[(int)rng.Next((uint)parts.Length)];
         }
-        SideAreas(graph, rng, vaalSideArea);
+        bool sideArea = SideAreas(graph, rng, vaalSideArea);
         // 0x142032760 / 0x142033e30: the Labyrinth's pass (secret nodes, the gold door, boss overrides).
         labyrinth?.Run(graph, rng);
         // 0x142035350 / 0x142034e60, for the first record only: a node with "subarea=hideout…" or
@@ -273,6 +274,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         UniqueGroups(graph, rng);
         // 0x142003bc0: stable sort by priority, highest first.
         graph.Nodes = [.. graph.Nodes.OrderByDescending(n => n.Priority)];
+        return sideArea;
     }
 
     /// <summary><c>0x142030790</c> after the exist rolls, with <c>0x14203a720</c>: a node's first description starting
@@ -359,8 +361,10 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// Vaal side area entrances, grouped by N. When the area rolled a Vaal side area (generator +0xa), one node of a
     /// random group keeps its entrance: <c>Next(groups)</c>, <c>Next(group size)</c> (unused), the group shuffled, its
     /// first node loses its "unique…" descriptions, gets exist 100 and "accessible". Every other grouped node gets exist
-    /// 0 with its descriptions cleared, so the exist rolls remove it (a tagged one stays as a plain node).</summary>
-    static void SideAreas(TileGraph graph, LevelRandom rng, bool vaalSideArea)
+    /// 0 with its descriptions cleared, so the exist rolls remove it (a tagged one stays as a plain node). The
+    /// dungeon graphs' copy (<c>0x142031d10</c>, from <c>0x14203c900</c>) groups through the same <c>0x14203a410</c>.
+    /// True when an entrance was kept.</summary>
+    static bool SideAreas(TileGraph graph, LevelRandom rng, bool vaalSideArea)
     {
         var groups = new List<List<GraphNode>>();
         foreach (var n in graph.Nodes)
@@ -377,7 +381,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         {
             // The generator then adds the VaalSideArea extra terrain feature row itself (not ported).
             if (vaalSideArea) throw new NotSupportedException("a Vaal side area without sidearea nodes is not ported");
-            return;
+            return false;
         }
         if (vaalSideArea)
         {
@@ -395,6 +399,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             n.Exist = 0;
             n.Descriptions.Clear();
         }
+        return vaalSideArea;
     }
 }
 
