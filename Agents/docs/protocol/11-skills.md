@@ -370,6 +370,12 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
   DPS with the player's stats. Conversion is applied per type through `DamagePacket`; more multipliers and added
   damage are not modelled.
+- **Damage effectiveness** (2026-10-24). An attack gem's hit is the weapon's damage × its `DamageEffectiveness` (the
+  GESSPL row, permyriad: Flicker Strike 7730 at level 1, 30890 at 20, 69600 at 40 — the gem's "Deals 77.3% of base
+  Attack Damage"), through `SkillCatalog.DamageEffectiveness` and `SpellDamage.WithEffectiveness`. A row of 0 (the
+  default attack's) or a negative one (a few skills have them) scales nothing. A **spell**'s own base damage is already
+  final: its effectiveness is the added-damage one (Fireball 200%), and the GESSPL `BaseMultiplier` is 0 for every spell,
+  so spells are left alone until added damage is modelled.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
@@ -385,8 +391,8 @@ else the class's unarmed attack; the player's stats on top), spells `SkillCatalo
 The player object of every area (`SendPlayer`) carries the same weapon attack, so the character panel's DPS includes the
 weapon's local mods from the start (until 2026-10-23 it started with the unarmed attack, and only an equipment change,
 `SendSkills`, brought the weapon's numbers).
-`base_deal_no_damage` skills (Portal) deal none. Not modelled: damage effectiveness, the skills' shapes (waves, cones,
-chains, leaps), stun, the accuracy roll. Being tested live.
+`base_deal_no_damage` skills (Portal) deal none. An attack's hit carries the skill's damage effectiveness (§9). Not
+modelled: the skills' shapes (waves, cones, chains, leaps), stun, and the accuracy roll. Being tested live.
 
 **Movement skills** (ActiveSkillType Movement: Leap Slam, Whirling Blades …): the server puts the player at the aimed
 cell when the skill starts (`SkillCatalog.IsMovement`); it kept the starting cell before, and a later resync pulled the

@@ -51,6 +51,16 @@ static class SpellDamage
         });
     }
 
+    /// <summary>
+    /// An attack's hit scaled by the skill's damage effectiveness (GrantedEffectStatSetsPerLevel DamageEffectiveness,
+    /// permyriad): Flicker Strike's "Deals 77.3% of base Attack Damage" at level 1 is 7730. The weapon's hit already
+    /// holds the increases, which multiply the base the same way, so scaling the total is the same as scaling the base
+    /// first. 0 leaves the hit alone (the default attack has no effectiveness) and so does 10000. A spell's own base
+    /// damage is already final: its effectiveness only multiplies added damage, which is not modelled.
+    /// </summary>
+    public static GameServer.Core.World.DamagePacket WithEffectiveness(GameServer.Core.World.DamagePacket hit, int permyriad) =>
+        permyriad is > 0 and not 10_000 ? hit.Scale(permyriad / 10_000.0) : hit;
+
     /// <summary>One hit: uniform between the minimum and the maximum, fraction dropped.</summary>
     public static int Roll((double Min, double Max) hit, Random rng) => (int)Math.Floor(hit.Min + rng.NextDouble() * (hit.Max - hit.Min));
 
