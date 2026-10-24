@@ -102,6 +102,9 @@ public static class TilePlacement
     /// <summary>Whether the code swaps width and height.</summary>
     public static bool Swaps(int code) => Table[code * 3] == 1;
 
+    /// <summary>The code's row of the table (the same bytes at <c>0x142fb7f78</c>, used for sub-tile objects).</summary>
+    public static (int T0, int T1, int T2) Row(int code) => (Table[code * 3], Table[code * 3 + 1], Table[code * 3 + 2]);
+
     /// <summary>A cell (x, y) of a w × h cell area placed with <paramref name="code"/>, relative to the placed origin:
     /// a = [w - x - 1, x, h - y - 1, y]; x' = a[T1 + 2·T0], y' = a[(T0 == 0 ? 2 : 0) + T2].</summary>
     public static (int X, int Y) Cell(int code, int x, int y, int width, int height)

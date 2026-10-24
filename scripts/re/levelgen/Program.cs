@@ -76,6 +76,49 @@ switch (args.FirstOrDefault())
                 else Console.WriteLine($"{path}: not found");
         }
         break;
+    case "subtiles":
+        // subtiles: every .tdt whose flags word has bit 9 (tile data +0x16d bit 1, made of sub-tiles), with its objects.
+        using (var fs = OpenGame())
+        {
+            var cache = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+            int all = 0, withObjects = 0;
+            foreach (var path in fs.EnumeratePaths().Where(p => p.EndsWith(".tdt", StringComparison.OrdinalIgnoreCase)).Order())
+            {
+                if ((cache.TileFlags(path) & 0x200) == 0) continue;
+                all++;
+                if (cache.Tile(path) is not { } tile) continue;
+                var objects = cache.TileObjects(tile);
+                if (objects.Count == 0) continue;
+                withObjects++;
+                Console.WriteLine($"{path} {tile.Width}x{tile.Height}: {objects.Count} objects ({string.Join(", ", objects.Select(o => o.Type).Distinct().Take(4))})");
+            }
+            Console.WriteLine($"{all} tiles with sub-tiles, {withObjects} with objects");
+        }
+        break;
+    case "tmds":
+        // tmds: per .tdt, where its objects come from: the mesh's .tmd (+0x178), the .tmd its string table names (+0x180),
+        // and the .tmd beside the .tdt.
+        using (var fs = OpenGame())
+        {
+            var cache = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+            var counts = new Dictionary<string, int>();
+            foreach (var path in fs.EnumeratePaths().Where(p => p.EndsWith(".tdt", StringComparison.OrdinalIgnoreCase)).Order())
+            {
+                TileDef? tile;
+                try { tile = cache.Tile(path); } catch (IndexOutOfRangeException) { continue; }
+                if (tile is null) continue;
+                bool Has(string? p) => p is not null && fs.TryReadFile(p, out _);
+                bool mesh = tile.Mesh is { Length: > 4 } m && !m.Contains(';') && Has(m[..^4] + ".tmd");
+                bool named = tile.ObjectsFile is not null;
+                bool beside = Has(path[..^4] + ".tmd");
+                bool same = named && string.Equals(tile.ObjectsFile, path[..^4] + ".tmd", StringComparison.OrdinalIgnoreCase);
+                string k = $"mesh {mesh} named {named} beside {beside} same {same} noMesh {tile.Mesh is null}";
+                counts[k] = counts.GetValueOrDefault(k) + 1;
+                if (beside && !same && !mesh && args.Length > 1) Console.WriteLine($"{path}: mesh {tile.Mesh} named {tile.ObjectsFile}");
+            }
+            foreach (var (k, n) in counts.OrderBy(p => p.Key)) Console.WriteLine($"{n,6} {k}");
+        }
+        break;
     case "vertices":
         // vertices <.tst>: every tile's vertex grounds as the parser finds them (a check of the vertex block scan).
         using (var fs = OpenGame())

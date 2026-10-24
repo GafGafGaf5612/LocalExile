@@ -391,9 +391,9 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
     }
 
     /// <summary><c>0x142041200</c>: row by row, every tile origin's objects (its .tmd, or the record master's Reskin
-    /// copy of it, <c>0x141d7eda0</c> → <c>0x141d7f700</c>), each placed as a room line (<c>0x1420415e0</c> →
-    /// <c>0x14202f1c0</c>) with the tile's size, origin and orientation. Not ported: tiles made of sub-tiles (tile data
-    /// +0x16d bit 1, the per-sub-tile lists of <c>0x141d7eda0</c>) and the second list (+0x180).</summary>
+    /// copy of it, <c>0x141d7eda0</c> → <c>0x141d7f700</c>; per sub-tile for a tile made of them), then the .tmd the
+    /// .tdt names (+0x180), each placed as a room line (<c>0x1420415e0</c> → <c>0x14202f1c0</c>) with the tile's size,
+    /// origin and orientation.</summary>
     void TileDoodads(IReadOnlyList<DoodadRecord> records)
     {
         for (int y = 0; y < grid.Height; y++)
@@ -406,24 +406,59 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
                 int index = 0;
                 for (int k = 0; k < records.Count; k++)
                     if (x >= records[k].X && x < records[k].X + records[k].W && y >= records[k].Y && y < records[k].Y + records[k].H) index = k;
-                if (records.Count != 0 && records[index].Master.GetValueOrDefault("Reskin") is { Length: > 0 } reskin)
-                    objects = files.ReskinObjects(tile, reskin) ?? objects;
-                if (objects.Count == 0) continue;
-                if ((files.TileFlags(tile.Path) & 0x200) != 0)
+                string? reskin = records.Count != 0 ? records[index].Master.GetValueOrDefault("Reskin") : null;
+
+                // 0x1420415e0: the .ao is resolved (AOSet draws) before the type filters. The line's angle and mirror
+                // are in the tile's frame.
+                void Line(TileObject o, int cellX, int cellY, float lineAngle, bool lineMirror)
                 {
-                    notes.Add($"tile doodads of {tile.Path}: sub-tile lists (0x141d7eda0) are not ported");
-                    continue;
+                    if (Resolve(o.Animation ?? o.VirtualModel(tile.Path), false) is not { } def) return;
+                    var (created, isStatic) = ClientType(o.Type);
+                    if (!created) return;
+                    var (cx, cy) = Orientation.Map(e.Orientation, cellX, cellY, tile.Width * 23, tile.Height * 23);
+                    bool mirrors = e.Orientation is >= 4 and < 8;
+                    float angle = TilePlacement.Angle(e.Orientation, lineAngle) + def.Angle;
+                    Create(new PlacedDoodad(def.Model, x * 23 + cx + def.Dx, y * 23 + cy + def.Dy, angle, def.Scale, mirrors ^ lineMirror ^ def.Mirrored), isStatic);
                 }
+
+                if (objects.Count != 0 && (files.TileFlags(tile.Path) & 0x200) != 0) SubTileDoodads(tile, reskin, Line);
+                else if (objects.Count != 0)
+                {
+                    if (reskin is { Length: > 0 }) objects = files.ReskinObjects(tile, reskin) ?? objects;
+                    foreach (var o in objects) Line(o, o.CellX, o.CellY, o.Angle, false);
+                }
+                foreach (var o in files.SecondObjects(tile)) Line(o, o.CellX, o.CellY, o.Angle, false);
+            }
+    }
+
+    /// <summary><c>0x141d7eda0</c> for a tile made of sub-tiles: row by row, every slot that starts a sub-tile (G without
+    /// bits 2, 4, 8) takes its mesh's objects (<c>0x141d7f430</c>, from the Reskin copy when there is one), turned by the
+    /// slot's code inside the sub-tile's span (<c>0x141d7ec10</c>, 250 units per slot: a = [w − x, x, h − y, y] read
+    /// like <see cref="TilePlacement.Cell"/>), moved to the slot and floored to cells (× 0.092); the angle is turned by
+    /// the code and codes 4–7 mirror. Heights (the slot's step × tile +0x177 × 7.8125) and the line's orientation mask
+    /// (+0x1e through <c>0x143646180</c>) are not carried, as for the other tile lines.</summary>
+    void SubTileDoodads(TileDef tile, string? reskin, Action<TileObject, int, int, float, bool> line)
+    {
+        if (files.Walk(tile.Path) is not { } walkData || walkData.SubTiles.Length < tile.Width * tile.Height) return;
+        SubTileWalk Slot(int u, int v) => walkData.SubTiles[v * tile.Width + u];
+        for (int v = 0; v < tile.Height; v++)
+            for (int u = 0; u < tile.Width; u++)
+            {
+                var slot = Slot(u, v);
+                if ((slot.G & 0xe) != 0) continue;
+                if (files.SubTileObjects(tile, slot.Mesh, reskin) is not { } objects) continue;
+                // The span: the slots on the right that continue it (G bit 2) and those below (bit 4).
+                int w = 1, h = 1;
+                while (u + w < tile.Width && (Slot(u + w, v).G & 2) != 0) w++;
+                while (v + h < tile.Height && (Slot(u, v + h).G & 4) != 0) h++;
+                int code = slot.Code;
+                if ((code & 1) != 0) (w, h) = (h, w);
+                var (t0, t1, t2) = TilePlacement.Row(code);
                 foreach (var o in objects)
                 {
-                    // 0x1420415e0: the .ao is resolved (AOSet draws) before the type filters.
-                    if (Resolve(o.Animation ?? o.VirtualModel(tile.Path), false) is not { } def) continue;
-                    var (created, isStatic) = ClientType(o.Type);
-                    if (!created) continue;
-                    var (cx, cy) = Orientation.Map(e.Orientation, o.CellX, o.CellY, tile.Width * 23, tile.Height * 23);
-                    bool mirrors = e.Orientation is >= 4 and < 8;
-                    float angle = TilePlacement.Angle(e.Orientation, o.Angle) + def.Angle;
-                    Create(new PlacedDoodad(def.Model, x * 23 + cx + def.Dx, y * 23 + cy + def.Dy, angle, def.Scale, mirrors ^ def.Mirrored), isStatic);
+                    Span<float> a = [w * 250 - o.X, o.X, h * 250 - o.Y, o.Y];
+                    float px = u * 250f + a[t1 + 2 * t0], py = v * 250f + a[(t0 == 0 ? 2 : 0) + t2];
+                    line(o, (int)MathF.Floor(px * 0.092f), (int)MathF.Floor(py * 0.092f), TilePlacement.Angle(code, o.Angle), code >= 4);
                 }
             }
     }

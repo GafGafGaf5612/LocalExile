@@ -232,8 +232,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   doodad-stage draw and places all 250 captured doodads. AOSet doodads (`1_1_6`) and the objects of reskinned tiles
   (`2_9_5`) are in. A fill room's own `.arm` vertex grounds now go in, so `2_8_10` matches every doodad-stage draw and
   places all 1 083 captured doodads; its grids match since the outer buffer flags its vertices unwalkable (vertex
-  flag 8, as the client's spread does). Left: tiles made of sub-tiles and the record-loop difference in `2_10_6`
-  (re/011 §6c).
+  flag 8, as the client's spread does). Each tile's second objects file (the `.tmd` its `.tdt` names, tile +0x180)
+  is placed too, so the Prison areas (`1_1_7_1`, `1_1_7_2`, `2_6_7_1`) place all their captured doodads (their
+  archways). Tiles made of sub-tiles place each sub-tile's objects (ported from the code; no capture has such a
+  tile). Left: the record-loop difference in `2_10_6` (re/011 §6c).
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
   stop it ([11](docs/protocol/11-skills.md) §10).

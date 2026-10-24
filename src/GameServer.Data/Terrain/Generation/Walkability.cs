@@ -13,6 +13,13 @@ public sealed record SubTileWalk(byte F, byte G, byte[]? Hull)
     public int Y0 => (F & 0x20) != 0 ? -4 : 0;
     public int HullWidth => 23 + ((F & 0x40) != 0 ? 4 : 0) + ((G & 1) != 0 ? 4 : 0);
     public int HullHeight => 23 + ((F & 0x20) != 0 ? 4 : 0) + ((F & 0x80) != 0 ? 4 : 0);
+
+    /// <summary>A tile made of sub-tiles (flags word 0x200): which of the tile's meshes (the ';' list of header u32 4)
+    /// fills this slot (tile entry +0x36 bits 2–7, the first of the record's three extra bytes, <c>0x141d7d860</c>).
+    /// G bit 2 / 4 then say the slot continues the sub-tile on its left / above, bit 8 that it is empty.</summary>
+    public int Mesh { get; init; }
+    /// <summary>The sub-tile's placement code in the tile (+0x37 bits 5–7, the second extra byte).</summary>
+    public int Code { get; init; }
 }
 
 /// <summary>A tile's walkability data (<c>0x1429f31a0</c>): the hull plane masks (tile data +0x172 count − 1, +0x173
@@ -55,7 +62,9 @@ public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
             {
                 byte f = data[p++], g = version >= 10 ? data[p++] : (byte)0;
                 p++;
-                if ((flags & 0x200) != 0) p += 3;
+                // The three extra bytes: mesh index, placement code, height step (+0x37 low nibble and 0x10, not ported).
+                int mesh = 0, code = 0;
+                if ((flags & 0x200) != 0) { mesh = data[p]; code = data[p + 1] & 7; p += 3; }
                 if ((f & 4) == 0)
                 {
                     if (version < 10) p += 0x211;
@@ -77,7 +86,7 @@ public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
                     hull = data[(p + 2)..(p + 2 + n)];
                     p += 2 + n;
                 }
-                subs[i] = new SubTileWalk(f, g, hull);
+                subs[i] = new SubTileWalk(f, g, hull) { Mesh = mesh, Code = code };
             }
             return new TileWalk(masks, subs);
         }

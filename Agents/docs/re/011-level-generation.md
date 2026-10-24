@@ -929,12 +929,29 @@ y, +0x18 height, +0x1b orientation code). Order:
    first and last `;`); its records are named `<reskin>_<name>`, and the client's virtual `.ao` is the original
    `<.tdt folder>/<name>.ao` (the captures of `1_1_3`, `1_1_6`, `2_9_5`; the port strips the prefix — the loader
    that does it was not found, `.tmd` is not a string in the decompile). +0x178
-   is the tile's `.tmd` (`0x141d7fb60` at load: the `.tdt` / `.tgt` name with `.tmd`, last existing one; none when
-   the flags word has bit 3), +0x180 a `.tmd` named by the `.tdt` reader (none seen). Each 0x58-byte entry goes
+   is the mesh's `.tmd` (`0x141d7fb60` at load: for each part of the tile's mesh string +0x20 — a `;` list for a tile
+   made of sub-tiles, `0x141d7f990` — that part with its last four characters replaced by `.tmd` (`0x141d7fcb0`); the
+   last one that exists; none when the flags word has bit 3). +0x180 is the `.tmd` the `.tdt` names (`0x141d7e060`:
+   the first of the two strings after the vertex block, e.g. `LargeCliffsGoatSpawner/beach_v01_01.tmd`, the Prison's
+   archways; 390 `.tdt` name one), loaded the same way (`0x141d7cc50`, so it also sets the transition flag +0x16f);
+   its entries go to the same callback after +0x178's, with no Reskin. Each 0x58-byte entry goes
    through `0x1420415e0` = the room-line path with the tile's size (+0x60 / +0x61), the entry's origin and
    orientation code (+0x36) and height (+0x30); the `.ao` is the record's, else the virtual
-   `<.tdt folder>/<record name>.ao`. Tiles with sub-tiles run per sub-tile (+0x90 grid, 250-unit offsets): not
-   ported, noted. Then `0x142041d40` again. These lines draw nothing without AOSet.
+   `<.tdt folder>/<record name>.ao`. **Tiles made of sub-tiles** (flags word 0x200, read only from `.tdt` version 13;
+   0x100 only from 14, `0x1429f31a0`) run per slot of the +0x90 grid, row by row (`0x141d7eda0`). The slot entry
+   (`0x141d7d860` from the `.tdt` record: u16 F | G << 8, a byte, then three bytes) has G at +0x31, the mesh index
+   (first extra byte, ≤ 0x3e) at +0x36 bits 2–7, the placement code (second) at +0x37 bits 5–7 and a signed height
+   step (third) at +0x37 bits 0–4. A slot whose G has bit 2, 4 (it continues the sub-tile on its left / above; for
+   other tiles the reader sets these for every slot past the first column / row) or 8 is skipped; otherwise the mesh's
+   `.tmd` (`0x141d7f430`, the Reskin copy first) is read and each entry is turned inside the sub-tile's span
+   (`0x141d7ec10`: 1 + the slots on the right with G bit 2, 1 + those below with bit 4; swapped for odd codes;
+   × 250): a = [w − x, x, h − y, y] taken by the code's table row (`0x142fb7f78`, the same bytes as `0x142fa04b0`),
+   plus the slot's (u, v) × 250, then cells = floor(× 0.092f) (`0x1402c2390`); the angle is turned by the code
+   (2π − a for 4–7, + (code & 3)·π/2, wrapped), codes 4–7 xor the mirror and map the orientation mask through
+   `0x143646180`; height −= step × tile +0x177 × 7.8125. The entry then takes the callback like the others.
+   Ported (`DoodadStage.SubTileDoodads`; heights and the mask are not carried) but not checked: the 19 such tiles
+   (`levelgen subtiles`; 10 with objects: the `MapUberChambers` terrace overlaps, `MapNocturne`'s `fence_cv`, the
+   Dreadnought hideout) are in no capture. Then `0x142041d40` again. These lines draw nothing without AOSet.
 
 Each doodad is created by `0x142042360` (nothing outside the map) and added to the world, which stamps its `.ao`
 `Hull` on both grids (§6b, `Walkability.Stamp`: walk grid walk shapes then projectile shapes, projectile grid
@@ -950,8 +967,10 @@ collision was also what made `2_7_5_map`'s first random loop run longer; AOSet t
 reskinned names above `2_9_5`, whose `foothills_*` ramp planes and blocker had found no `.ao` and so no Hull).
 Text `.tmd` records (version 8) carry the `.ao` as their first quoted field and z before the angle (08 §6); the
 waypoint effect of `beach_waypoint_v01_01.tmd` is `waypoint_idle.ao` at angle 0. Every doodad of `1_1_3`, `1_1_6`
-and `2_9_5` now has the captured name. Left:
-- The per-sub-tile lists of `0x141d7eda0` (tiles with +0x16d bit 1).
+and `2_9_5` now has the captured name. The +0x180 lists brought the Prison's archways (`1_1_7_1` 314 →
+336 of 336 captured doodads, `1_1_7_2` 761 → 795 of 795, `2_6_7_1` 281 → 298 of 298; grids were already exact, the
+archways have no Hull). Left:
+- Tiles made of sub-tiles: ported, no capture has one.
 - `2_10_6`: grids exact, but the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing, and 2 of
   the 1 639 captured doodads are not placed.
 
@@ -991,7 +1010,7 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
 - **Check:** `dotnet run --project scripts/re/levelgen -- hash <trace.gen.json>…` recomputes the tile hash from a
   traced grid. `… generate <area> <seed> [trace.gen.json]` runs the port and, with a trace, compares draw by draw
   (kind, argument, result; the first difference names the client's caller) and entry by entry, also when the port
-  stops at a part that is not ported, and graph by graph at each recorded stage. `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key, `… ls <regex>` the game paths
+  stops at a part that is not ported, and graph by graph at each recorded stage. `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key, `… subtiles` every `.tdt` made of sub-tiles, `… tmds` where each `.tdt`'s objects come from (+0x178 / +0x180), `… ls <regex>` the game paths
   that match (e.g. every `.arm` of a folder, to find rooms no room set lists). `… doodads <area> <seed>` compares the
   placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level
   (world +0xd4).

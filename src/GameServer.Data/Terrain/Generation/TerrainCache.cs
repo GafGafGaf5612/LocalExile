@@ -24,6 +24,9 @@ public sealed record TileDef(string Path, string Tag, TileKey Key)
     public sbyte[] VertexHeights { get; init; } = [];
     /// <summary>The tile's mesh (.tgt, u32 4 of the header; tile data +0x20, <c>0x141d7d700</c>), null for none.</summary>
     public string? Mesh { get; init; }
+    /// <summary>The second objects file (tile data +0x180): the .tmd the file names, the first of the two strings after the
+    /// vertex block. Found as the string table's .tmd string (the table holds only the header's strings).</summary>
+    public string? ObjectsFile { get; init; }
     /// <summary>The orientations the tile may take (tile data +0x171; 0 or 0xff = no restriction).</summary>
     public byte Restriction { get; init; }
 
@@ -177,7 +180,8 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
 
     readonly Dictionary<string, int> _tileFlags = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The u16 flags word after a .tdt's key (tile data +0x16c / +0x16d; bit 4: doodads may go on the tile).</summary>
+    /// <summary>The u16 flags word after a .tdt's key (tile data +0x16c / +0x16d; bit 4: doodads may go on the tile;
+    /// bit 0x200: made of sub-tiles). The reader (<c>0x1429f31a0</c>) clears 0x100 before version 14 and 0x200 before 13.</summary>
     public int TileFlags(string path)
     {
         if (_tileFlags.TryGetValue(path, out int known)) return known;
@@ -185,9 +189,12 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         int flags = 0;
         if (data is not null)
         {
+            int version = (int)BinaryPrimitives.ReadUInt32LittleEndian(data);
             int length = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
             int at = 8 + 2 * length + 58;
             if (at + 2 <= data.Length) flags = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(at));
+            if (version < 14) flags &= ~0x100;
+            if (version < 13) flags &= ~0x200;
         }
         return _tileFlags[path] = flags;
     }
@@ -195,37 +202,69 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
     readonly Dictionary<string, bool> _transitionTiles = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _transitionTypes = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Tile data +0x16f bit 1 (<c>0x141d7cc50</c>): one of the tile's objects (its .tmd, next to the .tgt, else
-    /// next to the .tdt) is of a type with an AreaTransition component or the "waypoint" interaction
-    /// (<c>0x141ebedf0</c>).</summary>
+    /// <summary>Tile data +0x16f bit 1 (<c>0x141d7cc50</c>, run on both object files as they load): one of the tile's
+    /// objects (<see cref="TileObjects"/> or <see cref="SecondObjects"/>) is of a type with an AreaTransition component
+    /// or the "waypoint" interaction (<c>0x141ebedf0</c>).</summary>
     public bool HasTransition(TileDef tile)
     {
         if (_transitionTiles.TryGetValue(tile.Path, out bool known)) return known;
-        return _transitionTiles[tile.Path] = TileObjects(tile).Any(o => IsTransitionType(o.Type));
+        return _transitionTiles[tile.Path] = TileObjects(tile).Concat(SecondObjects(tile)).Any(o => IsTransitionType(o.Type));
     }
 
-    readonly Dictionary<string, IReadOnlyList<TileObject>> _tileObjects = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, IReadOnlyList<TileObject>?> _objectFiles = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Tile data +0x178 (<c>0x141d7fb60</c>): the tile's objects, from the .tmd next to its .tgt, else next to
-    /// the .tdt; none when the flags word has bit 3.</summary>
+    /// <summary>A .tmd's records, null when the file does not exist.</summary>
+    IReadOnlyList<TileObject>? ObjectFile(string path)
+    {
+        if (_objectFiles.TryGetValue(path, out var known)) return known;
+        var data = read(path);
+        return _objectFiles[path] = data is null ? null : TileObjectFile.Parse(data);
+    }
+
+    /// <summary><c>0x141d7fcb0</c>: the .tmd of mesh <paramref name="index"/> (<c>0x141d7f990</c>: the index-th part of the
+    /// ';' list for a tile made of sub-tiles, else the whole mesh string), its last four characters replaced by ".tmd".</summary>
+    string? MeshObjectsPath(TileDef tile, int index)
+    {
+        string? mesh = tile.Mesh;
+        if ((TileFlags(tile.Path) & 0x200) != 0 && mesh is not null)
+        {
+            var parts = mesh.Split(';');
+            mesh = index < parts.Length ? parts[index] : null;
+        }
+        return mesh is { Length: >= 4 } ? mesh[..^4] + ".tmd" : null;
+    }
+
+    /// <summary>Tile data +0x178 (<c>0x141d7fb60</c>): for each part of the mesh's ';' list, the .tmd beside it; the last
+    /// one that exists. None when the flags word has bit 3.</summary>
     public IReadOnlyList<TileObject> TileObjects(TileDef tile)
     {
-        if (_tileObjects.TryGetValue(tile.Path, out var known)) return known;
-        IReadOnlyList<TileObject>? Objects(string? p)
-        {
-            if (p is null || !p.EndsWith(p.EndsWith(".tgt", StringComparison.OrdinalIgnoreCase) ? ".tgt" : ".tdt", StringComparison.OrdinalIgnoreCase)) return null;
-            var data = read(p[..^4] + ".tmd");
-            return data is null ? null : TileObjectFile.Parse(data);
-        }
-        var objects = (TileFlags(tile.Path) & 8) != 0 ? [] : Objects(tile.Mesh) ?? Objects(tile.Path) ?? [];
-        return _tileObjects[tile.Path] = objects;
+        if ((TileFlags(tile.Path) & 8) != 0 || tile.Mesh is null) return [];
+        IReadOnlyList<TileObject>? objects = null;
+        for (int i = 0, n = tile.Mesh.Count(c => c == ';') + 1; i < n; i++)
+            if (MeshObjectsPath(tile, i) is { } p && ObjectFile(p) is { } o) objects = o;
+        return objects ?? [];
+    }
+
+    /// <summary>Tile data +0x180 (<c>0x141d7e060</c>): the .tmd the .tdt names (<see cref="TileDef.ObjectsFile"/>), e.g.
+    /// a goat spawner's or a wall chest's objects. Placed after +0x178's, with no Reskin.</summary>
+    public IReadOnlyList<TileObject> SecondObjects(TileDef tile) =>
+        tile.ObjectsFile is { } p ? ObjectFile(p) ?? [] : [];
+
+    /// <summary><c>0x141d7f430</c>: the objects of a sub-tile's mesh <paramref name="index"/>, from the master's Reskin copy
+    /// when there is one; null when neither exists.</summary>
+    public IReadOnlyList<TileObject>? SubTileObjects(TileDef tile, int index, string? reskin)
+    {
+        if (MeshObjectsPath(tile, index) is not { } p) return null;
+        return (reskin is { Length: > 0 } ? ReskinObjects(p, reskin) : null) ?? ObjectFile(p);
     }
 
     /// <summary><c>0x141d7f700</c> with a master's Reskin: the tile's .tmd under "alttiles/&lt;reskin&gt;/&lt;reskin&gt;_"
     /// beside it (<c>0x141d88810</c>), null when there is none.</summary>
-    public IReadOnlyList<TileObject>? ReskinObjects(TileDef tile, string reskin)
+    public IReadOnlyList<TileObject>? ReskinObjects(TileDef tile, string reskin) =>
+        ReskinObjects(tile.Mesh is { } m && m.EndsWith(".tgt", StringComparison.OrdinalIgnoreCase) ? m : tile.Path, reskin);
+
+    IReadOnlyList<TileObject>? ReskinObjects(string p, string reskin)
     {
-        string? p = tile.Mesh is { } m && m.EndsWith(".tgt", StringComparison.OrdinalIgnoreCase) ? m : tile.Path;
         int slash = p.LastIndexOf('/');
         if (slash < 0) return null;
         var data = read(p[..(slash + 1)] + "alttiles/" + reskin + "/" + reskin + "_" + p[(slash + 1)..^4] + ".tmd");
@@ -292,6 +331,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             VertexGrounds = grounds is null ? [] : [.. grounds.Select(o => o == uint.MaxValue ? null : TableString(table, o))],
             VertexHeights = heights ?? [],
             Mesh = Str(4),
+            ObjectsFile = table.Split('\0').FirstOrDefault(x => x.EndsWith(".tmd", StringComparison.OrdinalIgnoreCase)),
         };
     }
 
