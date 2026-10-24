@@ -74,6 +74,7 @@ handler), `deser*.c` (component deserializers), `m*.c` (message classes), `gor*.
 
 | Script | Usage | Notes |
 |---|---|---|
+| `fn.py` | `<va>… [--callers] [--callees] [--show]` | the function that contains an address (exact bounds from the PE's `.pdata`), its file in `Tools/re/out/decomp-all`, the functions that name it / it names in the decompile, its code. Start here with a trace's caller VA. Index `Tools/re/out/fn-index.json` (local): the first run builds it (~15 min, reading every decompiled file), later lookups take under a second |
 | `dis.py` | `<va> [before] [after]` | quick disassembly with RIP-relative string hints. Starting `before` bytes back can land mid-instruction and print nothing; use 0 or a function start |
 | `xr.py` | `<string>` | find a string (ASCII/UTF-16) and its code xrefs. Slow on short, common strings; use `strexact.py` + `Callers.java` instead |
 | `strexact.py` | `<name>…` | exact NUL-terminated ASCII (`a:`) and UTF-16 (`u:`) occurrences |

@@ -170,6 +170,13 @@ static int Dispatch(string[] args)
                 // doodads against the walk-map capture (<area>_seed<seed>.doodads.json).
                 Doodads(args[1], uint.Parse(args[2]));
                 break;
+            case "tourlist":
+                // tourlist [out file] [--random N]: a list for the Gateway's /tour (live.ps1 -Walkmaps): every logged
+                // (area, seed) the last gate run did not match and that has no trace yet, then with --random N seeds
+                // for each area whose seed-1 trace matches (to check them at other seeds). Default out: data/tour.txt.
+                TourList(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--")) ?? Path.Combine(Root(), "data", "tour.txt"),
+                    args.SkipWhile(a => a != "--random").Skip(1).Select(int.Parse).FirstOrDefault());
+                break;
             case "oracle":
                 // oracle [area regex]: every (area, seed) the client logged with its tile hash (Client/logs/Client.txt), run by
                 // the port: match, mismatch, or where it stops.
@@ -182,6 +189,36 @@ static int Dispatch(string[] args)
     }
     finally { ResetHooks(); }
     return 0;
+}
+
+static void TourList(string outFile, int randomSeeds)
+{
+    string root = Root();
+    string latest = Path.Combine(root, "scripts", "re", "levelgen", "gate-latest.json");
+    if (!File.Exists(latest)) { Console.WriteLine("no gate-latest.json: run scripts/re/levelgen/gate.ps1 first"); return; }
+    using var doc = JsonDocument.Parse(File.ReadAllText(latest));
+    var lines = new List<string> { $"# levelgen tourlist {DateTime.Now:s}: logged seeds the port does not match, without a trace" };
+    int wrong = 0, random = 0;
+    foreach (var check in doc.RootElement.EnumerateObject())
+    {
+        var key = check.Name.Split(' ');
+        if (key[0] != "oracle" || check.Value.GetProperty("Hash").GetString() == "match") continue;
+        if (File.Exists(Path.Combine(root, "data", "walkability", $"{key[1]}_seed{key[2]}.gen.json"))) continue;
+        lines.Add($"{key[1]} {key[2]}  # {check.Value.GetProperty("Hash").GetString()}");
+        wrong++;
+    }
+    if (randomSeeds > 0)
+    {
+        lines.Add($"# {randomSeeds} random seeds per area whose seed-1 trace matches");
+        foreach (var check in doc.RootElement.EnumerateObject())
+        {
+            var key = check.Name.Split(' ');
+            if (key[0] != "capture" || check.Value.GetProperty("Hash").GetString() != "match") continue;
+            for (int i = 0; i < randomSeeds; i++) { lines.Add($"{key[1]} {Random.Shared.Next(2, int.MaxValue)}"); random++; }
+        }
+    }
+    File.WriteAllLines(outFile, lines);
+    Console.WriteLine($"{outFile}: {wrong} logged seeds the port gets wrong, {random} random seeds");
 }
 
 // The tile hash of a traced grid, computed the server's way, next to the hash the client sent.

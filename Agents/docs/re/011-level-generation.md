@@ -1040,6 +1040,14 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   Traces of 2026-10-22: town 496 draws (30 × 18 tiles), Twilight Strand 30 586 (78 × 42), The Coast 46 706 (75 × 75),
   HideoutForest 2 818 (33 × 33). Since the second Strand trace of 2026-10-22 a trace also holds `graphs`: the tile
   graph (nodes, edges with points, virtual end points, end offsets, widths) at each layout stage boundary (§3f).
+- **Capture tour (traces without playing):** with `live.ps1 -Walkmaps` running and a character in game,
+  `/tour data/tour.txt` sends the character through every "`<area id> <seed>`" line of the file, each in a new
+  instance with that seed (the `transfer` control request's `Seed`, `InstanceRegistry.EnterNew`), waits until the
+  recorder has written the load's trace, walk map and doodads (3 s without new doodads, at most 120 s), then goes on;
+  no monsters are spawned on the way. `/tour status`, `/tour stop`. `lg.ps1 tourlist [file] [--random N]` writes the
+  list from the last gate run: every logged (area, seed) the port does not match and that has no trace yet (their
+  client hashes are known, so each trace finds its first difference), and with `--random N` new seeds for the areas
+  that match at seed 1.
 - **Running levelgen:** `scripts/re/levelgen/lg.ps1 <command> …` (not `dotnet run`, which costs ~12 s a call): it
   builds into `bin/lg` only when a source changed and hands the command to the levelgen server (`levelgen serve`,
   started on first use from a copy of the build, replaced after a rebuild), which keeps the game files and the

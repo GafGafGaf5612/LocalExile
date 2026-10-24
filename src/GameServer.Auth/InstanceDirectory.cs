@@ -144,7 +144,7 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
                 if (!_links.TryGetValue(info.Character, out var link))
                     return new ControlResponse { Ok = false, Error = $"{info.Character} has no login connection" };
                 AreaInstanceState? inst = req.Instance != 0 ? registry.EnterExisting(req.Instance, info.Character)
-                    : req.New ? registry.EnterNew(req.Area, info.Character)
+                    : req.New ? registry.EnterNew(req.Area, info.Character, req.Seed)
                     : registry.Enter(req.Area, info.Character);
                 if (inst is null) return new ControlResponse { Ok = false, Error = $"instance {req.Instance} expired" };
                 // The Gateway hands the ticket to the client in 0x27: in game the client ignores login 0x14.

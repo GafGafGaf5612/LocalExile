@@ -685,6 +685,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SpawnTownPortals(remote, stream, ciphers, conn);
                 _ = RunServerFrames(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
+                _ = ContinueTour(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
                 _ = RunFlaskRecovery(remote, stream, ciphers, conn);
             }
@@ -782,6 +783,8 @@ static async Task PopulateArea(string remote, NetworkStream stream, ConnectionCi
 {
     var layout = conn.Layout;
     if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0") return;
+    // A capture tour only waits for the recorder: no monsters to attack the character meanwhile.
+    if (CaptureTour.Active(CharacterName(conn))) return;
     // An instance entered before keeps its monsters as the last connection left them: where they were, with their
     // damage; the dead stay dead (#12).
     if (conn.Instance.Monsters is { } saved)
@@ -3311,13 +3314,34 @@ static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiph
     _ = Task.Delay(2000).ContinueWith(async _ => { if (conn.PendingTransfer is { } p) await Transfer(remote, stream, ciphers, conn, p); });
 }
 
+// The capture tour's next step (CaptureTour), after an area load (0x7d) or when /tour starts: at the tour's current
+// stop, wait for scripts/walkmaps to write it, then go to a new instance of the next (area, seed).
+static async Task ContinueTour(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool starting = false)
+{
+    string character = CharacterName(conn);
+    if (!CaptureTour.Active(character)) return;
+    if (!starting && CaptureTour.IsCurrent(character, conn.Layout.Id, conn.Seed))
+    {
+        bool ok = await CaptureTour.WaitForCapture(character, conn.Layout.Id, conn.Seed);
+        Console.WriteLine($"[gateway] {remote} tour: {conn.Layout.Id} seed {conn.Seed} {(ok ? "captured" : "NOT captured (120 s; is live.ps1 -Walkmaps running?)")}");
+    }
+    else if (!starting) return;   // an area the tour did not send the player to
+    string done = CaptureTour.Summary(character);
+    if (CaptureTour.Next(character) is not var (area, hash, seed))
+    {
+        await conn.Commands!.Reply($"Tour finished: {done}.");
+        return;
+    }
+    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, true, AtSpawn: true) { Seed = seed }, $"tour: {area} seed {seed}");
+}
+
 // Auth moves the player and issues the destination ticket; 0x27 sends the client there (it reconnects to this Gateway).
 static async Task Transfer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t)
 {
     conn.PendingTransfer = null;
     var r = await InstanceControl.CallAsync(new ControlRequest
     {
-        Op = "transfer", Ticket = conn.Ticket, Area = t.Area, Instance = t.Instance, New = t.New,
+        Op = "transfer", Ticket = conn.Ticket, Area = t.Area, Instance = t.Instance, New = t.New, Seed = t.Seed,
     });
     t.Done?.Invoke(r);
     if (!r.Ok)
@@ -4059,6 +4083,17 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         string target = string.Join(' ', args);
         if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
         await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
+    })
+    .Add("tour", "/tour <list file> | stop | status (dev, live.ps1 -Walkmaps: visit every \"<area id> <seed>\" of the file in a new instance and record it; levelgen tourlist writes one)", async args =>
+    {
+        string character = CharacterName(conn);
+        string what = args.Length > 0 ? args[0] : "status";
+        if (what.Equals("stop", StringComparison.OrdinalIgnoreCase)) { await conn.Commands!.Reply(CaptureTour.Stop(character)); return; }
+        if (what.Equals("status", StringComparison.OrdinalIgnoreCase)) { await conn.Commands!.Reply(CaptureTour.Status(character)); return; }
+        string path = string.Join(' ', args);
+        if (!File.Exists(path)) { await conn.Commands!.Reply($"No file {path} (relative to the Gateway's directory, the repository root)."); return; }
+        await conn.Commands!.Reply(CaptureTour.Start(character, path));
+        await ContinueTour(remote, stream, ciphers, conn, starting: true);
     })
     .Add("league_flag", "/league_flag [<id> [off]] (dev: list, set or clear league quest flags by the client's id, e.g. /league_flag 350)", async args =>
     {
@@ -6250,6 +6285,94 @@ sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int Spawn
     }
 }
 
+/// <summary>Dev: the capture tour (`/tour &lt;file&gt;`, live.ps1 -Walkmaps). The file lists "&lt;area id&gt; &lt;seed&gt;" lines
+/// (# comments; `levelgen tourlist` writes one). The character is sent to a new instance of each with that seed; once
+/// scripts/walkmaps has written the load's generation trace, walk map and doodads, it goes on to the next. Monsters are
+/// not spawned on the way. The tour belongs to the character, not the connection: every area change reconnects.</summary>
+static class CaptureTour
+{
+    sealed class Tour
+    {
+        public required Queue<(string Area, ushort Hash, uint Seed)> Left { get; init; }
+        public (string Area, uint Seed)? Current { get; set; }
+        public DateTime StepStarted { get; set; }
+        public int Total { get; init; }
+        public int Captured { get; set; }
+        public int Missed { get; set; }
+    }
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Tour> Tours = new(StringComparer.OrdinalIgnoreCase);
+
+    public static bool Active(string character) => Tours.ContainsKey(character);
+
+    /// <summary>Reads the list and starts the tour; returns what to tell the player.</summary>
+    public static string Start(string character, string path)
+    {
+        var left = new Queue<(string, ushort, uint)>();
+        var unknown = new List<string>();
+        foreach (var raw in File.ReadLines(path))
+        {
+            var line = raw.Split('#')[0].Trim();
+            if (line.Length == 0) continue;
+            var f = line.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (f.Length < 2 || !uint.TryParse(f[1], out uint seed) || seed == 0) { unknown.Add(line); continue; }
+            if (AreaTransitionCatalog.HashOf(f[0]) is not { } hash) { unknown.Add(f[0]); continue; }
+            left.Enqueue((f[0], hash, seed));
+        }
+        Tours[character] = new Tour { Left = left, Total = left.Count };
+        return $"Tour of {left.Count} (area, seed) pairs started{(unknown.Count > 0 ? $"; skipped {unknown.Count} unknown: {string.Join(", ", unknown.Take(5))}" : "")}. /tour stop ends it.";
+    }
+
+    public static string Stop(string character) =>
+        Tours.TryRemove(character, out var t) ? $"Tour stopped: {t.Captured} captured, {t.Missed} missed, {t.Left.Count} left." : "No tour running.";
+
+    public static string Status(string character) =>
+        Tours.TryGetValue(character, out var t)
+            ? $"Tour: {t.Captured} of {t.Total} captured, {t.Missed} missed, {t.Left.Count} left; now {t.Current?.Area} seed {t.Current?.Seed}."
+            : "No tour running.";
+
+    /// <summary>Whether this load is the tour's current stop (else the tour has just started somewhere else).</summary>
+    public static bool IsCurrent(string character, string area, uint seed) =>
+        Tours.TryGetValue(character, out var t) && t.Current is var (a, s) && s == seed && a.Equals(area, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Waits until scripts/walkmaps has written this load's files: the generation trace and the walk map
+    /// (written after the step started), then the doodads unchanged for 3 s. False after 120 s.</summary>
+    public static async Task<bool> WaitForCapture(string character, string area, uint seed)
+    {
+        if (!Tours.TryGetValue(character, out var t)) return false;
+        string stem = $"data/walkability/{area}_seed{seed}";
+        bool Fresh(string file) => File.Exists(file) && File.GetLastWriteTimeUtc(file) >= t.StepStarted.AddSeconds(-1);
+        DateTime lastChange = DateTime.UtcNow, last = DateTime.MinValue;
+        for (var until = DateTime.UtcNow.AddSeconds(120); DateTime.UtcNow < until; await Task.Delay(250))
+        {
+            var doodads = File.Exists(stem + ".doodads.json") ? File.GetLastWriteTimeUtc(stem + ".doodads.json") : DateTime.MinValue;
+            if (doodads != last) { last = doodads; lastChange = DateTime.UtcNow; }
+            // The walk map is kept when one exists already (walkmaps.py), so an older one counts.
+            if (Fresh(stem + ".gen.json") && File.Exists(stem + ".bin") && DateTime.UtcNow - lastChange > TimeSpan.FromSeconds(3))
+            {
+                t.Captured++;
+                return true;
+            }
+        }
+        t.Missed++;
+        return false;
+    }
+
+    /// <summary>The next stop, or null when the tour is over (it is then removed).</summary>
+    public static (string Area, ushort Hash, uint Seed)? Next(string character)
+    {
+        if (!Tours.TryGetValue(character, out var t)) return null;
+        if (t.Left.Count == 0) { Tours.TryRemove(character, out _); return null; }
+        var next = t.Left.Dequeue();
+        t.Current = (next.Area, next.Seed);
+        t.StepStarted = DateTime.UtcNow;
+        return next;
+    }
+
+    public static string Summary(string character) =>
+        Tours.TryGetValue(character, out var t) ? $"{t.Captured} captured, {t.Missed} missed" : "";
+}
+
 static class AreaLayouts
 {
     public const ushort LioneyesWatch = 0x235c, TheCoast = 0x7ad2;
@@ -6415,6 +6538,9 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 {
     /// <summary>Called with Auth's answer to the transfer (a map portal records the map's new instance).</summary>
     public Action<ControlResponse>? Done { get; init; }
+
+    /// <summary>With <see cref="New"/>: the new instance's seed (0 = Auth's choice; the capture tour sets it).</summary>
+    public uint Seed { get; init; }
 }
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
