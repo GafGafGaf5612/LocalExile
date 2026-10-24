@@ -267,4 +267,34 @@ static class PanelStats
         }
         return result;
     }
+
+    /// <summary>Character.ot's <c>mana_regeneration_rate_per_minute_%</c>: 105, i.e. 1.75% of maximum mana per second.</summary>
+    public const int BaseManaRegenPctPerMinute = 105;
+
+    /// <summary>
+    /// The Defence tab's regeneration rows (issue #75), as the per-minute totals the client divides by 60: life
+    /// (<see cref="LifePerMinute"/>) and mana (<see cref="ManaPerMinute"/>). The same formulas feed the player tick, so
+    /// the panel shows the regeneration the server actually applies. A character with no life regeneration gets no life
+    /// row; mana always has its base rate.
+    /// </summary>
+    public static List<(string Stat, int Value)> Recovery(Func<string, int> get, uint maxLife, uint maxMana)
+    {
+        var result = new List<(string, int)>();
+        double life = LifePerMinute(get, maxLife);
+        if (life != 0) result.Add(("total_life_recovery_per_minute_from_regeneration", (int)Math.Round(life)));
+        result.Add(("total_mana_recovery_per_minute_from_regeneration", (int)Math.Round(ManaPerMinute(get, maxMana))));
+        return result;
+    }
+
+    /// <summary><c>base_life_regeneration_rate_per_minute</c> plus <c>life_regeneration_rate_per_minute_%</c> of maximum life.</summary>
+    public static double LifePerMinute(Func<string, int> get, uint maxLife) =>
+        get("base_life_regeneration_rate_per_minute") + maxLife * get("life_regeneration_rate_per_minute_%") / 100.0;
+
+    /// <summary>
+    /// Character.ot's <see cref="BaseManaRegenPctPerMinute"/> plus <c>mana_regeneration_rate_per_minute_%</c> of maximum
+    /// mana and the flat <c>base_mana_regeneration_rate_per_minute</c> (Clarity), all raised by <c>mana_regeneration_rate_+%</c>.
+    /// </summary>
+    public static double ManaPerMinute(Func<string, int> get, uint maxMana) =>
+        (maxMana * (BaseManaRegenPctPerMinute + get("mana_regeneration_rate_per_minute_%")) / 100.0
+         + get("base_mana_regeneration_rate_per_minute")) * (1 + get("mana_regeneration_rate_+%") / 100.0);
 }
