@@ -25,6 +25,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** command replies and server messages appear as chat lines, and the channel join stops timing out.
 
 ### A server tick loop
+- Continuous player recovery has its own 16 ms elapsed-game-time loop (regeneration, flasks and self RF);
+  implemented, awaiting real-client visual verification. See Status and protocol/20-damage.md.
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
 

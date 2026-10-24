@@ -586,7 +586,7 @@ mana over 3 s, 6 of 24. A use with fewer charges than PerCharge, or while dead, 
    0x1b1. `Game_FLASK_BUFFS=0` recovers without the buffs.
    Being tested: the buff's duration, from which the orb may draw the recovery still to come. `Game_FLASK_BUFF_DURATION`
    picks the field: `ms` (default) flags bit1, u32 +0x68 = 3000; `f6c` flags bit7, f32 +0x6c = 3.0; `0` none.
-3. `RunFlaskRecovery` adds the recovery evenly from the use to its end, by the clock, every 20 ms while a flask
+3. `RunResourceRecovery` adds the recovery evenly from the use to its end, by the clock, every 16 ms while a flask
    recovers, and sends each whole point at once (S→C 0x1b1): the orb rises by +1 about every 43 ms for a Small Life
    Flask, not in the player tick's 250 ms steps of 6 (live 2026-10-20: those looked jerky). The buff comes off
    (S→C 0x1c2) when the time is up, the pool is full, or the player dies. Using a flask whose effect still runs
