@@ -268,8 +268,7 @@ static void Doodads(string areaId, uint seed)
     stage.Run(result.Records);
     foreach (var n in notes.Distinct()) Console.WriteLine("  " + n);
     // Draw by draw from the tile stage's end.
-    var theirs = t.GetProperty("draws").EnumerateArray().Where(d => d[0].GetString() is "n" or "u" or "l")
-        .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
+    var theirs = TraceDraws(t);
     var mine = rng.Log!;
     int same = 0;
     while (same < theirs.Count && same < mine.Count && theirs[same].Kind == mine[same].Kind && theirs[same].Arg == mine[same].Arg && theirs[same].Result == mine[same].Result) same++;
@@ -457,6 +456,14 @@ static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string 
     Compare("projectile", walk.Projectile, stem + ".projectile.bin");
 }
 
+// The trace's 'n' / 'u' / 'l' draws, without the LCG draws of 0x142063a60 (call site 0x142063b9c): an animated
+// entity's random start time (rand() bits × length / 256), made when the doodad is created. It reads only the LCG,
+// which 0x142046a70 reseeds from the MT before each pick, so it moves nothing in the generation.
+static List<(char Kind, string Caller, uint Arg, uint Result)> TraceDraws(JsonElement t) =>
+    t.GetProperty("draws").EnumerateArray()
+        .Where(d => d[0].GetString() is "n" or "u" or "l" && d[1].GetString() != "0x142063b9c")
+        .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
+
 static GameFileSystem OpenGame()
 {
     string root = Root();
@@ -518,8 +525,7 @@ static void Generate(string areaId, uint seed, string? tracePath)
     var t = trace.RootElement;
     Console.WriteLine($"client: {t.GetProperty("w")}x{t.GetProperty("h")}, tile hash {t.GetProperty("tileHash")}");
     // Draw by draw: the client's 'n' / 'u' / 'l' entries against the port's, until the first difference.
-    var theirs = t.GetProperty("draws").EnumerateArray().Where(d => d[0].GetString() is "n" or "u" or "l")
-        .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
+    var theirs = TraceDraws(t);
     var mine = rng.Log!;
     int same = 0;
     while (same < theirs.Count && same < mine.Count && theirs[same].Kind == mine[same].Kind && theirs[same].Arg == mine[same].Arg && theirs[same].Result == mine[same].Result) same++;

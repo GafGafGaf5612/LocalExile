@@ -255,25 +255,29 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
     public IReadOnlyList<TileObject>? SubTileObjects(TileDef tile, int index, string? reskin)
     {
         if (MeshObjectsPath(tile, index) is not { } p) return null;
-        return (reskin is { Length: > 0 } ? ReskinObjects(p, reskin) : null) ?? ObjectFile(p);
+        return (reskin is { Length: > 0 } ? ReskinObjects(p, tile.Path, reskin) : null) ?? ObjectFile(p);
     }
 
     /// <summary><c>0x141d7f700</c> with a master's Reskin: the tile's .tmd under "alttiles/&lt;reskin&gt;/&lt;reskin&gt;_"
     /// beside it (<c>0x141d88810</c>), null when there is none.</summary>
     public IReadOnlyList<TileObject>? ReskinObjects(TileDef tile, string reskin) =>
-        ReskinObjects(tile.Mesh is { } m && m.EndsWith(".tgt", StringComparison.OrdinalIgnoreCase) ? m : tile.Path, reskin);
+        ReskinObjects(tile.Mesh is { } m && m.EndsWith(".tgt", StringComparison.OrdinalIgnoreCase) ? m : tile.Path, tile.Path, reskin);
 
-    IReadOnlyList<TileObject>? ReskinObjects(string p, string reskin)
+    IReadOnlyList<TileObject>? ReskinObjects(string p, string tdtPath, string reskin)
     {
         int slash = p.LastIndexOf('/');
         if (slash < 0) return null;
         var data = read(p[..(slash + 1)] + "alttiles/" + reskin + "/" + reskin + "_" + p[(slash + 1)..^4] + ".tmd");
         if (data is null) return null;
-        // The copy's records are named "<reskin>_<name>"; the client keys their virtual .ao by the original name (the
-        // captures place "<.tdt folder>/<name>.ao", whose Hull the reskinned name would miss).
+        // The copy's records are named "<reskin>_<name>". The captures place "<.tdt folder>/<name>.ao" (its Hull) when
+        // the record starts with the Reskin as the master writes it (case counts) and that .ao exists, else the
+        // reskinned name, a virtual .ao: 2_9_5's foothills ramps and 2_9_10_2's boss platform strip, 2_9_10_2's
+        // rot_…_assHole02 / rot_…_bellyfx (no such files) and 2_10_6's blood_…_cartblocker (master "Blood") keep it.
+        // The client code that does it was not found.
         string prefix = reskin + "_";
         return TileObjectFile.Parse(data)
-            .Select(o => o.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? o with { Name = o.Name[prefix.Length..] } : o)
+            .Select(o => o.Name.StartsWith(prefix, StringComparison.Ordinal) && o with { Name = o.Name[prefix.Length..] } is var original &&
+                Text(original.VirtualModel(tdtPath)) is not null ? original : o)
             .ToList();
     }
 

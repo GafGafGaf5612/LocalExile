@@ -88,7 +88,8 @@ Items are in rough priority order within each section. "Known" says what is alre
   `DoodadStage.SubTileDoodads`, the `DoodadNoOverlap` path
   `0x142041ac0` and `DoodadLayerDoodad` (world vtable +0x60), the random loop's entity exclusion circles and
   `Next(10000)` falloff (`0x1420425d0` lines 274–550), `0x14154c2d0`, the tile no-doodad bitmask (+0x150), the
-  deferred list `0x142041d40`, the `2_10_6` draw difference, the order of fill rooms in a record's room list (taken
+  deferred list `0x142041d40`, the 45 areas whose doodads still differ from the capture (`levelgen doodads`; most
+  have a tile hash that does not match yet), the order of fill rooms in a record's room list (taken
   as after the layout's), and room `outside_tiles` sectors (`0x142049420`).
 - **Done when:** the server's tile hash equals the client's 0x7d hash for a random seed in every act area, and
   non-town, non-hideout instances get a random seed without a walk-map capture (Auth's `SeedFor`, Gateway's

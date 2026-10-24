@@ -909,8 +909,9 @@ y, +0x18 height, +0x1b orientation code). Order:
    (`0x141ec1360`) takes from its BaseEvents +0x2a4 serialised (no `no_serialise`), +0x2a8 1 = `client_only`,
    2 = `server_only`, +0x2ac `league_category` (default 60; must be 60 or the generator's +0xd0). A line is created
    when its type is not serialised or client only, and not server only (spawners, markers, chests, transitions are
-   not). Checked over all captures (49 000 placements): every such type is captured, except `DoodadNoBlocking`
-   (5 028 lines, 14 captured; virtual models without a file, left out). Types with a league category are left out.
+   not). Checked over all captures (49 000 placements): every such type is captured, `DoodadNoBlocking` included
+   (all 5 062 of its room and tile lines in the 117 captures the stage reaches; it was left out before, from a count
+   taken while the reskin and text `.tmd` names were still wrong). Types with a league category are left out.
    **Collision:** only a type whose Positioned has `static = true` (`Doodad`, `DoodadInvisible`, …) stamps its Hull;
    `HangingSlave`, `BellyGrassClusterTrigger`, the `FlowBlocking` objects are created without collision (their
    Hulls are absent from the captured grids).
@@ -926,9 +927,13 @@ y, +0x18 height, +0x1b orientation code). Order:
    sub-tiles (+0x16d bit 1 clear) → `0x141d7f700`: with the record master's `Reskin` (master +0x80), the file
    `<dir>/alttiles/<reskin>/<reskin>_<name>.tmd` beside the tile (`0x141d88810`) when it exists, else +0x178. The
    copy is loaded under the key `<copy>;<middle of +0x178's key>;<reskin>` (`0x141d801b0` takes the part between the
-   first and last `;`); its records are named `<reskin>_<name>`, and the client's virtual `.ao` is the original
-   `<.tdt folder>/<name>.ao` (the captures of `1_1_3`, `1_1_6`, `2_9_5`; the port strips the prefix — the loader
-   that does it was not found, `.tmd` is not a string in the decompile). +0x178
+   first and last `;`); its records are named `<reskin>_<name>`. The client's virtual `.ao` is the original
+   `<.tdt folder>/<name>.ao` when the record starts with the Reskin exactly as the master writes it (case counts) and
+   that `.ao` exists, else `<.tdt folder>/<reskin>_<name>.ao` (no such file, so no Hull): `2_9_5`'s foothills ramps and
+   `2_9_10_2`'s boss platform take the original, `2_9_10_2`'s `rot_…_assHole02` / `rot_…_bellyfx` (no original
+   `.ao`) and `2_10_6`'s `blood_…_cartblocker` (master `Reskin "Blood"`) keep the prefix. Read off the captures; the
+   loader that does it was not found (`.tmd` is not a string in the decompile). The copy exists when
+   `0x1429f8b30` opens it with 5 bytes or more. +0x178
    is the mesh's `.tmd` (`0x141d7fb60` at load: for each part of the tile's mesh string +0x20 — a `;` list for a tile
    made of sub-tiles, `0x141d7f990` — that part with its last four characters replaced by `.tmd` (`0x141d7fcb0`); the
    last one that exists; none when the flags word has bit 3). +0x180 is the `.tmd` the `.tdt` names (`0x141d7e060`:
@@ -969,10 +974,16 @@ Text `.tmd` records (version 8) carry the `.ao` as their first quoted field and 
 waypoint effect of `beach_waypoint_v01_01.tmd` is `waypoint_idle.ao` at angle 0. Every doodad of `1_1_3`, `1_1_6`
 and `2_9_5` now has the captured name. The +0x180 lists brought the Prison's archways (`1_1_7_1` 314 →
 336 of 336 captured doodads, `1_1_7_2` 761 → 795 of 795, `2_6_7_1` 281 → 298 of 298; grids were already exact, the
-archways have no Hull). Left:
+archways have no Hull). Text `.tmd` records place at their own cell fields, not world / (250/23): `2_10_6`'s cart
+blockers are at world y 500 and cell 45, and the client puts them in 45; this fixed one-cell offsets in `1_1_2`,
+`1_3_3_1`, `1_3_6`, `2_6_2`, `2_8_13`, `MapAtlasHarbingerLow` and the Labyrinth rooms. With `DoodadNoBlocking` and
+the reskin rule above, **72 of the 117 captures the stage reaches place every captured doodad** (was 56), the 61
+grids still exact. The `l(8)` draws at `0x142063b9c` the traces show inside the stage (10 traces, up to 452 in
+`2_10_2`) are `0x142063a60`, an animated entity's random start time (`rand()` 8 bits × 1/256 × the animation's
+length) as the doodad is created: they read only the LCG, which `0x142046a70` reseeds from the MT before each pick,
+so they move nothing; `levelgen` leaves them out of the comparison, and `2_10_6` then matches every doodad-stage
+draw. Left:
 - Tiles made of sub-tiles: ported, no capture has one.
-- `2_10_6`: grids exact, but the client leaves for `0x142063b9c` (`l(8)`) while the port is still placing, and 2 of
-  the 1 639 captured doodads are not placed.
 
 **AOSet** (`0x14202ede0`, every room, tile, random and vertex line resolves its `.ao` through it, room and tile lines
 before their type filters, so a set draws even when its type is not created). The component (`0x141dbf380`, keys
@@ -1009,7 +1020,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   graph (nodes, edges with points, virtual end points, end offsets, widths) at each layout stage boundary (§3f).
 - **Check:** `dotnet run --project scripts/re/levelgen -- hash <trace.gen.json>…` recomputes the tile hash from a
   traced grid. `… generate <area> <seed> [trace.gen.json]` runs the port and, with a trace, compares draw by draw
-  (kind, argument, result; the first difference names the client's caller) and entry by entry, also when the port
+  (kind, argument, result; the first difference names the client's caller; the animation-start LCG draws of
+  `0x142063b9c` are skipped, §6c) and entry by entry, also when the port
   stops at a part that is not ported, and graph by graph at each recorded stage. `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key, `… subtiles` every `.tdt` made of sub-tiles, `… tmds` where each `.tdt`'s objects come from (+0x178 / +0x180), `… ls <regex>` the game paths
   that match (e.g. every `.arm` of a folder, to find rooms no room set lists). `… doodads <area> <seed>` compares the
   placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level

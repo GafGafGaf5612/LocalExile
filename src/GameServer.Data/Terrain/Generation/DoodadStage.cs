@@ -318,9 +318,9 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
     /// <c>0x1420415e0</c>, vtable +0x98 = <c>0x14152d680</c>): the type (<c>0x141ec1360</c>) takes its BaseEvents
     /// flags, +0x2a4 serialised (no <c>no_serialise</c>), +0x2a8 1 for <c>client_only</c> / 2 for <c>server_only</c>,
     /// +0x2ac <c>league_category</c> (60 without one, else it must be the generator's +0xd0). So: not serialised or
-    /// client only, not server only. Across the captures this holds for every type but <c>DoodadNoBlocking</c>, whose
-    /// lines are virtual models without a file (so without collision either way). Types with a league category are
-    /// taken as another league's. The MiscObjects.dat rows <c>DoodadNoOverlap</c> / <c>DoodadNoOverlap3</c> /
+    /// client only, not server only. Across the captures this holds for every type, <c>DoodadNoBlocking</c> included
+    /// (all 5 062 of its room and tile lines in the 117 captures the stage reaches are captured; it is not static).
+    /// Types with a league category are taken as another league's. The MiscObjects.dat rows <c>DoodadNoOverlap</c> / <c>DoodadNoOverlap3</c> /
     /// <c>TileUpperDoodadNoOverlap</c> (<c>0x14202f640</c> → <c>0x142041ac0</c>) and <c>DoodadLayerDoodad</c>
     /// (<c>0x14202f530</c> → world vtable +0x60) go elsewhere: not ported, left out. Static: the type's Positioned has
     /// <c>static = true</c> (<c>Doodad</c>, <c>DoodadInvisible</c>); only those stamp their Hull. The others
@@ -360,8 +360,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
         }
         string name = type[(type.LastIndexOf('/') + 1)..];
         bool routed = name is "DoodadNoOverlap" or "TileUpperDoodadNoOverlap" or "DoodadLayerDoodad";
-        bool created = found && !routed && !league && (noSerialise == true || clientOnly == true) && serverOnly != true &&
-            !name.Equals("DoodadNoBlocking", StringComparison.OrdinalIgnoreCase);
+        bool created = found && !routed && !league && (noSerialise == true || clientOnly == true) && serverOnly != true;
         return _clientTypes[type] = (created, isStatic);
     }
 
