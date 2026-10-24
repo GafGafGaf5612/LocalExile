@@ -1,4 +1,4 @@
-// usage: dotnet run --project scripts/re/levelgen -- hash <trace.gen.json>…
+// usage: scripts/re/levelgen/lg.ps1 <command> … (or dotnet run --project scripts/re/levelgen -- <command> …)
 // Checks the server's level generator against the client's generation traces (live.ps1 -Walkmaps writes
 // data/walkability/<area>_seed<seed>.gen.json). Agents/docs/re/011-level-generation.md.
 using System.Text.Json;
@@ -6,160 +6,182 @@ using GameServer.Data.Ggpk;
 using GameServer.Data.Terrain;
 using GameServer.Data.Terrain.Generation;
 using GgDump;
+using LevelGenTool;
+using static LevelGenTool.Shared;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-switch (args.FirstOrDefault())
+// serve: keep the game open behind a named pipe; any other command goes to a running server of the same build,
+// else runs here. gate / worker: the regression gate (Gate.cs).
+return args.FirstOrDefault() switch
 {
-    case "hash":
-        foreach (var path in args.Skip(1)) Hash(path);
-        break;
-    case "cat":
-        // Terrain files as text (what the generator reads).
-        using (var fs = OpenGame())
-            foreach (var path in args.Skip(1))
-                Console.WriteLine(fs.TryReadFile(path, out var data) ? $"== {path}\n{TerrainText.Decode(data)}" : $"== {path}: not found");
-        break;
-    case "ls":
-        // ls <regex>: the game paths matching a regex (case-insensitive).
-        using (var fs = OpenGame())
+    "serve" => Serve.Run(Dispatch),
+    "worker" => Gate.Worker(),
+    "gate" => Gate.Run(args.Skip(1).ToArray()),
+    _ => Serve.Forward(args) ?? Dispatch(args),
+};
+
+static int Dispatch(string[] args)
+{
+    // The game files, for the commands that read them (opened once per process, Shared.OpenGame).
+    GameFileSystem fs;
+    try
+    {
+        switch (args.FirstOrDefault())
         {
-            var pattern = new System.Text.RegularExpressions.Regex(args[1], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            foreach (var path in fs.EnumeratePaths().Where(p => pattern.IsMatch(p)).Order()) Console.WriteLine(path);
-        }
-        break;
-    case "grep":
-        // grep <path regex> <text regex>: the lines matching the text regex in every text file whose path matches.
-        using (var fs = OpenGame())
-        {
-            var paths = new System.Text.RegularExpressions.Regex(args[1], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            var text = new System.Text.RegularExpressions.Regex(args[2]);
-            foreach (var path in fs.EnumeratePaths().Where(p => paths.IsMatch(p)).Order())
-            {
-                if (!fs.TryReadFile(path, out var data)) continue;
-                foreach (var line in TerrainText.Decode(data).Split('\n').Where(l => text.IsMatch(l)))
-                    Console.WriteLine($"{path}: {line.TrimEnd()}");
-            }
-        }
-        break;
-    case "raw":
-        // raw <game path> <out file>: a game file's bytes as they are.
-        using (var fs = OpenGame())
-            if (fs.TryReadFile(args[1], out var data)) File.WriteAllBytes(args[2], data);
-            else Console.WriteLine($"{args[1]}: not found");
-        break;
-    case "tile":
-        // tile <.tdt>…: a tile's tag and key as the generator reads them.
-        using (var fs = OpenGame())
-        {
-            var cache = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
-            foreach (var path in args.Skip(1))
-                if (cache.Tile(path) is { } tile)
+            case "hash":
+                foreach (var path in args.Skip(1)) Hash(path);
+                break;
+            case "cat":
+                // Terrain files as text (what the generator reads).
+                if ((fs = OpenGame()) is not null)
+                    foreach (var path in args.Skip(1))
+                        Console.WriteLine(fs.TryReadFile(path, out var data) ? $"== {path}\n{TerrainText.Decode(data)}" : $"== {path}: not found");
+                break;
+            case "ls":
+                // ls <regex>: the game paths matching a regex (case-insensitive).
+                if ((fs = OpenGame()) is not null)
                 {
-                    for (int o = 0; o < 8; o++) Console.WriteLine($"{Path.GetFileName(path)} o{o}: tag '{tile.Tag}' {tile.Key.Rotate(o)}");
-                    Console.WriteLine($"  orientation restriction 0x{tile.Restriction:x2}");
-                    if (fs.TryReadFile(path, out var raw))
-                    {
-                        // The header after the string table, from the key's end (offset 58).
-                        int n = (int)BitConverter.ToUInt32(raw, 4), at = 8 + 2 * n;
-                        Console.WriteLine($"  version {BitConverter.ToUInt32(raw, 0)}, header[56..72] " +
-                            string.Join(" ", raw.Skip(at + 56).Take(16).Select(b => b.ToString("x2"))));
-                    }
-                    // The vertex heights, row by row (orientation 0).
-                    for (int v = 0; v <= tile.Height; v++)
-                        Console.WriteLine("  heights " + string.Join(" ", Enumerable.Range(0, tile.Width + 1).Select(u => tile.VertexHeight(u, v))));
-                    // The vertex grounds, row by row (orientation 0), "-" for none.
-                    for (int v = 0; v <= tile.Height; v++)
-                        Console.WriteLine("  grounds " + string.Join(" ", Enumerable.Range(0, tile.Width + 1).Select(u =>
-                            tile.VertexGround(u, v) is { } g ? Path.GetFileNameWithoutExtension(g) : "-")));
+                    var pattern = new System.Text.RegularExpressions.Regex(args[1], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    foreach (var path in fs.EnumeratePaths().Where(p => pattern.IsMatch(p)).Order()) Console.WriteLine(path);
                 }
-                else Console.WriteLine($"{path}: not found");
+                break;
+            case "grep":
+                // grep <path regex> <text regex>: the lines matching the text regex in every text file whose path matches.
+                if ((fs = OpenGame()) is not null)
+                {
+                    var paths = new System.Text.RegularExpressions.Regex(args[1], System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    var text = new System.Text.RegularExpressions.Regex(args[2]);
+                    foreach (var path in fs.EnumeratePaths().Where(p => paths.IsMatch(p)).Order())
+                    {
+                        if (!fs.TryReadFile(path, out var data)) continue;
+                        foreach (var line in TerrainText.Decode(data).Split('\n').Where(l => text.IsMatch(l)))
+                            Console.WriteLine($"{path}: {line.TrimEnd()}");
+                    }
+                }
+                break;
+            case "raw":
+                // raw <game path> <out file>: a game file's bytes as they are.
+                if ((fs = OpenGame()) is not null)
+                    if (fs.TryReadFile(args[1], out var data)) File.WriteAllBytes(args[2], data);
+                    else Console.WriteLine($"{args[1]}: not found");
+                break;
+            case "tile":
+                // tile <.tdt>…: a tile's tag and key as the generator reads them.
+                if ((fs = OpenGame()) is not null)
+                {
+                    var cache = Files();
+                    foreach (var path in args.Skip(1))
+                        if (cache.Tile(path) is { } tile)
+                        {
+                            for (int o = 0; o < 8; o++) Console.WriteLine($"{Path.GetFileName(path)} o{o}: tag '{tile.Tag}' {tile.Key.Rotate(o)}");
+                            Console.WriteLine($"  orientation restriction 0x{tile.Restriction:x2}");
+                            if (fs.TryReadFile(path, out var raw))
+                            {
+                                // The header after the string table, from the key's end (offset 58).
+                                int n = (int)BitConverter.ToUInt32(raw, 4), at = 8 + 2 * n;
+                                Console.WriteLine($"  version {BitConverter.ToUInt32(raw, 0)}, header[56..72] " +
+                                    string.Join(" ", raw.Skip(at + 56).Take(16).Select(b => b.ToString("x2"))));
+                            }
+                            // The vertex heights, row by row (orientation 0).
+                            for (int v = 0; v <= tile.Height; v++)
+                                Console.WriteLine("  heights " + string.Join(" ", Enumerable.Range(0, tile.Width + 1).Select(u => tile.VertexHeight(u, v))));
+                            // The vertex grounds, row by row (orientation 0), "-" for none.
+                            for (int v = 0; v <= tile.Height; v++)
+                                Console.WriteLine("  grounds " + string.Join(" ", Enumerable.Range(0, tile.Width + 1).Select(u =>
+                                    tile.VertexGround(u, v) is { } g ? Path.GetFileNameWithoutExtension(g) : "-")));
+                        }
+                        else Console.WriteLine($"{path}: not found");
+                }
+                break;
+            case "subtiles":
+                // subtiles: every .tdt whose flags word has bit 9 (tile data +0x16d bit 1, made of sub-tiles), with its objects.
+                if ((fs = OpenGame()) is not null)
+                {
+                    var cache = Files();
+                    int all = 0, withObjects = 0;
+                    foreach (var path in fs.EnumeratePaths().Where(p => p.EndsWith(".tdt", StringComparison.OrdinalIgnoreCase)).Order())
+                    {
+                        if ((cache.TileFlags(path) & 0x200) == 0) continue;
+                        all++;
+                        if (cache.Tile(path) is not { } tile) continue;
+                        var objects = cache.TileObjects(tile);
+                        if (objects.Count == 0) continue;
+                        withObjects++;
+                        Console.WriteLine($"{path} {tile.Width}x{tile.Height}: {objects.Count} objects ({string.Join(", ", objects.Select(o => o.Type).Distinct().Take(4))})");
+                    }
+                    Console.WriteLine($"{all} tiles with sub-tiles, {withObjects} with objects");
+                }
+                break;
+            case "tmds":
+                // tmds: per .tdt, where its objects come from: the mesh's .tmd (+0x178), the .tmd its string table names (+0x180),
+                // and the .tmd beside the .tdt.
+                if ((fs = OpenGame()) is not null)
+                {
+                    var cache = Files();
+                    var counts = new Dictionary<string, int>();
+                    foreach (var path in fs.EnumeratePaths().Where(p => p.EndsWith(".tdt", StringComparison.OrdinalIgnoreCase)).Order())
+                    {
+                        TileDef? tile;
+                        try { tile = cache.Tile(path); } catch (IndexOutOfRangeException) { continue; }
+                        if (tile is null) continue;
+                        bool Has(string? p) => p is not null && fs.TryReadFile(p, out _);
+                        bool mesh = tile.Mesh is { Length: > 4 } m && !m.Contains(';') && Has(m[..^4] + ".tmd");
+                        bool named = tile.ObjectsFile is not null;
+                        bool beside = Has(path[..^4] + ".tmd");
+                        bool same = named && string.Equals(tile.ObjectsFile, path[..^4] + ".tmd", StringComparison.OrdinalIgnoreCase);
+                        string k = $"mesh {mesh} named {named} beside {beside} same {same} noMesh {tile.Mesh is null}";
+                        counts[k] = counts.GetValueOrDefault(k) + 1;
+                        if (beside && !same && !mesh && args.Length > 1) Console.WriteLine($"{path}: mesh {tile.Mesh} named {tile.ObjectsFile}");
+                    }
+                    foreach (var (k, n) in counts.OrderBy(p => p.Key)) Console.WriteLine($"{n,6} {k}");
+                }
+                break;
+            case "vertices":
+                // vertices <.tst>: every tile's vertex grounds as the parser finds them (a check of the vertex block scan).
+                if ((fs = OpenGame()) is not null)
+                {
+                    var cache = Files();
+                    int found = 0, missing = 0;
+                    foreach (var (_, path, _) in cache.TileList(args[1]).DistinctBy(t => t.Path))
+                    {
+                        var tile = cache.Tile(path);
+                        if (tile is null) continue;
+                        if (tile.VertexGrounds.Length == 0) { missing++; Console.WriteLine($"{Path.GetFileName(path)} {tile.Width}x{tile.Height}: NO VERTEX BLOCK"); continue; }
+                        found++;
+                        if (args.Length > 2)
+                            Console.WriteLine($"{Path.GetFileName(path)} {tile.Width}x{tile.Height}: " + string.Join(" ", tile.VertexGrounds.Select(g => g is null ? "-" : Path.GetFileNameWithoutExtension(g))) +
+                                              (tile.VertexHeights.Any(x => x != 0) ? " H " + string.Join(",", tile.VertexHeights) : ""));
+                    }
+                    Console.WriteLine($"{found} with a vertex block, {missing} without");
+                }
+                break;
+            case "generate":
+                // generate <area id> <seed> [trace.gen.json]: the server's generation, compared with a client trace when given.
+                Generate(args[1], uint.Parse(args[2]), args.Length > 3 ? args[3] : null);
+                break;
+            case "walk":
+                // walk [<area id> <seed>]: the port's walkability and projectile grids against the walk-map capture
+                // (data/walkability/<area>_seed<seed>.bin and .projectile.bin); without an area, one line per seed-1 capture.
+                Walk(args.Length > 1 ? args[1] : null, args.Length > 2 ? uint.Parse(args[2]) : 1);
+                break;
+            case "doodads":
+                // doodads <area id> <seed>: the doodad stage after the port's generation, its draws against the trace and its
+                // doodads against the walk-map capture (<area>_seed<seed>.doodads.json).
+                Doodads(args[1], uint.Parse(args[2]));
+                break;
+            case "oracle":
+                // oracle [area regex]: every (area, seed) the client logged with its tile hash (Client/logs/Client.txt), run by
+                // the port: match, mismatch, or where it stops.
+                Oracle(args.Length > 1 ? args[1] : ".");
+                break;
+            default:
+                Console.WriteLine("usage: levelgen hash <trace.gen.json>… | cat <game path>… | tile <.tdt>… | generate <area> <seed> [trace] | oracle [area regex]");
+                break;
         }
-        break;
-    case "subtiles":
-        // subtiles: every .tdt whose flags word has bit 9 (tile data +0x16d bit 1, made of sub-tiles), with its objects.
-        using (var fs = OpenGame())
-        {
-            var cache = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
-            int all = 0, withObjects = 0;
-            foreach (var path in fs.EnumeratePaths().Where(p => p.EndsWith(".tdt", StringComparison.OrdinalIgnoreCase)).Order())
-            {
-                if ((cache.TileFlags(path) & 0x200) == 0) continue;
-                all++;
-                if (cache.Tile(path) is not { } tile) continue;
-                var objects = cache.TileObjects(tile);
-                if (objects.Count == 0) continue;
-                withObjects++;
-                Console.WriteLine($"{path} {tile.Width}x{tile.Height}: {objects.Count} objects ({string.Join(", ", objects.Select(o => o.Type).Distinct().Take(4))})");
-            }
-            Console.WriteLine($"{all} tiles with sub-tiles, {withObjects} with objects");
-        }
-        break;
-    case "tmds":
-        // tmds: per .tdt, where its objects come from: the mesh's .tmd (+0x178), the .tmd its string table names (+0x180),
-        // and the .tmd beside the .tdt.
-        using (var fs = OpenGame())
-        {
-            var cache = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
-            var counts = new Dictionary<string, int>();
-            foreach (var path in fs.EnumeratePaths().Where(p => p.EndsWith(".tdt", StringComparison.OrdinalIgnoreCase)).Order())
-            {
-                TileDef? tile;
-                try { tile = cache.Tile(path); } catch (IndexOutOfRangeException) { continue; }
-                if (tile is null) continue;
-                bool Has(string? p) => p is not null && fs.TryReadFile(p, out _);
-                bool mesh = tile.Mesh is { Length: > 4 } m && !m.Contains(';') && Has(m[..^4] + ".tmd");
-                bool named = tile.ObjectsFile is not null;
-                bool beside = Has(path[..^4] + ".tmd");
-                bool same = named && string.Equals(tile.ObjectsFile, path[..^4] + ".tmd", StringComparison.OrdinalIgnoreCase);
-                string k = $"mesh {mesh} named {named} beside {beside} same {same} noMesh {tile.Mesh is null}";
-                counts[k] = counts.GetValueOrDefault(k) + 1;
-                if (beside && !same && !mesh && args.Length > 1) Console.WriteLine($"{path}: mesh {tile.Mesh} named {tile.ObjectsFile}");
-            }
-            foreach (var (k, n) in counts.OrderBy(p => p.Key)) Console.WriteLine($"{n,6} {k}");
-        }
-        break;
-    case "vertices":
-        // vertices <.tst>: every tile's vertex grounds as the parser finds them (a check of the vertex block scan).
-        using (var fs = OpenGame())
-        {
-            var cache = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
-            int found = 0, missing = 0;
-            foreach (var (_, path, _) in cache.TileList(args[1]).DistinctBy(t => t.Path))
-            {
-                var tile = cache.Tile(path);
-                if (tile is null) continue;
-                if (tile.VertexGrounds.Length == 0) { missing++; Console.WriteLine($"{Path.GetFileName(path)} {tile.Width}x{tile.Height}: NO VERTEX BLOCK"); continue; }
-                found++;
-                if (args.Length > 2)
-                    Console.WriteLine($"{Path.GetFileName(path)} {tile.Width}x{tile.Height}: " + string.Join(" ", tile.VertexGrounds.Select(g => g is null ? "-" : Path.GetFileNameWithoutExtension(g))) +
-                                      (tile.VertexHeights.Any(x => x != 0) ? " H " + string.Join(",", tile.VertexHeights) : ""));
-            }
-            Console.WriteLine($"{found} with a vertex block, {missing} without");
-        }
-        break;
-    case "generate":
-        // generate <area id> <seed> [trace.gen.json]: the server's generation, compared with a client trace when given.
-        Generate(args[1], uint.Parse(args[2]), args.Length > 3 ? args[3] : null);
-        break;
-    case "walk":
-        // walk [<area id> <seed>]: the port's walkability and projectile grids against the walk-map capture
-        // (data/walkability/<area>_seed<seed>.bin and .projectile.bin); without an area, one line per seed-1 capture.
-        Walk(args.Length > 1 ? args[1] : null, args.Length > 2 ? uint.Parse(args[2]) : 1);
-        break;
-    case "doodads":
-        // doodads <area id> <seed>: the doodad stage after the port's generation, its draws against the trace and its
-        // doodads against the walk-map capture (<area>_seed<seed>.doodads.json).
-        Doodads(args[1], uint.Parse(args[2]));
-        break;
-    case "oracle":
-        // oracle [area regex]: every (area, seed) the client logged with its tile hash (Client/logs/Client.txt), run by
-        // the port: match, mismatch, or where it stops.
-        Oracle(args.Length > 1 ? args[1] : ".");
-        break;
-    default:
-        Console.WriteLine("usage: levelgen hash <trace.gen.json>… | cat <game path>… | tile <.tdt>… | generate <area> <seed> [trace] | oracle [area regex]");
-        break;
+    }
+    finally { ResetHooks(); }
+    return 0;
 }
 
 // The tile hash of a traced grid, computed the server's way, next to the hash the client sent.
@@ -182,20 +204,9 @@ static void Hash(string path)
 
 static void Oracle(string filter)
 {
-    string root = Root();
-    var pairs = new SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)>();
-    (string, uint, int)? cur = null;
-    // The running client keeps its log open for writing.
-    using var log = new StreamReader(new FileStream(Path.Combine(root, "Client", "logs", "Client.txt"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-    for (string? line; (line = log.ReadLine()) is not null;)
-    {
-        var m = System.Text.RegularExpressions.Regex.Match(line, @"Generating level (\d+) area ""([^""]+)"" with seed (\d+)");
-        if (m.Success) { cur = (m.Groups[2].Value, uint.Parse(m.Groups[3].Value), int.Parse(m.Groups[1].Value)); continue; }
-        m = System.Text.RegularExpressions.Regex.Match(line, @"Tile hash: (\d+)");
-        if (m.Success && cur is { } c) { pairs[(c.Item1, c.Item2)] = (c.Item3, uint.Parse(m.Groups[1].Value)); cur = null; }
-    }
-    using var fs = OpenGame();
-    var files = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+    var pairs = LoggedHashes();
+    var fs = OpenGame();
+    var files = Files();
     int match = 0, total = 0;
     var reasons = new Dictionary<string, int>();
     foreach (var ((areaId, seed), (level, hash)) in pairs)
@@ -223,8 +234,8 @@ static void Oracle(string filter)
 static void Walk(string? areaId, uint seed)
 {
     string root = Root();
-    using var fs = OpenGame();
-    var files = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+    var fs = OpenGame();
+    var files = Files();
     if (areaId is not null)
     {
         WalkArea(fs, files, root, areaId, seed, verbose: true);
@@ -245,8 +256,8 @@ static void Walk(string? areaId, uint seed)
 static void Doodads(string areaId, uint seed)
 {
     string root = Root();
-    using var fs = OpenGame();
-    var files = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+    var fs = OpenGame();
+    var files = Files();
     string stem = Path.Combine(root, "data", "walkability", $"{areaId}_seed{seed}");
     using var trace = JsonDocument.Parse(File.ReadAllText(stem + ".gen.json"));
     var t = trace.RootElement;
@@ -456,26 +467,11 @@ static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string 
     Compare("projectile", walk.Projectile, stem + ".projectile.bin");
 }
 
-// The trace's 'n' / 'u' / 'l' draws, without the LCG draws of 0x142063a60 (call site 0x142063b9c): an animated
-// entity's random start time (rand() bits × length / 256), made when the doodad is created. It reads only the LCG,
-// which 0x142046a70 reseeds from the MT before each pick, so it moves nothing in the generation.
-static List<(char Kind, string Caller, uint Arg, uint Result)> TraceDraws(JsonElement t) =>
-    t.GetProperty("draws").EnumerateArray()
-        .Where(d => d[0].GetString() is "n" or "u" or "l" && d[1].GetString() != "0x142063b9c")
-        .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
-
-static GameFileSystem OpenGame()
-{
-    string root = Root();
-    var oodle = new NodeOodleDecoder("node", Path.Combine(root, @"Tools\ooz\ooz_worker.mjs"));
-    return GameFileSystem.Open(Path.Combine(root, "Client", "Content.ggpk"), oodle);
-}
-
 static void Generate(string areaId, uint seed, string? tracePath)
 {
     string root = Root();
-    using var fs = OpenGame();
-    var files = new TerrainCache(p => fs.TryReadFile(p, out var d) ? d : null);
+    var fs = OpenGame();
+    var files = Files();
     int level = 1;
     if (tracePath is not null)
         using (var head = JsonDocument.Parse(File.ReadAllText(tracePath))) level = head.RootElement.TryGetProperty("level", out var l) ? l.GetInt32() : 1;
@@ -707,11 +703,3 @@ static string EdgeText(TileGraph g, GraphEdge e) =>
     $"v [{e.VirtualEnd1[0].X},{e.VirtualEnd1[0].Y},{e.VirtualEnd2[0].X},{e.VirtualEnd2[0].Y},{e.VirtualEnd1[1].X},{e.VirtualEnd1[1].Y},{e.VirtualEnd2[1].X},{e.VirtualEnd2[1].Y}] " +
     $"off [{e.StartOffset.X},{e.StartOffset.Y},{e.EndOffset.X},{e.EndOffset.Y}] w [{e.MinWidth},{e.MaxWidth}]";
 
-static string Root()
-{
-    string root = AppContext.BaseDirectory;
-    while (!File.Exists(Path.Combine(root, "Tools", "ooz", "ooz_worker.mjs")))
-        root = Path.GetDirectoryName(root.TrimEnd(Path.DirectorySeparatorChar))
-            ?? throw new InvalidOperationException("Tools/ooz/ooz_worker.mjs not found above the build output");
-    return root;
-}

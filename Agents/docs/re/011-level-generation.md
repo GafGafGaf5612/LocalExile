@@ -1040,7 +1040,17 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   Traces of 2026-10-22: town 496 draws (30 × 18 tiles), Twilight Strand 30 586 (78 × 42), The Coast 46 706 (75 × 75),
   HideoutForest 2 818 (33 × 33). Since the second Strand trace of 2026-10-22 a trace also holds `graphs`: the tile
   graph (nodes, edges with points, virtual end points, end offsets, widths) at each layout stage boundary (§3f).
-- **Check:** `dotnet run --project scripts/re/levelgen -- hash <trace.gen.json>…` recomputes the tile hash from a
+- **Running levelgen:** `scripts/re/levelgen/lg.ps1 <command> …` (not `dotnet run`, which costs ~12 s a call): it
+  builds into `bin/lg` only when a source changed and hands the command to the levelgen server (`levelgen serve`,
+  started on first use from a copy of the build, replaced after a rebuild), which keeps the game files and the
+  terrain cache open: ~0.5 s a call. `LEVELGEN_LOCAL=1` runs a command in its own process.
+- **Gate:** `scripts/re/levelgen/gate.ps1` before every commit to the generator: every seed-1 trace (tile hash,
+  matching draws through the doodad stage, both grids, the doodads) and every logged (area, seed), run by worker
+  processes (~5 min), compared with `scripts/re/levelgen/gate-baseline.json` (gained / lost per check), then the
+  three test suites; it fails when anything was lost. It also prints the work queue: traces grouped by the client's
+  caller at the first difference, and stops grouped by reason. `-Save` makes the run the baseline (commit it with
+  the change); `-NoTests`, `--only <area regex>`, `--no-oracle`, `--jobs N`.
+- **Check:** `lg.ps1 hash <trace.gen.json>…` recomputes the tile hash from a
   traced grid. `… generate <area> <seed> [trace.gen.json]` runs the port and, with a trace, compares draw by draw
   (kind, argument, result; the first difference names the client's caller; the animation-start LCG draws of
   `0x142063b9c` are skipped, §6c) and entry by entry, also when the port

@@ -25,3 +25,6 @@ All agent and contributor documentation is in [Agents/](Agents/). Read these fir
   `Roadmap.md` to `Status.md` in the same change.
 - **Verify with the real client and the logs** (`logs\`), and keep `dotnet test tests/GameServer.Core.Tests`,
   `tests/GameServer.Data.Tests` and `tests/GameServer.Gateway.Tests` passing.
+- **Level generator changes pass `scripts/re/levelgen/gate.ps1`** before they are committed (nothing lost against
+  `gate-baseline.json`; `-Save` and commit the new baseline). Run levelgen through `scripts/re/levelgen/lg.ps1`, not
+  `dotnet run` ([re/011](Agents/docs/re/011-level-generation.md) §8).
