@@ -286,13 +286,28 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   size is dropped and the pick redrawn.
 - **Special rooms** (room data tags starting "special": .arm flag +8, number after "special" at +4 else −1, chance +5
   default 100; filed apart, `DungeonRoomSet.Apart`, so out of the size tables): `0x142101aa0` → `0x1420ed7a0` →
-  `0x1420ff140`: each unnumbered special room by its chance. `0x1420ff140` takes a list of rooms (with orientation
+  `0x1420ff140`. Room set +0x1c0 holds one list per number, 0 up to the largest (`0x141ff6960`), then the
+  unnumbered rooms as the last list (`0x141ff7930`), each in file order. Every list but the last that has rooms
+  places one: a copy, `Next(count)` (unused), a shuffle (`0x142129610`), the first room that places; none: "Failed
+  to place special room <room>" (one room) or "Failed to place a special<n> room". The last list: each room by its
+  chance (`Next(100)` below it, none for 100 or 0). `0x1420ff140` takes a list of rooms (with orientation
   masks, 0 = any): candidates are the accessible placed rooms with a room, not special, empty tag, whose size and
   exits fit some allowed orientation of a listed room (the first, `0x1420ffb90`; exits by `0x1420feff0`, door types
   that can end may be missing), kept by entry index (`0x142127a50`, sorted) with each listed room that fits;
   `Next(entries)`, then `Next(that entry's rooms)` (`0x141f4f970`, weight 1 each); the entry takes room and
-  orientation, kind 8. Not ported: numbered lists, placement over several rooms (`0x1420ffcf0`), injector rooms,
-  room data +9 / +0x13a and `0x142101e50` (oversize rows into telepad injector rooms).
+  orientation, kind 8. With no such entry the room goes **over several rooms**: per listed room, per eligible
+  placed room (the same filter, list order) and allowed orientation, the turned room with a corner on that room's
+  same corner (top left; top right when its width is over 1; bottom left and bottom right when its height is over
+  1, `0x1420ffcf0`), where `0x1420fff20` allows it: inside the map; no reserved cell; every placed room it touches
+  lies wholly inside, has no room or one not special with no tag, all at one level; on the rectangle's border
+  (`0x142100350`) each touched room's exits, or a free cell's (none), equal the room's, except that a rooms.et exit
+  of the room may face no door, and when the room has rooms.et exits not all of them may. Spots are kept by
+  position (key x · 0x10000 + y, `0x1421277e0`), each with every (room, orientation) that went there; `Next(spots)`,
+  `Next(its rooms)`; the rooms under it leave the list (from the highest index; the level is the lowest's), the
+  cells are rebuilt (`0x1420fdf60`) and the room is placed there (`0x1420fe780`: accessible, kind 8, door type
+  rooms.et). No spot either: the room does not place (the numbered lists go on to their next room). `1_3_18_1`
+  seed 1060677158: `room_7_1_boss.arm` 2 × 2 over two rooms, matches. Not ported: injector rooms, room data +9 /
+  +0x13a and `0x142101e50` (oversize rows into telepad injector rooms).
 - **Shrine rooms** (`0x142103490`, `DungeonLayout.ShrineRooms`): with shrines rolled (pool +0x148), as many tries as
   the count: the room set's "shrine" rooms (+0x118) of the layout's unit size, any orientation, go to `0x1420ff140`;
   a placed room with a shrine object (room data +0x70, taken to be a `Metadata/Shrines/Shrine` object in the `.arm`)
@@ -1115,7 +1130,13 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   caller as the seed-1 traces `1_1_5`, `1_4_4_3`, `2_6_11`, `2_6_6`), a port bug. 2026-10-24, the Vaal side area
   pick on dungeon graphs (`0x142031d10`, the `0x142031e88` cluster): **553 of 782 match** (+30, none lost): 28 of its
   31 seeds match their tile hash; `2_8_13` 1984502362 and `2_9_10_1` 96082475 now stop at "a Vaal side area without
-  sidearea nodes" (the VaalSideArea feature row, not ported), `2_8_2_2` 698178759 at a door later on.
+  sidearea nodes" (the VaalSideArea feature row, not ported), `2_8_2_2` 698178759 at a door later on. 2026-10-24,
+  numbered special rooms and special rooms over several rooms (§3c2): **565 of 782 match** (+12, none lost), 100 of
+  the 197 seed-1 traces by hash (+4: `1_1_4_1`, `1_3_18_1`, `1_3_18_2`, `1_3_8_2`). Of the cluster's 28 oracle loads
+  13 match; the rest first differ elsewhere: `1_1_11_*` at `0x14210862e` (#604–713, before the special rooms),
+  `1_3_14_2` "no tile for slot" (`ledge_4.arm`), `1_3_15` seed 1 and `1_3_5` seed 1 later in tiling (`0x1420f4807`,
+  `0x1420f8fc1`), `1_3_15` 1003770448 / 3775385555 / 890665379 every draw but heights of outer `battlefield_wall_fill`
+  tiles, `1_3_9` at `0x141feddbe`, `2_8_9` door tiles without RoomOverlap.
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds

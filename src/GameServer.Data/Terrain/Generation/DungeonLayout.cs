@@ -379,15 +379,24 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         return true;
     }
 
-    /// <summary><c>0x142101aa0</c>: room set +0x1c0 holds the special rooms by number (room data +4, <c>0x141ff6960</c>);
-    /// each numbered list but the last places one of its rooms (<c>Next(count)</c>, then a shuffle; not ported), the
-    /// last, taken here to be the unnumbered rooms, places each room whose chance (room data +5) passes
+    /// <summary><c>0x142101aa0</c>: room set +0x1c0 holds the special rooms by number (room data +4, <c>0x141ff6960</c>),
+    /// one list per number from 0 up to the largest, then the unnumbered rooms as the last list (<c>0x141ff7930</c>).
+    /// Each list but the last that has rooms places one of them: a copy, <c>Next(count)</c> (unused), a shuffle
+    /// (<c>0x142129610</c>), then the first room that places, else "Failed to place special room" (one room) or
+    /// "Failed to place a special&lt;n&gt; room". The last places each room whose chance (room data +5) passes
     /// (<c>Next(100)</c> below 100), else "Failed to place special room".</summary>
     void SpecialRooms()
     {
         var special = roomSet.All.Where(r => r.Special).ToList();
-        if (special.Any(r => r.Number >= 0)) throw new NotSupportedException("numbered special rooms (0x142101aa0's lists) are not ported");
-        foreach (var r in special)
+        foreach (var number in special.Where(r => r.Number >= 0).GroupBy(r => r.Number).OrderBy(g => g.Key))
+        {
+            var list = number.ToList();
+            rng.Next((uint)list.Count);
+            rng.Shuffle(list);
+            if (!list.Any(r => PlaceSpecial([(r, r.Mask)]) is not null))
+                throw new InvalidOperationException(list.Count < 2 ? $"Failed to place special room {list[0].Path}" : $"Failed to place a special{number.Key} room");
+        }
+        foreach (var r in special.Where(r => r.Number < 0))
         {
             if (r.Chance < 100 && (r.Chance == 0 || rng.Next(100u) >= r.Chance)) continue;
             if (PlaceSpecial([(r, r.Mask)]) is null) throw new InvalidOperationException($"Failed to place special room {r.Path}");
@@ -548,8 +557,8 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
     /// room of no tag whose room is not special can take one when one of its orientations has the same size and exits
     /// (<c>0x1420ffb90</c>, the first such orientation). The candidates are kept by entry index (each entry with the
     /// rooms that fit it, in list order); <c>Next(entries)</c>, then <c>Next(its rooms)</c>; the entry takes the room
-    /// and orientation, kind 8. Without one, the room would go over several rooms at their corners
-    /// (<c>0x1420ffcf0</c>), not ported. Room data +9 (rooms paired by +0x13a) is taken to be clear.</summary>
+    /// and orientation, kind 8. Without one, the room goes over several rooms (<see cref="PlaceOver"/>). Room data +9
+    /// (rooms paired by +0x13a) is taken to be clear.</summary>
     DungeonPlacement? PlaceSpecial(IReadOnlyList<(DungeonRoom Room, int Mask)> rooms)
     {
         var candidates = new SortedDictionary<int, List<(DungeonRoom Room, int Orientation)>>();
@@ -572,7 +581,7 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
                 }
             }
         }
-        if (candidates.Count == 0) throw new NotSupportedException($"{rooms[0].Room.Path}: special rooms over several rooms (0x1420ffcf0) are not ported");
+        if (candidates.Count == 0) return PlaceOver(rooms);
         var (index, options) = candidates.ElementAt((int)rng.Next((uint)candidates.Count));
         var (room, orientation) = options[(int)rng.Next((uint)options.Count)];
         var q = map.Rooms[index];
@@ -581,6 +590,121 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         q.Kind = 8;
         notes.Add($"dungeon special room: {q} o{orientation}");
         return q;
+    }
+
+    /// <summary><c>0x1420ff140</c> when no room fits one entry: the room over several, each listed room against each
+    /// accessible placed room of no tag whose room is not special, in each allowed orientation with a corner on that
+    /// room's same corner (top left; top right for a width over 1; bottom left and bottom right for a height over 1;
+    /// <c>0x1420ffcf0</c>), where <see cref="Covers"/> allows it. The spots are kept by position (x · 0x10000 + y,
+    /// <c>0x1421277e0</c>), each with every room and orientation that went there; <c>Next(spots)</c>, then
+    /// <c>Next(its rooms)</c>. The rooms under it leave the list (from the last; the level is the first's), the cells
+    /// are rebuilt (<c>0x1420fdf60</c>) and the room is placed there (<c>0x1420fe780</c>): accessible, kind 8.</summary>
+    DungeonPlacement? PlaceOver(IReadOnlyList<(DungeonRoom Room, int Mask)> rooms)
+    {
+        var spots = new SortedDictionary<int, (int X, int Y, List<(DungeonRoom Room, int Orientation, int W, int H)> Rooms)>();
+        foreach (var (r, mask) in rooms)
+            for (int i = 0; i < map.Rooms.Count; i++)
+            {
+                var p = map.Rooms[i];
+                if ((p.Flags & 1) == 0 || p.Room is null || p.Room.Special || p.Room.Tag.Length != 0) continue;
+                for (int o = 0; o < 8; o++)
+                {
+                    if (mask != 0 && (mask >> o & 1) == 0) continue;
+                    var (w, h) = o % 2 == 1 ? (r.Height, r.Width) : (r.Width, r.Height);
+                    var exits = DungeonRoomSet.TurnExits(r.Exits, r.Width, r.Height, o, Directional);
+                    int right = p.X - w + p.Width, bottom = p.Y - h + p.Height;
+                    Try(p.X, p.Y);
+                    if (w >= 2)
+                    {
+                        Try(right, p.Y);
+                        if (h >= 2) { Try(p.X, bottom); Try(right, bottom); }
+                    }
+                    else if (h >= 2) Try(p.X, bottom);
+
+                    void Try(int x, int y)
+                    {
+                        if (!Covers(exits, w, h, x, y)) return;
+                        int key = x * 0x10000 + y;
+                        if (!spots.TryGetValue(key, out var spot)) spots[key] = spot = (x, y, []);
+                        spot.Rooms.Add((r, o, w, h));
+                    }
+                }
+            }
+        if (spots.Count == 0) return null;
+        var (sx, sy, options) = spots.ElementAt((int)rng.Next((uint)spots.Count)).Value;
+        var (room, orientation, rw, rh) = options[(int)rng.Next((uint)options.Count)];
+        var under = new SortedSet<int>();
+        for (int v = 0; v < rh; v++)
+            for (int u = 0; u < rw; u++)
+                if (map[sx + u, sy + v] != 0) under.Add(map[sx + u, sy + v]);
+        sbyte level = 0;
+        foreach (int k in under.Reverse())
+        {
+            level = map.RoomAt(k).Level;
+            map.Rooms.RemoveAt(k - 2);
+        }
+        map.Rebuild();
+        var q = map.Place(room, orientation, rw, rh, sx, sy, level, [], null, true, false, 8, 0, DungeonRoomSet.Rooms);
+        notes.Add($"dungeon special room over {under.Count} rooms: {q} o{orientation} l{level}");
+        return q;
+    }
+
+    /// <summary><c>0x1420fff20</c>: the turned room (w × h, its exits) at (x, y) inside the map over free cells and
+    /// whole placed rooms (no reserved cell; each with no room, or a room not special of no tag; all at one level). On
+    /// the rectangle's border each such room's exits, or a free cell's (none), must equal the room's (<c>0x142100350</c>),
+    /// except that a rooms.et exit of the room may face no door; and when the room has rooms.et exits, not all of them
+    /// may face none.</summary>
+    bool Covers(RoomExit[] exits, int w, int h, int x0, int y0)
+    {
+        int x1 = x0 + w, y1 = y0 + h;
+        if (x0 < 0 || y0 < 0 || x1 > map.Width || y1 > map.Height) return false;
+        int doors = exits.Count(e => string.Equals(e.Type, DungeonRoomSet.Rooms, StringComparison.OrdinalIgnoreCase)), open = 0, level = -1;
+        DungeonDoor[] free = [new(), new(), new(), new()];
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++)
+            {
+                int k = map[x, y];
+                if (k == 1) return false;
+                if (k == 0)
+                {
+                    if (!Edges(x, y, 1, 1, free)) return false;
+                    continue;
+                }
+                var p = map.RoomAt(k);
+                if (p.X < x0 || p.Y < y0 || p.X + p.Width > x1 || p.Y + p.Height > y1) return false;
+                if (p.X != x || p.Y != y) continue;
+                if (p.Room is { } pr && (pr.Special || pr.Tag.Length != 0)) return false;
+                if (level != -1 && p.Level != level) return false;
+                level = p.Level;
+                if (!Edges(x, y, p.Width, p.Height, p.Exits)) return false;
+            }
+        return doors == 0 || open != doors;
+
+        // The exits of a w × h piece at (x, y) on the rectangle's left, right, top and bottom sides against the room's.
+        bool Edges(int x, int y, int sw, int sh, DungeonDoor[] sub)
+        {
+            int n = exits.Length, ns = sub.Length;
+            if (x == x0)
+                for (int j = 0; j < sh; j++)
+                    if (!Fits(exits[n - (j + y - y0) - 1], sub[ns - j - 1])) return false;
+            if (x + sw == x1)
+                for (int j = 0; j < sh; j++)
+                    if (!Fits(exits[w + y - y0 + j], sub[sw + j])) return false;
+            if (y == y0)
+                for (int j = 0; j < sw; j++)
+                    if (!Fits(exits[x - x0 + j], sub[j])) return false;
+            if (y + sh == y1)
+                for (int j = 0; j < sw; j++)
+                    if (!Fits(exits[n - (x - x0 + j) - h - 1], sub[ns - sh - j - 1])) return false;
+            return true;
+        }
+
+        bool Fits(RoomExit a, DungeonDoor b)
+        {
+            if (string.Equals(a.Type, b.Type, StringComparison.OrdinalIgnoreCase) && a.Height == b.Height && a.Chirality == b.Chirality) return true;
+            open++;
+            return string.Equals(a.Type, DungeonRoomSet.Rooms, StringComparison.OrdinalIgnoreCase) && b.Type is null;
+        }
     }
 
     /// <summary><c>0x1420feff0</c>: every exit of the room equals the entry's, except that where the room's door type
