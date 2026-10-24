@@ -323,9 +323,20 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 - **Cast time.** The client reads **`virtual_base_spell_cast_time_ms`** (0x24b9) when it starts the cast; without it
   the cast was instant (`trace-skill-stats.js`). The Gateway sends GrantedEffects `CastTime` (750 ms) there and in
   `base_spell_cast_time_ms`, and `hundred_times_casts_per_second`. `mana_cost` (0x2e72) is what the client spends.
-- **Casting.** At the ground: C→S 0x25 with the gem skill's id; the server echoes 0x1ab from where the player stands (no
-  walk). On a monster: C→S 0x24; the server echoes 0x1ab aimed at it (no walk into range, unlike the default attack).
-  On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server echoes 0x1ab in place.
+- **Casting.** At the ground: C→S 0x25 with the gem skill's id. A **spell** stops where it stands and the server echoes
+  0x1ab from there (no walk). An **attack** (ActiveSkillType Attack: Holy Strike, Ground Slam …) follows bit 0 of the
+  message's flags, the client's **"Always Attack Without Moving"** setting (live 2026-10-25: 0x400 with it off, 0x401
+  with it on; the setting itself also arrives as C→S 0x16 command 8):
+  - bit 0 set: the player swings from where it stands; the server echoes 0x1ab there and pays at the swing.
+  - bit 0 clear: the client is **attack-moving** — it walks to the aimed point itself and sends no C→S 0x25 Move for
+    that walk. The server walks its estimate after it (`Walk.Order`) and answers 0x1ab from that estimate, like a
+    move's echo. A point with a living monster on it within the skill's hit radius is a swing (the client aims at the
+    cell, not at the object: Holy Strike on a monster sends 0x25, live 2026-10-25): the server walks into the
+    weapon's reach and only then pays and hits. An empty point never swings, so running costs no mana.
+  On a monster: C→S 0x24; an attack walks into the weapon's reach first (`Walk.Approach`, the swing is echoed on
+  arrival, unlike a spell) and a spell casts from where it stands. An attack with "Always Attack Without Moving" on
+  casts in place. On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server
+  echoes 0x1ab in place.
   An **instant** skill (stat `skill_is_instant`, below) is not sent this way: C→S **0x191** (8 bytes: u32 target
   object id, u16 skill id; `InstanceProtocol.ReadUseInstantSkill`) uses it without an action or a sequence, so the
   client keeps walking. The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
@@ -364,7 +375,12 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `mana_regeneration_rate_+%`. Changes go out as 0x1b1 with pool 1. The same two formulas (`PanelStats.LifePerMinute`
   and `ManaPerMinute`) are sent per minute as `total_life_recovery_per_minute_from_regeneration` and
   `total_mana_recovery_per_minute_from_regeneration`, the Defence tab's Life / Mana Regeneration per Second rows,
-  which the client divides by 60 — so the panel shows the regeneration the tick applies.
+  which the client divides by 60 — so the panel shows the regeneration the tick applies. An **attack** also waits for
+  the shared attack timer (`AttackTiming`): the client re-aims a held attack every 50 ms, so before 2026-10-25 every
+  use was a swing (Holy Strike: twelve a second, 6 mana each). Attack gem skills and the default attack share
+  `ClientState.NextAttackAt`, a use may arrive a quarter of an attack early, and a use that arrives sooner is ignored:
+  no cost, no swing, no 0x1b1. The client does not deduct the cost itself (a live trace of its Life pool showed the
+  mana change at the server's 0x1b1), so no "cost back" update is needed.
 - **Damage** (`SpellDamage.cs`). A spell's hit is, per damage type, its `spell_minimum/maximum_base_{type}_damage`
   × (1 + `damage_+%` + `spell_damage_+%` + `elemental_damage_+%` for fire / cold / lightning + `{type}_damage_+%` +
   `projectile_damage_+%` for `base_is_projectile` skills), from the player's stats (passives, item mods, auras) under
