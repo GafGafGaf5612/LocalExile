@@ -241,9 +241,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   = directional type and (node is the edge's A) xor edge chirality; `0x141ff2ee0`). The candidates
   (`0x141ff8ff0`) are the room set's per-tag (room, orientation) entries (weight ≠ 0) whose turned exits hold the
   wanted ones as a multiset keyed by (type, height, chirality) (`0x141ff8900`). None → the generator's extra room
-  pool (layout +0x38 = generator +0x40, filled per graph by `0x14204bfa0` / `0x141d8bba0`; entries with an id, −1 =
-  any, matched to layout +8; every orientation at weight 1; `0x141d8b750`; the Labyrinth's `secret` rooms; not
-  ported), else "No possible rooms found". Then `0x1421298e0` keeps those in the node's orientation (any for 8 and
+  pool (layout +0x38 = generator +0x40, its (room, id) list at +0x18; `0x141d8b750`: entries whose id is −1 or
+  layout +8 and whose room data +0x10 is the node's tag, whose unturned exits (+0x50) hold the wanted ones
+  (`0x141ff8900` over the node's slot count), each in all 8 orientations at weight 1, size swapped for odd ones; not
+  ported, and its writer was not found: no seed-1 capture reaches it now that the Labyrinth pass drops the `secret`
+  nodes), else "No possible rooms found". Then `0x1421298e0` keeps those in the node's orientation (any for 8 and
   9) that pass `0x1421065a0`: cells free or reserved at the anchor (`0x1420fe0e0`); unless the room is the map's
   size, its doors leading to a cell inside the map must number at least the node's edges; a door into a placed room
   (not a blank) whose facing exit has another type is a mismatch (doors of rooms.et = layout +0x20, or of an .et
@@ -357,7 +359,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    room's unturned cells, before the orientation (`RoomSlot.ShiftX` / `ShiftY`; also for tile-graph rooms and the
    fill's slots). Each tile is placed (`0x141ffb870`) and then set to the slot height (`0x141d82d00`): its vertices take
    that height plus the tile's own whatever their grounds (placing alone writes a vertex height only where a ground
-   has flag 1 or there was none). The same holds for the shared slots (`0x1420f5fb0`). With RoomOverlap, a slot whose key has an odd size and is centred on the room's outer row or column
+   has flag 1 or there was none). `0x141ffb870` first drops the mirror of a tile whose four key edges are none or
+   wildcards (.et +0x48 bit 7) and whose tile data +0x16f has bit 1 (`0x141d7cc50`: an object's type path contains
+   "Spawner"; bit 0 is the transition flag): orientation & 3 (the
+   Labyrinth's statue spawners; their o and o + 4 keys are equal, so the store's pick lands on either; `TileGrid.Place`,
+   `TerrainCache.Unmirrored`). The same holds for the shared slots (`0x1420f5fb0`). With RoomOverlap, a slot whose key has an odd size and is centred on the room's outer row or column
    (`0x1420f0a70`, not for `missiontile`) is shared: `0x1420eeec0` stores it by position (sorted by x · 65536 + y),
    with the sides the room covers (0x10 right, 8 left, 2 bottom, 4 top) and the side it lies on; a second room's slot
    is merged (`0x1420ee240`): corners both of whose sides it covers take its ground and height (`0x1420ee460`), sides
@@ -499,9 +505,25 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    edges, +0x44 exist, +0x48 height, +0x4c position, +0x8b / +0x8c x / y lock; edge +0x20 / +0x28 nodes, +8 points,
    +0x30 exist, +0x38 type.
 2. **Prepare** (`0x14203f890`): random offsets (`0x14203a600`, none in v19), a tag "a,b,c" keeps one alternative
-   (`0x14203a480`, `Next(count)`), labyrinth and league description passes (not ported: league= nodes throw; the
-   hideout nodes of `0x142035350` / `0x142034e60` are dropped without a discoverable hideout), tag
-   "league" → exist 0. **Vaal side areas** (`0x142032320`, `SideAreas`): nodes with a description "sidearea<N>" (the
+   (`0x14203a480`, `Next(count)`), the **Labyrinth pass** (below), league description passes (not ported: league=
+   nodes throw; the hideout nodes of `0x142035350` / `0x142034e60` are dropped without a discoverable hideout), tag
+   "league" → exist 0. **Labyrinth pass** (`0x142032760` from `0x14203c900`, `0x142033e30` from `0x14203f890`,
+   `LabyrinthPass`): only for a WorldAreas row with +0x171 (the 289 Labyrinth areas; +0x1bb marks the 24 boss areas;
+   without a row, a graph path under `Metadata/Terrain/Labyrinth/Areas/`). Every node tagged "secret" or "secret" +
+   one character (`0x14203a2e0`) is collected and gets exist 0. With a labyrinth node (instance +0x48, the server's
+   daily layout) its LabyrinthNodeOverrides apply and `0x142033660` hands the node's secrets to the "secret1" /
+   "secret2" nodes (not ported: the Gateway sends none). Without one: a boss area applies one LabyrinthNodeOverrides
+   row (Id at +0, node tag +8, override tags +0x10, weights +0x20 — empty in every row): "Boss1_Sec1" (tag
+   `boss_entrance1` → `boss_entrance1_1`), or for an id containing "_end" "FinalBossEasy" (difficulty 1: the id's
+   first digit, 'E' = 4) / "FinalBoss" (`0x1420339a0` → `0x142033ad0`: a node with the row's tag takes the only
+   override, none empties the tag; with several, `0x1424e5ee0` picks with a small RNG seeded from (difficulty + 4 ×
+   the node's index in the labyrinth layout `0x1424e5ca0` builds) × 0x13d, no level draw; not ported, FinalBoss has
+   4). Any other area whose id contains "_quad_door" or "_branch_door" gets the gold door: the collected nodes are
+   shuffled when all are plain "secret" (`Next(count − i)` per place, swap with the front) or else stably sorted by
+   tag (`0x1420393f0`); the first takes LabyrinthSecrets "GoldDoor" +8 (`gold_door`) as its tag, exist 100 and a
+   "secret1" description (+0x6d, an "entrance<N>" description, is clear in that row); none collected: "Not enough
+   secret nodes in …" is logged. The nodes still collected then lose their descriptions too; the exist rolls remove
+   them, or blank one with two or more edges (§ exist rolls). **Vaal side areas** (`0x142032320`, `SideAreas`): nodes with a description "sidearea<N>" (the
    first such; N from '1', none = 1) are side area entrances, grouped by N (The Coast: `sidevalley` "sidearea3",
    `cave1` "sidearea2" / "sidearea1", each also "unique1"). When the area rolled its Vaal side area (generator +0xa,
    §3b) one survives: `Next(groups)`, `Next(group size)` (unused), the group shuffled (`0x141f4fb80`), its first node

@@ -202,7 +202,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
     readonly Dictionary<string, bool> _transitionTiles = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _transitionTypes = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Tile data +0x16f bit 1 (<c>0x141d7cc50</c>, run on both object files as they load): one of the tile's
+    /// <summary>Tile data +0x16f bit 0 (<c>0x141d7cc50</c>, run on both object files as they load): one of the tile's
     /// objects (<see cref="TileObjects"/> or <see cref="SecondObjects"/>) is of a type with an AreaTransition component
     /// or the "waypoint" interaction (<c>0x141ebedf0</c>).</summary>
     public bool HasTransition(TileDef tile)
@@ -210,6 +210,13 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         if (_transitionTiles.TryGetValue(tile.Path, out bool known)) return known;
         return _transitionTiles[tile.Path] = TileObjects(tile).Concat(SecondObjects(tile)).Any(o => IsTransitionType(o.Type));
     }
+
+    /// <summary><c>0x141ffb870</c>: a tile with tile data +0x16f bit 1 (<c>0x141d7cc50</c>: one of its objects' type path
+    /// contains "Spawner") and no key edge other than none or a wildcard (.et +0x48 bit 7) is placed at its orientation
+    /// &amp; 3, its mirror dropped (the Labyrinth's statue spawners).</summary>
+    public bool Unmirrored(TileDef tile) =>
+        tile.Key.Edges.All(e => e is null || Edge(e)?.Wildcard == true) &&
+        TileObjects(tile).Concat(SecondObjects(tile)).Any(o => o.Type.Contains("Spawner", StringComparison.Ordinal));
 
     readonly Dictionary<string, IReadOnlyList<TileObject>?> _objectFiles = new(StringComparer.OrdinalIgnoreCase);
 

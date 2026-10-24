@@ -12,6 +12,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// <summary>The discoverable hideout rolled (generator +0xb).</summary>
     public bool Hideout { get; init; }
 
+    /// <summary>The Labyrinth's graph pass, for a Labyrinth area.</summary>
+    public LabyrinthPass? Labyrinth { get; init; }
+
     TileGrid? _grid;
     int _ox, _oy;
 
@@ -97,7 +100,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     {
         Graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         if (orientation != 0) throw new NotSupportedException($"turning a tile graph (orientation {orientation}) is not ported");
-        Prepare(Graph, rng, vaalSideArea, Hideout, primary);
+        Prepare(Graph, rng, vaalSideArea, Hideout, primary, Labyrinth);
         notes.Add($"graph {graphPath}: {Graph.Nodes.Count} nodes, {Graph.Edges.Count} edges after exist rolls");
         var cells = new VoronoiCells(Graph);
         cells.Jitter(rng);
@@ -109,7 +112,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         {
             // The tile map has the graph's size plus the outer buffer on every side; graph positions sit at the buffer.
             int buffer = int.Parse(master.GetValueOrDefault("OuterBufferSize", "0"));
-            grid = new TileGrid(Graph.Width + 2 * buffer, Graph.Height + 2 * buffer) { GroundFlags = g => files.Ground(g)?.Flags ?? 0 };
+            grid = new TileGrid(Graph.Width + 2 * buffer, Graph.Height + 2 * buffer) { GroundFlags = g => files.Ground(g)?.Flags ?? 0, Unmirrored = files.Unmirrored };
             (_ox, _oy) = (buffer, buffer);
         }
         else
@@ -215,7 +218,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
 
     /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws), for
     /// the subgraph record <paramref name="primary"/> says is the first (the passes that take the record index).</summary>
-    internal static void Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea, bool hideout, bool primary)
+    internal static void Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea, bool hideout, bool primary, LabyrinthPass? labyrinth = null)
     {
         foreach (var n in graph.Nodes)
         {
@@ -237,6 +240,8 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             if (parts.Length > 1) n.Tag = parts[(int)rng.Next((uint)parts.Length)];
         }
         SideAreas(graph, rng, vaalSideArea);
+        // 0x142032760 / 0x142033e30: the Labyrinth's pass (secret nodes, the gold door, boss overrides).
+        labyrinth?.Run(graph, rng);
         // 0x142035350 / 0x142034e60, for the first record only: a node with "subarea=hideout…" or
         // "subareatype=Hideout…" is dropped (exist 0, no descriptions) when no discoverable hideout rolled; with one,
         // that description names the hideout's claim subarea instead (Hideouts.dat; no draw or tile reads it, left as

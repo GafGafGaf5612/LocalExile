@@ -218,8 +218,11 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   `2_10_6`, `2_9_10_2` since the dungeon seams' edge-point fallback, MapWorldsGorge and MapWorldsToxicSewer since the
   `.tgr` subgraphs and mission rooms, `1_4_2`, `1_4_6_*`, `2_7_8`, `2_8_10` and `2_9_10_1` since the shrine rooms,
   the sub-area records (a rolled discoverable hideout's claim area beside the map: `2_8_5` matches every draw up to
-  its stop), the shuffle and unique node groups and the template nodes (`1_3_18_1` likewise): 61 of the 197 seed-1
-  traces; the oracle matches 104 of 710 logged seeds), the
+  its stop), the shuffle and unique node groups and the template nodes (`1_3_18_1` likewise), and since the Labyrinth
+  pass (secret nodes dropped, gold door, boss overrides; `LabyrinthPass.cs`) and the unmirrored spawner tiles 27 of the
+  41 Labyrinth traces plus `1_2_1`, `1_3_6`, `2_6_10`, `2_6_14`, `2_7_1` and others: 91 of the 197 seed-1 traces;
+  the oracle matches 143 of 710 logged seeds; the Labyrinth's final-boss areas of difficulty 2+ (FinalBoss pick
+  `0x1424e5ee0`) and the EndGame non-boss rooms are open), the
   one-node `.dgr` path (hideouts) lacks the outer buffer, and the Gateway does not use the port yet. The walkability
   and projectile grids are built from the generated tiles and doodads (re/011 §6b / §6c, `Walkability.cs`,
   `DoodadStage.cs`, `DoodadHull.cs`, `levelgen walk`): the doodad stage places room doodads, the .ddt's random and

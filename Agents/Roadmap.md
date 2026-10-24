@@ -72,8 +72,10 @@ Items are in rough priority order within each section. "Known" says what is alre
   (`Game_SEED`, e.g. `2_10_7` seed 3117172586): the 48 shrine seeds generate but most run to another hash. Then the
   `.dgr` oracle stops (re/011 §8): 350 seeds that run to the end with another hash (many of them Gorge seeds, which
   need traces), door tiles without RoomOverlap (29), numbered special rooms (35), DungeonFillRoomHeightOverride (17),
-  node kinds (73: the extra room pool `0x141d8b750` for the Labyrinth's `secret` and `labyrinth_final_boss` rooms,
-  which the server's Labyrinth layout decides), sub-areas beside a `.tgr` primary (the Act 9 `oasis_foothills`),
+  the Labyrinth: the FinalBoss override pick (`0x1424e5ee0` with the layout `0x1424e5ca0` builds; `2_`/`3_`/`EndGame_`
+  `boss_*_end`), the EndGame non-boss areas (size weights 240 below the port's at `0x142107272`), the bottleneck
+  areas' door counts (`0x142001ee5`, hash already matches); a labyrinth node from the server (overrides, secrets
+  `0x142033660`, the extra room pool `0x141d8b750`) only if the Gateway ever sends one; sub-areas beside a `.tgr` primary (the Act 9 `oasis_foothills`),
   lettered unique groups, template nodes without edges, the outer buffer of an inner subgraph (`1_2_14_2`),
   `1_1_7_2` seed 287067221 (a mismatch: needs a trace); then the parts no trace has exercised yet (`0x142108dc0`, numbered special rooms,
   door tiles without RoomOverlap), each checked with a trace of a dungeon

@@ -37,6 +37,9 @@ public sealed class TileGrid(int width, int height)
     /// <summary>The ground flags (.gt line 2 numbers as bits) by ground path; null for the null ground.</summary>
     public Func<string?, int> GroundFlags = _ => 0;
 
+    /// <summary><c>0x141ffb870</c>'s test: the tile keeps only its turn, not its mirror (<see cref="TerrainCache.Unmirrored"/>).</summary>
+    public Func<TileDef, bool> Unmirrored = _ => false;
+
     public bool Inside(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
 
     public TileEntry? this[int x, int y] => Inside(x, y) ? _entries[y * Width + x] : null;
@@ -55,6 +58,8 @@ public sealed class TileGrid(int width, int height)
     public void Place(TileDef tile, int orientation, int x, int y, short heightOffset, bool force = false)
     {
         HasHeights |= heightOffset != 0;
+        // 0x141ffb870, before the map's place (0x141d833e0): such a tile goes in at its orientation & 3.
+        if (Unmirrored(tile)) orientation &= 3;
         for (int v = 0; v < tile.Height; v++)
             for (int u = 0; u < tile.Width; u++)
             {
