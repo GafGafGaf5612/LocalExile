@@ -110,6 +110,35 @@ public class PanelStatsTests
     }
 
     [Fact]
+    public void Damage_immunities_come_from_their_base_forms()
+    {
+        var none = PanelStats.Compute(_ => 0).ToDictionary(s => s.Stat, s => s.Value);
+        Assert.DoesNotContain("fire_damage_immunity", none.Keys);
+        var given = new Dictionary<string, int>
+        {
+            ["base_fire_immunity"] = 1,
+            ["elemental_damage_immunity"] = 1,
+            ["chaos_immunity"] = 1,
+            ["physical_immunity"] = 1,
+        };
+        var panel = PanelStats.Compute(n => given.GetValueOrDefault(n)).ToDictionary(s => s.Stat, s => s.Value);
+        Assert.Equal(1, panel["fire_damage_immunity"]);
+        Assert.Equal(1, panel["cold_damage_immunity"]);
+        Assert.Equal(1, panel["lightning_damage_immunity"]);
+        Assert.Equal(1, panel["chaos_damage_immunity"]);
+        Assert.Equal(1, panel["physical_immunity"]);
+    }
+
+    [Fact]
+    public void Damage_immunity_stats_exist_in_Stats_dat()
+    {
+        foreach (var name in new[] { "fire_damage_immunity", "cold_damage_immunity", "lightning_damage_immunity",
+            "chaos_damage_immunity", "physical_immunity", "base_fire_immunity", "base_cold_immunity",
+            "base_lightning_immunity", "elemental_damage_immunity", "chaos_immunity" })
+            Assert.NotNull(Stats.Value.Key(name));
+    }
+
+    [Fact]
     public void Pool_rows_add_their_stat_and_cap()
     {
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 1) with

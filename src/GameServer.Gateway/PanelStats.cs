@@ -72,6 +72,14 @@ static class PanelStats
         new("reduce_enemy_fire_resistance_%", ["base_reduce_enemy_fire_resistance_%", ElementalPenetration, PenetrateElemental]),
         new("reduce_enemy_cold_resistance_%", ["base_reduce_enemy_cold_resistance_%", ElementalPenetration, PenetrateElemental]),
         new("reduce_enemy_lightning_resistance_%", ["base_reduce_enemy_lightning_resistance_%", ElementalPenetration, PenetrateElemental]),
+        // Damage immunities (the Defence tab's "Immune to X" rows). A source sets the base form; the elemental
+        // immunity covers fire, cold and lightning, and chaos keeps its own older name (chaos_immunity). The display
+        // stat itself counts too (Compute adds get(display)), so a mod that sets fire_damage_immunity directly works.
+        new("fire_damage_immunity", ["base_fire_immunity", "elemental_damage_immunity"], Flag: true),
+        new("cold_damage_immunity", ["base_cold_immunity", "elemental_damage_immunity"], Flag: true),
+        new("lightning_damage_immunity", ["base_lightning_immunity", "elemental_damage_immunity"], Flag: true),
+        new("chaos_damage_immunity", ["chaos_immunity"], Flag: true),
+        new("physical_immunity", [], Flag: true),
         // Main hand and off hand: the global stats and that weapon's own
         .. Hands(h => new($"{h}_chance_to_blind_on_hit_%", ["global_chance_to_blind_on_hit_%", "attacks_chance_to_blind_on_hit_%"],
             Local: ["local_chance_to_blind_on_hit_%"])),
