@@ -1107,7 +1107,11 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   topology pick the client calls `FUN_142031d10` (from `0x14203c900`, the `.dgr` path) with `Next(1)`, `Next(4)`
   and a shuffle of 4 (`0x141f4fbe3`) before the node exist rolls (`0x14203a8e0`), which the port draws at once;
   they are seeds whose topology is not seed 1's (`1_5_7_v2.dgr`, …). 9 first differ at `0x14211532d`
-  (`FUN_142115140`), 4 at `0x1420f24d2` (`FUN_1420f2340`).
+  (`FUN_142115140`), 4 at `0x1420f24d2` (`FUN_1420f2340`). The second tour (2026-10-24, 260 more seeds): **523 of
+  782 match** (216 of 260). First differences of the rest: `0x142031e88` 12 more (31 in all), `0x1420f24d2` 5 (9),
+  `0x14211532d` 4 (13, and 4 seed-1 traces), breaches 7 (21); and `0x14210fa5f` 6: the port stops with "Mismatching
+  ground types" where the client draws on (`1_2_1`, `2_6_8`, `2_6_14`, `2_9_2`, MapAtlasTropicalIsland; the same
+  caller as the seed-1 traces `1_1_5`, `1_4_4_3`, `2_6_11`, `2_6_6`), a port bug.
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds
@@ -1173,6 +1177,12 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   ground types), `2_7_9` 596252631 and 959702815 ("Non-feature node overlapping another node at room (10, 0)", both
   at room (10, 0) on two topologies, `dread_thicket_01` / `_02.dgr`; the third `2_7_9` seed generated), `2_8_12_2`
   2082813800 (overlap tile), `2_9_6` 1024190913 (special node "sidearea": no room or tile matches its TileEdgeKey).
+  The second tour found 7 more: `1_2_8` 818924722 (loop edge), `1_3_1` 276978459 (edge CityLargeBuildings), `1_4_7`
+  1992704892 and `2_6_15` 2012178496 and `2_9_5` 1491325087 (mismatching ground types), `2_7_9` 1375304313 (the same
+  room (10, 0) again: 3 of 5 `2_7_9` seeds), `2_9_5` 1781059559 ("sidearea" node). The port fails the same way on 5
+  of the first tour's 10 (`1_4_7`, `2_6_14`, `2_9_6`, MapAtlasHarbingerLow, `1_3_1`), stops at an unported part on
+  `1_2_8`, and generates a level for `1_3_8_1`, `2_8_12_2` and both `2_7_9` seeds, which the client cannot: before
+  the server can reroll failing seeds, the port has to fail where the client fails.
   After such a failure the client shows the exception and hangs (not responding); `live.ps1` restarts it and the tour
   resumes (§8 capture tour).
 
