@@ -56,7 +56,7 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done so far:** RNG, tile hash, extra-terrain-feature rolls (no area stats), topology pick, one-room fixed
   layouts: Lioneye's Watch matches tile for tile (re/011 §3b–3c); `.tgr` graphs to the finished grid (re/011 §3d–3g):
   The Twilight Strand seed 1 and The Coast seed 1 match tile for tile (hashes 266153788, 695393902) and every draw
-  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 104 of 710 logged seeds.
+  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 105 of the 262 seeds the 3.29.3 client logged (re/011 §8: older versions' loads are no oracle).
   Multi-node `.dgr` dungeons (`DungeonLayout.cs`, `DungeonTiler`, re/011 §3c2): The Ship Graveyard Cave seed 1
   (hash 3341726258) and the Prison `1_1_7_1` seed 1 (1542354689, two more seeds by the oracle) match tile for tile;
   composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863); The Slave Pens `1_5_1`

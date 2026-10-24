@@ -57,16 +57,34 @@ static class Shared
             .Where(d => d[0].GetString() is "n" or "u" or "l" && d[1].GetString() != "0x142063b9c")
             .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
 
-    /// <summary>The (area, seed) → (level, tile hash) pairs the client logged (Client/logs/Client.txt).</summary>
-    public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes()
+    /// <summary>The (area, seed) → (level, tile hash) pairs the client logged (Client/logs/Client.txt), only from the
+    /// sessions of the local client's version: each client start logs its patch root ("Web root:
+    /// https://patch.poecdn.com/3.29.3.3/"), and the log's last session is the local client. Older versions' hashes are
+    /// no oracle: the log holds 3.27 (February) and 3.28 (April) sessions of the official game, and every (area, seed,
+    /// level) logged by both 3.27 and 3.29 has another hash (game data changed between patches; 3.29 cannot even
+    /// generate 1_3_8_1 seed 2339687786, which 3.27 did).</summary>
+    public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes() => LoggedHashes(out _, out _);
+
+    public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes(out string? version, out int otherVersions)
     {
+        // The running client keeps its log open for writing.
+        string path = Path.Combine(Root(), "Client", "logs", "Client.txt");
+        StreamReader Open() => new(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+        var webRoot = new System.Text.RegularExpressions.Regex(@"\] Web root: \S*/([0-9][0-9.]*[0-9])/?\s*$");
+        version = null;
+        using (var scan = Open())
+            for (string? line; (line = scan.ReadLine()) is not null;)
+                if (webRoot.Match(line) is { Success: true } v) version = v.Groups[1].Value;
         var pairs = new SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)>();
         (string, uint, int)? cur = null;
-        // The running client keeps its log open for writing.
-        using var log = new StreamReader(new FileStream(Path.Combine(Root(), "Client", "logs", "Client.txt"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+        string? session = null;
+        otherVersions = 0;
+        using var log = Open();
         for (string? line; (line = log.ReadLine()) is not null;)
         {
+            if (webRoot.Match(line) is { Success: true } w) { session = w.Groups[1].Value; continue; }
             var m = System.Text.RegularExpressions.Regex.Match(line, @"Generating level (\d+) area ""([^""]+)"" with seed (\d+)");
+            if (m.Success && session != version) { otherVersions++; cur = null; continue; }
             if (m.Success) { cur = (m.Groups[2].Value, uint.Parse(m.Groups[3].Value), int.Parse(m.Groups[1].Value)); continue; }
             m = System.Text.RegularExpressions.Regex.Match(line, @"Tile hash: (\d+)");
             if (m.Success && cur is { } c) { pairs[(c.Item1, c.Item2)] = (c.Item3, uint.Parse(m.Groups[1].Value)); cur = null; }

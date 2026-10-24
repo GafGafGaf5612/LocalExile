@@ -221,7 +221,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   its stop), the shuffle and unique node groups and the template nodes (`1_3_18_1` likewise), and since the Labyrinth
   pass (secret nodes dropped, gold door, boss overrides; `LabyrinthPass.cs`) and the unmirrored spawner tiles 27 of the
   41 Labyrinth traces plus `1_2_1`, `1_3_6`, `2_6_10`, `2_6_14`, `2_7_1` and others: 91 of the 197 seed-1 traces;
-  the oracle matches 143 of 710 logged seeds; the Labyrinth's final-boss areas of difficulty 2+ (FinalBoss pick
+  the oracle matches 105 of the 262 seeds the 3.29.3 client logged (older versions' loads no longer count, re/011 §8);
+  the Labyrinth's final-boss areas of difficulty 2+ (FinalBoss pick
   `0x1424e5ee0`) and the EndGame non-boss rooms are open), the
   one-node `.dgr` path (hideouts) lacks the outer buffer, and the Gateway does not use the port yet. The walkability
   and projectile grids are built from the generated tiles and doodads (re/011 §6b / §6c, `Walkability.cs`,

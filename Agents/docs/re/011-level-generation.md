@@ -1067,7 +1067,15 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
-  (`Client/logs/Client.txt`, 558 pairs) and reports match / mismatch / where the port stops, with a summary.
+  (`Client/logs/Client.txt`) and reports match / mismatch / where the port stops, with a summary. **Only loads of the
+  local client's version count** (since 2026-10-24): each client start logs its patch root (`Web root:
+  https://patch.poecdn.com/3.29.3.3/`), and the log also holds the official game's 3.27.0.8.2 (February) and 3.28.0.8
+  (April) sessions. Their hashes are no oracle for 3.29.3b: all 46 (area, seed, level) triples logged by both 3.27
+  and 3.29 have different hashes (game data changed between patches), and 3.29 cannot generate `1_3_8_1` seed
+  2339687786 at level 27 at all ("Could not find matching overlap tile at (41, 35)", in the client), which 3.27 did.
+  The counts below before 2026-10-24 mix versions (448 of the 710 loads were 3.27 / 3.28). 2026-10-24, 3.29.3.3 loads
+  only: **105 of 262 match**; 9 seeds the port had "missed" match the 3.29 hashes the capture tour logged (`1_1_3`
+  seed 4012328457, `1_1_4_0` 944417618, `1_1_7_2` 287067221, `1_2_1` 1534834767, `1_2_10` 1723802332, …).
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds

@@ -174,8 +174,11 @@ static int Dispatch(string[] args)
                 // tourlist [out file] [--random N]: a list for the Gateway's /tour (live.ps1 -Walkmaps): every logged
                 // (area, seed) the last gate run did not match and that has no trace yet, then with --random N seeds
                 // for each area whose seed-1 trace matches (to check them at other seeds). Default out: data/tour.txt.
-                TourList(args.Skip(1).FirstOrDefault(a => !a.StartsWith("--")) ?? Path.Combine(Root(), "data", "tour.txt"),
-                    args.SkipWhile(a => a != "--random").Skip(1).Select(int.Parse).FirstOrDefault());
+            {
+                int at = Array.IndexOf(args, "--random");
+                var rest = args.Skip(1).Where((_, i) => i + 1 != at && i + 1 != at + 1).ToList();
+                TourList(rest.FirstOrDefault() ?? Path.Combine(Root(), "data", "tour.txt"), at > 0 ? int.Parse(args[at + 1]) : 0);
+            }
                 break;
             case "oracle":
                 // oracle [area regex]: every (area, seed) the client logged with its tile hash (Client/logs/Client.txt), run by
@@ -247,7 +250,8 @@ static void Hash(string path)
 
 static void Oracle(string filter)
 {
-    var pairs = LoggedHashes();
+    var pairs = LoggedHashes(out var version, out int otherVersions);
+    Console.WriteLine($"client {version}: {pairs.Count} logged (area, seed) pairs ({otherVersions} loads by other versions left out)");
     var fs = OpenGame();
     var files = Files();
     int match = 0, total = 0;
