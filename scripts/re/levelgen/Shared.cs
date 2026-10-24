@@ -57,39 +57,49 @@ static class Shared
             .Where(d => d[0].GetString() is "n" or "u" or "l" && d[1].GetString() != "0x142063b9c")
             .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
 
-    /// <summary>The (area, seed) → (level, tile hash) pairs the client logged (Client/logs/Client.txt), only from the
-    /// sessions of the local client's version: each client start logs its patch root ("Web root:
-    /// https://patch.poecdn.com/3.29.3.3/"), and the log's last session is the local client. Older versions' hashes are
-    /// no oracle: the log holds 3.27 (February) and 3.28 (April) sessions of the official game, and 46 of the 78 (area,
-    /// seed, level) logged by both 3.27 and 3.29 have another hash (per seed, not per area; 3.29 cannot even generate
-    /// 1_3_8_1 seed 2339687786, which 3.27 did).</summary>
+    /// <summary>The local client's version. Its sessions log the patch root as https://patch.poecdn.com/3.29.3.3/
+    /// or, started by live.ps1, our patch server's http://127.0.0.1:8080/ (no version in it).</summary>
+    public const string LocalVersion = "3.29.3.3";
+
+    /// <summary>The (area, seed) → (level, tile hash) pairs the client logged, only from the local client's sessions:
+    /// Client/logs/Client-*-archive.txt (older log parts kept aside, in log order) and then Client/logs/Client.txt. Each
+    /// client start logs its patch root ("Web root: …"). Other versions' hashes are no oracle: the log held 3.27
+    /// (February) and 3.28 (April) sessions of the official game, and 46 of the 78 (area, seed, level) logged by both
+    /// 3.27 and 3.29 have another hash (per seed, not per area; 3.29 cannot even generate 1_3_8_1 seed 2339687786, which
+    /// 3.27 did).</summary>
     public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes() => LoggedHashes(out _, out _);
 
     public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes(out string? version, out int otherVersions, string? only = null)
     {
-        // The running client keeps its log open for writing.
-        string path = Path.Combine(Root(), "Client", "logs", "Client.txt");
-        StreamReader Open() => new(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-        var webRoot = new System.Text.RegularExpressions.Regex(@"\] Web root: \S*/([0-9][0-9.]*[0-9])/?\s*$");
-        version = null;
-        using (var scan = Open())
-            for (string? line; (line = scan.ReadLine()) is not null;)
-                if (webRoot.Match(line) is { Success: true } v) version = v.Groups[1].Value;
+        string logs = Path.Combine(Root(), "Client", "logs");
+        var paths = Directory.GetFiles(logs, "Client-*-archive.txt").Order().Append(Path.Combine(logs, "Client.txt"));
+        var webRoot = new System.Text.RegularExpressions.Regex(@"\] Web root: (\S*)\s*$");
+        var versioned = new System.Text.RegularExpressions.Regex(@"/([0-9][0-9.]*[0-9])/?$");
         // Another version's loads only to compare (the oracle's LEVELGEN_ORACLE_VERSION), never as an answer.
-        if (only is not null) version = only;
+        version = only ?? LocalVersion;
         var pairs = new SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)>();
-        (string, uint, int)? cur = null;
-        string? session = null;
         otherVersions = 0;
-        using var log = Open();
-        for (string? line; (line = log.ReadLine()) is not null;)
+        foreach (string path in paths.Where(File.Exists))
         {
-            if (webRoot.Match(line) is { Success: true } w) { session = w.Groups[1].Value; continue; }
-            var m = System.Text.RegularExpressions.Regex.Match(line, @"Generating level (\d+) area ""([^""]+)"" with seed (\d+)");
-            if (m.Success && session != version) { otherVersions++; cur = null; continue; }
-            if (m.Success) { cur = (m.Groups[2].Value, uint.Parse(m.Groups[3].Value), int.Parse(m.Groups[1].Value)); continue; }
-            m = System.Text.RegularExpressions.Regex.Match(line, @"Tile hash: (\d+)");
-            if (m.Success && cur is { } c) { pairs[(c.Item1, c.Item2)] = (c.Item3, uint.Parse(m.Groups[1].Value)); cur = null; }
+            (string, uint, int)? cur = null;
+            string? session = null;
+            // The running client keeps its log open for writing.
+            using var log = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            for (string? line; (line = log.ReadLine()) is not null;)
+            {
+                if (webRoot.Match(line) is { Success: true } w)
+                {
+                    string url = w.Groups[1].Value;
+                    session = versioned.Match(url) is { Success: true } v ? v.Groups[1].Value
+                        : url.Contains("127.0.0.1") || url.Contains("localhost") ? LocalVersion : null;
+                    continue;
+                }
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"Generating level (\d+) area ""([^""]+)"" with seed (\d+)");
+                if (m.Success && session != version) { otherVersions++; cur = null; continue; }
+                if (m.Success) { cur = (m.Groups[2].Value, uint.Parse(m.Groups[3].Value), int.Parse(m.Groups[1].Value)); continue; }
+                m = System.Text.RegularExpressions.Regex.Match(line, @"Tile hash: (\d+)");
+                if (m.Success && cur is { } c) { pairs[(c.Item1, c.Item2)] = (c.Item3, uint.Parse(m.Groups[1].Value)); cur = null; }
+            }
         }
         return pairs;
     }

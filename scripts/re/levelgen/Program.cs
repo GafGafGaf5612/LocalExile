@@ -207,9 +207,16 @@ static void TourList(string outFile, int randomSeeds)
     var failed = File.Exists(failures)
         ? File.ReadLines(failures).Select(l => l.Split(' ')).Where(f => f.Length > 2).Select(f => $"{f[1]} {f[2].TrimEnd(':')}").ToHashSet()
         : [];
+    // Towns always get seed 1 (InstanceRegistry), so a tour stop at another seed never arrives.
+    string worldAreas = Path.Combine(root, "data", "tables", "WorldAreas.json");
+    var towns = File.Exists(worldAreas)
+        ? JsonDocument.Parse(File.ReadAllBytes(worldAreas)).RootElement.EnumerateArray()
+            .Where(r => r.GetProperty("IsTown").GetBoolean()).Select(r => r.GetProperty("Id").GetString()!).ToHashSet()
+        : ["1_1_town"];
     foreach (var check in doc.RootElement.EnumerateObject())
     {
         var key = check.Name.Split(' ');
+        if (towns.Contains(key[1])) continue;
         if (key[0] != "oracle" || check.Value.GetProperty("Hash").GetString() == "match") continue;
         if (File.Exists(Path.Combine(root, "data", "walkability", $"{key[1]}_seed{key[2]}.gen.json"))) continue;
         if (failed.Contains($"{key[1]} {key[2]}")) continue;
@@ -222,6 +229,7 @@ static void TourList(string outFile, int randomSeeds)
         foreach (var check in doc.RootElement.EnumerateObject())
         {
             var key = check.Name.Split(' ');
+            if (towns.Contains(key[1])) continue;
             if (key[0] != "capture" || check.Value.GetProperty("Hash").GetString() != "match") continue;
             for (int i = 0; i < randomSeeds; i++) { lines.Add($"{key[1]} {Random.Shared.Next(2, int.MaxValue)}"); random++; }
         }

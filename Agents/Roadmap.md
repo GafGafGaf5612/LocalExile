@@ -51,12 +51,12 @@ Items are in rough priority order within each section. "Known" says what is alre
   stages, the RNG (`LevelRandom`, matches the live client), the topology pick, the file parsers, and the tile hash
   (`TileHash`, matches four live areas). `live.ps1 -Walkmaps` writes a generation trace per load
   (`<area>_seed<seed>.gen.json`: every draw with its caller, the tile grid); `scripts/re/levelgen hash` checks a grid.
-  The client log has 262 (area, seed) → tile hash pairs of the 3.29 client (the rest are 3.27 / 3.28, no answer: re/011 §8). The atlas (08 §6) already resolves transitions per
+  The client log has 522 (area, seed) → tile hash pairs of the 3.29 client (the rest are 3.27 / 3.28, no answer: re/011 §8). The atlas (08 §6) already resolves transitions per
   topology; it needs the generated layout to place them.
 - **Done so far:** RNG, tile hash, extra-terrain-feature rolls (no area stats), topology pick, one-room fixed
   layouts: Lioneye's Watch matches tile for tile (re/011 §3b–3c); `.tgr` graphs to the finished grid (re/011 §3d–3g):
   The Twilight Strand seed 1 and The Coast seed 1 match tile for tile (hashes 266153788, 695393902) and every draw
-  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 105 of the 262 seeds the 3.29.3 client logged (re/011 §8: older versions' loads are no oracle).
+  up to the doodads, as does The Northern Forest seed 1 (2500166236); the oracle matches 307 of the 522 seeds the 3.29.3 client logged (re/011 §8: older versions' loads are no oracle).
   Multi-node `.dgr` dungeons (`DungeonLayout.cs`, `DungeonTiler`, re/011 §3c2): The Ship Graveyard Cave seed 1
   (hash 3341726258) and the Prison `1_1_7_1` seed 1 (1542354689; two more seeds match 3.27 hashes only) match tile for tile;
   composite maps (re/011 §3c3): the Prison's second level `1_1_7_2` seed 1 (1294234863); The Slave Pens `1_5_1`
@@ -68,7 +68,9 @@ Items are in rough priority order within each section. "Known" says what is alre
   (The Reliquary `1_5_7`, The Ossuary `1_5_5`, `1_5_2`, The Mud Flats `1_1_3` and more, re/011 §3c2).
 - **Start:** the seed-1 traces of 186 areas are recorded (`data/walkability/<area>_seed1.gen.json`): run `levelgen
   generate <area> 1 <trace>` and take the first difference. Known next: `1_1_9` #96 (`0x1421207cd`), `1_2_1`
-  #5874, `1_2_7` #11347; `2_8_5` and `1_3_18_*` match every draw up to their stops. A trace of a 3.29 shrine seed
+  #5874, `1_2_7` #11347; `2_8_5` and `1_3_18_*` match every draw up to their stops. From the capture tour (re/011 §8):
+  the client's `FUN_142031d10` step after the topology pick (`Next(1)`, `Next(4)`, a shuffle of 4; 19 tour seeds on
+  topologies other than seed 1's), breaches (14 tour seeds), `0x14211532d` (9). A trace of a 3.29 shrine seed
   (`Game_SEED`; the 48 shrine seeds and the Gorge seeds the oracle had were 3.27 loads, no answer). Then the
   stops on 3.29 data (`gate.ps1 -NoTests`, re/011 §8; traces / oracle loads): numbered special rooms (11 / 28),
   DungeonFillRoomHeightOverride (6 / 8), door tiles without RoomOverlap (6 / 6), "no tile for slot" in a room (6 / 12),

@@ -1069,9 +1069,12 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level
   (world +0xd4).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
-  (`Client/logs/Client.txt`) and reports match / mismatch / where the port stops, with a summary. **Only loads of the
-  local client's version count** (since 2026-10-24): each client start logs its patch root (`Web root:
-  https://patch.poecdn.com/3.29.3.3/`), and the log also holds the official game's 3.27.0.8.2 (February) and 3.28.0.8
+  (`Client/logs/Client-*-archive.txt`, older log parts kept aside, then `Client/logs/Client.txt`) and reports match /
+  mismatch / where the port stops, with a summary. **Only loads of the local client's version count** (since
+  2026-10-24; `Shared.LocalVersion`): each client start logs its patch root (`Web root:
+  https://patch.poecdn.com/3.29.3.3/`, or `http://127.0.0.1:8080/`, our patch server, when `live.ps1` starts it;
+  both are the local client). `Client-3.29-archive.txt` holds the 3.29 loads (262 pairs) rebuilt from the log
+  before it was cut to its last session on 2026-10-24. The log also held the official game's 3.27.0.8.2 (February) and 3.28.0.8
   (April) sessions. Their hashes are no oracle for 3.29.3b: of the 78 (area, seed, level) triples logged by both 3.27
   and 3.29 (the capture tour replayed 3.27 seeds), 46 have different hashes and 32 the same (the towns, two hideouts
   and 17 ordinary seeds), mixed within one area (`1_2_6_2`: two seeds the same, one not), so the change is per seed,
@@ -1090,7 +1093,14 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   `1_2_1` 1534834767, `1_2_10` 1723802332, …). Stops on 3.29 (traces / oracle loads): numbered special rooms 11 / 28,
   DungeonFillRoomHeightOverride 6 / 8, door tiles without RoomOverlap 6 / 6, "no tile for slot" in a room 6 / 12,
   outer buffer of an inner subgraph 5 / 7, "Mismatching ground types" 5 / 5, overlap tile over a placed tile 3 / 4,
-  FinalBoss pick 3 / 3, breach 1 / 1.
+  FinalBoss pick 3 / 3, breach 1 / 1. 2026-10-24 after the capture tour (random seeds of every area whose seed-1
+  trace matches, each with a trace): **307 of 522 match** (202 of the 260 new loads). Of the other 58: 36 run to
+  another hash, 14 stop at a breach (`2_6_*`, `2_8_*`, `2_9_*`, `2_10_5`, MapAtlasTropicalIsland: the 3.29 client
+  rolls breaches too), 4 at loop-edge tiling, 4 elsewhere. Of the 36, 19 first differ at draw 5–8: after the
+  topology pick the client calls `FUN_142031d10` (from `0x14203c900`, the `.dgr` path) with `Next(1)`, `Next(4)`
+  and a shuffle of 4 (`0x141f4fbe3`) before the node exist rolls (`0x14203a8e0`), which the port draws at once;
+  they are seeds whose topology is not seed 1's (`1_5_7_v2.dgr`, …). 9 first differ at `0x14211532d`
+  (`FUN_142115140`), 4 at `0x1420f24d2` (`FUN_1420f2340`).
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds
@@ -1149,6 +1159,14 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   - The Karui Fortress (`2_6_5`, karui_fortress_01.dgr): "Dungeon generation failed: Failed to connect edge (58,
     58)(35, 12) of type Metadata/Terrain/Act6/Area5/Rooms/swamp_deep_pool_cliff_rooms.et".
   - The Crossroads, Act 7 (`2_7_2`, crossroads.tgr): "Could not permute edge ForestSmallCliff: (758, 931)-(782, 977)".
+
+  The capture tour of 2026-10-24 (about 270 random seeds) found 8 more, listed with the client's message in
+  `data/walkability/tour-failures.txt` (`lg.ps1 tourlist` leaves them out): `1_3_8_1` 2339687786 (overlap tile),
+  `1_4_7` 1287178782 (edge AscentRavine), `2_6_14` 388279169 and `MapAtlasHarbingerLow` 1110653865 (mismatching
+  ground types), `2_7_9` 596252631 and 959702815 ("Non-feature node overlapping another node at room (10, 0)", both
+  at room (10, 0) on two topologies, `dread_thicket_01` / `_02.dgr`; the third `2_7_9` seed generated), `2_8_12_2`
+  2082813800 (overlap tile), `2_9_6` 1024190913 (special node "sidearea": no room or tile matches its TileEdgeKey).
+  After such a failure the client shows the exception and hangs (not responding); `live.ps1` restarts it.
 
   The official server must give the client only seeds that generate; ours pins 1, so such an area cannot be entered
   (or traced) until the server rerolls failing seeds.
