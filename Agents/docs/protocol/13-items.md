@@ -625,6 +625,12 @@ not in the save ("Open"), so dropping one takes it out of the save, and a discon
 
 `/item <BaseItemTypes row, Id or name> [count]` adds items to the main inventory; types with a Sockets component get two
 linked sockets in the colour of their highest attribute requirement (ComponentAttributeRequirements).
+`/sockets [colours]` (`SocketLayout.cs`) sets the held item's sockets and links: letters R, G, B, W, linked within a word
+and unlinked between words (`/sockets RRGBBB` a 6-link, `/sockets RRG B` a 3-link and a single; dashes are ignored, so
+`R-R-G-B` works too); without colours it shows the layout. Up to the base's `CurrencyEffects.SocketCapacity` (item
+level does not limit it; rings, amulets and other classes without one are refused). Socketed gems stay in their sockets
+and take the new colour; a layout that would remove a socket holding a gem is refused. The cursor item is replaced
+through 0xbf like `/mod`.
 
 ## 8. Life and mana flasks
 
