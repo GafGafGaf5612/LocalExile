@@ -46,4 +46,27 @@ public class AttackSpeedTests
         Assert.Equal(811, stats[StatKeys.HundredTimesDamagePerSecond]);
         Assert.Equal(350, stats[StatKeys.DisplayHundredTimesDamagePerSkillUse]);
     }
+
+    [Fact]
+    public void Off_hand_sends_the_same_values_under_the_off_hand_keys()
+    {
+        var player = new Dictionary<uint, int> { [StatKeys.MainHandAttackSpeedPct] = 93 };
+        var attack = SkillCatalog.Unarmed.Witch;
+        var main = attack.Stats(player).ToDictionary(s => s.Item1, s => s.Item2);
+        var off = attack.OffStats(player).ToDictionary(s => s.Item1, s => s.Item2);
+
+        // The same weapon in the other hand: the same hit, attack time and reach, under the off_hand_… keys the client
+        // sets the off-hand strike up from (issue #167: without them the off-hand weapon had no stats at all).
+        Assert.Equal(main[StatKeys.MainHandMinPhysical], off[StatKeys.OffHandMinPhysical]);
+        Assert.Equal(main[StatKeys.MainHandMaxPhysical], off[StatKeys.OffHandMaxPhysical]);
+        Assert.Equal(main[StatKeys.MainHandMinTotal], off[StatKeys.OffHandMinTotal]);
+        Assert.Equal(main[StatKeys.MainHandMaxTotal], off[StatKeys.OffHandMaxTotal]);
+        Assert.Equal(main[StatKeys.MainHandAttackDurationMs], off[StatKeys.OffHandAttackDurationMs]);
+        Assert.Equal(main[StatKeys.MainHandTotalAttackDurationMs], off[StatKeys.OffHandTotalAttackDurationMs]);
+        Assert.Equal(main[StatKeys.MainHandAttackSpeedPct], off[StatKeys.OffHandAttackSpeedPct]);
+        Assert.Equal(main[StatKeys.MainHandBaseMaxAttackDistance], off[StatKeys.OffHandBaseMaxAttackDistance]);
+        Assert.Equal(main[StatKeys.MainHandMaxAttackDistance], off[StatKeys.OffHandMaxAttackDistance]);
+        Assert.Equal(9, off.Count);
+        Assert.DoesNotContain(StatKeys.MainHandAttackDurationMs, off.Keys);
+    }
 }

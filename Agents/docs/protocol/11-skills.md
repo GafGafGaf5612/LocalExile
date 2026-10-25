@@ -124,6 +124,17 @@ uses:
   the actual swing are already updated.
 - The client walks into range by itself using `main_hand_maximum_attack_distance` (8 cells for the Witch).
 
+**A dual-wielded attack has two hands.** When the off hand holds a weapon, a melee attack swings that one too, and the
+client sets the off-hand strike's weapon up from the hand's **own** final stats — `off_hand_…` instead of `main_hand_…`,
+the keys next to the main hand's in Stats.dat: `off_hand_minimum/maximum_physical_damage` (0x119/0x11a),
+`off_hand_minimum/maximum_total_damage` (0x2a0/0x2a1), `off_hand_base_weapon_attack_duration_ms` (0x143),
+`off_hand_total_base_weapon_attack_duration_ms` (0x221b), `off_hand_attack_speed_+%` (0x127),
+`off_hand_base_maximum/maximum_attack_distance` (0x147/0x4d4). Sending only the main hand's leaves the second weapon
+without attack time, damage or reach, and the off-hand animation of a ground attack then has a null animation set: the
+next action crashes the client at 0x141c988c1 (issue #167). `WeaponStats()` sends both hands' sets, from the item in
+Offhand1 (or the weapon swap's Offhand2) with its own local mods, in the player's Stats component and in every granted
+skill's stats.
+
 `CharacterStats`/`PassiveBonus` compute the final attack speed from the player's passives: generic
 `attack_speed_+%`, `melee_attack_speed_+%`, one-/two-handed melee, all one-handed, `axe_` / `sword_` / `mace_` /
 `claw_` / `dagger_` / `wand_` / `bow_` / `staff_attack_speed_+%`, shield and dual-wield stats. Dual wielding (and
@@ -404,6 +415,26 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `ClientState.NextAttackAt`, a use may arrive a quarter of an attack early, and a use that arrives sooner is ignored:
   no cost, no swing, no 0x1b1. The client does not deduct the cost itself (a live trace of its Life pool showed the
   mana change at the server's 0x1b1), so no "cost back" update is needed.
+- **Ground attack in dual wield crashes the client: the off hand's weapon stats were missing (issue #167, fixed
+  2026-10-25).** A dual-wielded attack swings the off hand too, and the client sets that strike's weapon up from the
+  hand's **own** final stats; it derives none (§4). The Gateway sent only `main_hand_*`, so the second weapon had no
+  attack time, damage or reach on the client at all. A Holy Strike use on *empty ground* — an action the client starts by
+  itself (`0x141e8cf10` called from `0x141e8d8c7`, its own click, not from the 0x1ab handler) and repeats one attack time
+  later on its own — then animated the off-hand weapon (`holy_strike_animates_owners_main_hand_weapon`) with a null
+  animation set: the weapon's `AnimationController` holds an animation set at +0x180 (Frida: rig animation id 493/494 in
+  dual wield) and drops it when the animation ends, and the next action's first update (`0x141c98700`) found +0x180 = 0
+  and faulted at `mov r10, [r11+0xc8]` (0x141c988c1, access violation at 0xc8). Frida 2026-10-25 while the client builds
+  the action read `off_hand_maximum_attack_distance` = 0 where the main hand's was 11. The Gateway now sends both hands'
+  weapon stats from `WeaponStats()` (`WeaponFor` + `OffhandWeaponFor`, `SkillCatalog.Unarmed.OffStats`):
+  `off_hand_minimum/maximum_physical_damage` (0x119/0x11a), `off_hand_minimum/maximum_total_damage` (0x2a0/0x2a1),
+  `off_hand_base_weapon_attack_duration_ms` (0x143), `off_hand_total_base_weapon_attack_duration_ms` (0x221b),
+  `off_hand_attack_speed_+%` (0x127) and `off_hand_base_maximum/maximum_attack_distance` (0x147/0x4d4). Live: the set is
+  installed on every action (493/494 alternating) and holding the button on empty ground no longer crashes. What was
+  *not* the cause: the echo's skill id, sending no 0x1ab for ground uses, dropping
+  `holy_strike_animates_owners_main_hand_weapon`, the animated-weapons limit (the client derives
+  `holy_strike_maximum_number_of_animated_weapons` itself from `base_holy_strike_maximum_number_of_animated_weapons` and
+  `double_holy_strike_animated_weapons_limit`: 0x1400c37d1 registers 0x14279ee30), and the Templar rig's missing
+  mace/sceptre stances (`Art/Models/CHARACTERS/Templar/rig.amd`).
 - **Damage** (`SpellDamage.cs`). A spell's hit is, per damage type, its `spell_minimum/maximum_base_{type}_damage`
   × (1 + `damage_+%` + `spell_damage_+%` + `elemental_damage_+%` for fire / cold / lightning + `{type}_damage_+%` +
   `projectile_damage_+%` for `base_is_projectile` skills), from the player's stats (passives, item mods, auras) under

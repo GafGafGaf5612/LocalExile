@@ -2218,9 +2218,23 @@ static List<(uint, int)> PlayerStatsWithCleared(ClientState conn)
 static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
-    foreach (var (k, v) in WeaponFor(conn).Stats(stats)) stats[k] = v;
+    // Both hands' weapon stats. A dual-wielded attack swings the off hand as well, and the client sets that strike's
+    // weapon up from the off hand's own final stats (it derives nothing itself, 11-skills.md §4).
+    foreach (var (k, v) in WeaponStats(conn, stats)) stats[k] = v;
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     return stats.Select(kv => (kv.Key, kv.Value));
+}
+
+// The main hand's final weapon stats and, when the off hand holds a weapon, the off hand's too (off_hand_… instead of
+// main_hand_…). Until issue #167 the Gateway sent no off-hand stat at all, so the second weapon of a dual-wielded attack
+// had no attack time, damage or reach on the client; the off-hand animation of a Holy Strike on the ground then ran
+// with a null animation set and the next action crashed (0x141c988c1, AnimationController+0x180 = 0). Frida 2026-10-25:
+// while it creates the attack action the client reads off_hand_minimum/maximum_attack_distance.
+static List<(uint, int)> WeaponStats(ClientState conn, IReadOnlyDictionary<uint, int> stats)
+{
+    var list = WeaponFor(conn).Stats(stats).ToList();
+    if (OffhandWeaponFor(conn) is { } off) list.AddRange(off.OffStats(stats));
+    return list;
 }
 
 // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
@@ -5184,6 +5198,23 @@ static SkillCatalog.Unarmed WeaponFor(ClientState conn)
     return new SkillCatalog.Unarmed(Math.Max(1, attackMs), Math.Max(0, lo), Math.Max(lo, hi), Math.Max(range, unarmed.Range));
 }
 
+// The off-hand weapon (Offhand1, else the weapon-swap set's Offhand2) with the same values WeaponFor gives the main
+// hand: its WeaponTypes row, the physical damage with the item's local mods and the attack time with local_attack_speed_+%.
+// Null when there is nothing to swing with there (empty, a shield, a quiver, a two-handed weapon).
+static SkillCatalog.Unarmed? OffhandWeaponFor(ClientState conn)
+{
+    var items = ItemsOf(conn);
+    var item = items.Items(PlayerInventories.Offhand1).Concat(items.Items(PlayerInventories.Offhand2))
+        .Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
+    if (item is null || Items.ByHash(item.TypeHash) is not { } type || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return null;
+    var local = ItemModStats.Local(item, Items.Mods);
+    double scale = 1 + local.GetValueOrDefault("local_physical_damage_+%") / 100.0;
+    int lo = (int)((min + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
+    int hi = (int)((max + local.GetValueOrDefault("local_maximum_added_physical_damage")) * scale);
+    int attackMs = (int)Math.Round(ms / (1 + local.GetValueOrDefault("local_attack_speed_+%") / 100.0));
+    return new SkillCatalog.Unarmed(Math.Max(1, attackMs), Math.Max(0, lo), Math.Max(lo, hi), Math.Max(range, Skills.UnarmedFor(conn.ClassRow).Range));
+}
+
 static (Dictionary<string, int> Main, Dictionary<string, int> Off) HandLocalStats(ClientState conn)
 {
     var items = ItemsOf(conn);
@@ -6731,7 +6762,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var weapon = WeaponFor(conn);
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
-    var weaponStats = weapon.Stats(stats).ToList();
+    var weaponStats = WeaponStats(conn, stats);
     // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
     lock (conn.Monsters) conn.SentStatKeys = [.. statList.Select(s => s.Item1), .. weaponStats.Select(s => s.Item1)];
     int reservedMana = ReservedMana(conn);
@@ -6984,6 +7015,14 @@ static class StatKeys
     public const uint MainHandTotalAttackDurationMs = 0x221a;    // main_hand_total_base_weapon_attack_duration_ms
     public const uint HundredTimesAttacksPerSecond = 0x2a6;
     public const uint MainHandBaseMaxAttackDistance = 0x146, MainHandMaxAttackDistance = 0x4d3;
+    // Off-hand attack stats, the keys next to the main-hand ones in Stats.dat (off_hand_minimum_physical_damage 0x119 and
+    // so on). A dual-wielded attack's off-hand strike is set up from them.
+    public const uint OffHandMinPhysical = 0x119, OffHandMaxPhysical = 0x11a;
+    public const uint OffHandMinTotal = 0x2a0, OffHandMaxTotal = 0x2a1;
+    public const uint OffHandAttackDurationMs = 0x143;          // off_hand_base_weapon_attack_duration_ms
+    public const uint OffHandTotalAttackDurationMs = 0x221b;    // off_hand_total_base_weapon_attack_duration_ms
+    public const uint OffHandAttackSpeedPct = 0x127;
+    public const uint OffHandBaseMaxAttackDistance = 0x147, OffHandMaxAttackDistance = 0x4d4;
     /// <summary>hide_mini_life_bar: non-zero hides the object's overhead life bar (listener 0x140220c30).</summary>
     public const uint HideMiniLifeBar = 0x2a8b;
     /// <summary>skill_is_non_pathing: the action starts where the actor stands instead of walking into range first.</summary>

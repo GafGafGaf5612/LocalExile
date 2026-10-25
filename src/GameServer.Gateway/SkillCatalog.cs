@@ -411,6 +411,25 @@ sealed class SkillCatalog(string folder = "data")
         /// sent, and the swings came every ~757 ms = 833 / 1.1).</summary>
         public const int DualWieldAttackSpeedPct = 10;
 
+        /// <summary>
+        /// The same attack's off-hand stats (off_hand_… instead of main_hand_…), for the weapon in the other hand of a
+        /// dual-wielded attack. A dual-wielded attack swings the off hand too, and the client sets that strike's weapon
+        /// up from these stats; it derives none of them (11-skills.md §4), so without them the off-hand weapon has no
+        /// attack time, damage or reach at all.
+        /// </summary>
+        public IReadOnlyList<(uint, int)> OffStats(IReadOnlyDictionary<uint, int>? player)
+        {
+            var (min, max) = Damage(player);
+            return
+            [
+                (StatKeys.OffHandMinPhysical, min), (StatKeys.OffHandMaxPhysical, max),
+                (StatKeys.OffHandMinTotal, min), (StatKeys.OffHandMaxTotal, max),
+                (StatKeys.OffHandAttackDurationMs, AttackMs), (StatKeys.OffHandTotalAttackDurationMs, AttackMs),
+                (StatKeys.OffHandAttackSpeedPct, IncreasedAttackSpeed(player)),
+                (StatKeys.OffHandBaseMaxAttackDistance, Range), (StatKeys.OffHandMaxAttackDistance, Range),
+            ];
+        }
+
         /// <summary>The final main_hand_attack_speed_+% (passives and dual wielding, from CharacterStats), or the raw
         /// stats' sum when no final value was sent.</summary>
         public int IncreasedAttackSpeed(IReadOnlyDictionary<uint, int>? player)
