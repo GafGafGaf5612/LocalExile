@@ -15,6 +15,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// <summary>The Labyrinth's graph pass, for a Labyrinth area.</summary>
     public LabyrinthPass? Labyrinth { get; init; }
 
+    /// <summary>The area's TSI override (WorldAreas +0x192), the master in place of the graph's.</summary>
+    public string? Master { get; init; }
+
     TileGrid? _grid;
     int _ox, _oy;
 
@@ -105,7 +108,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         var cells = new VoronoiCells(Graph);
         cells.Jitter(rng);
 
-        string masterPath = TerrainText.Resolve(graphPath, Graph.MasterFile);
+        string masterPath = Master ?? TerrainText.Resolve(graphPath, Graph.MasterFile);
         var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
         TileGrid grid;
         if (shared is null)

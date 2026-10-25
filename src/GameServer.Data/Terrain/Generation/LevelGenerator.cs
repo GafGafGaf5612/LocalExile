@@ -10,12 +10,13 @@ public sealed record TopologyInfo(string Graph, IReadOnlyList<int> Orientations,
 /// offset), and the Hideouts row discoverable in it (+0x42 enabled, +0x43 chance in 10 000). <see cref="League"/> is a
 /// CoreLeagues row by index: +0x8a most per area, +0x8e needs a chance, +0xa0 not rolled here. <see cref="HideoutClaim"/>
 /// is that Hideouts row's claim subarea (+0x2a, a WorldAreas id), <see cref="SubArea"/> the topologies of a WorldAreas
-/// row by id (a graph node's "subarea=…"). +0x171 marks a Labyrinth area, +0x1bb a Labyrinth boss area.</summary>
+/// row by id (a graph node's "subarea=…"). +0x171 marks a Labyrinth area, +0x1bb a Labyrinth boss area. +0x192 is the
+/// area's TSI override (<see cref="Master"/>: the EndGame Labyrinth's master_endgame.tsi, the Delve biomes').</summary>
 public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo> Topologies, bool RandomnessDisabled = false,
     ushort Hash16 = 0, bool IsMapArea = false, int AreaType = 0, int Level = 1, Func<int, int>? LeagueChance = null,
     (bool Enabled, int Chance)? DiscoverableHideout = null, Func<int, (int Max, bool NeedsChance, bool Skip)>? League = null,
     string? HideoutClaim = null, Func<string, IReadOnlyList<TopologyInfo>?>? SubArea = null, bool IsLabyrinth = false,
-    bool IsLabyrinthBoss = false)
+    bool IsLabyrinthBoss = false, string? Master = null)
 {
     /// <summary>The area's row and the rows it points to, from the game's tables.</summary>
     public static AreaInfo Load(Func<string, byte[]?> read, string areaId, int level)
@@ -43,7 +44,8 @@ public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo
             areas.I32(row, 0x1e4), level, chance, hideout < 0 ? null : (hideouts.Bool(hideout, 0x42), hideouts.I32(hideout, 0x43)),
             i => (leagues.I32(i, 0x8a), leagues.Bool(i, 0x8e), leagues.Bool(i, 0xa0)),
             claim < 0 ? null : areas.String(claim, 0),
-            id => areas.Find(r => areas.String(r, 0) == id) is var r and >= 0 ? Tops(r) : null, areas.Bool(row, 0x171), areas.Bool(row, 0x1bb));
+            id => areas.Find(r => areas.String(r, 0) == id) is var r and >= 0 ? Tops(r) : null, areas.Bool(row, 0x171), areas.Bool(row, 0x1bb),
+            areas.String(row, 0x192) is { Length: > 0 } tsi ? tsi : null);
     }
 }
 
@@ -106,7 +108,7 @@ public static class LevelGenerator
         {
             var tiler = new DungeonTiler(files, rng, notes, pool)
             {
-                Hideout = hideout, Labyrinth = labyrinth, Secondaries = secondaries,
+                Hideout = hideout, Labyrinth = labyrinth, Secondaries = secondaries, Master = area.Master,
                 VaalSideArea = features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea),
             };
             grid = tiler.Generate(topology.Graph, orientation);
@@ -114,7 +116,8 @@ public static class LevelGenerator
         }
         else
         {
-            var gen = new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage) { Hideout = hideout, Labyrinth = labyrinth };
+            var gen = new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage)
+                { Hideout = hideout, Labyrinth = labyrinth, Master = area.Master };
             grid = gen.Generate(topology.Graph, orientation);
             records = gen.Records;
         }
@@ -182,6 +185,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// <summary>A Vaal side area rolled and no graph has kept its entrance yet (generator +0xa).</summary>
     public bool VaalSideArea { get; set; }
 
+    /// <summary>The area's TSI override (WorldAreas +0x192), the primary record's master in place of its graph's.</summary>
+    public string? Master { get; init; }
+
     /// <summary>The sub-areas' subgraphs (graph, orientation), placed beside the primary (<c>0x142047e50</c>).</summary>
     public List<(string Graph, int Orientation)> Secondaries { get; init; } = [];
 
@@ -242,7 +248,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     Subgraph Record(string graphPath, int x, int y, int orientation, int parent)
     {
         var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
-        string masterPath = TerrainText.Resolve(graphPath, graph.MasterFile);
+        // 0x14203c190: the area's TSI override, else the graph's master.
+        string masterPath = parent < 0 && Master is not null ? Master : TerrainText.Resolve(graphPath, graph.MasterFile);
         var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1")), overlap = int.Parse(master.GetValueOrDefault("RoomOverlap", "1"));
         int w = (unit - overlap) * graph.Width + overlap, h = (unit - overlap) * graph.Height + overlap;
@@ -263,7 +270,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     {
         var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         if (graph.Nodes.Count != 1 || Secondaries.Count != 0) return Composite(graphPath, graphOrientation);
-        string masterPath = TerrainText.Resolve(graphPath, graph.MasterFile);
+        string masterPath = Master ?? TerrainText.Resolve(graphPath, graph.MasterFile);
         var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
         _grid = new TileGrid(graph.Width * unit, graph.Height * unit) { CheckGrounds = false, GroundFlags = g => files.Ground(g)?.Flags ?? 0, Unmirrored = files.Unmirrored };
@@ -323,7 +330,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             {
                 // The tile graph's special nodes do not take the pool's rows (not ported).
                 if (pool.Share != 0) throw new NotSupportedException($"{r.Path}: extra feature rooms in a tile graph subgraph are not ported");
-                var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout, Labyrinth = Labyrinth };
+                var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout, Labyrinth = Labyrinth, Master = r.Parent < 0 ? Master : null };
                 gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
                 store = gen.Store;
                 roomsOf.Add(gen.Rooms);

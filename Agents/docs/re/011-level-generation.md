@@ -75,7 +75,11 @@ flag 1, .tgr not) and `0x1420457f0` adds it as a subgraph: its master file (`0x1
 row +0x192, else the graph's `MasterFile:`, following .tgr/.dgr to their own master; a non-file name picks among
 masters with `Next`), size from the graph (+0x40 / +0x48) scaled by the master's tile units (+0x149 − +0x14b), the
 master's outer buffer (+0x170..+0x173), and the orientation's placement code (`0x142fa04b0`, as in
-[08](../protocol/08-area-transitions.md) §5).
+[08](../protocol/08-area-transitions.md) §5). The override (WorldAreas `TSIFile`) is set for the 3.29 EndGame
+Labyrinth areas (`master_endgame.tsi` beside the graphs' `master.tsi`, `master_end_endgame.tsi` for the boss: other
+room sets, `*_endgame.arm` rooms and weights) and the Delve biomes; the client's traces place the endgame rooms. The
+port (`AreaInfo.Master`) uses it for the primary record only; sub-area records take their own graph's master (not
+checked against a trace).
 
 **Sub-areas** (`LevelGenerator.SubAreas`): while the records are not yet counted (generator +0x30 +9 = 0),
 `0x1420457f0` runs `0x14204f590` on each new record's graph: every node passing the league filter (`0x142036490`)
@@ -1141,7 +1145,11 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   13 match; the rest first differ elsewhere: `1_1_11_*` at `0x14210862e` (#604–713, before the special rooms),
   `1_3_14_2` "no tile for slot" (`ledge_4.arm`), `1_3_15` seed 1 and `1_3_5` seed 1 later in tiling (`0x1420f4807`,
   `0x1420f8fc1`), `1_3_15` 1003770448 / 3775385555 / 890665379 every draw but heights of outer `battlefield_wall_fill`
-  tiles, `1_3_9` at `0x141feddbe`, `2_8_9` door tiles without RoomOverlap.
+  tiles, `1_3_9` at `0x141feddbe`, `2_8_9` door tiles without RoomOverlap. 2026-10-25, the area's TSI override
+  (WorldAreas +0x192, §3; the `0x142107272` cluster, EndGame Labyrinth): **583 of 782 match** (+5, none lost), 110 of
+  the 197 seed-1 traces by hash (+5: EndGame Labyrinth `C_straight_bottleneck`, `EH_end_bottleneck`, `OH_branch`,
+  `OH_branch_door`, `RT_straight_bottleneck`); `P_branch`, `P_branch_bottleneck_1` and `P_straight_bottleneck` now
+  first differ in tiling (`0x1420f4807` / `0x1420f47d8`, with the 3_Labyrinth P traces).
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds
