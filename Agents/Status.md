@@ -405,3 +405,10 @@ Cyclone's additional melee-range and stage modifiers remain partial. See protoco
 - Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
 
 Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses. Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented. See [skills](docs/protocol/11-skills.md).
+
+Ordinary projectile-speed increases/reductions now scale server-created projectiles at release, combining the
+player's computed total with the skill's raw level/quality bonus. Flight duration and predicted arrival use the
+same speed; `Game_PROJECTILE_SPEED` retains priority. Automated checks cover additive stats, reductions, quality,
+double counting and finite guards; live verification is pending. Conditional/more/less speed and support-gem
+application remain open. Launch-time collision, including damage after a visual miss when a monster changes
+course, is unchanged. See [projectiles](docs/protocol/11-skills.md#10-projectiles-experimental).
