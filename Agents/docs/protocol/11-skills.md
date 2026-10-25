@@ -527,7 +527,13 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   to `0x141e30da7`: it stores the height at +0x290 and trailing u32 at +0x2b4, then calls `0x141e31200`. That routine's
   tail (`0x141e3162f`) calls `0x141e35250`, which clears the movement durations at +0x240/+0x280 and movement flags.
   Thus the explosion does not continue along the old glide. `InstanceProtocol.Teleport` now accepts an optional
-  height; existing calls retain zero, projectiles supply terrain + hand height or 0x7fffffff.
+  fixed-height marker and float world z; existing calls retain their two zero fields.
+  Unlike 0x1ba, 0x1b7 does not convert terrain height: a known terrain + hand height `h` must be sent as
+  signed marker `-h` and float world z `-h * 7.8125`, matching the projectile creation blob.
+  The height getter (`0x141e35800`) compares +0x290 with 0x7fffffff first; that sentinel selects terrain sampling
+  and ignores +0x2b4, so it remains valid when the server has no height grid.
+  Every other marker immediately returns the float at +0x2b4; sending a non-sentinel marker with a zero float
+  would snap the effect to world z zero.
   Impact damage is committed under the send gate and a short monster lock, rechecking connection/area/pause and
   target life. Packet writes and hit notifications await outside the monster lock. A transfer invalidates flights
   even after its pending ticket is consumed and removes outstanding projectile/impact objects before 0x2b2;

@@ -8,9 +8,18 @@ public class InstanceEntitiesTests
     public void Projectile_impact_teleport_carries_height_and_preserves_the_legacy_default()
     {
         const string header = "01B700003001000000000000000000280000001E";
-        Assert.Equal(header + "FFFFFFF800000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, unchecked((uint)-8))));
         Assert.Equal(header + "7FFFFFFF00000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, 0x7fffffff)));
         Assert.Equal(header + "0000000000000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30)));
+    }
+
+    [Theory]
+    [InlineData(-8, -62.5f, "FFFFFFF8C27A0000")]
+    [InlineData(8, 62.5f, "00000008427A0000")]
+    public void Fixed_height_teleports_send_the_signed_marker_and_the_world_z_float(int fixedHeight, float worldZ, string pair)
+    {
+        // The client copies these two fields to +0x290/+0x2b4. Non-sentinel height reads the float, not the marker.
+        Assert.Equal("01B700003001000000000000000000280000001E" + pair,
+            Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, unchecked((uint)fixedHeight), worldZ)));
     }
 
     [Theory]

@@ -2171,7 +2171,10 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
         if (step.TargetId != 0 || step.Wall)
         {
             int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
-            uint height = TerrainHeights.At(conn.Layout.Id, conn.Seed, x, y) is int impactHeight ? (uint)(impactHeight + up) : TerrainHeight;
+            // 0x1b7 copies Positioned's fixed-height pair directly; 0x1ba instead takes +terrain height and converts it.
+            int? fixedHeight = TerrainHeights.At(conn.Layout.Id, conn.Seed, x, y) is int impactHeight ? -(impactHeight + up) : null;
+            uint height = fixedHeight is int steps ? unchecked((uint)steps) : TerrainHeight;
+            float worldZ = fixedHeight is int zSteps ? zSteps * 7.8125f : 0;
             bool committed = false;
             SpawnedMonster? target = null;
             MonsterHit? hit = null;
@@ -2181,7 +2184,7 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
             {
                 // 0x1b7 relocates and cancels the existing glide (0x141e31200 -> 0x141e35250). Commit the hit
                 // under the same gate and short monster lock; a pause/transfer while waiting defers/cancels it.
-                await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y, height), !log ? null :
+                await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y, height, worldZ), !log ? null :
                     $"0x01b7 projectile 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})", still: () =>
                     {
                         lock (conn.Monsters)
