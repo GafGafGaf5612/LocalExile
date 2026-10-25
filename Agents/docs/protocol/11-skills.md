@@ -513,7 +513,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   calls when the flag byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
 - **Rotation.** Positioned rotation (+0x29c) = **atan2(dx, −dy)** in grid cells (the player's own moves traced with
   `trace-move.js`: facing (+15, −18) read 0.668).
-- **Ordinary speed modifiers (2026-10-25; automated checks, live check pending).** `ProjectileSpeed` scales the
+- **Ordinary speed modifiers (2026-10-25; automated and live Fireball checks).** `ProjectileSpeed` scales the
   table's world-units/second by `1 + (player final projectile_speed_+% + skill base_projectile_speed_+%)/100`,
   then converts to cells/second with 250/23 world units per cell. `Stats.dat` marks `base_projectile_speed_+%`
   (client key 178) as a scalable non-virtual input and `projectile_speed_+%` (1407) as virtual. The player's
@@ -532,6 +532,10 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   endpoint rounding and is a numeric guard, not a measured official minimum speed.
   More/less modifiers, conditional and per-charge speed, support-gem application and special projectile speed
   rules remain unimplemented. Collision is still predicted only at launch, with the limitations below.
+  Live validation used a copied OfflineWitch database and three Fireball casts over the same 116-cell path.
+  At 0/+100/-50% raw player speed, the logs reported 95.7/191.4/47.8 cells per second; the actual 0x1ba payloads
+  carried durations 1.212375/0.606187/2.424749 seconds. Before the patch, both 0 and +100% used 95.7 cells per second.
+  These checks cover travel timing, not moving-target collision or pixel-level matching with the official game.
 - **Hit (live 2026-10-18).** At launch the server walks the path cell by cell and stops it at the first living
   monster within 4 cells (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2) of where the projectile will
   be, using where that monster will be by then. Ground and monster casts alike: the projectile flies to the hit (else

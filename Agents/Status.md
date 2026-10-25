@@ -409,6 +409,8 @@ Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/
 Ordinary projectile-speed increases/reductions now scale server-created projectiles at release, combining the
 player's computed total with the skill's raw level/quality bonus. Flight duration and predicted arrival use the
 same speed; `Game_PROJECTILE_SPEED` retains priority. Automated checks cover additive stats, reductions, quality,
-double counting and finite guards; live verification is pending. Conditional/more/less speed and support-gem
+double counting and finite guards. Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline,
+0.606 seconds with +100% speed and 2.425 seconds with -50%, checked from the client's movement packets and logs
+using a copied save database. Conditional/more/less speed and support-gem
 application remain open. Launch-time collision, including damage after a visual miss when a monster changes
 course, is unchanged. See [projectiles](docs/protocol/11-skills.md#10-projectiles-experimental).

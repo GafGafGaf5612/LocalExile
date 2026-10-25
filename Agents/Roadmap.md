@@ -271,7 +271,7 @@ data is in [19](docs/protocol/19-gems.md).
 ### Skill projectiles
 - **Known:** Fireball casts, flies as a server-made projectile object and hits the targeted monster
   ([11](docs/protocol/11-skills.md) §9–10). Ordinary additive player and skill projectile-speed bonuses now drive
-  flight and predicted arrival together (automated checks; live verification pending). Conditional/more/less speed
+  flight and predicted arrival together (automated checks and live Fireball baseline/+100%/-50% casts). Conditional/more/less speed
   and support application remain open. Collision is still selected at launch: later direction changes can produce
   missed interceptors or damage after a visual miss.
 - **Start:** height grids for more areas (or in the walk-map recorder), collision with doodads and objects that have
