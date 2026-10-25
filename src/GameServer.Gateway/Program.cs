@@ -1098,6 +1098,8 @@ static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphe
     lock (conn.Npcs) id = conn.Npcs.FirstOrDefault(n => ReferenceEquals(n.Value, npc)).Key;
     conn.TalkingTo = id;
     conn.InNpcTalk = false;
+    conn.NpcFinishFlag = null;
+    conn.NpcRewardOffer = null;
     await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 talk to npc 0x{id:x} {npc.Npc.Name}");
 }
 
@@ -1110,11 +1112,18 @@ static async Task CloseNpcDialogue(string remote, NetworkStream stream, Connecti
     if (id != 0 && conn.InNpcTalk)
     {
         conn.InNpcTalk = false;
+        if (conn.NpcFinishFlag is { } finish)
+        {
+            conn.NpcFinishFlag = null;
+            await SetQuestFlags(remote, stream, ciphers, conn, [finish]);
+        }
         await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 npc 0x{id:x}: back to the options (0x85 after a talk)");
         return;
     }
     conn.TalkingTo = 0;
     conn.InNpcTalk = false;
+    conn.NpcFinishFlag = null;
+    conn.NpcRewardOffer = null;
     await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 object 0: npc dialogue closed (0x85)");
 }
 
@@ -1129,6 +1138,9 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
     Console.WriteLine($"[gateway] {remote} <= 0x0082 npc {npc.Npc.Name} option {index}: " +
         (talk is null ? "no NPCTalk row" : $"NPCTalk row {talk.Row} \"{talk.Option}\" ({talk.Category}), text audio [{string.Join(", ", talk.TextAudio)}]"));
     if (talk is null) return;
+    if (!talk.Available(Quests.Names(PlayerQuestFlags(conn)))) return;
+    if (talk.StartFlag is { } start) await SetQuestFlags(remote, stream, ciphers, conn, [start]);
+    conn.NpcFinishFlag = talk.FinishFlag;
     switch (talk.Category)
     {
         case "SelectHideout":
@@ -1137,6 +1149,22 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
             await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 close NPC dialogue for hideout selection");
             await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.HideoutSelectionUi,
                 talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
+            break;
+        case "QuestReward" when talk.RewardOffer is { } offer:
+            if (offer is not (0 or 8)) break; // Hillock and Nessa's prison preparation; other reward scripts need auditing.
+            var rewardCatalog = QuestRewardCatalog.Load();
+            var rewardItems = rewardCatalog.Choices(offer, conn.ClassRow)
+                .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, Items))).Where(c => c.Item is not null).ToArray();
+            if (rewardCatalog.Find(offer) is not { } rewardOffer || conn.QuestFlags.Contains(rewardOffer.TakenFlag)
+                || rewardItems.Length == 0) break;
+            conn.InNpcTalk = false;
+            conn.NpcRewardOffer = offer;
+            conn.NpcRewardItems = rewardItems.ToDictionary(c => c.Choice.Id, c => c.Item!);
+            await Send(remote, stream, ciphers, InstanceInventories.AddInventory(0x600, NpcShops.Tab, NpcShops.Manager,
+                [.. rewardItems.Select((c, i) => new InventoryItem(c.Choice.Id, (byte)(i % 12), (byte)(i / 12), c.Item!))]),
+                $"0x00c0 quest reward inventory: offer {offer}, {rewardItems.Length} choices");
+            await Send(remote, stream, ciphers, InstanceNpcs.OpenQuestReward(0x600, checked((ushort)offer)),
+                $"0x0087 reward inventory 0x600: quest reward offer {offer}");
             break;
         case "Gossip" or "Quests" or "QuestReward" when talk.TextAudio.Count > 0:
             // 0x84 with the row's index: the client opens the dialogue window on that NPCTalk row (its text and audio).
@@ -1211,6 +1239,12 @@ static async Task IdentifyInventory(string remote, NetworkStream stream, Connect
 // manager 1) and enters the inventory (0xbf), keeping its id. Free for now: prices are not charged yet.
 static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.Buy buy)
 {
+    if (conn.NpcRewardOffer is not null)
+    {
+        if (buy.InventoryId == PlayerInventories.InventoryId(PlayerInventories.MainInventory))
+            await ClaimNpcReward(remote, stream, ciphers, conn, buy.ItemId);
+        return;
+    }
     OpenShop? shop;
     uint tab = 0;
     InventoryItem? item = null;
@@ -1247,6 +1281,28 @@ static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCip
         $"0x00bf inventory {buy.InventoryId}: bought item {item.Id} from {shop.Npc.Npc.Name} at ({buy.X}, {buy.Y}) ({buy})");
 }
 
+static async Task ClaimNpcReward(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint itemId)
+{
+    if (conn.NpcRewardOffer is not int offer || !conn.NpcRewardItems.TryGetValue(itemId, out var reward)) return;
+    SpawnedNpc? npc;
+    lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(conn.TalkingTo);
+    if (npc is null || !Npcs.Value.HasAvailableReward(npc.Npc, offer, Quests.Names(PlayerQuestFlags(conn)))) return;
+    var catalog = QuestRewardCatalog.Load();
+    if (catalog.Find(offer) is not { } data) return;
+    var items = ItemsOf(conn);
+    var claimed = QuestRewardCatalog.Claim(CharacterName(conn), data.TakenFlag, items, reward, ShapeOf);
+    if (claimed is null) return;
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+        items.NextRevision(PlayerInventories.MainInventory), claimed.RemovedIds, claimed.AddedItems), "0x00bf claimed quest reward");
+    // Empty the offer inventory so the native reward window finishes its pending purchase and closes.
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(0x600, 1, [.. conn.NpcRewardItems.Keys], [], NpcShops.Manager),
+        $"0x00bf quest reward offer {offer}: all choices removed");
+    conn.NpcRewardOffer = null; conn.NpcRewardItems.Clear();
+    await SetQuestFlags(remote, stream, ciphers, conn, [data.TakenFlag]);
+    conn.InNpcTalk = false; conn.NpcFinishFlag = null; conn.TalkingTo = 0;
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 quest reward claimed: dialogue ended");
+}
+
 // What a price took from the stash (ItemMoves.Price.Stash), to the client: one 0xbf per tab this connection has the
 // contents of (the others come whole when it asks, 0xc7).
 static async Task SendStashPayment(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, AccountStash stash, AccountStash.Payment? paid)
@@ -1262,6 +1318,11 @@ static async Task SendStashPayment(string remote, NetworkStream stream, Connecti
 // (ItemMoves.BuyToInventory). Without room or enough to pay, nothing happens.
 static async Task CtrlBuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.CtrlBuy buy)
 {
+    if (conn.NpcRewardOffer is not null)
+    {
+        await ClaimNpcReward(remote, stream, ciphers, conn, buy.ItemId);
+        return;
+    }
     OpenShop? shop;
     uint tab = 0;
     InventoryItem? item = null;
@@ -7844,6 +7905,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public volatile uint TalkingTo;
     // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
     public volatile bool InNpcTalk;
+    public string? NpcFinishFlag;
+    public int? NpcRewardOffer;
+    public Dictionary<uint, Item> NpcRewardItems = [];
     // NPCs created on this connection by object id (town NPCs, /npc).
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>

@@ -393,3 +393,5 @@ conditional path now also receives aggregate area (0xd7) and radius percentage (
 Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
 
 - Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
+
+Nessa/Tarkleigh quest offers 8/0 now open their native reward inventory and grant class-filtered normal level-one gems, with prerequisite/claimed flags and atomic duplicate-safe saves. Other rewards and magic armour choices remain unimplemented; see [NPC rewards](docs/protocol/17-npcs.md#quest-dialogue-and-first-rewards-2026-10-25).
