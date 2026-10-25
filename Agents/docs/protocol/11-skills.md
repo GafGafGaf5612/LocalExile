@@ -1020,8 +1020,14 @@ For example, level-one Fireball's 9–14 with +12% spell damage gives a 10.08–
 per use is 12.88, and DPS at the emitted 1.33 casts/s is 17.13. These averages exclude crit and mitigation.
 The same skill construction runs on initial player creation and subsequent refresh; character conversion inputs
 are passed separately from the inherited final weapon/display stats. Attack and unsupported-action displays keep
-their existing path. Automated packet, conversion, hitless and table-format checks pass; real-client verification
-is pending.
+their existing path.
+Native panel/getter checks with a +12% spell-damage wand show Fireball 10-15 fire, 12.88 per use and 17.13 DPS,
+and Freezing Pulse 10-15 cold, 12.88 per use and 19.84 DPS.
+With 50% fire-to-chaos conversion and 20% fire gained as chaos, Fireball shows total 12-18, fire 5-7 and chaos 7-10,
+15.46 per use and 20.56 DPS; an actual noncritical server hit dealt 14 damage.
+Scorching Ray has twelve zero hit-range fields and zero DPS/per-use, also after adding 100 flat spell fire damage.
+The same added-damage control gives Fireball 234-239 fire, confirming that hit-capable spells still receive it.
+Automated packet, conversion, hitless, creation/refresh and table-format checks also pass.
 
 **Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
 `additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`

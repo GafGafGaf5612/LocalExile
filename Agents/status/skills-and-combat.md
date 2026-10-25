@@ -185,7 +185,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Initial player creation and later skill refresh both pass separate character conversion inputs.
   Attack displays, modifier precedence and the existing level-only conversion rule are preserved.
   Automated mixed conversion/gain, added-damage effectiveness, hitless, attack and native row-format checks pass.
-  Real-client selection/equipment/relog verification is pending.
+  Native selection/getter checks show Fireball 10-15 fire and Freezing Pulse 10-15 cold with a +12% spell-damage wand.
+  A conversion/gain control split Fireball into fire and chaos rows and dealt a noncritical 14-damage server hit.
+  Scorching Ray cleared inherited hit ranges and weapon DPS, including after added spell damage refreshed its record.
   Ranges use server floors; averages retain packet fractions and exclude crit weighting, target mitigation,
   per-type integer-roll expectation and cooldown/downtime.
   Beam/DoT displays, conditional damage rules and broader conversion semantics remain outside this slice.
