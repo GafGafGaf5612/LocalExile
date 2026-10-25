@@ -116,9 +116,9 @@ sealed class DungeonRoomSet
     }
 
     /// <summary>Room data +9 (<c>0x141ff4e70</c>): a fill room, its key's four corner grounds the same, no exits and
-    /// room data +0x40 clear (unidentified; taken to be "no tag and not unique": the Prison's unique boss_exit.arm,
-    /// tag "boss", one ground and no exits, is not filed in the client).</summary>
-    static bool IsFill(DungeonRoom r) => r.Def is { } d && r.Tag.Length == 0 && !r.Unique && r.Exits.All(e => e.Type is null) &&
+    /// room data +0x40 clear (unidentified; taken to be "no tag": the Prison's boss_exit.arm, tag "boss", one ground and
+    /// no exits, is not filed in the client, while 2_9_8's unique 1 × 2 pitfill_2.arm is).</summary>
+    static bool IsFill(DungeonRoom r) => r.Def is { } d && r.Tag.Length == 0 && r.Exits.All(e => e.Type is null) &&
         d.Key.Grounds.All(g => string.Equals(g, d.Key.Grounds[0], StringComparison.OrdinalIgnoreCase));
 
     static bool SameGround(DungeonRoom r, string? ground) => string.Equals(r.Def!.Key.Grounds[0], ground, StringComparison.OrdinalIgnoreCase);

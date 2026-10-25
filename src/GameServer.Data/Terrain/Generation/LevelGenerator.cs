@@ -108,7 +108,7 @@ public static class LevelGenerator
         {
             var tiler = new DungeonTiler(files, rng, notes, pool)
             {
-                Hideout = hideout, Labyrinth = labyrinth, Secondaries = secondaries, Master = area.Master,
+                Hideout = hideout, Labyrinth = labyrinth, Secondaries = secondaries, Master = area.Master, Town = area.IsTown,
                 VaalSideArea = features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea),
             };
             grid = tiler.Generate(topology.Graph, orientation);
@@ -117,7 +117,7 @@ public static class LevelGenerator
         else
         {
             var gen = new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage)
-                { Hideout = hideout, Labyrinth = labyrinth, Master = area.Master, Pool = pool };
+                { Hideout = hideout, Labyrinth = labyrinth, Master = area.Master, Pool = pool, Town = area.IsTown };
             grid = gen.Generate(topology.Graph, orientation);
             records = gen.Records;
         }
@@ -178,6 +178,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 {
     /// <summary>The discoverable hideout rolled (generator +0xb).</summary>
     public bool Hideout { get; init; }
+
+    /// <summary>The area is a town (WorldAreas IsTown): the walkability pass lets an area transition tile be enclosed.</summary>
+    public bool Town { get; init; }
 
     /// <summary>The Labyrinth's graph pass, for a Labyrinth area.</summary>
     public LabyrinthPass? Labyrinth { get; init; }
@@ -266,40 +269,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// <summary>The rooms <see cref="Tilise"/> placed, in layout order.</summary>
     List<PlacedRoom> _placed = [];
 
-    public TileGrid Generate(string graphPath, int graphOrientation)
-    {
-        var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
-        if (graph.Nodes.Count != 1 || Secondaries.Count != 0) return Composite(graphPath, graphOrientation);
-        string masterPath = Master ?? TerrainText.Resolve(graphPath, graph.MasterFile);
-        var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
-        int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
-        _grid = new TileGrid(graph.Width * unit, graph.Height * unit) { CheckGrounds = false, GroundFlags = g => files.Ground(g)?.Flags ?? 0, Unmirrored = files.Unmirrored };
-        _store = new TileStore(files, files.TileList(TerrainText.Resolve(masterPath, master["TileSet"])));
-        _fills = master.TryGetValue("FillTiles", out var gft) ? files.FillTiles(TerrainText.Resolve(masterPath, gft)) : [];
-        var rooms = RoomSetPaths(TerrainText.Resolve(masterPath, master["RoomSet"]));
-
-        var node = graph.Nodes[0];
-        // 0x142105a70: the room among the room set's rooms with the node's tag.
-        var candidates = rooms.Select(r => (r.Weight, Room: files.Room(r.Path))).Where(r => r.Room?.Tag == node.Tag).ToList();
-        int total = candidates.Sum(c => c.Weight);
-        int pick = (int)rng.Next((uint)total);
-        var room = candidates.First(c => (pick -= c.Weight) < 0).Room!;
-        int code = Compose(graphOrientation, Orientation.Parse(node.Rotation));
-        notes.Add($"room {room.Path} ({room.Width}x{room.Height}) orientation {code}");
-
-        TiliseRoom(room, code, 0, 0);
-        Fill();
-        // 0x142025440 over the whole map, the room in its room list (its vertex grounds are not ported here).
-        var (rw, rh) = Orientation.Size(code, room.Width, room.Height);
-        var tg = TileGraph.Parse(files.Text(graphPath)!);
-        new Seams(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, [new PlacedRoom(room, 0, 0, rw, rh, [], code)], new HashSet<(int X, int Y)>(),
-            (Ground(tg.TopGround), Ground(tg.BottomGround), Ground(tg.DefaultGround)), notes).Run();
-        // 0x142044f30: the walkability pass (0x1420289a0) over the one record, the whole map.
-        new GroundStages(_grid, 0, 0, _grid.Width, _grid.Height, files).Walkability(TileGraphGenerator.ImpassableGround, files.HasTransition);
-        Records = [new DoodadRecord(0, 0, _grid.Width, _grid.Height, master, masterPath, [new PlacedRoom(room, 0, 0, rw, rh, [], code)])];
-        return _grid;
-        string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
-    }
+    /// <summary>Every .dgr goes through the subgraph records, a single room's too: the client sizes its map as the record,
+    /// (unit − overlap) × the graph's size + overlap plus the margins, and fills its outer buffer.</summary>
+    public TileGrid Generate(string graphPath, int graphOrientation) => Composite(graphPath, graphOrientation);
 
     /// <summary><c>0x142049d10</c>: the subgraph records in order, each laid out and tilised on one tile map
     /// (<c>0x1420452e0</c> → <c>0x14203c900</c>; a layout's graph nodes add their subgraphs, <c>0x14204f030</c>); then,
@@ -330,7 +302,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             {
                 // The tile graph's special nodes do not take the pool's rows (not ported).
                 if (pool.Share != 0) throw new NotSupportedException($"{r.Path}: extra feature rooms in a tile graph subgraph are not ported");
-                var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout, Labyrinth = Labyrinth, Master = r.Parent < 0 ? Master : null };
+                var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout, Labyrinth = Labyrinth, Master = r.Parent < 0 ? Master : null, Town = Town };
                 gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
                 store = gen.Store;
                 roomsOf.Add(gen.Rooms);
@@ -338,7 +310,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             }
             else
             {
-                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout, Labyrinth = Labyrinth };
+                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout, Labyrinth = Labyrinth, Town = Town };
                 t.Tilise(r, grid, records, i);
                 store = t._store;
                 roomsOf.Add(t._placed);
@@ -353,7 +325,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         // 0x142028870 flags the map's border vertices. Only grounds and vertex flags change.
         for (int i = 0; i < records.Count; i++)
             if (i == 0 || records[i].Master.ContainsKey("CountAsPrimary"))
-                new GroundStages(grid, records[i].X, records[i].Y, records[i].W, records[i].H, files).Walkability(TileGraphGenerator.ImpassableGround, files.HasTransition);
+                new GroundStages(grid, records[i].X, records[i].Y, records[i].W, records[i].H, files).Walkability(TileGraphGenerator.ImpassableGround, files.HasTransition, Town);
         new GroundStages(grid, 0, 0, grid.Width, grid.Height, files).FlagBorder();
         // 0x14204cbd0: tile heights in levels become the client's units, each tile origin by the StoreyHeight of the
         // last record whose rectangle holds it (0x141d77a90), else the first's.
@@ -423,6 +395,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         int step = unit - map.Overlap;
         _ox = r.X + r.Margins.Left;
         _oy = r.Y + r.Margins.Top;
+        // The tiler's view (0x1420f3480 +8, which its fill keeps): the subgraph's rectangle inside its margins.
+        _view = (_ox, _oy, r.X + r.W - r.Margins.Right, r.Y + r.H - r.Margins.Bottom);
         if (_ox < 0 || _oy < 0 || _ox + step * map.Width + map.Overlap > grid.Width || _oy + step * map.Height + map.Overlap > grid.Height)
             throw new InvalidOperationException($"Subgraph {r.Path} extends outside the TileMap!");
         _overlap = map.Overlap;
@@ -541,18 +515,6 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         return groups;
     }
 
-    List<(int Weight, string Path)> RoomSetPaths(string path)
-    {
-        var list = new List<(int, string)>();
-        foreach (var line in TerrainText.Lines(files.Text(path) ?? ""))
-        {
-            var t = TerrainText.Tokenize(line);
-            int q = t.FindIndex(x => x.Quoted);
-            if (q < 0) continue;
-            list.Add((q > 0 && t[0].IsNumber ? t[0].Int : 1, TerrainText.Resolve(path, t[q].Text)));
-        }
-        return list;
-    }
 
     // 0x141d75980.
     static readonly byte[] ComposeTable =
@@ -603,7 +565,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                     ((bx == 1 && w % 2 == 1 && lx + w / 2 == 0) || (bx == 2 && w % 2 == 1 && lx + w / 2 == roomW - 1) ||
                      (by == 1 && h % 2 == 1 && ly + h / 2 == 0) || (by == 2 && h % 2 == 1 && ly + h / 2 == roomH - 1)))
                 {
-                    Border(x, y, bx, by, height, key.Rotate(code), slot.Tag, accessible, descriptions);
+                        Border(x, y, bx, by, height, key.Rotate(code), slot.Tag, accessible, descriptions);
                     continue;
                 }
                 var list = _store.Candidates(slot.Tag, key.Rotate(code));
@@ -712,8 +674,10 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary><c>0x1420f6b70</c>: the shared border slots by (x, y). A slot without tags whose key is plain
     /// (<c>0x1420ee9e0</c>) is left for the fill (<c>0x1420eec10</c>). Otherwise its footprint must be all free or all
-    /// taken ("partial overlap"); all taken, the tile there merges into the key; where free, the sides only one room covered are merged with themselves
-    /// (<c>0x1420ee240</c>, which changes nothing with this port's combiner and is skipped). Its tags are tried in
+    /// taken ("partial overlap"); all taken, the tile there merges into the key; all free, unless it lies on no side
+    /// (+0x5d has all of 0x1e), the sides it covers but does not lie on are merged with the key without its edges
+    /// (<c>0x1420ee240</c>): each edge there meets no edge, which the EdgeCombination may turn into another or none
+    /// (the temple's walkway + "" is none: a walkway along a room's shared column ends). Its tags are tried in
     /// <c>Next(total)</c> order, each weighted by its store total (1 without tiles), until one places
     /// (<c>0x1420f5fb0</c>); else a key that is not plain must place untagged ("Could not find matching overlap tile"),
     /// a plain one goes to the fill.</summary>
@@ -746,6 +710,14 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 for (int i = 0; i < 4; i++) b.Key.Heights[i] -= (sbyte)low;
                 b.Height += low;
                 b.Flags |= other;
+                key = b.Key;
+            }
+            else if ((b.Sides & 0x1e) != 0x1e)
+            {
+                byte own = (byte)(~b.Sides & b.Flags & 0x1e);
+                var self = key.Clone();
+                Array.Clear(self.Edges);
+                b.Key = Merge(b, self, b.Height, own, x, y);
                 key = b.Key;
             }
             var tags = b.Tags.Select(t => (Tag: t, Weight: Math.Max(1, _store.Candidates(t, key).Sum(c => c.Weight)))).ToList();
@@ -1154,12 +1126,14 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary><c>0x1420f3480</c>'s fill: after the shrines (<c>0x1420f2340</c>), the records sorted by (x, y)
     /// (<c>0x14212d520</c>); each still-empty one is filled (<c>0x1420f3de0</c> → <c>0x141feb970</c>) for its ground, or,
-    /// without one, its top-left vertex's ground when that vertex has flag 1. Not ported before it: <c>0x1420f1590</c>
+    /// without one, its top-left vertex's ground when that vertex has flag 1. The fill's view is the tiler's, so a tile
+    /// reaching more than one entry into the outer buffer does not fit. Not ported before it: <c>0x1420f1590</c>
     /// and <c>0x1420f3100</c> (unique and pre-unique rooms) and the overlay passes.</summary>
     void FillRecords(Dictionary<string, string> master, string masterPath)
     {
         bool hasFills = master.TryGetValue("FillTiles", out var gft);
-        var fill = new Fill(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store,
+        var (vx, vy, vx1, vy1) = _view;
+        var fill = new Fill(files, rng, _grid, vx, vy, vx1 - vx, vy1 - vy, _store,
             hasFills ? files.FillTiles(TerrainText.Resolve(masterPath, gft!)) : [], _fillRooms, notes);
         Shrines(master, masterPath, fill);
         if (!hasFills) return;
@@ -1167,7 +1141,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         {
             if (_grid[x, y] is not null) continue;
             var g = ground ?? ((_grid.Corner(x, y).Flags & 1) != 0 ? _grid.Corner(x, y).Ground : null);
-            fill.FillEntry(x, y, g, accessible, height);
+            fill.FillEntry(x - vx, y - vy, g, accessible, height);
         }
     }
 
@@ -1244,7 +1218,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             placed.Add((x, y, x + pw, y + ph));
             pool.ShrinePlaced();
             notes.Add($"shrine {Path.GetFileName(pick.Room.Path)} o{o} at ({x}, {y})");
-            fill.PlaceRoom(pick.Room, x, y, o, height, ground, true);
+            fill.PlaceRoom(pick.Room, x - _view.X0, y - _view.Y0, o, height, ground, true);
         }
     }
 
@@ -1484,37 +1458,6 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         return (list[^1].Tile, list[^1].Orientation);
     }
 
-    /// <summary><c>0x1420f3480</c>'s fill: the slots left for it and every other empty entry ("default" ground), sorted
-    /// by (x, y) (<c>0x14212d520</c>), each filled from the master's fill tiles for its ground (<c>0x141feb970</c>):
-    /// <c>Next(total weight)</c>, then the orientation (<c>0x141fecd00</c>).</summary>
-    void Fill()
-    {
-        var cells = new List<(int X, int Y, string? Ground, short Height)>(_pendingFills);
-        for (int y = 0; y < _grid.Height; y++)
-            for (int x = 0; x < _grid.Width; x++)
-                if (_grid[x, y] is null && !_pendingFills.Any(p => p.X == x && p.Y == y)) cells.Add((x, y, null, 0));
-        foreach (var (x, y, ground, height) in cells.OrderBy(c => c.X).ThenBy(c => c.Y))
-        {
-            if (_grid[x, y] is not null) continue;
-            string name = ground is null ? "default" : files.Ground(ground)?.Name ?? "default";
-            if (!_fills.TryGetValue(name, out var list) || list.Count == 0) throw new InvalidOperationException($"no fill tiles for ground '{name}' at ({x}, {y})");
-            int r = (int)rng.Next((uint)list.Sum(e => e.Weight));
-            var entry = list.First(e => (r -= e.Weight) < 0);
-            var tile = files.Tile(entry.Path) ?? throw new FileNotFoundException(entry.Path);
-            if (tile.Width != tile.Height) throw new NotSupportedException($"fill tile {tile.Path} is not square (0x141fecd00's mask pick is not ported)");
-            if (!Fits(tile, x, y)) throw new NotSupportedException($"fill tile {tile.Path} does not fit at ({x}, {y}) (the retry is not ported)");
-            int orientation = (int)rng.Next(8u);
-            _grid.Place(tile, orientation, x, y, height);
-        }
-    }
-
-    bool Fits(TileDef tile, int x, int y)
-    {
-        for (int v = 0; v < tile.Height; v++)
-            for (int u = 0; u < tile.Width; u++)
-                if (!_grid.Inside(x + u, y + v) || _grid[x + u, y + v] is not null) return false;
-        return true;
-    }
 }
 
 /// <summary>The tiles of a master's TileSet, indexed the way <c>0x141d81590</c> files them: for each tile in list
@@ -1608,31 +1551,34 @@ sealed class TileStore
 /// the client keys its map by the height step and a flag too, which this reader does not know yet.</summary>
 sealed class EdgeCombiner
 {
-    readonly Dictionary<(string, string), string?> _pairs = [];
+    /// <summary>By the two edges ("" for none) and the height step, null for a line without one.</summary>
+    readonly Dictionary<(string, string, int?), string?> _pairs = [];
 
+    /// <summary>Lines of two edges, the combination and an optional height step.</summary>
     public static EdgeCombiner Parse(string text, string relativeTo)
     {
         var c = new EdgeCombiner();
         foreach (var line in TerrainText.Lines(text))
         {
-            var t = TerrainText.Tokenize(line).Where(x => x.Quoted).ToList();
+            var all = TerrainText.Tokenize(line);
+            var t = all.Where(x => x.Quoted).ToList();
             if (t.Count < 3) continue;
-            string a = TerrainText.Resolve(relativeTo, t[0].Text), b = TerrainText.Resolve(relativeTo, t[1].Text);
+            string Key(string text) => text.Length == 0 ? "" : TerrainText.Resolve(relativeTo, text).ToLowerInvariant();
             string? r = t[2].Text.Length == 0 ? null : TerrainText.Resolve(relativeTo, t[2].Text);
-            c._pairs[(a.ToLowerInvariant(), b.ToLowerInvariant())] = r;
+            int? step = all.LastOrDefault() is { Quoted: false, IsNumber: true } n ? n.Int : null;
+            c._pairs[(Key(t[0].Text), Key(t[1].Text), step)] = r;
         }
         return c;
     }
 
-    /// <summary>The combination of a and b (either order), else b without a, a without b, none for two.</summary>
+    /// <summary><c>0x1420f9880</c>: the combination of a and b (either order; "" in the file is no edge, so an edge can
+    /// combine with none) for this height step, else the one without a step; else b without a, a without b, none for
+    /// two.</summary>
     public string? Combine(string? a, string? b, int heightStep)
     {
-        if (a is not null && b is not null)
-        {
-            if (_pairs.TryGetValue((a.ToLowerInvariant(), b.ToLowerInvariant()), out var r)) return r;
-            if (_pairs.TryGetValue((b.ToLowerInvariant(), a.ToLowerInvariant()), out r)) return r;
-            return null;
-        }
-        return a ?? b;
+        string ka = a?.ToLowerInvariant() ?? "", kb = b?.ToLowerInvariant() ?? "";
+        foreach (int? step in (int?[])[heightStep, null])
+            if (_pairs.TryGetValue((ka, kb, step), out var r) || _pairs.TryGetValue((kb, ka, step), out r)) return r;
+        return a is not null && b is not null ? null : a ?? b;
     }
 }

@@ -138,8 +138,11 @@ takes its share (`0x141d8bba0`, +0x144): all rows when +0x140 is 0, else rows ×
 The `.dgr` path of `0x1420452e0` is `0x14203c900`: rooms placed by `0x1421038d0`, then `0x1420f3480` tilises.
 For a one-node graph (towns, hideouts):
 
-1. **Grid**: graph `Size` × master `RoomUnitSize` (town 5 × 3 × 6 = 30 × 18); hideouts add the master's
-   `OuterBufferSize` around it (HideoutForest 21 + 2 × 6 = 33, not ported).
+1. **Grid**: the subgraph record's size, as for any `.dgr` (`0x1420457f0`): (`RoomUnitSize` − `RoomOverlap`) ×
+   graph `Size` + overlap, plus the master's `OuterBufferSize` around it (HideoutForest 21 + 2 × 6 = 33; the Act 8
+   town (5 − 1) × 8 + 1 + 2 × 3 = 39 wide). The port sends one-node graphs through the
+   same subgraph path as the others since 2026-10-25 (its own path used size × unit and no buffer: wrong for 2_8_town,
+   the Labyrinth airlock, the hideouts, Delve and four other towns).
 2. **Room**: `0x142105a70` picks among the RoomSet's (.rs) rooms with the node's tag, `Next(total weight)` (the town
    has one: `Next(1)`, no draw). Its orientation is the node's rotation word (`R270` = code 3) composed with the
    topology's (`0x141d75980`, 9 × 9 table).
@@ -253,8 +256,10 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
 - **Room picks** (`0x1421083e0`, each room on a path): a blank with a door type and no descriptions takes a room of
   its size whose exits have its doors (`0x141ff8300` → `0x141ff84e0`; strict = no extra exits, else extra exits of
   types that can end (.et flag 0x10) on the first pass, any on a second); weight (10 e² + 1) × room weight, e = empty
-  exits both share; `Next(total)`, `Next(840)` the orientation among those that fit (`0x14299da50`); once more when a
-  side neighbour already holds that room (`0x142108920`). The entry takes the room's turned exits (`0x1420fe360`).
+  exits both share; fitting entries of one room in a row make one choice (`0x141ff84e0` compares the .arm resource,
+  one per path: a room the .rs lists twice merges when no other room fits between, 1_1_11's cave lists its 1 × 2
+  rooms twice); `Next(total)`, `Next(840)` the orientation among those that fit (`0x14299da50`); once more when a
+  side neighbour already holds that room (`0x142108920`, by resource too). The entry takes the room's turned exits (`0x1420fe360`).
 - **Node rooms** (`0x142105a70`, a tagged node that is not "graph"): the wanted exits (`0x142104990`, fixed
   orientation): one per slot edge in slot order, (type, max of the edge's two nodes' heights − the node's, chirality
   = directional type and (node is the edge's A) xor edge chirality; `0x141ff2ee0`). The candidates
@@ -368,7 +373,8 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   side (right, bottom, left, top) at the level of the exit there (room +0x12 plus the exit's height), or, when the
   master has DungeonFillRoomHeightOverride (+0x159 set; taken to be set by the key), at its level (+0x14d, a byte:
   0 or 2 in 3.29) on every side, to `0x1421096f0`: a free cell (0) takes a fill room of that ground. Fill rooms (room data +9,
-  `0x141ff4e70`: four equal corner grounds, no exits, +0x40 clear, taken to be no tag and not unique) are filed by
+  `0x141ff4e70`: four equal corner grounds, no exits, +0x40 clear, taken to be no tag; unique rooms count, 2_9_8's
+  unique 1 × 2 pitfill_2.arm adds 2 × 10 to the size total) are filed by
   `0x141ff5760` per ground into a size list (room set +0x98: (w, h) and, not square, (h, w), each at the room's
   weight) and per (ground, size) into a room list (+0xd8: mask all for square, else & 0x55 at (w, h), & 0xaa at
   (h, w)). `Next(size total)`; `0x142109e90` tries the size with the cell at its top left, top right, bottom left,
@@ -413,7 +419,10 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    with the sides the room covers (0x10 right, 8 left, 2 bottom, 4 top) and the side it lies on; a second room's slot
    is merged (`0x1420ee240`): corners both of whose sides it covers take its ground and height (`0x1420ee460`), sides
    it covers take its edge, or, covered twice, the two edges combined by the master's EdgeCombination (.ecf,
-   `0x1420ee580` / `0x1420f9880`; one edge stays, two without an entry give none) and the side is marked shared
+   `0x1420ee580` / `0x1420f9880`: a line is two edges, the result and an optional height step; the lookup is for the
+   pair at the side's height step, then for the pair without a step (the church has thick + thick → thin wall, and →
+   ledge at step 1, where the port kept only the last line until 2026-10-25); "" is no edge, so an edge may combine
+   with none (the temple's walkway + "" → ""); without an entry one edge stays, two give none) and the side is marked shared
    (`0x1420ee900`); then the key's heights are made to start at 0. A slot tagged "missiontile" without a tile in the
    store (`0x141d81f70`) takes an injected room of its turned size from the pool (`0x141d8b450`: `Next(count)` over
    the injected rooms that fit, in list order): its w × h vertices take the slot height and flag 2, then
@@ -430,7 +439,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    taken (a tile of an earlier subgraph's layout is there) merges that tile's key, turned by its orientation, into its
    own (`0x1420ee240`) over the sides its rooms leave (+0x5c & 0x1e: 0x1c and 0x1a swap, 0x16 and 0xe swap, else
    0x1e) at the tile's height offset; the key's heights start at 0 again (2026-10-25: `1_3_14_1`, `2_8_7_1_`,
-   HideoutShapersRealm).
+   HideoutShapersRealm). A slot whose footprint is all free, unless +0x5d has all of 0x1e, is merged with itself
+   without its edges (`0x1420ee240` on a copy whose edges, key +0, are cleared) over the sides it covers but does not
+   lie on (~+0x5d & +0x5c & 0x1e): each edge there is combined with none, so the EdgeCombination decides (a walkway
+   along a room's shared column ends there in the temple, `1_3_14_2`; the cave's river wall stays). The plain test
+   comes again after the tags (`0x1420f6b70` end), so a key the merge leaves plain goes to the fill without a draw.
    **Without a match** `0x1420f5fb0` tries, in order, until the store (`0x141d81f70`) has tiles:
    - the movable sides' points moved to the middle (3 × length / 2), one side at a time and cumulatively
      (`0x1420f69c0`). A side is movable when it has an edge that is not virtual (.et +0x48 flag 4) nor N2 (flag 8),
@@ -471,6 +484,10 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    gives the footprint's vertices the height and flag 2) sorted by (x, y), each still empty one filled by
    `0x141feb970` (as for tile graphs) for its ground, or its top-left vertex's ground when that vertex has flag 1,
    at the record's height (`0x1420f3de0` → `0x141fec8f0`: a given height is used, 0x80000000 = corners' middle).
+   The fill object keeps the tiler's view (`0x1420f3480` +8, the subgraph's rectangle inside its margins), so a fill
+   tile reaching more than one entry into the outer buffer does not fit (`0x141fecc10`): `1_3_13`'s 3 × 3 wall fill
+   at the bottom row. After the fill come the edge-typed fills (`0x141feed20` → `0x141fed640`, FillTiles +0x140; not
+   ported: `1_3_9`, `1_3_14_2`, `2_8_7_2`).
 5. **Mirror seams** (`0x142025440`, the same pass as for tile graphs, `Seams.cs`, with the fallback `0x142026bc0`):
    `0x1420f3480` calls it on the layout's view (its corner to step × size + overlap) with the placed rooms as the room
    list, so tiles inside a room never take the fallback and tiles touching a room's vertex ground stay. The one-node
@@ -1015,7 +1032,9 @@ value, so the order does not matter.
   pipeline on the view, and in `0x142044f30` after the outer stages over each primary record's whole rectangle (the
   buffer included; records with CountAsPrimary too), followed by `0x142028870` (the map's border vertices). The
   second run is what makes a tile graph's outer buffer unwalkable. Then `0x142049420` flags the vertices under a
-  room's `outside_tiles` sector (`0x142025190`; none in the areas checked, not ported).
+  room's `outside_tiles` sector (`0x142025190`; none in the areas checked, not ported). A tile the pass flags whole
+  (`0x142028510`) that holds an area transition (tile data +0x16f bit 0) is fatal, "Area transition tile is
+  inaccessible", unless area data +0x14 is set (WorldAreas IsTown: `1_2_town`, `1_5_town` enclose their waypoint).
 - **Doodads** lower both grids around their collision as they are created (§6c).
 
 Checked with `levelgen walk` against the seed-1 captures (`data/walkability/<area>_seed1.bin`, `.projectile.bin`;

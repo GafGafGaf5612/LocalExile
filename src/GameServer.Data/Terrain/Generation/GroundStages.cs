@@ -153,7 +153,8 @@ sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, in
     /// grounds too (<c>0x142029990</c>). Then the border is flagged; every inner vertex already impassable starts a flood
     /// of its own (unless it touches a transition tile, <c>0x142027ee0</c>); inner walkable vertices beside a flagged one
     /// are flagged; a tile whose border is all flagged, without a tag (tile data +0x10), real edges or different corner grounds, is
-    /// flagged whole (<c>0x142028510</c>). "No walkable area in the level" with fewer than max(10, w · h / 500) inner
+    /// flagged whole (<c>0x142028510</c>; one with an area transition is fatal, "Area transition tile is inaccessible", except
+    /// in a town: area data +0x14, WorldAreas IsTown). "No walkable area in the level" with fewer than max(10, w · h / 500) inner
     /// open vertices left.</summary>
     /// <summary><c>0x142028870</c>: flag 8 on the view's border vertices.</summary>
     public void FlagBorder()
@@ -170,7 +171,7 @@ sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, in
         }
     }
 
-    public void Walkability(string impassable, Func<TileDef, bool> transition)
+    public void Walkability(string impassable, Func<TileDef, bool> transition, bool town = false)
     {
         var visited = new bool[(width + 1) * (height + 1)];
         var queue = new Queue<(int X, int Y, int D)>();
@@ -280,7 +281,7 @@ sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, in
                 for (int i = 0; i <= w && all; i++) all = Flagged(x + i, y) && Flagged(x + i, y + h);
                 for (int j = 1; j < h && all; j++) all = Flagged(x, y + j) && Flagged(x + w, y + j);
                 if (!all) continue;
-                if (transition(e.Tile)) throw new InvalidOperationException($"Area transition tile is inaccessible at ({x}, {y})");
+                if (transition(e.Tile) && !town) throw new InvalidOperationException($"Area transition tile is inaccessible at ({x}, {y})");
                 var key = e.Tile.Key;
                 if (e.Tile.Tag.Length != 0 || key.Edges.Any(t => t is not null && files.Edge(t)?.Wildcard != true) ||
                     key.Grounds.Any(g => g != key.Grounds[0])) continue;

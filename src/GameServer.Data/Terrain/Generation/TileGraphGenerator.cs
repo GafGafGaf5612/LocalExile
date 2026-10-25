@@ -12,6 +12,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// <summary>The discoverable hideout rolled (generator +0xb).</summary>
     public bool Hideout { get; init; }
 
+    /// <summary>The area is a town (WorldAreas IsTown): the walkability pass lets an area transition tile be enclosed.</summary>
+    public bool Town { get; init; }
+
     /// <summary>The Labyrinth's graph pass, for a Labyrinth area.</summary>
     public LabyrinthPass? Labyrinth { get; init; }
 
@@ -74,7 +77,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         // 0x142044f30 then runs the walkability pass (0x1420289a0) again for the primary record, over its whole
         // rectangle (the buffer included), and 0x142028870 flags the map's border vertices (the pass's border flags).
         // Only grounds and vertex flags change: the walkability grids read flag 8.
-        new GroundStages(grid, 0, 0, grid.Width, grid.Height, files).Walkability(ImpassableGround, files.HasTransition);
+        new GroundStages(grid, 0, 0, grid.Width, grid.Height, files).Walkability(ImpassableGround, files.HasTransition, Town);
         // 0x14204cbd0 (after the layout 0x142049d10): every tile origin with a height offset has it multiplied by the
         // master's StoreyHeight (+0x14a, default 0), row by row (0x141d83060). Levels become the client's units here.
         int storey = int.Parse(master.GetValueOrDefault("StoreyHeight", "0"));
@@ -193,7 +196,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         var heights = new HeightLevels(grid, _ox, _oy, Graph.Width, Graph.Height, files);
         heights.Run();
         // 0x1420289a0: the primary subgraphs (generator +0x30 +9) and those whose master has +0x164.
-        if (primary || master.ContainsKey("CountAsPrimary")) grounds.Walkability(ImpassableGround, files.HasTransition);
+        if (primary || master.ContainsKey("CountAsPrimary")) grounds.Walkability(ImpassableGround, files.HasTransition, Town);
         // 0x142110d60's levels: the master's +0x146 / +0x144 when set (not ported: no ported master sets them), else
         // the view's highest and lowest vertex heights, 0 without heights.
         var levels = grid.HasHeights ? heights.Range() : (0, 0);

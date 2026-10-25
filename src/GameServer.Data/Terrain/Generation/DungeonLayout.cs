@@ -1152,8 +1152,9 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
     /// <summary><c>0x141ff8300</c> → <c>0x141ff84e0</c>: the rooms of the blank's size (<see cref="DungeonRoomSet.BySize"/>)
     /// whose exits have each of the blank's doors (type, height, and chirality for a type with a direction); a room exit
     /// where the blank has none is allowed only when not strict, and on the first pass only for a type that can end
-    /// (the loose search makes a second pass that allows any when the first finds nothing). Each room once, with the
-    /// orientations that fit and weight (10 e² + 1) × its weight, e = the empty exits both have in its first
+    /// (the loose search makes a second pass that allows any when the first finds nothing). Fitting entries of the same
+    /// .arm in a row make one choice (a room the .rs lists twice merges when no other room fits between the two), with
+    /// the orientations that fit and weight (10 e² + 1) × its weight, e = the empty exits both have in its first
     /// orientation that fits.</summary>
     List<Choice> Choices(DungeonPlacement p, bool strict)
     {
@@ -1183,7 +1184,7 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
                               (!Directional(have.Type) || have.Chirality == want.Chirality);
                 }
                 if (!ok) continue;
-                if (!ReferenceEquals(room, current))
+                if (!SameRoom(room, current))
                 {
                     Flush();
                     current = room;
@@ -1201,6 +1202,11 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
     }
 
     /// <summary><c>0x142108920</c>: a room along the sides of the blank (anchored as a node room is) holds the same room.</summary>
+    /// <summary>The client compares rooms by their .arm resource, one per path: a room the .rs lists twice is the same
+    /// room (the second entry keeps its own weight).</summary>
+    static bool SameRoom(DungeonRoom? a, DungeonRoom? b) =>
+        a is not null && b is not null && string.Equals(a.Path, b.Path, StringComparison.OrdinalIgnoreCase);
+
     bool SameNeighbour(DungeonRoom room, DungeonPlacement p) => SameNeighbour(room, p.X, p.Y, p.Width, p.Height);
 
     bool SameNeighbour(DungeonRoom room, int cellX, int cellY, int w, int h)
@@ -1210,7 +1216,7 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         void Visit(int cx, int cy)
         {
             int k = map[cx, cy];
-            if (k > 1 && ReferenceEquals(map.RoomAt(k).Room, room)) same = true;
+            if (k > 1 && SameRoom(map.RoomAt(k).Room, room)) same = true;
         }
         void Row(int ry, int length)
         {
