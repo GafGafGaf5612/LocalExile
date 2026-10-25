@@ -78,6 +78,7 @@ sealed class NpcCatalog
     [
         new("Metadata/NPC/Act1/Nessa", 256, 351, 4.0f),
         new("Metadata/NPC/League/Delve/DelveMinerHideout", 263, 344, 4.0f),
+        new("Metadata/NPC/Missions/Hideout/Helena", 270, 337, 4.0f),
         new("Metadata/NPC/Epilogue/KiracHideout", 249, 358, 4.0f),
     ];
 
