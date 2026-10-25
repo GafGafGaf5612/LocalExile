@@ -279,7 +279,77 @@ the Gateway already registers this row with the other player inventories on entr
 to Default. UI kind 0x65 is for dynamic benches and is not the ordinary hideout bench.
 
 The opening packet is covered by an automated test; live window opening awaits a reconnect.
-Recipe unlocks and applying craft requests remain unimplemented.
+Recipe unlocks and applying craft requests are implemented below.
+
+## Ordinary bench recipes and payment (2026-10-25)
+
+`BenchCrafting` loads all **765 active ordinary recipes** from CraftingBenchOptions, excluding
+disabled and area/map-device rows. Class eligibility comes from explicit ItemClasses or the
+CraftingItemClassCategories union. Exact crafted Mods.dat keys (domain 9), enchantments and
+multi-currency costs come directly from the client tables. No hand-written list of craft values
+is used. The recipe rows' 130 distinct RecipeIds are league quest flags: unlock tests in
+0x140c4c720 read the local Player component +0x1d0 with flag id minus one. Every connection
+publishes those flags with the player, making all active recipes available on this local server.
+
+The craft button (0x140c40720) sends **C→S 0x15d**, exactly four bytes. Serializer
+0x141f9b2e0 writes u16 message id and u16 recipe row, both big-endian; bit 15 of the row
+confirms replacing an existing crafted modifier. The target is the one item in Inventories row
+16, StrMasterCrafting (inventory id 17). Requests are served after opening the bench in a hideout.
+
+Supported operations: add/replace crafted prefixes and suffixes; the three-crafted-modifier
+metamod and additional-crafted-mod enchantments; remove crafted mods; add/remove flask
+enchantments; exact socket count and link count; non-white socket recipes; rarity reroll; and
+one/three-affix rare-item rerolls. Affix slots and conflicting mod families are checked. Magic
+items have one prefix/suffix slot, rare equipment three; normal items become magic when a
+mod is crafted. Replacement needs confirmation and one extra Orb of Scouring. Unidentified,
+unique, fractured and protected items are checked according to the requested operation.
+Socket crafts bypass item-level socket caps but respect base capacity; occupied sockets are
+never discarded. Corrupted socket crafts add the same number of Vaal Orbs as the base cost.
+Mirrored items are never modified. Rare-affix rerolls preserve fractured/protected mods and
+respect Cannot roll Attack/Caster via the Mods.dat TagsKeys. Random affix/rarity probabilities
+use the existing server rolling model; these distributions are not reverse-engineered official odds.
+
+`ItemMoves.CraftAtBench` validates the item and **all** currency totals before its first write,
+then pays from the main inventory first and the remainder from any personal stash tabs. The
+item and every payment commit in one Saves transaction. A missing currency or invalid recipe
+does not spend anything; save failures roll back both sources and target. The existing stash
+currency preloading on area entry feeds vendor prices, but does not suffice for the bench
+affordability UI (see the balance correction below). Each payment sends inventory changes and updates the loaded stash tabs; the crafted
+item is removed/re-added with the same id via 0xbf. Guild stash currency is not used.
+
+Tests cover every recipe against supported item classes, raw-table costs/class masks/unlocks,
+rolled values, confirmation and extra scouring, multiple sources/tabs/currencies, insufficient
+funds, save rollback, multimod/affix caps, protected prefixes, and corrupted socket costs/gems.
+After Gateway restart, client validation still requires opening the bench, crafting and checking
+the wallet/item result; automated tests do not substitute for that live UI check.
+
+### Bench affordability: personal stash balance (2026-10-25)
+
+Live report: recipe costs stayed red despite sufficient stash currency, and no 0x15d request
+was sent. The bench uses its own currency counter: 0x140c3aa80 checks cached counts at
+counter +0x110; inventory filter 0x140c3b490 rejects equipment/read-only inventories and
+ordinary stash kind **0x11**, while accepting currency-count kind **0x12**. Thus loading
+real stash inventories for vendors did not initialize the bench's balance.
+
+`BenchBalance` builds a client-only view of current personal stash totals for every recipe
+currency, including replacement Scouring and corrupted-socket Vaal costs. It is sent before
+opening the bench using 0xc0, inventory id 0xfffffe00, kind 0x12, row 26. Row 26 deliberately
+does not overwrite the native manager's fixed inventory-slot lookup (0x141d625f0). The
+ordinary 0x1421f4cc0 reader/0x1421edc10 constructor supports this kind; no client files change.
+The view includes **stash only**: the native counter already counts actual main-inventory
+currency. Large totals are split into 16-bit stacks without changing their sum.
+
+Opening again rebuilds current totals. Each successful craft and a refused request refresh
+the view with 0xbf, removing old display entries before adding the new ones. Opening the
+personal stash or an NPC shop clears it, avoiding duplicate counts in other windows.
+Display ids are never saved, never added to real inventories, and their inventory id resolves
+to neither a character row nor a stash tab; requests to move/spend those display entries
+cannot touch the real wallet. Payment continues to use real stash/inventory data atomically.
+
+Tests check the wire inventory kind/id/flags, multiple-tab totals plus main inventory without
+double counting, depletion after payment, exclusion from actual inventory routing, and totals
+above 65535. This is an automated/native-code verification; the corrected affordability UI
+still needs a live reconnect/open/craft check.
 
 ## Selecting and retaining a personal hideout (2026-10-25)
 

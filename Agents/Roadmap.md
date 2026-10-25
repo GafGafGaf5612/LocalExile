@@ -24,6 +24,14 @@ Harvest station placement and native recipe browsing are implemented. Next: impl
   The owned list contains the default Lush Hideout. [21](docs/protocol/21-hideouts.md).
 - **Start:** map the selection request, persist the chosen template, and use it for /hideout, player keys and portals.
 
+The ordinary crafting bench's active recipes, unlocks and inventory/personal-stash payment
+are implemented (Status and protocol/21-hideouts.md). Disabled legacy recipes, map-device
+recipes and other specialised crafting stations are separate from the ordinary bench.
+
+Essence item crafting is implemented (105 currencies, class-specific guaranteed modifiers;
+see Status and protocol/13-items.md). Imprisoned essence encounters, Remnant of Corruption
+on monsters and stash-tab essence upgrading remain separate features.
+
 ### Chat lines and the global channel
 - **Known:** C→S 0x15 (chat text) is parsed; command replies use S→C 0x17 (chat line). 0x12d shows BackendErrors rows, 0x157 is
   a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".
@@ -309,3 +317,5 @@ data is in [19](docs/protocol/19-gems.md).
 - Rebuild the reverse-engineering setup from a fresh clone (Ghidra import, REA, Frida) and fix whatever the guide misses.
 - Unnamed fields: [04](docs/protocol/04-player-entity.md), [05](docs/protocol/05-inventories-and-ui.md) and
   [09](docs/protocol/09-area-change.md) list fields whose meaning is unknown. Naming them is a good first task.
+
+- Completed currency metacraft protection for supported explicit-affix currencies; specialized unsupported currencies and official Chance/Vaal outcome distributions remain separate work.
