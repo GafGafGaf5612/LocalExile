@@ -176,7 +176,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   All twelve ranges clear absent types; pre-crit averages retain fractions and DPS uses the emitted APS value.
   Creation and refresh pass raw character stats and the actual weapon separately from inherited display values.
   Native Burning Arrow showed 9-23 fire/total, physical zero, per-use 16.52 and DPS 16.19 at APS 0.98.
-  Added cold damage showed 9-9 cold and 18-32 total; clearing it removed the cold rows, and relog retained the base result.
+  Added cold damage showed 9-9 cold and 18-32 total; clearing it removed the cold rows.
+  Relog retained the base result.
   A noncritical server hit dealt 24 damage, while ordinary attack retained its original ranges and averages.
   Packet, catalog, conversion, source-isolation and native row-format tests also pass.
   Ordinary attacks, spells and off-hand display paths are unchanged.
