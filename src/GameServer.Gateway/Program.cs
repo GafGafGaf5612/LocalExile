@@ -751,7 +751,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 _ = RunServerFrames(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
-                _ = RunFlaskRecovery(remote, stream, ciphers, conn);
+                _ = RunResourceRecovery(remote, stream, ciphers, conn);
             }
         }
     }
@@ -834,6 +834,7 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
         {
             Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
             Life = Math.Min(damagedLife ?? life, life), Stage = stageSkill is null ? null : stage, States = variety.StateMachine,
+            HitAnimations = Monsters.TakeHit(variety.Id),
         };
     // A kept monster that was hit: its life as a hit sets it (0x1b1).
     if (damagedLife < life)
@@ -963,6 +964,11 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     if (conn.GuildStashObject != 0 && use.TargetId == conn.GuildStashObject)
     {
         await OpenGuildStash(remote, stream, ciphers, conn, use);
+        return;
+    }
+    if (conn.CraftingBenchObject != 0 && use.TargetId == conn.CraftingBenchObject)
+    {
+        await OpenCraftingBench(remote, stream, ciphers, conn, use);
         return;
     }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
@@ -1648,6 +1654,8 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(use.TargetId, [(StatKeys.HideMiniLifeBar, 1)]),
             $"0x01b3 monster 0x{use.TargetId:x} hide_mini_life_bar = 1");
+    // The hit reaction: one of the rig's TakeHit clips and its SoundEvent (0x1b2).
+    await SendFlinch(remote, stream, ciphers, conn, use.TargetId, m, damage, log: true);
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
         $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}" +
         (stored > 0 ? $", impale +{stored:0.#} ({impaleStacks} stack(s))" : "") +
@@ -1869,13 +1877,17 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
     if (started is not null)
     {
         await Send(remote, stream, ciphers,
-            InstanceEntities.AddBuff(PlayerId, started.Buff, started.BuffRow, PlayerId, started.SkillId),
+            AuraBuff(started),
             $"0x01c1 player buff {started.Buff}: {started.Name} (BuffDefinitions row {started.BuffRow})");
     }
     await SendCharacterStats(remote, stream, ciphers, conn, started is not null ? $"aura {name} on" : $"aura {ended!.Name} off");
     await SendPlayerMana(remote, stream, ciphers, conn,
         $"0x01b1 player mana {conn.PlayerMana}/{conn.Pools.Mana}, {ReservedMana(conn)} reserved");
 }
+
+static byte[] AuraBuff(AuraCatalog.Aura aura) =>
+    InstanceEntities.AddBuff(PlayerId, aura.Buff, aura.BuffRow, PlayerId, aura.SkillId,
+        activeSkill: Skills.ActionHash(aura.Effect) is ushort action ? (aura.SkillId, action) : null);
 
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
 // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
@@ -2108,10 +2120,28 @@ static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiph
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(id, [(StatKeys.HideMiniLifeBar, 1)]),
             !log ? null : $"0x01b3 monster 0x{id:x} hide_mini_life_bar = 1");
+    // The hit reaction: one of the rig's TakeHit clips and its SoundEvent (0x1b2), as in Attack.
+    await SendFlinch(remote, stream, ciphers, conn, id, m, damage, log);
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life),
         !log && life > 0 ? null : $"0x01b1 monster 0x{id:x} hit by {by} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
     if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
+}
+
+// The hit reaction: one of the rig's TakeHit clips and its SoundEvent, S→C 0x1b2 kind 0 (see Attack and HitMonster).
+// A killing blow gets none: the client's Life component runs the death instead, and the flinch would only be cut off.
+// The gates (HitReaction) keep it a stun-like reaction rather than a loop; see that class. The monster is checked again
+// inside the send gate: a hit that kills it meanwhile marks it Dead before it sends its own 0x1b1, so the flinch either
+// goes out before the death or not at all.
+static async Task SendFlinch(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
+    SpawnedMonster m, int damage, bool log)
+{
+    HitAnimation? clip;
+    lock (conn.Monsters) clip = HitReaction.TryFlinch(m, damage, conn.Clock.Elapsed.TotalSeconds, Random.Shared);
+    if (clip is not { } flinch) return;
+    await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, (uint)flinch.Index, 1f),
+        !log ? null : $"0x01b2 monster 0x{id:x} flinch (animation {flinch.Index}, {flinch.Seconds:0.00} s)",
+        still: () => { lock (conn.Monsters) return m.Life > 0 && !m.Dead; });
 }
 
 // A hit's damage off a monster's life (under the Monsters lock): the new life, and whether the hit starts its boss stage
@@ -3435,58 +3465,26 @@ static async Task EndRighteousFire(string remote, NetworkStream stream, Connecti
         await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(monster, buff), null);
 }
 
-// The player's own tick (PlayerTickMs): life regeneration and Righteous Fire's burning, on the player and on the enemies
-// around it. Life changes are sent with 0x1b1; monsters killed by the fire die as from a hit (MonsterKilled).
+// The slower player tick: RF on nearby enemies, suppression conditions, waypoints, auto-loot and quests.
+// Continuous player pool changes are handled by RunResourceRecovery instead.
 static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    double carry = 0, manaCarry = 0;   // fractions of life and mana between ticks
-    int suppression = Suppression(conn).Chance;   // the panel's Spell Suppression chance as of the last tick
+    double last = conn.Clock.Elapsed.TotalSeconds;
+    int suppression = Suppression(conn).Chance;
     while (!conn.Closed)
     {
         await Task.Delay(PlayerTickMs);
         if (conn.Closed) break;
-        if (conn.Paused) continue;
-        double seconds = PlayerTickMs / 1000.0;
-        double regen = LifeRegenPerSecond(conn) * seconds;
+        double tickNow = conn.Clock.Elapsed.TotalSeconds;
+        double seconds = tickNow - last;
+        last = tickNow;
+        if (conn.Paused || seconds <= 0) continue;
         var rf = conn.RighteousFire;
-        uint before, after;
-        bool dead;
-        lock (conn.Monsters)
+        if (conn.PlayerLife == 0)
         {
-            before = conn.PlayerLife;
-            dead = before == 0;
-            double burnPerSecond = rf is null ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0;
-            var burnDot = new DamageOverTime(DamageType.Fire, burnPerSecond, seconds);
-            double burn = DamageModel.Mitigate(burnDot.TotalRemainingDamage,
-                Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
-            double change = carry + regen - burn;
-            int whole = (int)Math.Truncate(change);
-            carry = change - whole;
-            // The burn is nonlethal: it stops at 1 life.
-            after = dead ? 0 : (uint)Math.Clamp((long)before + whole, Math.Min(1, before), conn.PlayerMaxLife);
-            if (!dead) conn.PlayerLife = after;
-            if (after == conn.PlayerMaxLife && carry > 0) carry = 0;
-        }
-        if (dead)
-        {
-            carry = 0;
             if (rf is not null) await EndRighteousFire(remote, stream, ciphers, conn, "death");
             continue;
         }
-        if (after != before) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, after), null);
-        uint manaBefore, manaAfter, manaCap;
-        double manaRegen = ManaRegenPerSecond(conn) * seconds;
-        lock (conn.Monsters)
-        {
-            manaBefore = conn.PlayerMana;
-            double change = manaCarry + manaRegen;
-            int whole = (int)Math.Truncate(change);
-            manaCarry = change - whole;
-            manaCap = (uint)UnreservedMana(conn);
-            conn.PlayerMana = manaAfter = (uint)Math.Clamp((long)manaBefore + whole, 0, manaCap);
-            if (manaAfter == manaCap) manaCarry = 0;
-        }
-        if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
         if (rf is not null) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
         // The character panel's Spell Suppression chance again (0x1b3 with only its stats) when a condition changed
         // it: full life lost or regained, a walk started or ended, an enemy hit 4 s ago.
@@ -3516,21 +3514,29 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
     }
 }
 
-// The flasks' recovery, apart from the player tick so the orb fills smoothly: while a flask recovers, every
-// FlaskStepMs the life and mana it gave since the last step are added, and each whole point goes to the client at once
-// (S→C 0x1b1; a Small Life Flask's 23 life per second is a +1 about every 43 ms). Effects end when their time is up,
-// their pool is full, or the player dies (13-items.md §8).
-static async Task RunFlaskRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+// One writer for continuous recovery: regeneration, flask recovery and the player's RF burn.
+// The game clock excludes pause; scheduling/network delays change the step size, never the per-second rate.
+static async Task RunResourceRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     double lifeCarry = 0, manaCarry = 0, last = conn.Clock.Elapsed.TotalSeconds;
+    double ratesAt = double.NegativeInfinity, lifeRate = 0, manaRate = 0, burnPerLife = 0;
+    var cachedRf = conn.RighteousFire;
     while (!conn.Closed)
     {
-        await Task.Delay(FlaskStepMs);
+        await Task.Delay(RecoveryStepMs);
+        if (conn.Closed) break;
         double now = conn.Clock.Elapsed.TotalSeconds;
-        if (!conn.FlaskEffects.Any)
+        double seconds = now - last;
+        if (seconds <= 0) continue;
+        var rf = conn.RighteousFire;
+        // Stat aggregation stays at the old 250 ms cadence, rather than rebuilding the panel 60 times/s.
+        if (now - ratesAt >= PlayerTickMs / 1000.0 || rf != cachedRf)
         {
-            (lifeCarry, manaCarry, last) = (0, 0, now);
-            continue;
+            lifeRate = LifeRegenPerSecond(conn);
+            manaRate = ManaRegenPerSecond(conn);
+            burnPerLife = rf is null ? 0 : DamageModel.Mitigate(rf.BurnPctPerMinute / 6000.0,
+                Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
+            (ratesAt, cachedRf) = (now, rf);
         }
         var (life, mana, ended) = conn.FlaskEffects.Advance(last, now);
         last = now;
@@ -3539,27 +3545,30 @@ static async Task RunFlaskRecovery(string remote, NetworkStream stream, Connecti
         lock (conn.Monsters)
         {
             lifeBefore = conn.PlayerLife;
-            dead = lifeBefore == 0;
-            lifeCarry += life;
-            int lifeWhole = (int)Math.Truncate(lifeCarry);
-            lifeCarry -= lifeWhole;
-            conn.PlayerLife = lifeAfter = dead ? 0 : (uint)Math.Min((long)lifeBefore + lifeWhole, conn.PlayerMaxLife);
             manaBefore = conn.PlayerMana;
-            manaCarry += mana;
-            int manaWhole = (int)Math.Truncate(manaCarry);
-            manaCarry -= manaWhole;
             manaCap = (uint)UnreservedMana(conn);
-            conn.PlayerMana = manaAfter = dead ? manaBefore : (uint)Math.Min((long)manaBefore + manaWhole, manaCap);
+            dead = lifeBefore == 0;
+            if (dead)
+            {
+                lifeCarry = manaCarry = 0;
+                lifeAfter = lifeBefore;
+                manaAfter = manaBefore;
+            }
+            else
+            {
+                conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
+                    life + (lifeRate - conn.PlayerMaxLife * burnPerLife) * seconds, ref lifeCarry, minimum: 1);
+                conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
+                    mana + manaRate * seconds, ref manaCarry);
+            }
         }
         if (dead)
         {
-            // Flask effects end with death (CancelOnDeath).
             await EndFlaskEffects(remote, stream, ciphers, conn, [.. ended, .. conn.FlaskEffects.End(_ => true)], "death");
             continue;
         }
         if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
         if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
-        // A flask's effect also ends once its pool is full (the flask_effect buffs are not "not removed when full").
         bool lifeFull = lifeAfter == conn.PlayerMaxLife, manaFull = manaAfter == manaCap;
         ended.AddRange(conn.FlaskEffects.End(e => (e.LifePerSecond == 0 || lifeFull) && (e.ManaPerSecond == 0 || manaFull)));
         if (ended.Count > 0)
@@ -4596,6 +4605,23 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, x, y, skill, 0xffff, 0x0408),
             $"0x01ab monster 0x{id:x} action skill 0x{skill:x4} from {from} to ({x}, {y})");
     })
+    // Animation probe: play animation index `id` on the nearest living monster (0x1b2 kind 0). The Animated handler
+    // bounds-checks the index against the actor's animation count, so an out-of-range value is ignored.
+    .Add("anim", "/anim <index> [speed] (0x1b2 kind 0: play an animation on the nearest monster)", async args =>
+    {
+        if (args.Length < 1 || !uint.TryParse(args[0], out uint index)) throw new ArgumentException("an animation index");
+        float speed = args.Length > 1 ? float.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture) : 1f;
+        var here = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        uint? pick;
+        lock (conn.Monsters)
+            pick = conn.Monsters.Where(kv => kv.Value.Life > 0)
+                .OrderBy(kv => Dist(here, kv.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)))
+                .Select(kv => (uint?)kv.Key).FirstOrDefault();
+        if (pick is not { } id) { await conn.Commands!.Reply("No living monster nearby."); return; }
+        await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, index, speed),
+            $"0x01b2 monster 0x{id:x} play animation {index} at speed {speed}");
+        await conn.Commands!.Reply($"0x1b2 anim {index} (speed {speed}) -> monster 0x{id:x}");
+    })
     .Add("mob_tp", "/mob_tp [id] (0x1b7 next to you; default the last monster)", async args =>
     {
         if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
@@ -5091,12 +5117,16 @@ static (int X, int Y) NextToPlayer(ClientState conn)
 
 // One sender at a time per connection: the Salsa20 keystream must be applied and written in the same order (the read
 // loop, the monster AI tick and the transfer timer all send).
-static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log)
+// `still`, when given, is checked inside the connection's send gate and drops the packet when false: a packet decided
+// before another task's packets were sent can check that it still applies (SendFlinch).
+static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
+    Func<bool>? still = null)
 {
     var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
     await gate.WaitAsync();
     try
     {
+        if (still is not null && !still()) return;
         if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
         string? trace = MoveTrace && bytes.Length >= 6 && (bytes[0] << 8 | bytes[1]) is 0x01ab or 0x01b7 or 0x01ba
             ? Convert.ToHexString(bytes) : null;
@@ -6125,6 +6155,37 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
     conn.GuildStashObject = guild;
     conn.GuildStashAt = (gx, gy);
     conn.SetBlocker(guild, gx, gy, ClientState.StashBlockerSize);
+    if (HideoutCatalog.ByArea(conn.Layout.Hash) is { } hideout
+        && HideoutCatalog.BenchBesideGuild(hideout, gx, gy, conn.Layout.Walkable) is { } bench
+        && HideoutCatalog.TypeOf(bench.Type!) is var (components, states)
+        && HideoutObject.CanSerialize(components))
+    {
+        uint benchId = conn.NextObjectId++;
+        var obj = new HideoutObject(bench.X, bench.Y, bench.Rotation, components,
+            new HideoutDoodad(bench.Hash, (byte)bench.Variation), [.. states.Select(_ => 0)]);
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(benchId,
+            InstanceEntities.ObjectTypeHash(bench.Type!), obj.Blob()),
+            $"0x02b9 create crafting bench 0x{benchId:x} left of guild stash at ({bench.X}, {bench.Y})");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(benchId), null);
+        conn.CraftingBenchObject = benchId;
+        conn.CraftingBenchAt = (bench.X, bench.Y);
+        conn.SetBlocker(benchId, bench.X, bench.Y, ClientState.StashBlockerSize);
+    }
+}
+
+// C→S 0x24: approach the bench before opening the ordinary crafting window (0x7b kind 0x33, bench type 0).
+static async Task OpenCraftingBench(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(conn.CraftingBenchAt.X, conn.CraftingBenchAt.Y, ClientState.StashBlockerSize, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 crafting bench ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.Closed || conn.ActionCount != action
+        || !PlayerWalk.InWalkUpRange(stop, conn.CraftingBenchAt, ClientState.StashBlockerSize)) return;
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.CraftingBenchUi),
+        "0x007b open the crafting bench window (type 0)");
 }
 
 // A click on the guild stash (C→S 0x24): walk there, then its tab list (S→C 0x136 kind 1) and its panel (0x7b kind 2).
@@ -6765,6 +6826,18 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         bool secondSet = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).WeaponSet == 1;
         messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}, weapon set {(secondSet ? 2 : 1)}",
             InstanceProtocol.EnterArea(tabs, secondSet)));
+        // The contents of every stash tab with currency in it (stackable items), as 0xc7 would send them (0xc0, no 0xc8:
+        // the panel is not open). The client checks a shop price against the currency it knows of, the inventory's and
+        // the loaded stash tabs' (3.29 vendors take it from the stash): without this a price was red, and no 0x88 came,
+        // until the stash had been opened in that area (live 2026-10-23, Nessa in the hideout).
+        var personal = PersonalStashOf(conn);
+        for (int t = 0; t < personal.Count; t++)
+        {
+            var (slot, inside) = personal.Inventory(t);
+            if (!inside.Any(i => i.Item.Components.Contains("Stack")) || !conn.StashTabsSent.Add(t)) continue;
+            messages.Add(($"0x00c0 stash tab {t} inventory {personal.InventoryOf(t)}: {inside.Count} item(s) (currency for shop prices)",
+                InstanceInventories.AddInventory(personal.InventoryOf(t), slot, 0, inside)));
+        }
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))
@@ -6780,7 +6853,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     lock (conn.Monsters) auras = [.. conn.Auras.Values];
     foreach (var aura in auras)
         await Send(remote, stream, ciphers,
-            InstanceEntities.AddBuff(PlayerId, aura.Buff, aura.BuffRow, PlayerId, aura.SkillId),
+            AuraBuff(aura),
             $"0x01c1 player buff {aura.Buff}: {aura.Name} restored after the area change");
 }
 
@@ -6911,8 +6984,8 @@ sealed partial class Program
     /// <summary>The quest books that give two passive refund points (BaseItemTypes Name; Acts 1, 6, 9 and 10).</summary>
     internal const string RegretBook = "Book of Regrets";
     internal const string PortalScroll = "Metadata/Items/Currency/CurrencyPortal";
-    /// <summary>The flask recovery's step (RunFlaskRecovery): short enough for one update per point of life.</summary>
-    internal const int FlaskStepMs = 20;
+    /// <summary>Continuous pool recovery's target cadence; amounts use elapsed game time, not this nominal delay.</summary>
+    internal const int RecoveryStepMs = 16;
     internal static bool FlaskBuffs => Environment.GetEnvironmentVariable("Game_FLASK_BUFFS") != "0";
     // MiscAnimated RighteousFireRing: the big burning circle around a Righteous Fire caster.
     internal const string RighteousFireRingAo = "Metadata/Effects/Spells/ri_fire/rifire.ao";
@@ -7271,6 +7344,9 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public bool Hostile { get; init; } = true;
     // What it is, for the experience and items its death gives (null for monsters made without a variety).
     public MonsterCatalog.Variety? Variety { get; init; }
+    // Its TakeHit clips (index in the rig's animation list, length) for 0x1b2: the flinch and its sound on a hit that
+    // passes HitReaction's gates. One clip for most varieties; a few have a pool the server picks from.
+    public IReadOnlyList<HitAnimation> HitAnimations { get; init; } = [];
     public byte Level { get; init; } = 1;
     public MonsterRarity Rarity { get; init; }
     // Damage over time not yet applied (fractions of a point between ticks).
@@ -7285,6 +7361,9 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public int StopRange => stopRange;
     public uint MaxLife { get; } = maxLife;
     public uint Life = maxLife;
+    // Until when its last flinch plays (Clock seconds; HitReaction): no new flinch before. Guarded by the Monsters
+    // lock.
+    public double FlinchUntil = double.NegativeInfinity;
     public bool Aggro, Dead;
     public (int X, int Y)? LastTarget;
     // A boss's stage (BossFights) and whether a hit has started it.
@@ -7499,6 +7578,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>
     public uint GuildStashObject;
     public (int X, int Y) GuildStashAt;
+    public uint CraftingBenchObject;
+    public (int X, int Y) CraftingBenchAt;
     public readonly HashSet<int> GuildStashTabsSent = [];
     public bool GuildStashOpen;
     // Whether this connection opened the stash already (only the first open selects the account's last tab), and while

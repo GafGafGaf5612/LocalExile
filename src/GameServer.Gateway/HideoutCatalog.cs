@@ -11,6 +11,22 @@ static class HideoutCatalog
 {
     /// <summary>The first campaign hideout (Hideouts row 0, found in The Dread Thicket): every character's.</summary>
     public const string DefaultArea = "HideoutForest";
+    public const string CraftingBenchType = "Metadata/Terrain/Missions/Hideouts/Objects/HideoutCraftingBench";
+
+    /// <summary>The standard bench, to the screen-left of the guild stash in the isometric grid.</summary>
+    public static Doodad? BenchBesideGuild(Hideout hideout, int guildX, int guildY, Func<int, int, bool>? walkable)
+    {
+        if (hideout.First(CraftingBenchType) is not { } bench) return null;
+        foreach (var (dx, dy) in new[] { (-12, 12), (-16, 16), (-12, 8), (-8, 12) })
+        {
+            int x = guildX + dx, y = guildY + dy;
+            bool clear = x >= 2 && y >= 2;
+            for (int ox = -2; clear && ox <= 2; ox++)
+                for (int oy = -2; clear && oy <= 2; oy++) clear = walkable?.Invoke(x + ox, y + oy) ?? true;
+            if (clear) return bench with { X = x, Y = y };
+        }
+        return null;
+    }
 
     /// <summary>A doodad of a hideout's decoration, in area grid cells; Rotation in radians (the file's r / 65536 turns).</summary>
     public sealed record Doodad(string Name, uint Hash, string? Type, string? Model, int X, int Y, float Rotation, int Variation);

@@ -344,6 +344,29 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   handler `0x142195880`): the client runs the skill's action without animation and consumes a use of the skill
   (actor vtable +0x198), which starts the skill bar's cooldown. Without it the tooltip showed the cooldown but the bar
   never ran it: the cooldown records had no entries (Frida, live 2026-10-21; not yet checked with 0x1ce).
+- **Hit reaction (live 2026-10-25).** A monster that takes a hit plays its rig's **TakeHit** clip with S→C **0x1b2**
+  (`InstanceProtocol.AnimationUpdate`, kind 0): object header, u8 kind, u32 clip index (+0x24), u32 float bits (speed,
+  +0x28). The index is 0-based into the actor's animation list, which is the rig `.amd`'s animations in file order
+  (Sanctum zombie: `flinch_unarmed` = 156 of 249 in `Art/Models/MONSTERS/skeleton/rig.amd`; `flinch_pitchfork` = 151,
+  both played the flinch *with its SoundEvent* live). The handler (`0x141e58ef0`) calls `0x141dba530`, which ignores an
+  index past the actor's animation count — a wrong index costs nothing. `0x1b1` alone only stores the pool and runs the
+  death/revive slots, so a hit without 0x1b2 is silent and still. A killing blow gets no flinch (the client's death
+  runs instead). The reaction is gated like a stun: the hit must take at least a tenth of the monster's max life, and a
+  monster does not flinch again until its clip has played (its `.amd` length at speed 1, at least 0.4 s) — otherwise a
+  fast attack or a volley restarts the clip and its sound and keeps cutting the monster's own attack and walk animations
+  while the server still moves it. The flinch is checked again inside the connection's send gate, so a hit that kills
+  the monster meanwhile (marked Dead before its own 0x1b1 goes out) drops it rather than playing it over the death.
+  `data/monster-takehit.json` (`python -I scripts/re/monster_takehit.py`) holds each MonsterVarieties
+  row's index(es) and clip lengths: its `.act` maps `TakeHit` to a clip, and the `.ao`'s `AnimationController` names
+  the rig. A rig whose parsed animations do not add up to the `.amd`'s count line is skipped (a missed entry would shift
+  every later index to a wrong but in-range clip). 26 `.act`
+  files map a pool — `flinch_01, flinch_02, flinch_03`, or `flinch_small:max_duration=0.45, flinch_large:min_duration=0.45`
+  (the condition picks by the hit's stun duration, which the server does not model) — and the server picks one at random
+  per hit; every other variety has a single clip. An `@Name` alias is expanded to the whole list it names, and every
+  `extends` parent is followed (not just the first), with "nothing" ending the chain. The client also has the directional
+  types TakeHitForward/Backward/Left/Right, but the `.act` files that set them alias them all to `@TakeHit`, so they add
+  no variants. 0x262 (a Life "changed by" event with a signed delta) reaches the Life listeners but plays no flinch,
+  sound or blood.
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
@@ -701,10 +724,19 @@ and radius scale. Live verification of this follow-up is pending.
   Purity of Fire/Ice/Lightning 145/146/147, Clarity 155, Vitality 153, Precision 1293) and is sent with
   S→C 0x1c1 with the player as source and the skill id as the source skill. A second cast removes it with
   0x1c2. The buff visual is the row's `BuffVisuals` (the `player_auras/...` EPKs); the server also sends
-  the final stats, because the client derives none of them. The skill-bar active border is not reproduced
-  yet: 0x25f is an internal UI event, not an instance/world message (both factories fall through to their
-  default case), so sending it crashed the 3.29.3b client; the Gateway does not send it. The client's
-  setter (`0x140ae4550`, skill id + ActionTypes HASH16) is not called by the buff add/remove events.
+   the final stats, because the client derives none of them. The skill-bar indicator uses the buff's separate
+   skill association (0x1c1 flags bit3): **u16 BE ActionTypes HASH16, then u16 BE server skill id**.
+   The Gateway sends it for activation and when restoring auras on area entry. Removing the buff removes
+   the association. The full action hash comes from GrantedEffects.ActiveSkill → ActiveSkills.ActionType
+   → ActionTypes.HASH16; it must not be masked to the basic-action id.
+   Client `0x140ad1400` draws `AuraFrame` and the rotating `AuraCircle` when `0x141e11180` finds an
+   IsSkillBuff whose +0x48/+0x4a match the skill's +0x40/+0x42. Reader `0x141fdf870` reads the action
+   hash into message +0x74 and skill id into +0x72; `0x141e11720` copies them to buff +0x4a/+0x48.
+   The mandatory source skill (+0x60) alone does not satisfy this check. Automated wire/lookup tests
+   cover the change; live icon verification is pending.
+   **Correction to the earlier notes:** 0x25f in `0x140ae1130`/`0x140ae4550` refers to Elemental
+   Overload (BuffDefinitions row 606, returned one-based by `0x142454bd0`), not an aura UI event or a
+   network opcode. Sending a standalone 0x25f packet is invalid and is not needed for aura indicators.
 - **Implemented effects.** Purity of Elements/Fire/Ice/Lightning add their resistances; Clarity and Vitality
   add their flat regeneration; Precision adds flat accuracy and increased critical strike chance; Haste adds
   attack, cast and movement speed. Generic
@@ -727,8 +759,7 @@ and radius scale. Live verification of this follow-up is pending.
   - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;
     Reservation1 (damage per aura), Reservation2 (max resistances with reserved life and mana) and Reservation6 (aura
     duration) are not. Skill-specific reservation efficiency/effect stats are not modelled.
-  - **Systems:** supports, gem levels, party/minion auras, life reservation, and the skill-bar active border (0x25f is an
-    internal UI event, not an instance/world message; the client's setter is not reached by the buff events).
+  - **Systems:** supports, party/minion auras and life reservation.
 - **Dev check.** `/auras` prints the active auras, flat/percent reservation, reserved and unreserved mana,
   reservation efficiency and aura effect. Area changes recreate the player object, so `SendPlayer` puts the
   running auras' buffs back on it.

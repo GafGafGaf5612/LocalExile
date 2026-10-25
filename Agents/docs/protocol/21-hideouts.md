@@ -233,3 +233,30 @@ processing the picker's selection request remain unimplemented.
 - Logging in to the hideout after logging out there (the real game does); Resurrect in a map → the hideout.
 - Choosing another hideout (the Hideout selection window), visiting other players' hideouts (0x17a names them).
 - Which UI reads the second Hideouts key.
+
+## Crafting bench placement (2026-10-25)
+
+After spawning a hideout's guild stash, the Gateway creates the standard HideoutCraftingBench
+from that hideout's existing decoration template. The original Mtx hash, variation and rotation
+are preserved. Placement is relative to the guild stash: grid offset (-12,+12), with nearby
+screen-left alternatives if its 5x5 footprint is blocked. It receives 0x2b9, 0x1a9 and a walk blocker.
+The bench is deliberately separate from the map-device dictionary, so portal creation and map
+activation still target only the map device. Towns and the Mine Encampment do not get this bench.
+No generated game-data format changes are needed. Placement was confirmed in the real client.
+
+The connection retains the bench's object id and grid position separately from map devices.
+C→S 0x24 on that id walks up to the bench; movement cancelling the approach, a closed connection
+or an unreachable stopping point prevents opening. Once in range, S→C 0x7b **kind 0x33, first
+u32 = 0**, remaining u32s zero, opens the ordinary crafting window. The first u32 is a
+CraftingBenchTypes row, **not the object's id** (row 1 selects runesmithing).
+
+Client trace: `0x142163420` case 0x33 dispatches to instance +0x22f8; HUD registration
+`0x140dbcd40` uses thunk `0x140dae898`, which calls virtual +0x8e0, `0x140ddb5c0`.
+That forwards the bench type to `0x140c3e600`, opening the window at HUD +0x880
+(constructor `0x140c3b650`). Its item control binds to inventory row 16 in `0x140c3e1c0`;
+the Gateway already registers this row with the other player inventories on entry.
+`0x140c45830` selects the bench's visual skin from the placed hideout decoration, falling back
+to Default. UI kind 0x65 is for dynamic benches and is not the ordinary hideout bench.
+
+The opening packet is covered by an automated test; live window opening awaits a reconnect.
+Recipe unlocks and applying craft requests remain unimplemented.

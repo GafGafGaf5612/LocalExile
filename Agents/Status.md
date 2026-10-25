@@ -37,6 +37,7 @@ switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
 | Monsters: `/spawn_mob <row, Id or name>[@level] [friendly] [rarity] [name]`, `/mobs`, `/despawn`, `/mob_walk`, `/ai`: any of 10 345 of the 10 691 MonsterVarieties at a level and rarity, with full life for its level, hostile (red) or friendly, that chases the player when near (Move action 0x1ab, client pathing) | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
 | Monster packs in areas: on entry the area fills with its MonsterPacks at the area level (The Coast: crab and Drowned packs, some magic, at least 2 with a rare; cannibal packs at the bonfires) and the unique boss at the camp's `mapboss` point with its boss pack (Fire Fury beside the campfire, verified live 2026-10-18); room points are found by fitting rooms to the doodads `-Walkmaps` captures | `MonsterPacks.cs`, Gateway (`PopulateArea`), `scripts/walkmaps`, `scripts/re/atlas room-points` | [14](docs/protocol/14-monster-packs.md) |
 | Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's 10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks per Second), and the server lowers the monster's life 2–5 at the contact point; moving cancels; the dead monster's life bar hides | `GrantedSkill`, `SkillCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) |
+| Monster hit reaction: a hit that leaves a monster alive and takes at least a tenth of its max life plays one of its rig's TakeHit clips with the clip's own sound (S→C 0x1b2 kind 0; a pool picks one at random), and not again until that clip has played (at least 0.4 s); a killing blow gets no flinch. Verified live 2026-10-25 on the Sanctum zombie and the Goatman (melee and Holy Strike); the damage and clip-length gates are not yet checked live. Not yet: the weapon impact sound (the hit "clank") and blood/sparks, a separate client system whose server message is unknown | `HitReaction.cs`, `MonsterCatalog.TakeHit`, Gateway (`SendFlinch`), `scripts/re/monster_takehit.py` → `data/monster-takehit.json` | [11](docs/protocol/11-skills.md) |
 | Impale: a physical hit that rolls `impale_on_hit_%_chance` stores 10% of the hit's physical damage on the monster (five stacks, five hits each), and every later physical hit on it takes the stored damage again as extra physical before the roll; five stacks add half the impaling hit's damage — the mechanic behind the panel's Chance to Impale row, verified live 2026-10-20 (the bonus climbs 0.5 → 2 over five hits and a fresh target reopens at one stack) | `Impale.cs`, Gateway (`Attack`) | [11](docs/protocol/11-skills.md) §14 |
 | Offence panel damage rows: the hit the server swings with becomes `main_hand_minimum/maximum_total_damage` and the per-type minimum/maximum rows, with `skill_uses_main_hand` so the client shows them; whole numbers, main hand only, and an empty packet sends none | `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`) | [11](docs/protocol/11-skills.md) §14 |
 | Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` / `off_hand_accuracy_rating` and the Chance to Hit rows at the character's level; `/accuracy [level]` | `CharacterStats.cs`, `DamageModel.cs`, `MonsterCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) §4–5 |
@@ -199,8 +200,9 @@ switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
   Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their gem's level and quality effects and
   buff icons; their 3D effects (`affected_player.epk`, `faster_attack.epk` …) do not render yet.
-  The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
-  sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
+   The skill-bar active frame and rotating circle now receive the buff's skill id/action hash association
+   (0x1c1 bit3), including area-entry restoration; automated checks pass, live icon verification pending.
+   Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
   curse auras, Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield
   are not applied), Purity ailment immunity, Reservation
   masteries 1/2/6, supports, party/minion auras and life reservation
@@ -298,6 +300,11 @@ guide.
 
 ## Doc caveats
 
+Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a
+16 ms elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are
+preserved. Implemented with regression tests; real-client visual verification after Gateway restart
+is pending. See [20](docs/protocol/20-damage.md), "Continuous resource updates".
+
 `docs/re/003`–`004` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`). Treat them as history, not reference.
 
 ## Jeweller's Orb (2026-10-21)
@@ -318,3 +325,11 @@ none. Spell-only area does not affect the attack. Tested calculations; live visu
 The first live check found that direct radius alone did not scale the channelled visual; its
 conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
 Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
+
+## Hideout crafting bench placement (2026-10-25)
+
+The standard bench spawns to the left of the guild stash in hideouts, using the existing
+decoration's model and a walkable placement (placement confirmed in the real client).
+Clicking it now walks into interaction range and sends 0x7b kind 0x33, type 0 to open the ordinary
+crafting window. Automated checks cover the wire format; a live window-opening check is pending.
+Recipe unlocks and applying crafts are not implemented. See protocol/21-hideouts.md.

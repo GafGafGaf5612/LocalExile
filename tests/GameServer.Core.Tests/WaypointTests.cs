@@ -29,6 +29,14 @@ public class WaypointTests
     }
 
     [Fact]
+    public void Open_crafting_bench_selects_the_ordinary_bench_type_not_the_object_id()
+    {
+        // Client 0x142163420 case 0x33 forwards the first u32 as CraftingBenchTypes row.
+        Assert.Equal("007B3300000000000000000000000000000000",
+            Convert.ToHexString(InstanceWaypoints.OpenUi(InstanceWaypoints.CraftingBenchUi)));
+    }
+
+    [Fact]
     public void Travel_request_reads_area_u32_and_ctrl()
     {
         // C→S 0x4d (write 0x141f92e60): u16 BE area HASH16, u32 BE, u8 Ctrl.

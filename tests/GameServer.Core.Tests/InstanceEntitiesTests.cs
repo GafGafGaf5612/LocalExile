@@ -114,6 +114,14 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Animation_update_layout()
+    {
+        // header, u8 kind (0 = play), u32 animation index, u32 float bits (speed 1.0).
+        Assert.Equal("01B2" + "00003000" + "00000000" + "0000" + "00" + "00000005" + "3F800000",
+            Convert.ToHexString(InstanceProtocol.AnimationUpdate(0x3000, 0, 5, 1f)));
+    }
+
+    [Fact]
     public void Action_started_on_an_object_carries_its_id_after_the_flags()
     {
         string hex = Convert.ToHexString(InstanceProtocol.ActionStarted(0x1000, 1, 2, 3, 4, 0x4000, 7, 0x0408, targetObjectId: 0x3000));
@@ -295,6 +303,15 @@ public class InstanceEntitiesTests
         // righteous_fire with Divine's art: flags 0x90, f32 +0x6c, then u16 BE BuffVisuals row 401 (righteous_fire_white).
         Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "000C" + "00001000" + "0042" + "90" + "3F800000" + "0191" + "00000000",
             Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 12, 0x1000, 0x42, f6c: 1f, visual: 401)));
+    }
+
+    [Fact]
+    public void Aura_buff_links_the_icon_by_action_hash_then_skill_id_before_the_visual_override()
+    {
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "0098" + "00001000" + "0103"
+            + "9A" + "00000BB8" + "3F800000" + "C1BA" + "0103" + "0007" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 152, 0x1000, 0x103,
+                u68: 3000, f6c: 1f, visual: 7, activeSkill: (0x103, 0xc1ba))));
     }
 
     [Fact]

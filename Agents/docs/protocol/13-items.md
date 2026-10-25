@@ -237,7 +237,12 @@ instead and sends nothing unless Destroy is chosen (0x16 command 9).
 Rules the Gateway applies (`PlayerInventories.Place`): grids need the item inside the grid. When exactly one item is in
 the way it is swapped onto the cursor; two or more refuse. Single-item slots take the item at (0, 0) when its class fits
 (`Accepts`: the ItemClasses Id per equipment row; flasks only in the flask bar). A one-handed weapon put into an empty
-main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there.
+main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there. The two
+hands of a weapon set must fit together (`PlayerInventories.HandConflict`, 2026-10-23): a bow goes with an empty off hand
+or a quiver, another two-handed weapon only with an empty off hand; a quiver goes with a bow or an empty main hand, never
+with a one-handed weapon; a shield or a one-handed weapon not with a two-handed weapon. A drop that breaks this is
+refused (the item stays held). Before, only the class per row was checked, so a bow could go next to a shield or a
+sword and a one-handed weapon next to a quiver.
 
 ### Client quiver eligibility
 
@@ -590,7 +595,7 @@ mana over 3 s, 6 of 24. A use with fewer charges than PerCharge, or while dead, 
    0x1b1. `Game_FLASK_BUFFS=0` recovers without the buffs.
    Being tested: the buff's duration, from which the orb may draw the recovery still to come. `Game_FLASK_BUFF_DURATION`
    picks the field: `ms` (default) flags bit1, u32 +0x68 = 3000; `f6c` flags bit7, f32 +0x6c = 3.0; `0` none.
-3. `RunFlaskRecovery` adds the recovery evenly from the use to its end, by the clock, every 20 ms while a flask
+3. `RunResourceRecovery` adds the recovery evenly from the use to its end, by the clock, every 16 ms while a flask
    recovers, and sends each whole point at once (S→C 0x1b1): the orb rises by +1 about every 43 ms for a Small Life
    Flask, not in the player tick's 250 ms steps of 6 (live 2026-10-20: those looked jerky). The buff comes off
    (S→C 0x1c2) when the time is up, the pool is full, or the player dies. Using a flask whose effect still runs
