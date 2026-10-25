@@ -69,4 +69,19 @@ public class AttackSpeedTests
         Assert.Equal(9, off.Count);
         Assert.DoesNotContain(StatKeys.MainHandAttackDurationMs, off.Keys);
     }
+
+    [Fact]
+    public void Off_hand_attack_speed_leaves_out_the_main_weapons_local_attack_speed()
+    {
+        // 75% increased, dual wielding's 10% more and a main-hand weapon with 10% local attack speed: CharacterStats sends
+        // main_hand_attack_speed_+% 112 (1.75 × 1.1 × 1.1). The off-hand weapon's own local value is in its attack time,
+        // so its hand gets 1.75 × 1.1 = 93, not the main weapon's 112.
+        Assert.Equal(93, SkillCatalog.Unarmed.OffHandAttackSpeedPct(112, 10));
+        Assert.Equal(93, SkillCatalog.Unarmed.OffHandAttackSpeedPct(93, 0));
+        Assert.Equal(-99, SkillCatalog.Unarmed.OffHandAttackSpeedPct(-99, 50));
+
+        var player = new Dictionary<uint, int> { [StatKeys.MainHandAttackSpeedPct] = 112 };
+        var off = SkillCatalog.Unarmed.Witch.OffStats(player, mainHandLocalAttackSpeedPct: 10).ToDictionary(s => s.Item1, s => s.Item2);
+        Assert.Equal(93, off[StatKeys.OffHandAttackSpeedPct]);
+    }
 }

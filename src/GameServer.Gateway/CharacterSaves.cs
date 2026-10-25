@@ -48,7 +48,7 @@ static class CharacterSaves
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
         SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null,
-        Dictionary<string, SavedCosmetic>? SkillCosmetics = null)
+        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -67,6 +67,16 @@ static class CharacterSaves
 
     public static void Write(string character, Save save) =>
         Saves.Put(SaveDatabase.Table.Characters, character, JsonSerializer.Serialize(save, Opts));
+
+    public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
+
+    /// <summary>Persist aura intent by stable GrantedEffects Id, never by a connection's skill or buff id.</summary>
+    public static void SetAuraActive(string character, string effect, bool active) => Update(character, save =>
+    {
+        var auras = (save.ActiveAuras ?? []).Where(id => id != effect).ToList();
+        if (active) auras.Add(effect);
+        return save with { ActiveAuras = auras };
+    });
 
     /// <summary>Records what a skill bar slot holds (see <see cref="Save.SkillBar"/>), keeping the saved items.</summary>
     public static void SetSkillBar(string character, byte slot, string entry) => Update(character, save =>

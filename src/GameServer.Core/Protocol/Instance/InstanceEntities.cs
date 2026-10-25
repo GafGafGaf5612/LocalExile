@@ -58,23 +58,34 @@ public static class InstanceEntities
     /// S→C 0x1c1 (world group, class 0x1435ddb78, read 0x141fdf870; world handler case 0x1c1 → the object's Buffs
     /// component, 0x141e11720): object header, u16 buff instance (+0x20, what 0x1c2 removes), u16 BuffDefinitions row,
     /// u32 +0x64 (the source object), u16 +0x60 (the source skill), u8 flags (bit0 u8 u32 u8 u16, bit1 u32 +0x68, bit2
-    /// u16 stacks +0x70 (default 1), bit3 u16 u16, bit4 u16 BuffVisuals override (default the row's), bit5 u8 +0x80
+    /// u16 stacks +0x70 (default 1), bit3 u16 ActionTypes HASH16 +0x74 then u16 skill id +0x72 (the active icon),
+    /// bit4 u16 BuffVisuals override (default the row's), bit5 u8 +0x80
     /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32
     /// per GrantedStats value when its IsRecovery (+0x7c) is set (<paramref name="values"/>: the caller must give exactly
     /// that many, or the client misreads the message), and a u32-counted list of u32. The buff's visual (BuffVisuals)
     /// plays while it lasts.
     /// </summary>
     public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
-        IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null, ushort? visual = null)
+        IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null, ushort? visual = null,
+        (ushort Id, ushort Action)? activeSkill = null, bool auraSource = false, byte? displayState = null)
     {
         // flags bit1: u32 +0x68; bit7: f32 +0x6c (read right after bit1's field); bit4: u16 BE a BuffVisuals row in place
         // of the BuffDefinitions row's (+0x38; read after bits 2 and 3, a row past the table keeps none): a skill
         // effect's art (BuffVisualsArtVariations).
-        byte flags = (byte)((u68 is null ? 0 : 0x02) | (f6c is null ? 0 : 0x80) | (visual is null ? 0 : 0x10));
+        // Bit3 associates a skill buff with the skill-bar icon: ActionTypes HASH16 first, then the server skill id.
+        // SourceSkill alone identifies the caster's source and does not enable AuraFrame/AuraCircle.
+        byte flags = (byte)((u68 is null ? 0 : 0x02) | (f6c is null ? 0 : 0x80) | (visual is null ? 0 : 0x10)
+            | (activeSkill is null ? 0 : 0x08) | (auraSource ? 0x01 : 0) | (displayState is null ? 0 : 0x20));
         var w = new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(flags);
+        // Nonzero +0x76 becomes Buff +0x30: Render selects EPKFiles2 (m_AuraEffectPack), rather than
+        // EPKFiles1 (m_EffectPack). All four bit0 fields must precede the remaining optional fields.
+        // The supported player auras use EPKs, not a radius-scaled MiscAnimated3 ring.
+        if (auraSource) w.U8(1).U32(0).U8(0).U16(0);
         if (u68 is { } a) w.U32(a);
         if (f6c is { } f) w.U32(BitConverter.SingleToUInt32Bits(f));
+        if (activeSkill is { } skill) w.U16(skill.Action).U16(skill.Id);
         if (visual is { } v) w.U16(v);
+        if (displayState is { } state) w.U8(state);
         return w.Bytes([.. (values ?? []).SelectMany(v => new[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v })]).U32(0).ToArray();
     }
 

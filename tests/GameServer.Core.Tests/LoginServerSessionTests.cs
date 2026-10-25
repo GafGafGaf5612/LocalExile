@@ -60,6 +60,58 @@ public class LoginServerSessionTests
         Assert.True(accounts.LoginWithClientDigest("bob", AccountService.ClientPasswordDigest("secret")).Ok);
     }
 
+    [Fact]
+    public void Remembered_login_survives_service_restart_and_is_bound_to_account_device_and_password()
+    {
+        var store = new JsonAccountStore();
+        var accounts = new AccountService(store);
+        accounts.Register("remembered", "pw1234");
+        accounts.Register("other", "pw1234");
+        var request = Request("remembered", "pw1234") with { Flag94 = true,
+            MachineIdA = Enumerable.Repeat((byte)1, 32).ToArray(), MachineIdB = Enumerable.Repeat((byte)2, 32).ToArray() };
+        var result = RoundTrip(new LoginServerSession(accounts), request);
+        Assert.Equal(LoginServerSession.ResultOk, result.Result);
+        Assert.NotEqual(new byte[32], result.Digest);
+        Assert.NotEqual(request.PasswordDigest, result.Digest);
+        var saved = request with { Flag95 = true, PasswordDigest = result.Digest };
+        var restarted = new AccountService(store);
+        Assert.Equal(LoginServerSession.ResultOk, RoundTrip(new LoginServerSession(restarted), saved).Result);
+        foreach (var invalid in new[] { saved with { Account = "other" },
+            saved with { MachineIdA = new byte[32] }, saved with { MachineIdB = new byte[32] },
+            saved with { PasswordDigest = new byte[32] }, saved with { PasswordDigest = request.PasswordDigest },
+            saved with { Flag95 = false } })
+            Assert.Equal(LoginServerSession.ResultInvalidPassword, RoundTrip(new LoginServerSession(restarted), invalid).Result);
+        Assert.Equal(new byte[32], RoundTrip(new LoginServerSession(accounts), request with { Flag94 = false }).Digest);
+        accounts.SetPassword("remembered", "changed");
+        Assert.Equal(LoginServerSession.ResultInvalidPassword, RoundTrip(new LoginServerSession(restarted), saved).Result);
+        Assert.Equal(LoginServerSession.ResultOk, RoundTrip(new LoginServerSession(restarted), Request("remembered", "changed")).Result);
+    }
+
+    [Fact]
+    public void Saved_credential_works_after_closing_and_reopening_the_account_database()
+    {
+        string folder = Directory.CreateTempSubdirectory("remember-login-").FullName;
+        string path = Path.Combine(folder, "saves.db");
+        try
+        {
+            var request = Request("persisted", "pw1234") with { Flag94 = true };
+            byte[] credential;
+            using (var database = new SaveDatabase(path))
+            {
+                var service = new AccountService(new SqliteAccountStore(database));
+                service.Register("persisted", "pw1234");
+                credential = RoundTrip(new LoginServerSession(service), request).Digest;
+            }
+            using (var database = new SaveDatabase(path))
+            {
+                var service = new AccountService(new SqliteAccountStore(database));
+                Assert.Equal(LoginServerSession.ResultOk, RoundTrip(new LoginServerSession(service),
+                    request with { Flag95 = true, PasswordDigest = credential }).Result);
+            }
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
     // The flow a real 3.29.3b client went through on 2026-10-16: 0x03 → (0x04, 0x1b), 0x18 → 0x15, 0x0e → 0x14.
     [Fact]
     public void Live_verified_flow_lists_characters_and_assigns_an_instance()

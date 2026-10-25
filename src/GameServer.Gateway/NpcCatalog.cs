@@ -19,7 +19,12 @@ sealed class NpcCatalog
     /// <summary>An NPCTalk row: the NPC's dialogue option <paramref name="Index"/> (column 1, what C→S 0x82 carries), its
     /// NPCTalkCategory Id (Gossip, Quests, BuyItems, SellItems, IdentifyItems, RespecPassivePointsForGold …), script and
     /// NPCTextAudio rows.</summary>
-    public sealed record Talk(int Row, int Npc, int Index, string Option, string Category, string Script, IReadOnlyList<int> TextAudio);
+    public sealed record Talk(int Row, int Npc, int Index, string Option, string Category, string Script, IReadOnlyList<int> TextAudio)
+    {
+        /// <summary>A SelectHideout row's script opens the guild's list: <c>SendOpenScreen( HideoutSelectionWindow, 1 )</c>
+        /// (the character's list has no argument or 0).</summary>
+        public bool OpensGuildHideouts => System.Text.RegularExpressions.Regex.IsMatch(Script, @"HideoutSelectionWindow\s*,\s*1\s*\)");
+    }
 
     /// <summary>An NPC standing in a town: its NPCs.dat Id, cell and facing (radians).</summary>
     public sealed record Placement(string Id, int X, int Y, float Rotation);
@@ -78,8 +83,11 @@ sealed class NpcCatalog
     [
         new("Metadata/NPC/Act1/Nessa", 256, 351, 4.0f),
         new("Metadata/NPC/League/Delve/DelveMinerHideout", 263, 344, 4.0f),
+        new("Metadata/NPC/Missions/Hideout/Helena", 270, 337, 4.0f),
         new("Metadata/NPC/Epilogue/KiracHideout", 249, 358, 4.0f),
     ];
+
+    public static IReadOnlyList<Placement> HideoutNpcs => Hideout;
 
     public static IReadOnlyList<Placement> In(ushort areaHash) =>
         Towns.GetValueOrDefault(areaHash) ?? (HideoutCatalog.ByArea(areaHash) is not null ? Hideout : []);

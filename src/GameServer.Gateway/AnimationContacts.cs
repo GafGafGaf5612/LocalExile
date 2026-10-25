@@ -11,6 +11,10 @@ sealed class AnimationContacts(string folder = "data")
     /// <summary>The Witch's spell_projectile fraction, used when the file or the animation is missing.</summary>
     public const double DefaultSpellRelease = 599.0 / 1066;
 
+    /// <summary>The default attack's contact fraction when the class's animation or weapon stance is missing
+    /// (attack1_unarmed 333/833 = 0.4 is representative).</summary>
+    public const double DefaultAttackContact = 0.4;
+
     private readonly Lazy<Dictionary<string, Dictionary<string, (int Length, int Contact)>>> _byAo = new(() => Load(folder));
 
     /// <summary>When in a spell cast its projectile leaves, as a fraction of the cast: the class's spell_projectile
@@ -24,6 +28,28 @@ sealed class AnimationContacts(string folder = "data")
             foreach (var (name, a) in anims.OrderBy(kv => kv.Key, StringComparer.Ordinal))
                 if (name.StartsWith(prefix, StringComparison.Ordinal) && a.Length > 0) return (double)a.Contact / a.Length;
         return DefaultSpellRelease;
+    }
+
+    /// <summary>When a melee attack's weapon visually hits (the attack1 animation's contact keyframe), as a fraction of the
+    /// attack: the class's <c>attack1_&lt;weapon&gt;</c> clip, then its shield/dual-wield variant, then any attack1 of that
+    /// weapon. The client stretches the clip to the attack time, so the server pays the hit at this fraction of it.</summary>
+    public double AttackContact(string animatedObject, WeaponProfile weapon)
+    {
+        if (!_byAo.Value.TryGetValue(animatedObject, out var anims)) return DefaultAttackContact;
+        string? main = weapon.Unarmed ? "unarmed" : weapon.Bow ? "bow" : weapon.Staff ? "staff"
+            : weapon.Sword && weapon.TwoHandMelee ? "2hsword" : weapon.Mace && weapon.TwoHandMelee ? "maul"
+            : weapon.Sword ? "sword" : weapon.Dagger ? "dagger" : weapon.Claw ? "claw" : weapon.Wand ? "wand" : null;
+        if (main is null) return DefaultAttackContact;
+        string[] candidates = weapon.Shield
+            ? [$"attack1_{main}_shield", $"attack1_{main}"]
+            : weapon.DualWield
+            ? [$"attack1_{main}_{main}", $"attack1_{main}"]
+            : [$"attack1_{main}"];
+        foreach (string name in candidates)
+            if (anims.TryGetValue(name, out var a) && a.Length > 0) return (double)a.Contact / a.Length;
+        foreach (var (name, a) in anims.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            if (name.StartsWith($"attack1_{main}", StringComparison.Ordinal) && a.Length > 0) return (double)a.Contact / a.Length;
+        return DefaultAttackContact;
     }
 
     private static Dictionary<string, Dictionary<string, (int, int)>> Load(string folder)

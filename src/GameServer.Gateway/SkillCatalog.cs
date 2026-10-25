@@ -224,6 +224,31 @@ sealed class SkillCatalog(string folder = "data")
     /// <summary>The ActionTypes Id of a basic action's skill id (HASH16 &amp; 0x3fff: Move 0x2909), or null.</summary>
     public string? ActionName(ushort skillId) => _actions.Value.FirstOrDefault(a => a.Id == skillId).Name;
 
+    /// <summary>The full ActionTypes HASH16 for a GrantedEffects row, used with its server skill id by skill buffs.</summary>
+    public ushort? ActionHash(int effectRow) => _effectActions.Value.TryGetValue(effectRow, out ushort hash) ? hash : null;
+
+    private readonly Lazy<Dictionary<int, ushort>> _effectActions = new(() =>
+    {
+        string PathOf(string name) => Path.Combine(folder, "tables", name + ".json");
+        if (!File.Exists(PathOf("GrantedEffects")) || !File.Exists(PathOf("ActiveSkills")) || !File.Exists(PathOf("ActionTypes"))) return [];
+        using var effects = JsonDocument.Parse(File.ReadAllBytes(PathOf("GrantedEffects")));
+        using var active = JsonDocument.Parse(File.ReadAllBytes(PathOf("ActiveSkills")));
+        using var actions = JsonDocument.Parse(File.ReadAllBytes(PathOf("ActionTypes")));
+        var result = new Dictionary<int, ushort>();
+        int row = 0;
+        foreach (var effect in effects.RootElement.EnumerateArray())
+        {
+            int index = row++;
+            if (!effect.TryGetProperty("ActiveSkill", out var a) || a.ValueKind != JsonValueKind.Number
+                || a.GetInt32() < 0 || a.GetInt32() >= active.RootElement.GetArrayLength()) continue;
+            var entry = active.RootElement[a.GetInt32()];
+            if (!entry.TryGetProperty("ActionType", out var t) || t.ValueKind != JsonValueKind.Number
+                || t.GetInt32() < 0 || t.GetInt32() >= actions.RootElement.GetArrayLength()) continue;
+            result[index] = actions.RootElement[t.GetInt32()].GetProperty("HASH16").GetUInt16();
+        }
+        return result;
+    });
+
     /// <summary>A basic action's skill id by ActionTypes Id ("Move" → 0x2909), or null.</summary>
     public ushort? ActionSkillId(string name) => _actions.Value.FirstOrDefault(a => a.Name == name) is { Name: not null } a ? a.Id : null;
 
@@ -415,20 +440,30 @@ sealed class SkillCatalog(string folder = "data")
         /// The same attack's off-hand stats (off_hand_… instead of main_hand_…), for the weapon in the other hand of a
         /// dual-wielded attack. A dual-wielded attack swings the off hand too, and the client sets that strike's weapon
         /// up from these stats; it derives none of them (11-skills.md §4), so without them the off-hand weapon has no
-        /// attack time, damage or reach at all.
+        /// attack time, damage or reach at all. <paramref name="mainHandLocalAttackSpeedPct"/> is the main weapon's own
+        /// local_attack_speed_+%, which the final main-hand value carries (<see cref="OffHandAttackSpeedPct"/>).
         /// </summary>
-        public IReadOnlyList<(uint, int)> OffStats(IReadOnlyDictionary<uint, int>? player)
+        public IReadOnlyList<(uint, int)> OffStats(IReadOnlyDictionary<uint, int>? player, DamagePacket? totalHit = null,
+            int mainHandLocalAttackSpeedPct = 0)
         {
             var (min, max) = Damage(player);
             return
             [
                 (StatKeys.OffHandMinPhysical, min), (StatKeys.OffHandMaxPhysical, max),
-                (StatKeys.OffHandMinTotal, min), (StatKeys.OffHandMaxTotal, max),
+                (StatKeys.OffHandMinTotal, totalHit is null ? min : (int)Math.Floor(totalHit.MinTotal)),
+                (StatKeys.OffHandMaxTotal, totalHit is null ? max : (int)Math.Floor(totalHit.MaxTotal)),
                 (StatKeys.OffHandAttackDurationMs, AttackMs), (StatKeys.OffHandTotalAttackDurationMs, AttackMs),
-                (StatKeys.OffHandAttackSpeedPct, IncreasedAttackSpeed(player)),
+                (StatKeys.OffHandAttackSpeedPct, OffHandAttackSpeedPct(IncreasedAttackSpeed(player), mainHandLocalAttackSpeedPct)),
                 (StatKeys.OffHandBaseMaxAttackDistance, Range), (StatKeys.OffHandMaxAttackDistance, Range),
             ];
         }
+
+        /// <summary>The off hand's attack_speed_+%: the final main-hand value with the main weapon's local attack speed
+        /// taken back out. CharacterStats multiplies that local value in like a more, but it belongs to the main weapon
+        /// only; the off-hand weapon's own local attack speed is already in its <see cref="AttackMs"/>.</summary>
+        public static int OffHandAttackSpeedPct(int mainHandPct, int mainHandLocalPct) =>
+            Math.Max(-99, (int)Math.Round(((1 + mainHandPct / 100.0) / Math.Max(0.01, 1 + mainHandLocalPct / 100.0) - 1) * 100,
+                MidpointRounding.AwayFromZero));
 
         /// <summary>The final main_hand_attack_speed_+% (passives and dual wielding, from CharacterStats), or the raw
         /// stats' sum when no final value was sent.</summary>
@@ -481,15 +516,16 @@ sealed class SkillCatalog(string folder = "data")
         /// (the client puts only dual wielding's 10 there when it is not sent), the panel's "Attacks per Second" is
         /// hundred_times_attacks_per_second / 100.
         /// </summary>
-        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null)
+        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null, DamagePacket? totalHit = null)
         {
             var (min, max) = Damage(player);
             double attacksPerSecond = 1 / AttackSeconds(player);
-            double averageHit = (min + max) / 2.0;
+            double averageHit = totalHit?.AverageTotal ?? (min + max) / 2.0;
             return
             [
                 (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
-                (StatKeys.MainHandMinTotal, min), (StatKeys.MainHandMaxTotal, max),
+                (StatKeys.MainHandMinTotal, totalHit is null ? min : (int)Math.Floor(totalHit.MinTotal)),
+                (StatKeys.MainHandMaxTotal, totalHit is null ? max : (int)Math.Floor(totalHit.MaxTotal)),
                 (StatKeys.MainHandAttackDurationMs, AttackMs), (StatKeys.MainHandTotalAttackDurationMs, AttackMs),
                 (StatKeys.MainHandAttackSpeedPct, IncreasedAttackSpeed(player)),
                 (StatKeys.SkillUsesMainHand, 1),

@@ -280,7 +280,8 @@ public sealed record StringList47(uint A, ushort B, IReadOnlyList<string> Items)
 /// C→S 0x03 (vtable 0x1435d8b88, write 0x14213c660, senders 0x14213ea10 and 0x140d05f70): account login.
 /// Version is 2. MachineIdA comes from 0x14213e970 and MachineIdB from 0x14299b130 (32-byte client identifiers),
 /// PasswordDigest is 32 bytes (the client hashes passwords with SHA-256 over UTF-16LE, 0x140e23290). Realm is the
-/// realm byte (0x143a6002c) | 0x40.
+/// realm byte (0x143a6002c) | 0x40. Flag94 requests Remember Password; Flag95 means PasswordDigest
+/// carries the previously returned LoginResult.Digest saved credential rather than a password hash.
 /// </summary>
 public sealed record AccountLogin(uint Version, string Account, byte[] MachineIdA, byte[] PasswordDigest, byte[] MachineIdB,
     bool Flag94, bool Flag95, byte Realm, byte B97) : ILoginMessage

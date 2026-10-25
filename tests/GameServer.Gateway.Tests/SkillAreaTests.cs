@@ -12,6 +12,22 @@ public class SkillAreaTests
     }
 
     [Fact]
+    public void Cyclone_uses_its_own_base_and_scales_for_attacks_without_spell_area()
+    {
+        var normal = Stats();
+        var enlarged = Stats(("base_skill_area_of_effect_+%", 300), ("spell_area_of_effect_+%", 900));
+        Assert.Equal(16, SkillArea.BaseRadius("Cyclone", normal));
+        Assert.Equal(16, SkillArea.Radius(SkillArea.BaseRadius("Cyclone", normal), normal, spell: false));
+        Assert.Equal(32, SkillArea.Radius(SkillArea.BaseRadius("Cyclone", enlarged), enlarged, spell: false));
+        Assert.Equal(300, SkillArea.Increased(enlarged, spell: false));
+        Assert.Equal(100, SkillArea.RadiusPercent(enlarged, spell: false));
+        Assert.Equal(0, SkillArea.RadiusPercent(normal, spell: false));
+        Assert.Equal(16, SkillArea.BaseRadius("CycloneAltX", normal));
+        Assert.Equal(20, SkillArea.BaseRadius("Cyclone", Stats(("active_skill_base_area_of_effect_radius", 20))));
+        Assert.Equal(12, SkillArea.BaseRadius("Unknown", normal));
+    }
+
+    [Fact]
     public void Increased_area_grows_the_radius_by_its_square_root()
     {
         // 100% increased area: √2 = 1.41, 18 × 1.41 = 25.38 → 25 (PoB calcRadius).

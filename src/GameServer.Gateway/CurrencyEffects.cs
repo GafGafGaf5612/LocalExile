@@ -22,14 +22,7 @@ static class CurrencyEffects
 
     /// <summary>Orb of Annulment: one random explicit affix leaves a magic or rare item; implicits, the other affixes,
     /// rarity and name stay. Refused for anything else, or an item without explicit affixes.</summary>
-    public static Item? Annulment(Item item, Random random)
-    {
-        var fractured = item.FracturedIndexes();
-        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit && !fractured.Contains(p.i)).Select(p => p.i).ToList();
-        if (item.Rarity is not (ItemRarity.Magic or ItemRarity.Rare) || explicits.Count == 0) return null;
-        int gone = explicits[random.Next(explicits.Count)];
-        return item with { Mods = [.. item.Mods.Where((_, i) => i != gone)] };
-    }
+    public static Item? Annulment(Item item, ItemRolls rolls, Random random) => rolls.Annul(item, random);
 
     /// <summary>Exalted Orb: a rare item keeps its affixes and name and gets one more (at most three prefixes and three
     /// suffixes). Refused for anything else, or when the item is full.</summary>
@@ -51,27 +44,16 @@ static class CurrencyEffects
     /// prefix and one suffix, each tier drawn by weight. Anything else is refused.</summary>
     public static Item? Alteration(Item item, ItemRolls rolls, Random random) =>
         item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null
-            : rolls.Roll(item, ItemRarity.Magic, random) with { Identified = true };
+            : rolls.Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
 
     /// <summary>Orb of Transmutation: a normal item with mods becomes an identified magic one with 1-2 random affixes
     /// (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
     public static Item? Transmutation(Item item, ItemRolls rolls, Random random) =>
         item.Rarity != ItemRarity.Normal || !item.Components.Contains("Mods") ? null
-            : rolls.Roll(item, ItemRarity.Magic, random) with { Identified = true };
+            : rolls.Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
 
-    /// <summary>Orb of Scouring: a magic, rare or unique item becomes normal; its explicit mods and name go, the base
-    /// (implicit, enchant …) mods stay. On this server it also sets an armour piece's, weapon's or flask's quality back to 0. Refused when
-    /// there is nothing to remove.</summary>
-    public static Item? Scouring(Item item)
-    {
-        bool armourQuality = (item.Components.Contains("Armour") || item.Components.Contains("Weapon") || item.Components.Contains("Flask")) && item.Quality > 0;
-        if (item.Rarity == ItemRarity.Normal && !armourQuality) return null;
-        // Fractured mods stay; an item that keeps one stays magic (a normal item shows no explicit mods).
-        var fractured = item.FracturedIndexes();
-        return item with { Rarity = fractured.Count > 0 ? ItemRarity.Magic : ItemRarity.Normal, Identified = true, NameWords = [],
-            Mods = [.. item.Mods.Where((m, i) => m.Section != ModSection.Explicit || fractured.Contains(i))],
-            Quality = armourQuality ? (byte)0 : item.Quality };
-    }
+    /// <summary>Remove unprotected explicit mods, preserving quality, sockets and locked affixes.</summary>
+    public static Item? Scouring(Item item, ItemRolls rolls) => rolls.Scour(item);
 
     public const string ArmourersScrap = "Metadata/Items/Currency/CurrencyArmourQuality";
     public const int MaximumQuality = 20;
@@ -164,7 +146,7 @@ static class CurrencyEffects
     /// values) and a new rare name; implicits stay. Anything else is refused.</summary>
     public static Item? Chaos(Item item, ItemRolls rolls, Random random) =>
         item.Rarity != ItemRarity.Rare || !item.Components.Contains("Mods") ? null
-            : rolls.Roll(item, ItemRarity.Rare, random) with { Identified = true };
+            : rolls.Roll(item, ItemRarity.Rare, random, respectMetamods: true) with { Identified = true };
 
     /// <summary>Change only links; socket colours, gems and all other properties stay intact.</summary>
     public static Item? Fusing(Item item, ItemCatalog.BaseType type, Random random)
