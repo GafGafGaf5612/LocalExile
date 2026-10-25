@@ -31,16 +31,20 @@ partial class Program
             $"0x02b9 create stash 0x{id:x} at ({at.X}, {at.Y})");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 stash 0x{id:x} enters wake zone");
         conn.StashObject = id;
+        conn.StashAt = (at.X, at.Y);
+        if (scene is not null) conn.HideoutEditor.Register(id, "stash", at.X, at.Y, at.Rotation, ClientState.StashBlockerSize);
         conn.SetBlocker(id, at.X, at.Y, ClientState.StashBlockerSize);
         // A hideout and the Mine Encampment also get the guild stash, a few cells from the stash.
         if (HideoutCatalog.ByArea(conn.Layout.Hash) is null && conn.Layout.Hash != StashCatalog.DelveHub) return;
         var (gx, gy) = scene?.Guild ?? conn.Layout.Near((at.X, at.Y));
+        float guildRotation = SavedHideoutPlacements(conn)?.GetValueOrDefault("guild-stash")?.Rotation ?? at.Rotation;
         uint guild = conn.NextObjectId++;
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(guild, InstanceEntities.ObjectTypeHash(StashObject.GuildMetadataPath),
-            new StashObject(gx, gy, at.Rotation).Blob()), $"0x02b9 create guild stash 0x{guild:x} at ({gx}, {gy})");
+            new StashObject(gx, gy, guildRotation).Blob()), $"0x02b9 create guild stash 0x{guild:x} at ({gx}, {gy})");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(guild), null);
         conn.GuildStashObject = guild;
         conn.GuildStashAt = (gx, gy);
+        if (scene is not null) conn.HideoutEditor.Register(guild, "guild-stash", gx, gy, guildRotation, ClientState.StashBlockerSize);
         conn.SetBlocker(guild, gx, gy, ClientState.StashBlockerSize);
         if (scene?.Bench is { } bench
             && HideoutCatalog.TypeOf(bench.Type!) is var (components, states)
@@ -55,6 +59,7 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(benchId), null);
             conn.CraftingBenchObject = benchId;
             conn.CraftingBenchAt = (bench.X, bench.Y);
+            conn.HideoutEditor.Register(benchId, "bench", bench.X, bench.Y, bench.Rotation, ClientState.StashBlockerSize);
             conn.SetBlocker(benchId, bench.X, bench.Y, ClientState.StashBlockerSize);
         }
         if (scene?.Harvest is { } harvest
@@ -69,6 +74,7 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(harvestId), null);
             conn.HorticraftingObject = harvestId;
             conn.HorticraftingAt = (harvest.X, harvest.Y);
+            conn.HideoutEditor.Register(harvestId, "harvest", harvest.X, harvest.Y, harvest.Rotation, 8);
             conn.SetBlocker(harvestId, harvest.X, harvest.Y, 8);
         }
 
@@ -80,7 +86,8 @@ partial class Program
     {
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         conn.BenchOpen = false;
-        if (StashCatalog.In(conn.Layout.Hash) is not { } at) return;
+        if (conn.StashObject == 0) return;
+        var at = conn.StashAt;
         int action = Interlocked.Increment(ref conn.ActionCount);
         double now = conn.Clock.Elapsed.TotalSeconds;
         var (here, stop, arrive) = conn.Walk.WalkUpTo(at.X, at.Y, ClientState.StashBlockerSize, now);
