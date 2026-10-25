@@ -124,6 +124,12 @@ partial class Program
         }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var player = CharacterPlayerStats(conn);
+        // The hit's penetration: the player's stats (passives, items, auras) with the attack's own on top, so a
+        // skill-granted penetration stat counts; the attack-only variants apply (this is an attack).
+        var hitStats = new Dictionary<uint, int>(player);
+        if (attackEffect >= 0)
+            foreach (var (key, value) in Skills.EffectStats(attackEffect, 1)) hitStats.TryAdd(key, value);
+        var pen = Penetration.Of(hitStats, Stats, attack: true);
         var hit = AttackHit(weapon, player)
             .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
         // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
@@ -137,7 +143,7 @@ partial class Program
         // Read before the hit is applied: a killing blow clears the target's impales.
         int impaleStacks = m.Impale.Stacks;
         double impaleStored = m.Impale.Bonus;
-        int damage = MonsterDamage(m, hit, Random.Shared);
+        int damage = MonsterDamage(m, hit, Random.Shared, pen);
         bool critical = conn.Pools.AttackCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
@@ -466,6 +472,8 @@ partial class Program
                 () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
+            // The hit's penetration: the player's and the skill's stats; spells take the general stats only.
+            var pen = Penetration.Of(stats, Stats, attack: !spell);
             var hit = projectileHitPlan.BuildHit(
                 () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
                         Skills.DamageEffectiveness(gem.Effect, gem.Level))
@@ -473,7 +481,7 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            int damage = MonsterDamage(m, hit, Random.Shared);
+            int damage = MonsterDamage(m, hit, Random.Shared, pen);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
@@ -551,6 +559,8 @@ partial class Program
         int criticalChance = hitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
             () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats));
         foreach (var (k, v) in skillStats) stats[k] = v;
+        // The hit's penetration: the player's and the skill's stats; spells take the general stats only.
+        var pen = Penetration.Of(stats, Stats, attack: !spell);
         foreach (var (id, m) in targets)
         {
             DamagePacket hit = hitPlan.BuildHit(
@@ -559,7 +569,7 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            int damage = MonsterDamage(m, hit, Random.Shared);
+            int damage = MonsterDamage(m, hit, Random.Shared, pen);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
@@ -763,10 +773,14 @@ partial class Program
     }
 
     // The damage a player's outgoing hit deals to its monster: one roll per type, then each type's own base resistance
-    // (HitMitigation), summed to the total the critical multiplier later applies to. Damage over time has no resistance
-    // here and keeps its own path.
-    static int MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random) =>
-        HitMitigation.RollMitigated(hit, type => HitMitigation.Resistance(Monsters, m.Variety, m.Level, type), random);
+    // with the hit's penetration subtracted from the capped value (HitMitigation), summed to the total the critical
+    // multiplier later applies to. Damage over time has neither here and keeps its own path. Internal for the tests.
+    internal static int MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random, Penetration.PerType pen) =>
+        HitMitigation.RollMitigated(hit, type =>
+        {
+            var resistance = HitMitigation.Resistance(Monsters, m.Variety, m.Level, type);
+            return resistance with { Penetration = pen.Of(type) };
+        }, random);
 
     // The short state mutation is shared with projectile impact; no awaits under Monsters.
     static MonsterHit? ApplyMonsterHitLocked(ClientState conn, SpawnedMonster m, int damage)

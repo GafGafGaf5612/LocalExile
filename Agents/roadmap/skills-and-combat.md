@@ -55,14 +55,19 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   The default attack, Fireball and monster melee use packets and read the player's/skill's conversion stats
   ([20](../docs/protocol/20-damage.md)).
   Player hits on monsters take the target's base resistance per type (`MonsterTypes.Resistances` →
-  `MonsterResistances` by the level's difficulty, `MonsterResistanceCatalog`/`HitMitigation`); monster armour is still
-  not modelled.
+  `MonsterResistances` by the level's difficulty, `MonsterResistanceCatalog`/`HitMitigation`), with the hit's
+  unconditional penetration subtracted from the capped value and no second clamp (`Penetration`): general
+  per-element and elemental stats on every hit, attack-only variants on attacks, the cannot-penetrate flag
+  suppressing the elemental ones; DoT and physical take none. Monster armour is still not modelled.
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
-  Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
-- **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
+  Special ES mechanics, exposure, conditional penetration, ailment application, added damage and support modifiers
+  remain open.
+- **Start:** special ES mechanics, exposure, the conditional penetration variants (non-critical strikes, aura
+  conditions, #216's critical resistance-ignore over the same `HitMitigation` foundation) and the remaining
+  conditional critical strike stats
   from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
   Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.
   Native skill switching, combined bonuses, no-crit, relog and hitless-spell controls are verified.

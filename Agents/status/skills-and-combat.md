@@ -223,8 +223,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour yet; each damage
-  type of a hit takes the monster's own base resistance, `HitMitigation`; the player's hit lands at the attack
-  animation's contact keyframe, a monster's still at half its attack time).
+  type of a hit takes the monster's own base resistance with the hit's penetration subtracted from the capped value,
+  `HitMitigation`/`Penetration`; the player's hit lands at the attack animation's contact keyframe, a monster's still
+  at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour
   and block.
   The player's life comes from the class/level/passive pools.
@@ -247,8 +248,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
-  Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
-  application/duration ([20](../docs/protocol/20-damage.md)).
+  Not yet: exposure, conditional penetration (non-critical strikes, aura conditions), added damage,
+  increased/more support modifiers, ailment application/duration ([20](../docs/protocol/20-damage.md)).
+  Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
+  attack-only variants, the cannot-penetrate flag; DoT and physical take none), with the real-table tests passing;
+  live verification against the real client is pending and coordinated outside this change.
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.
