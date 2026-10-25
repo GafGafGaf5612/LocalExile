@@ -17,6 +17,11 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 1. Quality of life
 
+### Switching hideout templates
+- **Known:** Helena now stands to Niko's screen-right and opens HideoutSelectionWindow (0x7b kind 0x22).
+  The owned list contains the default Lush Hideout. [21](docs/protocol/21-hideouts.md).
+- **Start:** map the selection request, persist the chosen template, and use it for /hideout, player keys and portals.
+
 ### Chat lines and the global channel
 - **Known:** C→S 0x15 (chat text) is parsed; command replies use S→C 0x17 (chat line). 0x12d shows BackendErrors rows, 0x157 is
   a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".
@@ -96,6 +101,9 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** talk options play their text, Nessa and Tarkleigh trade, and every town has its NPCs.
 
 ## 3. Gameplay
+
+- **Completed area fix:** Cyclone's `/set_aoe` final radius is now sent to the client and shared with hit selection;
+  see Status and protocol/11-skills.md (live check pending).
 
 ### The player's real stats
 - **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §8); `/set_stat` takes names. The

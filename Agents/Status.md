@@ -5,6 +5,13 @@ as any change that makes something work, or that finds something broken.
 
 What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in [docs/README.md](docs/README.md).
 
+Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows now publish
+`main_hand_weapon_type = 9`, required by the client's inventory gate; see [13](docs/protocol/13-items.md).
+
+Helena placement and hideout picker entry point (2026-10-25, awaiting client confirmation): Helena stands
+screen-right of Niko and Select Hideout opens the native window. Only the existing Lush Hideout is owned;
+switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
+
 ## Works (verified with the real client)
 
 | Feature | Where | Docs |
@@ -302,3 +309,12 @@ capacity blocks further use. Local counts are 1/2/3/4/6. Probabilities are appro
 
 PR branch validation: build succeeded with zero warnings/errors; Core 307, Data 15, Gateway 210 tests passed.
 Gateway test artifacts were placed in the local workspace so the existing extracted data could be read.
+
+## Cyclone area of effect (2026-10-25)
+
+`/set_aoe` now resends Cyclone's calculated final radius in the skill record, using the same radius
+calculation for server hits. Cyclone/CycloneAltX use a 16-cell base when their exported stat set has
+none. Spell-only area does not affect the attack. Tested calculations; live visual check pending.
+The first live check found that direct radius alone did not scale the channelled visual; its
+conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
+Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.

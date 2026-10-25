@@ -6,6 +6,8 @@ namespace GameServer.Core.Protocol.Instance;
 public static class InstanceNpcs
 {
     public const ushort TalkId = 0x84;
+    // HideoutSelectionWindow in the native screen-name table at 0x142fc5920.
+    public const byte HideoutSelectionUi = 0x22;
 
     /// <summary>C→S 0x85 (id only): the dialogue window was closed (Goodbye, Esc or walking away). Live 2026-10-19: sent
     /// after every 0x84, alone in its chunk.</summary>

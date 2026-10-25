@@ -239,6 +239,15 @@ the way it is swapped onto the cursor; two or more refuse. Single-item slots tak
 (`Accepts`: the ItemClasses Id per equipment row; flasks only in the flask bar). A one-handed weapon put into an empty
 main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there.
 
+### Client quiver eligibility
+
+`FUN_1421eca50` checks that a quiver (ItemClasses row + 1 = 21) sees player stat 3,
+`main_hand_weapon_type`, equal to **9**. This is a separate native enum: Bow's ItemClasses row + 1 is 14,
+and its model stance is 8. Sending the visual alone leaves inventory quivers red and prevents placement
+requests. `FinalPlayerStats` supplies 9 for an active, usable bow in row 2 and clears a stale bow value.
+Weapon swaps physically exchange rows 2/3 with 14/15. Other weapon-stat enum values remain to be mapped.
+Automated coverage passes; in-client confirmation pending.
+
 ## 4a. Stacks
 
 Stackable types have a Stack component (its u16 is the stack size) and a CurrencyItems.dat **StackSize** above 1

@@ -214,6 +214,15 @@ town (the way back), and the portal staying after the player leaves the area.
 
 ## Open
 
+Helena (2026-10-25, client verification pending) is placed at (270,337), screen-right of Niko,
+using `Metadata/NPC/Missions/Hideout/Helena` (NPCs row 342). Her own NPCTalk option 2,
+category `SelectHideout`, requires ThisIsMyHideout and HaveHideout, already supplied in hideouts.
+The handler closes dialogue with 0x84 object 0 and opens UI 0x7b kind **0x22**, argument 0
+(HideoutSelectionWindow in the native screen table 0x142fc5920; argument 1 is guild mode).
+The owned-hideouts response 0x1f5 now lists the default Lush Hideout rather than an empty list.
+This adds the NPC and picker entry point; changing ownership, persisting a different hideout and
+processing the picker's selection request remain unimplemented.
+
 - The decorations (trees, tents …): `Metadata/MiscellaneousObjects/HideoutDoodad` and other types, each with its own
   component list; `HideoutObject` writes the supported ones.
 - Editing: the Edit button shows; moving, placing and saving doodads (the client's messages) are not served.

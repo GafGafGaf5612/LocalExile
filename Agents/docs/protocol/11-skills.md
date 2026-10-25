@@ -655,6 +655,35 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   (`base_block_luck`, `attack_block_luck`, `spell_block_luck`) uses `1 - (1 - p)²` (PoB CalcDefence); Svalinn's unique
   item modifiers themselves are not supported yet.
 
+### Cyclone area updates (2026-10-25)
+
+`/set_aoe` sends the increased-area input, but Cyclone's visual also needs the final
+`active_skill_area_of_effect_radius` in its granted skill record. The Gateway now computes and sends
+that radius together with its base for Cyclone/CycloneAltX. The hit-radius calculation uses the same
+base selection and `SkillArea.Radius`, so visual scaling and hit selection agree on the next cast.
+Turning the override off resends the character's own modifiers and the newly calculated radius.
+
+The exported Cyclone stat set has no explicit base radius. Use 16 cells for these two variants,
+matching [Path of Building's skill definitions](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Export/Skills/act_dex.txt);
+an explicit positive base stat takes precedence. Other skills keep their existing data/fallback base.
+Client evidence: `0x1414b13c0` reads final radius stat 0x4876 to scale its cyclone effect; the shared
+cyclone path `0x141d434c0` also reads 0x4876 (or the base 0x4875 in its conditional-radius path).
+Increased area is not increased radius: +300% area changes radius 16 → 32, +0% restores 16 without
+other modifiers. Tests cover this calculation, spell-area exclusion, explicit bases and the fallback.
+Additional melee-range/stage modifiers specific to Cyclone remain outside this initial area model.
+Live visual verification after restarting Gateway is pending.
+
+**Follow-up after live failure:** sending only 0x4875/0x4876 did not change the rendered channel.
+The live hit radius did change (24 → 42 cells after `/set_aoe 300` on the test character), so that
+was insufficient evidence for visual scaling. The conditional-radius helper `0x141939880` reads
+`total_skill_area_of_effect_radius_+%_including_final` (0x1591) on its normal branch and the
+aggregated `skill_area_of_effect_+%` (0xd7), rather than the base input 0x1b5, on its conditional
+branch. Cyclone's skill record now carries both derived values as well. +300% increased area is
++100% radius before other modifiers. Compute all outputs from the original inputs before writing
+the aggregated 0xd7, to avoid counting 0x1b5 twice. The server's hit calculation still uses the
+original input stats. `Cyclone area:` log lines record the transmitted base, radius, area increase
+and radius scale. Live verification of this follow-up is pending.
+
 ## 13. Auras and reservation
 
 - **Reservation is in the data.** `GrantedEffectsPerLevel` has `ManaReservationFlat` and
