@@ -29,7 +29,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
 - **Spell cast timing (#192):** native base milliseconds are preserved and cast speed adjusts server waits and
-  displayed rate once. Automated checks pass; verify +100% and -80% clip duration/release alignment in the client.
+  displayed rate once. Automated checks and real-client -80%/+100%/zero clip durations pass.
+  Projectile release/contact alignment was not separately measured.
   Instant casts and attack timing stay separate; conditional action-speed and special native mechanics remain open.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.

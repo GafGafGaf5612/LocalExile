@@ -184,7 +184,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Server waits and displayed casts per second share `SpellCastTiming`; attacks keep their existing path.
   The old -80% Fireball recovery capture lasted 18.75 seconds instead of 3.75 due to two divisions by 0.2.
   Automated 0/+100/-80 timing, instant/channel classification, invalid-rate and existing aura/sum checks pass.
-  Corrected real-client clip duration and release alignment verification is pending.
+  Real-client Q Fireball clips measured 3.750000157 s at -80%, 0.375 s at +100%, and 0.75 s at zero.
+  Native virtual base stayed 750 ms; emitted cast rates were 0.27, 2.67 and 1.33 casts/s respectively.
+  Projectile release/contact alignment was not separately measured.
   Instant casts remain instant; channel damage cadence and conditional action-speed mechanics are unchanged.
   Numeric server durations below 1 ms are floored, and invalid factors/unrepresentable waits produce no spell effect.
   Code: `SpellCastTiming.cs`, Gateway (`GemSkills`, `CastMs`, `CastGemSkill`, `LaunchProjectile`, `AreaSkillHit`).

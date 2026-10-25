@@ -449,7 +449,11 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   The alternate action `0x1419eef50` uses the same formula with getter +0x788.
   In the earlier recovery capture (`logs/monster-hit-recovery-cast.json`), a 1.066-second clip at playback speed
   0.0568533279 took 18.7500015 seconds: the old 3750 virtual milliseconds were divided by 0.2 again.
-  Corrected normal-launch timing still needs a real-client check at both signs.
+  Real-client Q casts in the combined validation build now have native clip durations 3.750000157 seconds at
+  -80%, 0.375 seconds at +100%, and 0.75 seconds at zero. The native virtual base was 750 in all three captures;
+  emitted cast rates were 27, 267 and 133 hundredths. Duration was measured as clip length / playback speed.
+  Captures: `logs/skill-timing-after-fireball-{minus80,plus100,default}-real.json` in the integration checkout.
+  These checks establish native clip duration; projectile release/contact alignment was not separately measured.
   Server projectile release, area-spell delay and the Portal spell's cast wait use the adjusted duration once.
   Catalog instant skills retain their instant flag, zero server cast duration and no finite casts-per-second rate.
   A channelled spell's native base is also preserved; this does not implement beam damage or change the existing
