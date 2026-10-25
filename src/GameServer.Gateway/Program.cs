@@ -1982,7 +1982,7 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
             && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
         return (damage, critical);
-    });
+    }, epoch: epoch);
 }
 
 // The radius in cells of a gem skill's hit around its aimed point (AreaSkillHit): its own
@@ -2069,11 +2069,10 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
 // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
 static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     (string Id, int Speed) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)> damageTo,
-    bool log = true, string? impact = null)
+    int epoch, bool log = true, string? impact = null)
 {
     uint id;
-    int epoch;
-    lock (conn.Monsters) { id = conn.NextObjectId++; epoch = conn.ProjectileEpoch; }
+    lock (conn.Monsters) id = conn.NextObjectId++;
     bool Active() => conn.ProjectileActive(epoch);
     if (!Active()) return;
     double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
