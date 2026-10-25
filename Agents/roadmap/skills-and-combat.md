@@ -28,6 +28,11 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
+  Ordinary one-use cooldown recovery now shares the native base/rate and a server base-time budget, with atomic
+  preflight before action side effects; automated checks pass and real-client Dash validation is pending.
+  Remaining cooldown work includes multi-use recharge, shared groups, bypass, typed/conditional/more recovery,
+  official tick boundaries and Frostblink's unsupported location-instant C→S 0x190 path.
+  See [11](../docs/protocol/11-skills.md) §9.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 

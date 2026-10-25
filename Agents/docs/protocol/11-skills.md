@@ -456,8 +456,43 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `u32, u32, u32, u8` → +0xc0, +0xc4, +0xc8, +0xcc in `0x141ee73d0`), not from the data; or the stats
   `skill_cooldown_time_override_ms` / `skill_cooldown_is_4_seconds`. With 0 there the client kept no cooldown and the
   bar showed none (Frida: no records, +0xc8 = 0; live 2026-10-21); `GrantedSkill.CooldownMs` now carries GEPL Cooldown.
-  +0xd0 (the cooldown group) comes from the GEPL row's CooldownGroup (+0x30). The server also enforces it: `CastGemSkill` refuses a skill until its
-  GEPL Cooldown is over (`ClientState.SkillReadyAt`; Haste and the Purities 1200 ms, Righteous Fire 300 ms).
+  +0xd0 (the cooldown group) comes from the GEPL row's CooldownGroup (+0x30).
+  For ordinary one-use spells/attacks, the native base remains GEPL Cooldown; the final recovery percentage is
+  player-computed `virtual_cooldown_speed_+%` (3398) + the skill's own base (3397) and virtual (3398) inputs once.
+  Dash quality 20 adds 10%; the player's base input is already included in its computed virtual value.
+  `SingleUseCooldown` shares this resolution between granted skill stats and server readiness.
+  The server retains remaining **base milliseconds**, subtracting elapsed game-clock time times the recovery rate;
+  stat/skill refresh settles the old rate before installing the new one, and pause advances no game time.
+  Its ordinary preflight atomically checks readiness, reserves one use, and changes action/movement under `Monsters`
+  before an action echo or effect can run.
+  A queued continuation keeps the original action/area ticket; cancellation consumes the accepted use without a refund.
+  An attack approach only checks readiness, then reserves at arrival under its original action token.
+  Instant 0x191 skills preserve the current action.
+  A projectile's creation gate ends action cancellation; released flights continue with their existing area lifetime.
+  Multi-use, extra-use, duplicate same-effect gem, flat/override and pause-while-active mechanics retain legacy
+  `SkillReadyAt` raw deadlines.
+  Shared cooldown groups, bypass, conditional/enemy recovery, typed/more recovery and official tick equivalence are
+  outside this generic one-use implementation.
+  A zero recovery rate stalls a spent use.
+  Extreme input sums are bounded to avoid signed native `percent + 100` overflow.
+
+  Native evidence: Actor +0x598 owns the manager; its +0x170/+0x178 range holds 0x48-byte records.
+  A record's +0x10/+0x18 vector holds 0x10-byte entries: remaining base seconds, total base seconds, recovery rate,
+  flags; record +0x30 is uses, +0x34 base ms, +0x3c skill id, +0x40 group.
+  Constructor `0x141eebed0` reads skill +0xc8 unless an override applies.
+  `0x141eebfe0` takes the cooldown object at record +0x10 in RCX, recovery percent in EDX and group propagation in R8B;
+  it stores base ms / 1000 and `(100 + percent) / 100` separately.
+  Tick `0x141eebdb0..0x141eebdc8` subtracts elapsed time times rate; `0x141eeb7aa..0x141eeb7e7` refreshes active rates.
+  Pre-fix real-client Dash at +100% held base 2.5 s/rate 2 and completed natively within 1.4 s, but a raw 0x25 retry
+  was echoed/moved before the server rejected it for 1132 ms remaining (`logs/cooldown-before-dash-plus100.json`).
+  Automated checks cover 0/+100/-50%, source aggregation, quality, changing rates, pause,
+  and atomic stale-use rejection.
+  Post-fix real-client validation is pending.
+  Frostblink remains a catalog/math fixture only: actual location-instant input uses unsupported C→S 0x190 (12 bytes),
+  which is outside this change; it has no successful runtime cooldown claim.
+  [PoB](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Modules/CalcOffence.lua)
+  also divides base duration by recovery, then rounds ordinary one-use durations to its server tick.
+  This server keeps its existing continuous game clock and does not claim that tick boundary behavior.
 - **Mana.** The server keeps the player's mana (`PlayerMana`): a cast pays the skill's `mana_cost` first (refused
   without enough), and `RunPlayerTick` regenerates 1.75% of maximum mana per second (Character.ot
   `mana_regeneration_rate_per_minute_%` 105) plus `base_mana_regeneration_rate_per_minute`, raised by

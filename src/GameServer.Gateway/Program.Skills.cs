@@ -24,6 +24,7 @@ partial class Program
     // stat only an unequipped item or a refunded passive gave) goes with 0, so the client does not keep its old value.
     static List<(uint, int)> PlayerStatsWithCleared(ClientState conn)
     {
+        RefreshSingleUseCooldowns(conn);
         var stats = FinalPlayerStats(conn).ToList();
         var now = stats.Select(s => s.Item1).ToHashSet();
         lock (conn.Monsters)
@@ -227,13 +228,18 @@ partial class Program
     {
         var playerStats = new Dictionary<uint, int>();
         foreach (var (key, value) in player ?? []) playerStats[key] = value;
+        var gems = GemSkillEffects(character).ToArray();
+        var singleSources = gems.GroupBy(g => g.Effect).Where(g => g.Count() == 1).Select(g => g.Key).ToHashSet();
         var skillCosmetics = CharacterSaves.SkillCosmetics(string.IsNullOrEmpty(character) ? "Exile" : character);
-        foreach (var (id, effect, name, level, quality, gem) in GemSkillEffects(character))
+        foreach (var (id, effect, name, level, quality, gem) in gems)
         {
             var stats = new Dictionary<uint, int>();
             foreach (var (k, v) in playerStats) stats[k] = v;
             var own = Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             foreach (var (k, v) in own) stats[k] = v;
+            if (singleSources.Contains(effect) && SingleUseCooldown.ForSkill(Skills, Stats, effect, level, playerStats, own) is { } cooldown
+                && Stats.Key("virtual_cooldown_speed_+%") is uint recoveryKey)
+                stats[recoveryKey] = cooldown.RecoveryPercent;
             if (Skills.IsSpell(effect) && !Skills.IsAttack(effect) && Stats.Key("spell_critical_strike_chance") is uint critKey)
                 stats[critKey] = SpellCriticalStrike.Chance(Skills.SpellCritChance(effect, level), Stats, playerStats, own);
             // The skill effects worn in the gem's Cosmetics tab slots: their stats (skill_art_variation …) on this skill only.
@@ -472,6 +478,7 @@ partial class Program
     // Actor 0x20 update (PlayerSkillsChange): the 0x40 list neither removes skills nor tells the character panel.
     static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        RefreshSingleUseCooldowns(conn);
         var skills = PlayerSkills(conn);
         var gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
         var added = skills.Select(s => s.Id).Where(id => !conn.ClientSkillIds.Contains(id)).ToList();

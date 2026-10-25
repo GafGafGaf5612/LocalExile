@@ -144,8 +144,15 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
   `skill_is_instant`, so the client sends them as C→S 0x191 and keeps walking;
   the server applies them and answers S→C 0x1ce, which starts the skill bar's cooldown.
-  Skill records carry the GEPL Cooldown and the stats the cooldown count, and the server refuses a skill until its
-  cooldown is over.
+  Skill records retain GEPL Cooldown as the native base and carry the cooldown count.
+  Ordinary one-use spells/attacks now resolve player and skill generic recovery once, and the server keeps remaining
+  base-time budget through stat changes and pause.
+  Preflight reserves before action/movement/echo side effects; queued effects retain the original action/area ticket.
+  Automated checks pass; post-fix real-client Dash recovery and early raw retry validation are pending.
+  The pre-fix native Dash base 2.5 s/rate 2 completed while the server still rejected the retry after echoing/moving.
+  Multi-use, duplicate same-effect gems, shared groups, extra uses, bypass, typed/conditional/more recovery and official
+  tick equivalence remain outside this slice.
+  Frostblink's location-instant 0x190 input is unsupported and has no runtime verification claim.
   The skill bar keeps its slots when skills are re-sent or a gem is socketed again (the saved bar goes out as 0x53)
   ([11](../docs/protocol/11-skills.md) §9, §11).
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel (`ManaReservationFlat`
