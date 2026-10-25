@@ -615,7 +615,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                     TiliseInjected(injected.Room.Def!, injected.Orientation, x, y, height);
                     continue;
                 }
-                if (list.Count == 0) throw new InvalidOperationException($"{room.Path}: no tile for slot ({col}, {row}) {key.Rotate(code)} tag '{slot.Tag}'");
+                if (list.Count == 0) throw new InvalidOperationException($"{room.Path}: no tile for slot ({col}, {row}) at ({x}, {y}) {key.Rotate(code)} tag '{slot.Tag}'");
                 var (tile, orientation) = Weighted(list, (int)rng.Next((uint)list.Sum(c => c.Weight)));
                 // 0x1420ef310 places the tile (0x141ffb870), then sets its height (0x141d82d00): its vertices take the
                 // slot height plus the tile's own, whatever grounds they have.

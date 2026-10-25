@@ -157,7 +157,16 @@ For a one-node graph (towns, hideouts):
    0: `chris_sand_dune.gt` "1 0" has flags 1 | 4 | 8),
    corner heights, edge points; turning uses the tables `0x142fbe3b8` / `0x142fbe3d8` and mirrors edge points for
    codes 4..7 (`0x141d80480`). `.tdt` layout after the string table: u32 "", u32 .tgt, u32 tag, 4 × u32 edges,
-   u8 w, u8 h, 4 × u32 grounds, 4 × i8 heights, 4 × u8 points a, 4 × u8 points b.
+   u8 w, u8 h, 4 × u32 grounds, 4 × i8 heights, 4 × u8 points a, 4 × u8 points b. A room slot's key (`.arm`,
+   read raw by `0x142a0e2a0`) is finished by `0x141d808c0` when `0x141ff3210` turns it into the slot's 0x4e bytes:
+   per side, no edge puts both points at the side's length (3 per tile), an edge without .et flag 4 (not virtual) its
+   second point there, and a virtual edge's two points go in ascending order. Rooms write 250 virtual sides descending
+   (`wildcard_double` in `deepstream_corner_bridge_1.arm`, `sewers_thick_wall_corridor` in `entrance_dry_2.arm`, …);
+   no tile does, and the store compares keys with `memcmp`, so without the sort those slots find no tile.
+   (2026-10-25; was the "no tile for slot" stop in `1_3_7`, `1_3_10_1`, `1_3_14_2`, `2_8_11`, `2_8_7_2`,
+   `2_11_endgame_town`.) A `.tdt` with a base tile (u32 0 names one) has another header layout (`02 01` size at
+   +25 in `sewerwall_thin_entrance_v02_01_nofeature.tdt`) the port does not read: its key comes out as 255 × 255,
+   which is `2_8_2_1`'s "no tile for slot".
 5. **Fill**: the recorded cells plus every still-empty entry (ground "default"), sorted by (x, y), so column by
    column (`0x14212d520`); each empty one gets a tile from the master's FillTiles (.gft: quoted ground name, then
    "weight path") for its ground's name (.gt first line): `Next(total weight)`, then for a square tile `Next(8)` as
@@ -852,7 +861,7 @@ Also from the oracle: the extra-feature league rolls (`0x14204a310` → `0x141ea
 +0x8e needs a chance, +0xa0 skipped; repeat chance for shrines etc.), three-edge key turning (`0x14211ce90`), the
 store lookup's height fallback (`0x141d81f70`: corners whose ground lacks flag 1 drop their height), `.arm` keys
 (`0x142a0e2a0`: heights relative to the lowest corner, which is the slot's height; the last number is "corner",
-not the height) and symmetric virtual edge splits (`0x141d7bcf0`, `0x142112600`) are ported.
+not the height; edge points finished by `0x141d808c0`, §3c step 4) and symmetric virtual edge splits (`0x141d7bcf0`, `0x142112600`) are ported.
 
 Not ported (they throw): overlay pass-2 placements, SizeOrder overlay passes, MatchAllTileKeys, overlay room
 conditions, room heights (`0x142118900`), FillTiles edge lists,
@@ -1164,7 +1173,11 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   DoorEdgeType (§3c2, door tiles; was a stop in 9 traces / 9 oracle loads): **590 of 782 match** (+2, none lost), 115 of the
   197 seed-1 traces by hash (+2: `2_7_11`, `2_8_8`); `1_5_3`, `1_5_3b`, `2_8_5`, `2_10_9` match every draw up to the
   outer buffer of a sub-area subgraph or the doodads, `1_4_1` / `2_9_1` (`intro_1_1.dgr`) and `2_8_9` run to another
-  hash.
+  hash. 2026-10-25, room slot edge points in order (`0x141d808c0`, §3c step 4; the `0x1420efc0c` "no tile for slot"
+  cluster): **591 of 782 match** (+1, none lost), 116 of the 197 seed-1 traces by hash (+1: `2_7_3`); `1_3_7` /
+  `2_8_11` now run to another hash (first differing in `0x141fe89e0`'s injected rooms), `1_3_14_2` / `2_8_7_2` too
+  (at `0x1420f6875`), `1_3_10_1` stops at the hideout claim's outer buffer, `2_8_2_1` still at a `.tdt` with a base
+  tile.
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds

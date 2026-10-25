@@ -454,7 +454,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         return version > 0x15 && at < t.Count && t[at].IsNumber ? t[at].Int : 0;
     }
 
-    static RoomDef? ParseRoom(string path, string text)
+    RoomDef? ParseRoom(string path, string text)
     {
         var file = RoomFile.Parse(text);
         if (file.RoomKey is null) return null;
@@ -488,6 +488,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
                     key.Grounds[i] = Path(file, v[14 + i]);
                     key.Heights[i] = (sbyte)v[18 + i];
                 }
+                OrderPoints(key);
                 // 0x142a0e2a0: the corners keep their heights above the lowest, which becomes the slot's height (+0x132).
                 // The last number (version > 18, "corner") is not the height but the key's anchor corner.
                 int low = key.Heights.Min();
@@ -519,6 +520,21 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         if (inner > 0 && last is not null && last.Count == inner && last.All(t => t.IsNumber && !t.Text.Contains('.')))
             vertexGrounds = [.. last.Select(t => Path(file, t.Int))];
         return new RoomDef(path, file.Tag, roomKey, grid) { PointCount = file.Points.Count, VertexGrounds = vertexGrounds, Overlap = HeaderOverlap(text), Doodads = file.Doodads };
+    }
+
+    /// <summary><c>0x141d808c0</c>, as <c>0x141ff3210</c> turns a room slot into its key: per side, no edge puts both
+    /// points at the side's length (3 per tile), an edge that is not virtual (.et +0x48 flag 4) its second point there,
+    /// and a virtual edge's points go in ascending order (rooms write some descending; tiles never do, and the store's
+    /// lookup compares the keys byte for byte).</summary>
+    void OrderPoints(TileKey key)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            byte length = (byte)(((i & 1) == 0 ? key.Width : key.Height) * 3);
+            if (key.Edges[i] is null) key.PointA[i] = key.PointB[i] = length;
+            else if (Edge(key.Edges[i]) is not { Virtual: true }) key.PointB[i] = length;
+            else if (key.PointB[i] < key.PointA[i]) (key.PointA[i], key.PointB[i]) = (key.PointB[i], key.PointA[i]);
+        }
     }
 
     static string? Path(RoomFile file, int index) => file.Dict(index) is { Length: > 0 } s ? s : null;
