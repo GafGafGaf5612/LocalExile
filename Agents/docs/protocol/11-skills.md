@@ -229,13 +229,50 @@ once. The Gateway now sends the 0x20 update instead (above), which also removes 
 critical strike chance / 100)`, capped at 100%, then multiplies the damage by the final multiplier (150% plus
 `base_critical_strike_multiplier_+`), as PoB's `CalcOffence` does. PoB's `unarmedWeaponData[class].CritChance = 0`
 and `base_critical_strike_multiplier = 150` are the defaults used here. The base is the equipped main hand's `WeaponTypes.dat` `Critical` permyriad
-(830 = 8.30%); unarmed is 0. Fireball uses its `GrantedEffectStatSetsPerLevel` `SpellCritChance` 500 (5.00%). The
-unconditional passive stats are summed into `CharacterStats.Pools`: generic `critical_strike_chance_+%` and
+(830 = 8.30%); unarmed is 0. Spells use their own level's `GrantedEffectStatSetsPerLevel.SpellCritChance`:
+Fireball 500 (5.00%), Freezing Pulse and Ice Nova 750, Arc 600, Scorching Ray 0.
+`SkillCatalog.SpellCritChance` returns null for missing/invalid data, distinct from a known zero; both fail closed.
+The unconditional passive stats are summed into `CharacterStats.Pools`: generic `critical_strike_chance_+%` and
 `base_critical_strike_multiplier_+` for both attacks and spells, the attack/melee/weapon-shape chance and multiplier
 stats for attacks, and `spell_critical_strike_chance_+%` / `base_spell_critical_strike_multiplier_+` for spells. The final
 `main_hand_critical_strike_chance` / `_multiplier` and `spell_critical_strike_chance` / `_multiplier` stats go to the
-client, so the Offence panel shows them. Timed, charge, enemy-state and similar conditional crit stats are not modelled;
-`/crit` prints both final values.
+client, so the Offence panel shows them.
+`SpellCriticalStrike` shares the raw player-plus-skill increased-chance calculation between `GemSkills` and projectile/
+area spell hits; the old final Fireball-based player display chance is not added as another input.
+Precision and Zealotry expose their existing crit bonuses through `AuraCatalog.RawStats` for that calculation.
+Pool construction still reads passives/items and adds `AuraCatalog.Bonus` once; it does not read `RawStats` back.
+The result rounds to integer permyriad, halves away from zero, then caps at 0–10000, matching
+[PoB CalcOffence](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcOffence.lua#L3022-L3027).
+`global_cannot_crit` and `virtual_global_cannot_crit` disable the supported spell roll.
+Ordinary increased chance cannot make a known zero-base spell crit.
+The selected skill's spell rows also require `casting_spell = 1` (CharacterPanelStats `Spell_CritChance`);
+the main-hand rows exclude that flag.
+`EffectStats` supplies it only for an actual ActiveSkillType Spell without Attack, and sends zero otherwise.
+Warcries are not classified as spells merely because they are not attacks.
+Area and projectile hits use the same actual Attack/Spell types, with Attack taking precedence for a mixed type.
+Bow attack projectiles retain their weapon damage, damage effectiveness, attack critical chance and multiplier;
+the spell-specific calculation applies only to the spell route.
+`SkillHitPlan` rejects unsupported types and spells without extracted hit damage before building a weapon packet or
+rolling critical chance, so Scorching Ray, Righteous Fire and warcries cannot fall through to a wand hit.
+This adds no beam or damage-over-time implementation.
+The copied-save baseline recorded stored spell chance 500 for both Fireball and Freezing Pulse,
+and the selected Freezing Pulse panel still showed main-hand rows (main-hand crit 830).
+Native getters also read the stored 500; evidence is `logs/spell-crit-baseline.json` in the validation checkout.
+Copied-save native panel/getter checks now show Fireball 5%, Freezing Pulse and Ice Nova 7.5%, and Arc 6%.
+With 100% increased generic crit they show Fireball 10% and Freezing Pulse 15%; adding another 100% spell crit gives
+15% and 22.5%, respectively, so the inputs add once.
+`global_cannot_crit = 1` makes the native skill chance zero and hides its critical row.
+After clearing those modifiers and relogging, Freezing Pulse still shows 7.5%.
+Scorching Ray remains explicitly zero with 100000% increased generic crit; its actual cast caused no weapon hit or
+critical roll against a nearby 86-life Ash Harvester.
+On the same connection, Fireball with that increased chance dealt a logged 22-damage critical hit, leaving 64 life.
+The final Arc/Ice Nova and hitless-spell checks used the reviewed type-routing fix.
+Evidence: validation `logs/spell-crit-{after-default,after-generic100,after-combined100,after-disabled,after-relog,
+final-arc-ice,final-scorching-ray}.json`, `spell-critical-live-summary.json` and `live-gateway.log`.
+Native probes reported no errors.
+Catalog, raw-source, aura, flag, rounding, hit routing and roll-boundary checks are also automated.
+Timed, charge, enemy-state, lucky/more and added-base critical mechanics remain outside this slice.
+`/crit` prints the attack values and the legacy pooled 5%-base spell reference, not the selected gem's chance.
 
 **Impale.** A hit that rolls `impale_on_hit_%_chance` stores 10% of the swing's physical damage on the monster as a
 stack: five at most, each lasting five physical hits. The stored amount is taken from the packet's physical **maximum**,

@@ -181,12 +181,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   ([11](../docs/protocol/11-skills.md) §4)
 - **Critical strikes.** The server rolls unconditional crit passives: the equipped main hand's `WeaponTypes.dat`
   critical chance (permyriad) raised by generic/attack/melee/weapon-shape increased crit chance for attacks,
-  Fireball's 5% base for spells, and 150% plus `base_critical_strike_multiplier_+`;
+  each spell's extracted base chance, and 150% plus `base_critical_strike_multiplier_+`;
   critical damage is multiplied and logged.
   Unarmed has 0% base crit.
   The final main-hand and spell crit chance/multiplier stats go to the client for the Offence panel;
-  timed, charge and enemy-state crit stats are not modelled;
-  `/crit` shows both final values ([11](../docs/protocol/11-skills.md) §5).
+  selected spell chance and server projectile/area rolls now share raw player and skill inputs once.
+  Precision and Zealotry retain their existing bonuses without counting them twice.
+  Actual Spell skill types set the panel's casting flag; attacks and non-spell warcries keep it clear.
+  Hitless spells and unsupported action types cannot fall through to weapon damage or attack critical rolls.
+  Native panel/getter checks show Fireball 5%, Freezing Pulse and Ice Nova 7.5%, and Arc 6%, including after relog.
+  Combined generic/spell bonuses add once; the no-crit flag clears the native chance and hides its row.
+  A hitless Scorching Ray cast dealt no weapon damage, while the same connection's Fireball dealt a critical hit.
+  Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
+  Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
+  `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
 - **Projectiles.** Moving targets are checked throughout flight by sweeping observed relative movement.
   A monster can change course away from a hit, enter the path later, or intercept before a farther target.
   The client glide is stopped at the contact cell before impact with a height-preserving 0x1b7.

@@ -36,6 +36,11 @@ partial class Program
             await PickUpGroundItem(remote, stream, ciphers, conn, use.TargetId, ground, use);
             return;
         }
+        if (conn.TutorialChestId == use.TargetId && conn.TutorialChest is { } tutorialChest)
+        {
+            await OpenTutorialChest(remote, stream, ciphers, conn, use, tutorialChest);
+            return;
+        }
         if (use.TargetId == WaypointCatalog.ObjectId && conn.Layout.Waypoint is { } waypoint)
         {
             await UseWaypoint(remote, stream, ciphers, conn, use, waypoint);
