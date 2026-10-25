@@ -2075,6 +2075,17 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
     lock (conn.Monsters) id = conn.NextObjectId++;
     bool Active() => conn.ProjectileActive(epoch);
     if (!Active()) return;
+    async Task<bool> SendVisual(byte[] bytes, string? line, Action? commit = null)
+    {
+        bool sent = false;
+        while (!sent && Active())
+        {
+            await Send(remote, stream, ciphers, bytes, line,
+                still: () => sent = conn.TryCommitProjectileVisual(epoch, commit));
+            if (!sent) await Task.Delay(16);
+        }
+        return sent;
+    }
     double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
     var inv = System.Globalization.CultureInfo.InvariantCulture;
     // Game_PROJECTILE_SPEED (cells per second) overrides the speed, e.g. to watch a slow projectile while testing.
@@ -2194,20 +2205,13 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
             impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
             if (impact != "none")
             {
-                await Send(remote, stream, ciphers, InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
-                    $"0x02ba projectile 0x{id:x} explodes ({impact})", still: Active);
+                if (!await SendVisual(InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
+                    $"0x02ba projectile 0x{id:x} explodes ({impact})")) return;
                 if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + 1.5, epoch)) return;
             }
         }
-        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}", still: () =>
-        {
-            lock (conn.Monsters)
-            {
-                if (!Active()) return false;
-                conn.ProjectileObjects.Remove(id);
-                return true;
-            }
-        });
+        await SendVisual(InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}",
+            () => conn.ProjectileObjects.Remove(id));
     }
     catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } // The old area's connection has gone.
 }
@@ -7802,6 +7806,18 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public bool ProjectileActive(int epoch)
     {
         lock (Monsters) return !Closed && !LeavingArea && ProjectileEpoch == epoch;
+    }
+
+    // Called inside the send gate. A queued terminal visual must survive pause and retry after resume;
+    // its registry removal cannot commit until that packet is accepted.
+    public bool TryCommitProjectileVisual(int epoch, Action? commit = null)
+    {
+        lock (Monsters)
+        {
+            if (!ProjectileActive(epoch) || Paused) return false;
+            commit?.Invoke();
+            return true;
+        }
     }
 
     public bool TryBeginAreaChange(PendingTransfer transfer, out uint[] projectiles)

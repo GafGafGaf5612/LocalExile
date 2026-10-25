@@ -170,6 +170,31 @@ public class ProjectileFlightTests
     }
 
     [Fact]
+    public void Paused_terminal_visuals_keep_their_cleanup_pending_until_resume_or_transfer()
+    {
+        var conn = new ClientState(new AreaLayout(1, "test", 200, 200, 10, 10, null, []), 1, 1);
+        int epoch = conn.ProjectileEpoch;
+        conn.ProjectileObjects.Add(0x3000);
+        conn.Clock.Stop(); // Pause occurs after expiry was observed but before the packet reaches the send gate.
+        Assert.False(conn.TryCommitProjectileVisual(epoch)); // Animated swap is deferred too.
+        Assert.False(conn.TryCommitProjectileVisual(epoch, () => conn.ProjectileObjects.Remove(0x3000)));
+        Assert.Contains(0x3000u, conn.ProjectileObjects); // Cleanup has not been lost by dropping a paused packet.
+        conn.Clock.Start();
+        Assert.True(conn.TryCommitProjectileVisual(epoch));
+        Assert.True(conn.TryCommitProjectileVisual(epoch, () => conn.ProjectileObjects.Remove(0x3000)));
+        Assert.Empty(conn.ProjectileObjects);
+
+        conn.ProjectileObjects.Add(0x3001);
+        conn.Clock.Stop();
+        Assert.True(conn.TryBeginAreaChange(new PendingTransfer(2, 0, false), out var cleanup));
+        Assert.Equal(new[] { 0x3001u }, cleanup); // The transfer takes ownership of paused cleanup.
+        conn.Clock.Start();
+        bool oldPacketCommitted = false;
+        Assert.False(conn.TryCommitProjectileVisual(epoch, () => oldPacketCommitted = true));
+        Assert.False(oldPacketCommitted);
+    }
+
+    [Fact]
     public void Wall_route_excludes_a_monster_behind_it_but_allows_a_nearer_monster()
     {
         var route = ProjectileFlight.ClipWall((10, 10), (110, 10), (x, _) => x == 50);

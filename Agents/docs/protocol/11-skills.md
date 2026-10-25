@@ -533,6 +533,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   even after its pending ticket is consumed and removes outstanding projectile/impact objects before 0x2b2;
   a failed transfer permits new flights without reviving old ones or leaving their visuals behind.
   Cast release, flight and the explosion's 1.5-second lifetime use game time and wait through pause.
+  Terminal model swaps and removals recheck pause inside the send gate and retry after resume;
+  a transfer cancels the retry and takes ownership of visual cleanup.
   These remain estimates: monster positions are integer `WalkEstimator` samples, movement between samples is a
   straight chord, the radius is shared across monsters, and the client has its own cell stepping/network delay.
   Sharp turns between samples or long scheduling stalls can still differ from the client. This is not an official
