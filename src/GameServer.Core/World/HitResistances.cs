@@ -67,7 +67,7 @@ public static class HitResistances
     {
         if (!DamageTypes.IsElemental(type) || strike.OverTime) return target;
         if (mods.CannotPenetrateOrIgnore != 0) return target with { Penetration = 0 };
-        if (Ignored(strike, mods)) return new(0, target.Maximum);
+        if (Ignored(strike, mods)) return new(0);
         return target with { Penetration = target.Penetration + (strike.Critical ? 0 : mods.NonCriticalPenetration) };
     }
 

@@ -124,6 +124,12 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   over the same pass); the suppressor restores the plain capped resistance. Physical, chaos and damage over time are
   outside the rules, and a target's own "resistance cannot be penetrated" is a penetration guard only, never ignore
   protection. The hit's 0x1b1 log line names what the rules changed ("fire 40 ignored", "cold 40→30 (pen 10)").
+  Eight native checks used a fresh synthetic Witch, fixed 100-fire attacks and a level-68 fire skeleton.
+  Reading the client's Life component confirmed 60 damage normally and 70 with 10 non-critical penetration.
+  A local development weapon mod guaranteed critical hits through the existing weapon-chance path.
+  Generic and attack-only critical ignore each dealt 150; removing ignore or setting the prohibition restored 90.
+  Setting critical ignore on a non-critical character retained its companion penetration, while prohibition removed it.
+  Negative resistance and unusual maximum-resistance controls are covered by automated fixtures.
 - `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
   `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
   `MitigatePhysical`.

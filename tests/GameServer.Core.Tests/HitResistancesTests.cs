@@ -49,6 +49,18 @@ public class HitResistancesTests
         Assert.Equal(new DamageModel.ResistanceValue(0), ignored);
     }
 
+    [Theory]
+    [InlineData(-30)]
+    [InlineData(0)]
+    [InlineData(90)]
+    public void Ignore_is_independent_of_the_targets_maximum_resistance(int maximum)
+    {
+        var resolved = HitResistances.Effective(DamageType.Fire, new(40, maximum, 20),
+            Hit(critical: true), Judgement());
+        var mitigated = DamageModel.Mitigate(DamagePacket.Of(DamageType.Fire, 100, 100), _ => resolved);
+        Assert.Equal(100, mitigated[DamageType.Fire].Min);
+    }
+
     [Fact]
     public void A_noncritical_hit_stacks_its_penetration_with_the_general_one_after_the_cap()
     {

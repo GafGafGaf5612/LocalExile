@@ -232,7 +232,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   every 500 ms.
   Item mods count through the global item stats; "emerge" monsters stay hidden;
   346 varieties with NPC / ControlZone / ... components are refused.
-- **Critical-strike elemental resistance rules (Inevitable Judgement, native check pending).** The hit's
+- **Critical-strike elemental resistance rules (Inevitable Judgement).** The hit's
   already-rolled critical boolean decides the resistance: the packet rolls once (the original per-type draws), the
   existing single critical draw keeps its original place after them, and the mitigation resolves on the
   already-rolled packet without a second roll — a critical elemental hit with
@@ -245,8 +245,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   generic ignore and the 10 penetration through the ordinary passive stat sum.
   The shared helper (`HitResistances`, the Gateway's `MonsterDamage`) covers the default attack, gem projectile and
   area hits; the 0x1b1 log names the decision ("fire 40 ignored", "cold 40→30 (pen 10)").
-  Core and Gateway checks pass, including the real catalog's fire skeleton and the node's exact stat keys; the
-  real-client hit proof is pending and coordinated by the parent.
+  Core and Gateway checks cover positive/negative resistance, maximum independence and the node's exact stat keys.
+  Eight native checks read monster life: fixed 100 fire dealt 60 normally and 70 with non-critical penetration.
+  Guaranteed critical hits dealt 150 with generic or attack-only ignore, and 90 after removal or prohibition.
+  Ascendancy allocation remains in its separate lifecycle change.
   Code: `HitResistances.cs`, `HitMitigation.cs`, Gateway (`MonsterDamage`).
   Docs: [20](../docs/protocol/20-damage.md) §4.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`;
