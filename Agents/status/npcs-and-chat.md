@@ -10,6 +10,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   (replies as chat lines).
   Code: `Program.Commands.cs` (`Commands`), `ChatCommands.cs`.
   Docs: [10](../docs/protocol/10-chat-and-commands.md).
+- Chat lines and channels: what the player types comes back as a chat line from the character (S→C 0x17), local in
+  the local colour, `#` global as "#Name: text" and `$` trade as "$Name: text".
+  The global and trade channel joins (C→S 0x134, after entering an area and for `/global N` and `/trade N`) are
+  answered with S→C 0x135 and "You have joined global chat channel N.", so they no longer time out and the Global and
+  Trade tabs work.
+  The client joins once per session, so every area entry sends 0x135 for the channels already joined.
+  One player per server: nobody else sees the lines; party, guild and whisper lines are not echoed.
+  Code: `Program.Chat.cs`, `ChatChannels.cs`.
+  Docs: [10](../docs/protocol/10-chat-and-commands.md) §1, §2.
 - NPCs in Lioneye's Watch: Tarkleigh, Nessa and Bestel at their real-game cells, with name, minimap icon and idle
   model; clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
   Continue and Goodbye (C→S 0x85) are answered; Purchase Items opens the shop (S→C 0xc0 manager 1 + 0x8c) and buying
@@ -49,6 +58,3 @@ Part of [Status](../Status.md); what to build next in this area is in
   the 346 monster varieties with NPC, ControlZone, BlightTower … components.
   "Emerge" monsters (Gravel Eater …) are created but stay hidden until an Emerge action, which the server does not
   send.
-- Chat lines: server text only appears as a message box.
-  The chat-line message and the global channel join are unknown (the client logs "Timeout while joining global chat
-  channel").

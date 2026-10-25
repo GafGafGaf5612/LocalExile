@@ -118,6 +118,24 @@ G = global / static data.
 | `0x142f496a0` | G | static initializer table entry (Positioned) |
 | `0x1445bb240`, `0x1445bb6f0`, `0x1445bbe50`, `0x1445bbd60`, `0x1445bb760`, `0x1445bbd10`, `0x1445ba850`, `0x1445bc610` | G | component pools (Positioned, Stats, Pathfinding, Life, Animated, Player, Inventories, Actor) |
 
+## Chat ([10](10-chat-and-commands.md) §1, §2)
+| Address | Kind | What |
+|---|---|---|
+| `0x14215ddd0` | Fn | send a typed line (instance, text, linked items): client slash commands, else C→S 0x15 |
+| `0x14215c3b0` | Fn | the client's slash commands (Commands.dat); `/global N`, `/trade N` (row + 1 = 0x2a, 0x2b) → `0x142169250` |
+| `0x142169250` | Fn | join a chat channel: C→S 0x134, 5 s deadline (instance +0xcf08 trade, +0xcf18 global), listeners +0xdf8 |
+| `0x1435bf730` / `0x141f9ae30` | Cls / Fn | C→S 0x134 class / write |
+| `0x1435dc240` / `0x1421a6cd0` | Cls / Fn | S→C 0x135 class / read (ctor `0x1421a6c00`, dispatcher case 0x56 at `0x14214f1f3`) |
+| `0x140d5bf60` | Fn | in-game listener (instance +0x240): joins global and trade after entering an area (once, flag +0xa08) |
+| `0x14190f7d0` / `0x14190f8a0` / `0x141912640` | Fn | settings `join_global_channel` / `join_trade_channel` / chat language |
+| `0x143a60ce8` / `0x143a60c98` | G | remembered global / trade channel (0xffff until `/global N`, `/trade N`) |
+| `0x142148880` | Fn | instance network update: a passed join deadline fires the instance +0xe78 listeners |
+| `0x140178a80` | Fn | chat panel attaches to the instance: listeners +0xb78 (0x17 line), +0xd78, +0xe78 (join timeout) |
+| `0x14017dd10` | Fn | chat panel: "Timeout while joining {0} chat channel {1}" (ClientStrings rows 207 / 206) |
+| `0x140195a60` | Fn | chat panel channel popup ("Joining {0} channel …", "Connected to {0} channel …") |
+| `0x1422dbfc0` / `0x1421fdc40` | Fn | dat row by index / ClientStrings text by id (row + 1) |
+| `0x1435c0258` / `0x141f95200` | Cls / Fn | C→S 0x99 class / write (4 bytes) |
+
 ## Monsters ([10](10-chat-and-commands.md) §5)
 | Address | Kind | What |
 |---|---|---|
