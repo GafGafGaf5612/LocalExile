@@ -417,7 +417,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
 3. **Shared slots** (`0x1420f6b70`, by x then y): without tags and with a plain key (`0x1420ee9e0`) they go to the
    fill (with the slot's accessible bit, +0x5c bit 0); else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
    store (`0x1420f5fb0`: `Next(total weight)`). A 1 × 1 slot placed with tag "door", and an untagged shared tile with a 3 × 3 or passage-shaped
-   key (end of `0x1420f6b70`), become doorways (`0x1420edf80`; non-1 × 1 ones apart).
+   key (end of `0x1420f6b70`), become doorways (`0x1420edf80`; non-1 × 1 ones apart). A slot whose footprint is all
+   taken (a tile of an earlier subgraph's layout is there) merges that tile's key, turned by its orientation, into its
+   own (`0x1420ee240`) over the sides its rooms leave (+0x5c & 0x1e: 0x1c and 0x1a swap, 0x16 and 0xe swap, else
+   0x1e) at the tile's height offset; the key's heights start at 0 again (2026-10-25: `1_3_14_1`, `2_8_7_1_`,
+   HideoutShapersRealm).
    **Without a match** `0x1420f5fb0` tries, in order, until the store (`0x141d81f70`) has tiles:
    - the movable sides' points moved to the middle (3 × length / 2), one side at a time and cumulatively
      (`0x1420f69c0`). A side is movable when it has an edge that is not virtual (.et +0x48 flag 4) nor N2 (flag 8),
@@ -477,7 +481,17 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    vertices spread outwards and the buffer is tiled. Then StoreyHeight scales every origin's height (`0x14204cbd0`).
 
 Not ported on this path (no draws in the cave): `0x1420f4010` / `0x1420f4ae0` (RoomOverlap), `0x1420f7960`,
-`0x1420f1590` / `0x1420f2340` / `0x1420f3100` (unique, chest, pre-unique rooms), the overlay passes, `0x1420f8f20`.
+`0x1420f1590` / `0x1420f3100` (unique, pre-unique rooms), the overlay passes, `0x1420f8f20`. **Shrines**
+(`0x1420f2340`, before the fill, 2026-10-25): with shrines rolled (pool +0x148), the RoomSet's "shrine" rooms whose
+unit size is not the layout's (the layout's own ones are `0x142103490`'s); the tiler's fill records (+0x58: x, y,
+ground, accessible, height) are shuffled in place (`Next(count)`, shuffle), then `0x1420f2620` twice (the second only
+while shrines are left): every accessible record whose ground and vertex ground are none or flags 4 and 8 offers the
+shrine rooms that fit on empty entries with their corner grounds suiting the vertices (`0x141ffba10` /
+`0x141d85570`: a written vertex takes only its own ground, or none-or-flag-8 against none-or-flag-8) and, in the
+first round, 17 or more (squared rectangle distance, `0x1420f14b0`) from the shrines placed in this pass: square rooms
+any way (0xff), others as they are (0x55) and turned (0xaa); `Next(count)`, `Next(840)` from the mask, tilised as a
+fill room (`0x141fe89e0`) at the record's height with its ground; a shrine placed (`0x141d8b9a0`). Was the first
+difference of 11 logged loads (`0x1420f24d2`).
 **The Fetid Pool `1_1_3a` seed 1 (`fetid_3.dgr`, trace recorded 2026-10-23) generates tile for tile: all 3 060
 entries, tile hash 401409093, all 910 draws up to the doodads** (directional door types, fill rooms, slot corners,
 3 × 3 outer tiles). **The Slave Pens `1_5_1` seed 1 matches by tile hash (3415378844)** with the node door type and

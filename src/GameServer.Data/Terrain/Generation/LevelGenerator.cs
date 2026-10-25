@@ -712,7 +712,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary><c>0x1420f6b70</c>: the shared border slots by (x, y). A slot without tags whose key is plain
     /// (<c>0x1420ee9e0</c>) is left for the fill (<c>0x1420eec10</c>). Otherwise its footprint must be all free or all
-    /// taken ("partial overlap"); where free, the sides only one room covered are merged with themselves
+    /// taken ("partial overlap"); all taken, the tile there merges into the key; where free, the sides only one room covered are merged with themselves
     /// (<c>0x1420ee240</c>, which changes nothing with this port's combiner and is skipped). Its tags are tried in
     /// <c>Next(total)</c> order, each weighted by its store total (1 without tiles), until one places
     /// (<c>0x1420f5fb0</c>); else a key that is not plain must place untagged ("Could not find matching overlap tile"),
@@ -733,7 +733,21 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                     if (_grid.Inside(x + u, y + v) && _grid[x + u, y + v] is not null) taken++;
             if (taken != 0 && taken != key.Width * key.Height)
                 throw new InvalidOperationException($"Failed to create overlap tile at ({x}, {y}) because of partial overlap");
-            if (taken != 0) throw new NotSupportedException($"overlap tile at ({x}, {y}) over a placed tile (0x1420f6b70 with its key) is not ported");
+            if (taken != 0)
+            {
+                // A tile already there (an earlier layout's room): its key, turned by its orientation, merges into the
+                // slot's over the sides the slot's rooms leave (0x1e less the covered ones: 0x1c and 0x1a, 0x16 and 0xe
+                // swap, else all), at its height offset; the key's heights start at 0 again.
+                var e = _grid[x, y]!.Value;
+                byte covered = (byte)(b.Flags & 0x1e);
+                byte other = covered switch { 0x1c => 0x1a, 0x1a => 0x1c, 0x16 => 0x0e, 0x0e => 0x16, _ => 0x1e };
+                b.Key = Merge(b, e.Tile.Key.Rotate(e.Orientation), e.HeightOffset, other, x, y);
+                int low = b.Key.Heights.Min();
+                for (int i = 0; i < 4; i++) b.Key.Heights[i] -= (sbyte)low;
+                b.Height += low;
+                b.Flags |= other;
+                key = b.Key;
+            }
             var tags = b.Tags.Select(t => (Tag: t, Weight: Math.Max(1, _store.Candidates(t, key).Sum(c => c.Weight)))).ToList();
             bool placed = false;
             while (tags.Count != 0 && !placed)
@@ -1108,19 +1122,99 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         _grid.CheckGrounds = check;
     }
 
-    /// <summary><c>0x1420f3480</c>'s fill: the records sorted by (x, y) (<c>0x14212d520</c>); each still-empty one is
-    /// filled (<c>0x1420f3de0</c> → <c>0x141feb970</c>) for its ground, or, without one, its top-left vertex's ground
-    /// when that vertex has flag 1. Not ported before it: <c>0x1420f1590</c>, <c>0x1420f2340</c>, <c>0x1420f3100</c>
-    /// (unique, chest and pre-unique rooms; no draws in the 1_1_9a trace) and the overlay passes.</summary>
+    /// <summary><c>0x1420f3480</c>'s fill: after the shrines (<c>0x1420f2340</c>), the records sorted by (x, y)
+    /// (<c>0x14212d520</c>); each still-empty one is filled (<c>0x1420f3de0</c> → <c>0x141feb970</c>) for its ground, or,
+    /// without one, its top-left vertex's ground when that vertex has flag 1. Not ported before it: <c>0x1420f1590</c>
+    /// and <c>0x1420f3100</c> (unique and pre-unique rooms) and the overlay passes.</summary>
     void FillRecords(Dictionary<string, string> master, string masterPath)
     {
-        if (!master.TryGetValue("FillTiles", out var gft)) return;
-        var fill = new Fill(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes);
+        bool hasFills = master.TryGetValue("FillTiles", out var gft);
+        var fill = new Fill(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store,
+            hasFills ? files.FillTiles(TerrainText.Resolve(masterPath, gft!)) : [], _fillRooms, notes);
+        Shrines(master, masterPath, fill);
+        if (!hasFills) return;
         foreach (var (x, y, ground, height, accessible) in _fillRecords.OrderBy(r => r.X).ThenBy(r => r.Y))
         {
             if (_grid[x, y] is not null) continue;
             var g = ground ?? ((_grid.Corner(x, y).Flags & 1) != 0 ? _grid.Corner(x, y).Ground : null);
             fill.FillEntry(x, y, g, accessible, height);
+        }
+    }
+
+    /// <summary><c>0x1420f2340</c>: with shrines rolled (pool +0x148), the RoomSet's "shrine" rooms (+0x118) whose unit
+    /// size is not the layout's (the others are layout rooms, <c>DungeonLayout.ShrineRooms</c>): the fill records are
+    /// shuffled in place (<c>Next(count)</c>, then the shuffle), then <c>0x1420f2620</c> runs once keeping 17 entries
+    /// (squared rectangle distance, <c>0x1420f14b0</c>) from the shrines placed here, and again without that while
+    /// shrines are left.</summary>
+    void Shrines(Dictionary<string, string> master, string masterPath, Fill fill)
+    {
+        int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
+        var rooms = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"])).All
+            .Where(r => r.Tag == "shrine" && r.Unit != unit && r.Def is not null).Select(r => r.Def!).ToList();
+        if (rooms.Count == 0 || pool.Shrines == 0) return;
+        rng.Next((uint)_fillRecords.Count);
+        rng.Shuffle(_fillRecords);
+        var placed = new List<(int X0, int Y0, int X1, int Y1)>();
+        ShrineRound(rooms, placed, fill, false);
+        if (pool.Shrines != 0) ShrineRound(rooms, placed, fill, true);
+    }
+
+    /// <summary><c>0x1420f2620</c>: the records in order while shrines are left. One that is accessible, whose ground
+    /// and top-left vertex ground are none or flags 4 and 8, offers every shrine room that fits there on empty entries
+    /// with its corner grounds suiting the vertices (<c>0x141ffba10</c> / <c>0x141d85570</c>), and in the first round not
+    /// within 17 of a placed shrine: a square one any way (0xff), another as it is (0x55) and turned (0xaa, its key
+    /// turned once). <c>Next(count)</c>, the orientation <c>Next(840)</c> from its mask; tilised at the record's height
+    /// with its ground (open), a shrine placed (<c>0x141d8b9a0</c>).</summary>
+    void ShrineRound(List<RoomDef> rooms, List<(int X0, int Y0, int X1, int Y1)> placed, Fill fill, bool relaxed)
+    {
+        int Flags(string? g) => g is null ? 0 : files.Ground(g)?.Flags ?? 0;
+        bool Open(string? g) => g is null || (Flags(g) & 0xc) == 0xc;
+        bool Suits(int x, int y, string? g)
+        {
+            ref var c = ref _grid.Corner(x, y);
+            if ((c.Flags & 1) == 0 || g == c.Ground) return true;
+            return (g is null || (Flags(g) & 8) != 0) && (c.Ground is null || (Flags(c.Ground) & 8) != 0);
+        }
+        bool Corners(int x, int y, TileKey k) => Suits(x, y, k.Grounds[0]) && Suits(x + k.Width, y, k.Grounds[1]) &&
+            Suits(x + k.Width, y + k.Height, k.Grounds[2]) && Suits(x, y + k.Height, k.Grounds[3]);
+        bool Free(int x, int y, int w, int h)
+        {
+            if (x >= _grid.Width || x + w > _grid.Width || y >= _grid.Height || y + h > _grid.Height) return false;
+            for (int v = 0; v < h; v++)
+                for (int u = 0; u < w; u++)
+                    if (_grid[x + u, y + v] is not null) return false;
+            return true;
+        }
+        static int Gap(int a0, int a1, int b0, int b1) => b1 <= a0 ? a0 - b1 : a1 <= b0 ? b0 - a1 : 0;
+        bool Near(int x, int y, int w, int h) => !relaxed &&
+            placed.Any(p => { int dx = Gap(p.X0, p.X1, x, x + w), dy = Gap(p.Y0, p.Y1, y, y + h); return dx * dx + dy * dy < 17; });
+        for (int i = 0; i < _fillRecords.Count && pool.Shrines != 0; i++)
+        {
+            var (x, y, ground, height, accessible) = _fillRecords[i];
+            if (!accessible || !Open(ground) || !Open(_grid.Corner(x, y).Ground)) continue;
+            var fitting = new List<(RoomDef Room, byte Mask)>();
+            foreach (var room in rooms)
+            {
+                int w = room.Width, h = room.Height;
+                if (w == h)
+                {
+                    if (Free(x, y, w, h) && Corners(x, y, room.Key) && !Near(x, y, w, h)) fitting.Add((room, 0xff));
+                    continue;
+                }
+                byte mask = 0;
+                if (Free(x, y, w, h) && Corners(x, y, room.Key) && !Near(x, y, w, h)) mask = 0x55;
+                var turned = room.Key.Rotate(1);
+                if (Free(x, y, turned.Width, turned.Height) && Corners(x, y, turned) && !Near(x, y, turned.Width, turned.Height)) mask |= 0xaa;
+                if (mask != 0) fitting.Add((room, mask));
+            }
+            if (fitting.Count == 0) continue;
+            var pick = fitting[(int)rng.Next((uint)fitting.Count)];
+            int o = LevelRandom.OrientationFromMask(pick.Mask, rng.Next(840u));
+            var (pw, ph) = Orientation.Size(o, pick.Room.Width, pick.Room.Height);
+            placed.Add((x, y, x + pw, y + ph));
+            pool.ShrinePlaced();
+            notes.Add($"shrine {Path.GetFileName(pick.Room.Path)} o{o} at ({x}, {y})");
+            fill.PlaceRoom(pick.Room, x, y, o, height, ground, true);
         }
     }
 
