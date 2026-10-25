@@ -1186,14 +1186,16 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var tiler = new RoomTiler(rng, _grid, vx, vy, _store);
         var overlays = passes.Count == 0 ? null : new Overlays(files, rng, notes, _grid, vx, vy, vx1 - vx, vy1 - vy, tiler,
             [.. layoutRooms, .. _fillRooms], int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
-        foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays!.Run(pass, afterFill: false);
+        // Both dungeon passes save the tiles under a room (0x141fff1a0 param 3).
+        if (overlays is not null) overlays.FillEntry = (x, y, g, open) => fill.FillEntry(x, y, g, open);
+        foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays!.Run(pass, saveTiles: true);
         foreach (var (x, y, ground, height, accessible) in _fillRecords.OrderBy(r => r.X).ThenBy(r => r.Y))
         {
             if (_grid[x, y] is not null) continue;
             var g = ground ?? ((_grid.Corner(x, y).Flags & 1) != 0 ? _grid.Corner(x, y).Ground : null);
             fill.FillEntry(x - vx, y - vy, g, accessible, height);
         }
-        foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays!.Run(pass, afterFill: true);
+        foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays!.Run(pass, saveTiles: true);
         return tiler.Rooms;
     }
 

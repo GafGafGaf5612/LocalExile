@@ -225,14 +225,16 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
         var overlays = new Overlays(files, rng, notes, grid, _ox, _oy, Graph.Width, Graph.Height, special.Tiler, [.. special.Rooms],
             int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
-        foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays.Run(pass, afterFill: false);
+        foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays.Run(pass, saveTiles: false);
         onStage?.Invoke("overlays", Graph);
         // 0x141fef070, then the second overlay pass (bit 2, after the fill).
         if (gftPath is null) throw new InvalidOperationException("Cannot tilise blank: Fill tile list is not specified");
         LevelGenerator.FillStarting?.Invoke(grid, _ox, _oy, Graph.Width, Graph.Height);
         var fills = files.FillTiles(gftPath);
-        new Fill(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store, fills, special.Rooms, notes) { TilePlaced = painter }.Run();
-        foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays.Run(pass, afterFill: true);
+        var fill = new Fill(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store, fills, special.Rooms, notes) { TilePlaced = painter };
+        fill.Run();
+        overlays.FillEntry = (x, y, g, open) => fill.FillEntry(x, y, g, open);
+        foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays.Run(pass, saveTiles: true);
         // 0x1421193d0 (storeys: plain tiles take their neighbours' heights), then the mirror seams (0x142025440).
         new Storeys(grid, _ox, _oy, Graph.Width, Graph.Height, files).Run();
         new Seams(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store, special.Rooms, special.RoomVertices,

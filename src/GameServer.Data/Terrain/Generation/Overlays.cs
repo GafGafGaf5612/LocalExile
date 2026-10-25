@@ -174,7 +174,7 @@ sealed class Overlays
 
     /// <summary><c>0x141fff290</c>: a pass: with FileOrder each group's spots are found and placed in turn; with Random all
     /// groups' spots together.</summary>
-    public void Run(OverlayPass pass, bool afterFill)
+    public void Run(OverlayPass pass, bool saveTiles)
     {
         if (pass.Groups.Count == 0) return;
         if (pass.Order == 0)
@@ -182,16 +182,20 @@ sealed class Overlays
             // Random: one list of spots for every group in file order, then one draw sequence over it.
             var pooled = new List<Spot>();
             foreach (var g in pass.Groups) Spots(g, pooled);
-            Place(pooled, afterFill);
+            Place(pooled, saveTiles);
             return;
         }
         foreach (var g in pass.Groups)
         {
             var spots = new List<Spot>();
             Spots(g, spots);
-            Place(spots, afterFill);
+            Place(spots, saveTiles);
         }
     }
+
+    /// <summary>The fill (<c>0x141feb970</c>, no height given) for the entries a saving pass leaves empty: view x, y,
+    /// ground, open.</summary>
+    public Func<int, int, string?, bool, int>? FillEntry { get; set; }
 
     sealed class Spot(int x, int y)
     {
@@ -227,8 +231,10 @@ sealed class Overlays
     /// <summary><c>0x141fffb70</c>: spots are drawn by weight until none is left; at each, a group that still fits
     /// (<c>Next(total)</c>), then one of its rooms under its limit, padded with nothing to 100 (<c>Next</c>), and its
     /// orientation (<c>Next(840)</c>, <c>0x14299da50</c>). The tiles under the spot leave, the spot's vertices lose their
-    /// grounds and the room is tilised (<c>0x141fea780</c>); the spot is closed to later overlays (bit 1) either way.</summary>
-    void Place(List<Spot> spots, bool afterFill)
+    /// grounds and the room is tilised (<c>0x141fea780</c>); the spot is closed to later overlays (bit 1) either way.
+    /// A saving pass (param 3: the tile graph's second pass, both dungeon passes) first notes every entry of each tile
+    /// it removes and afterwards mends them (<see cref="Restore"/>).</summary>
+    void Place(List<Spot> spots, bool saveTiles)
     {
         int total = spots.Sum(s => s.Weight);
         while (spots.Count > 0)
@@ -265,9 +271,21 @@ sealed class Overlays
             }
             int o = LevelRandom.OrientationFromMask(chosen.OrientationMask, _rng.Next(840u));
             if (!Height(chosen.Room, spot.X, spot.Y, o)) continue;
-            if (afterFill) throw new NotSupportedException("overlays after the fill (0x141fffb70 pass 2) are not ported");
+            var saved = new List<(int X, int Y, TileEntry Entry)>();
             for (int y = spot.Y; y < spot.Y + kh; y++)
-                for (int x = spot.X; x < spot.X + kw; x++) _grid.Remove(x + _offsetX, y + _offsetY);
+                for (int x = spot.X; x < spot.X + kw; x++)
+                {
+                    if (saveTiles && Entry(x, y) is { } e)
+                    {
+                        // 0x142003c70: every entry the tile covers, in view entries, with its tile, orientation and height.
+                        int ox = x - e.OffsetX, oy = y - e.OffsetY;
+                        var (w, h) = Size(e);
+                        for (int v = oy; v < oy + h; v++)
+                            for (int u = ox; u < ox + w; u++)
+                                if (!saved.Exists(s => s.X == u && s.Y == v)) saved.Add((u, v, e));
+                    }
+                    _grid.Remove(x + _offsetX, y + _offsetY);
+                }
             for (int v = 0; v <= kh; v++)
                 for (int u = 0; u <= kw; u++)
                 {
@@ -277,10 +295,38 @@ sealed class Overlays
                 }
             _tiler.Tilise(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, []);
             Mark(spot.X + _offsetX, spot.Y + _offsetY, spot.X + _offsetX + kw, spot.Y + _offsetY + kh, 1);
+            if (saveTiles) Restore(saved);
             _placed[chosen] = _placed.GetValueOrDefault(chosen) + 1;
             _notes.Add($"overlay {Path.GetFileName(chosen.Room.Path)} o{o} at ({spot.X + _offsetX}, {spot.Y + _offsetY})");
         }
     }
+
+    /// <summary><c>0x141fffb70</c> after a saving pass's room: each noted entry left empty is filled for its top-left
+    /// vertex's ground (open when none or flag 4); one now holding the blank tile (<c>0x141d80a30</c> 2,
+    /// overlay_blank.tdt) gets its old tile back when that was 1 × 1 without edges (<c>0x141ffb870</c>), else is emptied
+    /// and filled. Entries holding another tile stay.</summary>
+    void Restore(List<(int X, int Y, TileEntry Entry)> saved)
+    {
+        foreach (var (x, y, old) in saved)
+        {
+            var now = Entry(x, y);
+            if (now is { } n)
+            {
+                if (!n.Tile.Path.Equals(BlankTile, StringComparison.OrdinalIgnoreCase)) continue;
+                if (old.Tile.Width == 1 && old.Tile.Height == 1 && old.Tile.Key.Edges.All(e => e is null || _files.Edge(e)?.Wildcard == true))
+                {
+                    _grid.Place(old.Tile, old.Orientation, x + _offsetX, y + _offsetY, old.HeightOffset);
+                    continue;
+                }
+                _grid.Remove(x + _offsetX, y + _offsetY);
+            }
+            string? g = _grid.Corner(x + _offsetX, y + _offsetY).Ground;
+            if (FillEntry is null) throw new NotSupportedException("an overlay's saved entry needs the fill, which this pass has not got");
+            FillEntry(x, y, g, g is null || (Flags(g) & 4) != 0);
+        }
+    }
+
+    const string BlankTile = "Metadata/Terrain/overlay_blank.tdt";
 
     /// <summary><c>0x142000c50</c>: every required tag (a multiset) is on a tile whose origin lies in the w × h area at
     /// view position (x, y), one tile per occurrence.</summary>
