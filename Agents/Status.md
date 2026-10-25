@@ -1,5 +1,7 @@
 # Status
 
+Horticrafting Station: placed beside the ordinary bench in every selected hideout; interaction approaches and opens the native Harvest recipe browser (0x7b kind 0x39). Recipe execution/payment are not implemented. Automated coverage; station and window confirmed working in the real client. See protocol/21-hideouts.md.
+
 Remember Password now returns and verifies the official client's 32-byte saved-login credential
 in account login 0x03 / result 0x04. It survives server restarts, is device/account-bound and
 is invalidated by changing the password. Covered by protocol/session tests and confirmed working by the user in the real client. See [01](docs/protocol/01-login.md).

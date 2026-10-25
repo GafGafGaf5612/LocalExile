@@ -2,7 +2,7 @@ using GameServer.Core.Protocol.Instance;
 
 /// <summary>The functional furniture and NPCs of a hideout, placed on its own floor rather than Lush's coordinates.</summary>
 sealed record HideoutScene(HideoutCatalog.Doodad Stash, (int X, int Y) Guild,
-    HideoutCatalog.Doodad Bench, HideoutCatalog.Doodad Device, IReadOnlyList<NpcCatalog.Placement> Npcs)
+    HideoutCatalog.Doodad Bench, HideoutCatalog.Doodad Harvest, HideoutCatalog.Doodad Device, IReadOnlyList<NpcCatalog.Placement> Npcs)
 {
     public static HideoutScene Build(HideoutCatalog.Hideout hideout, HideoutCatalog.Hideout fallback, Func<int, int, bool>? walkable)
     {
@@ -41,6 +41,9 @@ sealed record HideoutScene(HideoutCatalog.Doodad Stash, (int X, int Y) Guild,
         var bench = Template(HideoutCatalog.CraftingBenchType);
         var (bx, by) = Place(guild.X - 12, guild.Y + 12, 2);
         bench = bench with { X = bx, Y = by };
+        var (hx, hy) = Place(bx - 18, by + 18, 8);
+        var harvest = new HideoutCatalog.Doodad("Horticrafting Station", 0, HideoutCatalog.HorticraftingType,
+            null, hx, hy, 0, 0);
         var device = hideout.Doodads.FirstOrDefault(HideoutCatalog.IsPlaced) ?? fallback.Doodads.First(HideoutCatalog.IsPlaced);
         // Retain the established Lush placement; every other template gets the same device beside its waypoint.
         var (mx, my) = Place(hideout.AreaId == HideoutCatalog.DefaultArea ? device.X : waypoint.X + 20,
@@ -52,6 +55,6 @@ sealed record HideoutScene(HideoutCatalog.Doodad Stash, (int X, int Y) Guild,
             var (x, y) = Place(waypoint.X + npc.X - origin.X, waypoint.Y + npc.Y - origin.Y, 4);
             npcs.Add(npc with { X = x, Y = y });
         }
-        return new(stash, guild, bench, device, npcs);
+        return new(stash, guild, bench, harvest, device, npcs);
     }
 }

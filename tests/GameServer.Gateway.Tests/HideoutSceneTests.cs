@@ -35,7 +35,11 @@ public class HideoutSceneTests
         Assert.Equal(fallback.First(HideoutCatalog.CraftingBenchType)!.Hash, scene.Bench.Hash);
         Assert.Equal("model.ao", scene.Device.Model);
         var points = new List<(int X, int Y)> { (scene.Stash.X, scene.Stash.Y), scene.Guild,
-            (scene.Bench.X, scene.Bench.Y), (scene.Device.X, scene.Device.Y) };
+            (scene.Bench.X, scene.Bench.Y), (scene.Harvest.X, scene.Harvest.Y), (scene.Device.X, scene.Device.Y) };
+        Assert.Equal(HideoutCatalog.HorticraftingType, scene.Harvest.Type);
+        for (int dx = -8; dx <= 8; dx++)
+            for (int dy = -8; dy <= 8; dy++)
+                Assert.True(Floor(scene.Harvest.X + dx, scene.Harvest.Y + dy));
         points.AddRange(scene.Npcs.Select(n => (n.X, n.Y)));
         Assert.Equal(points.Count, points.Distinct().Count());
         Assert.All(points, p => Assert.True(Floor(p.X, p.Y)));
