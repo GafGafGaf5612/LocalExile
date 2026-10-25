@@ -87,6 +87,9 @@ partial class Program
         foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
             .Concat(PanelStats.FromPools(Get, conn.Pools))
             .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana))
+            .Concat(new[] { ("energy_shield_recovery_per_minute", (int)Math.Round(EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield, Get, conn.EnergyShield.Recharging))),
+                ("energy_shield_recharge_rate_per_minute", (int)Math.Round(EnergyShield.RechargePerMinute(conn.Pools.EnergyShield, Get))),
+                ("energy_shield_recharge_active", 0) })
             .Concat(ChargePanelStats.Compute(Get)))
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
@@ -168,7 +171,7 @@ partial class Program
             ("character_sheet_reference_high_dex_evasion", referenceEvasiveEvasion),
             ("physical_damage_reduction_rating", pools.Armour), ("physical_damage_reduction_rating_+%", pools.ArmourPct),
             ("base_evasion_rating", CharacterStats.BaseEvasion), ("evasion_rating", pools.Evasion), ("evasion_rating_+%", pools.EvasionPct),
-            ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
+            ("maximum_energy_shield", (int)pools.EnergyShield), ("maximum_energy_shield_+%", pools.EnergyShieldPct), ("melee_physical_damage_+%", pools.MeleePhysicalDamagePct),
             ("movement_velocity_+%", pools.MovementVelocityPct),
             ("combined_base_block_%", pools.BlockChanceBase), ("attack_block_%", pools.BlockChance),
             // The character panel prints attack block as "capped% (uncapped%)"; the client does not derive the second value.
@@ -451,7 +454,7 @@ partial class Program
         Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}, {Progression.PassivePoints(level)} passive point(s))");
         await SendCharacterStats(remote, stream, ciphers, conn, $"level {level}");
         int mana = UnreservedMana(conn);
-        lock (conn.Monsters) (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, (uint)mana);
+        lock (conn.Monsters) { (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, (uint)mana); conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, true); }
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife), $"0x01b1 player life {conn.PlayerMaxLife}");
         await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
         await SendPassives(remote, stream, ciphers, conn);
@@ -462,6 +465,7 @@ partial class Program
     {
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
         await SendSkills(remote, stream, ciphers, conn);
+        await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
 
     // The player's skills again, and the removal of the ones the client still has whose gems left the equipment, in one

@@ -43,6 +43,9 @@ static class StatKeys
     public const uint HundredTimesDamagePerSecond = 0x2a7, DisplayHundredTimesDamagePerSkillUse = 0x7fc;
     /// <summary>The main-hand flag the character panel checks before drawing the MH_* damage rows.</summary>
     public const uint SkillUsesMainHand = 0x1e70;
+    /// <summary>main_hand_weapon_type (Stats.dat row 2): the client's native weapon enum. A bow is 9 - its ItemClasses
+    /// row + 1 is 14 and its model stance is another enum again (13-items.md "Client quiver eligibility").</summary>
+    public const uint MainHandWeaponType = 0x3;
     // "Increased damage" stats that apply to an unarmed melee attack's physical damage (damage × (1 + sum / 100)):
     // damage_+%, physical_damage_+%, melee_damage_+%, melee_physical_damage_+% (strength's 1% per 5).
     public const uint DamagePct = 0x19, PhysicalDamagePct = 0x1b, MeleeDamagePct = 0x558, MeleePhysicalDamagePct = 0x1ed;

@@ -146,6 +146,23 @@ public class SpellCriticalStrikeTests
         Assert.Equal(830, attack.CriticalChance(830, () => throw new Exception("An attack keeps its critical chance")));
     }
 
+    [Theory]
+    [InlineData("BurningArrow")]
+    [InlineData("CausticArrow")]
+    public void Bow_projectile_gems_keep_weapon_damage_and_attack_crit_despite_zero_spell_base(string effect)
+    {
+        var skills = new SkillCatalog(Data());
+        int row = skills.EffectRow(effect);
+        Assert.NotNull(skills.ProjectileFor(row));
+        Assert.Equal(0, skills.SpellCritChance(row, 1));
+        var plan = SkillHitPlan.ForSkill(skills, row, 1);
+        var weapon = DamagePacket.Of(DamageType.Physical, 10, 20);
+        Assert.Equal(SkillHitKind.Attack, plan.Kind);
+        Assert.True(plan.CanHit);
+        Assert.Same(weapon, plan.BuildHit(() => weapon, _ => throw new Exception("An arrow is not spell damage")));
+        Assert.Equal(830, plan.CriticalChance(830, () => throw new Exception("An arrow uses attack crit")));
+    }
+
     [Fact]
     public void Type_precedence_and_fractional_damage_do_not_depend_on_a_trial_roll()
     {

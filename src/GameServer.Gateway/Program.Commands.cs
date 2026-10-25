@@ -403,7 +403,7 @@ partial class Program
                 wasDead = conn.PlayerLife == 0;
                 if (!wasDead)
                 {
-                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - dealt);
+                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds));
                     life = conn.PlayerLife;
                 }
                 else life = 0;
@@ -413,6 +413,7 @@ partial class Program
                 await conn.Commands!.Reply("You are already dead.");
                 return;
             }
+            await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
                     "0x01b3 player hide_mini_life_bar = 1 (dev hit)");
@@ -523,7 +524,7 @@ partial class Program
                 wasDead = conn.PlayerLife == 0;
                 if (!wasDead)
                 {
-                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - dealt);
+                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds));
                     life = conn.PlayerLife;
                 }
                 else life = 0;
@@ -533,6 +534,7 @@ partial class Program
                 await conn.Commands!.Reply("You are already dead.");
                 return;
             }
+            await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
                     "0x01b3 player hide_mini_life_bar = 1 (dev spell hit)");
@@ -605,7 +607,7 @@ partial class Program
                     int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
                     int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
                     conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife,
-                        Math.Max(0, (long)conn.PlayerLife - dealt + gainedLife));
+                        Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds) + gainedLife));
                     conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
                     life = conn.PlayerLife;
                     mana = conn.PlayerMana;
@@ -617,6 +619,7 @@ partial class Program
                 await conn.Commands!.Reply("You are already dead.");
                 return;
             }
+            await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
                     "0x01b3 player hide_mini_life_bar = 1 (dev block hit)");
@@ -653,7 +656,7 @@ partial class Program
         })
         .Add("heal", "/heal (full life; also revives: 0x1b1 from 0 runs the client's revive)", async _ =>
         {
-            lock (conn.Monsters) (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, (uint)UnreservedMana(conn));
+            lock (conn.Monsters) { (conn.PlayerLife, conn.PlayerMana) = (conn.PlayerMaxLife, (uint)UnreservedMana(conn)); conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, true); }
             await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
                 $"0x01b1 player healed to {conn.PlayerMaxLife}");
             await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
