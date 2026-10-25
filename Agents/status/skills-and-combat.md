@@ -200,7 +200,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Areas without a height grid fly the fireball on the terrain.
   Height capture still uses `scripts/re/frida/capture-terrain-tiles.js` and `scripts/walkmaps/heights.py`.
   Doodad/object colliders, explosion area damage and pierce/chains remain unimplemented.
-  Code: `ProjectileFlight.cs`, Gateway (`LaunchProjectile`, `FlyProjectile`), `InstanceProtocol.Teleport`.
+  Code: `ProjectileFlight.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
+  `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
   yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
