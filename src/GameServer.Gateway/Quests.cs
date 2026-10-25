@@ -60,7 +60,16 @@ static class Quests
             areaId == Strand && objectType == ForceWall ? KilledHillock : null;
     }
 
-    static readonly Script[] All = [new EnemyAtTheGate()];
+    /// <summary>a1q4 "Breaking Some Eggs": the Glyph Wall in The Mud Flats takes the three glyphs from the Rhoa Nests and
+    /// sets PlacedGlyphs, which opens the Submerged Passage (12-quests.md §1–4; the objects are <see cref="GlyphQuest"/>'s).
+    /// The client stops the player at its own invisible blockers until then; the Gateway also keeps the exit closed.</summary>
+    public sealed class BreakingSomeEggs : Script
+    {
+        public override string? FlagToEnter(string fromArea, string toArea) =>
+            fromArea == GlyphQuest.Area && toArea == GlyphQuest.Passage ? GlyphQuest.PlacedGlyphs : null;
+    }
+
+    static readonly Script[] All = [new EnemyAtTheGate(), new BreakingSomeEggs()];
 
     /// <summary>Flags every character has from the start (added on login, not a quest's), all for the hideout
     /// (21-hideouts.md §1): HideoutUnlocked; HASH32 0x2f1b9c25 (row 718, the schema's "HideoutJukeboxEnabled"), which the

@@ -41,6 +41,18 @@ partial class Program
             await OpenTutorialChest(remote, stream, ciphers, conn, use, tutorialChest);
             return;
         }
+        GlyphQuest.Nest? nest;
+        lock (conn.GlyphNests) nest = conn.GlyphNests.GetValueOrDefault(use.TargetId);
+        if (nest is not null)
+        {
+            await OpenRhoaNest(remote, stream, ciphers, conn, use, nest);
+            return;
+        }
+        if (conn.GlyphWallId != 0 && use.TargetId == conn.GlyphWallId)
+        {
+            await UseGlyphWall(remote, stream, ciphers, conn, use);
+            return;
+        }
         if (use.TargetId == WaypointCatalog.ObjectId && conn.Layout.Waypoint is { } waypoint)
         {
             await UseWaypoint(remote, stream, ciphers, conn, use, waypoint);
