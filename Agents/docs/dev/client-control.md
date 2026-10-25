@@ -24,8 +24,9 @@ with the local patching-server argument and requires the local servers already r
 rebuild, extract data, or close an existing client. It waits up to 60 seconds for a native menu, so login can immediately
 follow its successful result. Before opening a closed client, it resets the cached GGPK gateway list to local Auth,
 as a normal startup does; an existing client returns before that write. Startup asset loading still takes the
-client's normal time. The gateway-reset integration has mocked startup coverage; fresh client startup against an
-already-running Patch service still needs live verification after merging upstream changes.
+client's normal time. After merging upstream's gateway reset, a fresh client opened against the already-running
+Patch/Auth/Gateway services in 9.5 seconds, then logged in, listed characters and entered an area successfully
+(2026-10-25, isolated validation database). Mocked startup checks also cover existing clients and failed preflights.
 
 Every command returns one JSON object: `ok`, `result` or `error`, and `elapsedMs`. `character:list` reads the list
 actually received by the client; entries have `index`, `name`, `league`, `level`, and `classId`. Play resolves the name
