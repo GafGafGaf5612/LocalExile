@@ -89,7 +89,7 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
 
 - Pack density and magic/rare chances are guesses (§1). Rarity gives no mods, no extra life, no rare names.
 - `Grounds` (Drowned on wet beach) is not checked; we have no ground-type grid.
-- Emerge packs (Gravel Eaters, Dripping Dead, the Strand's Drowned …) are placed buried and rise within 30 cells of the
+- Emerge packs (Gravel Eaters, Dripping Dead, the Strand's Drowned …) are placed buried and rise within 24 cells of the
   player ([10](10-chat-and-commands.md) §5); the distance is ours (the official one is in the server's AI files).
   An "Emerge" variety whose type has a Transitionable but no Emerge action is still skipped (it would never rise).
 - Fire Fury uses only her first granted effect. Bosses whose MonsterVarieties row has `BossHealthBar` and whose type

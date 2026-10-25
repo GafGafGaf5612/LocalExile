@@ -205,7 +205,7 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
     2. S→C **0x2ba** to its Transitionable with state 2: `on_transition` makes it targetable.
     3. When the clip has played, S→C **0x1ac** ends the action; the monster then chases and attacks like any other.
     Which monster rises when is the official server's (its `.ais` AI files are not in the client); the Gateway raises a
-    buried monster when the player comes within 30 cells, or its aggro range if shorter (`MonsterEmerge.cs`). Until
+    buried monster when the player comes within 24 cells, or its aggro range if shorter (`MonsterEmerge.cs`). Until
     then it is not among the connection's monsters, so no attack, skill, projectile or aura reaches it. Types that list
     `num_states` (SpiderBoss, Tukohama's totem: 3) are created transitioned as before.
 - **Animated path.** Not sent (flags 0): the type supplies the animated object. `Game_MONSTER_AO=1` sends the variety's

@@ -16,9 +16,9 @@ using System.Text.Json;
 sealed class MonsterEmerge(string folder = "data")
 {
     /// <summary>How near (grid cells) the player comes before a buried monster rises; its aggro range when that is
-    /// shorter. The official server decides it in the monster's .ais file, which the client does not have: 30 cells
+    /// shorter. The official server decides it in the monster's .ais file, which the client does not have: 24 cells
     /// keeps the emerge on screen.</summary>
-    public const int Range = 30;
+    public const int Range = 24;
 
     /// <summary>How long a monster without a known Emerge clip takes to rise.</summary>
     public const double DefaultSeconds = 1.5;
