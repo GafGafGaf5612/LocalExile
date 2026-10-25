@@ -393,3 +393,5 @@ conditional path now also receives aggregate area (0xd7) and radius percentage (
 Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
 
 - Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
+
+Ordinary player energy shield now derives from equipment/passives, absorbs non-chaos damage and implements regeneration, delayed/interrupted recharge, death/refill, and native client prediction. It extends the existing 16 ms recovery loop. Special ES keystones/conditional mechanics and the native recharge-start event remain unimplemented; see [ES scope](docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
