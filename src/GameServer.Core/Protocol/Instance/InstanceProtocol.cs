@@ -87,7 +87,8 @@ public static class InstanceProtocol
         InstancePause.RequestId => InstancePause.RequestLength, InstanceMicrotransactions.SlotId => InstanceMicrotransactions.SlotLength,
         InstanceMicrotransactions.SkillPickId => InstanceMicrotransactions.SkillPickLength,
         InstanceMicrotransactions.RequestId => InstanceMicrotransactions.RequestLength,
-        InstanceHideouts.SelectId => InstanceHideouts.SelectLength, _ => null,
+        InstanceHideouts.SelectId => InstanceHideouts.SelectLength,
+        InstanceBench.CraftId => InstanceBench.CraftLength, _ => null,
     };
 
     /// <summary>

@@ -100,6 +100,49 @@ implicits again. Dev commands on the held item: `/mod [implicit|explicit|enchant
 
 ## 2b. Rolling magic and rare items
 
+### Essence crafting (2026-10-25)
+
+`EssenceCrafting.cs` reads the existing `tables/Essences.json`: BaseItemTypesKey identifies
+the consumed currency, and each equipment-class ModsKey resolves the exact guaranteed
+Mods.dat row. Quivers use Display_Quiver_ModsKey (there is no separate Quiver_ModsKey in
+this schema); Rune Daggers use Dagger, Warstaves use Staff, and thrusting swords use
+OneHandThrustingSword. All 105 craftable essences are included, including the four tier-8
+essences and tier-0 Essence of Desolation. Remnant of Corruption has no equipment mods
+and is deliberately not handled as item crafting currency.
+
+Normal equipment becomes identified rare. Tiers 5–8 and Desolation can also reforge rare
+equipment; magic, unique, corrupted, mirrored, incompatible classes/domains and the four
+standard metamods are refused without consuming currency. The guaranteed mod bypasses
+ordinary spawn weights and item-level requirements. Random affixes retain their normal
+base/tag weights and use min(item level, ItemLevelRestriction), when a restriction is set;
+the item's actual level stays unchanged. This is a cap on random properties, not a maximum
+target item level. Desolation's cap is 15 in this client's table.
+
+`ItemRolls.Roll` inserts the guaranteed affix before filling remaining prefix/suffix slots.
+Family conflicts are excluded, the usual three-prefix/three-suffix limits apply, fractured
+mods keep their values and positions, and a conflicting fracture refuses the craft. Existing
+implicit/enchant mods, sockets, gems, links and quality remain. The random affix-count
+distribution is the existing server distribution documented below, not a newly verified
+official distribution. Conditional combat effects still depend on the server's implementation
+of the corresponding stats; this change supplies their exact item modifiers.
+
+UseItemOn dispatches essences through the existing 0x71 / Shift 0x72 currency path,
+including currency in the Essence stash tab, item targets in stash/inventory, atomic saves,
+one-unit consumption and 0xbf item replacement. Failures never consume a stack unit.
+The extraction manifest explicitly checks Essences.json, and GameDataFiles warns if absent.
+
+Tests exercise every essence across supported equipment classes at item levels 1 and 100,
+raw-table class mappings, value ranges, random-mod caps, rarity/protection restrictions,
+fractures/metamods and repeated use directly from the Essence tab. Real-client application
+awaits the user's test after Gateway restart.
+
+References: [PoEDB essences](https://poedb.tw/us/Essence),
+[Desolation](https://poedb.tw/us/Essence_of_Desolation),
+[PoE Wiki mechanics](https://www.poewiki.net/wiki/Essence). Prefer this client's extracted
+rows over later website data when modifier values differ by game version.
+
+### Ordinary random affixes
+
 `ItemRolls.cs`. An affix can roll when its Mods.dat row has the base's BaseItemTypes **ModDomain** (1 items, flasks
 their own), GenerationType 1 (prefix) or 2 (suffix), Level at most the item level, is not essence-only, and has a
 weight above 0 for the item's **tags**: the first of its SpawnWeight tags the item has gives the weight, the first
@@ -620,3 +663,9 @@ not known yet), and they fill up on entering a town or a hideout and on resurrec
   on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
   Gateway shows each client only its own player).
+
+### Currency metamod protection
+
+Currency mutations snapshot positive explicit metamod stats before changing the item. Scouring, Annulment, Divine and Chaos preserve existing prefixes/suffixes protected by their respective locks, as well as fractured affixes. Scouring removes the opposite-side protecting craft, retains quality, sockets, links and non-explicit mods, refuses uniques, and derives rarity from retained explicit count (0 normal, 1 magic, 2+ rare). Annulment retains rarity and also excludes attack/caster-tagged affixes when their cannot-roll craft is present. Exalt, Regal and Augment allow additions to a locked side, but filter cannot-roll attack/caster tags. Reforges use cannot-roll restrictions from retained crafts; an unprotected craft removed by Chaos does not restrict the new pool. Bench selective replacement uses the same protection and generation rules. Essence rejects the four outcome-changing metamods (multimod remains allowed). Socket/quality/implicit currencies do not alter explicit affixes.
+
+Regression coverage: MetacraftTests, real data prefix/suffix lock removal, Divine/Chaos preservation, annul tag protection and added-affix tag exclusion. These fixes do not implement currencies absent from UseItemOn, or replace the documented local Chance/Vaal outcome distributions with official probabilities. References: https://www.poewiki.net/wiki/Metamod and https://www.poewiki.net/wiki/Orb_of_Scouring.
