@@ -56,6 +56,9 @@ sealed class NpcSale(SpawnedNpc npc, uint mine, uint theirs)
     public uint Theirs { get; } = theirs;
     // The offered items stay in the character's inventory cells until the sale ends (PlayerInventories.Offer).
     public List<InventoryItem> Reward = [];
+    public IReadOnlyList<InventoryItem> QuotedItems = [];
+    public IReadOnlyList<Item> QuotedRewards = [];
+    public string? QuoteError;
     public uint MineRevision, TheirsRevision;
 }
 
