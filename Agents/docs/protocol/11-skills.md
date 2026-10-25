@@ -686,7 +686,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   distance / speed it flies at ~1000 units/s. The fireball now starts `Game_PROJECTILE_AHEAD` cells (1.5) in front of
   the caster and flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area), stopped by the first
   monster or wall contact described above. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
-- **Ordinary bow attacks (#203, awaiting native after-check).** Ground and object uses share `LaunchOrdinaryBow`:
+- **Ordinary bow attacks (#203).** Ground and object uses share `LaunchOrdinaryBow`:
   the action is confirmed, then the game clock waits for `attack1_bow` contact without the melee walk-in offset.
   The original action, life and area epoch must still be valid at creation. An already-paused use is rejected before
   changing action, walk or attack pacing; an accepted echo/creation queued behind a later pause waits for resume.
@@ -696,8 +696,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   can prevent damage. The object-use path returns before the old melee contact hit, so it cannot double-hit.
   Current player position, weapon/raw damage, added damage, player-first default-skill conversion, accuracy,
   attack crit chance/multiplier, impale chance and projectile speed are sampled after the contact wait, before
-  enqueueing creation. Aim remains the original aim. This is the selected release snapshot policy; native
-  equivalence for weapon/stat changes or instant movement before release has not been established.
+  enqueueing creation. Aim remains the original aim. This is the selected release snapshot policy; official-server
+  snapshot equivalence has not been established.
   At the actual send gate, one game-time sample drives the target observation and swept contact test. Target
   evasion is checked there; on a hit, existing target impales are consumed, a new stack may be added, the packet
   is rolled and crit applied, and life is committed with the arrow's stop packet. Paused or obsolete queued
@@ -711,10 +711,34 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   Official evasion-continuation parity remains unverified. Null contact predicates preserve existing gem behavior.
   Ordinary arrows send ranged life/flinch/death notifications without the melee `0x1af 0x4201` sound or Fireball
   explosion. Before-controls on 2026-10-25 showed object arrows created at bow-clip elapsed ~0.012 s and melee
-  damage before flight impact, while a ground arrow crossed the same monster with no damage. Automated sweep,
-  release snapshot, actual send-gate lifecycle and paused-input dispatch checks cover the replacement path;
-  native after-checks remain pending. Surface/platform height, wands, supports, pierce, fork and chain are outside
-  this change.
+  damage before flight impact, while a ground arrow crossed the same monster with no damage. On the combined
+  runtime, actual right-click ground/object after-checks each caused one hit only at the native arrow stop:
+  ground aim (363,224) hit at (296,221) for 13; object aim (300,220) hit at (296,220) for 6, without melee
+  `0x1af 0x4201`. Creation was in `attack1_bow`, clip elapsed ~0.466/~0.448 rather than ~0.013; the expected clip contact
+  is ~0.399, so frame/server scheduling delay remains visible and exact native timing equivalence is not claimed.
+  A wall before the selected object stopped the arrow at (318,276) without damage; previously the selected
+  monster still took damage. A nearer interceptor took one 7-damage hit while the selected target was untouched.
+  A target ordered off-path after release was missed and the arrow continued to the wall. A framed Move before
+  release cancelled creation/damage; after release it left the old arrow alive to deal one 13-damage hit.
+  During flight pause, 35 native samples stayed at (286,220); that shot later missed and continued to the wall.
+  A release paused before contact created nothing while paused, then created ~1.03 s after resume and hit once
+  for 11. Paused raw ground/object requests were ignored and resume remained processable.
+  A shot with 100 added cold captured at release still dealt 112 after those raw stats were cleared in flight:
+  one killing hit and one 4-XP award. Loot was not measured. Live accuracy was not forced to 100%; the existing
+  `/set_stat accuracy_rating` path does not refresh `conn.Pools.Accuracy` used by ordinary combat.
+  Combined-only Frostblink checks: actual right-click then actual Q after release preserved one 13-damage hit.
+  Actual right-click then a timed framed `0x190` before release moved the native player to (312,221); the arrow
+  was created at (313,221) with the original aim (363,224), ending at the wall. This verifies local composition,
+  not standalone Frostblink support or official-server mechanics. Combined-only hit-recovery controls showed
+  native TakeHit (clip 163, 0.429 s) cancelling the pending bow without creating its arrow; input during recovery
+  was denied and a fresh retry after expiry released. An arrow created before recovery still stopped/removed
+  under its original id despite action cancellation. These recovery/Frostblink features are separate contributions.
+  Evidence: integration-checkout `logs/ordinary-bow-after-{ground,object,wall-object,interceptor-object,
+  moving-away-object,prerelease-cancel,released-move-hit,flight-pause,release-pause,paused-dispatch,
+  release-snapshot-kill,released-native-frostblink,pending-bow-framed-frostblink}.json`.
+  Recovery evidence: `logs/ordinary-bow-hit-recovery-{bow,flight}.json` in the same checkout.
+  Automated sweep, release snapshot, actual send-gate lifecycle and paused-input dispatch checks also pass.
+  Surface/platform height, wands, supports, pierce, fork and chain are outside this change.
 - **Still wrong.** Without a surface-height model the projectile uses the captured terrain height; on a platform or
   doodad (which the terrain grid does not include) it spawns below the player (issue #182). The direction floats of
   Positioned's f1 0x04 block are not used; sending (dx, dy, 0, 0) put the fireball under the ground, so the Gateway no
