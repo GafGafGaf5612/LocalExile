@@ -1,5 +1,5 @@
 /// <summary>
-/// A spell's hit before crits and the target's mitigation (Agents/docs/protocol/11-skills.md §9): per damage type, the
+/// A spell's hit before crits and the target's mitigation (Agents/docs/protocol/11-skills.md В§9): per damage type, the
 /// skill's spell_minimum/maximum_base_{type}_damage scaled by 1 + the summed increases that apply: damage_+%,
 /// spell_damage_+%, elemental_damage_+% (fire, cold, lightning), the type's own {type}_damage_+%, and
 /// projectile_damage_+% for projectile skills (base_is_projectile). The skill's stats include the player's (passives,
@@ -14,7 +14,8 @@ static class SpellDamage
     /// and drops the fraction, <see cref="Roll"/>); (0, 0) for a skill with no base spell damage.</summary>
     public static (double Min, double Max) Hit(Func<string, int> get, double addedEffectiveness = 1)
     {
-        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
+        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0)
+            + (get("is_area_damage") != 0 ? get("area_damage_+%") : 0);
         double min = 0, max = 0;
         foreach (string type in Types)
         {
@@ -35,7 +36,8 @@ static class SpellDamage
     public static GameServer.Core.World.DamagePacket Packet(GameServer.Core.World.DamagePacket hit, Func<string, int> get, double addedEffectiveness = 1)
     {
         hit = DamageStats.Added(hit, get, spell: true, effectiveness: addedEffectiveness);
-        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
+        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0)
+            + (get("is_area_damage") != 0 ? get("area_damage_+%") : 0);
         return hit.Select((type, range) =>
         {
             string slug = type switch
@@ -72,7 +74,7 @@ static class SpellDamage
     /// <summary>One hit: uniform between the minimum and the maximum, fraction dropped.</summary>
     public static int Roll((double Min, double Max) hit, Random rng) => (int)Math.Floor(hit.Min + rng.NextDouble() * (hit.Max - hit.Min));
 
-    /// <summary>The panel's Damage per Use and Damage per Second (both × 100) for a spell cast this often.</summary>
+    /// <summary>The panel's Damage per Use and Damage per Second (both Г— 100) for a spell cast this often.</summary>
     public static (int PerUse, int PerSecond) Display((double Min, double Max) hit, double castsPerSecond)
     {
         double average = (hit.Min + hit.Max) / 2.0;

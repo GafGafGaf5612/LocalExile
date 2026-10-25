@@ -5,6 +5,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Works (verified with the real client)
 
+- Heist Locker is placed in each hideout and opens its native window (0x7b kind 0x37).
+  The native window handler and visible state were verified through the real client.
+  Its placement supports the hideout editor; storage transfers were not added by this change.
+  See [21](../docs/protocol/21-hideouts.md), Heist Locker.
 - Portal Scroll and the Portal skill (its 2.5 s cast): outside towns and hideouts a portal opens beside the player,
   replacing the previous one; from a map it leads to the hideout, anywhere else to the last town.
   That town or hideout gets a portal back, which brings the player to the portal's cell of the same instance;
@@ -28,6 +32,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [21](../docs/protocol/21-hideouts.md).
 
 ## Partly working
+
+- **Waypoint arrival.** Hideout entry uses the exact saved waypoint cell for spawn and movement origin,
+  including login and returns from other areas.
 
 - Hideout editing moves and rotates installed furniture, the waypoint and NPCs through native C→S 0x5b.
   Placements persist per character/template; runtime interactions and path blockers follow the moved objects.

@@ -20,8 +20,8 @@ partial class Program
         lock (conn.Monsters) return AttackTiming.Ready(now, conn.NextAttackAt, seconds);
     }
 
-    // The 0x1af hit angle (0..255 = a full turn), the direction the hit comes from (attacker → target) in the client's
-    // facing convention atan2(dx, −dy), like Positioned's rotation.
+    // The 0x1af hit angle (0..255 = a full turn), the direction the hit comes from (attacker РІвЂ вЂ™ target) in the client's
+    // facing convention atan2(dx, РІв‚¬вЂ™dy), like Positioned's rotation.
     static byte HitAngle(int dx, int dy)
     {
         double a = Math.Atan2(dx, -dy);
@@ -47,7 +47,7 @@ partial class Program
         return AttackTiming.ContactDelay(attackSeconds, contact, approach ? HitContactOffsetSeconds() : 0);
     }
 
-    // The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). The client walks into range
+    // The player uses a skill on a monster (CРІвЂ вЂ™S 0x24, e.g. the default attack on a left click). The client walks into range
     // first, so the server walks its estimate too (WalkEstimator.Approach, reach = the weapon's MaxAttackDistance in cells,
     // centre to centre) and only then starts the swing: it echoes the action aimed at the monster (0x1ab, flags | 0x80 +
     // target id) and, at the contact point (AttackContactDelay: the attack animation's contact keyframe), lowers the monster's life (0x1b1) by the unarmed damage
@@ -178,10 +178,10 @@ partial class Program
         if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, use.TargetId, m);
     }
 
-    // A gem skill used on a monster (C→S 0x24 with a skill id other than the default attack's). A spell stops and casts from
+    // A gem skill used on a monster (CРІвЂ вЂ™S 0x24 with a skill id other than the default attack's). A spell stops and casts from
     // where the player stands: the server echoes the action from there, aimed at the monster, so the client plays the cast.
-    // An attack gem (Holy Strike, Ground Slam …) is used like the default attack (see Attack): the client walks into reach
-    // first, so the server walks its estimate too and only echoes the swing — and pays the skill's cost — on arrival. Before
+    // An attack gem (Holy Strike, Ground Slam РІР‚В¦) is used like the default attack (see Attack): the client walks into reach
+    // first, so the server walks its estimate too and only echoes the swing РІР‚вЂќ and pays the skill's cost РІР‚вЂќ on arrival. Before
     // 2026-10-25 the attack cast at the click from out of reach: the mana was gone at once and the hit landed around the
     // player, hitting nothing. CastGemSkill pays the cost and runs the skill's effect (projectile, area hit, aura, self-cast).
     static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
@@ -279,7 +279,7 @@ partial class Program
         // two attacks cannot start at once either.
         if (gem.Name is not null && Skills.IsAttack(gem.Effect))
         {
-            double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+            double duration = SupportedAttackSeconds(conn, skillId);
             double now = conn.Clock.Elapsed.TotalSeconds, next;
             bool ready;
             lock (conn.Monsters)
@@ -294,14 +294,16 @@ partial class Program
                 return false;
             }
         }
-        if (gem.Name is not null && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
+        if (gem.Name is not null && Supports.Of(gem.Effect)?.Types.Contains(47) == true)
+            conn.NextChannelHitAt = conn.Clock.Elapsed.TotalSeconds + SupportedAttackSeconds(conn, skillId);
+        if (gem.Name is not null && SupportedReservation(conn, skillId) is { } reservation)
         {
-            await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, gem.Level, gem.Quality);
+            await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, SupportedSkill(conn, skillId).Level, SupportedSkill(conn, skillId).Quality);
             return true;
         }
         if (gem.Name is not null)
         {
-            if (!PayMana(conn, gem.Effect, gem.Level, gem.Quality, out uint cost))
+            if (!PayMana(conn, skillId, out uint cost))
             {
                 Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: not enough mana ({conn.PlayerMana} < {cost})");
                 return false;
@@ -330,7 +332,7 @@ partial class Program
         return true;
     }
 
-    // An instant skill (C→S 0x191): its effect, then S→C 0x1ce, which has the client run the skill's action without animation
+    // An instant skill (CРІвЂ вЂ™S 0x191): its effect, then SРІвЂ вЂ™C 0x1ce, which has the client run the skill's action without animation
     // and consume a use of it: the skill bar's cooldown starts (the tooltip showed the cooldown, the bar did not run it).
     static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, uint targetId, (int X, int Y) at)
@@ -405,7 +407,7 @@ partial class Program
         AuraCatalog.StartPackets(aura, PlayerId, Skills.ActionHash(aura.Effect));
 
     // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
-    // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
+    // named after the effect (Fireball РІвЂ вЂ™ Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
     // aimed point and on to its range with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid
     // cell), stopping at the first wall or monster on its path; a monster takes the skill's damage packet
     // (SkillCatalog.HitDamage, after conversion). It explodes there; then the object is removed.
@@ -425,7 +427,7 @@ partial class Program
         int action = conn.ActionCount;
         int epoch;
         lock (conn.Monsters) epoch = conn.ProjectileEpoch;
-        // Released at the action's contact keyframe. An attack gem (Burning Arrow, Caustic Arrow …) plays the weapon's
+        // Released at the action's contact keyframe. An attack gem (Burning Arrow, Caustic Arrow РІР‚В¦) plays the weapon's
         // attack1 animation, which the client stretches to the weapon's attack time: its contact is attack1_bow's 399/1066
         // (0.374 for the Ranger) of that time. A spell plays its spell_projectile clip instead (Dex: 699/1133 = 0.617 of
         // the cast). Using the spell fraction for a bow sent the arrow 0.617 of the action after the swing had already
@@ -434,14 +436,14 @@ partial class Program
         var cls = Skills.ClassFor(conn.ClassRow);
         bool attack = gem.Name is not null && Skills.IsAttack(gem.Effect);
         double releaseDelay = attack
-            ? AttackContactDelay(conn, WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn)), approach: false)
-            : CastMs(conn, gem.Effect) / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
+            ? AttackContactDelay(conn, SupportedAttackSeconds(conn, skillId), approach: false)
+            : CastMs(conn, gem.Effect, skillId) / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
         if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, releaseDelay), epoch)
             || conn.ActionCount != action) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
         // A worn skill effect (its skill_art_variation) flies its own projectile and explodes in its own art (SkillArt).
         int variation = SkillArtVariation(conn, gem.Gem);
         projectile = (Art.Projectile(projectile.Id, variation), projectile.Speed);
-        // The fireball explosion is only right for the Fireball spell; a bow's arrow (Burning Arrow, Caustic Arrow …)
+        // The fireball explosion is only right for the Fireball spell; a bow's arrow (Burning Arrow, Caustic Arrow РІР‚В¦)
         // sticks and disappears on hit, so it gets no impact. Its burning/debuff is the monster's, not the arrow's.
         string impact = projectile.Id.Contains("Fireball")
             ? Art.AnimatedInPlaceOf(DefaultProjectileImpactAo, variation)
@@ -449,7 +451,7 @@ partial class Program
         // Keep the player's final speed separate from the skill's raw stats: the panel already includes the player's
         // base speed, while a gem's own base speed (including quality) adds to that total instead of replacing it.
         var playerSpeedStats = CharacterPlayerStats(conn);
-        var skillSpeedStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var skillSpeedStats = SupportedSkill(conn, skillId).Stats;
         int PlayerSpeedStat(string name) => Stats.Key(name) is uint key ? playerSpeedStats.GetValueOrDefault(key) : 0;
         int SkillSpeedStat(string name) => Stats.Key(name) is uint key ? skillSpeedStats.GetValueOrDefault(key) : 0;
         float speed = ProjectileSpeed.CellsPerSecond(projectile.Speed, PlayerSpeedStat, SkillSpeedStat,
@@ -457,29 +459,22 @@ partial class Program
         await FlyProjectile(remote, stream, ciphers, conn, (projectile.Id, speed), from, to, impact: impact, damageTo: m =>
         {
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
-            // types separate so conversion and per-type mitigation apply. An attack gem (Burning Arrow, Caustic Arrow …) has
+            // types separate so conversion and per-type mitigation apply. An attack gem (Burning Arrow, Caustic Arrow РІР‚В¦) has
             // no spell damage of its own: its hit is the weapon's, scaled by the skill's damage effectiveness, with the
-            // attack's crit — the same split AreaSkillHit makes for the non-projectile gems.
+            // attack's crit РІР‚вЂќ the same split AreaSkillHit makes for the non-projectile gems.
             var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-            var own = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-            int chance = projectileHitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
-                () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
+            var own = SupportedSkill(conn, skillId).Stats;
+            int chance = SupportedCriticalChance(conn, skillId);
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
-            var hit = projectileHitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
-                        Skills.DamageEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
-                spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
-                        AddedEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
+            var hit = SupportedHit(conn, skillId);
             int damage = hit.RollTotal(Random.Shared);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
-                    spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
+                    SupportedCriticalMultiplier(conn, skillId));
             return (damage, critical);
         }, epoch: epoch);
     }
@@ -489,18 +484,17 @@ partial class Program
     // (SkillArea). The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23).
     static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell, int effect)
     {
-        var areaStats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        foreach (var (k, v) in skillStats) areaStats[k] = v;
+        var areaStats = MergeSkillStats(FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2), skillStats);
         int Get(string name) => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0;
         return SkillArea.Radius(SkillArea.BaseRadius(Skills.EffectId(effect), Get), Get, spell);
     }
 
     // Whether a living monster stands within a gem attack's hit radius of a ground point. The client sends a point with a
-    // monster on it as C→S 0x25 (not C→S 0x24 on the object), so an attack-move at such a point has to become a swing.
+    // monster on it as CРІвЂ вЂ™S 0x25 (not CРІвЂ вЂ™S 0x24 on the object), so an attack-move at such a point has to become a swing.
     static bool MonsterAtAim(ClientState conn, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem,
         int x, int y, double at)
     {
-        var stats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var stats = SupportedSkill(conn, gem.Id).Stats;
         int radius = SkillRadius(conn, stats, spell: false, gem.Effect);
         lock (conn.Monsters)
             return conn.Monsters.Any(m => !m.Value.Dead && m.Value.Life > 0
@@ -518,7 +512,7 @@ partial class Program
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
         bool immediate = false, ushort sequence = 0)
     {
-        var skillStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var skillStats = SupportedSkill(conn, skillId).Stats;
         // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
         int effectiveness = Skills.DamageEffectiveness(gem.Effect, gem.Level);
         int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
@@ -529,13 +523,13 @@ partial class Program
         var weapon = WeaponFor(conn);
         double delay;
         // An attack lands at its contact keyframe; the player swings where it stands, so without the walk-in offset.
-        lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0
-            : AttackContactDelay(conn, weapon.AttackSeconds(CharacterPlayerStats(conn)), approach: false);
+        lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect, skillId) / 1000.0
+            : AttackContactDelay(conn, SupportedAttackSeconds(conn, skillId), approach: false);
         int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
         // A melee skill aimed far away still lands in front of the player.
         var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
         int action = conn.ActionCount;
-        // A channel's hits (Cyclone, C→S 0x197) land at once, where the player is.
+        // A channel's hits (Cyclone, CРІвЂ вЂ™S 0x197) land at once, where the player is.
         if (!immediate)
         {
             await Task.Delay(TimeSpan.FromSeconds(Math.Max(0.05, delay)));
@@ -548,22 +542,16 @@ partial class Program
                 .Select(e => (e.Key, e.Value))];
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int criticalChance = hitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
-            () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats));
+        int criticalChance = SupportedCriticalChance(conn, skillId);
         foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
-            DamagePacket hit = hitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
-                spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
-                        AddedEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
+            DamagePacket hit = SupportedHit(conn, skillId);
             int damage = hit.RollTotal(Random.Shared);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
-                : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
-            if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
+                : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
+            if (critical) damage = DamageModel.CriticalDamage(damage, SupportedCriticalMultiplier(conn, skillId));
             await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
@@ -628,7 +616,7 @@ partial class Program
         double cells = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
         // Positioned rotation = atan2(dx, -dy) (the player's own moves, traced live 2026-10-18: facing (+15, -18) read 0.668)
         // Height: the captured terrain height plus Game_PROJECTILE_HEIGHT steps of 7.8125 world units (default 5, the
-        // height the live server's arrow flew at: i32 -5, f32 +39.0625). The protocol carries no player z (C→S
+        // height the live server's arrow flew at: i32 -5, f32 +39.0625). The protocol carries no player z (CРІвЂ вЂ™S
         // 0x25/0x24 have only x,y, and the player's Positioned follows the terrain), so natural ground is the supported
         // case; without a capture the bare offset is used. A platform/doodad is not in the terrain grid (the hideout's
         // waypoint platform read z -78.37 while the terrain under it was 0..2 steps); that needs a server-side
@@ -639,7 +627,7 @@ partial class Program
         // -z / 7.8125 and its f32 is z; 0x1ba's u32 is the same signed value. The live arrow's i32 -5 / f32 +39.0625 was
         // z = +39.0625 with its player at z = +78.125 (5 steps above the feet). In the hideout the player's feet are at
         // z = -78.37 (up), so the torso is at z = -117.4: i32 +15, f32 -117.1875, 0x1ba 0xfffffff1. Sending positive 15
-        // put the arrow at z = +117 (below the platform) — the client reads the height as signed world z.
+        // put the arrow at z = +117 (below the platform) РІР‚вЂќ the client reads the height as signed world z.
         int clientHeight = -startHeight;
         var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Height: clientHeight);
         uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
@@ -798,7 +786,7 @@ partial class Program
         if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
     }
 
-    // The hit reaction: one of the rig's TakeHit clips and its SoundEvent, S→C 0x1b2 kind 0 (see Attack and HitMonster).
+    // The hit reaction: one of the rig's TakeHit clips and its SoundEvent, SРІвЂ вЂ™C 0x1b2 kind 0 (see Attack and HitMonster).
     // A killing blow gets none: the client's Life component runs the death instead, and the flinch would only be cut off.
     // The gates (HitReaction) keep it a stun-like reaction rather than a loop; see that class. The monster is checked again
     // inside the send gate: a hit that kills it meanwhile marks it Dead before it sends its own 0x1b1, so the flinch either
@@ -853,7 +841,7 @@ partial class Program
         }
         if (m.Variety?.ComponentsOrBase.ToList().IndexOf("Transitionable") is int t and >= 0)
             await Send(remote, stream, ciphers, InstanceEntities.TransitionableUpdate(id, (byte)t, stage.TransitionTo),
-                $"0x02ba monster 0x{id:x} ({m.Label}) Transitionable → {stage.TransitionTo}");
+                $"0x02ba monster 0x{id:x} ({m.Label}) Transitionable РІвЂ вЂ™ {stage.TransitionTo}");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life), $"0x01b1 monster 0x{id:x} ({m.Label}) life refilled to {life}");
         // The stage's action is over: 0x1ac ends it, so the client never keeps the boss in it.
         await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(id), $"0x01ac monster 0x{id:x} ({m.Label}) stage action ended");
@@ -902,7 +890,7 @@ partial class Program
             await GainGemExperience(remote, stream, ciphers, conn, xp);
             await GainExperience(remote, stream, ciphers, conn, xp, $"{m.Rarity} {m.Label} 0x{id:x}");
         }
-        // A quest kill that levels the character up (a1q1: Hillock → at least level 2), wherever the player stands.
+        // A quest kill that levels the character up (a1q1: Hillock РІвЂ вЂ™ at least level 2), wherever the player stands.
         if (Quests.LevelAfterKill(conn.Layout.Id, variety.Id) is int level and > 1 && level <= CharacterStats.LevelStarts.Count)
         {
             uint needed = CharacterStats.LevelStarts[level - 1], have;

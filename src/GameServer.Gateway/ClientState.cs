@@ -361,6 +361,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>
     public uint GuildStashObject;
     public (int X, int Y) GuildStashAt;
+    public uint HeistLockerObject;
+    public (int X, int Y) HeistLockerAt;
     public uint HorticraftingObject;
     public (int X, int Y) HorticraftingAt;
     public uint CraftingBenchObject;

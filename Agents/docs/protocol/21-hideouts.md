@@ -414,6 +414,26 @@ Real-client movement/rotation and reconnect persistence were checked for the map
 The test placements were returned to their original positions afterwards.
 Other registered objects share the same update path; their individual Edit UI interactions still need manual checks.
 
+### Heist Locker
+
+Every hideout scene includes `Metadata/MiscellaneousObjects/Heist/HeistStash_Hideout` on clear floor.
+It is placed after the existing furniture/NPCs, so adding it does not change their default positions.
+Its serialized components are Positioned, BaseEvents, Animated, MinimapIcon and InteractionAction.
+The model is supplied by the native object type; no Stash or HideoutDoodad payload is present.
+It registers a size-4 path blocker and the stable editor key `heist-locker`.
+Movement/rotation updates interaction coordinates and persists with the template's other placements.
+
+C→S 0x24 interaction approaches the locker, validates arrival, then sends S→C 0x7b kind **0x37**.
+The four u32 arguments are zero; this is distinct from ordinary stash kind 1 and guild stash kind 2.
+Native dispatch: `0x142163420` case 0x37 -> instance +0x5278 -> `LAB_140dae778` -> HUD virtual +0xcf8.
+PC handler `0x140dcf150` opens HUD +0x8d8 and raises HeistStashOpen.
+HeistStorage1 (Inventories row 56, kind 0x24) is already included in the player's default inventories.
+This change adds placement and the native window entry point; Heist storage transfers are not newly implemented.
+
+Real-client verification sent the locker interaction and observed the native handler completing with the actual
+Heist window visible (flag 0x800 at +0x1e8) and its open marker set (+0x338), while the client remained in game.
+Tests cover placement across exported templates, editor restoration, native component order and the open message.
+
 ### Horticrafting Station (recipe browser only)
 
 HideoutScene places `Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout` beside the ordinary bench on clear floor in every selected hideout. The object has Positioned (blocking size 8), BaseEvents, Animated, MinimapIcon and InteractionAction, with no HideoutDoodad or StateMachine payload. Its built-in Animated model is harvest_workbench.ao. The Gateway registers a blocker and handles its 0x24 interaction separately from the ordinary bench.
@@ -421,3 +441,9 @@ HideoutScene places `Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout`
 After walking within range, send `0x7b` kind **0x39**, four zero u32s. Native dispatcher 0x142163420 uses instance +0x4ef8; HUD callback LAB_140dae88c invokes virtual +0xcc0, PC 0x140dcee40 (window +0x8b0) / controller 0x140d8d750 (window +0x4a8). This differs from 0x33 ordinary crafting and 0x45 Sanctum.
 
 The native Harvest panel builds the complete recipe list from HarvestCraftOptions.dat (0x14048dd00), with its own search/filter, current game-mode filtering and localized descriptions/costs. No ordinary bench unlock flags or server-manufactured recipe list are needed. HarvestCraftingItem (Inventories row 43) is already registered with the player's defaults. This step only opens the browser: Harvest execution and lifeforce payment are not implemented. Station placement and native window opening were confirmed in the real client.
+
+### Arrival on the saved waypoint
+
+Before serializing the player, PrepareHideoutWaypoint restores the character's saved waypoint position.
+It sets the hideout spawn and movement origin to that exact cell, rather than a nearby cell or old template spawn.
+This applies to login, waypoint travel and returns from other areas; moving the waypoint changes later arrivals.

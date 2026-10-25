@@ -53,9 +53,9 @@ partial class Program
         foreach (var gem in GemSkillEffects(conn.Character))
             if (Skills.EffectId(gem.Effect) is { } effect && wanted.Contains(effect) && AuraCatalog.Supported(effect)
                 && !conn.Auras.Values.Any(a => a.EffectId == effect)
-                && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
+                && SupportedReservation(conn, gem.Id) is { } reservation)
                 candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
-                    reservation.Flat, reservation.Percent, gem.Level, gem.Quality, SourceBuff: conn.NextBuff++));
+                    reservation.Flat, reservation.Percent, SupportedSkill(conn, gem.Id).Level, SupportedSkill(conn, gem.Id).Quality, SourceBuff: conn.NextBuff++));
         var restored = AuraCatalog.Restore(saved, candidates, conn.Pools, InTown(conn));
         foreach (var aura in restored) conn.Auras[aura.SkillId] = aura;
         if (restored.Count > 0)
@@ -135,9 +135,9 @@ partial class Program
 
     // A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
     // the mana.
-    static bool PayMana(ClientState conn, int effect, int level, int quality, out uint cost)
+    static bool PayMana(ClientState conn, ushort skillId, out uint cost)
     {
-        cost = Stats.Key("mana_cost") is uint k ? (uint)Skills.EffectStats(effect, level, quality).Where(kv => kv.Item1 == k).Select(kv => kv.Item2).FirstOrDefault() : 0;
+        cost = Stats.Key("mana_cost") is uint k ? (uint)Math.Max(0, SupportedSkill(conn, skillId).Stats.GetValueOrDefault(k)) : 0;
         lock (conn.Monsters)
         {
             if (conn.PlayerMana < cost) return false;
@@ -147,14 +147,20 @@ partial class Program
     }
 
     // A cast's time in ms: the effect's CastTime scaled by the player's increased cast speed.
-    static int CastMs(ClientState conn, int effect) => (int)Math.Round(Skills.CastMs(effect) / (1 + CastSpeedPct(CharacterPlayerStats(conn)) / 100.0));
+    static int CastMs(ClientState conn, int effect, ushort skillId = 0)
+    {
+        var own = skillId == 0 ? new Dictionary<uint, int>() : SupportedSkill(conn, skillId).Stats;
+        int speed = CastSpeedPct(CharacterPlayerStats(conn));
+        if (Stats.Key("base_cast_speed_+%") is uint k) speed += own.GetValueOrDefault(k);
+        return Math.Max(1, (int)Math.Round(Skills.CastMs(effect) / Math.Max(.01, 1 + speed / 100.0)));
+    }
 
     // cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
     static int CastSpeedPct(IReadOnlyDictionary<uint, int> stats) =>
         Stats.Key("cast_speed_+%") is uint k ? stats.GetValueOrDefault(k) : 0;
 
     // Righteous Fire (GrantedEffects RighteousFire): casting it puts the righteous_fire buff (BuffDefinitions row 12: the
-    // flames around the player, BuffVisuals 15) on the player with S→C 0x1c1. While it lasts the player burns for 90% of
+    // flames around the player, BuffVisuals 15) on the player with Sв†’C 0x1c1. While it lasts the player burns for 90% of
     // maximum life per second, nonlethal (base_nonlethal_fire_damage_%_of_maximum_life_taken_per_minute 5400), and enemies
     // within its radius (active_skill_base_area_of_effect_radius 18 cells at level 1, plus their size) take 70% of the
     // player's maximum life per second as fire damage (base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute 4200)
@@ -172,7 +178,7 @@ partial class Program
     // Righteous Fire's ring stays on the player. It is an object of its own, which the client moves only when the server
     // says so, so every RingFollowMs (RunRingFollow) and after each move order it glides (0x1ba) to where the player will be
     // RingFollowMs later, along the walk's path. Before 2026-10-23 it glided once per ground click to where that walk
-    // ended: a walk started any other way (a click on a stash or an item, C→S 0x24 → Walk.Approach) never moved it, and
+    // ended: a walk started any other way (a click on a stash or an item, Cв†’S 0x24 в†’ Walk.Approach) never moved it, and
     // the straight glide cut the path's corners.
     static async Task FollowRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
@@ -211,8 +217,7 @@ partial class Program
         ushort? buffVisual = Art.BuffVisual("righteous_fire_buff_visual", variation), auraVisual = Art.BuffVisual("righteous_fire_aura_visual", variation);
         string? ringAo = Art.Animated("righteous_fire_ring", variation) ?? (variation == 0 ? RighteousFireRingAo : null);
         // The radius takes the player's area of effect stats (passives, items, gem quality) under the skill's own (SkillArea).
-        var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        foreach (var (k, v) in Skills.EffectStats(effect, level, quality)) stats[k] = v;
+        var stats = SupportedStats(conn, skillId);
         int Get(string name, int fallback) => Stats.Key(name) is uint k && stats.TryGetValue(k, out int v) ? v : fallback;
         int radius = SkillArea.Radius(Get("active_skill_base_area_of_effect_radius", 18), name => Get(name, 0), spell: true);
         (int X, int Y) at;
@@ -399,7 +404,7 @@ partial class Program
         }
     }
 
-    // The ended flask effects' buffs come off the player (S→C 0x1c2).
+    // The ended flask effects' buffs come off the player (Sв†’C 0x1c2).
     static async Task EndFlaskEffects(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, List<Flasks.Effect> ended, string why)
     {
         foreach (var e in ended)
@@ -534,7 +539,7 @@ partial class Program
         _ => null,
     };
 
-    // The death screen's buttons (C→S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
+    // The death screen's buttons (Cв†’S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
     // checkpoint" revives next to the area's activated waypoint, else at its arrival point (teleport 0x1b7, AreaLayout.Checkpoint),
     // "in town" in the character's last town (an area change;
     // in that town it is the same as the checkpoint).
@@ -598,7 +603,7 @@ partial class Program
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
+            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));
@@ -611,7 +616,7 @@ partial class Program
             ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
             ($"0x02b9 create {player} ({cls.ObjectType}) type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, player.Blob())),
         };
-        // The player's inventories (id = row + 1), needed by UI built on entering (flask bar → row 11), with the character's items.
+        // The player's inventories (id = row + 1), needed by UI built on entering (flask bar в†’ row 11), with the character's items.
         var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items);
         if (Items.Error is not null) Console.WriteLine($"[gateway] items: {Items.Error}");
         foreach (var slot in InstanceInventories.PlayerDefaults)

@@ -5,9 +5,9 @@ using GameServer.Core.Protocol.Login;
 partial class Program
 {
     // Handles the framed messages of one read, ticks taken out (OnClientData):
-    // 0x7d (area generated) → the local player id (0x22), the player object (0x2b9), inventories, passive slots, the area transitions,
-    // and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x25 (move) → 0x1ab echo;
-    // 0x24 on an area transition → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
+    // 0x7d (area generated) в†’ the local player id (0x22), the player object (0x2b9), inventories, passive slots, the area transitions,
+    // and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x25 (move) в†’ 0x1ab echo;
+    // 0x24 on an area transition в†’ change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
     // Anything else is logged in hex: those are the next messages to map.
     static async Task OnClientMessages(string remote, NetworkStream stream, ConnectionCiphers ciphers,
         IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown, ClientState conn, long readAt = 0)
@@ -62,8 +62,8 @@ partial class Program
                     conn.ChannelSkillSequence = use.Slot;
                     continue;
                 }
-                // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an
-                // attack-move: the client walks to the aimed point itself and sends no C→S 0x25 Move for that walk, so the
+                // An attack gem (Holy Strike, Ground Slam вЂ¦) used on the ground with "Always Attack Without Moving" off is an
+                // attack-move: the client walks to the aimed point itself and sends no Cв†’S 0x25 Move for that walk, so the
                 // server walks its own estimate after it and echoes from there. A point with a living monster on it is a
                 // swing (the client aims at the cell, not at the object); an empty point is movement only, so running costs
                 // no mana. Before 2026-10-25 every use swung, which paid the cost at the click and echoed the server's stale
@@ -96,7 +96,7 @@ partial class Program
                 Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
                 var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
                 if (cast) conn.Walk.Order(px, py, at);
-                // A movement skill (Leap Slam …) takes the player to the aimed point: the server keeps the position the
+                // A movement skill (Leap Slam вЂ¦) takes the player to the aimed point: the server keeps the position the
                 // client will have, or a later resync would pull the player back to where the skill started.
                 if (gem.Name is not null && Skills.IsMovement(gem.Effect)
                     && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
@@ -119,7 +119,7 @@ partial class Program
             }
             else if (InstanceProtocol.IsLockstepMovement(id))
             {
-                // The client moves this way only in lockstep, which the Gateway does not serve yet (07 §6): say so once per
+                // The client moves this way only in lockstep, which the Gateway does not serve yet (07 В§6): say so once per
                 // connection.
                 if (conn.WarnedLockstep) continue;
                 conn.WarnedLockstep = true;
@@ -259,8 +259,8 @@ partial class Program
                 await PickUpItem(remote, stream, ciphers, conn, InstanceItems.ReadPickUpItem(bytes));
             else if (id == InstanceProtocol.ExitToCharacterSelectId)
             {
-                // Esc → "Exit to Character Selection" or the hardcore death screen's Exit. Closing the instance connection
-                // is the answer: the client keeps its login connection and goes back to the character list (09 §6).
+                // Esc в†’ "Exit to Character Selection" or the hardcore death screen's Exit. Closing the instance connection
+                // is the answer: the client keeps its login connection and goes back to the character list (09 В§6).
                 Console.WriteLine($"[gateway] {remote} <= 0x0153 exit to character selection: closing the instance connection");
                 conn.Closed = true;
                 return;
@@ -272,7 +272,7 @@ partial class Program
             else if (id == InstanceNpcs.TradeOfferId)
             {
                 var offer = InstanceNpcs.ReadTradeOffer(bytes);
-                // Ctrl + click on an inventory item sends x = y = 0xff (0x14030e3e0 → 0x142166660): any free offer cell.
+                // Ctrl + click on an inventory item sends x = y = 0xff (0x14030e3e0 в†’ 0x142166660): any free offer cell.
                 if (conn.Sale is { } sale && offer.X == 0xff && offer.Y == 0xff) await OfferFromInventory(remote, stream, ciphers, conn, sale, offer.InventoryId, offer.ItemId);
                 else if (conn.Sale is { } open) await OfferForSale(remote, stream, ciphers, conn, open, offer.InventoryId, offer.ItemId, offer.X, offer.Y);
                 else Console.WriteLine($"[gateway] {remote} <= 0x00b2 trade offer {offer}: no sale open");
@@ -321,8 +321,15 @@ partial class Program
                 if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
                 {
                     double every;
-                    lock (conn.Monsters) every = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+                    lock (conn.Monsters) every = SupportedAttackSeconds(conn, conn.ChannelSkill);
                     conn.NextChannelHitAt = t + every;
+                    if (!PayMana(conn, conn.ChannelSkill, out uint channelCost))
+                    {
+                        conn.ChannelSkill = 0;
+                        await SendPlayerMana(remote, stream, ciphers, conn, "channel stopped: insufficient mana");
+                        continue;
+                    }
+                    if (channelCost > 0) await SendPlayerMana(remote, stream, ciphers, conn, $"channel cost {channelCost}");
                     _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy), immediate: true, sequence: conn.ChannelSkillSequence);
                 }
             }
@@ -331,7 +338,7 @@ partial class Program
             else if (id == InstanceProtocol.SwapWeaponsId)
             {
                 // The weapon swap: the hands' rows and the other set's trade their items (the client shows the active set in
-                // the hands' rows), each of the four inventories gets its new contents (0xbf), S→C 0xde gives the set (which
+                // the hands' rows), each of the four inventories gets its new contents (0xbf), Sв†’C 0xde gives the set (which
                 // also ends the client's wait), then what the hands hold, with the new set's stats and skills (13-items.md).
                 var swapItems = ItemsOf(conn);
                 byte wanted = (byte)(bytes[2] == 1 ? 1 : 0);
@@ -458,11 +465,11 @@ partial class Program
                     await SendWaypoints(remote, stream, ciphers, conn);
                     uint gold = PersonalStashOf(conn).Gold;
                     await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
-                    // The worn cosmetics (S→C 0x1f3): the client's worn table starts empty with every instance connection.
+                    // The worn cosmetics (Sв†’C 0x1f3): the client's worn table starts empty with every instance connection.
                     await SendWornCosmetics(remote, stream, ciphers, conn, "entering the area");
-                    // The saved skill bar (S→C 0x53), right after the player and the area.
+                    // The saved skill bar (Sв†’C 0x53), right after the player and the area.
                     await SendSkillBar(remote, stream, ciphers, conn);
-                    // The equipment again (S→C 0x02ba), as after an equip: the player object's own list does not set how a
+                    // The equipment again (Sв†’C 0x02ba), as after an equip: the player object's own list does not set how a
                     // two-handed weapon is held, the update does (live 2026-10-22: it was held one-handed after every load).
                     var worn = Looks(conn, ItemsOf(conn));
                     await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, worn),
@@ -489,14 +496,14 @@ partial class Program
         {
             ushort uid = unknown.Length > 1 ? (ushort)(unknown[0] << 8 | unknown[1]) : unknown[0];
             Console.WriteLine($"[gateway] {remote} <= unframed 0x{uid:x4} ({unknown.Length} bytes): {Convert.ToHexString(unknown.AsSpan(0, Math.Min(unknown.Length, 256)))}");
-            // C→S 0x23f: the Delve chart (opened by Niko) asks for its data; S→C 0x240 answers (an empty chart for now).
+            // Cв†’S 0x23f: the Delve chart (opened by Niko) asks for its data; Sв†’C 0x240 answers (an empty chart for now).
             if (uid == InstanceDelve.ChartRequestId && unknown.Length == 2)
             {
                 var (a, b, cells) = conn.DelveChartProbe;
                 await Send(remote, stream, ciphers, InstanceDelve.Chart(a, b, cells),
                     $"0x0240 Delve chart: {a}, {b}, {cells.Count} cell(s) {string.Join(" ", cells)}");
             }
-            // C→S 0x35: the mastery effect chosen in the passive tree (node, effect HASH16). It allocates the mastery node
+            // Cв†’S 0x35: the mastery effect chosen in the passive tree (node, effect HASH16). It allocates the mastery node
             // and records the effect; the client waits for the 0x33 tree and the updated stats.
             if (uid == InstanceEntities.MasteryEffectId && unknown.Length >= 6)
             {

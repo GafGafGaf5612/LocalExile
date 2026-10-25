@@ -741,9 +741,16 @@ public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int Share
 /// which the client uses in its skill messages; the action id (+0x42) comes from the data (GEPL row → GrantedEffect →
 /// ActiveSkill → ActionTypes HASH16). Rows are GrantedEffectsPerLevel and GrantedEffectStatSetsPerLevel indices.
 /// CooldownMs is the skill's cooldown, which the client takes from the record, not from the data.</summary>
+public sealed record GrantedSupport(uint EffectsPerLevelRow, uint StatSetsPerLevelRow, uint Source = 0)
+{
+    public IReadOnlyList<uint> ExtraStatSets { get; init; } = [];
+}
+
 public sealed record GrantedSkill(ushort Id, uint EffectsPerLevelRow, uint StatSetsPerLevelRow,
     IReadOnlyList<(uint Key, int Value)>? Stats = null, uint CooldownMs = 0)
 {
+    /// <summary>Native support references (GEPL row and source metadata), read by 0x142196ce0.</summary>
+    public IReadOnlyList<GrantedSupport> Supports { get; init; } = [];
     /// <summary>The effect's additional stat sets (GrantedEffects StatSet2, e.g. Volcanic Fissure's), in order: each one's
     /// GrantedEffectStatSetsPerLevel row and stats. The record must carry one of each per set, or the client misreads it
     /// (and crashed, live 2026-10-23).</summary>
@@ -882,7 +889,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     /// (u16 skill id, u32 c × 4 u32). Each skill: u16 id (+0x40), the GrantedEffectsPerLevel reference (0x1424a0dc0:
     /// u8 → +0x10, u32 GEPL row, then a GrantedEffectStatSetsPerLevel reference 0x1424a0990: u8 a [u8 if a], u32 GESSPL
     /// row; then one more stat-set reference per entry of the effect's additional stat sets, GrantedSkill.ExtraStatSets), u8
-    /// flags (bit0 → u32 parent object id + u16), u8 support count × (GEPL reference, u32), u32, u32, u32, u8, then the
+    /// flags (bit0 → u32 parent object id + u16), u8 support count × (GEPL and stat-set references, u32), u32, u32, u32, u8, then the
     /// skill's stats (compact count × compact key, compact value) and one such stat list per additional stat set.</summary>
     /// <summary>The Actor's index in the player object's component order (04 §3).</summary>
     public const byte ActorComponentIndex = 9;
@@ -901,8 +908,14 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U8(0).U32(s.EffectsPerLevelRow)      // GEPL reference
          .U8(0).U32(s.StatSetsPerLevelRow);    // its stat set
         foreach (var (row, _) in s.ExtraStatSets) w.U8(0).U32(row);   // one more stat-set reference per additional set
-        w.U8(0)                                // flags: no parent object
-         .U8(0)                                // supports
+        w.U8(0).U8(checked((byte)s.Supports.Count)); // flags: no parent object, then supports
+        foreach (var support in s.Supports)
+        {
+            w.U8(0).U32(support.EffectsPerLevelRow).U8(0).U32(support.StatSetsPerLevelRow);
+            foreach (uint row in support.ExtraStatSets) w.U8(0).U32(row);
+            w.U32(support.Source);
+        }
+        w
          // → skill +0xc0, +0xc4, +0xc8, +0xcc (0x141ee73d0). +0xc8 is the cooldown in ms: with it and the stat
          // virtual_total_cooldown_count the client keeps the skill's cooldown and shows it on the skill bar
          // (0x141eea6a0 creates the cooldown record only when it is not 0; live 2026-10-21).
