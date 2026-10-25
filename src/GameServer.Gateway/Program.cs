@@ -2344,7 +2344,8 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     var (mainLocal, offLocal) = HandLocalStats(conn);
     foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
         .Concat(PanelStats.FromPools(Get, conn.Pools))
-        .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana)))
+        .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana))
+        .Concat(ChargePanelStats.Compute(Get)))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
     // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by

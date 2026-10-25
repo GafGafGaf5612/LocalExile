@@ -920,3 +920,7 @@ on the Defence tab as Stun Recovery 30%, the four Avoidance rows at 20% and "Can
 - Projectiles: their height above the ground and model orientation (§10), collision, the explosion, the real
   skill → projectile link; damage for ground casts.
 - The meaning of 0x53's two trailing u16.
+
+## Standard maximum-charge rows
+
+`ChargePanelStats.Compute` derives the three standard maximum-charge display values from base three plus unconditional modifiers. The current values remain zero; conditional modifiers, replacement charges and gain/expiry mechanics are outside this change. Verified on the native Charges tab with all three baseline rows at `0 / 3`; eight focused modifier tests cover the formulas.
