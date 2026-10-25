@@ -450,8 +450,27 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   fallback landed `(264,220)`; the server rejects such partial traces instead of guessing that fallback.
   Evidence is `logs/instant-location-object-manual-{near,far,diagonal,offaxis,reflected}.json` in integration.
   These are injected native protocol experiments, without server movement or production cost acceptance.
-  Actual hovered Q before this extension produced 0x191, no confirmation, no cost and no movement;
-  production hovered-Q validation of the new route remains pending.
+  Actual hovered Q before this extension produced 0x191, no confirmation, no cost and no movement.
+  Production hovered Q now passed from `(280,220)` against stationary target `(300,220)`, with sizes 1/2.
+  The native request hook recorded message 401 (`0x191`), skill 259 and target 12288.
+  Exactly one 12-mana cost changed mana 175 to 163 and emitted one object-bound 0x1ce.
+  Its flags were 0x20, target id 12288 and raw aim `(300,220)`.
+  Native position and server `/pos` both became `(317,220)`.
+  A framed ground 0x190 retry after 0.5 seconds produced no extra mana cost or confirmation.
+  Combined #197 progress synchronization retained base 3000 ms, total 3 seconds and recovery rate 1.
+  Near evidence: integration `logs/instant-location-object-live-near.json`.
+  Final evidence: integration `logs/instant-location-object-live-near-final.json`.
+  Framed production 0x191 controls from `(280,220)` matched native/server endpoints for two stationary targets.
+  Off-axis target `(300,230)` reached `(314,236)`; far target `(330,220)` reached `(322,220)`.
+  Each accepted control paid 12 mana once and emitted one object-bound confirmation.
+  A framed request on a target walking from `(330,220)` toward `(283,220)` was rejected without cost or movement.
+  Reflected partial terrain, missing target `0xdeadbeef` and noninstant Fireball 260 were also rejected.
+  Those three framed invalid requests left mana 175, native cooldown entries empty and position `(280,220)`.
+  They emitted no 0x1ce.
+  These are production framed-request controls, distinct from actual hovered Q and injected native RE confirmations.
+  Framed positives: integration `logs/instant-location-object-framed-{offaxis,far}.json`.
+  Moving rejection: integration `logs/instant-location-object-framed-moving-reject.json`.
+  Other invalid cases: integration `logs/instant-location-object-framed-invalid.json`.
   End-to-end stationary validation subsequently passed with actual Q input from `(280,220)`:
   raw aim `(308,221)` resolved to native/server `(312,221)`.
   Requests after 0.3 seconds, with noninstant Fireball, or with an unsigned-invalid x coordinate were rejected.

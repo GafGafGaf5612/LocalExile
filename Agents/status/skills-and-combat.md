@@ -159,8 +159,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Both preflight and the send gate require a living known-size monster with no active walk, and recheck placement.
   Invalid preflight changes no mana/cooldown; later invalidation withholds confirmation under the existing cost policy.
   Automated actual-send tests cover current target/player sampling, target death/walk, pause, transfer, barriers and unequip.
-  Four manual native object confirmations verified clear near/far/diagonal/off-axis endpoints; a reflected terrain
-  fallback is deliberately rejected. Production hovered-Q validation remains pending.
+  Four manual native object confirmations verified clear near/far/diagonal/off-axis endpoints.
+  A reflected terrain fallback is deliberately rejected.
+  Actual hovered Q on a stationary monster emitted 0x191 and one object-bound 0x1ce with flags 0x20.
+  From `(280,220)` against `(300,220)`, native/server position became `(317,220)` for one 12-mana cost.
+  A framed ground retry at 0.5 seconds changed no mana or position and sent no extra confirmation.
+  Combined #197 synchronization retained base 3000 ms, total 3 seconds and rate 1.
+  Production framed off-axis/far object requests matched native/server endpoints with one 12-mana cost each.
+  Framed moving-target, reflected-terrain, missing-target and noninstant requests changed no mana or position.
+  They sent no confirmation, and the invalid-combination control kept native cooldown entries empty.
   Production movement during an active walk has not been measured.
   Frostblink damage, chilled ground, enemy-dependent recovery and shared Blink cooldown groups remain unsupported.
   The skill bar keeps its slots when skills are re-sent or a gem is socketed again (the saved bar goes out as 0x53)
