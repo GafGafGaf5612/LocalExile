@@ -20,7 +20,7 @@ $manifest = @(
        Args = @('run', '--project', 'Tools/PoEDataExtractor', '--', 'decode', 'Client/Content.ggpk'); Version = 1; Needs = @()
        UsedBy = 'every game table: stats, levels, areas, waypoints, items, mods, monsters, NPCs; all other entries' }
     @{ Name = 'object-types'; Outputs = @('data\object-types.json'); Runner = 'python'
-       Args = @('scripts/re/ot_components.py', '--all', '--json', 'data/object-types.json'); Version = 1; Needs = @('tables')
+       Args = @('scripts/re/ot_components.py', '--all', '--json', 'data/object-types.json'); Version = 2; Needs = @('tables')
        UsedBy = 'monsters, NPCs, area transitions, hideout decorations (their components)' }
     @{ Name = 'item-types'; Outputs = @('data\item-types.json'); Runner = 'python'
        Args = @('scripts/re/ot_components.py', '--items', '--json', 'data/item-types.json'); Version = 1; Needs = @('tables')
@@ -38,7 +38,7 @@ $manifest = @(
        Args = @('scripts/re/anim_contacts.py'); Version = 1; Needs = @('tables')
        UsedBy = 'spell release timing per class (11-skills.md)' }
     @{ Name = 'monster-takehit'; Outputs = @('data\monster-takehit.json'); Runner = 'python'
-       Args = @('scripts/re/monster_takehit.py'); Version = 2; Needs = @('tables')
+       Args = @('scripts/re/monster_takehit.py'); Version = 3; Needs = @('tables')
        UsedBy = 'monster hit reaction: each variety''s TakeHit clip indexes in its rig and their lengths (11-skills.md, 0x1b2)' }
 )
 

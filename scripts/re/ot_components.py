@@ -169,7 +169,7 @@ def parse(text):
     """-> {extends: [...], abstract, sections: [names], client: [names], server: [names]}"""
     toks = TOKEN.findall(re.sub(r"//[^\n]*", "", text))
     r = {"extends": [], "abstract": False, "sections": [], "client": [], "server": [], "version": None,
-         "shared_states": [], "shared_timers": [], "transitionable": {}, "tags": []}
+         "shared_states": [], "shared_timers": [], "transitionable": {}, "tags": [], "basic_actions": []}
     i = 0
 
     def block(i):  # i at '{' -> index after matching '}', plus the names of sections directly inside
@@ -204,6 +204,10 @@ def parse(text):
                     state_machine(toks[i + 2:j - 1], r)
                 elif t == "Transitionable":
                     top_level_keys(toks[i + 2:j - 1], r["transitionable"], ("num_states", "no_serialise"))
+                elif t == "Actor":  # basic actions (ActionTypes Ids): basic_action = "Emerge"
+                    body = toks[i + 2:j - 1]
+                    r["basic_actions"] += [body[k + 2].strip("\"'") for k in range(len(body) - 2)
+                                           if body[k] == "basic_action" and body[k + 1] == "="]
                 elif t == "Base":  # item tags (Tags.dat Ids) for mod spawn weights: tag = "wand"
                     body = toks[i + 2:j - 1]
                     r["tags"] += [body[k + 2].strip("\"'") for k in range(len(body) - 2) if body[k] == "tag" and body[k + 1] == "="]
@@ -283,8 +287,9 @@ def merge(type_path, files, otc, first=("Positioned",)):
         for name in (f or {}).get("shared_timers", []):
             if name not in timers:
                 timers.append(name)
-    # Transitionable (type +0xb0 = num_states, default 1; states run 1..num_states, num_states = fully transitioned):
-    # later files in the chain override.
+    # Transitionable (type +0xb0 = num_states; states run 1..num_states, num_states = fully transitioned): later files
+    # in the chain override. Without the key the type's constructor (0x141e42d50) sets 2, and the key itself only takes
+    # 2..127 (0x141e42a80), so 1 below means "not given": state 1 is then the untransitioned state, 2 the transitioned.
     trans = {}
     for _, f in ch:
         trans.update((f or {}).get("transitionable", {}))
@@ -295,6 +300,9 @@ def merge(type_path, files, otc, first=("Positioned",)):
     return {"type": type_path, "chain": [p for p, _ in ch], "missing": [p for p, f in ch if f is None],
             "abstract": bool(files.get(type_path, {}).get("abstract")), "components": comps, "read": read,
             "shared_states": [[k, v] for k, v in states.items()], "shared_timers": timers,
+            # The Actor's basic actions (ClientActor ctor 0x142192860 adds one skill per name, id = HASH16 & 0x3fff),
+            # parents first: e.g. Monster.ot's Move, and "Emerge" for monsters that rise from the ground.
+            "basic_actions": list(dict.fromkeys(a for _, f in ch for a in (f or {}).get("basic_actions", []))),
             "transitionable": {"num_states": num_states,
                                "no_serialise": str(trans.get("no_serialise", "false")).lower() == "true"}}
 
