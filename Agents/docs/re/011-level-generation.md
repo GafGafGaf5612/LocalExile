@@ -111,7 +111,11 @@ SpawnAreas +0x1a lists the area: +0x42 enabled, +0x43 chance in 10 000; campaign
 league mechanics by `CoreLeagues` row N (`0x14204a310` → `0x141ea1f50` picks the league-chances field: 1 → +0x24,
 7 → +0x40, 0xf → +0x2c, 0x10 → +0x48, 0x12 → +0x34, 0x1b → +0x9c) rolled by `0x141ea2400` with the percent roll
 `0x142054a50`; the fishing mission `Next(100000) == 0` when +0x88..+0x94 sum above 0. A zero chance draws nothing,
-which is why the traces of The Twilight Strand and The Coast start with the topology pick. Rolls with a nonzero
+which is why the traces of The Twilight Strand and The Coast start with the topology pick. A breach (CoreLeagues 7)
+that rolls goes on (`0x14204b67f`, every stat 0): `Next(100) < 50` adds one `BrequelHiveEncounter` row to the pool
+(`BrequelSkyHiveEncounter` when the area level is 68 or more and `Next(10000)` at `0x14204b6f9` falls below 1600);
+otherwise the generator's +0x18b breach count goes up and no row is added (2026-10-25; checked on 22 traced loads).
+Rolls with a nonzero
 league-mechanic chance (`0x141ea1c80`, which mixes in stats) are not ported and throw. The WorldAreas row in memory
 is the `.datc64` row, so `AreaInfo.Load` reads these offsets from the file (`RawDat`).
 
@@ -522,7 +526,7 @@ entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of 
   `_glacier_vertical_01.tgr`, 36 × 57) generates tile for tile: tile hash 3320701478 and all 4 778 draws up to the
   doodads** (with the Village row in `mission_4_1.arm`, §3c2). One view vertex differs at the fill (18, 45): flag 2 in
   the client, not in the port; heights and tiles are equal.
-- Not ported: turned subgraphs (orientation ≠ 0), the outer buffer of a subgraph that is not the whole map, the pool's
+- Not ported: turned subgraphs (orientation ≠ 0), the pool's
   rows in a `.tgr` subgraph's special nodes, sub-area records beside a `.tgr` primary (§3), and the rest of
   `0x1420457f0` (oversize-feature / telepad-injector records).
 
@@ -749,7 +753,28 @@ are the doodads, `0x142042fae`).
    tile's border breadth first over unwritten vertices, never across a tile edge (`0x1420281e0`: `0x142027df0` vertex
    inside a tile, `0x142027bd0` an edge point on that entry's side), sets the height levels (below), paints the
    levels and gives every still-unwritten vertex the graph's third ground (+0xb0, `0x142110d60`), fills the open
-   sides of the step-1 edge tiles (`0x141feed20`, none on the Strand) and unlocks. `.tdt` vertex grounds sit after the
+   sides of the step-1 edge tiles (`0x141feed20`, none on the Strand) and unlocks. Then three room passes
+   (`TileGraphGenerator`, 2026-10-25), each tilised as a fill room (`0x141fe89e0`, `Fill.PlaceRoom`) at the vertex
+   height with the vertex ground, and each on its own list of openings (`0x142115140`: the view's empty entries, row
+   by row, whose vertex has no ground or one with .gt flags 4 and 8 and no vertex flag 8; `Next(count)`, its value
+   unused, then the shuffle `0x14212d7f0`):
+   - **Area unique rooms** (`0x142115390`, master +0x92 taken to be off): with rows in the extra room pool, the
+     primary graph's share is all of them; the rows in order while the share lasts place a room (`0x142115680`): its
+     only room, else its rooms shuffled (`Next(count)`, shuffle) until one goes in. A room whose own key has edges or
+     two corner grounds is skipped. Orientation `Next(8)` when the row allows any (none listed or 8), else one of
+     its list (`Next(count)`); the first opening whose ground is none or flags 4 and 8 where it fits on empty
+     entries; the covered vertices with no ground or a flag-8 one take the opening's (when it has none or flag 8).
+     Placed rows leave the pool (`0x141d8b2c0`, counted). The breach hive rows (§3b) go in here.
+   - **Shrines** (`0x142115cc0`): with "shrine" rooms in the RoomSet (+0x118) and shrines rolled (pool +0x148),
+     openings in order while shrines are left; one within 5 entries (squared distance < 25) of a shrine placed here is
+     skipped; the shrine rooms that fit there (mask 0x55 as they are, 0xaa turned) give `Next(count)`, the orientation
+     `Next(840)` from its mask (`0x14299da50`); open; a shrine placed (`0x141d8b9a0`).
+   - **Pre-unique rooms** (`0x1421162d0`): the RoomSet's "preunique" rooms (+0x148, filed by `0x141ff6960` with the
+     line's orientation mask; six in the game: two `breach_encounter.arm`, two `circlestones.arm`, `ruin_villa.arm`,
+     `ruin_windmill.arm`), each in list order on the first opening it fits, `Next(840)` drawn for every opening tried;
+     open when the ground is none or flag 4. One that fits nowhere is fatal ("Failed to place pre-unique room").
+   Was the first difference of 22 logged loads (`0x14211532d`, the shared `Next(count)`): 15 shrine loads, 6
+   pre-unique, 1 unique room. `.tdt` vertex grounds sit after the
    packed sub-tile data (`0x1429f59a0`, not ported); the port finds the block by a validated scan from the file's end
    (`TerrainCache.VertexBlock`; `levelgen vertices` checks a tile set). Whether a tile has vertex grounds and heights
    is the u16 after its key (`0x1429f31a0`, file offset 58 after the string table for a tile without a base tile: bit
@@ -842,7 +867,10 @@ are the doodads, `0x142042fae`).
    the tile goes in at the old tile's height; none is fatal ("Failed to place post-unique tile"). The Coast:
    `beach_karuistone1.tdt` over one of 114 `Blank.tdt`. The walkability pass's "tile without a tag" test
    (`0x142028510`) reads the same field.
-7. **Outer buffer** (`OuterBuffer.cs`, `0x142044f30` → `0x14201ffa0`; `0x14201db80` only with OuterGroundType): the
+7. **Outer buffer** (`OuterBuffer.cs`, `0x142044f30` → `0x14201ffa0`; `0x14201db80` only with OuterGroundType), on a
+   view of the subgraph record's rectangle (`0x141ffb7f0`: record +0x40 … +0x4c → `0x141ffb6c0`; the whole map for a
+   tile graph, a sub-area's own rectangle in a composite dungeon: 2026-10-25, the hideout claims and `inca_cave`,
+   `mines`, `ossuary`, `bathhouse`, `forest_ruinedtemple`, `factory` subgraphs): the
    border vertices' grounds and heights spread outward (vertical, then horizontal; each spread also sets vertex flag 8,
    `0x141ffbd30`, on its source vertex and on every buffer vertex on that side, written ones included, so the whole
    buffer is unwalkable for the walkability pass after it); then passes top, bottom, left and
@@ -865,7 +893,7 @@ not the height; edge points finished by `0x141d808c0`, §3c step 4) and symmetri
 
 Not ported (they throw): overlay pass-2 placements, SizeOrder overlay passes, MatchAllTileKeys, overlay room
 conditions, room heights (`0x142118900`), FillTiles edge lists,
-OuterGroundType, the seams' skip of room +0xe8 vertices, outer buffers of `.dgr` layouts. The Twilight Strand seed 2 needs overlay
+OuterGroundType, the seams' skip of room +0xe8 vertices. The Twilight Strand seed 2 needs overlay
 pass 2; seeds 3 and 7 stop with "Could not tilise edge", which the client answers by retrying with another seed
 ("Retrying with seed", §1) — not done by the port yet.
 
@@ -1106,14 +1134,16 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
 - **Gate:** `scripts/re/levelgen/gate.ps1` before every commit to the generator: every seed-1 trace (tile hash,
   matching draws through the doodad stage, both grids, the doodads) and every logged (area, seed), run by worker
   processes (~5 min), compared with `scripts/re/levelgen/gate-baseline.json` (gained / lost per check), then the
-  three test suites; it fails when anything was lost. It also prints the work queue: traces grouped by the client's
-  caller at the first difference, and stops grouped by reason. `-Save` makes the run the baseline (commit it with
+  three test suites; it fails when anything was lost. A logged load whose hash is wrong (or that stops) is also run
+  against its own trace (every logged load has one since the capture tours), for its draws and first difference. It
+  also prints the work queue: seed-1 traces grouped by the client's caller at the first difference, every wrong
+  logged load the same way (the biggest causes by loads held back), and stops grouped by reason. `-Save` makes the run the baseline (commit it with
   the change); `-NoTests`, `--only <area regex>`, `--no-oracle`, `--jobs N`.
 - **Check:** `lg.ps1 hash <trace.gen.json>…` recomputes the tile hash from a
   traced grid. `… generate <area> <seed> [trace.gen.json]` runs the port and, with a trace, compares draw by draw
   (kind, argument, result; the first difference names the client's caller; the animation-start LCG draws of
   `0x142063b9c` are skipped, §6c) and entry by entry, also when the port
-  stops at a part that is not ported, and graph by graph at each recorded stage. `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key, `… subtiles` every `.tdt` made of sub-tiles, `… tmds` where each `.tdt`'s objects come from (+0x178 / +0x180), `… ls <regex>` the game paths
+  stops at a part that is not ported (`LEVELGEN_STACK=1` prints where in the port), and graph by graph at each recorded stage. `… objects [area regex]` places the area transitions and waypoints of every logged load the port matches (`AreaObjects`) and compares them with the client's `transitions.json` (2026-10-25: 1 760 of 1 794 at the client's cell and height; the extras are quest and boss gates no topology names, the missing ones `AreaTransitionEffects` types). `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key, `… subtiles` every `.tdt` made of sub-tiles, `… tmds` where each `.tdt`'s objects come from (+0x178 / +0x180), `… ls <regex>` the game paths
   that match (e.g. every `.arm` of a folder, to find rooms no room set lists). `… doodads <area> <seed>` compares the
   placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level
   (world +0xd4).

@@ -2,8 +2,7 @@ namespace GameServer.Data.Terrain.Generation;
 
 /// <summary><c>0x14204a570</c>: before the layout, the generator rolls which extra terrain features (league encounters,
 /// trials, the discoverable hideout …) the area gets. The rolls draw from the level RNG, so they shift everything after
-/// them. Ported for an area without area stats (map mods, atlas passives: every stat the client reads is 0); a breach
-/// that rolls is not ported and throws.</summary>
+/// them. Ported for an area without area stats (map mods, atlas passives: every stat the client reads is 0).</summary>
 public static class ExtraTerrainFeatures
 {
     public sealed record Feature(string Name, int Count);
@@ -41,7 +40,15 @@ public static class ExtraTerrainFeatures
             // CoreLeagues 0x17 only rolls with stat 0x45f8 (none here).
             int village = Category(area, rng, 0x1b);
             if (village != 0) features.Add(new("Village", village));
-            if (Category(area, rng, 7) != 0) throw new NotSupportedException($"{area.Id}: a breach rolled (category 7's follow-up is not ported)");
+            // CoreLeagues 7 (breaches), without area stats: Next(100) < 50 adds a hive encounter row (at area level 68
+            // and up, Next(10000) below 1600 makes it the sky hive); else the generator's +0x18b breach count goes up,
+            // with no row.
+            if (Category(area, rng, 7) != 0)
+            {
+                if (rng.Next(100u) < 50)
+                    features.Add(new(area.Level >= 0x44 && rng.Next(10000u) < 1600 ? "BrequelSkyHiveEncounter" : "BrequelHiveEncounter", 1));
+                else features.Add(new("(breaches)", 1));
+            }
         }
         // Every area: the fishing mission, one in 100 000, when the league chances list one (+0x88..+0x94).
         if (Chance(0x88) + Chance(0x8c) + Chance(0x90) + Chance(0x94) > 0 && rng.Next(100000u) == 0) features.Add(new("MissionFish", 1));

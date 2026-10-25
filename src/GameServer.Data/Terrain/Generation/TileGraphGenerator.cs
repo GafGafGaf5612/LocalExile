@@ -18,6 +18,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// <summary>The area's TSI override (WorldAreas +0x192), the master in place of the graph's.</summary>
     public string? Master { get; init; }
 
+    /// <summary>The generator's extra room pool (+0x40): the shrine count the features rolled.</summary>
+    public ExtraRoomPool? Pool { get; init; }
+
     TileGrid? _grid;
     int _ox, _oy;
 
@@ -60,7 +63,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         // the outer buffer (0x14201ffa0).
         if (master.ContainsKey("OuterGroundType")) throw new NotSupportedException("OuterGroundType (0x14201db80) is not ported");
         if (buffer != 0)
-            new OuterBuffer(files, rng, grid, buffer, buffer, buffer + Graph.Width, buffer + Graph.Height, Store, fills, notes).Run();
+            new OuterBuffer(files, rng, new OuterBuffer.View(grid), buffer, buffer, buffer + Graph.Width, buffer + Graph.Height, Store, fills, notes).Run();
         // 0x142044f30 then runs the walkability pass (0x1420289a0) again for the primary record, over its whole
         // rectangle (the buffer included), and 0x142028870 flags the map's border vertices (the pass's border flags).
         // Only grounds and vertex flags change: the walkability grids read flag 8.
@@ -198,8 +201,14 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         // under every tile that room tilising and the fill place.
         var painter = grounds.LevelPainter(GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), levels);
         special.TilePlaced = painter;
-        // 0x142115390 (master +0x92 off, area unique rooms), 0x142115cc0 (chests), 0x142115140 / 0x1421162d0
-        // (pre-unique rooms): none draws for the ported areas; not ported.
+        // The pool's area unique rooms (0x142115390, master +0x92 taken to be off), the shrines (0x142115cc0) and the
+        // pre-unique rooms (0x1421162d0), each tilised as a fill room (0x141fe89e0).
+        var roomSet = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
+        var placer = new Fill(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store,
+            gftPath is null ? new Dictionary<string, List<(int Weight, string Path)>>() : files.FillTiles(gftPath), special.Rooms, notes) { TilePlaced = painter };
+        AreaUniqueRooms(placer);
+        Shrines(roomSet, placer);
+        PreUniqueRooms(roomSet, placer);
         // 0x141ffe240, then the first overlay pass (0x141fff1a0 with bit 1).
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
         var overlays = new Overlays(files, rng, notes, grid, _ox, _oy, Graph.Width, Graph.Height, special, [.. special.Rooms],
@@ -217,6 +226,160 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         new Seams(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store, special.Rooms, special.RoomVertices,
             (GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), GraphGround(Graph.DefaultGround)), notes).Run();
         return (masterPath, master, fills);
+    }
+
+    /// <summary><c>0x142115140</c>: the view's entries, row by row, that are empty, whose vertex has no ground or one
+    /// with .gt flags 4 and 8, and that is not unwalkable (vertex flag 8); <c>Next(count)</c> (its value unused), then
+    /// shuffled (<c>0x14212d7f0</c>).</summary>
+    List<(int X, int Y)> Openings()
+    {
+        var grid = _grid!;
+        var list = new List<(int X, int Y)>();
+        for (int y = 0; y < Graph.Height; y++)
+            for (int x = 0; x < Graph.Width; x++)
+            {
+                if (grid[x + _ox, y + _oy] is not null) continue;
+                ref var c = ref grid.Corner(x + _ox, y + _oy);
+                int flags = c.Ground is null ? 0 : files.Ground(c.Ground)?.Flags ?? 0;
+                if (c.Ground is not null && (flags & 0xc) != 0xc) continue;
+                if ((c.Flags & 8) != 0) continue;
+                list.Add((x, y));
+            }
+        rng.Next((uint)list.Count);
+        rng.Shuffle(list);
+        return list;
+    }
+
+    /// <summary>The turned w × h lies inside the view on empty entries (<c>0x141d84e10</c>).</summary>
+    bool Fits(int x, int y, int w, int h)
+    {
+        if (x >= Graph.Width || x + w > Graph.Width || y >= Graph.Height || y + h > Graph.Height) return false;
+        for (int v = 0; v < h; v++)
+            for (int u = 0; u < w; u++)
+                if (!_grid!.Inside(x + u + _ox, y + v + _oy) || _grid[x + u + _ox, y + v + _oy] is not null) return false;
+        return true;
+    }
+
+    /// <summary><c>0x142115390</c>: with rows in the pool, the openings once; the rows in order, while the share (+0x144)
+    /// lasts, each place a room (<c>0x142115680</c>): its only room, else its rooms shuffled (<c>Next(count)</c>, then
+    /// the shuffle) until one is placed. The rows placed leave the pool, counted (<c>0x141d8b2c0</c>).</summary>
+    void AreaUniqueRooms(Fill placer)
+    {
+        if (Pool is not { } pool || pool.Rows.Count == 0) return;
+        // 0x14203f890: the primary tile graph takes its share (all the rows: no subgraph weight to share by).
+        pool.Spread(0, rng);
+        var openings = Openings();
+        var placed = new List<ExtraFeatureRow>();
+        int left = pool.Share;
+        foreach (var row in pool.Rows.ToList())
+        {
+            if (left == 0) break;
+            bool any = row.Orientations.Count == 0 || row.Orientations.Contains(8);
+            bool done;
+            if (row.Rooms.Count == 1) done = PlaceUnique(placer, row, row.Rooms[0], any, openings);
+            else
+            {
+                var rooms = row.Rooms.ToList();
+                rng.Next((uint)rooms.Count);
+                rng.Shuffle(rooms);
+                done = false;
+                foreach (var r in rooms)
+                    if (PlaceUnique(placer, row, r, any, openings)) { done = true; break; }
+            }
+            if (done) { placed.Add(row); left--; }
+        }
+        foreach (var row in placed) pool.Remove(row, true);
+    }
+
+    /// <summary><c>0x142115680</c>: a room whose own key has no edges and one ground on its corners turns by
+    /// <c>Next(8)</c> (the row allows any) or one of the row's orientations (<c>Next(count)</c>), and goes on the first
+    /// opening whose vertex ground is none or flags 4 and 8 where it fits; the vertices it covers that have no ground
+    /// or a flag-8 one take the opening's ground, when that has none or flag 8. Tilised at the vertex height (open);
+    /// the caller's copy of the share drops by one.</summary>
+    bool PlaceUnique(Fill placer, ExtraFeatureRow row, string path, bool any, List<(int X, int Y)> openings)
+    {
+        var room = files.Room(path) ?? throw new FileNotFoundException(path);
+        if (room.Key.Edges.Any(e => e is not null) || room.Key.Grounds.Distinct().Count() != 1) return false;
+        int o = any ? (int)rng.Next(8u) : row.Orientations[(int)rng.Next((uint)row.Orientations.Count)];
+        var (w, h) = Orientation.Size(o, room.Width, room.Height);
+        var grid = _grid!;
+        bool Loose(string? g) => g is null || ((files.Ground(g)?.Flags ?? 0) & 8) != 0;
+        foreach (var (x, y) in openings)
+        {
+            string? ground = grid.Corner(x + _ox, y + _oy).Ground;
+            if (ground is not null && ((files.Ground(ground)?.Flags ?? 0) & 0xc) != 0xc) continue;
+            if (!Fits(x, y, w, h)) continue;
+            for (int v = 0; v <= h; v++)
+                for (int u = 0; u <= w; u++)
+                    if (Loose(grid.Corner(x + u + _ox, y + v + _oy).Ground) && Loose(ground))
+                        grid.SetGround(x + u + _ox, y + v + _oy, ground);
+            notes.Add($"area unique room {Path.GetFileName(room.Path)} ({row.Name}) o{o} at ({x + _ox}, {y + _oy})");
+            placer.PlaceRoom(room, x, y, o, grid.Corner(x + _ox, y + _oy).Height, ground, true);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary><c>0x142115cc0</c>: with shrine rooms in the RoomSet (+0x118, tag "shrine") and shrines rolled (pool
+    /// +0x148), the openings in order while shrines are left: one whose vertex ground is none or flags 4 and 8, not
+    /// within 5 entries of a shrine placed here, takes a shrine room that fits it (0x55 as it is, 0xaa turned):
+    /// <c>Next(count)</c> among them, the orientation <c>Next(840)</c> from its mask, tilised at the vertex height with
+    /// the vertex ground (open); a shrine placed (<c>0x141d8b9a0</c>).</summary>
+    void Shrines(DungeonRoomSet roomSet, Fill placer)
+    {
+        var rooms = roomSet.All.Where(r => r.Tag == "shrine" && r.Def is not null).Select(r => r.Def!).ToList();
+        if (rooms.Count == 0 || Pool is not { Shrines: > 0 } pool) return;
+        var placed = new List<(int X, int Y)>();
+        foreach (var (x, y) in Openings())
+        {
+            if (pool.Shrines == 0) break;
+            ref var c = ref _grid!.Corner(x + _ox, y + _oy);
+            string? ground = c.Ground;
+            if (ground is not null && ((files.Ground(ground)?.Flags ?? 0) & 0xc) != 0xc) continue;
+            if (placed.Any(p => (uint)((p.X - x) * (p.X - x) + (p.Y - y) * (p.Y - y)) < 25)) continue;
+            var fitting = new List<(RoomDef Room, byte Mask)>();
+            foreach (var room in rooms)
+            {
+                byte mask = (byte)((Fits(x, y, room.Width, room.Height) ? 0x55 : 0) | (Fits(x, y, room.Height, room.Width) ? 0xaa : 0));
+                if (mask != 0) fitting.Add((room, mask));
+            }
+            if (fitting.Count == 0) continue;
+            placed.Add((x, y));
+            var pick = fitting[(int)rng.Next((uint)fitting.Count)];
+            int o = LevelRandom.OrientationFromMask(pick.Mask, rng.Next(840u));
+            notes.Add($"shrine {Path.GetFileName(pick.Room.Path)} o{o} at ({x + _ox}, {y + _oy})");
+            placer.PlaceRoom(pick.Room, x, y, o, c.Height, ground, true);
+            pool.ShrinePlaced();
+        }
+    }
+
+    /// <summary><c>0x142116600</c> → <c>0x1421162d0</c>: with "preunique" rooms in the RoomSet (+0x148, with their line's
+    /// orientation mask), each in list order takes the first opening where it fits, an orientation drawn for every
+    /// opening tried (<c>Next(840)</c> from the mask); tilised at the vertex height with the vertex ground, open when
+    /// that has none or flag 4. One that fits nowhere is fatal.</summary>
+    void PreUniqueRooms(DungeonRoomSet roomSet, Fill placer)
+    {
+        var rooms = roomSet.All.Where(r => r.Tag == "preunique" && r.Def is not null).ToList();
+        if (rooms.Count == 0) return;
+        var openings = Openings();
+        foreach (var room in rooms)
+        {
+            bool done = false;
+            foreach (var (x, y) in openings)
+            {
+                int o = LevelRandom.OrientationFromMask((byte)room.Mask, rng.Next(840u));
+                var (w, h) = Orientation.Size(o, room.Def!.Width, room.Def.Height);
+                if (!Fits(x, y, w, h)) continue;
+                ref var c = ref _grid!.Corner(x + _ox, y + _oy);
+                string? ground = c.Ground;
+                bool open = ground is null || ((files.Ground(ground)?.Flags ?? 0) & 4) != 0;
+                notes.Add($"pre-unique room {Path.GetFileName(room.Path)} o{o} at ({x + _ox}, {y + _oy})");
+                placer.PlaceRoom(room.Def, x, y, o, c.Height, ground, open);
+                done = true;
+                break;
+            }
+            if (!done) throw new InvalidOperationException($"Failed to place pre-unique room {room.Path}");
+        }
     }
 
     /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws), for

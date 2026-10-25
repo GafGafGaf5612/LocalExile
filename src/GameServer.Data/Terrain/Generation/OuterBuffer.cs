@@ -7,10 +7,27 @@ namespace GameServer.Data.Terrain.Generation;
 /// edge crosses outwards, an edge tile of that type with its point continued is drawn (<c>Next(total)</c>) and repeated
 /// out to the map's edge; elsewhere, where the two border vertices of the step agree, the first fill tile of the
 /// ground (<c>0x141feffb0</c>, orientation 8 taken as 0) is repeated outwards where it fits, at the height of the
-/// step's first border vertex (an edge tile: the lower of its two border vertices).</summary>
-sealed class OuterBuffer(TerrainCache files, LevelRandom rng, TileGrid grid, int left, int top, int right, int bottom,
+/// step's first border vertex (an edge tile: the lower of its two border vertices).
+/// The view is the subgraph record's rectangle (<c>0x141ffb7f0</c>: record +0x40 … +0x4c), the whole map for a tile
+/// graph and a one-record dungeon; <paramref name="left"/> … <paramref name="bottom"/> are in the view.</summary>
+sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View grid, int left, int top, int right, int bottom,
     TileStore store, Dictionary<string, List<(int Weight, string Path)>> fills, List<string> notes)
 {
+    /// <summary>A rectangle of the map (<c>0x141ffb6c0</c>), read and written in its own coordinates.</summary>
+    public sealed class View(TileGrid map, int x, int y, int width, int height)
+    {
+        public View(TileGrid map) : this(map, 0, 0, map.Width, map.Height) { }
+
+        public int Width => width;
+        public int Height => height;
+        public TileEntry? this[int u, int v] => u >= 0 && v >= 0 && u < width && v < height ? map[u + x, v + y] : null;
+        public ref TileCorner Corner(int u, int v) => ref map.Corner(u + x, v + y);
+        public int HeightAt(int u, int v) => map.HeightAt(u + x, v + y);
+        public void SetGround(int u, int v, string? ground) => map.SetGround(u + x, v + y, ground);
+        public void Place(TileDef tile, int o, int u, int v, short height) => map.Place(tile, o, u + x, v + y, height);
+        public bool CheckGrounds { get => map.CheckGrounds; set => map.CheckGrounds = value; }
+    }
+
     int W => grid.Width;
     int H => grid.Height;
 

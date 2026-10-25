@@ -117,7 +117,7 @@ public static class LevelGenerator
         else
         {
             var gen = new TileGraphGenerator(files, rng, notes, features.Any(f => f.Name == ExtraTerrainFeatures.VaalSideArea), onStage)
-                { Hideout = hideout, Labyrinth = labyrinth, Master = area.Master };
+                { Hideout = hideout, Labyrinth = labyrinth, Master = area.Master, Pool = pool };
             grid = gen.Generate(topology.Graph, orientation);
             records = gen.Records;
         }
@@ -492,15 +492,14 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     }
 
     /// <summary><c>0x142044f30</c> for one subgraph: its outer ground (<c>0x14201db80</c>) over its view, then its outer
-    /// buffer (<c>0x14201ffa0</c>) in its margins.</summary>
+    /// buffer (<c>0x14201ffa0</c>) in its margins, on the view of its record's rectangle (<c>0x141ffb7f0</c>).</summary>
     void Outer(Subgraph r)
     {
         _view = (r.X + r.Margins.Left, r.Y + r.Margins.Top, r.X + r.W - r.Margins.Right, r.Y + r.H - r.Margins.Bottom);
         OuterGround(r.Master, r.MasterPath);
         if (r.Margins == (0, 0, 0, 0)) return;
-        if (r.X != 0 || r.Y != 0 || r.W != _grid.Width || r.H != _grid.Height)
-            throw new NotSupportedException($"{r.Path}: the outer buffer of a subgraph that is not the whole map (0x14201ffa0) is not ported");
-        new OuterBuffer(files, rng, _grid, _view.X0, _view.Y0, _view.X1, _view.Y1, _store, _fills, notes).Run();
+        new OuterBuffer(files, rng, new OuterBuffer.View(_grid, r.X, r.Y, r.W, r.H), _view.X0 - r.X, _view.Y0 - r.Y,
+            _view.X1 - r.X, _view.Y1 - r.Y, _store, _fills, notes).Run();
     }
 
     /// <summary><c>0x14203c900</c> for a graph of several nodes: the exist rolls (as for tile graphs), then the rooms

@@ -126,6 +126,11 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
         return Entry(x, y) is null ? FillEntry(x, y, ground, open, height) : 0;
     }
 
+    /// <summary><c>0x141fe89e0</c> for a room placed before the fill (the tile graph's shrines and pre-unique rooms):
+    /// see <see cref="FillRoom"/>.</summary>
+    internal void PlaceRoom(RoomDef room, int x, int y, int o, short height, string? ground, bool open) =>
+        FillRoom(room, x, y, o, height, ground, open);
+
     /// <summary><c>0x141d77670</c>: two grounds that do not suit each other: different, unless either is null or flag 8
     /// against a null or flag-8 one, or both lack flags 1 and 4.</summary>
     bool Unsuited(string? a, string? b)
