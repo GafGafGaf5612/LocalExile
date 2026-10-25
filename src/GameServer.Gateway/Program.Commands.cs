@@ -550,7 +550,7 @@ partial class Program
             var p = conn.Pools;
             await conn.Commands!.Reply(
                 $"Attack crit {p.AttackCriticalStrikeChance / 100.0:0.##}% ({p.CriticalStrikeChancePct}% increased), " +
-                $"multiplier {p.CriticalStrikeMultiplier}%. Spell crit {p.SpellCriticalStrikeChance / 100.0:0.##}% " +
+                $"multiplier {p.CriticalStrikeMultiplier}%. Spell crit reference (5% base) {p.SpellCriticalStrikeChance / 100.0:0.##}% " +
                 $"({p.SpellCriticalStrikeChancePct}% increased), multiplier {p.SpellCriticalStrikeMultiplier}%.");
         })
         .Add("block", "/block (attack and spell block chance and caps)", async _ =>

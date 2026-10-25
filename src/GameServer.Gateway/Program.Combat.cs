@@ -428,13 +428,14 @@ partial class Program
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
             // types separate so conversion and per-type mitigation apply.
             var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-            foreach (var (k, v) in Skills.EffectStats(gem.Effect, gem.Level, gem.Quality)) stats[k] = v;
+            var own = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+            int criticalChance = SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own);
+            foreach (var (k, v) in own) stats[k] = v;
             var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, gem.Level, gem.Quality),
                     name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0, AddedEffectiveness(gem.Effect, gem.Level))
                 .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false));
             int damage = hit.RollTotal(Random.Shared);
-            bool critical = conn.Pools.SpellCriticalStrikeChance > 0
-                && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
+            bool critical = criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize));
             if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
             return (damage, critical);
         });
@@ -503,6 +504,8 @@ partial class Program
                 .Select(e => (e.Key, e.Value))];
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        int spellCriticalChance = spell
+            ? SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats) : 0;
         foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
@@ -512,8 +515,9 @@ partial class Program
                 : SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true));
             int damage = hit.RollTotal(Random.Shared);
-            int chance = spell ? conn.Pools.SpellCriticalStrikeChance : conn.Pools.AttackCriticalStrikeChance;
-            bool critical = chance > 0 && Random.Shared.Next(10_000) < chance;
+            bool critical = spell
+                ? spellCriticalChance > 0 && SpellCriticalStrike.Hits(spellCriticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
+                : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
             await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence);
         }

@@ -60,6 +60,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   energy shield, penetration, exposure, ailment application, added damage and support modifiers are not modelled.
 - **Start:** energy shield, penetration/exposure, the remaining conditional critical strike stats from the stats both
   sides already carry; monster skills beyond the first granted effect (ranged, spells).
+  Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.
+  Native selected-skill verification is pending; added-base, lucky/more and conditional crit remain separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
