@@ -338,6 +338,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public RighteousFireState? RighteousFire;
     /// <summary>The flasks recovering life and mana (C→S 0x70), applied by the player tick.</summary>
     public Flasks.Effects FlaskEffects { get; } = new();
+    /// <summary>The utility flasks whose effect runs (UtilityFlasks); their stats count in the pools until they end.</summary>
+    public UtilityFlasks.Effects UtilityFlaskEffects { get; } = new();
     public ushort NextBuff = 1;
     public uint PlayerMaxLife => Pools.Life;
     // The player's life as the server keeps it (PlayerObject's Life, full on creation); 0 = dead.

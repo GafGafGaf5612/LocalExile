@@ -157,6 +157,11 @@ partial class Program
     {
         var items = ItemsOf(conn);
         var flask = items.Items(PlayerInventories.Flask).FirstOrDefault(i => i.X == slot);
+        if (flask is not null && Items.ByHash(flask.Item.TypeHash) is { } utilityType && Items.UtilityFlaskOf(utilityType) is { } utility)
+        {
+            await UseUtilityFlask(remote, stream, ciphers, conn, slot, flask, utilityType, utility);
+            return;
+        }
         if (flask is null || Items.ByHash(flask.Item.TypeHash) is not { } type || Items.FlaskOf(type) is not { } use)
         {
             Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot}: {(flask is null ? "no flask there" : "not a life or mana flask (not handled)")}");
@@ -192,14 +197,14 @@ partial class Program
                 $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, duration field {durationField}");
     }
 
-    // Gives each life and mana flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them (or, for
+    // Gives each life, mana and utility flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them (or, for
     // the refills of kills and the like, lets them wait for the next save: PlayerInventories.ChangeUnsaved): the
     // flasks that changed.
     static List<InventoryItem> FillFlasks(PlayerInventories items, int charges, bool saveNow = true)
     {
         List<InventoryItem> changed = [];
         foreach (var flask in items.Items(PlayerInventories.Flask))
-            if (Items.ByHash(flask.Item.TypeHash) is { } type && Items.FlaskOf(type) is { } use && flask.Item.Charges < use.MaxCharges &&
+            if (Items.ByHash(flask.Item.TypeHash) is { } type && (Items.FlaskOf(type) ?? Items.UtilityFlaskOf(type)?.Charges) is { } use && flask.Item.Charges < use.MaxCharges &&
                 (saveNow ? items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges)) : items.ChangeUnsaved(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges))) is { } done)
                 changed.Add(done);
         return changed;
