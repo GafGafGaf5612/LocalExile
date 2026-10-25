@@ -635,13 +635,10 @@ partial class Program
         // world/surface height model (issue #182).
         int up = int.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HEIGHT"), out int u) ? u : 5;
         int startHeight = (TerrainHeights.At(conn.Layout.Id, conn.Seed, from.X, from.Y) ?? 0) + up;
-        // The protocol's height is the object's world z in steps, and world z points DOWN: the Positioned blob's i32 is
-        // -z / 7.8125 and its f32 is z; 0x1ba's u32 is the same signed value. The live arrow's i32 -5 / f32 +39.0625 was
-        // z = +39.0625 with its player at z = +78.125 (5 steps above the feet). In the hideout the player's feet are at
-        // z = -78.37 (up), so the torso is at z = -117.4: i32 +15, f32 -117.1875, 0x1ba 0xfffffff1. Sending positive 15
-        // put the arrow at z = +117 (below the platform) — the client reads the height as signed world z.
-        int clientHeight = -startHeight;
-        var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Height: clientHeight);
+        // Positioned's marker and 0x1ba's endpoint are -worldZ / 7.8125, whereas ProjectileObject.Height
+        // takes worldZ / 7.8125. A mismatched glide endpoint makes the native interpolation drift vertically.
+        var height = new ProjectileHeight(startHeight);
+        var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Height: height.ObjectHeight);
         uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
         // All observations below are taken with the monster lock held, including the initial observation when the
         // glide reaches the send gate. The game clock, not time spent waiting for the gate, starts the flight.
@@ -662,8 +659,8 @@ partial class Program
                 });
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null :
                 $"0x01a9 projectile 0x{id:x} enters wake zone", still: Active);
-            await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: unchecked((uint)clientHeight)), !log ? null :
-                $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight} up (client z {clientHeight})" +
+            await Send(remote, stream, ciphers, height.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond)), !log ? null :
+                $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height marker {height.Marker} (world z {height.WorldZ})" +
                 (hitWall ? ", route ends at a wall" : ""), still: () =>
                 {
                     lock (conn.Monsters)
@@ -691,10 +688,7 @@ partial class Program
             if (step.TargetId != 0 || step.Wall)
             {
                 int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
-                // 0x1b7 copies the fixed pair directly: retain the same marker/world Z as creation, while
-                // 0x1ba takes the signed world-Z steps. Do not resample terrain and jump the impact vertically.
-                uint height = unchecked((uint)-clientHeight);
-                float worldZ = clientHeight * 7.8125f;
+                // Copy creation's marker/world-Z pair at contact; do not resample terrain at impact.
                 bool committed = false;
                 SpawnedMonster? target = null;
                 MonsterHit? hit = null;
@@ -704,7 +698,7 @@ partial class Program
                 {
                     // 0x1b7 relocates and cancels the existing glide (0x141e31200 -> 0x141e35250). Commit the hit
                     // under the same gate and short monster lock; a pause/transfer while waiting defers/cancels it.
-                    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y, height, worldZ), !log ? null :
+                    await Send(remote, stream, ciphers, height.StopAt(id, x, y), !log ? null :
                         $"0x01b7 projectile 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})", still: () =>
                         {
                             lock (conn.Monsters)

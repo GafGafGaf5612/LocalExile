@@ -84,7 +84,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   and disconnect handling through the game clock and flight lifetime. Default-attack arrows are visual only.
   Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
   Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume passed before the
-  bow packet/height update; merged bow/collision integration needs a live recheck. Integer monster walk estimates,
+  bow packet/height update; merged bow/collision integration and corrected glide height need a live recheck.
+  Integer monster walk estimates,
   a shared collision radius and straight movement between samples still limit accuracy.
 - **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
   (or in the walk-map recorder), and collision with doodads and objects that have their own colliders.
