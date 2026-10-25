@@ -393,3 +393,5 @@ conditional path now also receives aggregate area (0xd7) and radius percentage (
 Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
 
 - Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
+
+Optional [native client control](docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated UI input. It targets the copied standalone 3.29.3b client and local services only.

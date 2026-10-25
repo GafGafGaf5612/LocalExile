@@ -9,7 +9,7 @@
 #               area the client generates into data/walkability/
 #   -Only Gateway[,Auth,Patch]   rebuild and restart only these servers; the others and the client keep running (implies
 #               -NoClient). Restarting the Gateway drops the client to the login screen, but Auth keeps the login session.
-param([switch]$NoClient, [switch]$NoBuild, [switch]$NoExtract, [switch]$Walkmaps, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
+param([switch]$NoClient, [switch]$NoBuild, [switch]$NoExtract, [switch]$Walkmaps, [switch]$ClientOnly, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -22,6 +22,23 @@ Need (Test-Path (Join-Path $repo 'data\login-keys.json')) 'data\login-keys.json 
 Need (Test-Path (Join-Path $repo 'Client\Game.exe')) 'Client\Game.exe missing: copy the client and its PathOfExile.exe'
 Need (Test-Path (Join-Path $repo 'Client\Game.patched.exe')) 'Client\Game.patched.exe missing: run GameServer.Auth patch'
 Need (Test-Path (Join-Path $repo 'Client\Content.ggpk')) 'Client\Content.ggpk missing: this needs the standalone client layout'
+
+# The control bridge can open a closed client without restarting the servers or touching an existing game.
+if ($ClientOnly) {
+    if ($NoClient -or $Only -or $Walkmaps) { throw '-ClientOnly cannot be combined with -NoClient, -Only or -Walkmaps' }
+    $existing = @(Get-Process -Name 'Game.patched' -ErrorAction SilentlyContinue)
+    if ($existing.Count) {
+        Need ($existing.Count -eq 1 -and $existing[0].Path -eq (Join-Path $repo 'Client\Game.patched.exe')) 'another patched client is running'
+        Write-Output "client already running: $($existing[0].Id)"
+        return
+    }
+    foreach ($port in @(12995, 20493, 6112)) {
+        Need (@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count -gt 0) "local servers must be running before -ClientOnly (missing port $port)"
+    }
+    $p = Start-Process (Join-Path $repo 'Client\Game.patched.exe') -ArgumentList '--patching-server', '127.0.0.1:12995' -WorkingDirectory (Join-Path $repo 'Client') -PassThru
+    Write-Output "client pid $($p.Id)"
+    return
+}
 
 $python = $null
 if ($Walkmaps) {
