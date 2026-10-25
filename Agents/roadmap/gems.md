@@ -70,6 +70,7 @@ What is known about the client and the data is in [19](../docs/protocol/19-gems.
 - **Quality** from Gemcutter's Prism needs currency on items (C→S 0x4a, "Items" above).
 - **Getting gems:** quest rewards (QuestRewards, QuestRewardOffers: by class), the Act 1–4 vendors whose gems follow
   the character's level, class and quest progress, Siosa (Act 3) and Lilly Roth (Act 6 and later), and drops.
+  Offers 0 and 8 already grant their supported class gems; remaining offers and vendor progression are open.
   Needs the quests and NPC shop items.
 - **Corruption and Vaal skills:** Vaal Orb outcomes on gems (one level over the cap, quality up to 23%, the Vaal
   variant), the Lapidary Lens's double corruption, and Vaal souls for the Vaal skills.

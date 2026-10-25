@@ -87,7 +87,8 @@ partial class Program
         var weapons = WeaponProfileFor(conn);
         var bonus = PassiveBonus(sources, weapons);
         var gear = EquippedBaseDefences(conn);
-        bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion };
+        bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion,
+            EnergyShield = bonus.EnergyShield + gear.EnergyShield };
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
@@ -290,7 +291,9 @@ partial class Program
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
-            EnergyShieldPct: Get("maximum_energy_shield_+%"), MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
+            EnergyShield: Get("base_maximum_energy_shield"),
+            EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
+            MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
             FireResistance: allRes + Get("base_fire_damage_resistance_%"),
             ColdResistance: allRes + Get("base_cold_damage_resistance_%"),
             LightningResistance: allRes + Get("base_lightning_damage_resistance_%"),
