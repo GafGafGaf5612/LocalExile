@@ -222,10 +222,12 @@ Gem pacing, attack contact/projectile release and channel intervals share that d
 Ordinary attacks and non-attack skills retain their previous paths.
 Native baseline before this fix: a 714 ms bow had stored speed 0%, base/total base 714 ms and APS 140 for both
 ordinary attacks and Burning Arrow, with actual native clip duration 0.714 seconds in each case.
-The corrected Burning Arrow fixture resolves total base 1020 ms, duration 1.02 seconds and APS 98, while the default
-attack remains 714 ms and APS 140. This expected after-state is regression-tested; live verification is pending.
-Local baseline captures are `logs/skill-timing-before-default-bow-real.json` and
-`logs/skill-timing-before-burning-arrow-real.json` in the integration checkout.
+After the fix, actual native input verified Burning Arrow total base 1020 ms, clip duration 1.019999959 seconds
+and stored APS 98; its original base stayed 714 ms and player speed stayed 0%.
+The ordinary bow attack retained total base 714 ms, clip duration 0.7140000038 seconds and stored APS 140.
+These checks verify native duration and stored APS, not a separate measurement of release/contact timing.
+Local before/after captures are `logs/skill-timing-{before,after}-default-bow-real.json` and
+`logs/skill-timing-{before,after}-burning-arrow-real.json` in the integration checkout.
 Catalog, native-field, modifier-order, pacing/contact and spell-exclusion tests pass.
 This excludes support/conditional/per-charge speed, skill-specific attack-time overrides and off-hand alternation rules.
 Selected attack-gem damage ranges/DPS still inherit the existing weapon display; correcting those is separate work.

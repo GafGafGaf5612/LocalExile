@@ -174,7 +174,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   dual wielding adds PoB's 10% more and the server's unarmed attack uses the same final value.
   Attack gems now apply their extracted inherent speed multiplier to total base duration separately from player speed.
   Pacing, contact/release timing, channel intervals and selected APS share the same rounded native base duration.
-  Catalog, modifier-order, native-field and spell-exclusion tests pass; real-client verification is pending.
+  Actual native bow input verified ordinary duration 0.714 s and Burning Arrow 1.02 s, with stored APS 1.40 and 0.98.
+  Original weapon base 714 ms and player speed 0% stayed unchanged; release/contact timing was not separately measured.
+  Catalog, modifier-order, native-field and spell-exclusion tests pass.
   Supports, conditional/per-charge speed, special time overrides and attack-gem damage/DPS remain separate work.
   The default attack also sends the panel's `hundred_times_damage_per_second` and
   `display_hundred_times_damage_per_skill_use`.
