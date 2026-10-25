@@ -11,6 +11,7 @@ static class HideoutCatalog
 {
     /// <summary>The first campaign hideout (Hideouts row 0, found in The Dread Thicket): every character's.</summary>
     public const string DefaultArea = "HideoutForest";
+    public const string HorticraftingType = "Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout";
     public const string CraftingBenchType = "Metadata/Terrain/Missions/Hideouts/Objects/HideoutCraftingBench";
 
     /// <summary>The standard bench, to the screen-left of the guild stash in the isometric grid.</summary>

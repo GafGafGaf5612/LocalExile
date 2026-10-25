@@ -1,5 +1,7 @@
 # Status
 
+Horticrafting Station: placed beside the ordinary bench in every selected hideout; interaction approaches and opens the native Harvest recipe browser (0x7b kind 0x39). Recipe execution/payment are not implemented. Automated coverage; station and window confirmed working in the real client. See protocol/21-hideouts.md.
+
 Ordinary crafting bench (2026-10-25, automated coverage; live client verification pending):
 all 765 active recipes and their 130 recipe flags are available. Exact modifiers, class masks,
 socket/link recipes, flask enchantments, replacement/removal and rare-affix rerolls are served.

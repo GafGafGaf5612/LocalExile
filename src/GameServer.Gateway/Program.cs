@@ -975,6 +975,11 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await OpenCraftingBench(remote, stream, ciphers, conn, use);
         return;
     }
+    if (conn.HorticraftingObject != 0 && use.TargetId == conn.HorticraftingObject)
+    {
+        await OpenHorticrafting(remote, stream, ciphers, conn);
+        return;
+    }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
     if (transition is null)
     {
@@ -6237,6 +6242,33 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
         conn.CraftingBenchAt = (bench.X, bench.Y);
         conn.SetBlocker(benchId, bench.X, bench.Y, ClientState.StashBlockerSize);
     }
+    if (scene?.Harvest is { } harvest
+        && HideoutCatalog.TypeOf(HideoutCatalog.HorticraftingType) is var (harvestComponents, _)
+        && harvestComponents.Count > 0 && HideoutObject.CanSerialize(harvestComponents))
+    {
+        uint harvestId = conn.NextObjectId++;
+        var obj = new HideoutObject(harvest.X, harvest.Y, harvest.Rotation, harvestComponents, new HideoutDoodad(0, 0));
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(harvestId,
+            InstanceEntities.ObjectTypeHash(HideoutCatalog.HorticraftingType), obj.Blob()),
+            $"0x02b9 create Horticrafting Station 0x{harvestId:x} at ({harvest.X}, {harvest.Y})");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(harvestId), null);
+        conn.HorticraftingObject = harvestId;
+        conn.HorticraftingAt = (harvest.X, harvest.Y);
+        conn.SetBlocker(harvestId, harvest.X, harvest.Y, 8);
+    }
+
+}
+
+// Opens the native recipe browser. Harvest recipe execution is a separate feature.
+static async Task OpenHorticrafting(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (_, stop, arrive) = conn.Walk.WalkUpTo(conn.HorticraftingAt.X, conn.HorticraftingAt.Y, 8, now);
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.Closed || conn.ActionCount != action || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, 8)) return;
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HorticraftingUi),
+        "0x007b open Horticrafting Station recipe browser");
 }
 
 // C→S 0x24: approach the bench before opening the ordinary crafting window (0x7b kind 0x33, bench type 0).
@@ -7694,6 +7726,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>
     public uint GuildStashObject;
     public (int X, int Y) GuildStashAt;
+    public uint HorticraftingObject;
+    public (int X, int Y) HorticraftingAt;
     public uint CraftingBenchObject;
     public bool BenchOpen;
     public bool BenchBalanceSent;

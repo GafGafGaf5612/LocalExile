@@ -17,6 +17,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 1. Quality of life
 
+Harvest station placement and native recipe browsing are implemented. Next: implement Harvest recipe execution and atomic lifeforce payment; see protocol/21-hideouts.md.
+
 ### Switching hideout templates
 - **Known:** Helena now stands to Niko's screen-right and opens HideoutSelectionWindow (0x7b kind 0x22).
   The owned list contains the default Lush Hideout. [21](docs/protocol/21-hideouts.md).

@@ -372,3 +372,11 @@ The default template supplies missing functional furniture. Arbitrary decorative
 interactive decoration editing remain outside this implementation. Automated coverage checks
 selection bytes, persisted choice and placement; final client verification requires selecting
 a different template and reconnecting after restarting both Auth and Gateway.
+
+### Horticrafting Station (recipe browser only)
+
+HideoutScene places `Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout` beside the ordinary bench on clear floor in every selected hideout. The object has Positioned (blocking size 8), BaseEvents, Animated, MinimapIcon and InteractionAction, with no HideoutDoodad or StateMachine payload. Its built-in Animated model is harvest_workbench.ao. The Gateway registers a blocker and handles its 0x24 interaction separately from the ordinary bench.
+
+After walking within range, send `0x7b` kind **0x39**, four zero u32s. Native dispatcher 0x142163420 uses instance +0x4ef8; HUD callback LAB_140dae88c invokes virtual +0xcc0, PC 0x140dcee40 (window +0x8b0) / controller 0x140d8d750 (window +0x4a8). This differs from 0x33 ordinary crafting and 0x45 Sanctum.
+
+The native Harvest panel builds the complete recipe list from HarvestCraftOptions.dat (0x14048dd00), with its own search/filter, current game-mode filtering and localized descriptions/costs. No ordinary bench unlock flags or server-manufactured recipe list are needed. HarvestCraftingItem (Inventories row 43) is already registered with the player's defaults. This step only opens the browser: Harvest execution and lifeforce payment are not implemented. Station placement and native window opening were confirmed in the real client.
