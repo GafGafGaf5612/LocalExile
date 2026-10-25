@@ -453,8 +453,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 placed.Add(new PlacedRoom(def, _ox + step * p.X, _oy + step * p.Y, w, h, p.Descriptions, p.Orientation));
             }
         var overlayRooms = FillRecords(master, masterPath, placed);
-        // 0x1420f8f20 (draws only when +0xb0 lists cells, not ported), then the mirror seams (0x142025440) over the
-        // layout's view, with the placed rooms as its room list.
+        Wiggle();
+        // The mirror seams (0x142025440) over the layout's view, with the placed rooms as its room list.
         new Seams(files, rng, _grid, _ox, _oy, step * map.Width + map.Overlap, step * map.Height + map.Overlap, _store, placed, roomVertices,
             _graphGrounds, notes).Run();
         // The overlays' rooms and the fill's rooms (.gft lines naming an .arm) join the record's rooms after the
@@ -570,9 +570,13 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 // (not for "missiontile").
                 int lx = x - originX, ly = y - originY;
                 int bx = lx < 1 ? 1 : roomW <= lx + w ? 2 : 0, by = ly < 1 ? 1 : roomH <= ly + h ? 2 : 0;
-                if (_overlap != 0 && slot.Tag != "missiontile" &&
+                bool shared = _overlap != 0 && slot.Tag != "missiontile" &&
                     ((bx == 1 && w % 2 == 1 && lx + w / 2 == 0) || (bx == 2 && w % 2 == 1 && lx + w / 2 == roomW - 1) ||
-                     (by == 1 && h % 2 == 1 && ly + h / 2 == 0) || (by == 2 && h % 2 == 1 && ly + h / 2 == roomH - 1)))
+                     (by == 1 && h % 2 == 1 && ly + h / 2 == 0) || (by == 2 && h % 2 == 1 && ly + h / 2 == roomH - 1));
+                // An untagged square slot whose edges all have its size and one a wiggle of at least 2 (1 when shared)
+                // is noted for 0x1420f8f20.
+                if (slot.Tag.Length == 0 && Wiggles(key.Rotate(code), shared ? 1 : 2)) NoteWiggle(x - _view.X0, y - _view.Y0);
+                if (shared)
                 {
                         Border(x, y, bx, by, height, key.Rotate(code), slot.Tag, accessible, descriptions);
                     continue;
@@ -934,6 +938,127 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     readonly List<(int X, int Y, int Index)> _edgeRecords = [];
     List<EdgePoint> _edgePoints = [];
     readonly List<PlacedRoom> _fillRooms = [];
+    // Tiler +0xb0: view cells of wiggling room slots (0x1420ef310) and tiles the listener saw (0x1420f1230), a set
+    // sorted by x · 0x10000 + y (0x14204e650).
+    readonly SortedDictionary<int, (int X, int Y)> _wiggleCells = [];
+
+    void NoteWiggle(int x, int y) => _wiggleCells.TryAdd(x * 0x10000 + y, (x, y));
+
+    /// <summary><c>0x1420f1230</c>'s first part, the listener the dungeon tiler puts on its FillTiles placer (the
+    /// shrines, edge fill, overlays and fill): a placed tile that wiggles has its view cell noted.</summary>
+    void Listen(TileDef tile, int o, int x, int y)
+    {
+        if (Wiggles(tile, 1)) NoteWiggle(x, y);
+    }
+
+    /// <summary><c>0x1420ed900</c>'s test: an untagged (tile data +0x10) square tile whose edges all have its size
+    /// (.et +0x4b), at least one of them with a wiggle (+0x4d) of at least <paramref name="least"/>.</summary>
+    bool Wiggles(TileDef tile, int least = 1) => tile.Tag.Length == 0 && Wiggles(tile.Key, least);
+
+    bool Wiggles(TileKey key, int least)
+    {
+        if (key.Width != key.Height) return false;
+        bool any = false;
+        foreach (var e in key.Edges)
+        {
+            if (e is null) continue;
+            var et = files.Edge(e);
+            if (et is null || et.Size != key.Width) return false;
+            if (et.Wiggle >= least) any = true;
+        }
+        return any;
+    }
+
+    static readonly int[] SideX = [0, 1, 0, -1], SideY = [-1, 0, 1, 0];
+
+    /// <summary><c>0x140df93f0</c>: the edge point a cell's side takes, from its view position (side 1 and 2 as the
+    /// neighbour's side 3 and 0, mirrored).</summary>
+    static byte WigglePoint(int x, int y, int side, int size)
+    {
+        uint u;
+        switch (side)
+        {
+            case 1:
+                u = unchecked((uint)(y * 0x7bb + 0x31e9 + (x + size) * 0x337)) % 13;
+                return (byte)((2 - u % 3) * size + (size >> 1));
+            case 2:
+                u = unchecked((uint)((y + size) * 0x7bb + x * 0x337)) % 13;
+                return (byte)((2 - u % 3) * size + (size >> 1));
+            default:
+                u = unchecked((uint)(y * 0x7bb + side * 0x10a3 + x * 0x337)) % 13;
+                return (byte)(u % 3 * size + (size >> 1));
+        }
+    }
+
+    /// <summary><c>0x1420f8f20</c>: the noted cells (<c>Next(count)</c>, shuffled) whose tile still wiggles at its
+    /// origin are re-tiled with moved edge points. Each side in a shuffled order (<c>Next(4)</c>, shuffle) whose edge
+    /// wiggles takes the point <see cref="WigglePoint"/> gives when that differs and the neighbour across it (one
+    /// edge size on) wiggles too: when the TileSet has untagged tiles for the moved key and for the neighbour's key
+    /// with the mirrored point (3 · size − p − 1), the move stays. With any move, the cell and then each such neighbour
+    /// (sides 0 … 3) get a tile from their lists (<c>Next(total weight)</c>, placed forced at their old height,
+    /// <c>0x141ffb870</c>).</summary>
+    void Wiggle()
+    {
+        if (_wiggleCells.Count == 0) return;
+        var (vx, vy, vx1, vy1) = _view;
+        var cells = _wiggleCells.Values.ToList();
+        _wiggleCells.Clear();
+        rng.Next((uint)cells.Count);
+        rng.Shuffle(cells);
+        foreach (var (x, y) in cells)
+        {
+            if (_grid[x + vx, y + vy] is not { IsOrigin: true } at || !Wiggles(at.Tile)) continue;
+            var key = at.Tile.Key.Rotate(at.Orientation);
+            int[] sides = [0, 1, 2, 3];
+            rng.Next(4u);
+            rng.Shuffle(sides);
+            List<(TileDef Tile, int Orientation, int Weight)>? mine = null;
+            var near = new (int X, int Y, short Height, List<(TileDef Tile, int Orientation, int Weight)>? List)[4];
+            foreach (int s in sides)
+            {
+                if (key.Edges[s] is not { } e || files.Edge(e) is not { Wiggle: not 0 } et) continue;
+                int size = et.Size;
+                byte p = WigglePoint(x, y, s, size);
+                if (p == key.PointA[s]) continue;
+                int nx = x + size * SideX[s], ny = y + size * SideY[s];
+                near[s] = (nx, ny, 0, null);
+                if ((uint)nx >= (uint)(vx1 - vx) || (uint)ny >= (uint)(vy1 - vy)) continue;
+                var nb = _grid[nx + vx, ny + vy];
+                near[s].Height = nb?.HeightOffset ?? 0;
+                if (nb is not { IsOrigin: true } n || !Wiggles(n.Tile)) continue;
+                byte old = key.PointA[s];
+                key.PointA[s] = p;
+                var list = _store.Candidates("", key);
+                if (list.Count != 0)
+                {
+                    var nk = n.Tile.Key.Rotate(n.Orientation);
+                    nk.PointA[(s + 2) & 3] = (byte)(3 * size - p - 1);
+                    near[s].List = _store.Candidates("", nk);
+                    if (near[s].List!.Count != 0)
+                    {
+                        mine = list;
+                        continue;
+                    }
+                }
+                key.PointA[s] = old;
+            }
+            if (mine is null) continue;
+            void Put(List<(TileDef Tile, int Orientation, int Weight)> list, int px, int py, short height)
+            {
+                int r = (int)rng.Next((uint)list.Sum(c => c.Weight));
+                var pick = list[^1];
+                foreach (var c in list)
+                {
+                    if (r < c.Weight) { pick = c; break; }
+                    r -= c.Weight;
+                }
+                _grid.Place(pick.Tile, pick.Orientation, px + vx, py + vy, height, force: true);
+            }
+            Put(mine, x, y, at.HeightOffset);
+            foreach (var nb in near)
+                if (nb.List is { Count: > 0 } l) Put(l, nb.X, nb.Y, nb.Height);
+        }
+    }
 
     /// <summary><c>0x141feffb0</c> for the outer ground: the first fill tile of its ground.</summary>
     internal static TileDef OuterTile(TerrainCache files, Dictionary<string, List<(int Weight, string Path, int Orientation)>> fills, GroundType ground)
@@ -1177,13 +1302,13 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         if (!master.TryGetValue("FillTiles", out var gft)) return [];
         var (vx, vy, vx1, vy1) = _view;
         var fill = new Fill(files, rng, _grid, vx, vy, vx1 - vx, vy1 - vy, _store,
-            files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes);
+            files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes) { TilePlaced = Listen };
         Shrines(master, masterPath, fill);
         if (_edgeRecords.Count != 0)
             new GroundStages(_grid, vx, vy, vx1 - vx, vy1 - vy, files).EdgePoints(
                 [.. _edgeRecords.Select(r => (r.X - vx, r.Y - vy, r.Index))], _edgePoints, fill.FillSide);
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
-        var tiler = new RoomTiler(rng, _grid, vx, vy, _store);
+        var tiler = new RoomTiler(rng, _grid, vx, vy, _store) { TilePlaced = Listen };
         var overlays = passes.Count == 0 ? null : new Overlays(files, rng, notes, _grid, vx, vy, vx1 - vx, vy1 - vy, tiler,
             [.. layoutRooms, .. _fillRooms], int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
         // Both dungeon passes save the tiles under a room (0x141fff1a0 param 3).
