@@ -193,10 +193,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   Cast release, flight and explosion cleanup use game time and wait through pause.
   Area changes remove outstanding visuals before handoff and invalidate flights even if the transfer fails.
   Disconnects cancel outstanding flight tasks.
-  Automated trajectory, wall, lifecycle and packet checks pass; live verification is pending.
-  Positions remain integer server walk estimates with a shared radius and straight movement between samples.
+  Automated trajectory, wall, lifecycle and packet checks pass.
+  Live checks verified a moving-away miss, a later-entry hit, first-wall contact, pause/resume and native glide stop.
+  Raw fixed-height and terrain-sentinel stop packets preserved their fields and cleared native movement duration.
+  This retains the existing terrain-height model; broader height accuracy is unchanged.
+  Positions remain integer server walk estimates sampled about every 16 ms, with a shared collision radius
+  and straight movement between samples.
   Sharp turns, scheduling stalls and client interpolation can still differ; official timing equivalence is unverified.
-  Static walls use the captured projectile grid with diagonal-corner traversal and rounded-endpoint checks.
+  Static walls use the captured two-dimensional projectile grid with diagonal-corner traversal and endpoint checks.
   Areas without a height grid fly the fireball on the terrain.
   Height capture still uses `scripts/re/frida/capture-terrain-tiles.js` and `scripts/walkmaps/heights.py`.
   Doodad/object colliders, explosion area damage and pierce/chains remain unimplemented.

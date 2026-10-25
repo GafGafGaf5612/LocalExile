@@ -75,9 +75,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   ([11](../docs/protocol/11-skills.md) §9–10).
   Swept relative-motion checks now run throughout flight instead of reserving a launch-time target.
   Pause, transfer and disconnect handling use the game clock and flight lifetime.
-  Automated checks pass; live moving-target, impact-stop and pause verification is pending.
+  Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
+  Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume checks passed.
   Integer monster walk estimates, a shared collision radius and straight movement between samples still limit accuracy.
 - **Start:** height grids for more areas (or in the walk-map recorder), collision with doodads and objects that have
   their own colliders.
-  Verify changed-course misses, later interceptors, impact position and pause behavior with the real client and logs.
 - **Done when:** Fireball looks like the real one in every area: over the terrain, stopping at walls and objects.

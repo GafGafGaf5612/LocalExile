@@ -513,7 +513,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   calls when the flag byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
 - **Rotation.** Positioned rotation (+0x29c) = **atan2(dx, −dy)** in grid cells (the player's own moves traced with
   `trace-move.js`: facing (+15, −18) read 0.668).
-- **Hit (reworked 2026-10-25; automated checks, live verification pending).** `ProjectileFlight` advances from the
+- **Hit (reworked and verified live 2026-10-25).** `ProjectileFlight` advances from the
   connection's elapsed game clock, polled about every 16 ms. For each interval it solves the earliest intersection
   of the projectile segment and each living monster's observed movement segment in relative coordinates, with the
   existing 4-cell radius (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2). It keeps previous samples
@@ -521,8 +521,12 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   predicted hit, walk into the path later, or intercept before a farther monster. Removed/dead monsters are omitted;
   new objects and replaced walk estimators are tested only at the current endpoint, without inventing past motion.
   The first contact stops the flight; range expiry without a contact removes it without an explosion.
-- **Stopping at contact (static client evidence, 2026-10-25).** The initial 0x1ba goes to the range/static-wall
-  endpoint. At a discovered contact, S→C **0x1b7** relocates it to the rounded contact cell with the appropriate height,
+  Live at 10 cells/s on The Twilight Strand: a monster ordered from (330, 220) to (330, 240) after release was
+  missed, and the projectile reached the wall at (369, 220).
+  Ordering the monster from (330, 240) into the ray after release produced a hit at (326, 220).
+  These checks used actual monster movement orders; nearer interceptors and dead targets also have automated coverage.
+- **Stopping at contact (static evidence and live verification, 2026-10-25).** The initial 0x1ba goes to the
+  range/static-wall endpoint. At a discovered contact, S→C **0x1b7** relocates it to the rounded contact cell with the appropriate height,
   then the Animated swap below plays its impact. The 3.29.3b Positioned handler's switch (`0x141e30c90`) maps 0x1b7
   to `0x141e30da7`: it stores the height at +0x290 and trailing u32 at +0x2b4, then calls `0x141e31200`. That routine's
   tail (`0x141e3162f`) calls `0x141e35250`, which clears the movement durations at +0x240/+0x280 and movement flags.
@@ -534,6 +538,10 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   and ignores +0x2b4, so it remains valid when the server has no height grid.
   Every other marker immediately returns the float at +0x2b4; sending a non-sentinel marker with a zero float
   would snap the effect to world z zero.
+  Live contact probes read zero native movement duration at both the monster and wall impacts.
+  Separate raw 0x1b7 probes preserved marker/float pairs (-8, -62.5), (8, 62.5) and the terrain sentinel,
+  with native movement duration zero in each case.
+  This preserves the existing projectile terrain-height model; it does not establish broader height accuracy.
   Impact damage is committed under the send gate and a short monster lock, rechecking connection/area/pause and
   target life. Packet writes and hit notifications await outside the monster lock. A transfer invalidates flights
   even after its pending ticket is consumed and removes outstanding projectile/impact objects before 0x2b2;
@@ -541,8 +549,11 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   Cast release, flight and the explosion's 1.5-second lifetime use game time and wait through pause.
   Terminal model swaps and removals recheck pause inside the send gate and retry after resume;
   a transfer cancels the retry and takes ownership of visual cleanup.
+  Live pause held the projectile at (289, 220) for 1.2 seconds, with no removal until the game resumed.
+  Local validation captures: `logs/projectile-collision-live.json` and `logs/projectile-fixed-height-live.json`.
   These remain estimates: monster positions are integer `WalkEstimator` samples, movement between samples is a
   straight chord, the radius is shared across monsters, and the client has its own cell stepping/network delay.
+  Static wall checks use a captured two-dimensional grid, not object/doodad colliders or three-dimensional geometry.
   Sharp turns between samples or long scheduling stalls can still differ from the client. This is not an official
   collision/tick-rate implementation; explosion area damage, pierce/chains and object-owned colliders are unchanged.
 - **Walls (live 2026-10-18).** The client's walkability provider (walk-map hook `0x1410ddcfd`) returns a second grid
