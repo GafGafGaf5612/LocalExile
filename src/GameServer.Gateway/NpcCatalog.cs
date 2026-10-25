@@ -87,6 +87,8 @@ sealed class NpcCatalog
         new("Metadata/NPC/Epilogue/KiracHideout", 249, 358, 4.0f),
     ];
 
+    public static IReadOnlyList<Placement> HideoutNpcs => Hideout;
+
     public static IReadOnlyList<Placement> In(ushort areaHash) =>
         Towns.GetValueOrDefault(areaHash) ?? (HideoutCatalog.ByArea(areaHash) is not null ? Hideout : []);
 

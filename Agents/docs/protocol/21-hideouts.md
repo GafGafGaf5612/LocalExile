@@ -22,6 +22,26 @@ sequenceDiagram
 
 ## 1. Unlocking: flags and keys
 
+**All personal templates (2026-10-25).** Every exported Hideouts row is available on the local server
+(103 templates in this client; all have personal eligibility enabled), including UnlockMtx templates.
+0x1f6 sets the campaign unlock bits and the personal 0x1f5 response includes every exported row,
+so MTX entries also pass the purchased-list check. The lists are derived from HideoutCatalog, not a
+hard-coded count or byte range. This expands the picker; changing and persisting its selected template
+remains unimplemented. Guild ownership is unchanged.
+
+### Campaign unlock mask required by the picker (2026-10-25)
+
+S→C **0x1f6** (class 0x1435c0758, writer 0x141f9e5c0) is exactly 16 raw bytes after the
+message id: bit `row` unlocks that Hideouts.dat row (LSB first, zero-based). It is separate from
+0x1f5's purchased-hideout list. Dispatcher case 0x95 at 0x142151d47 allocates a bit vector of
+the Hideouts table's size, copies the corresponding mask bits and marks it initialized.
+Without this packet the picker calls `0x14216d800` with a null vector at session +0xcdf0;
+Windows recorded access violation **0x14216d8b7** on opening Helena's selector.
+SendPlayer now sends the fixed mask before the player object, in every area, with the default
+hideout unlocked. This also covers client-side opens that do not send an NPC option request.
+The mask encoder tests cover empty input, byte/word boundaries, the highest bit and invalid rows.
+Live picker confirmation is pending; choosing/persisting another template remains separate work.
+
 | What | Where | Value |
 |---|---|---|
 | quest flag `HideoutUnlocked` | QuestFlags row 2030, Player +0x1b8 | every character (`Quests.EveryCharacter`, added on login, not saved) |
@@ -220,8 +240,8 @@ category `SelectHideout`, requires ThisIsMyHideout and HaveHideout, already supp
 The handler closes dialogue with 0x84 object 0 and opens UI 0x7b kind **0x22**, argument 0
 (HideoutSelectionWindow in the native screen table 0x142fc5920; argument 1 is guild mode).
 The owned-hideouts response 0x1f5 now lists the default Lush Hideout rather than an empty list.
-This adds the NPC and picker entry point; changing ownership, persisting a different hideout and
-processing the picker's selection request remain unimplemented.
+The owned list now includes all exported personal templates, including MTX.
+Selection is implemented as described below.
 
 - The decorations (trees, tents …): `Metadata/MiscellaneousObjects/HideoutDoodad` and other types, each with its own
   component list; `HideoutObject` writes the supported ones.
@@ -230,8 +250,8 @@ processing the picker's selection request remain unimplemented.
   map), the telepads' exact cells, fragments and device recipes (MapDeviceRecipes), the map's mods and area level, the map
   device type (3) portal's own model and "Map Portal" text (needs its open transition, which crashed), the window's
   u16 target and the 0x008f fields left at 0.
-- Logging in to the hideout after logging out there (the real game does); Resurrect in a map → the hideout.
-- Choosing another hideout (the Hideout selection window), visiting other players' hideouts (0x17a names them).
+- Resurrect in a map → the hideout.
+- Visiting other players' hideouts (0x17a names them).
 - Which UI reads the second Hideouts key.
 
 ## Crafting bench placement (2026-10-25)
@@ -260,3 +280,25 @@ to Default. UI kind 0x65 is for dynamic benches and is not the ordinary hideout 
 
 The opening packet is covered by an automated test; live window opening awaits a reconnect.
 Recipe unlocks and applying craft requests remain unimplemented.
+
+## Selecting and retaining a personal hideout (2026-10-25)
+
+The Choose button sends C→S **0x254**, followed by one big-endian u16: low 15 bits are the
+Hideouts row index, bit 15 is guild mode. Native sender: 0x140bbae90; serializer: 0x141f9d070.
+Captured personal selection `0254001D` selects row 29. The Gateway frames all four bytes,
+rejects unknown rows and guild requests, saves `SelectedHideout` as a stable WorldAreas Id,
+updates the player's Hideouts component and uses the normal acknowledged area-transfer path.
+Selecting the current template keeps the character in place.
+
+Auth reads the shared character save on each login and enters the selected home directly;
+characters without a saved choice retain last-town login. `/hideout`, world-panel travel,
+map return portals and the player's hideout key all resolve the same saved choice.
+Entry uses the selected template's waypoint and fixed seed 1.
+
+`HideoutScene` recreates personal/guild stashes, crafting bench, map device, Nessa, Niko,
+Helena and Kirac on the destination floor. It retains decoration appearance, translates NPC
+positions relative to the new waypoint, and searches for nonoverlapping walkable footprints.
+The default template supplies missing functional furniture. Arbitrary decorative objects and
+interactive decoration editing remain outside this implementation. Automated coverage checks
+selection bytes, persisted choice and placement; final client verification requires selecting
+a different template and reconnecting after restarting both Auth and Gateway.

@@ -10,11 +10,14 @@ public static class WorldAreaHideouts
 {
     /// <summary>The hideout rows' HASH16s; empty when the file is missing.</summary>
     public static IReadOnlySet<ushort> Load(string worldAreasJson)
+        => LoadAreas(worldAreasJson).Values.ToHashSet();
+
+    public static IReadOnlyDictionary<string, ushort> LoadAreas(string worldAreasJson)
     {
-        if (!File.Exists(worldAreasJson)) return new HashSet<ushort>();
+        if (!File.Exists(worldAreasJson)) return new Dictionary<string, ushort>();
         using var doc = JsonDocument.Parse(File.ReadAllBytes(worldAreasJson));
         return doc.RootElement.EnumerateArray()
             .Where(r => r.TryGetProperty("IsHideout", out var h) && h.ValueKind == JsonValueKind.True)
-            .Select(r => (ushort)r.GetProperty("HASH16").GetInt32()).ToHashSet();
+            .ToDictionary(r => r.GetProperty("Id").GetString()!, r => (ushort)r.GetProperty("HASH16").GetInt32());
     }
 }

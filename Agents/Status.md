@@ -1,5 +1,9 @@
 # Status
 
+Remember Password now returns and verifies the official client's 32-byte saved-login credential
+in account login 0x03 / result 0x04. It survives server restarts, is device/account-bound and
+is invalidated by changing the password. Covered by protocol/session tests and confirmed working by the user in the real client. See [01](docs/protocol/01-login.md).
+
 Where the project stands. Last updated 2026-10-21, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
@@ -9,8 +13,26 @@ Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows n
 `main_hand_weapon_type = 9`, required by the client's inventory gate; see [13](docs/protocol/13-items.md).
 
 Helena placement and hideout picker entry point (2026-10-25, awaiting client confirmation): Helena stands
-screen-right of Niko and Select Hideout opens the native window. Only the existing Lush Hideout is owned;
-switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
+screen-right of Niko and Select Hideout opens the native window. All exported personal templates are owned; selection, transfer and persistence are implemented. See [21](docs/protocol/21-hideouts.md).
+
+Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art. A live check found
+that source-only buffs hid the top-left icons; source and received buff instances now coexist,
+restore and end together. Icon restoration awaits client confirmation. See [11](docs/protocol/11-skills.md) section 13.
+
+Ordinary aura expansion (2026-10-25, awaiting client confirmation): Determination, Grace, Discipline,
+Anger, Hatred, Wrath, Zealotry, Malevolence and Envy now activate with reservation and paired visual/HUD buffs.
+Armour/evasion, added hit damage, gain-as-cold, spell damage/crit and RF's more DoT are connected.
+Discipline's ES pool/recharge and conditional effects remain partial. Reservation overflow is refused.
+See [11](docs/protocol/11-skills.md) section 13.
+
+Hideout picker crash fix (2026-10-25, awaiting client confirmation): initialize the campaign
+unlock bitset with S→C 0x1f6 on area entry, before Helena can open the picker. Missing data
+caused the confirmed client access violation at 0x14216d8b7. See [21](docs/protocol/21-hideouts.md).
+
+Saved aura toggles (2026-10-25, awaiting client confirmation): active effects persist per character
+and restore on relog, area entry and server restart, subject to usable gems and available reservation.
+Helena's picker now receives all 103 exported personal hideouts, including MTX templates; switching
+templates now uses the native selection request and persists the chosen home. See [11](docs/protocol/11-skills.md) and [21](docs/protocol/21-hideouts.md).
 
 ## Works (verified with the real client)
 
@@ -273,7 +295,7 @@ switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
 - Waypoint travel to a generated area without a `-Walkmaps` capture for its seed puts the player at an arbitrary cell
   (The Submerged Passage, seed 1); quest flags are derived from visited areas and waypoints, not from quests
   ([16](docs/protocol/16-waypoints.md) "Open").
-- Hideouts: no decorations (trees, tents …), editing does nothing, logins never start in the hideout, only the Lush Hideout ([21](docs/protocol/21-hideouts.md) "Open").
+- Hideouts: decorative trees/tents and editing are not implemented. Personal template selection, saved home login and functional furniture placement are implemented ([21](docs/protocol/21-hideouts.md)).
 - Map device: a map without a walk-map capture puts the player at an arbitrary cell (Beach is captured); the arena gates
   land next to their pair, not on the telepads; fragments add nothing; the portals look like player portals; the open map is lost on a
   Gateway restart ([21](docs/protocol/21-hideouts.md) §5, "Open").
@@ -328,8 +350,23 @@ Cyclone's additional melee-range and stage modifiers remain partial. See protoco
 
 ## Hideout crafting bench placement (2026-10-25)
 
+Personal hideout selection now handles the native 0x254 request, saves the selected WorldAreas Id
+per character and transfers immediately. Auth uses the saved choice on login; world-panel travel,
+`/hideout` and map return portals use the same home. Functional furniture and all four NPCs are
+placed on the selected template's floor. Selection decoding, persistence and placement have
+automated coverage; the new transfer and reconnect path awaits user verification in the client.
+
 The standard bench spawns to the left of the guild stash in hideouts, using the existing
 decoration's model and a walkable placement (placement confirmed in the real client).
 Clicking it now walks into interaction range and sends 0x7b kind 0x33, type 0 to open the ordinary
 crafting window. Automated checks cover the wire format; a live window-opening check is pending.
 Recipe unlocks and applying crafts are not implemented. See protocol/21-hideouts.md.
+
+## Cyclone area of effect (2026-10-25)
+
+`/set_aoe` now resends Cyclone's calculated final radius in the skill record, using the same radius
+calculation for server hits. Cyclone/CycloneAltX use a 16-cell base when their exported stat set has
+none. Spell-only area does not affect the attack. Tested calculations; live visual check pending.
+The first live check found that direct radius alone did not scale the channelled visual; its
+conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
+Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.

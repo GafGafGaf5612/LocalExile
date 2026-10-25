@@ -3,7 +3,8 @@
 /// skill's spell_minimum/maximum_base_{type}_damage scaled by 1 + the summed increases that apply: damage_+%,
 /// spell_damage_+%, elemental_damage_+% (fire, cold, lightning), the type's own {type}_damage_+%, and
 /// projectile_damage_+% for projectile skills (base_is_projectile). The skill's stats include the player's (passives,
-/// items, auras), so item mods count. More multipliers, conversion and added damage are not modelled.
+/// items, auras), so item mods count. Added spell damage uses damage effectiveness; Wrath and Zealotry supply
+/// their more multipliers. Conversion is applied by the caller after this packet is built.
 /// </summary>
 static class SpellDamage
 {
@@ -11,26 +12,29 @@ static class SpellDamage
 
     /// <summary>The summed minimum and maximum hit, unrounded (the tooltip averages these; a real hit rolls between them
     /// and drops the fraction, <see cref="Roll"/>); (0, 0) for a skill with no base spell damage.</summary>
-    public static (double Min, double Max) Hit(Func<string, int> get)
+    public static (double Min, double Max) Hit(Func<string, int> get, double addedEffectiveness = 1)
     {
         int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
         double min = 0, max = 0;
         foreach (string type in Types)
         {
-            int baseMin = get($"spell_minimum_base_{type}_damage"), baseMax = get($"spell_maximum_base_{type}_damage");
+            double baseMin = get($"spell_minimum_base_{type}_damage") + get($"spell_minimum_added_{type}_damage") * addedEffectiveness,
+                baseMax = get($"spell_maximum_base_{type}_damage") + get($"spell_maximum_added_{type}_damage") * addedEffectiveness;
             if (baseMin == 0 && baseMax == 0) continue;
             bool elemental = type is "fire" or "cold" or "lightning";
             double factor = Math.Max(0, 1 + (common + (elemental ? get("elemental_damage_+%") : 0) + get($"{type}_damage_+%")) / 100.0);
-            min += baseMin * factor;
-            max += baseMax * factor;
+            double more = More(get, type);
+            min += baseMin * factor * more;
+            max += baseMax * factor * more;
         }
         return (min, Math.Max(min, max));
     }
 
     /// <summary>The same increases applied to a per-type packet, keeping each type separate for conversion and
     /// mitigation.</summary>
-    public static GameServer.Core.World.DamagePacket Packet(GameServer.Core.World.DamagePacket hit, Func<string, int> get)
+    public static GameServer.Core.World.DamagePacket Packet(GameServer.Core.World.DamagePacket hit, Func<string, int> get, double addedEffectiveness = 1)
     {
+        hit = DamageStats.Added(hit, get, spell: true, effectiveness: addedEffectiveness);
         int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
         return hit.Select((type, range) =>
         {
@@ -47,16 +51,20 @@ static class SpellDamage
                 or GameServer.Core.World.DamageType.Cold
                 or GameServer.Core.World.DamageType.Lightning;
             double factor = Math.Max(0, 1 + (common + (elemental ? get("elemental_damage_+%") : 0) + get($"{slug}_damage_+%")) / 100.0);
-            return range.Scale(factor);
+            return range.Scale(factor * More(get, slug));
         });
     }
+
+    static double More(Func<string, int> get, string type) =>
+        Math.Max(0, 1 + get("spell_damage_aura_spell_damage_+%_final") / 100.0)
+        * (type == "lightning" ? Math.Max(0, 1 + get("wrath_aura_spell_lightning_damage_+%_final") / 100.0) : 1);
 
     /// <summary>
     /// An attack's hit scaled by the skill's damage effectiveness (GrantedEffectStatSetsPerLevel DamageEffectiveness,
     /// permyriad): Flicker Strike's "Deals 77.3% of base Attack Damage" at level 1 is 7730. The weapon's hit already
     /// holds the increases, which multiply the base the same way, so scaling the total is the same as scaling the base
     /// first. 0 leaves the hit alone (the default attack has no effectiveness) and so does 10000. A spell's own base
-    /// damage is already final: its effectiveness only multiplies added damage, which is not modelled.
+    /// damage is already final: its effectiveness only multiplies added damage in Packet/Hit.
     /// </summary>
     public static GameServer.Core.World.DamagePacket WithEffectiveness(GameServer.Core.World.DamagePacket hit, int permyriad) =>
         permyriad is > 0 and not 10_000 ? hit.Scale(permyriad / 10_000.0) : hit;
