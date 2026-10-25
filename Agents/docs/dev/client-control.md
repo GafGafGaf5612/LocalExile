@@ -84,7 +84,10 @@ The bridge refuses a different executable path or code signatures. Addresses bel
 Live verified 2026-10-25: fresh `game:open`, login, actual level-100 OfflineWitch list, Play, return to selection, logout,
 wrong-password rejection, successful retry, Play again, and `/hit physical 1` received by the Gateway. In one persistent
 run: login 0.7–0.9 s, list 94 ms, Play 1.4–2.2 s, command submission 94 ms; timings include game frames and loading,
-and are observations rather than guarantees. Only the Witch class was exercised live. An attached bridge is for the
+and are observations rather than guarantees. Only the Witch class was exercised live.
+`tp` checked live 2026-10-25 in The Mud Flats (seed 1): after `/tp RhoaChest 2`, `/tp GlyphWall` and `/tp +10 +0` the
+client's own cell (Positioned +0x294/+0x298, as `scripts/re/frida/trace-player-drift.js` reads it) equalled the
+Gateway's `/pos` every time, and the `/pos`, `/tp list` and refusal replies came back in `replies`. An attached bridge is for the
 local development client; it has no official-service support.
 
 Checks: `node --check scripts/dev/client-control.js` and
