@@ -40,6 +40,14 @@ public static class InstanceWaypoints
     /// (0x140dce290, mode 0x56). 21-hideouts.md §4.</summary>
     public const byte MapDeviceUi = 5;
 
+    /// <summary>S→C 0x7b kind 0x33: instance +0x22f8 → HUD virtual +0x8e0 (0x140ddb5c0) → 0x140c3e600.
+    /// The first u32 is the CraftingBenchTypes row (0: ordinary bench, 1: runesmithing), not an object id.</summary>
+    public const byte CraftingBenchUi = 0x33;
+
+    /// <summary>Harvest crafting: 0x7b kind 0x39 -> instance +0x4ef8 -> HUD virtual +0xcc0
+    /// (PC 0x140dcee40, controller 0x140d8d750). Recipes are populated from HarvestCraftOptions.dat.</summary>
+    public const byte HorticraftingUi = 0x39;
+
     /// <summary>
     /// S→C 0x4c (class 0x1435dc7e0, read 0x14219f460; dispatcher case 0x12): u32 BE (+0x10, passed with the bitset to the
     /// listeners at instance +0x73f0), then 19 raw bytes (+0x14) copied to instance +0xcf31: bit i = the i-th WorldAreas

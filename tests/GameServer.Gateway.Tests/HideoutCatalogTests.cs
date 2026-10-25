@@ -5,6 +5,36 @@ namespace GameServer.Gateway.Tests;
 public class HideoutCatalogTests
 {
     [Fact]
+    public void All_template_rows_are_owned_including_high_mtx_rows_without_duplicates()
+    {
+        var campaign = new HideoutCatalog.Hideout(0, 1, "Campaign", 1, "Campaign", []);
+        var mtx = campaign with { Row = 102, AreaId = "MTX" };
+        Assert.Equal(new byte[] { 0, 102 }, HideoutCatalog.SelectableRows([mtx, campaign, mtx]));
+        Assert.Empty(HideoutCatalog.SelectableRows([]));
+    }
+    [Fact]
+    public void Crafting_bench_is_placed_left_of_guild_stash_with_its_original_appearance()
+    {
+        var bench = new HideoutCatalog.Doodad("Crafting Bench", 123, HideoutCatalog.CraftingBenchType,
+            "bench.ao", 251, 351, 1.5f, 2);
+        var hideout = new HideoutCatalog.Hideout(0, 1, HideoutCatalog.DefaultArea, 1, "Test", [bench]);
+        var placed = HideoutCatalog.BenchBesideGuild(hideout, 224, 358, (_, _) => true)!;
+        Assert.Equal(bench with { X = 212, Y = 370 }, placed);
+        Assert.False(HideoutCatalog.IsPlaced(placed)); // The bench must not become a map device/portal owner.
+    }
+
+    [Fact]
+    public void Crafting_bench_avoids_blocked_ground_and_does_not_spawn_without_a_template()
+    {
+        var bench = new HideoutCatalog.Doodad("Crafting Bench", 123, HideoutCatalog.CraftingBenchType,
+            null, 0, 0, 0, 0);
+        var hideout = new HideoutCatalog.Hideout(0, 1, "Test", 1, "Test", [bench]);
+        Assert.Equal((208, 374), HideoutCatalog.BenchBesideGuild(hideout, 224, 358, (x, _) => x <= 210) is { } p ? (p.X, p.Y) : default);
+        Assert.Null(HideoutCatalog.BenchBesideGuild(hideout, 224, 358, (_, _) => false));
+        Assert.Null(HideoutCatalog.BenchBesideGuild(hideout with { Doodads = [] }, 224, 358, null));
+    }
+
+    [Fact]
     public void Every_character_has_the_hideout_unlocked()
     {
         Assert.Contains("HideoutUnlocked", Quests.EveryCharacter);
@@ -53,6 +83,8 @@ public class HideoutCatalogTests
         Assert.Equal((230, 364), (lush.First(StashObject.MetadataPath)!.X, lush.First(StashObject.MetadataPath)!.Y));
         var device = lush.Doodads.Single(HideoutCatalog.IsPlaced);
         Assert.Equal(("Map Device", 257, 283), (device.Name, device.X, device.Y));   // moved from the decoration's (449, 460)
+        var bench = HideoutCatalog.BenchBesideGuild(lush, 224, 358, null)!;
+        Assert.Equal(("Crafting Bench", 212, 370), (bench.Name, bench.X, bench.Y));
     }
 
     static string? FindUp(string relative)

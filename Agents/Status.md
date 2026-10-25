@@ -1,9 +1,59 @@
 # Status
 
+Horticrafting Station: placed beside the ordinary bench in every selected hideout; interaction approaches and opens the native Harvest recipe browser (0x7b kind 0x39). Recipe execution/payment are not implemented. Automated coverage; station and window confirmed working in the real client. See protocol/21-hideouts.md.
+
+Ordinary crafting bench (2026-10-25, automated coverage; live client verification pending):
+all 765 active recipes and their 130 recipe flags are available. Exact modifiers, class masks,
+socket/link recipes, flask enchantments, replacement/removal and rare-affix rerolls are served.
+Payment combines main inventory and personal stash, including multiple tabs/currencies, and
+commits with the item atomically. Tests cover each recipe/class and failed-payment/save cases.
+See [21](docs/protocol/21-hideouts.md), Ordinary bench recipes and payment.
+
+Bench affordability correction: native bench counters exclude ordinary stash inventories.
+A separate, nonspendable currency-count view now publishes current personal stash totals on
+opening and refreshes after crafting, while actual main-inventory currency is counted once.
+Payment still uses only real items; large totals retain their full value. Automated checks pass;
+corrected live UI verification is pending. See [21](docs/protocol/21-hideouts.md), Bench affordability.
+
+Essence crafting (2026-10-25, automated verification; real-client use pending): all 105
+craftable essences resolve their exact class-specific guaranteed mod from Essences.dat,
+including tier-8 and Desolation. Normal/rare eligibility, random-mod level caps, fractures,
+metamod refusal and repeated consumption from the Essence tab are covered. Uses the
+existing currency path for ordinary and Shift application. See [13](docs/protocol/13-items.md).
+
+Remember Password now returns and verifies the official client's 32-byte saved-login credential
+in account login 0x03 / result 0x04. It survives server restarts, is device/account-bound and
+is invalidated by changing the password. Covered by protocol/session tests and confirmed working by the user in the real client. See [01](docs/protocol/01-login.md).
+
 Where the project stands. Last updated 2026-10-21, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
 What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in [docs/README.md](docs/README.md).
+
+Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows now publish
+`main_hand_weapon_type = 9`, required by the client's inventory gate; see [13](docs/protocol/13-items.md).
+
+Helena placement and hideout picker entry point (2026-10-25, awaiting client confirmation): Helena stands
+screen-right of Niko and Select Hideout opens the native window. All exported personal templates are owned; selection, transfer and persistence are implemented. See [21](docs/protocol/21-hideouts.md).
+
+Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art. A live check found
+that source-only buffs hid the top-left icons; source and received buff instances now coexist,
+restore and end together. Icon restoration awaits client confirmation. See [11](docs/protocol/11-skills.md) section 13.
+
+Ordinary aura expansion (2026-10-25, awaiting client confirmation): Determination, Grace, Discipline,
+Anger, Hatred, Wrath, Zealotry, Malevolence and Envy now activate with reservation and paired visual/HUD buffs.
+Armour/evasion, added hit damage, gain-as-cold, spell damage/crit and RF's more DoT are connected.
+Discipline's ES pool/recharge and conditional effects remain partial. Reservation overflow is refused.
+See [11](docs/protocol/11-skills.md) section 13.
+
+Hideout picker crash fix (2026-10-25, awaiting client confirmation): initialize the campaign
+unlock bitset with S→C 0x1f6 on area entry, before Helena can open the picker. Missing data
+caused the confirmed client access violation at 0x14216d8b7. See [21](docs/protocol/21-hideouts.md).
+
+Saved aura toggles (2026-10-25, awaiting client confirmation): active effects persist per character
+and restore on relog, area entry and server restart, subject to usable gems and available reservation.
+Helena's picker now receives all 103 exported personal hideouts, including MTX templates; switching
+templates now uses the native selection request and persists the chosen home. See [11](docs/protocol/11-skills.md) and [21](docs/protocol/21-hideouts.md).
 
 ## Works (verified with the real client)
 
@@ -193,8 +243,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
   Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their gem's level and quality effects and
   buff icons; their 3D effects (`affected_player.epk`, `faster_attack.epk` …) do not render yet.
-  The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
-  sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
+   The skill-bar active frame and rotating circle now receive the buff's skill id/action hash association
+   (0x1c1 bit3), including area-entry restoration; automated checks pass, live icon verification pending.
+   Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
   curse auras, Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield
   are not applied), Purity ailment immunity, Reservation
   masteries 1/2/6, supports, party/minion auras and life reservation
@@ -265,7 +316,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - Waypoint travel to a generated area without a `-Walkmaps` capture for its seed puts the player at an arbitrary cell
   (The Submerged Passage, seed 1); quest flags are derived from visited areas and waypoints, not from quests
   ([16](docs/protocol/16-waypoints.md) "Open").
-- Hideouts: no decorations (trees, tents …), editing does nothing, logins never start in the hideout, only the Lush Hideout ([21](docs/protocol/21-hideouts.md) "Open").
+- Hideouts: decorative trees/tents and editing are not implemented. Personal template selection, saved home login and functional furniture placement are implemented ([21](docs/protocol/21-hideouts.md)).
 - Map device: a map without a walk-map capture puts the player at an arbitrary cell (Beach is captured); the arena gates
   land next to their pair, not on the telepads; fragments add nothing; the portals look like player portals; the open map is lost on a
   Gateway restart ([21](docs/protocol/21-hideouts.md) §5, "Open").
@@ -292,6 +343,11 @@ guide.
 
 ## Doc caveats
 
+Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a
+16 ms elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are
+preserved. Implemented with regression tests; real-client visual verification after Gateway restart
+is pending. See [20](docs/protocol/20-damage.md), "Continuous resource updates".
+
 `docs/re/003`–`004` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`). Treat them as history, not reference.
 
 ## Jeweller's Orb (2026-10-21)
@@ -303,3 +359,37 @@ capacity blocks further use. Local counts are 1/2/3/4/6. Probabilities are appro
 
 PR branch validation: build succeeded with zero warnings/errors; Core 307, Data 15, Gateway 210 tests passed.
 Gateway test artifacts were placed in the local workspace so the existing extracted data could be read.
+
+## Cyclone area of effect (2026-10-25)
+
+`/set_aoe` now resends Cyclone's calculated final radius in the skill record, using the same radius
+calculation for server hits. Cyclone/CycloneAltX use a 16-cell base when their exported stat set has
+none. Spell-only area does not affect the attack. Tested calculations; live visual check pending.
+The first live check found that direct radius alone did not scale the channelled visual; its
+conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
+Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
+
+## Hideout crafting bench placement (2026-10-25)
+
+Personal hideout selection now handles the native 0x254 request, saves the selected WorldAreas Id
+per character and transfers immediately. Auth uses the saved choice on login; world-panel travel,
+`/hideout` and map return portals use the same home. Functional furniture and all four NPCs are
+placed on the selected template's floor. Selection decoding, persistence and placement have
+automated coverage; the new transfer and reconnect path awaits user verification in the client.
+
+The standard bench spawns to the left of the guild stash in hideouts, using the existing
+decoration's model and a walkable placement (placement confirmed in the real client).
+Clicking it now walks into interaction range and sends 0x7b kind 0x33, type 0 to open the ordinary
+crafting window. Automated checks cover the wire format; a live window-opening check is pending.
+Recipe unlocks and applying crafts are now implemented; see protocol/21-hideouts.md.
+
+## Cyclone area of effect (2026-10-25)
+
+`/set_aoe` now resends Cyclone's calculated final radius in the skill record, using the same radius
+calculation for server hits. Cyclone/CycloneAltX use a 16-cell base when their exported stat set has
+none. Spell-only area does not affect the attack. Tested calculations; live visual check pending.
+The first live check found that direct radius alone did not scale the channelled visual; its
+conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
+Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
+
+- Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.

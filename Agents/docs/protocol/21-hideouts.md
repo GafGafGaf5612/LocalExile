@@ -22,6 +22,26 @@ sequenceDiagram
 
 ## 1. Unlocking: flags and keys
 
+**All personal templates (2026-10-25).** Every exported Hideouts row is available on the local server
+(103 templates in this client; all have personal eligibility enabled), including UnlockMtx templates.
+0x1f6 sets the campaign unlock bits and the personal 0x1f5 response includes every exported row,
+so MTX entries also pass the purchased-list check. The lists are derived from HideoutCatalog, not a
+hard-coded count or byte range. This expands the picker; changing and persisting its selected template
+remains unimplemented. Guild ownership is unchanged.
+
+### Campaign unlock mask required by the picker (2026-10-25)
+
+S→C **0x1f6** (class 0x1435c0758, writer 0x141f9e5c0) is exactly 16 raw bytes after the
+message id: bit `row` unlocks that Hideouts.dat row (LSB first, zero-based). It is separate from
+0x1f5's purchased-hideout list. Dispatcher case 0x95 at 0x142151d47 allocates a bit vector of
+the Hideouts table's size, copies the corresponding mask bits and marks it initialized.
+Without this packet the picker calls `0x14216d800` with a null vector at session +0xcdf0;
+Windows recorded access violation **0x14216d8b7** on opening Helena's selector.
+SendPlayer now sends the fixed mask before the player object, in every area, with the default
+hideout unlocked. This also covers client-side opens that do not send an NPC option request.
+The mask encoder tests cover empty input, byte/word boundaries, the highest bit and invalid rows.
+Live picker confirmation is pending; choosing/persisting another template remains separate work.
+
 | What | Where | Value |
 |---|---|---|
 | quest flag `HideoutUnlocked` | QuestFlags row 2030, Player +0x1b8 | every character (`Quests.EveryCharacter`, added on login, not saved) |
@@ -214,6 +234,15 @@ town (the way back), and the portal staying after the player leaves the area.
 
 ## Open
 
+Helena (2026-10-25, client verification pending) is placed at (270,337), screen-right of Niko,
+using `Metadata/NPC/Missions/Hideout/Helena` (NPCs row 342). Her own NPCTalk option 2,
+category `SelectHideout`, requires ThisIsMyHideout and HaveHideout, already supplied in hideouts.
+The handler closes dialogue with 0x84 object 0 and opens UI 0x7b kind **0x22**, argument 0
+(HideoutSelectionWindow in the native screen table 0x142fc5920; argument 1 is guild mode).
+The owned-hideouts response 0x1f5 now lists the default Lush Hideout rather than an empty list.
+The owned list now includes all exported personal templates, including MTX.
+Selection is implemented as described below.
+
 - The decorations (trees, tents …): `Metadata/MiscellaneousObjects/HideoutDoodad` and other types, each with its own
   component list; `HideoutObject` writes the supported ones.
 - Editing: the Edit button shows; moving, placing and saving doodads (the client's messages) are not served.
@@ -221,6 +250,133 @@ town (the way back), and the portal staying after the player leaves the area.
   map), the telepads' exact cells, fragments and device recipes (MapDeviceRecipes), the map's mods and area level, the map
   device type (3) portal's own model and "Map Portal" text (needs its open transition, which crashed), the window's
   u16 target and the 0x008f fields left at 0.
-- Logging in to the hideout after logging out there (the real game does); Resurrect in a map → the hideout.
-- Choosing another hideout (the Hideout selection window), visiting other players' hideouts (0x17a names them).
+- Resurrect in a map → the hideout.
+- Visiting other players' hideouts (0x17a names them).
 - Which UI reads the second Hideouts key.
+
+## Crafting bench placement (2026-10-25)
+
+After spawning a hideout's guild stash, the Gateway creates the standard HideoutCraftingBench
+from that hideout's existing decoration template. The original Mtx hash, variation and rotation
+are preserved. Placement is relative to the guild stash: grid offset (-12,+12), with nearby
+screen-left alternatives if its 5x5 footprint is blocked. It receives 0x2b9, 0x1a9 and a walk blocker.
+The bench is deliberately separate from the map-device dictionary, so portal creation and map
+activation still target only the map device. Towns and the Mine Encampment do not get this bench.
+No generated game-data format changes are needed. Placement was confirmed in the real client.
+
+The connection retains the bench's object id and grid position separately from map devices.
+C→S 0x24 on that id walks up to the bench; movement cancelling the approach, a closed connection
+or an unreachable stopping point prevents opening. Once in range, S→C 0x7b **kind 0x33, first
+u32 = 0**, remaining u32s zero, opens the ordinary crafting window. The first u32 is a
+CraftingBenchTypes row, **not the object's id** (row 1 selects runesmithing).
+
+Client trace: `0x142163420` case 0x33 dispatches to instance +0x22f8; HUD registration
+`0x140dbcd40` uses thunk `0x140dae898`, which calls virtual +0x8e0, `0x140ddb5c0`.
+That forwards the bench type to `0x140c3e600`, opening the window at HUD +0x880
+(constructor `0x140c3b650`). Its item control binds to inventory row 16 in `0x140c3e1c0`;
+the Gateway already registers this row with the other player inventories on entry.
+`0x140c45830` selects the bench's visual skin from the placed hideout decoration, falling back
+to Default. UI kind 0x65 is for dynamic benches and is not the ordinary hideout bench.
+
+The opening packet is covered by an automated test; live window opening awaits a reconnect.
+Recipe unlocks and applying craft requests are implemented below.
+
+## Ordinary bench recipes and payment (2026-10-25)
+
+`BenchCrafting` loads all **765 active ordinary recipes** from CraftingBenchOptions, excluding
+disabled and area/map-device rows. Class eligibility comes from explicit ItemClasses or the
+CraftingItemClassCategories union. Exact crafted Mods.dat keys (domain 9), enchantments and
+multi-currency costs come directly from the client tables. No hand-written list of craft values
+is used. The recipe rows' 130 distinct RecipeIds are league quest flags: unlock tests in
+0x140c4c720 read the local Player component +0x1d0 with flag id minus one. Every connection
+publishes those flags with the player, making all active recipes available on this local server.
+
+The craft button (0x140c40720) sends **C→S 0x15d**, exactly four bytes. Serializer
+0x141f9b2e0 writes u16 message id and u16 recipe row, both big-endian; bit 15 of the row
+confirms replacing an existing crafted modifier. The target is the one item in Inventories row
+16, StrMasterCrafting (inventory id 17). Requests are served after opening the bench in a hideout.
+
+Supported operations: add/replace crafted prefixes and suffixes; the three-crafted-modifier
+metamod and additional-crafted-mod enchantments; remove crafted mods; add/remove flask
+enchantments; exact socket count and link count; non-white socket recipes; rarity reroll; and
+one/three-affix rare-item rerolls. Affix slots and conflicting mod families are checked. Magic
+items have one prefix/suffix slot, rare equipment three; normal items become magic when a
+mod is crafted. Replacement needs confirmation and one extra Orb of Scouring. Unidentified,
+unique, fractured and protected items are checked according to the requested operation.
+Socket crafts bypass item-level socket caps but respect base capacity; occupied sockets are
+never discarded. Corrupted socket crafts add the same number of Vaal Orbs as the base cost.
+Mirrored items are never modified. Rare-affix rerolls preserve fractured/protected mods and
+respect Cannot roll Attack/Caster via the Mods.dat TagsKeys. Random affix/rarity probabilities
+use the existing server rolling model; these distributions are not reverse-engineered official odds.
+
+`ItemMoves.CraftAtBench` validates the item and **all** currency totals before its first write,
+then pays from the main inventory first and the remainder from any personal stash tabs. The
+item and every payment commit in one Saves transaction. A missing currency or invalid recipe
+does not spend anything; save failures roll back both sources and target. The existing stash
+currency preloading on area entry feeds vendor prices, but does not suffice for the bench
+affordability UI (see the balance correction below). Each payment sends inventory changes and updates the loaded stash tabs; the crafted
+item is removed/re-added with the same id via 0xbf. Guild stash currency is not used.
+
+Tests cover every recipe against supported item classes, raw-table costs/class masks/unlocks,
+rolled values, confirmation and extra scouring, multiple sources/tabs/currencies, insufficient
+funds, save rollback, multimod/affix caps, protected prefixes, and corrupted socket costs/gems.
+After Gateway restart, client validation still requires opening the bench, crafting and checking
+the wallet/item result; automated tests do not substitute for that live UI check.
+
+### Bench affordability: personal stash balance (2026-10-25)
+
+Live report: recipe costs stayed red despite sufficient stash currency, and no 0x15d request
+was sent. The bench uses its own currency counter: 0x140c3aa80 checks cached counts at
+counter +0x110; inventory filter 0x140c3b490 rejects equipment/read-only inventories and
+ordinary stash kind **0x11**, while accepting currency-count kind **0x12**. Thus loading
+real stash inventories for vendors did not initialize the bench's balance.
+
+`BenchBalance` builds a client-only view of current personal stash totals for every recipe
+currency, including replacement Scouring and corrupted-socket Vaal costs. It is sent before
+opening the bench using 0xc0, inventory id 0xfffffe00, kind 0x12, row 26. Row 26 deliberately
+does not overwrite the native manager's fixed inventory-slot lookup (0x141d625f0). The
+ordinary 0x1421f4cc0 reader/0x1421edc10 constructor supports this kind; no client files change.
+The view includes **stash only**: the native counter already counts actual main-inventory
+currency. Large totals are split into 16-bit stacks without changing their sum.
+
+Opening again rebuilds current totals. Each successful craft and a refused request refresh
+the view with 0xbf, removing old display entries before adding the new ones. Opening the
+personal stash or an NPC shop clears it, avoiding duplicate counts in other windows.
+Display ids are never saved, never added to real inventories, and their inventory id resolves
+to neither a character row nor a stash tab; requests to move/spend those display entries
+cannot touch the real wallet. Payment continues to use real stash/inventory data atomically.
+
+Tests check the wire inventory kind/id/flags, multiple-tab totals plus main inventory without
+double counting, depletion after payment, exclusion from actual inventory routing, and totals
+above 65535. This is an automated/native-code verification; the corrected affordability UI
+still needs a live reconnect/open/craft check.
+
+## Selecting and retaining a personal hideout (2026-10-25)
+
+The Choose button sends C→S **0x254**, followed by one big-endian u16: low 15 bits are the
+Hideouts row index, bit 15 is guild mode. Native sender: 0x140bbae90; serializer: 0x141f9d070.
+Captured personal selection `0254001D` selects row 29. The Gateway frames all four bytes,
+rejects unknown rows and guild requests, saves `SelectedHideout` as a stable WorldAreas Id,
+updates the player's Hideouts component and uses the normal acknowledged area-transfer path.
+Selecting the current template keeps the character in place.
+
+Auth reads the shared character save on each login and enters the selected home directly;
+characters without a saved choice retain last-town login. `/hideout`, world-panel travel,
+map return portals and the player's hideout key all resolve the same saved choice.
+Entry uses the selected template's waypoint and fixed seed 1.
+
+`HideoutScene` recreates personal/guild stashes, crafting bench, map device, Nessa, Niko,
+Helena and Kirac on the destination floor. It retains decoration appearance, translates NPC
+positions relative to the new waypoint, and searches for nonoverlapping walkable footprints.
+The default template supplies missing functional furniture. Arbitrary decorative objects and
+interactive decoration editing remain outside this implementation. Automated coverage checks
+selection bytes, persisted choice and placement; final client verification requires selecting
+a different template and reconnecting after restarting both Auth and Gateway.
+
+### Horticrafting Station (recipe browser only)
+
+HideoutScene places `Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout` beside the ordinary bench on clear floor in every selected hideout. The object has Positioned (blocking size 8), BaseEvents, Animated, MinimapIcon and InteractionAction, with no HideoutDoodad or StateMachine payload. Its built-in Animated model is harvest_workbench.ao. The Gateway registers a blocker and handles its 0x24 interaction separately from the ordinary bench.
+
+After walking within range, send `0x7b` kind **0x39**, four zero u32s. Native dispatcher 0x142163420 uses instance +0x4ef8; HUD callback LAB_140dae88c invokes virtual +0xcc0, PC 0x140dcee40 (window +0x8b0) / controller 0x140d8d750 (window +0x4a8). This differs from 0x33 ordinary crafting and 0x45 Sanctum.
+
+The native Harvest panel builds the complete recipe list from HarvestCraftOptions.dat (0x14048dd00), with its own search/filter, current game-mode filtering and localized descriptions/costs. No ordinary bench unlock flags or server-manufactured recipe list are needed. HarvestCraftingItem (Inventories row 43) is already registered with the player's defaults. This step only opens the browser: Harvest execution and lifeforce payment are not implemented. Station placement and native window opening were confirmed in the real client.

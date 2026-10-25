@@ -206,3 +206,22 @@ start kit.
 - Meanings of most 0x15 / 0x1b fields, and the result-code mapping onto BackendErrors (row 4 AccountDoesNotExist,
   row 5 InvalidPassword: whether it is direct or code−1 is not verified).
 - The other login paths (0x05 token, 0x06/0x07 ticket/Steam, 0x2c Epic) are decoded but not answered.
+
+## Remember Password (2026-10-25)
+
+This uses account login **0x03**, not Steam's binary-token message 0x05.
+`Flag94` requests remembering login; `Flag95` means the 32-byte PasswordDigest field contains
+the saved credential from S→C 0x04 Digest. Native 0x140d05f70 sets both flags for a saved
+login and only Flag94 for typed-password login with Remember Password checked.
+On success 0x140d07950 passes the response digest to 0x140d04250, which saves a nonzero
+32-byte value through 0x140cfc0f0. Returning zeros never establishes a usable saved login.
+
+The server returns an HMAC-SHA256 credential when Flag94 is set, bound to the account id,
+both machine identifiers and a versioned domain, keyed with the account's stored password
+verifier. Flag95 selects constant-time verification of that credential instead of password
+digest verification. No plaintext password or additional database table is needed; the existing
+persisted account verifier supports restart and password changes invalidate old credentials.
+Credentials are redacted from outgoing Auth logs as well as incoming login requests.
+Tests cover remembered login after a new AccountService, account/device mismatches, invalid
+credentials, unchecked Remember Password and password changes. First use after this fix needs
+one typed-password login with Remember Password checked to replace the old zero credential.

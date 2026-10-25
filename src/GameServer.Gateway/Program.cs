@@ -184,7 +184,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
             var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), InstanceNumber = instanceId, LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
             left = conn;
             conn.Commands = Commands(remote, stream, ciphers, conn);
-            conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _);
+            conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _) || HideoutCatalog.ByArea(layout.Hash) is not null;
             conn.ArriveAt = SpotArrivals.TryRemove(ticket, out var spot) ? spot : null;
             PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
             // Load the items now: a new character's start kit is built only while it has no save, and the save is written
@@ -207,7 +207,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
                     (fixedLevel.Ok ? "" : $"; not saved to the account: {fixedLevel.Error}"));
             }
             conn.PlayerLife = conn.PlayerMaxLife;
-            conn.PlayerMana = conn.Pools.Mana;
+            conn.PlayerMana = (uint)UnreservedMana(conn);
             Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}, attack speed +{conn.Pools.AttackSpeedPct}%), league {conn.League ?? "?"}");
             // The read loop answers ticks; everything else runs in order on the handler task (ClientInbox, issue #46).
             var inbox = new ClientInbox();
@@ -666,6 +666,10 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             Console.WriteLine($"[gateway] {remote} <= 0x00d1 stash tab into a folder (not handled): {Convert.ToHexString(bytes)}");
         else if (id == InstanceNpcs.OptionId)
             await ChooseNpcOption(remote, stream, ciphers, conn, InstanceNpcs.ReadOption(bytes));
+        else if (id == InstanceHideouts.SelectId)
+            await SelectHideout(remote, stream, ciphers, conn, InstanceHideouts.ReadSelect(bytes));
+        else if (id == InstanceBench.CraftId)
+            await CraftBench(remote, stream, ciphers, conn, InstanceBench.ReadCraft(bytes));
         else if (id == InstanceChat.ChatId)
         {
             var chat = InstanceChat.ReadChat(bytes);
@@ -752,7 +756,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 _ = RunServerFrames(remote, stream, ciphers, conn);
                 _ = RunMonsterAi(remote, stream, ciphers, conn);
                 _ = RunPlayerTick(remote, stream, ciphers, conn);
-                _ = RunFlaskRecovery(remote, stream, ciphers, conn);
+                _ = RunResourceRecovery(remote, stream, ciphers, conn);
             }
         }
     }
@@ -967,6 +971,16 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
         await OpenGuildStash(remote, stream, ciphers, conn, use);
         return;
     }
+    if (conn.CraftingBenchObject != 0 && use.TargetId == conn.CraftingBenchObject)
+    {
+        await OpenCraftingBench(remote, stream, ciphers, conn, use);
+        return;
+    }
+    if (conn.HorticraftingObject != 0 && use.TargetId == conn.HorticraftingObject)
+    {
+        await OpenHorticrafting(remote, stream, ciphers, conn);
+        return;
+    }
     var (_, transition) = conn.Layout.AreaTransitions.FirstOrDefault(e => e.Id == use.TargetId);
     if (transition is null)
     {
@@ -1059,7 +1073,7 @@ static async Task SpawnNpc(string remote, NetworkStream stream, ConnectionCipher
 // The town's NPCs (NpcCatalog.In) at their cells.
 static async Task SpawnTownNpcs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    var placements = NpcCatalog.In(conn.Layout.Hash);
+    var placements = HideoutFurniture(conn)?.Npcs ?? NpcCatalog.In(conn.Layout.Hash);
     if (placements.Count == 0 || Environment.GetEnvironmentVariable("Game_NPCS") == "0") return;
     if (Npcs.Value.Error is { } error) { Console.WriteLine($"[gateway] {remote} npcs: {error}"); return; }
     foreach (var p in placements)
@@ -1117,6 +1131,13 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
     if (talk is null) return;
     switch (talk.Category)
     {
+        case "SelectHideout":
+            conn.InNpcTalk = false;
+            conn.TalkingTo = 0;
+            await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 close NPC dialogue for hideout selection");
+            await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.HideoutSelectionUi,
+                talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
+            break;
         case "Gossip" or "Quests" or "QuestReward" when talk.TextAudio.Count > 0:
             // 0x84 with the row's index: the client opens the dialogue window on that NPCTalk row (its text and audio).
             conn.InNpcTalk = true;
@@ -1432,6 +1453,8 @@ static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCip
 // Purchase Items: the NPC's stock as one shop tab (S→C 0xc0, inventory manager 1), then S→C 0x8c opens the buy window on it.
 static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint npcObject, SpawnedNpc npc)
 {
+    await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
+    conn.BenchOpen = false;
     if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
     var notes = new List<string>();
     var items = ItemsOf(conn);
@@ -1633,7 +1656,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     }
     int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
     var player = CharacterPlayerStats(conn);
-    var hit = weapon.HitDamage(player)
+    var hit = AttackHit(weapon, player)
         .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
     // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
     // hits, and the hit's own physical damage may store a new stack for the hits after it.
@@ -1874,9 +1897,9 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
         else
         {
             var aura = new AuraCatalog.Aura(skillId, effect, effectId, name, conn.NextBuff++,
-                AuraCatalog.BuffRow(effectId), reservation.Flat, reservation.Percent, level, quality);
+                AuraCatalog.BuffRow(effectId), reservation.Flat, reservation.Percent, level, quality, SourceBuff: conn.NextBuff++);
             conn.Auras[skillId] = aura;
-            int reserved = AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
+            int reserved = AuraCatalog.RequiredMana(conn.Pools, conn.Auras.Values);
             if (reserved > conn.Pools.Mana)
             {
                 conn.Auras.Remove(skillId);
@@ -1891,21 +1914,26 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
         conn.ApplyMovementSpeed();
     }
 
+    CharacterSaves.SetAuraActive(CharacterName(conn), effectId, started is not null);
     if (ended is not null)
     {
-        await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, ended.Buff),
-            $"0x01c2 player buff {ended.Buff}: {ended.Name} ends");
+        foreach (var packet in AuraCatalog.EndPackets(ended, PlayerId))
+            await Send(remote, stream, ciphers, packet,
+                $"0x01c2 player aura {ended.Name} ends");
     }
     if (started is not null)
     {
-        await Send(remote, stream, ciphers,
-            InstanceEntities.AddBuff(PlayerId, started.Buff, started.BuffRow, PlayerId, started.SkillId),
-            $"0x01c1 player buff {started.Buff}: {started.Name} (BuffDefinitions row {started.BuffRow})");
+        foreach (var packet in AuraBuffs(started))
+            await Send(remote, stream, ciphers, packet,
+                $"0x01c1 player aura {started.Name} (BuffDefinitions row {started.BuffRow})");
     }
     await SendCharacterStats(remote, stream, ciphers, conn, started is not null ? $"aura {name} on" : $"aura {ended!.Name} off");
     await SendPlayerMana(remote, stream, ciphers, conn,
         $"0x01b1 player mana {conn.PlayerMana}/{conn.Pools.Mana}, {ReservedMana(conn)} reserved");
 }
+
+static IEnumerable<byte[]> AuraBuffs(AuraCatalog.Aura aura) =>
+    AuraCatalog.StartPackets(aura, PlayerId, Skills.ActionHash(aura.Effect));
 
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
 // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
@@ -1939,7 +1967,7 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         foreach (var (k, v) in Skills.EffectStats(gem.Effect, gem.Level, gem.Quality)) stats[k] = v;
         var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, gem.Level, gem.Quality),
-                name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
+                name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0, AddedEffectiveness(gem.Effect, gem.Level))
             .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false));
         int damage = hit.RollTotal(Random.Shared);
         bool critical = conn.Pools.SpellCriticalStrikeChance > 0
@@ -1950,16 +1978,14 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
 }
 
 // The radius in cells of a gem skill's hit around its aimed point (AreaSkillHit): its own
-// active_skill_base_area_of_effect_radius, else 12, grown by the player's area of effect stats under the skill's own
+// active_skill_base_area_of_effect_radius, else Cyclone's 16 or the generic 12, grown by the player's area stats
 // (SkillArea). The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23).
-static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell)
+static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell, int effect)
 {
-    const int AreaSkillRadius = 12;
-    int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
     var areaStats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
     foreach (var (k, v) in skillStats) areaStats[k] = v;
-    return SkillArea.Radius(Stat("active_skill_base_area_of_effect_radius") is int r and > 0 ? r : AreaSkillRadius,
-        name => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0, spell);
+    int Get(string name) => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0;
+    return SkillArea.Radius(SkillArea.BaseRadius(Skills.EffectId(effect), Get), Get, spell);
 }
 
 // Whether a living monster stands within a gem attack's hit radius of a ground point. The client sends a point with a
@@ -1968,7 +1994,7 @@ static bool MonsterAtAim(ClientState conn, (ushort Id, int Effect, string Name, 
     int x, int y, double at)
 {
     var stats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-    int radius = SkillRadius(conn, stats, spell: false);
+    int radius = SkillRadius(conn, stats, spell: false, gem.Effect);
     lock (conn.Monsters)
         return conn.Monsters.Any(m => !m.Value.Dead && m.Value.Life > 0
             && Dist(m.Value.Walk.Position(at), (x, y)) <= radius);
@@ -1995,7 +2021,7 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     var weapon = WeaponFor(conn);
     double delay;
     lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0 : AttackContactDelay(conn, weapon);
-    int radius = SkillRadius(conn, skillStats, spell);
+    int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
     // A melee skill aimed far away still lands in front of the player.
     var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
     int action = conn.ActionCount;
@@ -2016,9 +2042,9 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     foreach (var (id, m) in targets)
     {
         DamagePacket hit = spell
-            ? SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0)
+            ? SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0, AddedEffectiveness(gem.Effect, gem.Level))
                 .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false))
-            : SpellDamage.WithEffectiveness(weapon.HitDamage(player), effectiveness)
+            : SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
                 .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true));
         int damage = hit.RollTotal(Random.Shared);
         int chance = spell ? conn.Pools.SpellCriticalStrikeChance : conn.Pools.AttackCriticalStrikeChance;
@@ -2263,7 +2289,14 @@ static List<(uint, int)> PlayerStatsWithCleared(ClientState conn)
 static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
-    foreach (var (k, v) in WeaponFor(conn).Stats(stats)) stats[k] = v;
+    // Quivers are gated by main_hand_weapon_type on the client, independently of the model's weapon stance. Only the
+    // bow's value is known, so other weapons send nothing (a value /set_stat set stays); taking the bow off clears the
+    // 9 sent before through PlayerStatsWithCleared.
+    var mainHand = ActiveMainHand(conn);
+    if (Stats.Key("main_hand_weapon_type") is uint weaponTypeKey && WeaponTypeStats.BowType(mainHand?.Type?.Class) is int bowType)
+        stats.TryAdd(weaponTypeKey, bowType);
+    var weapon = WeaponOf(conn, mainHand);
+    foreach (var (k, v) in weapon.Stats(stats, AttackHit(weapon, stats).Convert(DamageStats.Conversion(stats, Stats, attack: true)))) stats[k] = v;
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     return stats.Select(kv => (kv.Key, kv.Value));
 }
@@ -2294,7 +2327,7 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
     // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
     if (Stats.Key("skill_uses_main_hand") is uint usesMainHand && !devSet.Contains(usesMainHand)) stats[usesMainHand] = 1;
-    var attack = WeaponFor(conn).HitDamage(stats);
+    var attack = AttackHit(WeaponFor(conn), stats);
     foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The conditions as they are now; the player tick sends the chance again when they change.
@@ -2305,6 +2338,11 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
 
 // Conversion for one hit: the player's stats plus the skill's own stats (base/skill conversion). Player stats win on
 // a key collision; the normal case is that the skill adds stats the player does not have.
+static DamagePacket AttackHit(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats) =>
+    DamageStats.Added(weapon.HitDamage(stats), name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0, spell: false);
+
+static double AddedEffectiveness(int effect, int level) => Skills.DamageEffectiveness(effect, level) is int value and > 0 ? value / 10000.0 : 1;
+
 static GameServer.Core.World.DamageConversion ConversionFor(ClientState conn, int effectRow, int level, bool attack)
 {
     var stats = CharacterPlayerStats(conn);
@@ -2440,7 +2478,23 @@ static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint,
         // A spell's tooltip DPS is its own hit (SpellDamage) × casts per second, not the default attack's values that
         // came with the player's stats.
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
-        if (SpellDamage.Hit(Get) is { Max: > 0 } hit && Get("hundred_times_casts_per_second") is int cps and > 0)
+        // Cyclone's client effect reads the final radius, not the increased-area input. Match AreaSkillHit.
+        if (SkillArea.IsCyclone(Skills.EffectId(effect)))
+        {
+            int baseRadius = SkillArea.BaseRadius(Skills.EffectId(effect), Get);
+            int increased = SkillArea.Increased(Get, spell: false);
+            int radiusPercent = SkillArea.RadiusPercent(Get, spell: false);
+            int radius = SkillArea.Radius(baseRadius, Get, spell: false);
+            if (Stats.Key("active_skill_base_area_of_effect_radius") is uint baseKey) stats[baseKey] = baseRadius;
+            if (Stats.Key("active_skill_area_of_effect_radius") is uint radiusKey)
+                stats[radiusKey] = radius;
+            // Channelled Cyclone's conditional-radius path reads these derived stats instead of 0x4876.
+            // Compute them before writing skill_area_of_effect_+%, or the base increase would count twice.
+            if (Stats.Key("total_skill_area_of_effect_radius_+%_including_final") is uint scaleKey) stats[scaleKey] = radiusPercent;
+            if (Stats.Key("skill_area_of_effect_+%") is uint areaKey) stats[areaKey] = increased;
+            Console.WriteLine($"[gateway] Cyclone area: base {baseRadius}, radius {radius}, increased area {increased}%, radius scale {radiusPercent}%");
+        }
+        if (SpellDamage.Hit(Get, AddedEffectiveness(effect, level)) is { Max: > 0 } hit && Get("hundred_times_casts_per_second") is int cps and > 0)
         {
             var (perUse, perSecond) = SpellDamage.Display(hit, cps / 100.0);
             stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = perUse;
@@ -2680,7 +2734,11 @@ static async Task EndSkillEffects(string remote, NetworkStream stream, Connectio
         }
     }
     foreach (var aura in ended)
-        await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, aura.Buff), $"0x01c2 player buff {aura.Buff}: {aura.Name} ends (its gem left)");
+    {
+        CharacterSaves.SetAuraActive(CharacterName(conn), aura.EffectId, false);
+        foreach (var packet in AuraCatalog.EndPackets(aura, PlayerId))
+            await Send(remote, stream, ciphers, packet, $"0x01c2 player aura {aura.Name} ends (its gem left)");
+    }
     if (ended.Count > 0)
     {
         await SendCharacterStats(remote, stream, ciphers, conn, $"aura {string.Join(", ", ended.Select(a => a.Name))} off (gem left)");
@@ -2725,6 +2783,20 @@ static int LoadProgress(ClientState conn, int level)
             && Passives.FindEffect(kv.Value) is { } effect && Passives.IsEffectFor(kv.Key, effect))
             .ToDictionary(kv => kv.Key, kv => kv.Value);
         conn.Pools = PoolsFor(conn, level);
+        // Resolve saved effects against today's usable gems; connection-local skill/buff ids are rebuilt.
+        var candidates = new List<AuraCatalog.Aura>();
+        foreach (var gem in GemSkillEffects(conn.Character))
+            if (Skills.EffectId(gem.Effect) is { } effect && AuraCatalog.Supported(effect)
+                && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
+                candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
+                    reservation.Flat, reservation.Percent, gem.Level, gem.Quality, SourceBuff: conn.NextBuff++));
+        foreach (var aura in AuraCatalog.Restore(save?.ActiveAuras ?? [], candidates, conn.Pools))
+            conn.Auras[aura.SkillId] = aura;
+        if (conn.Auras.Count > 0)
+        {
+            conn.Pools = PoolsFor(conn, level);
+            Console.WriteLine($"[gateway] {CharacterName(conn)}: restored saved auras: {string.Join(", ", conn.Auras.Values.Select(a => a.EffectId))}");
+        }
         conn.ApplyMovementSpeed();
     }
     return level;
@@ -2793,6 +2865,10 @@ static CharacterStats.Pools PoolsFor(ClientState conn, int level)
         LightningMaxResistance = bonus.LightningMaxResistance + aura.LightningMaxResistance,
         ChaosMaxResistance = bonus.ChaosMaxResistance + aura.ChaosMaxResistance,
         Accuracy = bonus.Accuracy + aura.Accuracy,
+        Armour = bonus.Armour + aura.Armour,
+        Evasion = bonus.Evasion + aura.Evasion,
+        ArmourMorePct = aura.ArmourMorePct,
+        EvasionMorePct = aura.EvasionMorePct,
         CriticalStrikeChancePct = bonus.CriticalStrikeChancePct + aura.CriticalStrikeChancePct,
         SpellCriticalStrikeChancePct = bonus.SpellCriticalStrikeChancePct + aura.SpellCriticalStrikeChancePct,
         AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
@@ -3471,58 +3547,26 @@ static async Task EndRighteousFire(string remote, NetworkStream stream, Connecti
         await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(monster, buff), null);
 }
 
-// The player's own tick (PlayerTickMs): life regeneration and Righteous Fire's burning, on the player and on the enemies
-// around it. Life changes are sent with 0x1b1; monsters killed by the fire die as from a hit (MonsterKilled).
+// The slower player tick: RF on nearby enemies, suppression conditions, waypoints, auto-loot and quests.
+// Continuous player pool changes are handled by RunResourceRecovery instead.
 static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    double carry = 0, manaCarry = 0;   // fractions of life and mana between ticks
-    int suppression = Suppression(conn).Chance;   // the panel's Spell Suppression chance as of the last tick
+    double last = conn.Clock.Elapsed.TotalSeconds;
+    int suppression = Suppression(conn).Chance;
     while (!conn.Closed)
     {
         await Task.Delay(PlayerTickMs);
         if (conn.Closed) break;
-        if (conn.Paused) continue;
-        double seconds = PlayerTickMs / 1000.0;
-        double regen = LifeRegenPerSecond(conn) * seconds;
+        double tickNow = conn.Clock.Elapsed.TotalSeconds;
+        double seconds = tickNow - last;
+        last = tickNow;
+        if (conn.Paused || seconds <= 0) continue;
         var rf = conn.RighteousFire;
-        uint before, after;
-        bool dead;
-        lock (conn.Monsters)
+        if (conn.PlayerLife == 0)
         {
-            before = conn.PlayerLife;
-            dead = before == 0;
-            double burnPerSecond = rf is null ? 0 : conn.PlayerMaxLife * rf.BurnPctPerMinute / 6000.0;
-            var burnDot = new DamageOverTime(DamageType.Fire, burnPerSecond, seconds);
-            double burn = DamageModel.Mitigate(burnDot.TotalRemainingDamage,
-                Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
-            double change = carry + regen - burn;
-            int whole = (int)Math.Truncate(change);
-            carry = change - whole;
-            // The burn is nonlethal: it stops at 1 life.
-            after = dead ? 0 : (uint)Math.Clamp((long)before + whole, Math.Min(1, before), conn.PlayerMaxLife);
-            if (!dead) conn.PlayerLife = after;
-            if (after == conn.PlayerMaxLife && carry > 0) carry = 0;
-        }
-        if (dead)
-        {
-            carry = 0;
             if (rf is not null) await EndRighteousFire(remote, stream, ciphers, conn, "death");
             continue;
         }
-        if (after != before) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, after), null);
-        uint manaBefore, manaAfter, manaCap;
-        double manaRegen = ManaRegenPerSecond(conn) * seconds;
-        lock (conn.Monsters)
-        {
-            manaBefore = conn.PlayerMana;
-            double change = manaCarry + manaRegen;
-            int whole = (int)Math.Truncate(change);
-            manaCarry = change - whole;
-            manaCap = (uint)UnreservedMana(conn);
-            conn.PlayerMana = manaAfter = (uint)Math.Clamp((long)manaBefore + whole, 0, manaCap);
-            if (manaAfter == manaCap) manaCarry = 0;
-        }
-        if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
         if (rf is not null) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
         // The character panel's Spell Suppression chance again (0x1b3 with only its stats) when a condition changed
         // it: full life lost or regained, a walk started or ended, an enemy hit 4 s ago.
@@ -3552,21 +3596,29 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
     }
 }
 
-// The flasks' recovery, apart from the player tick so the orb fills smoothly: while a flask recovers, every
-// FlaskStepMs the life and mana it gave since the last step are added, and each whole point goes to the client at once
-// (S→C 0x1b1; a Small Life Flask's 23 life per second is a +1 about every 43 ms). Effects end when their time is up,
-// their pool is full, or the player dies (13-items.md §8).
-static async Task RunFlaskRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+// One writer for continuous recovery: regeneration, flask recovery and the player's RF burn.
+// The game clock excludes pause; scheduling/network delays change the step size, never the per-second rate.
+static async Task RunResourceRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     double lifeCarry = 0, manaCarry = 0, last = conn.Clock.Elapsed.TotalSeconds;
+    double ratesAt = double.NegativeInfinity, lifeRate = 0, manaRate = 0, burnPerLife = 0;
+    var cachedRf = conn.RighteousFire;
     while (!conn.Closed)
     {
-        await Task.Delay(FlaskStepMs);
+        await Task.Delay(RecoveryStepMs);
+        if (conn.Closed) break;
         double now = conn.Clock.Elapsed.TotalSeconds;
-        if (!conn.FlaskEffects.Any)
+        double seconds = now - last;
+        if (seconds <= 0) continue;
+        var rf = conn.RighteousFire;
+        // Stat aggregation stays at the old 250 ms cadence, rather than rebuilding the panel 60 times/s.
+        if (now - ratesAt >= PlayerTickMs / 1000.0 || rf != cachedRf)
         {
-            (lifeCarry, manaCarry, last) = (0, 0, now);
-            continue;
+            lifeRate = LifeRegenPerSecond(conn);
+            manaRate = ManaRegenPerSecond(conn);
+            burnPerLife = rf is null ? 0 : DamageModel.Mitigate(rf.BurnPctPerMinute / 6000.0,
+                Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
+            (ratesAt, cachedRf) = (now, rf);
         }
         var (life, mana, ended) = conn.FlaskEffects.Advance(last, now);
         last = now;
@@ -3575,27 +3627,30 @@ static async Task RunFlaskRecovery(string remote, NetworkStream stream, Connecti
         lock (conn.Monsters)
         {
             lifeBefore = conn.PlayerLife;
-            dead = lifeBefore == 0;
-            lifeCarry += life;
-            int lifeWhole = (int)Math.Truncate(lifeCarry);
-            lifeCarry -= lifeWhole;
-            conn.PlayerLife = lifeAfter = dead ? 0 : (uint)Math.Min((long)lifeBefore + lifeWhole, conn.PlayerMaxLife);
             manaBefore = conn.PlayerMana;
-            manaCarry += mana;
-            int manaWhole = (int)Math.Truncate(manaCarry);
-            manaCarry -= manaWhole;
             manaCap = (uint)UnreservedMana(conn);
-            conn.PlayerMana = manaAfter = dead ? manaBefore : (uint)Math.Min((long)manaBefore + manaWhole, manaCap);
+            dead = lifeBefore == 0;
+            if (dead)
+            {
+                lifeCarry = manaCarry = 0;
+                lifeAfter = lifeBefore;
+                manaAfter = manaBefore;
+            }
+            else
+            {
+                conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
+                    life + (lifeRate - conn.PlayerMaxLife * burnPerLife) * seconds, ref lifeCarry, minimum: 1);
+                conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
+                    mana + manaRate * seconds, ref manaCarry);
+            }
         }
         if (dead)
         {
-            // Flask effects end with death (CancelOnDeath).
             await EndFlaskEffects(remote, stream, ciphers, conn, [.. ended, .. conn.FlaskEffects.End(_ => true)], "death");
             continue;
         }
         if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
         if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
-        // A flask's effect also ends once its pool is full (the flask_effect buffs are not "not removed when full").
         bool lifeFull = lifeAfter == conn.PlayerMaxLife, manaFull = manaAfter == manaCap;
         ended.AddRange(conn.FlaskEffects.End(e => (e.LifePerSecond == 0 || lifeFull) && (e.ManaPerSecond == 0 || manaFull)));
         if (ended.Count > 0)
@@ -3617,6 +3672,9 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
 {
     double now = conn.Clock.Elapsed.TotalSeconds;
     double perSecond = conn.PlayerMaxLife * rf.DamagePctPerMinute / 6000.0;
+    var playerStats = CharacterPlayerStats(conn);
+    if (Stats.Key("delirium_aura_damage_over_time_+%_final") is uint moreDot)
+        perSecond *= Math.Max(0, 1 + playerStats.GetValueOrDefault(moreDot) / 100.0);
     var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
     var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
     var stages = new List<(uint Id, SpawnedMonster M)>();
@@ -3663,13 +3721,35 @@ static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiph
 // (C→S 0x17a). Its own instance (Auth re-enters the live one), arriving next to its waypoint.
 static async Task WarpToHideout(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
 {
-    if (HideoutCatalog.Default is not { } hideout)
+    if (HomeHideout(conn) is not { } hideout)
     {
         Console.WriteLine($"[gateway] {remote} {why}: no data/hideouts.json (run scripts/dev/extract-data.ps1)");
         return;
     }
     if (conn.Layout.Hash == hideout.AreaHash16) { Console.WriteLine($"[gateway] {remote} {why}: already in the {hideout.Name}"); return; }
     await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hideout.AreaHash16, 0, false, AtWaypoint: true), $"{why}: {hideout.Name}");
+}
+
+static HideoutCatalog.Hideout? HomeHideout(ClientState conn) =>
+    HideoutCatalog.Selected(CharacterSaves.Load(CharacterName(conn))?.SelectedHideout);
+
+static HideoutScene? HideoutFurniture(ClientState conn) => conn.Furniture ??=
+    HideoutCatalog.ByArea(conn.Layout.Hash) is { } hideout && HideoutCatalog.Default is { } fallback
+        ? HideoutScene.Build(hideout, fallback, conn.Layout.Walkable) : null;
+
+static async Task SelectHideout(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int Row, bool Guild) selected)
+{
+    if (selected.Guild || conn.PendingTransfer is not null) return;
+    var hideout = HideoutCatalog.Hideouts.FirstOrDefault(h => h.Row == selected.Row);
+    if (hideout is null) return;
+    CharacterSaves.SetSelectedHideout(CharacterName(conn), hideout.AreaId);
+    conn.TalkingTo = 0;
+    conn.InNpcTalk = false;
+    await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 close hideout dialogue");
+    await Send(remote, stream, ciphers, InstanceEntities.PlayerHideoutsUpdate(PlayerId, hideout.Hash16, 0),
+        $"0x02ba selected personal hideout: {hideout.Name}");
+    Console.WriteLine($"[gateway] {CharacterName(conn)} selected hideout row {hideout.Row}: {hideout.AreaId}");
+    await WarpToHideout(remote, stream, ciphers, conn, "Helena: Select Hideout");
 }
 
 // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
@@ -4788,7 +4868,7 @@ static async Task SetPaused(string remote, NetworkStream stream, ConnectionCiphe
 
 // The Microtransactions panel, the store and the hideout picker ask for their lists with C→S 0x1f2 and show "Loading…"
 // until each one arrives (23-microtransactions.md). Every account owns every microtransaction; the hideout and guild
-// lists go out empty, which is enough to load the panels that wait on them.
+// personal hideout list includes all exported templates; the guild list stays empty.
 static async Task AnswerMtxRequest(string remote, NetworkStream stream, ConnectionCiphers ciphers, InstanceMicrotransactions.Lists asked)
 {
     var owned = Mtx.Owned;
@@ -4802,7 +4882,8 @@ static async Task AnswerMtxRequest(string remote, NetworkStream stream, Connecti
         await Send(remote, stream, ciphers, InstanceMicrotransactions.Added([], InstanceMicrotransactions.StoreSecond),
             "0x01f4 microtransactions: the guild's list, empty");
     if (asked.HasFlag(InstanceMicrotransactions.Lists.Hideouts))
-        await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts([]), "0x01f5 unlocked hideouts: none");
+        await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts(HideoutCatalog.OwnedRows),
+            $"0x01f5 owned hideouts: all {HideoutCatalog.OwnedRows.Length} templates including MTX");
     if (asked.HasFlag(InstanceMicrotransactions.Lists.GuildHideouts))
         await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts([], guild: true), "0x01f5 guild hideouts: none");
 }
@@ -5217,14 +5298,20 @@ static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
 // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
 // The local stats of the active main hand and off hand items (the first weapon set, else the second), for the panel's
 // hand rows (PanelStats).
+// The item in the main hand (row 2, the active set) and its base type, unless its requirements are not met.
+static (Item Item, ItemCatalog.BaseType? Type)? ActiveMainHand(ClientState conn) =>
+    ItemsOf(conn).Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id))
+        .Select(i => ((Item, ItemCatalog.BaseType?)?)(i.Item, Items.ByHash(i.Item.TypeHash))).FirstOrDefault();
+
 // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, its
 // physical damage with the weapon's own local mods (local_physical_damage_+%, local_minimum / maximum_added_physical_damage)
 // and its attack time with local_attack_speed_+%; no weapon, the class's unarmed attack.
-static SkillCatalog.Unarmed WeaponFor(ClientState conn)
+static SkillCatalog.Unarmed WeaponFor(ClientState conn) => WeaponOf(conn, ActiveMainHand(conn));
+
+static SkillCatalog.Unarmed WeaponOf(ClientState conn, (Item Item, ItemCatalog.BaseType? Type)? mainHand)
 {
     var unarmed = Skills.UnarmedFor(conn.ClassRow);
-    var item = ItemsOf(conn).Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
-    if (item is null || Items.ByHash(item.TypeHash) is not { } type || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return unarmed;
+    if (mainHand is not var (item, type) || type is null || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return unarmed;
     var local = ItemModStats.Local(item, Items.Mods);
     double scale = 1 + local.GetValueOrDefault("local_physical_damage_+%") / 100.0;
     int lo = (int)((min + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
@@ -5940,6 +6027,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         return;
     }
     var type = Items.ByHash(used.Item.TypeHash);
+    bool isEssence = type is not null && Essences.Contains(type.Hash);
     if (type?.Id == CurrencyEffects.MirrorOfKalandra)
     {
         if (stashTab is not null || targetTab is not null) { Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra with the stash: not handled, use it in the inventory"); return; }
@@ -5961,13 +6049,13 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         CurrencyEffects.ChaosOrb => CurrencyEffects.Chaos(target.Item, Rolls, Random.Shared),
         CurrencyEffects.DivineOrb => Rolls.Reforge(target.Item, Random.Shared),
         CurrencyEffects.BlessedOrb => Rolls.Bless(target.Item, Random.Shared),
-        CurrencyEffects.OrbOfScouring => CurrencyEffects.Scouring(target.Item),
+        CurrencyEffects.OrbOfScouring => CurrencyEffects.Scouring(target.Item, Rolls),
         CurrencyEffects.OrbOfTransmutation => CurrencyEffects.Transmutation(target.Item, Rolls, Random.Shared),
         CurrencyEffects.OrbOfAlteration => CurrencyEffects.Alteration(target.Item, Rolls, Random.Shared),
         CurrencyEffects.OrbOfAugmentation => CurrencyEffects.Augmentation(target.Item, Rolls, Random.Shared),
         CurrencyEffects.RegalOrb => CurrencyEffects.Regal(target.Item, Rolls, Random.Shared),
         CurrencyEffects.ExaltedOrb => CurrencyEffects.Exalted(target.Item, Rolls, Random.Shared),
-        CurrencyEffects.OrbOfAnnulment => CurrencyEffects.Annulment(target.Item, Random.Shared),
+        CurrencyEffects.OrbOfAnnulment => CurrencyEffects.Annulment(target.Item, Rolls, Random.Shared),
         CurrencyEffects.ArmourersScrap => CurrencyEffects.ArmourerScrap(target.Item),
         CurrencyEffects.BlacksmithsWhetstone => CurrencyEffects.Whetstone(target.Item),
         CurrencyEffects.OrbOfChance => CurrencyEffects.Chance(target.Item, Rolls, Random.Shared),
@@ -5975,6 +6063,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         CurrencyEffects.GemcuttersPrism => CurrencyEffects.Gemcutter(target.Item),
         CurrencyEffects.FracturingOrb => CurrencyEffects.Fracture(target.Item, Random.Shared),
         CurrencyEffects.VaalOrb => Items.ByHash(target.Item.TypeHash) is { } vaalType ? CurrencyEffects.Vaal(target.Item, vaalType, Rolls, Random.Shared) : null,
+        _ when isEssence => Essences.Apply(type!.Hash, target.Item, Random.Shared),
         _ => null,
     };
     if (result is null)
@@ -5984,7 +6073,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
                 $"sockets {target.Item.Sockets.Count}, roll cap {CurrencyEffects.MaximumSockets(target.Item, refusedType)}, " +
                 $"base cap {CurrencyEffects.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
         Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
-            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
+            (isEssence || type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
                 ? "target refused (corrupted / mirrored / identified / wrong rarity / no explicit mods / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
         return;
     }
@@ -6032,7 +6121,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
             if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
         }
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
+    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (isEssence || type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
         ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
         : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}; link groups {string.Join(",", identified.Item.Links ?? [])}"));
 }
@@ -6166,7 +6255,10 @@ static HashSet<int> TabsSentOf(ClientState conn, AccountStash stash) => stash.Is
 // The town's Stash object (Agents/docs/protocol/18-stash.md §1) where the town has one (StashCatalog).
 static async Task SpawnTownStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    if (StashCatalog.In(conn.Layout.Hash) is not { } at || Environment.GetEnvironmentVariable("Game_STASH") == "0") return;
+    var scene = HideoutFurniture(conn);
+    var at = scene is { } furnished ? new StashCatalog.Placement(furnished.Stash.X, furnished.Stash.Y, furnished.Stash.Rotation)
+        : StashCatalog.In(conn.Layout.Hash);
+    if (at is null || Environment.GetEnvironmentVariable("Game_STASH") == "0") return;
     uint id = conn.NextObjectId++;
     var stash = new StashObject(at.X, at.Y, at.Rotation);
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(StashObject.MetadataPath), stash.Blob()),
@@ -6176,7 +6268,7 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
     conn.SetBlocker(id, at.X, at.Y, ClientState.StashBlockerSize);
     // A hideout and the Mine Encampment also get the guild stash, a few cells from the stash.
     if (HideoutCatalog.ByArea(conn.Layout.Hash) is null && conn.Layout.Hash != StashCatalog.DelveHub) return;
-    var (gx, gy) = conn.Layout.Near((at.X, at.Y));
+    var (gx, gy) = scene?.Guild ?? conn.Layout.Near((at.X, at.Y));
     uint guild = conn.NextObjectId++;
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(guild, InstanceEntities.ObjectTypeHash(StashObject.GuildMetadataPath),
         new StashObject(gx, gy, at.Rotation).Blob()), $"0x02b9 create guild stash 0x{guild:x} at ({gx}, {gy})");
@@ -6184,6 +6276,106 @@ static async Task SpawnTownStash(string remote, NetworkStream stream, Connection
     conn.GuildStashObject = guild;
     conn.GuildStashAt = (gx, gy);
     conn.SetBlocker(guild, gx, gy, ClientState.StashBlockerSize);
+    if (scene?.Bench is { } bench
+        && HideoutCatalog.TypeOf(bench.Type!) is var (components, states)
+        && HideoutObject.CanSerialize(components))
+    {
+        uint benchId = conn.NextObjectId++;
+        var obj = new HideoutObject(bench.X, bench.Y, bench.Rotation, components,
+            new HideoutDoodad(bench.Hash, (byte)bench.Variation), [.. states.Select(_ => 0)]);
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(benchId,
+            InstanceEntities.ObjectTypeHash(bench.Type!), obj.Blob()),
+            $"0x02b9 create crafting bench 0x{benchId:x} left of guild stash at ({bench.X}, {bench.Y})");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(benchId), null);
+        conn.CraftingBenchObject = benchId;
+        conn.CraftingBenchAt = (bench.X, bench.Y);
+        conn.SetBlocker(benchId, bench.X, bench.Y, ClientState.StashBlockerSize);
+    }
+    if (scene?.Harvest is { } harvest
+        && HideoutCatalog.TypeOf(HideoutCatalog.HorticraftingType) is var (harvestComponents, _)
+        && harvestComponents.Count > 0 && HideoutObject.CanSerialize(harvestComponents))
+    {
+        uint harvestId = conn.NextObjectId++;
+        var obj = new HideoutObject(harvest.X, harvest.Y, harvest.Rotation, harvestComponents, new HideoutDoodad(0, 0));
+        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(harvestId,
+            InstanceEntities.ObjectTypeHash(HideoutCatalog.HorticraftingType), obj.Blob()),
+            $"0x02b9 create Horticrafting Station 0x{harvestId:x} at ({harvest.X}, {harvest.Y})");
+        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(harvestId), null);
+        conn.HorticraftingObject = harvestId;
+        conn.HorticraftingAt = (harvest.X, harvest.Y);
+        conn.SetBlocker(harvestId, harvest.X, harvest.Y, 8);
+    }
+
+}
+
+// Opens the native recipe browser. Harvest recipe execution is a separate feature.
+static async Task OpenHorticrafting(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (_, stop, arrive) = conn.Walk.WalkUpTo(conn.HorticraftingAt.X, conn.HorticraftingAt.Y, 8, now);
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.Closed || conn.ActionCount != action || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, 8)) return;
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HorticraftingUi),
+        "0x007b open Horticrafting Station recipe browser");
+}
+
+// C→S 0x24: approach the bench before opening the ordinary crafting window (0x7b kind 0x33, bench type 0).
+static async Task OpenCraftingBench(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use)
+{
+    int action = Interlocked.Increment(ref conn.ActionCount);
+    double now = conn.Clock.Elapsed.TotalSeconds;
+    var (here, stop, arrive) = conn.Walk.WalkUpTo(conn.CraftingBenchAt.X, conn.CraftingBenchAt.Y, ClientState.StashBlockerSize, now);
+    Console.WriteLine($"[gateway] {remote} <= 0x0024 crafting bench ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
+    if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+    if (conn.Closed || conn.ActionCount != action
+        || !PlayerWalk.InWalkUpRange(stop, conn.CraftingBenchAt, ClientState.StashBlockerSize)) return;
+    conn.BenchOpen = true;
+    await RefreshBenchBalance(remote, stream, ciphers, conn);
+    await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.CraftingBenchUi),
+        "0x007b open the crafting bench window (type 0)");
+}
+
+static async Task CraftBench(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int Recipe, bool Replace) request)
+{
+    if (!conn.BenchOpen || HideoutCatalog.ByArea(conn.Layout.Hash) is null) return;
+    var items = ItemsOf(conn);
+    var stash = PersonalStashOf(conn);
+    var result = ItemMoves.CraftAtBench(items, stash, Bench, request.Recipe, request.Replace, Random.Shared);
+    if (result is null)
+    {
+        await RefreshBenchBalance(remote, stream, ciphers, conn);
+        await Send(remote, stream, ciphers, InstanceChat.ChatLine("Craft refused: incompatible item or insufficient currency in inventory and stash."), "bench craft refused");
+        return;
+    }
+    foreach (var payment in result.Payments)
+    {
+        if (payment.Inventory is { } paid)
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [.. paid.Removed, .. paid.Changed.Select(c => c.Id)], paid.Changed), "bench currency paid from inventory");
+        await SendStashPayment(remote, stream, ciphers, conn, stash, payment.Stash);
+    }
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.CraftingBench),
+        items.NextRevision(PlayerInventories.CraftingBench), [result.Changed.Id], [result.Changed]), $"bench recipe {request.Recipe}: crafted item {result.Changed.Id}");
+    await RefreshBenchBalance(remote, stream, ciphers, conn);
+}
+
+static async Task RefreshBenchBalance(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool clear = false)
+{
+    if (clear && !conn.BenchBalanceSent) return;
+    IReadOnlyList<InventoryItem> snapshot = clear ? [] : Saves.Atomically(() => BenchBalance.Snapshot(PersonalStashOf(conn), Items, Bench));
+    byte[] packet;
+    if (!conn.BenchBalanceSent)
+    {
+        packet = InstanceInventories.AddInventory(InstanceBench.BalanceInventoryId, InstanceBench.BalanceSlot, 0, snapshot);
+        conn.BenchBalanceSent = true;
+    }
+    else
+        packet = InstanceItems.InventoryChange(InstanceBench.BalanceInventoryId, ++conn.BenchBalanceRevision,
+            [.. conn.BenchBalanceItems.Select(i => i.Id)], snapshot);
+    conn.BenchBalanceItems = snapshot;
+    await Send(remote, stream, ciphers, packet, $"bench stash balance: {snapshot.Count} currency stack(s), {snapshot.Sum(i => (long)i.Item.StackSize)} units");
 }
 
 // A click on the guild stash (C→S 0x24): walk there, then its tab list (S→C 0x136 kind 1) and its panel (0x7b kind 2).
@@ -6208,8 +6400,8 @@ static async Task OpenGuildStash(string remote, NetworkStream stream, Connection
 // A hideout's placed doodads (HideoutCatalog.IsPlaced: the map device) from its decoration, with their HideoutDoodad data.
 static async Task SpawnHideoutDoodads(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    if (HideoutCatalog.ByArea(conn.Layout.Hash) is not { } hideout) return;
-    foreach (var d in hideout.Doodads.Where(HideoutCatalog.IsPlaced))
+    if (HideoutFurniture(conn) is not { } scene) return;
+    foreach (var d in new[] { scene.Device })
     {
         if (HideoutCatalog.TypeOf(d.Type!) is not var (components, states) || !HideoutObject.CanSerialize(components))
         {
@@ -6439,7 +6631,7 @@ static async Task UseMapPortal(string remote, NetworkStream stream, ConnectionCi
 // a device once the world is active (21-hideouts.md §5). It is not used up.
 static async Task SpawnMapReturnPortal(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
-    if (!MapDevices.Value.IsMapArea(conn.Layout.Hash) || HideoutCatalog.Default is not { } hideout) return;
+    if (!MapDevices.Value.IsMapArea(conn.Layout.Hash) || HomeHideout(conn) is not { } hideout) return;
     var (x, y) = conn.Layout.Near((conn.Layout.SpawnX, conn.Layout.SpawnY));
     uint id = conn.NextObjectId++;
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(MapPortalObject.MetadataPath),
@@ -6535,7 +6727,8 @@ static async Task OpenTownPortal(string remote, NetworkStream stream, Connection
     bool replace = true)
 {
     ushort here = conn.Layout.Hash;
-    bool toHideout = MapDevices.Value.IsMapArea(here) && HideoutCatalog.Default is not null;
+    var home = HomeHideout(conn);
+    bool toHideout = MapDevices.Value.IsMapArea(here) && home is not null;
     ushort town = conn.LastTown != 0 ? conn.LastTown : AreaLayouts.LioneyesWatch;
     // One portal per player: the old one closes (0x8f with area 0) and goes.
     if (conn.ReturnPortal is { } old)
@@ -6551,7 +6744,7 @@ static async Task OpenTownPortal(string remote, NetworkStream stream, Connection
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
     conn.ReturnPortal = (id, x, y);
     conn.ReturnPortalTo = toHideout ? (ushort)0 : town;
-    ushort leadsTo = toHideout ? HideoutCatalog.Default!.AreaHash16 : town;
+    ushort leadsTo = toHideout ? home!.AreaHash16 : town;
     string owner = CharacterName(conn);
     OpenPortals[owner] = new OpenPortal(here, conn.InstanceNumber, x, y, leadsTo);
     Console.WriteLine($"[gateway] {remote} {why}: town portal at ({x}, {y}) of 0x{here:x4} instance {conn.InstanceNumber} → 0x{leadsTo:x4}");
@@ -6568,6 +6761,8 @@ static async Task OpenTownPortal(string remote, NetworkStream stream, Connection
 // the tab carrying that affinity bit in the tab list, which only the account's last tab does (AccountStash.Records).
 static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
 {
+    await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
+    conn.BenchOpen = false;
     if (StashCatalog.In(conn.Layout.Hash) is not { } at) return;
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
@@ -6780,7 +6975,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     var weapon = WeaponFor(conn);
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
-    var weaponStats = weapon.Stats(stats).ToList();
+    var weaponStats = weapon.Stats(stats, AttackHit(weapon, stats).Convert(DamageStats.Conversion(stats, Stats, attack: true))).ToList();
     // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
     lock (conn.Monsters) conn.SentStatKeys = [.. statList.Select(s => s.Item1), .. weaponStats.Select(s => s.Item1)];
     int reservedMana = ReservedMana(conn);
@@ -6790,12 +6985,14 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
         Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
         Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
-        QuestFlags: PlayerQuestFlags(conn), Hideout: HideoutCatalog.Default?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
+        QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
         Portrait: WornPortrait(conn));
     conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
     uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
     var messages = new List<(string Name, byte[] Bytes)>
     {
+        ("0x01f6 campaign hideout unlocks", InstanceMicrotransactions.HideoutUnlocks(
+            HideoutCatalog.OwnedRows.Where(row => row < 128).Select(row => (int)row))),
         ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
         ($"0x02b9 create {player} ({cls.ObjectType}) type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, player.Blob())),
     };
@@ -6824,6 +7021,18 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
         bool secondSet = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).WeaponSet == 1;
         messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}, weapon set {(secondSet ? 2 : 1)}",
             InstanceProtocol.EnterArea(tabs, secondSet)));
+        // The contents of every stash tab with currency in it (stackable items), as 0xc7 would send them (0xc0, no 0xc8:
+        // the panel is not open). The client checks a shop price against the currency it knows of, the inventory's and
+        // the loaded stash tabs' (3.29 vendors take it from the stash): without this a price was red, and no 0x88 came,
+        // until the stash had been opened in that area (live 2026-10-23, Nessa in the hideout).
+        var personal = PersonalStashOf(conn);
+        for (int t = 0; t < personal.Count; t++)
+        {
+            var (slot, inside) = personal.Inventory(t);
+            if (!inside.Any(i => i.Item.Components.Contains("Stack")) || !conn.StashTabsSent.Add(t)) continue;
+            messages.Add(($"0x00c0 stash tab {t} inventory {personal.InventoryOf(t)}: {inside.Count} item(s) (currency for shop prices)",
+                InstanceInventories.AddInventory(personal.InventoryOf(t), slot, 0, inside)));
+        }
         // Put the player in the wake zone so it is drawn and its actions/movement run.
         messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
         foreach (var (id, _) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))
@@ -6838,9 +7047,9 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     List<AuraCatalog.Aura> auras;
     lock (conn.Monsters) auras = [.. conn.Auras.Values];
     foreach (var aura in auras)
-        await Send(remote, stream, ciphers,
-            InstanceEntities.AddBuff(PlayerId, aura.Buff, aura.BuffRow, PlayerId, aura.SkillId),
-            $"0x01c1 player buff {aura.Buff}: {aura.Name} restored after the area change");
+        foreach (var packet in AuraBuffs(aura))
+            await Send(remote, stream, ciphers, packet,
+                $"0x01c1 player aura {aura.Name} restored after the area change");
 }
 
 sealed partial class Program
@@ -6946,6 +7155,8 @@ sealed partial class Program
     // What dying monsters drop (ItemDrops.cs).
     // Magic and rare items (ItemRolls.cs).
     internal static readonly ItemRolls Rolls = new(Items);
+    internal static readonly EssenceCrafting Essences = new(Items, Rolls);
+    internal static readonly BenchCrafting Bench = new(Items, Rolls);
     internal static readonly ItemDrops Drops = new(Items, Rolls);
     // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
     // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
@@ -6970,8 +7181,8 @@ sealed partial class Program
     /// <summary>The quest books that give two passive refund points (BaseItemTypes Name; Acts 1, 6, 9 and 10).</summary>
     internal const string RegretBook = "Book of Regrets";
     internal const string PortalScroll = "Metadata/Items/Currency/CurrencyPortal";
-    /// <summary>The flask recovery's step (RunFlaskRecovery): short enough for one update per point of life.</summary>
-    internal const int FlaskStepMs = 20;
+    /// <summary>Continuous pool recovery's target cadence; amounts use elapsed game time, not this nominal delay.</summary>
+    internal const int RecoveryStepMs = 16;
     internal static bool FlaskBuffs => Environment.GetEnvironmentVariable("Game_FLASK_BUFFS") != "0";
     // MiscAnimated RighteousFireRing: the big burning circle around a Righteous Fire caster.
     internal const string RighteousFireRingAo = "Metadata/Effects/Spells/ri_fire/rifire.ao";
@@ -7564,6 +7775,15 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>
     public uint GuildStashObject;
     public (int X, int Y) GuildStashAt;
+    public uint HorticraftingObject;
+    public (int X, int Y) HorticraftingAt;
+    public uint CraftingBenchObject;
+    public bool BenchOpen;
+    public bool BenchBalanceSent;
+    public uint BenchBalanceRevision;
+    public IReadOnlyList<InventoryItem> BenchBalanceItems = [];
+    public HideoutScene? Furniture;
+    public (int X, int Y) CraftingBenchAt;
     public readonly HashSet<int> GuildStashTabsSent = [];
     public bool GuildStashOpen;
     // Whether this connection opened the stash already (only the first open selects the account's last tab), and while
@@ -7582,7 +7802,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public HashSet<string> QuestFlags = [];
 
     /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
-    public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter];
+    public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter, .. Program.Bench.UnlockFlags];
     /// <summary>What the next Delve chart (S→C 0x240) carries; /delve_chart sets it (one cell at 0, 0 by default).</summary>
     public (uint A, ushort B, List<InstanceDelve.Cell> Cells) DelveChartProbe = (0, 0, [new(0, 0, 0, 0, 0)]);
 

@@ -103,7 +103,27 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   `MitigatePhysical`.
 - `/hit` and `/spellhit` still use a single type; conversion is not applied to those debug commands.
 
-## 5. Not modelled yet
+## 5. Continuous resource updates (2026-10-24)
+
+The client Life handler for S→C 0x1b1 stores the current whole pool value; merely sending the
+regeneration stat does not make the visible life value advance between these updates. The former
+250 ms player tick therefore made /god recovery jump by roughly one quarter of maximum life.
+
+`RunResourceRecovery` now combines life/mana regeneration, flask recovery and the player's nonlethal
+Righteous Fire burn in one 16 ms loop. Each step integrates the actual elapsed `ClientState.Clock`
+time, including scheduler delays; the clock stops during pause. `RecoveryPool` retains fractional
+points, discards overflow at a full pool and negative carry at RF's one-life floor, and never revives
+dead life. Only changed whole values generate 0x1b1. The original per-minute rate formulas and
+unreserved mana cap are unchanged. Stat aggregation is refreshed at the old 250 ms cadence, with
+an additional refresh when RF changes, instead of rebuilding the panel about 60 times a second.
+
+`RunPlayerTick` keeps the 250 ms cadence for RF on monsters, suppression conditions, waypoints,
+auto-loot and quests; its RF duration also uses elapsed game time. Instant damage and instant
+healing remain immediate. No client executable or packet layout changes are needed. Live visual
+verification: enable /god, damage life with `/blockhit attack physical 10000`, then observe recovery;
+also check pause, flasks and RF. The new visual behavior awaits that real-client check.
+
+## 6. Not modelled yet
 
 - Energy shield, penetration, exposure, shock and other damage-taken modifiers; monster armour and resistances.
 - Added flat damage from supports/items, increased/more modifiers per type, damage effectiveness, and skill-specific

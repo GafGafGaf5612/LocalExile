@@ -112,7 +112,9 @@ public sealed class LoginServerSession(AccountService accounts)
 
     private ILoginMessage[] Login(AccountLogin m)
     {
-        var r = accounts.LoginWithClientDigest(m.Account, m.PasswordDigest);
+        var r = m.Flag95
+            ? accounts.LoginWithSavedClientCredential(m.Account, m.PasswordDigest, m.MachineIdA, m.MachineIdB)
+            : accounts.LoginWithClientDigest(m.Account, m.PasswordDigest);
         if (!r.Ok)
         {
             Failed = true;
@@ -122,13 +124,14 @@ public sealed class LoginServerSession(AccountService accounts)
         Session = r.Value;
         Account = accounts.GetAccount(Session!.AccountId);
         // The wide string is shown to the player in a message box (live test 2026-10-16: sending the account name popped up
-        // "devtester" with an OK button), so it stays empty. Digest, flags and data go to UI listeners; their meaning is
-        // unknown, so they are sent empty too.
+        // "devtester" with an OK button), so it stays empty. Digest is the 32-byte saved credential;
+        // Flag94 requests remembering it; Flag95 identifies a subsequent login using it instead of a password digest.
         // The real client waits for a push after 0x04; an empty 0x1b moves it on to the character screen, which then
         // asks for the character list with 0x18 (captured 2026-10-16). What 0x1b's own entries are is still unknown.
         // Flags0 bit 5 → login+0xea8: the account's email is verified. With it clear the character screen builds the
         // "Your account is not verified" panel (0x140d195d0) and chat/trade features are locked.
-        return [new LoginResult(ResultOk, "", new byte[32], FlagVerified, 0, []),
+        byte[] remembered = m.Flag94 ? accounts.SavedClientCredential(Session.AccountId, m.MachineIdA, m.MachineIdB) : new byte[32];
+        return [new LoginResult(ResultOk, "", remembered, FlagVerified, 0, []),
                 new LeagueList(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), Leagues.Entries(), false, false)];
     }
 

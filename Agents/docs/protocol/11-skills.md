@@ -678,7 +678,78 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   (`base_block_luck`, `attack_block_luck`, `spell_block_luck`) uses `1 - (1 - p)²` (PoB CalcDefence); Svalinn's unique
   item modifiers themselves are not supported yet.
 
+### Cyclone area updates (2026-10-25)
+
+`/set_aoe` sends the increased-area input, but Cyclone's visual also needs the final
+`active_skill_area_of_effect_radius` in its granted skill record. The Gateway now computes and sends
+that radius together with its base for Cyclone/CycloneAltX. The hit-radius calculation uses the same
+base selection and `SkillArea.Radius`, so visual scaling and hit selection agree on the next cast.
+Turning the override off resends the character's own modifiers and the newly calculated radius.
+
+The exported Cyclone stat set has no explicit base radius. Use 16 cells for these two variants,
+matching [Path of Building's skill definitions](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Export/Skills/act_dex.txt);
+an explicit positive base stat takes precedence. Other skills keep their existing data/fallback base.
+Client evidence: `0x1414b13c0` reads final radius stat 0x4876 to scale its cyclone effect; the shared
+cyclone path `0x141d434c0` also reads 0x4876 (or the base 0x4875 in its conditional-radius path).
+Increased area is not increased radius: +300% area changes radius 16 → 32, +0% restores 16 without
+other modifiers. Tests cover this calculation, spell-area exclusion, explicit bases and the fallback.
+Additional melee-range/stage modifiers specific to Cyclone remain outside this initial area model.
+Live visual verification after restarting Gateway is pending.
+
+**Follow-up after live failure:** sending only 0x4875/0x4876 did not change the rendered channel.
+The live hit radius did change (24 → 42 cells after `/set_aoe 300` on the test character), so that
+was insufficient evidence for visual scaling. The conditional-radius helper `0x141939880` reads
+`total_skill_area_of_effect_radius_+%_including_final` (0x1591) on its normal branch and the
+aggregated `skill_area_of_effect_+%` (0xd7), rather than the base input 0x1b5, on its conditional
+branch. Cyclone's skill record now carries both derived values as well. +300% increased area is
++100% radius before other modifiers. Compute all outputs from the original inputs before writing
+the aggregated 0xd7, to avoid counting 0x1b5 twice. The server's hit calculation still uses the
+original input stats. `Cyclone area:` log lines record the transmitted base, radius, area increase
+and radius scale. Live verification of this follow-up is pending.
+Checked against the disassembly (2026-10-25): the conditional branch of `0x141939880` reads only 0xd7, never
+0x1b5, so the record's aggregated 0xd7 is not counted twice; its more multipliers are 0x1670, 0x16ee and 0x28d7.
+Its caller `0x141939aa0` adds `active_skill_base_radius_+` (0x16c4) to the base itself, so the record carries the
+base without it, as the server's `SkillArea.Radius` adds it to its own base.
+
 ## 13. Auras and reservation
+
+**Persistent toggles (2026-10-25).** CharacterSaves.ActiveAuras stores stable GrantedEffects Ids,
+updated transactionally on every successful toggle and cleared for an active aura when its gem leaves.
+On login/area connection, LoadProgress restores progress and evaluates usable gems first, then resolves
+saved aura ids to fresh skill and source/recipient buff ids. It checks total reservation against current
+mana, recalculates pools with the restored bonuses and initializes current mana to the unreserved amount.
+SendPlayer restores both buff records, so ground art, top-left icons and skill-bar indicators return.
+An absent/unusable gem or insufficient reservation skips that aura without discarding saved intent;
+it can return on a later login after requirements are met. Old saves without ActiveAuras start empty.
+
+**Expanded activation (2026-10-25).** Determination (buff 142), Grace (143), Discipline (148),
+Anger (149), Hatred (150), Wrath (151), Zealotry (1272), Malevolence (1274) and Envy (828)
+now use the same toggle/reservation/source-and-recipient lifecycle as the original eight auras.
+RequiredMana checks the uncapped total before adding an aura; ReservedMana remains capped for display.
+Previously clamping before validation made the insufficient-reservation check unreachable.
+Determination and Grace add their level/quality-based flat and more defences, including Iron Reflexes.
+Anger/Envy supply added attack/spell damage, Hatred feeds gain-as-extra conversion, Wrath adds attack
+lightning damage and more spell lightning damage, Zealotry supplies spell crit and more spell damage.
+Spell added damage uses the gem's damage effectiveness. Malevolence's more DoT affects the implemented
+Righteous Fire burn; its duration stat and Discipline's ES stats are published, but the server's ES pool,
+recharge, general DoT skills and Zealotry's conditional consecrated ground remain unimplemented.
+
+**Source and recipient pair (2026-10-25).** Sending only the source fixed ground art but the live
+client stopped showing top-left aura icons. Each self aura now owns two buff instances of its
+BuffDefinitions row: a source with bit0 art and explicit display state 0 (bit5), and an ordinary
+received buff with default display state 2 and bit3 skill association. The source is sent first;
+both ids are removed on toggle-off or gem removal and restored on area entry. The server retains
+one Aura record, so reservation and bonuses are counted once. Top-left recovery awaits live confirmation.
+
+**Caster visuals (2026-10-25, awaiting live verification).** BuffVisuals' EPKFiles1 is the common
+`affected_player.epk`; EPKFiles2 holds each aura's own art (Clarity, Vitality, Precision, Haste and
+the four Purities). `0x1416082d0` selects `m_AuraEffectPack` (row +0x20/+0x28) when Buff +0x30
+is nonzero, otherwise `m_EffectPack` (+0x10/+0x18). AddBuff bit0's first byte (+0x76) becomes
+that field via `0x141e07220` and `0x141e06290`. `auraSource: true` sends the complete bit0 group
+`u8 1, u32 0, u8 0, u16 0` before other optional fields. All supported self auras use this on
+activation and restoration; recipients and other buffs retain their existing default. These aura
+rows have no MiscAnimated3 ring, so the nonzero marker only selects their EPK art; a radius-scaled
+ring will require its actual radius rather than this marker. The skill-bar association is independent.
 
 - **Reservation is in the data.** `GrantedEffectsPerLevel` has `ManaReservationFlat` and
   `ManaReservationPercent` (permyriad: `5000` = 50%); `SkillCatalog.Reservation` reads them. Standard
@@ -695,10 +766,19 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   Purity of Fire/Ice/Lightning 145/146/147, Clarity 155, Vitality 153, Precision 1293) and is sent with
   S→C 0x1c1 with the player as source and the skill id as the source skill. A second cast removes it with
   0x1c2. The buff visual is the row's `BuffVisuals` (the `player_auras/...` EPKs); the server also sends
-  the final stats, because the client derives none of them. The skill-bar active border is not reproduced
-  yet: 0x25f is an internal UI event, not an instance/world message (both factories fall through to their
-  default case), so sending it crashed the 3.29.3b client; the Gateway does not send it. The client's
-  setter (`0x140ae4550`, skill id + ActionTypes HASH16) is not called by the buff add/remove events.
+   the final stats, because the client derives none of them. The skill-bar indicator uses the buff's separate
+   skill association (0x1c1 flags bit3): **u16 BE ActionTypes HASH16, then u16 BE server skill id**.
+   The Gateway sends it for activation and when restoring auras on area entry. Removing the buff removes
+   the association. The full action hash comes from GrantedEffects.ActiveSkill → ActiveSkills.ActionType
+   → ActionTypes.HASH16; it must not be masked to the basic-action id.
+   Client `0x140ad1400` draws `AuraFrame` and the rotating `AuraCircle` when `0x141e11180` finds an
+   IsSkillBuff whose +0x48/+0x4a match the skill's +0x40/+0x42. Reader `0x141fdf870` reads the action
+   hash into message +0x74 and skill id into +0x72; `0x141e11720` copies them to buff +0x4a/+0x48.
+   The mandatory source skill (+0x60) alone does not satisfy this check. Automated wire/lookup tests
+   cover the change; live icon verification is pending.
+   **Correction to the earlier notes:** 0x25f in `0x140ae1130`/`0x140ae4550` refers to Elemental
+   Overload (BuffDefinitions row 606, returned one-based by `0x142454bd0`), not an aura UI event or a
+   network opcode. Sending a standalone 0x25f packet is invalid and is not needed for aura indicators.
 - **Implemented effects.** Purity of Elements/Fire/Ice/Lightning add their resistances; Clarity and Vitality
   add their flat regeneration; Precision adds flat accuracy and increased critical strike chance; Haste adds
   attack, cast and movement speed. Generic
@@ -708,21 +788,17 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   apply these to `Pools` and `CharacterStats`.
 - **Not implemented yet.** Casting one of these logs that its reservation is known but its effect is not implemented and does not
   reserve mana:
-  - **Combat auras:** Anger, Hatred and Wrath need added elemental damage and Hatred's physical-as-extra-cold; Zealotry needs
-    more spell damage and spell crit; Pride needs an enemy physical-damage-taken debuff. The damage model has no added
-    elemental damage or enemy aura debuffs yet.
+  - **Enemy auras:** Pride still needs a radius- and time-dependent enemy physical-damage-taken debuff.
   - **Heralds:** Ash, Ice and Thunder need on-kill/overkill/shatter/storm effects; Agony and Purity need minions.
   - **Banners:** Defiance, Dread and War need the planted banner, stages and their pulses.
   - **Curse auras:** Blasphemy-style skills need the curse system.
-  - **Determination, Grace and Discipline:** the reservation is known, but armour, evasion as avoidance and energy shield
-    are not modelled; they are not in `AuraCatalog` yet.
+  - **Discipline:** activation, reservation and presentation work; the energy-shield pool/recharge mechanics remain open.
   - **Partial effects:** Purity of Elements' elemental-ailment immunity is not applied. Purity of Fire/Ice/Lightning
     max-resistance values are read at the gem's level (0 at level 1).
   - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;
     Reservation1 (damage per aura), Reservation2 (max resistances with reserved life and mana) and Reservation6 (aura
     duration) are not. Skill-specific reservation efficiency/effect stats are not modelled.
-  - **Systems:** supports, gem levels, party/minion auras, life reservation, and the skill-bar active border (0x25f is an
-    internal UI event, not an instance/world message; the client's setter is not reached by the buff events).
+  - **Systems:** supports, party/minion auras and life reservation.
 - **Dev check.** `/auras` prints the active auras, flat/percent reservation, reserved and unreserved mana,
   reservation efficiency and aura effect. Area changes recreate the player object, so `SendPlayer` puts the
   running auras' buffs back on it.

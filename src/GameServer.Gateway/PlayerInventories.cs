@@ -10,7 +10,7 @@ using GameServer.Core.Protocol.Instance;
 sealed class PlayerInventories
 {
     public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
-        Boots = 9, Flask = 11, MapDevice = 13, Weapon2 = 14, Offhand2 = 15, Cursor = InstanceInventories.CursorRow;
+        Boots = 9, Flask = 11, MapDevice = 13, Weapon2 = 14, Offhand2 = 15, CraftingBench = 16, Cursor = InstanceInventories.CursorRow;
 
     private static readonly ConcurrentDictionary<string, PlayerInventories> ByCharacter = new(StringComparer.OrdinalIgnoreCase);
 
@@ -162,6 +162,7 @@ sealed class PlayerInventories
             {
                 slot = InstanceInventories.PlayerDefaults[row];
                 if (!Accepts(row, shape.Class)) { why = $"{shape.Class} does not go in row {row}"; return null; }
+                if (HandConflict(row, shape.Class, shapeOf) is { } conflict) { why = conflict; return null; }
                 (x, y) = (0, 0);
                 inTheWay = [.. ItemsIn(row)];
             }
@@ -408,6 +409,28 @@ sealed class PlayerInventories
         Flask => itemClass is "LifeFlask" or "ManaFlask" or "HybridFlask" or "UtilityFlask" or "UtilityFlaskCritical",
         _ => true,
     };
+
+    /// <summary>
+    /// Why an item of this class can't go into a hand row next to what the other hand of the same weapon set holds, or
+    /// null: a bow goes with an empty off hand or a quiver, another two-handed weapon only with an empty off hand; a quiver
+    /// goes with an empty main hand or a bow, never with a one-handed weapon; a shield or a one-handed weapon in the off hand
+    /// not with a two-handed weapon (a bow included). Call under the lock.
+    /// </summary>
+    string? HandConflict(byte row, string itemClass, Func<Item, Shape?> shapeOf)
+    {
+        if (row is not (Weapon1 or Offhand1 or Weapon2 or Offhand2)) return null;
+        bool main = row is Weapon1 or Weapon2;
+        byte other = main ? (byte)(row + 1) : (byte)(row - 1);
+        string? otherClass = _items.TryGetValue(other, out var l) && l.Count > 0 ? shapeOf(l[0].Item)?.Class : null;
+        if (main)
+        {
+            if (itemClass == "Bow") return otherClass is null or "Quiver" ? null : "a bow goes only with an empty off hand or a quiver";
+            if (TwoHand.Contains(itemClass)) return otherClass is null ? null : "a two-handed weapon needs an empty off hand";
+            return otherClass == "Quiver" ? "a quiver goes only with a bow (or an empty main hand)" : null;
+        }
+        if (itemClass == "Quiver") return otherClass is null or "Bow" ? null : "a quiver goes only with a bow or an empty main hand";
+        return otherClass is not null && TwoHand.Contains(otherClass) ? $"the main hand holds a two-handed weapon ({otherClass})" : null;
+    }
 
     /// <summary>Inventories.dat column 7 by row: the slot the player's model shows an equipped item in (17 = none).</summary>
     static readonly Dictionary<byte, byte> VisibleSlots = new()
