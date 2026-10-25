@@ -292,6 +292,11 @@ guide.
 
 ## Doc caveats
 
+Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a
+16 ms elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are
+preserved. Implemented with regression tests; real-client visual verification after Gateway restart
+is pending. See [20](docs/protocol/20-damage.md), "Continuous resource updates".
+
 `docs/re/003`–`004` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`). Treat them as history, not reference.
 
 ## Jeweller's Orb (2026-10-21)
@@ -303,3 +308,11 @@ capacity blocks further use. Local counts are 1/2/3/4/6. Probabilities are appro
 
 PR branch validation: build succeeded with zero warnings/errors; Core 307, Data 15, Gateway 210 tests passed.
 Gateway test artifacts were placed in the local workspace so the existing extracted data could be read.
+
+## Hideout crafting bench placement (2026-10-25)
+
+The standard bench spawns to the left of the guild stash in hideouts, using the existing
+decoration's model and a walkable placement (placement confirmed in the real client).
+Clicking it now walks into interaction range and sends 0x7b kind 0x33, type 0 to open the ordinary
+crafting window. Automated checks cover the wire format; a live window-opening check is pending.
+Recipe unlocks and applying crafts are not implemented. See protocol/21-hideouts.md.
