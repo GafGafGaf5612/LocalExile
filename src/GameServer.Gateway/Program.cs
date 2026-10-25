@@ -2091,6 +2091,9 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
     if (TerrainHeights.Size(conn.Layout.Id, conn.Seed) is (int w, int h))
         foreach (var (d, lo, hi) in new[] { (dx, -from.X, w - 1 - from.X), (dy, -from.Y, h - 1 - from.Y) })
             if (d != 0) length = Math.Min(length, Math.Max(0, (d > 0 ? hi : lo) / (d / aim)));
+    // The rounded endpoint can add less than one cell. Guard only speeds whose resulting flight would exceed
+    // Task.Delay's maximum duration; valid slow test overrides (e.g. 0.001 cells/s) retain their exact value.
+    cellsPerSecond = ProjectileSpeed.ForFlightDistance(cellsPerSecond, length + 1);
     // Collision: the first living monster within Game_PROJECTILE_HIT_RADIUS cells (default 4: the row's CollisionRadius
     // 2 plus a monster's body) of the projectile when it passes, using where the monster will be by then. Checked once at
     // launch, half a cell at a time along the path; a monster that walks into the path later is not hit. Walls and

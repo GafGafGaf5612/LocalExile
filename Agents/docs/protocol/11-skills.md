@@ -525,8 +525,11 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   and [modifier formula](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcTools.lua#L16),
   restricted here to additive increases/reductions. One resolved speed drives collision prediction, 0x1ba's
   duration and the server's flight delay. A finite positive `Game_PROJECTILE_SPEED` still overrides the result
-  in cells/second. Invalid overrides fall back to the modified table speed; a 0.01 cells/second floor prevents
-  nonpositive/tiny speeds from making unbounded delays (a server guard, not a measured official minimum).
+  in cells/second. Invalid overrides fall back to the modified table speed. Finite positive overrides, including
+  0.001 cells/second, are preserved when their flight duration is representable. Only a nonpositive speed or a
+  flight exceeding [.NET's maximum Task.Delay duration](https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.task.delay?view=net-10.0)
+  (4,294,967,294 ms) gets a distance-dependent lower speed bound, before collision prediction. The bound includes
+  endpoint rounding and is a numeric guard, not a measured official minimum speed.
   More/less modifiers, conditional and per-charge speed, support-gem application and special projectile speed
   rules remain unimplemented. Collision is still predicted only at launch, with the limitations below.
 - **Hit (live 2026-10-18).** At launch the server walks the path cell by cell and stops it at the first living

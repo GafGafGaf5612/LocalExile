@@ -35,11 +35,15 @@ public class ProjectileSpeedTests
             Stats(("projectile_speed_+%", 0), ("base_projectile_speed_+%", 200)), Stats()), 4);
     }
 
-    [Fact]
-    public void Test_override_is_in_cells_per_second_and_does_not_receive_bonuses()
+    [Theory]
+    [InlineData("10.5", 10.5f)]
+    [InlineData("0.001", 0.001f)]
+    public void Valid_test_override_is_exact_and_does_not_receive_bonuses(string value, float expected)
     {
-        Assert.Equal(10.5f, ProjectileSpeed.CellsPerSecond(1040,
-            Stats(("projectile_speed_+%", 200)), Stats(("base_projectile_speed_+%", 100)), "10.5"));
+        float speed = ProjectileSpeed.CellsPerSecond(1040,
+            Stats(("projectile_speed_+%", 200)), Stats(("base_projectile_speed_+%", 100)), value);
+        Assert.Equal(expected, speed);
+        Assert.Equal(expected, ProjectileSpeed.ForFlightDistance(speed, 121));
     }
 
     [Theory]
@@ -64,13 +68,18 @@ public class ProjectileSpeedTests
     [InlineData(0, 0, 0, null)]
     [InlineData(-1, 0, 0, null)]
     [InlineData(1040, 0, 0, "1e-30")]
-    public void Nonpositive_or_tiny_speeds_have_a_finite_positive_floor(int basis, int player, int skill, string? value)
+    public void Only_an_unsafe_flight_delay_gets_a_distance_dependent_speed_floor(int basis, int player, int skill, string? value)
     {
         float speed = ProjectileSpeed.CellsPerSecond(basis,
             Stats(("projectile_speed_+%", player)), Stats(("base_projectile_speed_+%", skill)), value);
-        Assert.Equal(ProjectileSpeed.MinimumCellsPerSecond, speed);
-        Assert.True(float.IsFinite(120 / speed));
-        Assert.True(TimeSpan.FromSeconds(120 / speed).TotalSeconds > 0);
+        float safe = ProjectileSpeed.ForFlightDistance(speed, 121);
+        Assert.True(float.IsFinite(safe));
+        Assert.True(safe > speed);
+        var duration = TimeSpan.FromSeconds(121.0 / safe);
+        Assert.InRange(duration.TotalMilliseconds, 1, 4294967294);
+        // Validate the actual API boundary without leaving a timer pending for 49 days.
+        Assert.True(Task.Delay(duration, new CancellationToken(canceled: true)).IsCanceled);
+        Assert.True(ProjectileSpeed.ForFlightDistance(speed, 241) > safe);
     }
 
     [Fact]
