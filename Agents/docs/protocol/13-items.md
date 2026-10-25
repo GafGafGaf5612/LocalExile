@@ -249,7 +249,8 @@ sword and a one-handed weapon next to a quiver.
 `FUN_1421eca50` checks that a quiver (ItemClasses row + 1 = 21) sees player stat 3,
 `main_hand_weapon_type`, equal to **9**. This is a separate native enum: Bow's ItemClasses row + 1 is 14,
 and its model stance is 8. Sending the visual alone leaves inventory quivers red and prevents placement
-requests. `FinalPlayerStats` supplies 9 for an active, usable bow in row 2 and clears a stale bow value.
+requests. `FinalPlayerStats` supplies 9 for an active, usable bow in row 2 (a value /set_stat set wins); other
+weapons send nothing, and taking the bow off sends 0 through the cleared-stat list (`PlayerStatsWithCleared`).
 Weapon swaps physically exchange rows 2/3 with 14/15. Other weapon-stat enum values remain to be mapped.
 Automated coverage passes; in-client confirmation pending.
 

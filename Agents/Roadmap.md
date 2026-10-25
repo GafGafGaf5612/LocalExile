@@ -17,6 +17,11 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 1. Quality of life
 
+### Switching hideout templates
+- **Known:** Helena now stands to Niko's screen-right and opens HideoutSelectionWindow (0x7b kind 0x22).
+  The owned list contains the default Lush Hideout. [21](docs/protocol/21-hideouts.md).
+- **Start:** map the selection request, persist the chosen template, and use it for /hideout, player keys and portals.
+
 ### Chat lines and the global channel
 - **Known:** C→S 0x15 (chat text) is parsed; command replies use S→C 0x17 (chat line). 0x12d shows BackendErrors rows, 0x157 is
   a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".

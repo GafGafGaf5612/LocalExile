@@ -706,6 +706,10 @@ branch. Cyclone's skill record now carries both derived values as well. +300% in
 the aggregated 0xd7, to avoid counting 0x1b5 twice. The server's hit calculation still uses the
 original input stats. `Cyclone area:` log lines record the transmitted base, radius, area increase
 and radius scale. Live verification of this follow-up is pending.
+Checked against the disassembly (2026-10-25): the conditional branch of `0x141939880` reads only 0xd7, never
+0x1b5, so the record's aggregated 0xd7 is not counted twice; its more multipliers are 0x1670, 0x16ee and 0x28d7.
+Its caller `0x141939aa0` adds `active_skill_base_radius_+` (0x16c4) to the base itself, so the record carries the
+base without it, as the server's `SkillArea.Radius` adds it to its own base.
 
 ## 13. Auras and reservation
 

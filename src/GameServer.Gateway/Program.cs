@@ -1128,7 +1128,7 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
             conn.TalkingTo = 0;
             await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 close NPC dialogue for hideout selection");
             await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.HideoutSelectionUi,
-                talk.Script.Contains("HideoutSelectionWindow, 1") ? 1u : 0u), "0x007b open hideout selection");
+                talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
             break;
         case "Gossip" or "Quests" or "QuestReward" when talk.TextAudio.Count > 0:
             // 0x84 with the row's index: the client opens the dialogue window on that NPCTalk row (its text and audio).
@@ -2235,16 +2235,13 @@ static List<(uint, int)> PlayerStatsWithCleared(ClientState conn)
 static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
-    // Quivers are gated by main_hand_weapon_type on the client, independently of the model's weapon stance.
-    var inventories = ItemsOf(conn);
-    var activeMainClass = inventories.Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id))
-        .Select(i => Items.ByHash(i.Item.TypeHash)?.Class).FirstOrDefault();
-    if (Stats.Key("main_hand_weapon_type") is uint weaponTypeKey)
-    {
-        if (WeaponTypeStats.BowType(activeMainClass) is int bowType) stats[weaponTypeKey] = bowType;
-        else stats[weaponTypeKey] = stats.GetValueOrDefault(weaponTypeKey) is var existing && existing != 9 ? existing : 0;
-    }
-    var weapon = WeaponFor(conn);
+    // Quivers are gated by main_hand_weapon_type on the client, independently of the model's weapon stance. Only the
+    // bow's value is known, so other weapons send nothing (a value /set_stat set stays); taking the bow off clears the
+    // 9 sent before through PlayerStatsWithCleared.
+    var mainHand = ActiveMainHand(conn);
+    if (Stats.Key("main_hand_weapon_type") is uint weaponTypeKey && WeaponTypeStats.BowType(mainHand?.Type?.Class) is int bowType)
+        stats.TryAdd(weaponTypeKey, bowType);
+    var weapon = WeaponOf(conn, mainHand);
     foreach (var (k, v) in weapon.Stats(stats, AttackHit(weapon, stats).Convert(DamageStats.Conversion(stats, Stats, attack: true)))) stats[k] = v;
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     return stats.Select(kv => (kv.Key, kv.Value));
@@ -5243,14 +5240,20 @@ static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
 // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
 // The local stats of the active main hand and off hand items (the first weapon set, else the second), for the panel's
 // hand rows (PanelStats).
+// The item in the main hand (row 2, the active set) and its base type, unless its requirements are not met.
+static (Item Item, ItemCatalog.BaseType? Type)? ActiveMainHand(ClientState conn) =>
+    ItemsOf(conn).Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id))
+        .Select(i => ((Item, ItemCatalog.BaseType?)?)(i.Item, Items.ByHash(i.Item.TypeHash))).FirstOrDefault();
+
 // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, its
 // physical damage with the weapon's own local mods (local_physical_damage_+%, local_minimum / maximum_added_physical_damage)
 // and its attack time with local_attack_speed_+%; no weapon, the class's unarmed attack.
-static SkillCatalog.Unarmed WeaponFor(ClientState conn)
+static SkillCatalog.Unarmed WeaponFor(ClientState conn) => WeaponOf(conn, ActiveMainHand(conn));
+
+static SkillCatalog.Unarmed WeaponOf(ClientState conn, (Item Item, ItemCatalog.BaseType? Type)? mainHand)
 {
     var unarmed = Skills.UnarmedFor(conn.ClassRow);
-    var item = ItemsOf(conn).Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
-    if (item is null || Items.ByHash(item.TypeHash) is not { } type || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return unarmed;
+    if (mainHand is not var (item, type) || type is null || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return unarmed;
     var local = ItemModStats.Local(item, Items.Mods);
     double scale = 1 + local.GetValueOrDefault("local_physical_damage_+%") / 100.0;
     int lo = (int)((min + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
