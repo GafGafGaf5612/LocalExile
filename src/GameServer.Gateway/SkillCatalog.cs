@@ -326,11 +326,16 @@ sealed class SkillCatalog(string folder = "data")
     /// attack's, unlike a spell, which the client paces by its cast time.</summary>
     public bool IsAttack(int effectRow) => _attackEffects.Value.Contains(effectRow);
 
+    /// <summary>Whether a GrantedEffects row's skill classifies Melee (the ActiveSkillType). Decides whether an attack
+    /// gem's hit takes melee_damage_+% (the default attack does by its weapon profile instead).</summary>
+    public bool IsMelee(int effectRow) => _meleeEffects.Value.Contains(effectRow);
+
     public bool IsSpell(int effectRow) => _spellEffects.Value.Contains(effectRow);
 
     private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
     private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
     private readonly Lazy<HashSet<int>> _attackEffects = new(() => EffectsOfType(folder, "Attack"));
+    private readonly Lazy<HashSet<int>> _meleeEffects = new(() => EffectsOfType(folder, "Melee"));
     private readonly Lazy<HashSet<int>> _spellEffects = new(() => EffectsOfType(folder, "Spell"));
 
     /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>

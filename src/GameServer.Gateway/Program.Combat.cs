@@ -124,7 +124,7 @@ partial class Program
         }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var player = CharacterPlayerStats(conn);
-        var hit = AttackHit(weapon, player)
+        var hit = AttackHit(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee)
             .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
         // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
         // hits, and the hit's own physical damage may store a new stack for the hits after it.
@@ -466,8 +466,9 @@ partial class Program
                 () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
+            bool melee = MeleeAttack(conn, gem.Effect);
             var hit = projectileHitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
+                () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn), melee),
                         Skills.DamageEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
@@ -554,7 +555,7 @@ partial class Program
         foreach (var (id, m) in targets)
         {
             DamagePacket hit = hitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
+                () => SpellDamage.WithEffectiveness(AttackHit(weapon, player, MeleeAttack(conn, gem.Effect)), effectiveness)
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
