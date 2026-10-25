@@ -205,6 +205,26 @@ hits. `/set_stat` overrides any of these. The packet, conversion order and damag
 `f0 0x40, f1 0, skill list`: the list replaces the skill of the same id, new stats included. Live: the swing sped up at
 once. The Gateway now sends the 0x20 update instead (above), which also removes skills and updates the character panel.
 
+**Inherent attack-gem speed (#191).** `GrantedEffectsPerLevel.AttackSpeedMultiplier` multiplies weapon attack
+rate separately from the player's increased/more speed: Burning Arrow -30%, Heavy Strike -15%, Flicker Strike +20%.
+The level-aware catalog accessor follows the same selected-level rule as other GEPL values.
+[PoB CalcOffence](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/1afbc4cdcc4fe83273ce8e06a51c5cf986999250/src/Modules/CalcOffence.lua#L2299)
+multiplies `source.AttackRate` by `1 + attackSpeedMultiplier / 100` before ordinary speed modifiers.
+For the supported ordinary weapon-based path, `SkillAttackTiming` sends total base weapon ms as
+`round(weapon base ms / (1 + inherent percent / 100))`, midpoint away from zero, with a minimum of one ms.
+It retains the original weapon base ms (0x142/0x143) and final player speed percent (0x126/0x127).
+The native total base fields (0x221a/0x221b) are integer ms, so the server uses that same rounded base, then player
+speed, then its existing 30 Hz attack-duration floor; rounding the base changes the uncapped time by at most
+0.5 ms divided by the player-speed factor.
+Native action code `0x141c06c2a..0x141c06c8e` reads 0x221a and divides by 1000 and `1 + stat(0x126) / 100`.
+The explicit 0x221a getter (`0x142706568..0x14270658f`) returns the stored value without another GEPL multiplier.
+Gem pacing, attack contact/projectile release and channel intervals share that duration; selected APS is `100 / seconds`.
+Ordinary attacks and non-attack skills retain their previous paths.
+Catalog, native-field, modifier-order, pacing/contact and spell-exclusion tests pass; native validation is pending.
+This excludes support/conditional/per-charge speed, skill-specific attack-time overrides and off-hand alternation rules.
+Selected attack-gem damage ranges/DPS still inherit the existing weapon display; correcting those is separate work.
+No generator output changes are needed: the multiplier is already extracted.
+
 ## 5. Combat timing (Gateway `Attack`)
 
 1. C→S 0x24 arrives when the player clicks, before the client walks into range. The server walks its position estimate

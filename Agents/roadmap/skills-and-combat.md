@@ -28,6 +28,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
+  Attack gems now share level-aware inherent speed with server pacing/contact and native total-duration/APS stats.
+  Automated checks pass; native ordinary-versus-gem cadence verification is pending.
+  Attack-gem damage/DPS and conditional speed remain separate work.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 

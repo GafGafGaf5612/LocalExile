@@ -172,6 +172,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack
   speed is summed into the client's `main_hand_attack_speed_+%`;
   dual wielding adds PoB's 10% more and the server's unarmed attack uses the same final value.
+  Attack gems now apply their extracted inherent speed multiplier to total base duration separately from player speed.
+  Pacing, contact/release timing, channel intervals and selected APS share the same rounded native base duration.
+  Catalog, modifier-order, native-field and spell-exclusion tests pass; real-client verification is pending.
+  Supports, conditional/per-charge speed, special time overrides and attack-gem damage/DPS remain separate work.
   The default attack also sends the panel's `hundred_times_damage_per_second` and
   `display_hundred_times_damage_per_skill_use`.
   Live verified: the dual-wield character's APS follows the passives (2.93 → 2.98 after a node).
