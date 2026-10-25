@@ -49,6 +49,11 @@ conversion fills whatever remains of the 100% cap, and the final conversion for 
 as in Path of Building. Gains are added to the destination without reducing the source, matching the wiki's
 "gain as extra" rule.
 
+A player hit on a monster rolls each type once and then takes the monster's own base resistance on each type
+(MonsterResistanceCatalog, §4), before the critical multiplier and the life update. A monster's attack on the player
+does the mirror pass through the player's resistances. Damage over time is outside this pass: it has no hit, and
+Righteous Fire's monster burn keeps its per-tick percentage-of-life model with no resistance.
+
 The same packet is used for attacks, spells and monster hits. The caller decides whether the attack-only or spell-only
 stats apply; `DamageStats` reads the Stats.dat names:
 
@@ -98,6 +103,12 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   rolls it and sends the life change.
 - Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands, applies each
   type's resistance and then armour to the physical part.
+- Player hits on monsters (default attack, gem projectile and area hits) roll each type once and reduce it by the
+  monster's base resistance: `MonsterTypes.Resistances` → `MonsterResistances`, the level's
+  `DefaultMonsterStats.Difficulty` (1/2/3) picking the Normal/Cruel/Merciless columns (`MonsterResistanceCatalog`,
+  `MonsterCatalog.BaseResistance`, the shared pass is `HitMitigation`). Without the extracted tables every type reads
+  0, so hits land as they did before. Spawned-monster resistance modifiers, exposure and curses are outside the base
+  table, and monster armour is not modelled yet.
 - `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
   `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
   `MitigatePhysical`.
@@ -125,7 +136,8 @@ also check pause, flasks and RF. The new visual behavior awaits that real-client
 
 ## 6. Not modelled yet
 
-- Energy shield, penetration, exposure, shock and other damage-taken modifiers; monster armour and resistances.
+- Energy shield, penetration, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base
+  resistances are in, §4).
 - Added flat damage from supports/items, increased/more modifiers per type, damage effectiveness, and skill-specific
   added-damage scaling.
 - Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.
