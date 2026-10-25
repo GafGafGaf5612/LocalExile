@@ -27,5 +27,7 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Start:** the remaining quest reward offers and offer 8's magic-armour choices.
   NPCDialogueWindow's option handler is `0x140723d60` / `0x14071f6d0`.
   Shops from NPCShop / ShopSets.
+  Nessa now stocks the deduplicated legacy MapWorlds catalogue and unique map identities.
+  Complete unique modifiers and unique-area routing remain separate follow-up work.
   Placements for the other towns (`NpcCatalog.Towns`, with `/pos`).
 - **Done when:** talk options play their text, Nessa and Tarkleigh trade, and every town has its NPCs.

@@ -37,9 +37,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   save.
   Player-to-player trade remains unimplemented.
   Live visibility verification pending; see protocol/17-npcs.md.
-- **Nessa's shop tabs (2026-10-21; the gem tabs verified live, the maps and the tabbed window flag being tested):**
-  Goods (her stock, one Beach Map, then every map of tiers 1-16) and Goods2 for the rest, then every shop gem in Red /
-  Green / Blue Skills and Support and White Skills, 1 Scroll of Wisdom each, filled row by row.
+- **Nessa's shop tabs:** Goods contains her supplies and the legacy MapWorlds catalogue, with automatic extra pages.
+  Ordinary maps are white and deduplicated by name; 28 unique names have unique rarity, name and artwork.
+  Full unique modifier sets and unique-area routing remain open.
+  Gem tabs remain Red / Green / Blue Skills and Support and White Skills, 1 Scroll of Wisdom each.
   Shops send one inventory per tab and their names in 0x8c.
   See [17](../docs/protocol/17-npcs.md) §5.
 
