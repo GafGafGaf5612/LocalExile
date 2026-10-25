@@ -406,4 +406,6 @@ Cyclone's additional melee-range and stage modifiers remain partial. See protoco
 
 Nessa/Tarkleigh quest offers 8/0 now open their native reward inventory and grant class-filtered normal level-one gems, with prerequisite/claimed flags and atomic duplicate-safe saves. Other rewards and magic armour choices remain unimplemented; see [NPC rewards](docs/protocol/17-npcs.md#quest-dialogue-and-first-rewards-2026-10-25).
 
+Optional [native client control](docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated UI input. It targets the copied standalone 3.29.3b client and local services only.
+
 Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses. Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented. See [skills](docs/protocol/11-skills.md).
