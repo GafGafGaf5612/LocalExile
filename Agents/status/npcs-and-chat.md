@@ -20,11 +20,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   the normal tree's Apply refunds (0x36 with flag 0) spend saved refund points;
   Identify Items identifies the inventory for free, prints "N Items identified" in chat (S→C 0x17) and grays the
   option; `/npc`, `/npcs`, `/pos`.
+  Dialogue options now enforce their required/excluded quest flags and save their start/finish flags.
   Code: `InstanceNpcs.cs`, `NpcCatalog.cs`, Gateway (`SpawnTownNpcs`, `TalkToNpc`).
   Docs: [17](../docs/protocol/17-npcs.md).
 
 ## Partly working
 
+- Quest reward offers 0 and 8 open the native reward inventory and grant class-filtered normal level-one gems.
+  The item and claimed flag are saved together, with duplicate, prerequisite, full-inventory and save-failure guards.
+  Tarkleigh's Freezing Pulse and Nessa's Combustion Support claims were checked live on a disposable character.
+  Other offers and offer 8's magic-armour choices remain unimplemented.
+  See [quest rewards](../docs/protocol/17-npcs.md#quest-dialogue-and-first-rewards-2026-10-25).
 - NPC sale visibility: offered items are hidden from the main inventory and shown only in Your Offer.
   Their original cells/items remain reserved in the durable save;
   take-back/cancel restores the view, disconnect/crash preserves items, and acceptance exchanges items/payment in one
