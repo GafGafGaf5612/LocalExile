@@ -750,6 +750,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 await SpawnTownNpcs(remote, stream, ciphers, conn);
                 await SpawnTownStash(remote, stream, ciphers, conn);
                 await SpawnQuestRoomObjects(remote, stream, ciphers, conn);
+                await SpawnOpeningTutorial(remote, stream, ciphers, conn);
                 await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                 await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                 await SpawnTownPortals(remote, stream, ciphers, conn);
@@ -917,6 +918,11 @@ static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCip
     if (conn.Instance.Ground.Get(use.TargetId) is { } ground)
     {
         await PickUpGroundItem(remote, stream, ciphers, conn, use.TargetId, ground, use);
+        return;
+    }
+    if (conn.TutorialChestId == use.TargetId && conn.TutorialChest is { } tutorialChest)
+    {
+        await OpenTutorialChest(remote, stream, ciphers, conn, use, tutorialChest);
         return;
     }
     if (use.TargetId == WaypointCatalog.ObjectId && conn.Layout.Waypoint is { } waypoint)
@@ -1098,6 +1104,11 @@ static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphe
     lock (conn.Npcs) id = conn.Npcs.FirstOrDefault(n => ReferenceEquals(n.Value, npc)).Key;
     conn.TalkingTo = id;
     conn.InNpcTalk = false;
+    if (npc.Npc.Id == TutorialObjects.Exile)
+    {
+        await TalkToWoundedExile(remote, stream, ciphers, conn, id, npc);
+        return;
+    }
     await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 talk to npc 0x{id:x} {npc.Npc.Name}");
 }
 
@@ -1107,7 +1118,7 @@ static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphe
 static async Task CloseNpcDialogue(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
     uint id = conn.TalkingTo;
-    if (id != 0 && conn.InNpcTalk)
+    if (id != 0 && conn.InNpcTalk && !IsWoundedExile())
     {
         conn.InNpcTalk = false;
         await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 npc 0x{id:x}: back to the options (0x85 after a talk)");
@@ -1116,6 +1127,11 @@ static async Task CloseNpcDialogue(string remote, NetworkStream stream, Connecti
     conn.TalkingTo = 0;
     conn.InNpcTalk = false;
     await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 object 0: npc dialogue closed (0x85)");
+
+    bool IsWoundedExile()
+    {
+        lock (conn.Npcs) return conn.Npcs.GetValueOrDefault(id)?.Npc.Id == TutorialObjects.Exile;
+    }
 }
 
 // C→S 0x82: an option picked in the NPC dialogue window (an NPCTalk row of the NPC talked to).
@@ -1125,6 +1141,7 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
     SpawnedNpc? npc;
     lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(id);
     if (npc is null) { Console.WriteLine($"[gateway] {remote} <= 0x0082 npc option {index}: no NPC dialogue open"); return; }
+    if (npc.Npc.Id == TutorialObjects.Exile) return;
     var talk = Npcs.Value.TalkOf(npc.Npc, index);
     Console.WriteLine($"[gateway] {remote} <= 0x0082 npc {npc.Npc.Name} option {index}: " +
         (talk is null ? "no NPCTalk row" : $"NPCTalk row {talk.Row} \"{talk.Option}\" ({talk.Category}), text audio [{string.Join(", ", talk.TextAudio)}]"));
@@ -3333,6 +3350,12 @@ static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionC
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove dead monster 0x{id:x}");
     });
     if (m.Variety is not { } variety || !m.Hostile) return;
+    if (conn.Layout.Id == TutorialObjects.Strand && variety.Id == TutorialObjects.Zombie
+        && CharacterSaves.Load(CharacterName(conn))?.Tutorial is { ZombieKilled: false })
+    {
+        CharacterSaves.ChangeTutorial(CharacterName(conn), t => t with { ZombieKilled = true });
+        await DropTutorialGem(remote, stream, ciphers, conn, false, at.X, at.Y);
+    }
     await SetQuestFlags(remote, stream, ciphers, conn, Quests.OnMonsterKilled(conn.Layout.Id, variety.Id));
     if (alive && Dist(at, player) <= ExperienceRange && Monsters.BaseExperience(variety, m.Level) is int baseXp)
     {
@@ -5790,6 +5813,133 @@ static async Task GainFlaskCharges(string remote, NetworkStream stream, Connecti
         $"0x00bf flasks: {string.Join(", ", changed.Select(c => $"{c.X}: {c.Item.Charges}"))} charges ({why})");
 }
 
+static async Task SpawnOpeningTutorial(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (conn.Layout.Id != TutorialObjects.Strand || CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { } tutorial) return;
+    var objects = AreaPopulation.LoadObjects(conn.Layout.Id, conn.Seed, []);
+    var exile = objects.FirstOrDefault(o => o.Type == TutorialObjects.Exile);
+    conn.TutorialZombiePlacement = objects.FirstOrDefault(o => o.Type == TutorialObjects.Spawner);
+    if (exile is not null && Npcs.Value.Find(TutorialObjects.Exile) is { Supported: true } npc)
+        await SpawnNpc(remote, stream, ciphers, conn, npc with { TransitionState = (byte)(tutorial.Talked ? 2 : 1) }, exile.X, exile.Y, exile.Angle);
+    if (conn.TutorialZombiePlacement is { } spawn)
+    {
+        if (tutorial.ZombieKilled)
+            await DropTutorialGem(remote, stream, ciphers, conn, false, spawn.X, spawn.Y);
+        else if (tutorial.Talked)
+            await SpawnTutorialZombie(remote, stream, ciphers, conn);
+        else
+        {
+            conn.TutorialSceneId = conn.NextObjectId++;
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(conn.TutorialSceneId, InstanceEntities.ObjectTypeHash(TutorialObjects.Spawner),
+                TutorialObjects.SceneBlob(spawn.X,spawn.Y,spawn.Angle)), "0x02b9 opening bite zombie scene");
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(conn.TutorialSceneId), null);
+            await Send(remote, stream, ciphers, TutorialObjects.BiteAnimation(conn.TutorialSceneId,0), "0x01b2 opening zombie paused at bite start");
+        }
+    }
+    // The recorder writes tile placements while the client generates the area. Wait briefly for this optional capture.
+    _ = TrySpawnTutorialChest(remote, stream, ciphers, conn);
+}
+
+static async Task TrySpawnTutorialChest(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    try
+    {
+        for (int retry=0; retry<20 && !conn.Closed; retry++)
+        {
+            var named=AreaPopulation.LoadPoints(conn.Layout.Id,conn.Seed,[]).FirstOrDefault(p=>p.Name==TutorialObjects.Chest);
+            if ((TutorialObjects.ChestPlacement(conn.Layout.Id,conn.Seed) ?? (named is null ? null : TutorialObjects.ChestAt(named))) is { } chest)
+            {
+                conn.TutorialChest = chest; conn.TutorialChestId = conn.NextObjectId++;
+                bool opened = CharacterSaves.Load(CharacterName(conn))?.Tutorial?.ChestOpened == true;
+                await Send(remote,stream,ciphers,InstanceEntities.CreateObject(conn.TutorialChestId,InstanceEntities.ObjectTypeHash(chest.Type),
+                    TutorialObjects.ChestBlob(chest,opened)), $"0x02b9 tutorial support chest at ({chest.X},{chest.Y}), opened={opened}");
+                await Send(remote,stream,ciphers,InstanceProtocol.EnterWakeZone(conn.TutorialChestId),null);
+                if (opened) await DropTutorialGem(remote,stream,ciphers,conn,true,chest.X,chest.Y);
+                return;
+            }
+            await Task.Delay(1000);
+        }
+        if (!conn.Closed) Console.WriteLine($"[gateway] {remote} tutorial chest has no captured placement for {conn.Layout.Id} seed {conn.Seed}; capture with -Walkmaps");
+    }
+    catch (Exception ex) when (ex is IOException or JsonException or ObjectDisposedException)
+    { if (!conn.Closed) Console.WriteLine($"[gateway] tutorial chest: {ex.Message}"); }
+}
+
+static async Task TalkToWoundedExile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,uint id,SpawnedNpc npc)
+{
+    if (CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { Talked: false } || conn.TutorialSceneRunning) return;
+    bool armed = ItemsOf(conn).Items(PlayerInventories.Weapon1).Count > 0;
+    conn.InNpcTalk = true;
+    await Send(remote,stream,ciphers,InstanceNpcs.Talk(id,armed ? (byte)2 : (byte)1),"0x0084 dying exile: class weapon check");
+    if (!armed) return;
+    conn.TutorialSceneRunning = true;
+    CharacterSaves.ChangeTutorial(CharacterName(conn),t=>t with { Talked=true });
+    await SetQuestFlags(remote,stream,ciphers,conn,["TalkedToWoundedExile"]);
+    _ = RunOpeningScene(remote,stream,ciphers,conn,id,npc);
+}
+
+static async Task RunOpeningScene(string remote,NetworkStream stream,ConnectionCiphers ciphers,ClientState conn,uint id,SpawnedNpc npc)
+{
+    try
+    {
+        double start=conn.Clock.Elapsed.TotalSeconds;
+        // NPCTalk's actual script: triggerer.TalkToWoundedExile(8.2,22.8). Use the paused instance clock.
+        async Task Until(double elapsed) { while (!conn.Closed && conn.Clock.Elapsed.TotalSeconds < start+elapsed) await Task.Delay(50); }
+        await Until(8.2); if(conn.Closed) return;
+        int component=npc.Npc.Components!.ToList().IndexOf("Transitionable");
+        if(component>=0) await Send(remote,stream,ciphers,InstanceEntities.TransitionableUpdate(id,(byte)component,2),"0x02ba wounded exile bitten");
+        if(conn.TutorialSceneId!=0) await Send(remote,stream,ciphers,TutorialObjects.BiteAnimation(conn.TutorialSceneId,1),"0x01b2 opening zombie bites exile");
+        await Until(22.8); if(conn.Closed) return;
+        if(conn.TutorialSceneId!=0) await Send(remote,stream,ciphers,InstanceProtocol.RemoveObject(conn.TutorialSceneId),null);
+        if(conn.TalkingTo==id) { conn.InNpcTalk=false;conn.TalkingTo=0;await Send(remote,stream,ciphers,InstanceNpcs.Talk(0),null); }
+        await SpawnTutorialZombie(remote,stream,ciphers,conn);
+    }
+    catch(Exception ex) when(ex is IOException or ObjectDisposedException)
+    { if(!conn.Closed) Console.WriteLine($"[gateway] opening scene: {ex.Message}"); }
+    finally { conn.TutorialSceneRunning=false; }
+}
+
+static async Task SpawnTutorialZombie(string remote,NetworkStream stream,ConnectionCiphers ciphers,ClientState conn)
+{
+    if(Environment.GetEnvironmentVariable("Game_MONSTERS")=="0" || conn.TutorialZombiePlacement is not { } spawn) return;
+    lock(conn.Monsters) if(conn.Monsters.Values.Any(m=>m.Variety?.Id==TutorialObjects.Zombie)) return;
+    if(Monsters.Find(TutorialObjects.Zombie) is { Supported:true } zombie)
+        await SpawnMonster(remote,stream,ciphers,conn,zombie,1,MonsterRarity.Normal,spawn.X,spawn.Y);
+}
+
+static async Task DropTutorialGem(string remote,NetworkStream stream,ConnectionCiphers ciphers,ClientState conn,bool support,int x,int y)
+{
+    if(CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { } tutorial || (support ? tutorial.SupportClaimed : tutorial.SkillClaimed)) return;
+    var item=CharacterSaves.FromSaved(support?tutorial.SupportGem:tutorial.SkillGem,Items);
+    var ground=new WorldItemObject(x,y,item);
+    if(conn.Instance.PlaceTutorialItem(TutorialObjects.DropKey(CharacterName(conn),tutorial,support),ground) is not uint id) return;
+    await Send(remote,stream,ciphers,InstanceEntities.CreateObject(id,InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath),ground.Blob()),
+        $"0x02b9 tutorial {(support?"support":"skill")} gem {Items.GemName(item)} at ({x},{y})");
+    await Send(remote,stream,ciphers,InstanceProtocol.EnterWakeZone(id),null);
+}
+
+static async Task OpenTutorialChest(string remote,NetworkStream stream,ConnectionCiphers ciphers,ClientState conn,InstanceTransfer.UseSkillOnObject use,TutorialObjects.Placement chest)
+{
+    if(CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { ChestOpened:false }) return;
+    int action=Interlocked.Increment(ref conn.ActionCount);
+    double now=conn.Clock.Elapsed.TotalSeconds;
+    var (here,stop,arrive)=conn.Walk.WalkUpTo(chest.X,chest.Y,1,now);
+    await Send(remote,stream,ciphers,InstanceProtocol.ActionStarted(PlayerId,here.X,here.Y,chest.X,chest.Y,use.SkillId,use.Sequence,use.Flags,targetObjectId:use.TargetId),null);
+    if(arrive>now) await Task.Delay(TimeSpan.FromSeconds(arrive-now));
+    if(conn.ActionCount!=action || conn.Closed) return;
+    if(!GameServer.Core.World.PlayerWalk.InWalkUpRange(stop,(chest.X,chest.Y),1))
+    {
+        await Send(remote,stream,ciphers,InstanceProtocol.ActionEnded(PlayerId),null);
+        return;
+    }
+    CharacterSaves.ChangeTutorial(CharacterName(conn),t=>t with { ChestOpened=true });
+    await Send(remote,stream,ciphers,InstanceProtocol.RemoveObject(use.TargetId),null);
+    await Send(remote,stream,ciphers,InstanceEntities.CreateObject(use.TargetId,InstanceEntities.ObjectTypeHash(chest.Type),TutorialObjects.ChestBlob(chest,true)),"0x02b9 opened support gem chest");
+    await Send(remote,stream,ciphers,InstanceProtocol.EnterWakeZone(use.TargetId),null);
+    await DropTutorialGem(remote,stream,ciphers,conn,true,chest.X,chest.Y);
+    await Send(remote,stream,ciphers,InstanceProtocol.ActionEnded(PlayerId),null);
+}
+
 // A new character's class weapon lies on the ground a few cells from where it appears, as on the real game's Twilight
 // Strand, until it is picked up (PlayerInventories.StartWeapon): put once into each instance it enters outside towns.
 static async Task PlaceStartWeapon(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
@@ -5885,8 +6035,17 @@ static async Task PickUpGroundItem(string remote, NetworkStream stream, Connecti
     if (conn.Instance.IsStartWeapon(CharacterName(conn), id) && items.ClaimStartWeapon())
         Console.WriteLine($"[gateway] {remote} start weapon picked up");
 
-    var placed = KeepOnGroundIfNotSaved(conn, ground, () => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item)));
+    var placed = KeepOnGroundIfNotSaved(conn, ground, () =>
+    {
+        InventoryItem Put() => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
+        if (CharacterSaves.Load(CharacterName(conn))?.Tutorial is { } tutorial)
+            foreach (bool support in new[] { false, true })
+                if (conn.Instance.IsStartWeapon(TutorialObjects.DropKey(CharacterName(conn), tutorial, support), id))
+                    return TutorialObjects.Claim(CharacterName(conn), support, ground.Item, Put);
+        return Put();
+    }, id);
     await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
+    if (placed is null) return;
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
         toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
 }
@@ -5904,12 +6063,13 @@ static async Task PickUpGold(string remote, NetworkStream stream, ConnectionCiph
 
 // A pickup whose save fails puts the item back on the ground before the error closes the connection: it left the ground
 // first, and the items are loaded again as saved (Saves).
-static T KeepOnGroundIfNotSaved<T>(ClientState conn, WorldItemObject ground, Func<T> pickUp)
+static T KeepOnGroundIfNotSaved<T>(ClientState conn, WorldItemObject ground, Func<T> pickUp, uint? originalId = null)
 {
     try { return pickUp(); }
     catch
     {
-        conn.Instance.Ground.Add(ground);
+        if (originalId is uint id) conn.Instance.Ground.Restore(id, ground);
+        else conn.Instance.Ground.Add(ground);
         throw;
     }
 }
@@ -7844,6 +8004,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public volatile uint TalkingTo;
     // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
     public volatile bool InNpcTalk;
+    public uint TutorialSceneId, TutorialChestId;
+    public TutorialObjects.Placement? TutorialChest;
+    public AreaPopulation.RoomObject? TutorialZombiePlacement;
+    public bool TutorialSceneRunning;
     // NPCs created on this connection by object id (town NPCs, /npc).
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>

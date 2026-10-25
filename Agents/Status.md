@@ -393,3 +393,6 @@ conditional path now also receives aggregate area (0xd7) and radius percentage (
 Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
 
 - Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
+
+
+New characters now receive the Twilight Strand ground weapon, wounded-exile/zombie skill-gem encounter, and support-gem chest using captured room placements. Existing saves retain their kit/progress. Tutorial popup acknowledgements and force walls remain unimplemented; see [opening encounter](docs/protocol/12-quests.md#opening-encounter-2026-10-25).
