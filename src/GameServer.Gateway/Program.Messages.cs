@@ -115,7 +115,7 @@ partial class Program
                 await Send(remote, stream, ciphers,
                     InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                     $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})",
-                    still: () => cooldownUse?.CommitNativeUse(conn) ?? true);
+                    still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? true);
                 if (cooldownUse?.Current(conn) == false) continue;
                 conn.ChannelSkill = cast ? use.SkillId : (ushort)0;
                 conn.ChannelSkillSequence = use.Slot;

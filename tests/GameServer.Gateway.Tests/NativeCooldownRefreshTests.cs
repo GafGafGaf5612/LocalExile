@@ -18,14 +18,14 @@ public class NativeCooldownRefreshTests
         conn.SingleUseCooldowns[10619] = state;
         return (conn, state, new(10619, conn.ActionCount, conn.ProjectileEpoch, false, State: state, UseVersion: state.UseVersion));
     }
-    static byte[]? Snapshot(ClientState conn) => Program.NativeCooldownRefresh(conn, conn.ProjectileEpoch, Eligible);
+    static byte[]? Snapshot(ClientState conn) => Program.NativeCooldownRefresh(conn, conn.ProjectileEpoch, () => Eligible);
     static float Float(byte[] bytes, int offset) => BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(offset));
 
     [Fact]
     public void An_acknowledged_active_rate_change_sends_progress_once_without_paying_or_consuming_again()
     {
         var (conn, state, ticket) = Spent();
-        Assert.True(ticket.CommitNativeUse(conn));
+        Assert.True(ticket.CommitNativeUse(conn, 0x103));
         state.Refresh(10.5, 2);
         byte[] bytes = Assert.IsType<byte[]>(Snapshot(conn));
         Assert.Equal(2, Float(bytes, 29));
@@ -45,8 +45,8 @@ public class NativeCooldownRefreshTests
         Assert.Null(Snapshot(conn));
         state.Refresh(10.5, 2);
         Assert.Null(Snapshot(conn)); // Reserved while its original echo is still queued/cancelled.
-        Assert.True(ticket.CommitNativeUse(conn));
-        Assert.Null(Program.NativeCooldownRefresh(conn, conn.ProjectileEpoch, []));
+        Assert.True(ticket.CommitNativeUse(conn, 0x103));
+        Assert.Null(Program.NativeCooldownRefresh(conn, conn.ProjectileEpoch, () => []));
         conn.ClientSkillIds.Clear();
         Assert.Null(Snapshot(conn)); // A skill removed while queued cannot have an old entry restored.
         conn.ClientSkillIds.Add(0x103);
@@ -58,7 +58,7 @@ public class NativeCooldownRefreshTests
     public void An_unchanged_active_rate_and_a_use_that_finished_before_the_rate_change_send_nothing()
     {
         var (conn, state, ticket) = Spent();
-        ticket.CommitNativeUse(conn);
+        ticket.CommitNativeUse(conn, 0x103);
         state.Refresh(10.5, 1);
         Assert.Null(Snapshot(conn));
         state.Refresh(13, 2);
@@ -66,13 +66,16 @@ public class NativeCooldownRefreshTests
         Assert.Null(Snapshot(conn));
     }
 
-    [Fact]
-    public void Expiry_while_a_rate_change_is_queued_clears_the_native_entry_instead_of_restarting_it()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Expiry_while_a_rate_change_is_queued_clears_the_native_entry_instead_of_restarting_it(bool roundtrip)
     {
         var (conn, state, ticket) = Spent();
-        ticket.CommitNativeUse(conn);
+        ticket.CommitNativeUse(conn, 0x103);
         state.Refresh(10.5, 2);
-        state.Refresh(12, 2);
+        if (roundtrip) state.Refresh(11, 1);
+        state.Refresh(13, state.Rate);
         var bytes = Assert.IsType<byte[]>(Snapshot(conn));
         Assert.Equal(29, bytes.Length);
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(25)));
@@ -83,7 +86,7 @@ public class NativeCooldownRefreshTests
     public void Paused_rate_changes_and_zero_to_positive_refresh_replace_one_entry_without_resetting_base_progress()
     {
         var (conn, state, ticket) = Spent();
-        ticket.CommitNativeUse(conn);
+        ticket.CommitNativeUse(conn, 0x103);
         conn.Clock.Stop();
         state.Refresh(10.5, 0);
         var stalled = Assert.IsType<byte[]>(Snapshot(conn));
@@ -103,24 +106,26 @@ public class NativeCooldownRefreshTests
     {
         var (conn, state, ticket) = Spent();
         conn.ActionCount++;
-        Assert.False(ticket.CommitNativeUse(conn));
+        Assert.False(ticket.CommitNativeUse(conn, 0x103));
         state.Refresh(10.5, 2);
         Assert.Null(Snapshot(conn));
         state.Refresh(12, 2);
         Assert.True(state.TryUse(12, new(2500, 100)));
         Assert.False(ticket.Current(conn));
-        Assert.False(ticket.CommitNativeUse(conn));
+        Assert.False(ticket.CommitNativeUse(conn, 0x103));
         Assert.Null(Snapshot(conn));
         int epoch = conn.ProjectileEpoch;
         Assert.True(conn.TryBeginAreaChange(new(2, 0, false), out _));
-        Assert.Null(Program.NativeCooldownRefresh(conn, epoch, Eligible));
+        Assert.Null(Program.NativeCooldownRefresh(conn, epoch, () => Eligible));
     }
 
-    [Fact]
-    public async Task Queued_send_builds_and_encrypts_the_cooldown_snapshot_at_its_actual_gate()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Queued_send_builds_and_encrypts_the_cooldown_snapshot_at_its_actual_gate(bool roundtrip)
     {
         var (conn, state, ticket) = Spent();
-        ticket.CommitNativeUse(conn);
+        ticket.CommitNativeUse(conn, 0x103);
         state.Refresh(10.5, 2);
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -138,7 +143,8 @@ public class NativeCooldownRefreshTests
             return Snapshot(conn);
         });
         Assert.False(built);
-        state.Refresh(11.25, 2); // Advance while waiting: sending the staged 2.0 s would rewind progress.
+        if (roundtrip) state.Refresh(11, 1); // Equal rates do not imply aligned progress after 1 -> 2 -> 1.
+        else state.Refresh(11.25, 2); // Advance while waiting: staged 2.0 s would rewind progress.
         gate.Release();
         await sending.WaitAsync(TimeSpan.FromSeconds(5));
         byte[] bytes = new byte[45];
@@ -146,9 +152,71 @@ public class NativeCooldownRefreshTests
         await reader.GetStream().ReadExactlyAsync(bytes, timeout.Token);
         new ConnectionCiphers(new byte[64], isClient: true).Receive.Process(bytes);
         Assert.True(built);
-        Assert.Equal(.5f, Float(bytes, 29));
+        Assert.Equal(roundtrip ? 1 : .5f, Float(bytes, 29));
         Assert.Equal(2.5f, Float(bytes, 33));
-        Assert.Equal(2, Float(bytes, 37));
+        Assert.Equal(roundtrip ? 1 : 2, Float(bytes, 37));
         Assert.Null(Snapshot(conn));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Rate_roundtrips_before_or_after_acknowledgement_retain_unsynchronized_progress(bool beforeAck)
+    {
+        var (conn, state, ticket) = Spent();
+        if (!beforeAck) ticket.CommitNativeUse(conn, 0x103);
+        state.Refresh(10.5, 2);
+        state.Refresh(11, 1);
+        if (beforeAck)
+        {
+            Assert.Null(Snapshot(conn));
+            ticket.CommitNativeUse(conn, 0x103);
+        }
+        var bytes = Assert.IsType<byte[]>(Snapshot(conn));
+        Assert.Equal(1, Float(bytes, 29));
+        Assert.Equal(1, Float(bytes, 37));
+        Assert.Null(Snapshot(conn));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Instant_acknowledgement_aligns_original_reservation_progress_even_without_a_rate_change(bool expired)
+    {
+        var (conn, state, ordinary) = Spent();
+        var ticket = ordinary with { Instant = true };
+        state.Refresh(expired ? 13 : 11, 1);
+        Assert.Null(Snapshot(conn));
+        Assert.True(ticket.CommitNativeUse(conn, 0x103));
+        var bytes = Assert.IsType<byte[]>(Snapshot(conn));
+        if (expired) Assert.Equal(29, bytes.Length);
+        else
+        {
+            Assert.Equal(1.5f, Float(bytes, 29));
+            Assert.Equal(2.5f, Float(bytes, 33));
+            Assert.Equal(1, Float(bytes, 37));
+        }
+        Assert.Null(Snapshot(conn));
+    }
+
+    [Fact]
+    public void Actual_gate_map_identity_and_death_prevent_refreshing_a_reused_skill_id_or_dead_player()
+    {
+        var (conn, state, ticket) = Spent();
+        ticket.CommitNativeUse(conn, 0x103);
+        state.Refresh(10.5, 2);
+        (ushort Id, int Effect)[] currentMap = [(0x103, 10656)]; // The same id now belongs to Frostblink, not Dash.
+        Assert.Null(Program.NativeCooldownRefresh(conn, conn.ProjectileEpoch, () =>
+        {
+            Assert.True(Monitor.IsEntered(conn.Monsters));
+            return currentMap;
+        }));
+        Assert.True(state.NeedsNativeRefresh);
+        currentMap = Eligible;
+        conn.PlayerLife = 0;
+        Assert.Null(Program.NativeCooldownRefresh(conn, conn.ProjectileEpoch,
+            () => throw new Exception("A dead state may not resolve or synchronize skills")));
+        conn.PlayerLife = 100;
+        Assert.NotNull(Program.NativeCooldownRefresh(conn, conn.ProjectileEpoch, () => currentMap));
     }
 }

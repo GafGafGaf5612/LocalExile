@@ -39,16 +39,20 @@ sealed class SingleUseCooldownState(double at, double rate, double remainingBase
     public int TotalBaseMilliseconds { get; private set; } = totalBaseMilliseconds;
     public double Rate { get; private set; } = rate;
     public int UseVersion { get; private set; }
+    public ushort NativeSkillId { get; private set; }
     double? nativeRate;
+    bool nativeAcknowledged, nativeDirty;
     double spentRate;
     double lastAt = at;
 
     public void Refresh(double now, double rate)
     {
         RemainingBaseMilliseconds = Math.Max(0, RemainingBaseMilliseconds - Math.Max(0, now - lastAt) * 1000 * Rate);
-        if (Ready && nativeRate == Rate) nativeRate = null; // Both clocks completed at the same rate.
+        if (Ready && !nativeDirty && nativeRate == Rate) nativeRate = null; // Known aligned completion.
         lastAt = Math.Max(lastAt, now);
-        Rate = Math.Max(0, rate);
+        double next = Math.Max(0, rate);
+        if (!Ready && UseVersion > 0 && next != Rate) nativeDirty = true;
+        Rate = next;
     }
 
     public bool Ready => RemainingBaseMilliseconds <= 1e-6;
@@ -61,16 +65,26 @@ sealed class SingleUseCooldownState(double at, double rate, double remainingBase
         TotalBaseMilliseconds = plan.BaseMilliseconds;
         spentRate = Rate;
         nativeRate = null; // No native entry may be fabricated before the original acknowledgement reaches its gate.
+        nativeAcknowledged = nativeDirty = false;
+        NativeSkillId = 0;
         UseVersion++;
         return true;
     }
 
-    public void ConfirmNativeUse(int version)
+    public void ConfirmNativeUse(int version, ushort skillId, bool synchronizeProgress)
     {
-        if (version == UseVersion && nativeRate is null) nativeRate = spentRate;
+        if (version != UseVersion || nativeAcknowledged) return;
+        nativeAcknowledged = true;
+        nativeRate = spentRate;
+        NativeSkillId = skillId;
+        nativeDirty |= synchronizeProgress;
     }
-    public bool NeedsNativeRefresh => nativeRate is double previous && previous != Rate;
-    public void NativeRefreshed() => nativeRate = Ready ? null : Rate;
+    public bool NeedsNativeRefresh => nativeAcknowledged && nativeDirty;
+    public void NativeRefreshed()
+    {
+        nativeRate = Ready ? null : Rate;
+        nativeDirty = false;
+    }
 }
 
 /// <summary>One accepted use, reserved before ordinary action side effects. Async continuations keep this original
@@ -84,12 +98,12 @@ sealed record CooldownUseTicket(int Effect, int ActionToken, int ProjectileEpoch
         lock (conn.Monsters) return conn.ProjectileActive(ProjectileEpoch) && conn.PlayerLife > 0
             && (Instant || conn.ActionCount == ActionToken) && (State is null || !Reserved || State.UseVersion == UseVersion);
     }
-    public bool CommitNativeUse(ClientState conn)
+    public bool CommitNativeUse(ClientState conn, ushort skillId)
     {
         lock (conn.Monsters)
         {
             if (!Current(conn)) return false;
-            if (Reserved) State?.ConfirmNativeUse(UseVersion);
+            if (Reserved) State?.ConfirmNativeUse(UseVersion, skillId, synchronizeProgress: Instant);
             return true;
         }
     }

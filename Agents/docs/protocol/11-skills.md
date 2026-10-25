@@ -492,9 +492,16 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `InstanceEntities.PlayerSingleUseCooldowns` sends remaining/total **base** seconds, recovery rate, flags `0xffffffff`.
   An empty vector clears a use that expired while the update waited; native base duration and group are untouched.
   Only eligible spent uses whose original action/instant acknowledgement reached its gate can request this refresh.
-  The packet's factory samples game time under `Monsters` at the actual send gate, after the skill-stat update.
-  Rejected/unacknowledged uses and unchanged rates send nothing; a refresh replaces one entry, including zero-rate
-  transitions, rather than appending or restarting it.
+  The packet's factory samples game time and resolves the current skill id/effect map under `Monsters` at the actual
+  send gate, after the skill-stat update; dead/old-area states and recycled skill ids cannot refresh the wrong entry.
+  Unsynchronized progress stays dirty through rate round trips such as 1 -> 2 -> 1,
+  including changes before acknowledgement.
+  Rejected/unacknowledged uses send nothing.
+  Instant acknowledgements request one progress snapshot even at an unchanged rate: native use consumption starts at
+  0x1ce, so its fresh full budget must align with the original server reservation after time spent queued.
+  Ordinary casts keep their native predicted initial timing and refresh only changed progress.
+  A refresh replaces one entry, including zero-rate transitions, rather than appending or restarting it.
+  Initial ordinary prediction/network alignment and official tick boundaries are not claimed exact.
   Pre-fix real-client Dash at +100% held base 2.5 s/rate 2 and completed natively within 1.4 s, but a raw 0x25 retry
   was echoed/moved before the server rejected it for 1132 ms remaining (`logs/cooldown-before-dash-plus100.json`).
   Automated checks cover 0/+100/-50%, source aggregation, quality, changing rates, pause,
@@ -505,8 +512,11 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   Artifacts: `logs/cooldown-after-dash-{plus100,minus50,early,pause}.json` in the validation checkout.
   The initial rate-change check exposed the native positive-rate cache above: the server changed rate at 0.5 s,
   while the client retained rate 1 (`logs/cooldown-after-dash-rate-change.json`).
-  The cooldown-state trailer now has layout, active/expired/zero/pause and queued encrypted-send tests;
-  its real-client rate-change recheck is pending.
+  A manual wire experiment replaced Frostblink's active entry with remaining 2.5/total 3/rate 2, retaining exactly one
+  entry and native base 3000; this verified the reader, not the production refresh path
+  (`logs/cooldown-manual-actor40-progress.json` in the validation checkout).
+  The cooldown-state trailer has layout, active/expired/zero/pause, rate-roundtrip and queued encrypted-send tests;
+  its production-path real-client rate-change recheck is pending.
   Frostblink remains a catalog/math fixture only: actual location-instant input uses unsupported C→S 0x190 (12 bytes),
   which is outside this change; it has no successful runtime cooldown claim.
   [PoB](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Modules/CalcOffence.lua)

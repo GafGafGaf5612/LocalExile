@@ -68,17 +68,19 @@ partial class Program
         }
     }
 
-    internal static byte[]? NativeCooldownRefresh(ClientState conn, int epoch, IReadOnlyList<(ushort Id, int Effect)> skills)
+    internal static byte[]? NativeCooldownRefresh(ClientState conn, int epoch,
+        Func<IReadOnlyList<(ushort Id, int Effect)>> currentSkills)
     {
         lock (conn.Monsters)
         {
-            if (!conn.ProjectileActive(epoch)) return null;
+            if (!conn.ProjectileActive(epoch) || conn.PlayerLife == 0) return null;
             double now = conn.Clock.Elapsed.TotalSeconds;
             var updates = new List<SingleUseCooldownUpdate>();
             var synchronized = new List<SingleUseCooldownState>();
-            foreach (var (id, effect) in skills)
+            foreach (var (id, effect) in currentSkills())
             {
-                if (!conn.ClientSkillIds.Contains(id) || !conn.SingleUseCooldowns.TryGetValue(effect, out var state)) continue;
+                if (!conn.ClientSkillIds.Contains(id) || !conn.SingleUseCooldowns.TryGetValue(effect, out var state)
+                    || state.NativeSkillId != id) continue;
                 state.Refresh(now, state.Rate);
                 if (!state.NeedsNativeRefresh) continue;
                 updates.Add(new(id, state.Ready ? 0 : (float)(state.RemainingBaseMilliseconds / 1000),
@@ -96,11 +98,11 @@ partial class Program
     {
         lock (conn.Monsters)
             if (!conn.SingleUseCooldowns.Values.Any(s => s.NeedsNativeRefresh)) return Task.CompletedTask;
-        var skills = GemSkillEffects(conn.Character).Where(g => CooldownFor(conn, g.Effect, g.Level, g.Quality) is not null)
-            .Select(g => (g.Id, g.Effect)).ToArray();
         int epoch;
         lock (conn.Monsters) epoch = conn.ProjectileEpoch;
         return Send(remote, stream, ciphers, [], "0x02ba player active cooldown progress/rate refresh",
-            atGate: () => NativeCooldownRefresh(conn, epoch, skills));
+            atGate: () => NativeCooldownRefresh(conn, epoch, () => GemSkillEffects(conn.Character)
+                .Where(g => CooldownFor(conn, g.Effect, g.Level, g.Quality) is not null)
+                .Select(g => (g.Id, g.Effect)).ToArray()));
     }
 }
