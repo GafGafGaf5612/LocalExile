@@ -8,9 +8,13 @@ partial class Program
     // Sets or clears quest flags for the character (saved at once) and sends the player's flag set again.
     static async Task SetQuestFlags(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on = true)
     {
+        var wanted = flags.Distinct().ToList();
+        // What the client had before (ClientHasQuestFlag): objects change only where that changes.
+        var clientBefore = PlayerQuestFlags(conn);
+        var had = wanted.ToDictionary(f => f, f => Quests.ClientHas(f, conn.QuestFlags, clientBefore));
         var changed = new List<string>();
         lock (conn.Monsters)
-            foreach (string flag in flags)
+            foreach (string flag in wanted)
                 if (on ? conn.QuestFlags.Add(flag) : conn.QuestFlags.Remove(flag)) changed.Add(flag);
         if (changed.Count == 0) return;
         // Only the changed flags: a flag another connection of the character set meanwhile stays in the save.
@@ -19,11 +23,13 @@ partial class Program
         if (!conn.PlayerSent) return;
         var all = PlayerQuestFlags(conn);
         await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, all), $"0x02ba player quest flags: {all.Count}");
+        bool Has(string flag) => Quests.ClientHas(flag, conn.QuestFlags, all);
+        var effective = Quests.EffectiveChanges(changed, f => had[f], Has);
         // The exits these flags open appear (or go again when a flag is cleared).
         foreach (var (id, transition) in conn.Layout.AreaTransitions)
         {
-            if (TransitionFlag(conn, transition) is not { } flag || !changed.Contains(flag)) continue;
-            if (on)
+            if (TransitionFlag(conn, transition) is not { } flag || !effective.Contains(flag)) continue;
+            if (Has(flag))
             {
                 await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(transition.Type), transition.Blob()),
                     $"0x02b9 create area transition 0x{id:x} {transition} (quest flag {flag})");
@@ -32,13 +38,12 @@ partial class Program
             else await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove area transition 0x{id:x} (quest flag {flag} cleared)");
         }
         // a1q4: the glyphs placed (or the dev flag set) open the Submerged Passage.
-        if (changed.Contains(GlyphQuest.PlacedGlyphs)) await ChangeSubmergedPassage(remote, stream, ciphers, conn, on);
+        if (effective.Contains(GlyphQuest.PlacedGlyphs)) await ChangeSubmergedPassage(remote, stream, ciphers, conn, Has(GlyphQuest.PlacedGlyphs));
         // The room objects these flags take away (a1q1: the force wall when Hillock dies).
-        if (!on) return;
         List<uint> gone;
         lock (conn.Monsters)
         {
-            gone = [.. conn.QuestRoomObjects.Where(o => changed.Contains(o.Value.Flag)).Select(o => o.Key)];
+            gone = [.. conn.QuestRoomObjects.Where(o => effective.Contains(o.Value.Flag) && Has(o.Value.Flag)).Select(o => o.Key)];
             foreach (uint id in gone) conn.QuestRoomObjects.Remove(id);
             conn.UpdateBarrier();
         }
@@ -62,7 +67,7 @@ partial class Program
         uint id = QuestRoomObjectFirstId;
         foreach (var (o, flag) in objects)
         {
-            if (conn.QuestFlags.Contains(flag!)) continue;
+            if (ClientHasQuestFlag(conn, flag!)) continue;
             var blocker = new BlockerObject(o.X, o.Y, o.Angle, o.Scale);
             await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(o.Type), blocker.Blob()),
                 $"0x02b9 create room object 0x{id:x} {o.Type} at ({o.X}, {o.Y}), angle {o.Angle:0.###}, scale {o.Scale:0.##}, until quest flag {flag}");
@@ -95,8 +100,7 @@ partial class Program
     // A quest flag as the client has it: the character's own, or one the World panel's access flags carry (an activated
     // waypoint's area, 16-waypoints.md §4: the Submerged Passage's waypoint brings a1q4-PlacedGlyphs). The client opens
     // its ways by these, so the server's checks follow them.
-    static bool ClientHasQuestFlag(ClientState conn, string flag) =>
-        conn.QuestFlags.Contains(flag) || Quests.Rows([flag]) is [int row] && PlayerQuestFlags(conn).Contains(row);
+    static bool ClientHasQuestFlag(ClientState conn, string flag) => Quests.ClientHas(flag, conn.QuestFlags, PlayerQuestFlags(conn));
     static async Task SpawnOpeningTutorial(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         if (conn.Layout.Id != TutorialObjects.Strand || CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { } tutorial) return;
@@ -226,6 +230,11 @@ partial class Program
 
     // Ids of the invisible SunkenPassageBlockers on the server's walk estimate (blockers only: the client spawns them).
     const uint PassageBlockerFirstId = 0xff000000;
+    // a1q4's objects have ids of their own, between the quest room objects (QuestRoomObjectFirstId) and the waypoint, so
+    // they never meet the ids other code takes from NextObjectId: the nests (+ their index), the wall, the waterfall and
+    // the opened nests (+ 0x20 + their index).
+    const uint GlyphObjectFirstId = 0x2e80, GlyphWallObjectId = GlyphObjectFirstId + 0x10, GlyphWaterObjectId = GlyphObjectFirstId + 0x11,
+        OpenedNestFirstId = GlyphObjectFirstId + 0x20;
 
     // a1q4 "Breaking Some Eggs" (GlyphQuest, 12-quests.md §2–4): The Mud Flats' three Rhoa Nests, the Glyph Wall and the
     // waterfall where the recorder captured them, and the client's invisible blockers on the server's walk estimate until
@@ -263,10 +272,16 @@ partial class Program
             conn.Glyphs = layout;
             bool placed = ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs);
             if (!placed) SetPassageBlockers(conn, true);
-            foreach (var nest in layout.Nests)
+            else
+                // Glyphs left on this instance's ground are not needed any more (their .it remove_flag).
+                foreach (var (gid, _) in conn.Instance.Ground.All().Where(e => GlyphIndex(e.Item.Item) is not null))
+                    if (conn.Instance.Ground.Take(gid) is not null)
+                        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(gid), $"0x02bb remove glyph 0x{gid:x}: the glyphs are placed");
+            for (int i = 0; i < layout.Nests.Count && i < 0x10; i++)
             {
-                uint id = Interlocked.Increment(ref conn.NextObjectId) - 1;
+                var nest = layout.Nests[i];
                 bool opened = conn.Instance.ChestOpened(nest.At.X, nest.At.Y);
+                uint id = (opened ? OpenedNestFirstId : GlyphObjectFirstId) + (uint)i;
                 lock (conn.GlyphNests) conn.GlyphNests[id] = nest;
                 conn.SetBlocker(id, nest.At.X, nest.At.Y, GlyphQuest.NestSize);
                 await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(nest.Type), GlyphQuest.NestBlob(nest.At, opened)),
@@ -275,24 +290,25 @@ partial class Program
             }
             if (layout.Wall is { } wall)
             {
-                uint id = Interlocked.Increment(ref conn.NextObjectId) - 1;
-                await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(GlyphQuest.Wall), GlyphQuest.WallBlob(wall, placed)),
-                    $"0x02b9 Glyph Wall 0x{id:x} at ({wall.X}, {wall.Y}), {(placed ? "glyphs placed" : "waiting for the glyphs")}");
-                await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
-                conn.GlyphWallId = id;
+                await Send(remote, stream, ciphers, InstanceEntities.CreateObject(GlyphWallObjectId, InstanceEntities.ObjectTypeHash(GlyphQuest.Wall), GlyphQuest.WallBlob(wall, placed)),
+                    $"0x02b9 Glyph Wall 0x{GlyphWallObjectId:x} at ({wall.X}, {wall.Y}), {(placed ? "glyphs placed" : "waiting for the glyphs")}");
+                await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(GlyphWallObjectId), null);
+                conn.GlyphWallId = GlyphWallObjectId;
             }
             if (layout.Water is { } water)
             {
-                uint id = Interlocked.Increment(ref conn.NextObjectId) - 1;
-                await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(GlyphQuest.Water), GlyphQuest.WaterBlob(water.X, water.Y, water.Rotation, placed)),
-                    $"0x02b9 waterfall 0x{id:x} at ({water.X}, {water.Y}), transitioned={placed}");
-                await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
-                conn.GlyphWaterId = id;
+                await Send(remote, stream, ciphers, InstanceEntities.CreateObject(GlyphWaterObjectId, InstanceEntities.ObjectTypeHash(GlyphQuest.Water), GlyphQuest.WaterBlob(water.X, water.Y, water.Rotation, placed)),
+                    $"0x02b9 waterfall 0x{GlyphWaterObjectId:x} at ({water.X}, {water.Y}), transitioned={placed}");
+                await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(GlyphWaterObjectId), null);
+                conn.GlyphWaterId = GlyphWaterObjectId;
             }
         }
         catch (Exception ex) when (ex is IOException or JsonException or ObjectDisposedException or KeyNotFoundException or InvalidOperationException)
         { if (!conn.Closed) Console.WriteLine($"[gateway] a1q4 objects: {ex.Message}"); }
     }
+
+    // Which glyph (0–2) an item is, or null.
+    static int? GlyphIndex(Item item) => GlyphQuest.GlyphOf(Items.ByHash(item.TypeHash)?.Id);
 
     static void SetPassageBlockers(ClientState conn, bool on)
     {
@@ -302,8 +318,9 @@ partial class Program
             else conn.RemoveBlocker(PassageBlockerFirstId + (uint)i);
     }
 
-    // PlacedGlyphs set: the wall and the waterfall play their transition (0x2ba to Transitionable), and the invisible blockers
-    // leave the server's walk estimate (the client drops its own when it gets the flag). Cleared (dev): the other way.
+    // PlacedGlyphs as the client has it changed: the wall and the waterfall play their transition (0x2ba to
+    // Transitionable), and the invisible blockers leave the server's walk estimate (the client drops its own when it gets
+    // the flag). Cleared (dev): the other way.
     static async Task ChangeSubmergedPassage(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool open)
     {
         if (conn.Glyphs is null) return;
@@ -313,6 +330,27 @@ partial class Program
             if (id != 0)
                 await Send(remote, stream, ciphers, InstanceEntities.TransitionableUpdate(id, GlyphQuest.TransitionableIndex, state),
                     $"0x02ba {what} 0x{id:x} Transitionable → {state}");
+    }
+
+    // The HaveGlyph flags follow the glyphs the character carries (GlyphQuest.SyncFlags), whatever took them away (a drop,
+    // a sale, the stash). Once the glyphs are placed, any glyph still carried goes (the .it remove_flag): a copy picked up
+    // in another instance.
+    static async Task SyncGlyphs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        var items = ItemsOf(conn);
+        var carried = GlyphQuest.Carried(items).Select(c => (c.Row, c.Item, Glyph: GlyphIndex(c.Item.Item))).Where(c => c.Glyph is not null).ToList();
+        bool placed = ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs);
+        if (placed && carried.Count > 0)
+            foreach (var row in carried.GroupBy(c => c.Row))
+            {
+                var gone = row.Where(c => items.Remove(row.Key, c.Item.Id) is not null).Select(c => c.Item.Id).ToList();
+                if (gone.Count > 0)
+                    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key), gone, []),
+                        $"0x00bf inventory {PlayerInventories.InventoryId(row.Key)}: glyphs {string.Join(", ", gone)} removed, the glyphs are placed");
+            }
+        var (set, clear) = GlyphQuest.SyncFlags(conn.QuestFlags, placed, placed ? new HashSet<int>() : carried.Select(c => c.Glyph!.Value).ToHashSet());
+        if (set.Count > 0) await SetQuestFlags(remote, stream, ciphers, conn, set);
+        if (clear.Count > 0) await SetQuestFlags(remote, stream, ciphers, conn, clear, on: false);
     }
 
     // C→S 0x24 on a Rhoa Nest: walk up, open it (once per instance) and drop its glyph, unless the character has it already.
@@ -327,14 +365,15 @@ partial class Program
             $"0x01ab player opens Rhoa Nest 0x{use.TargetId:x} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
         if (conn.ActionCount != action || conn.Closed) return;
-        if (!GameServer.Core.World.PlayerWalk.InWalkUpRange(stop, (at.X, at.Y), GlyphQuest.NestSize) || !conn.Instance.OpenChest(at.X, at.Y))
+        int index = conn.Glyphs is { } layout ? layout.Nests.ToList().IndexOf(nest) : -1;
+        if (index < 0 || !GameServer.Core.World.PlayerWalk.InWalkUpRange(stop, (at.X, at.Y), GlyphQuest.NestSize) || !conn.Instance.OpenChest(at.X, at.Y))
         {
             await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(PlayerId), null);
             return;
         }
-        // Chest has no update reader: the opened nest replaces the closed one, under a new id (the same id again made the
-        // client log "Replacing awake object", live 2026-10-25).
-        uint opened = Interlocked.Increment(ref conn.NextObjectId) - 1;
+        // Chest has no update reader: the opened nest replaces the closed one, under its own id (the same id again made
+        // the client log "Replacing awake object", live 2026-10-25).
+        uint opened = OpenedNestFirstId + (uint)index;
         lock (conn.GlyphNests) { conn.GlyphNests.Remove(use.TargetId); conn.GlyphNests[opened] = nest; }
         conn.RemoveBlocker(use.TargetId);
         conn.SetBlocker(opened, at.X, at.Y, GlyphQuest.NestSize);
@@ -346,21 +385,22 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(PlayerId), null);
     }
 
-    // A nest's glyph, on the ground of the instance, while the character still needs it: no PlacedGlyphs or HaveGlyphN, none
-    // held and none lying here already.
+    // A nest's glyph on the instance's ground, unless the glyphs are placed or a copy is carried, in the stash or on this
+    // instance's ground (GlyphQuest.NestDrops): a glyph lost another way drops again.
     static async Task DropGlyph(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, GlyphQuest.Nest nest)
     {
         int g = nest.Glyph;
-        if (ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs) || conn.QuestFlags.Contains(GlyphQuest.HaveGlyph[g])) return;
         if (Items.Find(GlyphQuest.Glyphs[g]) is not { Supported: true } type)
         {
             Console.WriteLine($"[gateway] {remote} a1q4: {GlyphQuest.Glyphs[g]} is not in the item data");
             return;
         }
-        var items = ItemsOf(conn);
-        if (conn.Instance.Ground.All().Any(e => e.Item.Item.TypeHash == type.Hash)
-            || new[] { PlayerInventories.MainInventory, PlayerInventories.Cursor }.Any(r => items.Items(r).Any(i => i.Item.TypeHash == type.Hash)))
+        var stash = PersonalStashOf(conn);
+        if (!GlyphQuest.NestDrops(type.Hash, ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs), ItemsOf(conn), stash.CountOf, conn.Instance.Ground))
+        {
+            Console.WriteLine($"[gateway] {remote} Rhoa Nest at ({nest.At.X}, {nest.At.Y}): no {type.Name}, the character has it or the glyphs are placed");
             return;
+        }
         var ground = new WorldItemObject(nest.At.X, nest.At.Y, ItemCatalog.Create(type));
         uint id = conn.Instance.Ground.Add(ground);
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), ground.Blob()),
@@ -383,7 +423,7 @@ partial class Program
         if (GameServer.Core.World.PlayerWalk.InWalkUpRange(stop, (wall.X, wall.Y), GlyphQuest.WallSize))
         {
             await SetQuestFlags(remote, stream, ciphers, conn, [GlyphQuest.SeenGlyphWall]);
-            if (!conn.QuestFlags.Contains(GlyphQuest.PlacedGlyphs))
+            if (!ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs))
                 await PlaceGlyphs(remote, stream, ciphers, conn);
         }
         else Console.WriteLine($"[gateway] {remote} Glyph Wall out of reach from ({stop.X}, {stop.Y})");
@@ -393,7 +433,7 @@ partial class Program
     static async Task PlaceGlyphs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         var items = ItemsOf(conn);
-        var removed = GlyphQuest.Place(CharacterName(conn), items, i => GlyphQuest.GlyphOf(Items.ByHash(i.TypeHash)?.Id));
+        var removed = GlyphQuest.Place(CharacterName(conn), items, GlyphIndex);
         if (removed is null)
         {
             Console.WriteLine($"[gateway] {remote} Glyph Wall: needs all three glyphs");

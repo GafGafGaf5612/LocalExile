@@ -148,13 +148,126 @@ public class GlyphQuestTests : IDisposable
         inventory.Add(0, 0, 0, Make(Glyph1));
         inventory.Add(0, 1, 0, Make(Glyph2));
         inventory.Add(0, 2, 0, Make(Glyph3));
+        CharacterSaves.ChangeQuestFlags(character, [.. GlyphQuest.HaveGlyph, GlyphQuest.KnowsAboutGlyphs], true);
         int writes = 0;
-        Saves.FailWrite = key => key == character && ++writes == 3;
+        // Three item removals, then the flag write fails.
+        Saves.FailWrite = key => key == character && ++writes == 4;
         Assert.ThrowsAny<Exception>(() => GlyphQuest.Place(character, inventory, GlyphOf));
+        Assert.Equal(4, writes);
         Saves.FailWrite = null;
         PlayerInventories.Forget(character);
         Assert.Equal(3, Inventory().Items(0).Count);
         Assert.DoesNotContain(GlyphQuest.PlacedGlyphs, Flags());
+        Assert.Superset(new HashSet<string>(GlyphQuest.HaveGlyph), Flags());
+    }
+
+    [Fact]
+    public void ASecondQuickUseOfTheWallFindsNothingAndDoesNotThrow()
+    {
+        var inventory = Inventory();
+        inventory.Add(0, 0, 0, Make(Glyph1));
+        inventory.Add(0, 1, 0, Make(Glyph2));
+        inventory.Add(0, 2, 0, Make(Glyph3));
+        Assert.NotNull(GlyphQuest.Place(character, inventory, GlyphOf));
+        Assert.Null(GlyphQuest.Place(character, inventory, GlyphOf));
+    }
+
+    [Fact]
+    public void AFailedPickupKeepsNeitherTheGlyphNorItsFlags()
+    {
+        var inventory = Inventory();
+        int writes = 0;
+        // The item's write, then the flags' write fails.
+        Saves.FailWrite = key => key == character && ++writes == 2;
+        Assert.ThrowsAny<Exception>(() => GlyphQuest.Claim(character, 0, () => inventory.Add(0, 0, 0, Make(Glyph1))));
+        Saves.FailWrite = null;
+        PlayerInventories.Forget(character);
+        Assert.Empty(Inventory().Items(0));
+        Assert.DoesNotContain(GlyphQuest.KnowsAboutGlyphs, Flags());
+        Assert.DoesNotContain("a1q4-HaveGlyph1", Flags());
+    }
+
+    [Fact]
+    public void AGlyphIsNotPickedUpOnceTheGlyphsArePlaced()
+    {
+        var inventory = Inventory();
+        CharacterSaves.ChangeQuestFlags(character, [GlyphQuest.PlacedGlyphs], true);
+        Assert.Null(GlyphQuest.Claim(character, 1, () => inventory.Add(0, 0, 0, Make(Glyph2))));
+        Assert.Empty(inventory.Items(0));
+        Assert.DoesNotContain("a1q4-HaveGlyph2", Flags());
+        Assert.DoesNotContain(GlyphQuest.KnowsAboutGlyphs, Flags());
+    }
+
+    [Fact]
+    public void ASecondCopyAddsNoFlagWrites()
+    {
+        var inventory = Inventory();
+        GlyphQuest.Claim(character, 0, () => inventory.Add(0, 0, 0, Make(Glyph1)));
+        int writes = 0;
+        Saves.FailWrite = key => { if (key == character) writes++; return false; };
+        Assert.NotNull(GlyphQuest.Claim(character, 0, () => inventory.Add(0, 1, 0, Make(Glyph1))));
+        Saves.FailWrite = null;
+        Assert.Equal(1, writes);   // only the item
+        Assert.Equal(2, inventory.Items(0).Count);
+    }
+
+    [Fact]
+    public void ANestDropsItsGlyphOnlyWhileNoCopyIsWithinReach()
+    {
+        var inventory = Inventory();
+        var ground = new InstanceGround();
+        int stashed = 0;
+        int Stash(uint hash) => hash == Glyph2 ? stashed : 0;
+        Assert.True(GlyphQuest.NestDrops(Glyph2, false, inventory, Stash, ground));
+        Assert.False(GlyphQuest.NestDrops(Glyph2, true, inventory, Stash, ground));
+        // Carried anywhere, the cursor included.
+        var held = inventory.Add(PlayerInventories.Cursor, 0, 0, Make(Glyph2));
+        Assert.False(GlyphQuest.NestDrops(Glyph2, false, inventory, Stash, ground));
+        Assert.True(GlyphQuest.NestDrops(Glyph1, false, inventory, Stash, ground));
+        inventory.Remove(PlayerInventories.Cursor, held.Id);
+        // In the stash.
+        stashed = 1;
+        Assert.False(GlyphQuest.NestDrops(Glyph2, false, inventory, Stash, ground));
+        stashed = 0;
+        // On this instance's ground; once it is gone (picked up and lost, or dropped in another instance) it drops again.
+        uint lying = ground.Add(new WorldItemObject(1, 2, Make(Glyph2)));
+        Assert.False(GlyphQuest.NestDrops(Glyph2, false, inventory, Stash, ground));
+        ground.Take(lying);
+        Assert.True(GlyphQuest.NestDrops(Glyph2, false, inventory, Stash, ground));
+    }
+
+    [Fact]
+    public void TheHaveGlyphFlagsFollowTheCarriedGlyphs()
+    {
+        var (set, clear) = GlyphQuest.SyncFlags(new HashSet<string> { "a1q4-HaveGlyph1", "a1q4-HaveGlyph2" }, false, new HashSet<int> { 1, 2 });
+        Assert.Equal(new[] { "a1q4-HaveGlyph3", GlyphQuest.KnowsAboutGlyphs }, set);
+        Assert.Equal(new[] { "a1q4-HaveGlyph1" }, clear);
+        (set, clear) = GlyphQuest.SyncFlags(new HashSet<string> { GlyphQuest.KnowsAboutGlyphs, "a1q4-HaveGlyph3" }, false, new HashSet<int> { 2 });
+        Assert.Empty(set);
+        Assert.Empty(clear);
+        // Placed: none held, whatever is carried.
+        (set, clear) = GlyphQuest.SyncFlags(new HashSet<string> { GlyphQuest.PlacedGlyphs, "a1q4-HaveGlyph2" }, true, new HashSet<int> { 0 });
+        Assert.Empty(set);
+        Assert.Equal(new[] { "a1q4-HaveGlyph2" }, clear);
+    }
+
+    [Fact]
+    public void TheClientsFlagsIncludeTheAccessFlagsAndOnlyRealChangesCount()
+    {
+        var rows = new Dictionary<string, int> { ["a1q4-PlacedGlyphs"] = 24, ["a1q1-KilledHillock"] = 9 };
+        var own = new HashSet<string>();
+        Assert.False(Quests.ClientHas("a1q4-PlacedGlyphs", own, [9, 30], rows));
+        Assert.True(Quests.ClientHas("a1q4-PlacedGlyphs", own, [24], rows));   // the Submerged Passage's waypoint
+        own.Add("a1q4-PlacedGlyphs");
+        Assert.True(Quests.ClientHas("a1q4-PlacedGlyphs", own, [], rows));
+        Assert.False(Quests.ClientHas("unknown", own, [24], rows));
+
+        // Set for real while the waypoint already gave it: nothing to create again.
+        var before = new Dictionary<string, bool> { ["a1q4-PlacedGlyphs"] = true, ["a1q1-KilledHillock"] = false };
+        var after = new Dictionary<string, bool> { ["a1q4-PlacedGlyphs"] = true, ["a1q1-KilledHillock"] = true };
+        Assert.Equal(new[] { "a1q1-KilledHillock" }, Quests.EffectiveChanges(["a1q4-PlacedGlyphs", "a1q1-KilledHillock"], f => before[f], f => after[f]));
+        // Cleared (dev) while the waypoint still gives it: nothing to remove.
+        Assert.Empty(Quests.EffectiveChanges(["a1q4-PlacedGlyphs"], _ => true, _ => true));
     }
 
     [Fact]

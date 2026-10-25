@@ -151,32 +151,78 @@ static class GlyphQuest
         w.U8(0).U8(1);
     }
 
-    /// <summary>A glyph picked up: puts it and sets its flags in one save transaction.</summary>
-    public static T Claim<T>(string character, int glyph, Func<T> put) => Saves.Atomically(() =>
+    /// <summary>A glyph picked up: puts it and sets the flags it brings that the save lacks, in one save transaction.
+    /// Refused (null, nothing put) once the save has <see cref="PlacedGlyphs"/>: a copy left on another instance's ground
+    /// is not needed any more.</summary>
+    public static T? Claim<T>(string character, int glyph, Func<T> put) where T : class => Saves.Atomically(() =>
     {
+        var saved = CharacterSaves.Load(character)?.QuestFlags ?? [];
+        if (saved.Contains(PlacedGlyphs)) return null;
         var placed = put();
-        CharacterSaves.ChangeQuestFlags(character, PickupFlags(glyph), true);
+        var missing = PickupFlags(glyph).Where(f => !saved.Contains(f)).ToList();
+        if (missing.Count > 0) CharacterSaves.ChangeQuestFlags(character, missing, true);
         return placed;
     });
 
+    /// <summary>Every item the character carries: each of its inventories and the cursor.</summary>
+    public static IEnumerable<(byte Row, InventoryItem Item)> Carried(PlayerInventories items)
+    {
+        var rows = Enumerable.Range(0, InstanceInventories.PlayerDefaults.Length).Select(r => (byte)r).Append(PlayerInventories.Cursor).Distinct();
+        foreach (byte row in rows)
+            foreach (var it in items.Items(row))
+                yield return (row, it);
+    }
+
+    /// <summary>Whether a nest drops this glyph: not once the glyphs are placed, nor while a copy exists where the player
+    /// can get it (carried, in the stash, on this instance's ground). A glyph lost any other way (dropped in another
+    /// instance, destroyed, sold) drops again.</summary>
+    public static bool NestDrops(uint glyphHash, bool placed, PlayerInventories items, Func<uint, int> stashCount, InstanceGround ground) =>
+        !placed && !Carried(items).Any(c => c.Item.Item.TypeHash == glyphHash) && stashCount(glyphHash) == 0
+        && !ground.All().Any(e => e.Item.Item.TypeHash == glyphHash);
+
+    /// <summary>The flags that make the HaveGlyph flags follow the glyphs the character carries (the .it grant_flag),
+    /// with KnowsAboutGlyphs once one is carried. None are held once the glyphs are placed.</summary>
+    public static (List<string> Set, List<string> Clear) SyncFlags(IReadOnlySet<string> flags, bool placed, IReadOnlySet<int> carried)
+    {
+        List<string> set = [], clear = [];
+        for (int g = 0; g < HaveGlyph.Length; g++)
+        {
+            bool want = !placed && carried.Contains(g);
+            if (want && !flags.Contains(HaveGlyph[g])) set.Add(HaveGlyph[g]);
+            if (!want && flags.Contains(HaveGlyph[g])) clear.Add(HaveGlyph[g]);
+        }
+        if (!placed && carried.Count > 0 && !flags.Contains(KnowsAboutGlyphs)) set.Add(KnowsAboutGlyphs);
+        return (set, clear);
+    }
+
+    sealed class PlacementRefused(string message) : Exception(message);
+
     /// <summary>The Glyph Wall takes the three glyphs (main inventory or cursor): removes them, sets
     /// <see cref="PlacedGlyphs"/> and clears the HaveGlyph flags, in one save transaction. The removed items by inventory
-    /// row, or null (nothing changes) when a glyph is missing.</summary>
+    /// row, or null (nothing changes) when a glyph is missing. The lookup runs inside the transaction, which is one at a
+    /// time: of two quick uses only the first finds the glyphs.</summary>
     public static List<(byte Row, InventoryItem Item)>? Place(string character, PlayerInventories items, Func<Item, int?> glyphOf)
     {
-        var found = new (byte Row, InventoryItem Item)?[3];
-        foreach (byte row in new[] { PlayerInventories.MainInventory, PlayerInventories.Cursor })
-            foreach (var it in items.Items(row))
-                if (glyphOf(it.Item) is int g && found[g] is null) found[g] = (row, it);
-        if (found.Any(f => f is null)) return null;
-        return Saves.Atomically(() =>
+        try
         {
-            var removed = new List<(byte Row, InventoryItem Item)>();
-            foreach (var (row, it) in found.Select(f => f!.Value))
-                removed.Add((row, items.Remove(row, it.Id) ?? throw new InvalidOperationException($"glyph item {it.Id} left row {row}")));
-            CharacterSaves.ChangeQuestFlags(character, [PlacedGlyphs], true);
-            CharacterSaves.ChangeQuestFlags(character, HaveGlyph, false);
-            return removed;
-        });
+            return Saves.Atomically(() =>
+            {
+                var found = new (byte Row, InventoryItem Item)?[3];
+                foreach (byte row in new[] { PlayerInventories.MainInventory, PlayerInventories.Cursor })
+                    foreach (var it in items.Items(row))
+                        if (glyphOf(it.Item) is int g && found[g] is null) found[g] = (row, it);
+                if (found.Any(f => f is null)) return null;
+                var removed = new List<(byte Row, InventoryItem Item)>();
+                foreach (var (row, it) in found.Select(f => f!.Value))
+                    removed.Add((row, items.Remove(row, it.Id) ?? throw new PlacementRefused($"glyph item {it.Id} cannot leave row {row}")));
+                CharacterSaves.ChangeQuestFlags(character, [PlacedGlyphs], true);
+                CharacterSaves.ChangeQuestFlags(character, HaveGlyph, false);
+                return removed;
+            });
+        }
+        catch (PlacementRefused)
+        {
+            return null;   // rolled back: a glyph was on offer to a vendor
+        }
     }
 }

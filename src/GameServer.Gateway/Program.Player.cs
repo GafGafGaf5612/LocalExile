@@ -326,6 +326,12 @@ partial class Program
             if (conn.Glyphs?.Wall is { } glyphWall && !conn.QuestFlags.Contains(GlyphQuest.SeenGlyphWall)
                 && Dist(at, (glyphWall.X, glyphWall.Y)) <= Quests.SightRange)
                 await SetQuestFlags(remote, stream, ciphers, conn, [GlyphQuest.SeenGlyphWall]);
+            // a1q4: the HaveGlyph flags follow the glyphs carried (dropped, sold, stashed ones too), about once a second.
+            if (conn.Clock.Elapsed.TotalSeconds >= conn.GlyphSyncAt)
+            {
+                conn.GlyphSyncAt = conn.Clock.Elapsed.TotalSeconds + 1;
+                await SyncGlyphs(remote, stream, ciphers, conn);
+            }
         }
     }
 

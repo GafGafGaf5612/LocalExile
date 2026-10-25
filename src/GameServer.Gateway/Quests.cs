@@ -154,6 +154,17 @@ static class Quests
     public static IReadOnlyList<int> Rows(IEnumerable<string> ids, IReadOnlyDictionary<string, int>? rows = null) =>
         [.. ids.Select(id => (rows ?? TableRows.Value).TryGetValue(id, out int r) ? r : -1).Where(r => r >= 0).Order()];
 
+    /// <summary>Whether the client has a quest flag: the character's own, or among the rows the client gets (the
+    /// player's flag set also carries the World panel's access flags: an activated waypoint's area, 16-waypoints.md §4).
+    /// The client opens its ways by these, so the server's checks use the same.</summary>
+    public static bool ClientHas(string flag, IReadOnlySet<string> own, IReadOnlyCollection<int> clientRows, IReadOnlyDictionary<string, int>? rows = null) =>
+        own.Contains(flag) || Rows([flag], rows) is [int row] && clientRows.Contains(row);
+
+    /// <summary>Of the flags a change set or cleared, those the client now has differently: a flag the client had already
+    /// (through an access flag) changes nothing it sees, so nothing is created or removed for it.</summary>
+    public static List<string> EffectiveChanges(IEnumerable<string> changed, Func<string, bool> before, Func<string, bool> after) =>
+        [.. changed.Where(f => before(f) != after(f))];
+
     public static IReadOnlySet<string> Names(IEnumerable<int> rows)
     {
         var wanted = rows.ToHashSet();

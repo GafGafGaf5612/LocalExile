@@ -249,6 +249,13 @@ partial class Program
     static async Task PickUpGroundItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, WorldItemObject ground,
         InstanceTransfer.UseSkillOnObject use)
     {
+        // a1q4: a glyph is not needed once the glyphs are placed (a copy left in another instance): it goes, unpicked.
+        if (GlyphIndex(ground.Item) is not null && ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs))
+        {
+            if (conn.Instance.Ground.Take(id) is not null)
+                await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove glyph 0x{id:x}: the glyphs are placed");
+            return;
+        }
         int action = Interlocked.Increment(ref conn.ActionCount);
         double now = conn.Clock.Elapsed.TotalSeconds;
         var (here, stop, arrive) = conn.Walk.Approach(ground.GridX, ground.GridY, PickupReach, now);
@@ -311,7 +318,7 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} start weapon picked up");
 
         // A glyph (a1q4) sets its quest flags with the pickup, in the same save.
-        int? glyph = GlyphQuest.GlyphOf(Items.ByHash(ground.Item.TypeHash)?.Id);
+        int? glyph = GlyphIndex(ground.Item);
         var placed = KeepOnGroundIfNotSaved(conn, ground, () =>
         {
             InventoryItem Put() => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));

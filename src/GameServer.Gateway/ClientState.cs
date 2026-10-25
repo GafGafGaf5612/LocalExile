@@ -387,6 +387,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public GlyphQuest.Layout? Glyphs;
     public readonly Dictionary<uint, GlyphQuest.Nest> GlyphNests = [];
     public uint GlyphWallId, GlyphWaterId;
+    public double GlyphSyncAt;
     public TutorialObjects.Placement? TutorialChest;
     public AreaPopulation.RoomObject? TutorialZombiePlacement;
     public bool TutorialSceneRunning;
