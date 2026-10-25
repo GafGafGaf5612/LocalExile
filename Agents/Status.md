@@ -406,4 +406,6 @@ Cyclone's additional melee-range and stage modifiers remain partial. See protoco
 
 Ordinary player energy shield now derives from equipment/passives, absorbs non-chaos damage and implements regeneration, delayed/interrupted recharge, death/refill, and native client prediction. It extends the existing 16 ms recovery loop. Special ES keystones/conditional mechanics and the native recharge-start event remain unimplemented; see [ES scope](docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
 
+Optional [native client control](docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated UI input. It targets the copied standalone 3.29.3b client and local services only.
+
 Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses. Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented. See [skills](docs/protocol/11-skills.md).
