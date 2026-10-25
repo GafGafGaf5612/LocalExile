@@ -161,7 +161,7 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
 
 ## Open
 
-- Selling: real sell prices; quest rewards (0x87); Respecialisation with refund points;
+- Selling: real sell prices; remaining quest reward offers/scripts; Respecialisation with refund points;
   real buy prices.
 - The NPC component's two bytes, and 0x84's other mode values.
 - The NPCs' facing (rotation 0 for now), and NPCs in the other towns and outside towns.
@@ -174,7 +174,7 @@ row 0 is valid, including `a1q1-KilledHillock`. `NEVER_SET` remains an eligibili
 effect. Eligibility uses the same projected visited/access flags sent to the client, plus saved character flags.
 
 Implemented offers are limited to 0 and 8 and their class-filtered normal level-one gem choices. Offer 8's magic
-armour choices need item construction not implemented here. Nessa's Brutus conversation sets `a1q2-NessaChatBrutus`,
+armour choices need item construction not implemented here. Nessa's Brutus conversation sets `NessaChatBrutus`,
 enabling her prison reward; claiming sets `a1q2-NessaRewardTaken`. Tarkleigh's Hillock reward sets
 `a1q1-QuestRewardTaken`. Inventory addition and the taken flag commit in one save transaction, with a durable duplicate
 check and rollback on failure/full inventory. The server removes all choices and ends dialogue after claiming.
