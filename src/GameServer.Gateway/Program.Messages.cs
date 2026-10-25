@@ -470,6 +470,7 @@ partial class Program
                     await SpawnTownNpcs(remote, stream, ciphers, conn);
                     await SpawnTownStash(remote, stream, ciphers, conn);
                     await SpawnQuestRoomObjects(remote, stream, ciphers, conn);
+                    await SpawnOpeningTutorial(remote, stream, ciphers, conn);
                     await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);

@@ -341,6 +341,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public volatile uint TalkingTo;
     // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
     public volatile bool InNpcTalk;
+    public uint TutorialSceneId, TutorialChestId;
+    public TutorialObjects.Placement? TutorialChest;
+    public AreaPopulation.RoomObject? TutorialZombiePlacement;
+    public bool TutorialSceneRunning;
     public string? NpcFinishFlag;
     public int? NpcRewardOffer;
     public Dictionary<uint, Item> NpcRewardItems = [];

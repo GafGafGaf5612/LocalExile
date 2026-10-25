@@ -800,6 +800,12 @@ partial class Program
                 await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove dead monster 0x{id:x}");
         });
         if (m.Variety is not { } variety || !m.Hostile) return;
+        if (conn.Layout.Id == TutorialObjects.Strand && variety.Id == TutorialObjects.Zombie
+            && CharacterSaves.Load(CharacterName(conn))?.Tutorial is { ZombieKilled: false })
+        {
+            CharacterSaves.ChangeTutorial(CharacterName(conn), t => t with { ZombieKilled = true });
+            await DropTutorialGem(remote, stream, ciphers, conn, false, at.X, at.Y);
+        }
         await SetQuestFlags(remote, stream, ciphers, conn, Quests.OnMonsterKilled(conn.Layout.Id, variety.Id));
         if (alive && Dist(at, player) <= ExperienceRange && Monsters.BaseExperience(variety, m.Level) is int baseXp)
         {
