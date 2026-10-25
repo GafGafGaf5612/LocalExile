@@ -81,7 +81,9 @@ When the deadline passes, the network update `0x142148880` fires the instance +0
 "Timeout while joining global chat." (row 206).
 Live 2026-10-25 the two requests were `0134 FFFF 00 01 00` and `0134 FFFF 01 01 00`; `/global 821` sent
 `0134 0335 00 00 00`.
-An older capture had both for channel 820 (`0334`), the number in the timeout seen before.
+An older capture had `0134 0334 00 01 00` (global, channel 820, the number in the timeout seen before) and
+`0134 0001 01 01 00` (trade, channel 1).
+A kind other than 0 or 1 is ignored (logged).
 The Gateway took 20 bytes for 0x99 then: 0x99 is 4 bytes (class `0x1435c0258`, write `0x141f95200`: two u8), and the
 same chunk held the two joins and 0x129 (id only).
 

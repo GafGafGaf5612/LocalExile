@@ -92,13 +92,14 @@ public static class InstanceChat
     /// </summary>
     public sealed record JoinChannelRequest(ChatChannelKind Kind, ushort Channel, bool Automatic, byte Language);
 
-    public static JoinChannelRequest ReadJoinChannel(ReadOnlySpan<byte> m)
+    /// <summary>The request, or null for a kind other than global (0) or trade (1): the client has only those two.</summary>
+    public static JoinChannelRequest? ReadJoinChannel(ReadOnlySpan<byte> m)
     {
         var r = new LoginReader(m[2..]);
         ushort channel = r.U16();
-        var kind = r.U8() == 0 ? ChatChannelKind.Global : ChatChannelKind.Trade;
+        byte kind = r.U8();
         bool automatic = r.Bool();
-        return new JoinChannelRequest(kind, channel, automatic, r.U8());
+        return kind > 1 ? null : new JoinChannelRequest(kind == 0 ? ChatChannelKind.Global : ChatChannelKind.Trade, channel, automatic, r.U8());
     }
 
     /// <summary>

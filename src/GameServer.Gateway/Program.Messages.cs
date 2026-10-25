@@ -400,7 +400,10 @@ partial class Program
                 else await EchoChat(remote, stream, ciphers, conn, chat.Text);
             }
             else if (id == InstanceChat.JoinChannelId)
-                await JoinChatChannel(remote, stream, ciphers, conn, InstanceChat.ReadJoinChannel(bytes));
+            {
+                if (InstanceChat.ReadJoinChannel(bytes) is { } join) await JoinChatChannel(remote, stream, ciphers, conn, join);
+                else Console.WriteLine($"[gateway] {remote} <= 0x0134 join with an unknown channel kind, ignored: {Convert.ToHexString(bytes)}");
+            }
             else if (id == InstanceTransfer.ChooseInstanceId)
             {
                 byte row = bytes[2];

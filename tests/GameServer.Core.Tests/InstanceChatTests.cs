@@ -50,6 +50,7 @@ public class InstanceChatTests
             InstanceChat.ReadJoinChannel(Convert.FromHexString("01340335000000")));
         Assert.Equal(new InstanceChat.JoinChannelRequest(ChatChannelKind.Trade, 822, false, 0),
             InstanceChat.ReadJoinChannel(Convert.FromHexString("01340336010000")));
+        Assert.Null(InstanceChat.ReadJoinChannel(Convert.FromHexString("01340336020000")));
         Assert.Equal(InstanceChat.JoinChannelLength, InstanceProtocol.KnownClientLength(InstanceChat.JoinChannelId));
     }
 
