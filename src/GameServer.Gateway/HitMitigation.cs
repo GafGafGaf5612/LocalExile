@@ -19,8 +19,9 @@ static class HitMitigation
             ? new DamageModel.ResistanceValue(value)
             : default;
 
-    /// <summary>One roll per type of the hit, then each type's own resistance, summed to whole damage. The critical
-    /// strike multiplier applies to this total afterwards, exactly one roll and one rounding per type as before.</summary>
+    /// <summary>One roll per type of the hit, then each type's own resistance, kept fractional per type and summed;
+    /// the total rounds once, exactly the rounding the unmitigated <c>RollTotal</c> path had. The critical strike
+    /// multiplier applies to this total afterwards.</summary>
     public static int RollMitigated(DamagePacket hit, Func<DamageType, DamageModel.ResistanceValue> resistance, Random random) =>
         (int)Math.Round(DamageModel.Mitigate(hit.Roll(random), resistance).MinTotal);
 }

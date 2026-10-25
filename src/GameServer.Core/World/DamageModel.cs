@@ -99,8 +99,8 @@ public static class DamageModel
     /// <summary>Mitigate every damage type in a hit separately. The game applies each type's own resistance and
     /// maximum resistance; the hit's penetration subtracts from the capped value with no second clamp (Path of
     /// Building's CalcOffence 16de4b8: calcResistForType caps the resistance first, the hit branch then uses
-    /// resist − pen), so penetration can take the effective resistance below the floor. Fractions stay fractional
-    /// until the final roll.</summary>
+    /// resist − pen), so penetration can take the effective resistance below the floor. The per-type components stay
+    /// fractional; the caller rounds the final total.</summary>
     public static DamagePacket Mitigate(DamagePacket damage, Func<DamageType, ResistanceValue> resistance) =>
         damage.Select((type, range) =>
         {
@@ -109,12 +109,13 @@ public static class DamageModel
             return new DamageRange(MitigateBy(range.Min, effective), MitigateBy(range.Max, effective));
         });
 
-    /// <summary>The damage left by an already-effective resistance (capped, with the penetration applied), rounded to
-    /// the nearest point and never below zero; a below-floor effective resistance deals more than the raw damage.</summary>
-    public static int MitigateBy(double damage, int effectiveResistance)
+    /// <summary>The share of the damage an already-effective resistance leaves (capped, with the penetration
+    /// applied), kept fractional and never below zero; a below-floor effective resistance deals more than the raw
+    /// damage. The caller rounds the final total once, not the components.</summary>
+    public static double MitigateBy(double damage, int effectiveResistance)
     {
         if (damage <= 0) return 0;
-        return (int)Math.Max(0, Math.Round(damage * (100.0 - effectiveResistance) / 100.0));
+        return Math.Max(0, damage * (100.0 - effectiveResistance) / 100.0);
     }
 
     /// <summary>Path of Building's <c>BlockChanceCap</c>: block chance cannot exceed 90%.</summary>

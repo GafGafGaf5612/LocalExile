@@ -66,6 +66,14 @@ public class HitMitigationTests
     }
 
     [Fact]
+    public void A_mixed_rolled_hit_stays_fractional_per_type_until_the_total()
+    {
+        // A rolled 3 fire + 3 cold at 50% each: the components stay 1.5 and the total rounds once to 3, not 2 + 2 = 4.
+        var hit = DamagePacket.Of(DamageType.Fire, 3, 3).Add(DamageType.Cold, new DamageRange(3, 3));
+        Assert.Equal(3, HitMitigation.RollMitigated(hit, _ => new DamageModel.ResistanceValue(50), new Random(1)));
+    }
+
+    [Fact]
     public void A_real_fire_skeleton_takes_the_difficulty_columns_resistance_on_a_fixed_roll()
     {
         if (Data() is not { } data) return; // Real-client cross-check is optional on a fresh clone.

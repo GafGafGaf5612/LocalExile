@@ -75,6 +75,27 @@ public class DamageModelTests
     }
 
     [Fact]
+    public void Mitigated_components_stay_fractional_until_the_total()
+    {
+        // A rolled 3 fire + 3 cold at 50% each is 1.5 + 1.5 in the packet and sums to 3, not a per-type 2 + 2 = 4.
+        var packet = DamagePacket.Of(DamageType.Fire, 3, 3).Add(DamageType.Cold, new DamageRange(3, 3));
+        var mitigated = DamageModel.Mitigate(packet, _ => new DamageModel.ResistanceValue(50));
+        Assert.Equal(1.5, mitigated[DamageType.Fire].Min);
+        Assert.Equal(1.5, mitigated[DamageType.Cold].Min);
+        Assert.Equal(3.0, mitigated.MinTotal);
+    }
+
+    [Fact]
+    public void A_fractional_component_mitigates_fractionally_and_never_below_zero()
+    {
+        // The fractional bounds survive the pass: 1.5 at 50% is 0.75, not a rounded 1.
+        var packet = DamagePacket.Of(DamageType.Fire, 1.5, 1.5);
+        Assert.Equal(0.75, DamageModel.Mitigate(packet, _ => new DamageModel.ResistanceValue(50))[DamageType.Fire].Min);
+        // An effective resistance over 100% (here 90 raw capped at 90 with a negative penetration) bottoms at zero.
+        Assert.Equal(0.0, DamageModel.Mitigate(packet, _ => new DamageModel.ResistanceValue(90, Penetration: -50))[DamageType.Fire].Min);
+    }
+
+    [Fact]
     public void Damage_over_time_keeps_its_fraction()
     {
         Assert.Equal(50.0, DamageModel.Mitigate(100.0, 50), 3);
