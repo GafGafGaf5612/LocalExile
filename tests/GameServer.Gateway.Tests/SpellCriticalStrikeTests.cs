@@ -1,3 +1,5 @@
+using GameServer.Core.World;
+
 namespace GameServer.Gateway.Tests;
 
 public class SpellCriticalStrikeTests
@@ -102,6 +104,60 @@ public class SpellCriticalStrikeTests
         int ray = skills.EffectRow("ScorchingRay");
         Assert.Equal(0, SpellCriticalStrike.Chance(skills.SpellCritChance(ray, 1), stats, player,
             skills.EffectStats(ray, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2)));
+    }
+
+    [Theory]
+    [InlineData("ScorchingRay", true)]
+    [InlineData("RighteousFire", true)]
+    [InlineData("EnduringCry", false)]
+    [InlineData("NoSuchEffect", false)]
+    public void Hitless_spells_and_unclassified_actions_never_borrow_weapon_damage_or_attack_crit(
+        string effect, bool spell)
+    {
+        var skills = new SkillCatalog(Data());
+        int row = skills.EffectRow(effect);
+        var plan = SkillHitPlan.ForSkill(skills, row, 1);
+        Assert.Equal(spell ? SkillHitKind.Spell : SkillHitKind.Unsupported, plan.Kind);
+        Assert.True(plan.SpellBase.IsZero);
+        Assert.False(plan.CanHit);
+        Assert.Same(DamagePacket.Empty, plan.BuildHit(
+            () => throw new Exception("A hitless action must not construct a weapon hit"),
+            _ => throw new Exception("Added spell damage must not fabricate a hit for a hitless spell")));
+        Assert.Equal(0, plan.CriticalChance(10000,
+            () => throw new Exception("There is no hit to roll critical chance for")));
+        if (effect == "ScorchingRay") Assert.Equal(0, skills.SpellCritChance(row, 1));
+    }
+
+    [Fact]
+    public void Real_spell_and_attack_plans_keep_their_separate_damage_and_crit_routes()
+    {
+        var skills = new SkillCatalog(Data());
+        var arc = SkillHitPlan.ForSkill(skills, skills.EffectRow("Arc"), 1);
+        Assert.True(arc.CanHit);
+        Assert.Equal(SkillHitKind.Spell, arc.Kind);
+        Assert.Same(arc.SpellBase, arc.BuildHit(() => throw new Exception("Arc is not a weapon hit"), hit => hit));
+        Assert.Equal(600, arc.CriticalChance(10000,
+            () => SpellCriticalStrike.Chance(skills.SpellCritChance(skills.EffectRow("Arc"), 1), Values())));
+
+        var attack = SkillHitPlan.ForSkill(skills, skills.EffectRow("PlayerMelee"), 1);
+        var weapon = DamagePacket.Of(DamageType.Physical, 10, 20);
+        Assert.True(attack.CanHit);
+        Assert.Same(weapon, attack.BuildHit(() => weapon, _ => throw new Exception("An attack keeps its weapon")));
+        Assert.Equal(830, attack.CriticalChance(830, () => throw new Exception("An attack keeps its critical chance")));
+    }
+
+    [Fact]
+    public void Type_precedence_and_fractional_damage_do_not_depend_on_a_trial_roll()
+    {
+        var fractional = DamagePacket.Of(DamageType.Fire, .1, .9);
+        Assert.True(SkillHitPlan.Create(attack: false, spell: true, fractional).CanHit);
+        var mixed = SkillHitPlan.Create(attack: true, spell: true, fractional);
+        Assert.Equal(SkillHitKind.Attack, mixed.Kind);
+        Assert.True(mixed.CanHit);
+        var unknown = SkillHitPlan.Create(attack: false, spell: false, fractional);
+        Assert.False(unknown.CanHit);
+        Assert.Same(DamagePacket.Empty, unknown.BuildHit(() => fractional, _ => fractional));
+        Assert.Equal(0, unknown.CriticalChance(10000, () => 10000));
     }
 
     [Theory]

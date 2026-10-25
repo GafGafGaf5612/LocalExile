@@ -480,8 +480,9 @@ partial class Program
         int effectiveness = Skills.DamageEffectiveness(gem.Effect, gem.Level);
         int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
         if (Stat("base_deal_no_damage") != 0) return;
-        var spellBase = Skills.HitDamage(gem.Effect, gem.Level, gem.Quality);
-        bool spell = spellBase.RollTotal(new Random(0)) > 0;
+        var hitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
+        if (!hitPlan.CanHit) return;
+        bool spell = hitPlan.Kind == SkillHitKind.Spell;
         var weapon = WeaponFor(conn);
         double delay;
         // An attack lands at its contact keyframe; the player swings where it stands, so without the walk-in offset.
@@ -504,19 +505,20 @@ partial class Program
                 .Select(e => (e.Key, e.Value))];
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int spellCriticalChance = spell
-            ? SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats) : 0;
+        int criticalChance = hitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
+            () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats));
         foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
-            DamagePacket hit = spell
-                ? SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0, AddedEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false))
-                : SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true));
+            DamagePacket hit = hitPlan.BuildHit(
+                () => SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
+                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
+                spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
+                        AddedEffectiveness(gem.Effect, gem.Level))
+                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
             int damage = hit.RollTotal(Random.Shared);
             bool critical = spell
-                ? spellCriticalChance > 0 && SpellCriticalStrike.Hits(spellCriticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
+                ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
             await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence);

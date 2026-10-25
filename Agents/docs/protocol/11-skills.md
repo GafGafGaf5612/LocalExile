@@ -249,6 +249,10 @@ The selected skill's spell rows also require `casting_spell = 1` (CharacterPanel
 the main-hand rows exclude that flag.
 `EffectStats` supplies it only for an actual ActiveSkillType Spell without Attack, and sends zero otherwise.
 Warcries are not classified as spells merely because they are not attacks.
+`AreaSkillHit` uses the same actual Attack/Spell types, with Attack taking precedence for a mixed type.
+`SkillHitPlan` rejects unsupported types and spells without extracted hit damage before building a weapon packet or
+rolling critical chance, so Scorching Ray, Righteous Fire and warcries cannot fall through to a wand hit.
+This adds no beam or damage-over-time implementation.
 The copied-save baseline recorded stored spell chance 500 for both Fireball and Freezing Pulse,
 and the selected Freezing Pulse panel still showed main-hand rows (main-hand crit 830).
 Native getters also read the stored 500; evidence is `logs/spell-crit-baseline.json` in the validation checkout.

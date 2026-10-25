@@ -187,6 +187,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   selected spell chance and server projectile/area rolls now share raw player and skill inputs once.
   Precision and Zealotry retain their existing bonuses without counting them twice.
   Actual Spell skill types set the panel's casting flag; attacks and non-spell warcries keep it clear.
+  Hitless spells and unsupported action types cannot fall through to weapon damage or attack critical rolls.
   The per-skill calculation and panel gates have automated checks; native selected-skill verification is pending.
   Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
