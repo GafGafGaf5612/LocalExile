@@ -298,6 +298,15 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Aura_buff_links_the_icon_by_action_hash_then_skill_id_before_the_visual_override()
+    {
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "0098" + "00001000" + "0103"
+            + "9A" + "00000BB8" + "3F800000" + "C1BA" + "0103" + "0007" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 152, 0x1000, 0x103,
+                u68: 3000, f6c: 1f, visual: 7, activeSkill: (0x103, 0xc1ba))));
+    }
+
+    [Fact]
     public void A_pet_does_not_block_walkers()
     {
         // Positioned: x, y, rotation, u16, flags0 0, flags1 0x0a, the shown pair (0, 1), then 1 for flags1 0x08.
