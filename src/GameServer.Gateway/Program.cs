@@ -6357,6 +6357,8 @@ static async Task OpenHorticrafting(string remote, NetworkStream stream, Connect
     var (_, stop, arrive) = conn.Walk.WalkUpTo(conn.HorticraftingAt.X, conn.HorticraftingAt.Y, 8, now);
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.Closed || conn.ActionCount != action || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, 8)) return;
+    conn.BenchOpen = false;
+    await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
     await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HorticraftingUi),
         "0x007b open Horticrafting Station recipe browser");
 }
