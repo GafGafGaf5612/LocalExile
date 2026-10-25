@@ -436,6 +436,35 @@ sealed class SkillCatalog(string folder = "data")
         /// sent, and the swings came every ~757 ms = 833 / 1.1).</summary>
         public const int DualWieldAttackSpeedPct = 10;
 
+        /// <summary>
+        /// The same attack's off-hand stats (off_hand_… instead of main_hand_…), for the weapon in the other hand of a
+        /// dual-wielded attack. A dual-wielded attack swings the off hand too, and the client sets that strike's weapon
+        /// up from these stats; it derives none of them (11-skills.md §4), so without them the off-hand weapon has no
+        /// attack time, damage or reach at all. <paramref name="mainHandLocalAttackSpeedPct"/> is the main weapon's own
+        /// local_attack_speed_+%, which the final main-hand value carries (<see cref="OffHandAttackSpeedPct"/>).
+        /// </summary>
+        public IReadOnlyList<(uint, int)> OffStats(IReadOnlyDictionary<uint, int>? player, DamagePacket? totalHit = null,
+            int mainHandLocalAttackSpeedPct = 0)
+        {
+            var (min, max) = Damage(player);
+            return
+            [
+                (StatKeys.OffHandMinPhysical, min), (StatKeys.OffHandMaxPhysical, max),
+                (StatKeys.OffHandMinTotal, totalHit is null ? min : (int)Math.Floor(totalHit.MinTotal)),
+                (StatKeys.OffHandMaxTotal, totalHit is null ? max : (int)Math.Floor(totalHit.MaxTotal)),
+                (StatKeys.OffHandAttackDurationMs, AttackMs), (StatKeys.OffHandTotalAttackDurationMs, AttackMs),
+                (StatKeys.OffHandAttackSpeedPct, OffHandAttackSpeedPct(IncreasedAttackSpeed(player), mainHandLocalAttackSpeedPct)),
+                (StatKeys.OffHandBaseMaxAttackDistance, Range), (StatKeys.OffHandMaxAttackDistance, Range),
+            ];
+        }
+
+        /// <summary>The off hand's attack_speed_+%: the final main-hand value with the main weapon's local attack speed
+        /// taken back out. CharacterStats multiplies that local value in like a more, but it belongs to the main weapon
+        /// only; the off-hand weapon's own local attack speed is already in its <see cref="AttackMs"/>.</summary>
+        public static int OffHandAttackSpeedPct(int mainHandPct, int mainHandLocalPct) =>
+            Math.Max(-99, (int)Math.Round(((1 + mainHandPct / 100.0) / Math.Max(0.01, 1 + mainHandLocalPct / 100.0) - 1) * 100,
+                MidpointRounding.AwayFromZero));
+
         /// <summary>The final main_hand_attack_speed_+% (passives and dual wielding, from CharacterStats), or the raw
         /// stats' sum when no final value was sent.</summary>
         public int IncreasedAttackSpeed(IReadOnlyDictionary<uint, int>? player)
