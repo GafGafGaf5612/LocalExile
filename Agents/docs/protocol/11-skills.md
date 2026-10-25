@@ -513,11 +513,35 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   calls when the flag byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
 - **Rotation.** Positioned rotation (+0x29c) = **atan2(dx, −dy)** in grid cells (the player's own moves traced with
   `trace-move.js`: facing (+15, −18) read 0.668).
+- **Ordinary speed modifiers (2026-10-25; automated and live Fireball checks).** `ProjectileSpeed` scales the
+  table's world-units/second by `1 + (player final projectile_speed_+% + skill base_projectile_speed_+%)/100`,
+  then converts to cells/second with 250/23 world units per cell. `Stats.dat` marks `base_projectile_speed_+%`
+  (client key 178) as a scalable non-virtual input and `projectile_speed_+%` (1407) as virtual. The player's
+  `CharacterPlayerStats`/`PanelStats` total already includes its base input, so that input is not added again.
+  Skill inputs are read separately from `SkillCatalog.EffectStats` at release, including level/quality, rather
+  than overlaid on the player's raw values. For example, Freezing Pulse's quality row grants 2000 permille per
+  quality: +40% at quality 20 adds to a player's +30%, giving 1.7 times table speed.
+  The additive formula follows PoB's [ProjectileSpeed calculation](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcOffence.lua#L1152)
+  and [modifier formula](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcTools.lua#L16),
+  restricted here to additive increases/reductions. One resolved speed drives collision prediction, 0x1ba's
+  duration and the server's flight delay. A finite positive `Game_PROJECTILE_SPEED` still overrides the result
+  in cells/second. Invalid overrides fall back to the modified table speed. Finite positive overrides, including
+  0.001 cells/second, are preserved when their flight duration is representable. Only a nonpositive speed or a
+  flight exceeding [.NET's maximum Task.Delay duration](https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.task.delay?view=net-10.0)
+  (4,294,967,294 ms) gets a distance-dependent lower speed bound, before collision prediction. The bound includes
+  endpoint rounding and is a numeric guard, not a measured official minimum speed.
+  More/less modifiers, conditional and per-charge speed, support-gem application and special projectile speed
+  rules remain unimplemented. Collision is still predicted only at launch, with the limitations below.
+  Live validation used a copied OfflineWitch database and three Fireball casts over the same 116-cell path.
+  At 0/+100/-50% raw player speed, the logs reported 95.7/191.4/47.8 cells per second; the actual 0x1ba payloads
+  carried durations 1.212375/0.606187/2.424749 seconds. Before the patch, both 0 and +100% used 95.7 cells per second.
+  These checks cover travel timing, not moving-target collision or pixel-level matching with the official game.
 - **Hit (live 2026-10-18).** At launch the server walks the path cell by cell and stops it at the first living
   monster within 4 cells (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2) of where the projectile will
   be, using where that monster will be by then. Ground and monster casts alike: the projectile flies to the hit (else
   to its range), the monster loses the skill's fire damage (0x1b1), a kill is removed 10 s later. A monster that walks
-  into the path after launch is not hit.
+  into the path after launch is not hit. A monster selected at launch can still take damage after changing course
+  away from the predicted impact; ordinary speed modifiers do not fix this collision limitation.
 - **Walls (live 2026-10-18).** The client's walkability provider (walk-map hook `0x1410ddcfd`) returns a second grid
   of the same size at +0x20/+0x28: what stops projectiles. 0 blocks, 1..5 (a distance gradient like the walk map's) lets
   them through. On The Coast seed 1 every walkable cell is open in it, cliffs and rocks are 0 in both, and 1.44 M cells

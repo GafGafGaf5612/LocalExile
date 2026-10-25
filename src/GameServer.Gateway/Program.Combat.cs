@@ -423,7 +423,15 @@ partial class Program
         int variation = SkillArtVariation(conn, gem.Gem);
         projectile = (Art.Projectile(projectile.Id, variation), projectile.Speed);
         string impact = Art.AnimatedInPlaceOf(DefaultProjectileImpactAo, variation);
-        await FlyProjectile(remote, stream, ciphers, conn, projectile, from, to, impact: impact, damageTo: m =>
+        // Keep the player's final speed separate from the skill's raw stats: the panel already includes the player's
+        // base speed, while a gem's own base speed (including quality) adds to that total instead of replacing it.
+        var playerSpeedStats = CharacterPlayerStats(conn);
+        var skillSpeedStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        int PlayerSpeedStat(string name) => Stats.Key(name) is uint key ? playerSpeedStats.GetValueOrDefault(key) : 0;
+        int SkillSpeedStat(string name) => Stats.Key(name) is uint key ? skillSpeedStats.GetValueOrDefault(key) : 0;
+        float speed = ProjectileSpeed.CellsPerSecond(projectile.Speed, PlayerSpeedStat, SkillSpeedStat,
+            Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));
+        await FlyProjectile(remote, stream, ciphers, conn, (projectile.Id, speed), from, to, impact: impact, damageTo: m =>
         {
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
             // types separate so conversion and per-type mitigation apply.
@@ -523,15 +531,14 @@ partial class Program
     // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
     // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
     static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        (string Id, int Speed) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)> damageTo,
+        (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)> damageTo,
         bool log = true, string? impact = null)
     {
         uint id = conn.NextObjectId++;
         double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        // Game_PROJECTILE_SPEED (cells per second) overrides the speed, e.g. to watch a slow projectile while testing.
-        float cellsPerSecond = float.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"), inv, out var ps) && ps > 0
-            ? ps : projectile.Speed / (250f / 23f);
+        // One launch-time speed drives predicted collisions, the client's glide duration and the server's flight delay.
+        float cellsPerSecond = projectile.CellsPerSecond;
         // It leaves a little ahead of the caster (Game_PROJECTILE_AHEAD cells, default 4) and flies toward the clicked point
         // or monster and on to Game_PROJECTILE_RANGE cells (default 120, ~1.2 s at the real speed), clamped to the area.
         double ahead = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_AHEAD"), inv, out var pa) ? pa : 4;
@@ -542,6 +549,9 @@ partial class Program
         if (TerrainHeights.Size(conn.Layout.Id, conn.Seed) is (int w, int h))
             foreach (var (d, lo, hi) in new[] { (dx, -from.X, w - 1 - from.X), (dy, -from.Y, h - 1 - from.Y) })
                 if (d != 0) length = Math.Min(length, Math.Max(0, (d > 0 ? hi : lo) / (d / aim)));
+        // The rounded endpoint can add less than one cell. Guard only speeds whose resulting flight would exceed
+        // Task.Delay's maximum duration; valid slow test overrides (e.g. 0.001 cells/s) retain their exact value.
+        cellsPerSecond = ProjectileSpeed.ForFlightDistance(cellsPerSecond, length + 1);
         // Collision: the first living monster within Game_PROJECTILE_HIT_RADIUS cells (default 4: the row's CollisionRadius
         // 2 plus a monster's body) of the projectile when it passes, using where the monster will be by then. Checked once at
         // launch, half a cell at a time along the path; a monster that walks into the path later is not hit. Walls and

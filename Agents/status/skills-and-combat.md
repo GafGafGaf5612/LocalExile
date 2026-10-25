@@ -191,6 +191,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   it hits the first monster or wall on its path (checked at launch;
   walls from the projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own
   colliders do not stop it ([11](../docs/protocol/11-skills.md) §10).
+  Ordinary player and skill projectile-speed increases/reductions now share the flight and predicted-arrival speed.
+  The player's computed total is counted once; the skill's own level/quality bonus is added separately.
+  The development speed override retains priority.
+  Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline, 0.606 at +100% and 2.425 at -50%.
+  Conditional/more/less speed and support-gem application remain open.
+  Code: `ProjectileSpeed.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
   yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour

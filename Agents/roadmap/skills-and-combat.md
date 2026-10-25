@@ -74,6 +74,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 
 - **Known:** Fireball casts, flies as a server-made projectile object and hits the targeted monster
   ([11](../docs/protocol/11-skills.md) §9–10).
+  Ordinary player and skill projectile-speed bonuses affect flight and predicted arrival together.
+  Baseline/+100%/-50% Fireball casts were checked live.
+  Conditional/more/less speed and support application remain open.
+  Collision is still selected at launch, so later direction changes can cause damage after a visual miss.
 - **Start:** height grids for more areas (or in the walk-map recorder), collision with doodads and objects that have
   their own colliders.
 - **Done when:** Fireball looks like the real one in every area: over the terrain, stopping at walls and objects.
