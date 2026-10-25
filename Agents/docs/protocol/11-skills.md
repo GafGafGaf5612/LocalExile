@@ -541,7 +541,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   of the same size at +0x20/+0x28: what stops projectiles. 0 blocks, 1..5 (a distance gradient like the walk map's) lets
   them through. On The Coast seed 1 every walkable cell is open in it, cliffs and rocks are 0 in both, and 1.44 M cells
   the walk map blocks (the sea) are open. `scripts/walkmaps` saves it as `<area>_seed<seed>.projectile.bin`
-  (`ProjectileGrid`). Static routes now use a supercover grid trace, including diagonal corner cells, clipped to
+  (`ProjectileGrid`). Static routes use a supercover grid trace with exact rational boundary comparisons,
+  including non-45-degree diagonal corner cells, clipped to
   an open cell before the first blocker; the moving-target sweep uses that same endpoint. Earlier live checks: the fireball
   explodes on cliffs and flies over the sea. Doodads and objects with their own colliders (not in the grid) do not stop
   it yet. Grids exist for Lioneye's Watch and The Coast seed 1.

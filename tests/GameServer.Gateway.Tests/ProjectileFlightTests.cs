@@ -209,6 +209,28 @@ public class ProjectileFlightTests
         Assert.True(flight.Advance(0.1, []).Wall);
     }
 
+    [Theory]
+    [InlineData(10, 10, 24, 16, 13, 12)]
+    [InlineData(24, 16, 10, 10, 13, 12)]
+    [InlineData(40, 10, 26, 16, 37, 12)]
+    [InlineData(26, 16, 40, 10, 37, 12)]
+    [InlineData(10, 40, 24, 34, 13, 38)]
+    [InlineData(24, 34, 10, 40, 13, 38)]
+    [InlineData(40, 40, 26, 34, 37, 38)]
+    [InlineData(26, 34, 40, 40, 37, 38)]
+    [InlineData(10, 10, 16, 24, 12, 13)]
+    [InlineData(16, 24, 10, 10, 12, 13)]
+    public void Non_45_degree_exact_corners_check_both_side_cells_in_all_directions(
+        int x0, int y0, int x1, int y1, int blockX, int blockY)
+    {
+        bool Blocks(int x, int y) => x == blockX && y == blockY;
+        var clipped = ProjectileFlight.ClipWall((x0, y0), (x1, y1), Blocks);
+        Assert.True(clipped.Wall);
+        Assert.False(Blocks(clipped.End.X, clipped.End.Y));
+        Assert.NotEqual((x1, y1), clipped.End);
+        Assert.False(ProjectileFlight.ClipWall((x0, y0), clipped.End, Blocks).Wall);
+    }
+
     [Fact]
     public void The_rounded_wire_endpoint_also_has_a_clear_route_through_adjacent_blockers()
     {

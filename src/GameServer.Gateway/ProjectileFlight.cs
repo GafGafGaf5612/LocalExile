@@ -102,24 +102,22 @@ sealed class ProjectileFlight
     {
         int x = from.X, y = from.Y;
         if (blocked(x, y)) return (from, true);
-        double dx = (double)to.X - from.X, dy = (double)to.Y - from.Y;
+        long dx = (long)to.X - from.X, dy = (long)to.Y - from.Y;
         int sx = Math.Sign(dx), sy = Math.Sign(dy);
-        double tx = sx == 0 ? double.PositiveInfinity : 0.5 / Math.Abs(dx);
-        double ty = sy == 0 ? double.PositiveInfinity : 0.5 / Math.Abs(dy);
-        double stepX = sx == 0 ? double.PositiveInfinity : 1 / Math.Abs(dx);
-        double stepY = sy == 0 ? double.PositiveInfinity : 1 / Math.Abs(dy);
-        while (Math.Min(tx, ty) <= 1)
+        long ax = Math.Abs(dx), ay = Math.Abs(dy), boundaryX = 1, boundaryY = 1;
+        // Boundary times are odd / (2 * axis distance), starting half a cell from the integer origin.
+        // Compare them exactly: accumulated floating steps can split a true corner and miss a side cell.
+        // Int128 also covers full signed-int coordinate spans without cross-product overflow.
+        while ((sx != 0 && boundaryX <= 2 * ax) || (sy != 0 && boundaryY <= 2 * ay))
         {
-            double t = Math.Min(tx, ty);
-            bool crossX = tx <= ty, crossY = ty <= tx;
+            Int128 order = (Int128)boundaryX * ay - (Int128)boundaryY * ax;
+            bool crossX = sx != 0 && (sy == 0 || order <= 0);
+            bool crossY = sy != 0 && (sx == 0 || order >= 0);
             if ((crossX && blocked(x + sx, y)) || (crossY && blocked(x, y + sy))
                 || (crossX && crossY && blocked(x + sx, y + sy)))
-            {
-                double before = Math.Max(0, t - 0.000001 / Math.Max(1, Math.Sqrt(dx * dx + dy * dy)));
-                return (((int)Math.Round(from.X + dx * before), (int)Math.Round(from.Y + dy * before)), true);
-            }
-            if (crossX) { x += sx; tx += stepX; }
-            if (crossY) { y += sy; ty += stepY; }
+                return ((x, y), true); // The current integer cell is exactly the last open cell before entry.
+            if (crossX) { x += sx; boundaryX += 2; }
+            if (crossY) { y += sy; boundaryY += 2; }
         }
         return (to, false);
     }
