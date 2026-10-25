@@ -1,8 +1,8 @@
 # usage: python -I scripts/re/monster_takehit.py [--json data/monster-takehit.json]
 #
-# For every MonsterVarieties row: the indexes of its TakeHit clips in the rig's animation list. The client's
-# S->C 0x1b2 "play animation" takes an index into the actor's animation list, and that list is the rig .amd's
-# animations in file order (0-based). Live 2026-10-25 on the Sanctum zombie: index 156 = flinch_unarmed and
+# For every MonsterVarieties row: the indexes of its TakeHit clips in the rig's animation list, and their lengths.
+# The client's S->C 0x1b2 "play animation" takes an index into the actor's animation list, and that list is the rig
+# .amd's animations in file order (0-based). Live 2026-10-25 on the Sanctum zombie: index 156 = flinch_unarmed and
 # 151 = flinch_pitchfork played the flinch *with its SoundEvent*, both at the position of the clip in
 # Art/Models/MONSTERS/skeleton/rig.amd.
 #
@@ -91,33 +91,43 @@ def main():
     fetch(sorted({amd for amd in amds.values() if amd}))
     print(f"fetched; indexing {len(variants)} monster varieties", file=sys.stderr, flush=True)
 
+    # Parsed once per rig and per .act: thousands of varieties share a handful of rigs.
+    rigs, act_clips = {}, {}
+
+    def rig(amd):
+        if amd not in rigs:
+            anims = {}
+            for i, a in enumerate(amd_animations(amd, fetch_missing=False) or []):
+                anims.setdefault(a["name"], (i, a["length"]))   # a repeated name: the first one, as names.index did
+            rigs[amd] = anims
+        return rigs[amd]
+
     cache, out = {}, {}
     for n, row in enumerate(variants, 1):
         key = (tuple(row.get("ACTFiles") or []), tuple(row.get("AOFiles") or []))
         if key not in cache:
             index = None
             for act in key[0]:
-                clips, act_ao = act_takehit(act)
+                if act not in act_clips:
+                    act_clips[act] = act_takehit(act)
+                clips, act_ao = act_clips[act]
                 if not clips:
                     continue
                 for ao in ([act_ao] if act_ao else []) + list(key[1]):
                     amd = amds.get(ao)
-                    names = [a["name"] for a in amd_animations(amd, fetch_missing=False) or []] if amd else []
-                    if not names:
-                        continue
-                    hits = []
-                    for clip in clips:
-                        if clip in names and names.index(clip) not in hits:
-                            hits.append(names.index(clip))
-                    if hits:
-                        index = (hits, [c for c in clips if c in names], amd, act)
+                    anims = rig(amd) if amd else {}
+                    found = [c for c in clips if c in anims]
+                    if found:
+                        index = ([anims[c][0] for c in found], [anims[c][1] for c in found], found, amd, act)
                         break
                 if index:
                     break
             cache[key] = index
         if cache[key]:
-            indexes, clips, amd, act = cache[key]
-            out[row["Id"]] = {"index": indexes[0], "indexes": indexes, "clips": clips, "amd": amd, "act": act}
+            indexes, lengths, clips, amd, act = cache[key]
+            # lengths: each clip's length in ms (the Gateway holds the next flinch until the clip has played).
+            out[row["Id"]] = {"index": indexes[0], "indexes": indexes, "lengths": lengths, "clips": clips,
+                              "amd": amd, "act": act}
         if n % 1000 == 0:
             print(f"  {n}/{len(variants)}", file=sys.stderr, flush=True)
     with open(dest, "w", encoding="utf-8") as f:

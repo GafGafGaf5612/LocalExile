@@ -352,10 +352,14 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   index past the actor's animation count — a wrong index costs nothing. `0x1b1` alone only stores the pool and runs the
   death/revive slots, so a hit without 0x1b2 is silent and still. A killing blow gets no flinch (the client's death
   runs instead). The reaction is gated like a stun: the hit must take at least a tenth of the monster's max life, and a
-  monster flinches at most every 0.4 s — otherwise a fast attack or a volley restarts the clip and its sound and keeps
-  cutting the monster's own attack and walk animations while the server still moves it.
+  monster does not flinch again until its clip has played (its `.amd` length at speed 1, at least 0.4 s) — otherwise a
+  fast attack or a volley restarts the clip and its sound and keeps cutting the monster's own attack and walk animations
+  while the server still moves it. The flinch is checked again inside the connection's send gate, so a hit that kills
+  the monster meanwhile (marked Dead before its own 0x1b1 goes out) drops it rather than playing it over the death.
   `data/monster-takehit.json` (`python -I scripts/re/monster_takehit.py`) holds each MonsterVarieties
-  row's index(es): its `.act` maps `TakeHit` to a clip, and the `.ao`'s `AnimationController` names the rig. 26 `.act`
+  row's index(es) and clip lengths: its `.act` maps `TakeHit` to a clip, and the `.ao`'s `AnimationController` names
+  the rig. A rig whose parsed animations do not add up to the `.amd`'s count line is skipped (a missed entry would shift
+  every later index to a wrong but in-range clip). 26 `.act`
   files map a pool — `flinch_01, flinch_02, flinch_03`, or `flinch_small:max_duration=0.45, flinch_large:min_duration=0.45`
   (the condition picks by the hit's stun duration, which the server does not model) — and the server picks one at random
   per hit; every other variety has a single clip. An `@Name` alias is expanded to the whole list it names, and every

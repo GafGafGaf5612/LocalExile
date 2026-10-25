@@ -131,7 +131,9 @@ def amd_animations(amd, fetch_missing=True):
     """The .amd's animations in file order (the client's animation list): name, once/loop, length ms, events.
 
     Format: a version line, a count line, then per animation "<name>" / once|loop / <length ms> / <event count> /
-    per event "<event>" / <time ms> / "<x> <y> <z>", then two lines. None when the file is missing.
+    per event "<event>" / <time ms> / "<x> <y> <z>", then two lines. None when the file is missing, or when the
+    animations read do not add up to the count line: a skipped entry would shift every later index, and a shifted index
+    is still in range, so the client would play the wrong clip rather than ignore it.
     """
     if fetch_missing:
         fetch([amd])
@@ -153,6 +155,10 @@ def amd_animations(amd, fetch_missing=True):
             i = j
         else:
             i += 1
+    if len(lines) < 2 or not lines[1].isdigit() or int(lines[1]) != len(out):
+        count = lines[1] if len(lines) > 1 else "?"
+        print(f"warning: {amd}: read {len(out)} animations, the count line says {count}; skipped", file=sys.stderr, flush=True)
+        return None
     return out
 
 

@@ -25,21 +25,37 @@ public class MonsterTakeHitTests : IDisposable
         Write("""
             {"Metadata/Monsters/A": {"index": 7, "indexes": [7, 3, 9], "clips": ["flinch_01", "flinch_02", "flinch_03"]}}
             """);
-        Assert.Equal(new[] { 7, 3, 9 }, Catalog().TakeHit("Metadata/Monsters/A"));
+        Assert.Equal(new[] { 7, 3, 9 }, Catalog().TakeHit("Metadata/Monsters/A").Select(a => a.Index));
     }
 
     [Fact]
     public void A_single_index_file_still_resolves()
     {
         Write("""{"Metadata/Monsters/A": {"index": 156, "clip": "flinch_unarmed"}}""");
-        Assert.Equal(new[] { 156 }, Catalog().TakeHit("Metadata/Monsters/A"));
+        Assert.Equal(new[] { 156 }, Catalog().TakeHit("Metadata/Monsters/A").Select(a => a.Index));
     }
 
     [Fact]
     public void Non_numeric_indexes_are_skipped()
     {
         Write("""{"Metadata/Monsters/A": {"indexes": [5, null, "x", 8]}}""");
-        Assert.Equal(new[] { 5, 8 }, Catalog().TakeHit("Metadata/Monsters/A"));
+        Assert.Equal(new[] { 5, 8 }, Catalog().TakeHit("Metadata/Monsters/A").Select(a => a.Index));
+    }
+
+    [Fact]
+    public void Each_index_carries_its_clip_length_in_seconds()
+    {
+        Write("""
+            {"Metadata/Monsters/A": {"indexes": [7, 3], "lengths": [450, 800]}}
+            """);
+        Assert.Equal(new[] { new HitAnimation(7, 0.45), new HitAnimation(3, 0.8) }, Catalog().TakeHit("Metadata/Monsters/A"));
+    }
+
+    [Fact]
+    public void A_file_without_lengths_gives_0_s()
+    {
+        Write("""{"Metadata/Monsters/A": {"indexes": [5, null, 8], "lengths": [300]}}""");
+        Assert.Equal(new[] { new HitAnimation(5, 0.3), new HitAnimation(8, 0) }, Catalog().TakeHit("Metadata/Monsters/A"));
     }
 
     [Fact]

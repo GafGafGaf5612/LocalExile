@@ -2116,18 +2116,18 @@ static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiph
 
 // The hit reaction: one of the rig's TakeHit clips and its SoundEvent, S→C 0x1b2 kind 0 (see Attack and HitMonster).
 // A killing blow gets none: the client's Life component runs the death instead, and the flinch would only be cut off.
-// The gates (HitReaction) keep it a stun-like reaction rather than a loop; see that class.
+// The gates (HitReaction) keep it a stun-like reaction rather than a loop; see that class. The monster is checked again
+// inside the send gate: a hit that kills it meanwhile marks it Dead before it sends its own 0x1b1, so the flinch either
+// goes out before the death or not at all.
 static async Task SendFlinch(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
     SpawnedMonster m, int damage, bool log)
 {
-    int flinch;
-    lock (conn.Monsters)
-    {
-        if (!HitReaction.TryFlinch(m, damage, conn.Clock.Elapsed.TotalSeconds)) return;
-        flinch = m.HitAnimations[Random.Shared.Next(m.HitAnimations.Count)];
-    }
-    await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, (uint)flinch, 1f),
-        !log ? null : $"0x01b2 monster 0x{id:x} flinch (animation {flinch})");
+    HitAnimation? clip;
+    lock (conn.Monsters) clip = HitReaction.TryFlinch(m, damage, conn.Clock.Elapsed.TotalSeconds, Random.Shared);
+    if (clip is not { } flinch) return;
+    await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, (uint)flinch.Index, 1f),
+        !log ? null : $"0x01b2 monster 0x{id:x} flinch (animation {flinch.Index}, {flinch.Seconds:0.00} s)",
+        still: () => { lock (conn.Monsters) return m.Life > 0 && !m.Dead; });
 }
 
 // A hit's damage off a monster's life (under the Monsters lock): the new life, and whether the hit starts its boss stage
@@ -5097,12 +5097,16 @@ static (int X, int Y) NextToPlayer(ClientState conn)
 
 // One sender at a time per connection: the Salsa20 keystream must be applied and written in the same order (the read
 // loop, the monster AI tick and the transfer timer all send).
-static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log)
+// `still`, when given, is checked inside the connection's send gate and drops the packet when false: a packet decided
+// before another task's packets were sent can check that it still applies (SendFlinch).
+static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
+    Func<bool>? still = null)
 {
     var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
     await gate.WaitAsync();
     try
     {
+        if (still is not null && !still()) return;
         if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
         string? trace = MoveTrace && bytes.Length >= 6 && (bytes[0] << 8 | bytes[1]) is 0x01ab or 0x01b7 or 0x01ba
             ? Convert.ToHexString(bytes) : null;
@@ -7277,9 +7281,9 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public bool Hostile { get; init; } = true;
     // What it is, for the experience and items its death gives (null for monsters made without a variety).
     public MonsterCatalog.Variety? Variety { get; init; }
-    // Its TakeHit clips' indexes in the rig's animation list (0x1b2): the flinch and its sound on each hit. One
-    // animation for most varieties; a few have a pool the server picks from.
-    public IReadOnlyList<int> HitAnimations { get; init; } = [];
+    // Its TakeHit clips (index in the rig's animation list, length) for 0x1b2: the flinch and its sound on a hit that
+    // passes HitReaction's gates. One clip for most varieties; a few have a pool the server picks from.
+    public IReadOnlyList<HitAnimation> HitAnimations { get; init; } = [];
     public byte Level { get; init; } = 1;
     public MonsterRarity Rarity { get; init; }
     // Damage over time not yet applied (fractions of a point between ticks).
@@ -7294,8 +7298,9 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public int StopRange => stopRange;
     public uint MaxLife { get; } = maxLife;
     public uint Life = maxLife;
-    // When it last flinched (Clock seconds): the 0.4 s gate on the hit reaction. Guarded by the Monsters lock.
-    public double LastFlinchAt = double.NegativeInfinity;
+    // Until when its last flinch plays (Clock seconds; HitReaction): no new flinch before. Guarded by the Monsters
+    // lock.
+    public double FlinchUntil = double.NegativeInfinity;
     public bool Aggro, Dead;
     public (int X, int Y)? LastTarget;
     // A boss's stage (BossFights) and whether a hit has started it.
