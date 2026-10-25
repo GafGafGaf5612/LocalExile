@@ -364,7 +364,7 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x1415f53c0` | Fn | Render: model transform; tilt = −`0x141e35c00`(Positioned) when the type has `tilt_to_target` |
 | `0x141e34400` | Fn | Positioned: start a move (interpolation `0x141e4d180`; height 0x7fffffff = terrain, else z = −height × 7.8125) |
 | `0x141e3491a` / `0x141e34921` | Fn | Move endpoint/current Positioned markers passed to the 3D stepper |
-| `0x141e3495b`?`0x141e3496b` | Code | Move endpoint world z = ?marker ? 7.8125 before render interpolation |
+| `0x141e3495b` to `0x141e3496b` | Code | Move endpoint world z = -marker * 7.8125 before render interpolation |
 | `0x141e4d510` | Fn | Render interpolation setup: stores endpoint world z minus current world z |
 | `0x142042360` | Fn | create one client-side doodad from a placed record (grid x, y +0, +4; angle +0x14; type +0x30; .ao +0x38): rooms' doodads too ([14](14-monster-packs.md) §3) |
 | `0x14214dbe1` | Fn | instance dispatcher case 0xe2 (S→C 0x2a9 gold, read `0x140913050`, u32 BE): stores it at session +0xc40c, plays Gold_Spend.ogg when it drops |
