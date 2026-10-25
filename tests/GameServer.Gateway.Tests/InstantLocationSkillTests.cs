@@ -69,8 +69,13 @@ public class InstantLocationSkillTests
         conn.ActionCount = 17; conn.ChannelSkill = 0x104; conn.NextAttackAt = 20;
         conn.Walk.Order(180, 100, conn.Clock.Elapsed.TotalSeconds);
         var destination = conn.Walk.Destination;
-        Assert.True(InstantLocationSkill.TryResolve(conn, conn.ProjectileEpoch, (140, 100), false, NoStats, out var from, out var to));
-        Assert.Equal((100, 100), from); Assert.Equal((140, 100), to);
+        var before = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        Assert.True(InstantLocationSkill.TryResolve(conn, conn.ProjectileEpoch, (250, 100), false, NoStats, out var from, out var to));
+        var after = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        // This is a live stopwatch walk: full-suite scheduling may advance whole cells between observations.
+        Assert.InRange(from.X, before.X, after.X);
+        Assert.Equal(100, from.Y);
+        Assert.Equal((from.X + 42, 100), to);
         Assert.Equal(destination, conn.Walk.Destination);
         Assert.Equal(17, conn.ActionCount); Assert.Equal((ushort)0x104, conn.ChannelSkill); Assert.Equal(20, conn.NextAttackAt);
         Assert.True(InstantLocationSkill.TryCommit(conn, conn.ProjectileEpoch, (140, 100), false, NoStats, out to));
