@@ -4,6 +4,15 @@ namespace GameServer.Core.Tests;
 
 public class InstanceEntitiesTests
 {
+    [Fact]
+    public void Projectile_impact_teleport_carries_height_and_preserves_the_legacy_default()
+    {
+        const string header = "01B700003001000000000000000000280000001E";
+        Assert.Equal(header + "FFFFFFF800000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, unchecked((uint)-8))));
+        Assert.Equal(header + "7FFFFFFF00000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, 0x7fffffff)));
+        Assert.Equal(header + "0000000000000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30)));
+    }
+
     [Theory]
     // Reference values from an independent MurmurHash2 implementation (seed 0).
     [InlineData("Metadata/Characters/Int/Int", 0x9c41993eu)]

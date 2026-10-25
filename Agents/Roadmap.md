@@ -270,7 +270,10 @@ data is in [19](docs/protocol/19-gems.md).
 
 ### Skill projectiles
 - **Known:** Fireball casts, flies as a server-made projectile object and hits the targeted monster
-  ([11](docs/protocol/11-skills.md) §9–10).
+  ([11](docs/protocol/11-skills.md) §9–10). Swept relative-motion checks now run throughout flight rather than reserving
+  a launch-time target; pause and area cleanup use the game clock/lifetime. Automated checks pass; live moving-target,
+  impact-stop and pause verification is pending. Monster walk estimates, shared collision radius and movement between
+  samples still limit accuracy.
 - **Start:** height grids for more areas (or in the walk-map recorder), collision with doodads and objects that have
   their own colliders.
 - **Done when:** Fireball looks like the real one in every area: over the terrain, stopping at walls and objects.

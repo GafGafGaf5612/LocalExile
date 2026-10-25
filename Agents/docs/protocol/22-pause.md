@@ -60,10 +60,11 @@ Per connection (one connection is one area), `ClientState.Paused` is "the Clock 
 | `RunMonsterAi` | skips its steps: monsters neither chase nor start swings |
 | `RunPlayerTick` | skips its steps: no regeneration, no Righteous Fire burn, no waypoint activation |
 | `MonsterSwing` | a swing started before the pause waits (`WhilePaused`) and lands after the resume |
+| player projectiles | cast release, swept flight collision and impact cleanup use the stopped game clock; damage commits defer while paused (2026-10-25, automated checks; live verification pending) |
 | ticks 0x1b / acks 0x1c | still answered |
 
 ## Open
 
 - What the two flags mean apart: the client pauses only with both set, and the Gateway always sends both.
-- Damage already on its way when the pause starts (the player's spell projectiles, delayed hits) is not held back.
+- Other delayed player hits still use wall-clock timers; projectiles now wait through pause as described above.
 - Live verification is pending.

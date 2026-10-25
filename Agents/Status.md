@@ -285,7 +285,7 @@ templates now uses the native selection request and persists the chosen home. Se
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch
   use the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
-- **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (checked at launch; walls from the
+- **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` + `scripts/walkmaps/heights.py`) fly the fireball on the terrain; it hits the first monster or wall on its path (moving targets checked throughout flight; walls from the
   projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own colliders do not
   stop it ([11](docs/protocol/11-skills.md) §10).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
@@ -407,3 +407,10 @@ Cyclone's additional melee-range and stage modifiers remain partial. See protoco
 Optional [native client control](docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated UI input. It targets the copied standalone 3.29.3b client and local services only.
 
 Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses. Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented. See [skills](docs/protocol/11-skills.md).
+
+Projectile collision now sweeps observed projectile/monster movement throughout flight, so later path entry and
+direction changes affect the hit. The client glide is stopped at the contact cell before impact, and game-time
+cast release/flight/explosion cleanup waits through pause. Area changes and disconnects cancel outstanding flights.
+Automated trajectory, wall, lifecycle and height-packet checks pass; live verification is pending. Positions remain
+server estimates with a shared radius and straight movement between samples; doodad colliders, explosion area
+damage and official timing equivalence are not implemented. See [projectiles](docs/protocol/11-skills.md#10-projectiles-experimental).

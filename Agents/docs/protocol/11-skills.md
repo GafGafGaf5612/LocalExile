@@ -513,16 +513,36 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   calls when the flag byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
 - **Rotation.** Positioned rotation (+0x29c) = **atan2(dx, −dy)** in grid cells (the player's own moves traced with
   `trace-move.js`: facing (+15, −18) read 0.668).
-- **Hit (live 2026-10-18).** At launch the server walks the path cell by cell and stops it at the first living
-  monster within 4 cells (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2) of where the projectile will
-  be, using where that monster will be by then. Ground and monster casts alike: the projectile flies to the hit (else
-  to its range), the monster loses the skill's fire damage (0x1b1), a kill is removed 10 s later. A monster that walks
-  into the path after launch is not hit.
+- **Hit (reworked 2026-10-25; automated checks, live verification pending).** `ProjectileFlight` advances from the
+  connection's elapsed game clock, polled about every 16 ms. For each interval it solves the earliest intersection
+  of the projectile segment and each living monster's observed movement segment in relative coordinates, with the
+  existing 4-cell radius (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2). It keeps previous samples
+  across movement orders, rather than choosing a future target at launch. A monster can walk out of a formerly
+  predicted hit, walk into the path later, or intercept before a farther monster. Removed/dead monsters are omitted;
+  new objects and replaced walk estimators are tested only at the current endpoint, without inventing past motion.
+  The first contact stops the flight; range expiry without a contact removes it without an explosion.
+- **Stopping at contact (static client evidence, 2026-10-25).** The initial 0x1ba goes to the range/static-wall
+  endpoint. At a discovered contact, S→C **0x1b7** relocates it to the rounded contact cell with the appropriate height,
+  then the Animated swap below plays its impact. The 3.29.3b Positioned handler's switch (`0x141e30c90`) maps 0x1b7
+  to `0x141e30da7`: it stores the height at +0x290 and trailing u32 at +0x2b4, then calls `0x141e31200`. That routine's
+  tail (`0x141e3162f`) calls `0x141e35250`, which clears the movement durations at +0x240/+0x280 and movement flags.
+  Thus the explosion does not continue along the old glide. `InstanceProtocol.Teleport` now accepts an optional
+  height; existing calls retain zero, projectiles supply terrain + hand height or 0x7fffffff.
+  Impact damage is committed under the send gate and a short monster lock, rechecking connection/area/pause and
+  target life. Packet writes and hit notifications await outside the monster lock. A transfer invalidates flights
+  even after its pending ticket is consumed and removes outstanding projectile/impact objects before 0x2b2;
+  a failed transfer permits new flights without reviving old ones or leaving their visuals behind.
+  Cast release, flight and the explosion's 1.5-second lifetime use game time and wait through pause.
+  These remain estimates: monster positions are integer `WalkEstimator` samples, movement between samples is a
+  straight chord, the radius is shared across monsters, and the client has its own cell stepping/network delay.
+  Sharp turns between samples or long scheduling stalls can still differ from the client. This is not an official
+  collision/tick-rate implementation; explosion area damage, pierce/chains and object-owned colliders are unchanged.
 - **Walls (live 2026-10-18).** The client's walkability provider (walk-map hook `0x1410ddcfd`) returns a second grid
   of the same size at +0x20/+0x28: what stops projectiles. 0 blocks, 1..5 (a distance gradient like the walk map's) lets
   them through. On The Coast seed 1 every walkable cell is open in it, cliffs and rocks are 0 in both, and 1.44 M cells
   the walk map blocks (the sea) are open. `scripts/walkmaps` saves it as `<area>_seed<seed>.projectile.bin`
-  (`ProjectileGrid`); the path stops half a cell before the first blocking cell and explodes there. Live: the fireball
+  (`ProjectileGrid`). Static routes now use a supercover grid trace, including diagonal corner cells, clipped to
+  an open cell before the first blocker; the moving-target sweep uses that same endpoint. Earlier live checks: the fireball
   explodes on cliffs and flies over the sea. Doodads and objects with their own colliders (not in the grid) do not stop
   it yet. Grids exist for Lioneye's Watch and The Coast seed 1.
 - **Explosion (live 2026-10-18).** Projectiles.dat names the impact as an animation of the projectile's own .ao
