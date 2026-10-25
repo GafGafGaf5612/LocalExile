@@ -695,10 +695,19 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   Purity of Fire/Ice/Lightning 145/146/147, Clarity 155, Vitality 153, Precision 1293) and is sent with
   S→C 0x1c1 with the player as source and the skill id as the source skill. A second cast removes it with
   0x1c2. The buff visual is the row's `BuffVisuals` (the `player_auras/...` EPKs); the server also sends
-  the final stats, because the client derives none of them. The skill-bar active border is not reproduced
-  yet: 0x25f is an internal UI event, not an instance/world message (both factories fall through to their
-  default case), so sending it crashed the 3.29.3b client; the Gateway does not send it. The client's
-  setter (`0x140ae4550`, skill id + ActionTypes HASH16) is not called by the buff add/remove events.
+   the final stats, because the client derives none of them. The skill-bar indicator uses the buff's separate
+   skill association (0x1c1 flags bit3): **u16 BE ActionTypes HASH16, then u16 BE server skill id**.
+   The Gateway sends it for activation and when restoring auras on area entry. Removing the buff removes
+   the association. The full action hash comes from GrantedEffects.ActiveSkill → ActiveSkills.ActionType
+   → ActionTypes.HASH16; it must not be masked to the basic-action id.
+   Client `0x140ad1400` draws `AuraFrame` and the rotating `AuraCircle` when `0x141e11180` finds an
+   IsSkillBuff whose +0x48/+0x4a match the skill's +0x40/+0x42. Reader `0x141fdf870` reads the action
+   hash into message +0x74 and skill id into +0x72; `0x141e11720` copies them to buff +0x4a/+0x48.
+   The mandatory source skill (+0x60) alone does not satisfy this check. Automated wire/lookup tests
+   cover the change; live icon verification is pending.
+   **Correction to the earlier notes:** 0x25f in `0x140ae1130`/`0x140ae4550` refers to Elemental
+   Overload (BuffDefinitions row 606, returned one-based by `0x142454bd0`), not an aura UI event or a
+   network opcode. Sending a standalone 0x25f packet is invalid and is not needed for aura indicators.
 - **Implemented effects.** Purity of Elements/Fire/Ice/Lightning add their resistances; Clarity and Vitality
   add their flat regeneration; Precision adds flat accuracy and increased critical strike chance; Haste adds
   attack, cast and movement speed. Generic
@@ -721,8 +730,7 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;
     Reservation1 (damage per aura), Reservation2 (max resistances with reserved life and mana) and Reservation6 (aura
     duration) are not. Skill-specific reservation efficiency/effect stats are not modelled.
-  - **Systems:** supports, gem levels, party/minion auras, life reservation, and the skill-bar active border (0x25f is an
-    internal UI event, not an instance/world message; the client's setter is not reached by the buff events).
+  - **Systems:** supports, party/minion auras and life reservation.
 - **Dev check.** `/auras` prints the active auras, flat/percent reservation, reserved and unreserved mana,
   reservation efficiency and aura effect. Area changes recreate the player object, so `SendPlayer` puts the
   running auras' buffs back on it.

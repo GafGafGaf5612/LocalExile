@@ -224,6 +224,31 @@ sealed class SkillCatalog(string folder = "data")
     /// <summary>The ActionTypes Id of a basic action's skill id (HASH16 &amp; 0x3fff: Move 0x2909), or null.</summary>
     public string? ActionName(ushort skillId) => _actions.Value.FirstOrDefault(a => a.Id == skillId).Name;
 
+    /// <summary>The full ActionTypes HASH16 for a GrantedEffects row, used with its server skill id by skill buffs.</summary>
+    public ushort? ActionHash(int effectRow) => _effectActions.Value.TryGetValue(effectRow, out ushort hash) ? hash : null;
+
+    private readonly Lazy<Dictionary<int, ushort>> _effectActions = new(() =>
+    {
+        string PathOf(string name) => Path.Combine(folder, "tables", name + ".json");
+        if (!File.Exists(PathOf("GrantedEffects")) || !File.Exists(PathOf("ActiveSkills")) || !File.Exists(PathOf("ActionTypes"))) return [];
+        using var effects = JsonDocument.Parse(File.ReadAllBytes(PathOf("GrantedEffects")));
+        using var active = JsonDocument.Parse(File.ReadAllBytes(PathOf("ActiveSkills")));
+        using var actions = JsonDocument.Parse(File.ReadAllBytes(PathOf("ActionTypes")));
+        var result = new Dictionary<int, ushort>();
+        int row = 0;
+        foreach (var effect in effects.RootElement.EnumerateArray())
+        {
+            int index = row++;
+            if (!effect.TryGetProperty("ActiveSkill", out var a) || a.ValueKind != JsonValueKind.Number
+                || a.GetInt32() < 0 || a.GetInt32() >= active.RootElement.GetArrayLength()) continue;
+            var entry = active.RootElement[a.GetInt32()];
+            if (!entry.TryGetProperty("ActionType", out var t) || t.ValueKind != JsonValueKind.Number
+                || t.GetInt32() < 0 || t.GetInt32() >= actions.RootElement.GetArrayLength()) continue;
+            result[index] = actions.RootElement[t.GetInt32()].GetProperty("HASH16").GetUInt16();
+        }
+        return result;
+    });
+
     /// <summary>A basic action's skill id by ActionTypes Id ("Move" → 0x2909), or null.</summary>
     public ushort? ActionSkillId(string name) => _actions.Value.FirstOrDefault(a => a.Name == name) is { Name: not null } a ? a.Id : null;
 

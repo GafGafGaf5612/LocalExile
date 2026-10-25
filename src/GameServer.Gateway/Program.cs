@@ -1870,13 +1870,17 @@ static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiph
     if (started is not null)
     {
         await Send(remote, stream, ciphers,
-            InstanceEntities.AddBuff(PlayerId, started.Buff, started.BuffRow, PlayerId, started.SkillId),
+            AuraBuff(started),
             $"0x01c1 player buff {started.Buff}: {started.Name} (BuffDefinitions row {started.BuffRow})");
     }
     await SendCharacterStats(remote, stream, ciphers, conn, started is not null ? $"aura {name} on" : $"aura {ended!.Name} off");
     await SendPlayerMana(remote, stream, ciphers, conn,
         $"0x01b1 player mana {conn.PlayerMana}/{conn.Pools.Mana}, {ReservedMana(conn)} reserved");
 }
+
+static byte[] AuraBuff(AuraCatalog.Aura aura) =>
+    InstanceEntities.AddBuff(PlayerId, aura.Buff, aura.BuffRow, PlayerId, aura.SkillId,
+        activeSkill: Skills.ActionHash(aura.Effect) is ushort action ? (aura.SkillId, action) : null);
 
 // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
 // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
@@ -6817,7 +6821,7 @@ static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiph
     lock (conn.Monsters) auras = [.. conn.Auras.Values];
     foreach (var aura in auras)
         await Send(remote, stream, ciphers,
-            InstanceEntities.AddBuff(PlayerId, aura.Buff, aura.BuffRow, PlayerId, aura.SkillId),
+            AuraBuff(aura),
             $"0x01c1 player buff {aura.Buff}: {aura.Name} restored after the area change");
 }
 

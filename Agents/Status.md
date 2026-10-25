@@ -193,8 +193,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
   Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their gem's level and quality effects and
   buff icons; their 3D effects (`affected_player.epk`, `faster_attack.epk` …) do not render yet.
-  The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
-  sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
+   The skill-bar active frame and rotating circle now receive the buff's skill id/action hash association
+   (0x1c1 bit3), including area-entry restoration; automated checks pass, live icon verification pending.
+   Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
   curse auras, Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield
   are not applied), Purity ailment immunity, Reservation
   masteries 1/2/6, supports, party/minion auras and life reservation

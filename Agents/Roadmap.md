@@ -123,8 +123,8 @@ Items are in rough priority order within each section. "Known" says what is alre
   visuals and `/auras`, awaiting live verification ([11](docs/protocol/11-skills.md) 13, [Status](Status.md)).
 - **Start:** the auras' 3D effects (BuffVisuals EPKs of the `IsSkillBuff` rows do not render, unlike Righteous Fire's);
   the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
-  Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar active border is still open: 0x25f is a
-  client UI event, not a server message. Support gems and gem levels come with the gem system ("Gems" below); party and
+   Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar indicator's buff association is implemented
+   (0x1c1 bit3; live check pending, see Status). Support gems come with the gem system ("Gems" below); party and
   minion auras and life reservation with their own systems.
 - **Done when:** the standard auras reserve correctly, their effects match PoB, and the character panel and HUD show the
   same reserved and unreserved values.
