@@ -1933,3 +1933,35 @@ Skill removal suspends runtime effects without deleting enabled intent. A skill-
 A real town/hideout round trip restored only Vitality despite saved Precision and Clarity. The log marked the body armour inactive because Precision needed 22 dexterity while initial pools still contained the class base 14. CharacterStatSources was checking socketed gems against stale/uninitialized pools while constructing those very pools, then disabling the entire item's global modifiers and all its gems.
 
 Item activation now uses only the equipment's own requirements. Gem requirements remain enforced individually at socketing/casting against completed pools; an unavailable gem no longer suppresses its host armour, unrelated gems or their attributes. This removes the circular initialization gate on aura candidates. AuraEquipmentRestoreTests reproduces the fresh-connection equipment case and restores all 17 supported self auras, including 34 distinct source/recipient buff packets after town suppression. Restoration has no aura-count limit.
+
+### Grace Period on combat-area entry
+
+Each instance connection grants a fresh 60-second `grace_period` buff after creating the player and before
+spawning monsters. WorldAreas.IsTown and owned hideout templates are excluded by this server's policy.
+BuffDefinitions row 6 is visible, non-recovery, uses BuffVisuals row 8 (`invulnerability.dds`), and has
+base_cannot_be_damaged / is_hidden_monster / in_grace_period and minion protection flags. Send ordinary
+S→C 0x1c1 with a fresh buff instance and u68 holding IEEE-754 f32 **60.0 seconds** (0x42700000); remove once with 0x1c2.
+
+GracePeriod tracks a per-entry deadline and initial cell using the pause-aware connection game clock.
+The first actual grid step (including approach-to-object movement), expiry, skill/attack use or a successful
+flask use ends protection. An idle/blocked move order alone does not remove it. Protection is checked at
+hit time and ends immediately on movement/deadline even before the recovery loop sends the remove packet.
+It cannot reactivate by returning to the starting cell. No state is persisted across connections.
+
+While protected, the server grants immunity to every damage type, suppresses RF self-burning and outgoing
+RF pulses, and prevents hostile AI targeting and pending monster hits. Functional summoned-minion combat
+is not implemented; cosmetic pets have no incoming/outgoing damage to protect.
+GGG's [3.25.0 patch notes](https://www.pathofexile.com/forum/view-thread/3531661) explicitly identify the
+Grace Period buff and protection from enemy targeting. The native buff metadata supplies the icon/name/stats;
+the requested 60-second duration and town/hideout exclusions are server policy. See also the
+[community mechanics reference](https://www.poewiki.net/wiki/Grace_Period) for action cancellation rules.
+Automated coverage includes exact expiry, all exclusion combinations, native metadata/packet, one-step
+movement and action cancellation. Real-client icon/timing verification is pending.
+
+Grace Period countdown correction: packet +0x68 is copied by 0x141e07220 to constructor parameters,
+then by 0x141e06290 to Buff +0x18 (initial duration) and +0x1c (remaining duration).
+0x141e10520 subtracts elapsed seconds multiplied by Buff +0x20 (packet +0x6c, rate default 1).
+The omitted-duration default 0x14015a670 is float positive infinity (0x7f800000).
+An integer 60000 was interpreted as a tiny subnormal float and immediately displayed 0:00.
+The regression independently decodes the BE duration bits and checks float 60, rather than comparing two calls
+to the same packet writer. Native icon was confirmed; corrected countdown awaits live verification.

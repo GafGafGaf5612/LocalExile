@@ -32,6 +32,8 @@ partial class Program
         lock (conn.Monsters)
             if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
         if (InTown(conn) && (Skills.IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)) return;
+        if (Skills.IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)
+            await EndGracePeriod(remote, stream, ciphers, conn, action: true);
         SpawnedMonster? target;
         lock (conn.Monsters) target = conn.Monsters.GetValueOrDefault(use.TargetId);
         if (target is not null)

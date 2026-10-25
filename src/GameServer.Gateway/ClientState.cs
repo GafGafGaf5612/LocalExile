@@ -376,6 +376,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public ushort RefundPoints;
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
+    public readonly GracePeriod EntryProtection = new();
     public RighteousFireState? RighteousFire;
     /// <summary>The flasks recovering life and mana (C→S 0x70), applied by the player tick.</summary>
     public Flasks.Effects FlaskEffects { get; } = new();
