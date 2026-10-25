@@ -54,12 +54,13 @@ static class AuraCatalog
 
     public static ushort BuffRow(string effectId) => BuffRows[effectId];
 
-    public static IReadOnlyList<Aura> Restore(IEnumerable<string> saved, IEnumerable<Aura> available, CharacterStats.Pools pools)
+    public static IReadOnlyList<Aura> Restore(IEnumerable<string> saved, IEnumerable<Aura> available, CharacterStats.Pools pools, bool inTown = false)
     {
+        if (inTown) return [];
         var gems = available.Where(a => Supported(a.EffectId)).GroupBy(a => a.EffectId).ToDictionary(g => g.Key, g => g.First());
         var restored = new List<Aura>();
         foreach (string effect in saved.Distinct())
-            if (gems.TryGetValue(effect, out var aura) && RequiredMana(pools, restored.Append(aura)) <= pools.Mana)
+            if (gems.TryGetValue(effect, out var aura))
                 restored.Add(aura);
         return restored;
     }
