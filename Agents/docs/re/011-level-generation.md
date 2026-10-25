@@ -460,8 +460,9 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    length takes the middle point there; else a placed tile there (its turned key, `0x141d80480`) with that edge and
    length and another point is placed again (grounds left out of keys dropped, the middle point, its tag and height,
    `0x1420f5fb0` with the flag that stops the point moves and this step), or "Could not find matching adjacent tile".
-   Not ported: the description objects (`0x141d83f10`) and `0x1420f8df0` (records of master +0x218's edge types
-   that 1 to 3 of the key's edges have, tiler +0x40).
+   After each slot tile (`0x1420ef310`) and each `0x1420f5fb0` placement that is not for a neighbour, `0x1420f8df0`
+   records the tile's cell once per entry of the FillTiles object's +0x140 list (below) whose edge type is on 1 to
+   3 of the key's sides (tiler +0x40), for the edge fill. Not ported: the description objects (`0x141d83f10`).
 3b. **Door tiles** (TileSet has "door" tiles, tiler +0x38; with RoomOverlap): `0x1420ed9f0` marks each room's exits
    (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots; `0x1420f4010`: per doorway the orientation, the
    sizes from the store's "door" sizes for its edges (a set sorted by (w, h), `0x141d8c620`; the port kept them in
@@ -479,15 +480,25 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    (`0x141ffc700`), else BottomGround (+0x28 = +0xa8) when the lowest (`0x141ffc7d0`), both only when set and the
    default is not impassable_ground.gt. With RoomOverlap a room leaves out its left / top vertex column / row unless
    its cell is at x / y 0, and its right / bottom one unless its cell x / y is the map's last (cell, not cell + size).
-   Not ported: room data +0xa with +0x13a (the room's own ground instead of the default, taken as clear) and the
-   master's level overrides +0x146 / +0x144. Then the **fill**: the recorded cells (`0x1420eec10`, which also
-   gives the footprint's vertices the height and flag 2) sorted by (x, y), each still empty one filled by
+   A room with room data +0xa gives its own ground (+0x13a, the key's first corner) in place of the default: the
+   room data constructor `0x141ff4e70` clears +0xa, then sets it for a fill room (+9) whose slots' four key grounds
+   are all in the class of the room's ground (none or .gt flag 4, or neither). Act 3's `black_fill.arm` and
+   `garden_fill.arm` have it: their vertices take a wall ground without .gt flag 1, so the fill tiles placed on them
+   later keep the record heights (`0x141d833e0` writes a height only over a null or flag-1 ground, or for a null or
+   flag-1 tile ground); with the default ground `1_3_13`, `2_8_6` and `2_9_8` had walls a level off (2026-10-25). The
+   "special" rooms of `1_3_9` (`dockarm_end_special*.arm`) do not have it. Not ported: the master's level overrides
+   +0x146 / +0x144. Then, only with FillTiles (master +0x218), the unique rooms (`0x1420f1590`, not ported), the
+   shrines (`0x1420f2340`), the pre-unique rooms (`0x1420f3100`, not ported), the **edge fill** (`0x141feed20` on the
+   tiler +0x40 records, as for tile graphs, below), the records sorted by (x, y) (`0x14212d520`), the first
+   **overlay** pass (`0x141ffe240` on the tiler's view with the context's placed rooms, `0x141fff1a0` with bit 1; as
+   for tile graphs), the **fill**, and the second overlay pass. The fill: the recorded cells (`0x1420eec10`, which also
+   gives the footprint's vertices the height and flag 2), each still empty one filled by
    `0x141feb970` (as for tile graphs) for its ground, or its top-left vertex's ground when that vertex has flag 1,
    at the record's height (`0x1420f3de0` → `0x141fec8f0`: a given height is used, 0x80000000 = corners' middle).
    The fill object keeps the tiler's view (`0x1420f3480` +8, the subgraph's rectangle inside its margins), so a fill
    tile reaching more than one entry into the outer buffer does not fit (`0x141fecc10`): `1_3_13`'s 3 × 3 wall fill
-   at the bottom row. After the fill come the edge-typed fills (`0x141feed20` → `0x141fed640`, FillTiles +0x140; not
-   ported: `1_3_9`, `1_3_14_2`, `2_8_7_2`).
+   at the bottom row. The edge fill was the stop of `1_3_9`, `1_3_14_2`, `2_8_7_2` (and, ordered after the fill, a
+   wrong draw order), the overlays that of `1_3_14_1`, `1_3_8_1`, `2_8_12_1`, `2_8_7_1_` (2026-10-25).
 5. **Mirror seams** (`0x142025440`, the same pass as for tile graphs, `Seams.cs`, with the fallback `0x142026bc0`):
    `0x1420f3480` calls it on the layout's view (its corner to step × size + overlap) with the placed rooms as the room
    list, so tiles inside a room never take the fallback and tiles touching a room's vertex ground stay. The one-node
@@ -511,7 +522,9 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    vertices spread outwards and the buffer is tiled. Then StoreyHeight scales every origin's height (`0x14204cbd0`).
 
 Not ported on this path (no draws in the cave): `0x1420f4010` / `0x1420f4ae0` (RoomOverlap), `0x1420f7960`,
-`0x1420f1590` / `0x1420f3100` (unique, pre-unique rooms), the overlay passes, `0x1420f8f20`. **Shrines**
+`0x1420f1590` / `0x1420f3100` (unique, pre-unique rooms), `0x1420f8f20` (the tiler +0xb0 cells that the tile
+listener `0x1420f1230` records for square tiles whose edges all have the tile's size and .et +0x4d: shuffled, each
+re-tiled with its sides' points moved, `0x140df93f0`; `1_3_5`). **Shrines**
 (`0x1420f2340`, before the fill, 2026-10-25): with shrines rolled (pool +0x148), the RoomSet's "shrine" rooms whose
 unit size is not the layout's (the layout's own ones are `0x142103490`'s); the tiler's fill records (+0x58: x, y,
 ground, accessible, height) are shuffled in place (`Next(count)`, shuffle), then `0x1420f2620` twice (the second only
@@ -810,7 +823,17 @@ are the doodads, `0x142042fae`).
    tile's border breadth first over unwritten vertices, never across a tile edge (`0x1420281e0`: `0x142027df0` vertex
    inside a tile, `0x142027bd0` an edge point on that entry's side), sets the height levels (below), paints the
    levels and gives every still-unwritten vertex the graph's third ground (+0xb0, `0x142110d60`), fills the open
-   sides of the step-1 edge tiles (`0x141feed20`, none on the Strand) and unlocks. Then three room passes
+   sides of the step-1 edge tiles and unlocks. The **edge fill** (`0x141feed20`, `GroundStages.EdgePoints`, map +0x10
+   off): the FillTiles object's +0x140 list holds its .gft's edge type headers in file order (`"path.et" mode`,
+   `0x141fef920`; the lines under such a header go to maps +0x40 / +0xc0 keyed by mode and type, which no ported stage
+   reads, and not to the ground before it). Each recorded tile whose own key has the entry's type on exactly two
+   sides fills each side without an edge (its turned key, `0x141d80480`): mode 2 always, with the side's first corner
+   ground; modes 0 and 1 when both corners of the side have the type's first or second ground and the neighbour lies
+   in the view. `0x141fed640` fills that neighbour unless it holds a tile, as `0x141feb970` does but at the tile's
+   height plus the corner's, with "open" from the ground alone (none or .gt flag 4), rooms never left out for spawn
+   points (`0x141fee9f0`), and every choice shifted to end at the neighbour (side 0: up by its height − 1; side 3:
+   left by its width − 1; `0x141fee460` / `0x141fee670`); nothing fitting places nothing (`Fill.FillSide`). None on
+   the Strand. Then three room passes
    (`TileGraphGenerator`, 2026-10-25), each tilised as a fill room (`0x141fe89e0`, `Fill.PlaceRoom`) at the vertex
    height with the vertex ground, and each on its own list of openings (`0x142115140`: the view's empty entries, row
    by row, whose vertex has no ground or one with .gt flags 4 and 8 and no vertex flag 8; `Next(count)`, its value
@@ -877,7 +900,9 @@ are the doodads, `0x142042fae`).
    (`0x141ffca30`): a pass line (up to three "0"/"1" for the passes, `SizeOrder` / `FileOrder` / `Random`, ±flags of
    `OverlayTileOverlays OverlayFeatureTiles OverlayFeatureRooms OverlayFeatureRoomOverlap OverlayDescriptionNodes
    OverlayExtraFeatures MatchAllTileKeys`, default 0x18), then "weight path [args]" rooms (`limit=`, `required=`,
-   orientation names, `!condition`). Each room in each allowed orientation adds its key to the group with that key and
+   orientation names, `!tag`: a tile tag the room needs under it, room +0x10; the same tag twice needs two tiles,
+   `0x142000c50` counting tile origins in the spot, checked after the limit; Act 3 / 8 temple door overlays use
+   `!door`, `!carpet`). Each room in each allowed orientation adds its key to the group with that key and
    flags; the same room again only ORs in the orientation bit. An exclusion grid marks rooms of nodes with
    descriptions (0x10), rooms (4 shrunk by RoomOverlap, 8), tagged tiles (2), extra features (0x20) and placed
    overlays (1); a cell takes an overlay only if the group's flags have every bit set there. Per group (FileOrder),
@@ -886,7 +911,10 @@ are the doodads, `0x142042fae`).
    heights agree, each side inside the map matches the edges across it (`0x141ffa390` / `0x141ff9cb0` /
    `0x141ff9ee0`)) is a spot of the group's weight. `0x141fffb70` draws spots (`Next(total)`), a group that still fits
    (`Next`), a room under its limit padded to 100 with nothing (`Next`; nothing closes the spot), its orientation
-   (`Next(840)`), removes the tiles and vertex grounds there and tilises the room (`0x141fea780`).
+   (`Next(840)`), removes the tiles and vertex grounds there and tilises the room (`0x141fea780`, `RoomTiler`, which
+   dungeons share). Open: in `1_3_8_1`, `2_8_12_1` and `2_8_7_1_` every draw matches, but at some corners of the temple
+   door overlays (`f` slots tagged "overlayblank") the client ends up with the column or statue tile that was there
+   before, not `overlay_blank.tdt` (19, 13 and 1 entries); other corners do hold `overlay_blank.tdt`.
 5. **Fill** (`Fill.cs`, `0x141fef070`): map +0x10 off; every empty entry, row by row, gets a fill for the ground of its
    top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"; a line may end with an orientation,
    I, R90 … FR270, which the choice keeps (`0x141fecd00` then draws nothing; 8 without one): Act 4's
@@ -943,7 +971,11 @@ are the doodads, `0x142042fae`).
    right walk the border: where a tile edge crosses outward (`0x14201d890`) an edge tile with the point continued is
    drawn (`Next(total)`) and repeated to the map edge; elsewhere, where the step's two border vertices agree
    (`0x141d77670`), the ground's first fill tile (`0x141feffb0`) is repeated outward at orientation 0. Fill tiles go
-   in at the height of the step's first border vertex; an edge tile at the lower of its two border vertices, its key
+   in at a height read before the walk outward over tiles already there: the top pass at the view's row 0 and the
+   bottom pass at its last row (the spread values), the left and right passes at the inner rectangle's left / right
+   column (`0x14201ffa0`'s bounds: view width / height, then left, top, right, bottom); reading the vertex at the end
+   of the walk instead put `1_3_13`'s and `2_8_6`'s buffer walls a level off where fill tiles reach into the buffer
+   (2026-10-25). An edge tile goes in at the lower of its two border vertices, its key
    carrying each corner's height above that (`0x141ffb870`, not forced).
 8. **Storey height** (`0x14204cbd0`, after the layout `0x142049d10`): row by row, every tile origin with a height
    offset has it multiplied by the master's StoreyHeight (+0x14a, a byte, default 0; The Coast 24), its entries
@@ -973,7 +1005,7 @@ pass 2; seeds 3 and 7 stop with "Could not tilise edge", which the client answer
 | .et edge types | `0x142a0c0a0`, `0x1429f78f0` | default %, branching, voidness, split edges |
 | .tdt tile | `0x1429f31a0` | size, hull planes, UniqueMesh; vertex grounds / heights after the packed sub-tiles |
 | .toy overlays | `0x141ffca30` | passes and overlay rooms (§3g) |
-| .gft fill tiles | FillTiles (master +0x218) | per ground name: tiles and rooms with weights |
+| .gft fill tiles | FillTiles (master +0x218), `0x14201d070` / `0x141fef470` / `0x141fef6e0` / `0x141fef920` | per ground name: tiles and rooms with weights; `"path.et" mode` headers: the edge fill's +0x140 list |
 | .fgp file groups | `0x14204c520`, `0x1421052e0` | random subgraphs ("graph" nodes) |
 
 ## 5. Not yet mapped in detail
@@ -1327,8 +1359,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   Some seeds fail in the client itself ("Terrain generation failed" in `Client.txt`, then an exception dialog). Seen
   2026-10-23, all seed 1:
   - The Crossroads (`1_2_3`, macro_crossroads.tgr): "Mismatching ground types at (44, 57): Cannot place
-    ForestPoolFlowingWater over (wildcard) … forestpool_flowingwater_v01_02.tdt @ (43, 56) (R180)". The port stops
-    earlier (fill tiles with edge types).
+    ForestPoolFlowingWater over (wildcard) … forestpool_flowingwater_v01_02.tdt @ (43, 56) (R180)". With the edge
+    fill (2026-10-25) the port stops there too ("Mismatching ground types at (44, 57)").
   - The Southern Forest, Act 6 (`2_6_12`, southern_forest_01.tgr): "Failed to tilise edge: Could not find matching
     tile at (22, 57) for edge type ForestRiverBank".
   - The Karui Fortress (`2_6_5`, karui_fortress_01.dgr): "Dungeon generation failed: Failed to connect edge (58,
