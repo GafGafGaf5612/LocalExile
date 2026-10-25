@@ -442,7 +442,8 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    that 1 to 3 of the key's edges have, tiler +0x40).
 3b. **Door tiles** (TileSet has "door" tiles, tiler +0x38; with RoomOverlap): `0x1420ed9f0` marks each room's exits
    (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots; `0x1420f4010`: per doorway the orientation, the
-   sizes from the store's "door" sizes for its edges, `Next(n)` + shuffle, the key resized with points at none, the
+   sizes from the store's "door" sizes for its edges (a set sorted by (w, h), `0x141d8c620`; the port kept them in
+   filing order until 2026-10-25, which picked other door sizes in 17 logged loads), `Next(n)` + shuffle, the key resized with points at none, the
    middle of the unit for odd units else `Next(len − size + 1)`, `Next(total)`; `0x1420f4ae0` for the big ones.
    Without RoomOverlap (`0x1420f3480`: master +0x167 clear and RoomOverlap 0) only a master with a DoorEdgeType
    (+0x250; the parser `0x142a06390` hands OuterGroundType, OuterEdgeType, DoorEdgeType, SwapDungeonDoorsFrom / To to

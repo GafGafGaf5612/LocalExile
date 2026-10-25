@@ -1525,7 +1525,12 @@ sealed class TileStore
                 _edges.Add((tile.Tag, k[0], k[1], k[2], k[3]));
                 var sizes = _sizes.TryGetValue((tile.Tag, k[0], k[1], k[2], k[3]), out var sl) ? sl : _sizes[(tile.Tag, k[0], k[1], k[2], k[3])] = [];
                 var size = ((int)key.Item2.Width, (int)key.Item2.Height);
-                if (!sizes.Contains(size)) sizes.Add(size);
+                // 0x141d8c620: a set kept sorted by (w, h).
+                if (!sizes.Contains(size))
+                {
+                    int at = sizes.FindIndex(z => z.Item1 > size.Item1 || (z.Item1 == size.Item1 && z.Item2 > size.Item2));
+                    sizes.Insert(at < 0 ? sizes.Count : at, size);
+                }
                 var bySize = (k[0], k[1], k[2], k[3], size.Item1, size.Item2);
                 if (!_bySize.TryGetValue(bySize, out var bl)) _bySize[bySize] = bl = [];
                 bl.Add((tile, o, weight));
@@ -1559,7 +1564,7 @@ sealed class TileStore
     /// orientation.</summary>
     public bool HasEdges(string tag, string?[] edges) => _edges.Contains((tag, edges[0], edges[1], edges[2], edges[3]));
 
-    /// <summary><c>0x141d811c0</c>: the sizes of the tag's tiles (in any orientation) with these edges.</summary>
+    /// <summary><c>0x141d811c0</c>: the sizes of the tag's tiles (in any orientation) with these edges, sorted by (w, h).</summary>
     public IReadOnlyList<(int W, int H)> Sizes(string tag, string?[] edges) =>
         _sizes.TryGetValue((tag, edges[0], edges[1], edges[2], edges[3]), out var l) ? l : [];
 
