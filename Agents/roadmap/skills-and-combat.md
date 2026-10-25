@@ -57,7 +57,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
   Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
-  Integrated monster-hit verification is pending.
+  Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   energy shield, penetration, exposure, ailment application, added damage and support modifiers are not modelled.
 - **Start:** energy shield, penetration/exposure, the remaining conditional critical strike stats from the stats both

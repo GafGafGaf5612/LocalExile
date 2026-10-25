@@ -398,6 +398,13 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   Live on a captured Strand, a 0.5 s packet stopped predictive walking and a subsequent cast.
   The predicted/current action became null, movement stopped, and recovery cleared after about 0.508 s.
   A new cast worked afterward.
+  Integrated copied-save tests used a level 1 Witch (57 life, no ES) and Ash Harvester row 717 at level 7.
+  Actual 24/27 physical damage hits stopped client prediction and the server walk estimate at cell (283, 216).
+  TakeHit selected Witch clip 177 and cleared Actor `+0x219` bit 2 after the requested 429 ms recovery.
+  A slow Fireball cast was cancelled before release, with no projectile created.
+  An already released Fireball continued through recovery to impact and removal.
+  With `cannot_be_stunned = 1`, another actual 24 damage hit sent no 0x1d1 and did not set the recovery flag.
+  Evidence: `logs/monster-hit-recovery-{walk,cast,flight,immune}.json` in the validation checkout.
   In contrast, 0x1b2 merely replaced the clip while movement or server cast release continued.
   Its Play ABI is `0x141dba530(controller, &resourcePair, index, speed, ...)`, with the index in **r8d**.
   Actor `+0x1a0` is the body controller; its main state is `+0x180`, clip index `+0x190`, elapsed `+0x1a4`.
@@ -417,10 +424,13 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   Pending melee, casts and area hits retain their original token across awaits; released projectiles keep flying.
   Projectile creation rechecks the token inside the send gate; cancellation resets ordinary attack pacing too.
   Buffered 0x24/0x25/0x197 inputs are rejected using socket-read game time through the recovery end.
+  Object walk-ups reserve movement and the original token under the same recovery check.
+  Their delayed continuations and queued action/teleport echoes recheck that token.
   Recovery does not restart while active; flasks and instant skills keep their existing paths.
   This does not implement block recovery, ES stun avoidance, CI/mana/ES threshold substitutions, conditional defences,
   attacker-specific stun modifiers or monster spell/ranged stuns.
-  A known nonzero `maximum_energy_shield` disables this slice until ES integration supplies the appropriate avoidance.
+  Known final or raw base ES, active equipped ES bases and local flat ES disable this slice until ES avoidance exists.
+  This includes Discipline before a separate ES pool implementation computes `maximum_energy_shield`.
   Conditional stun-defence builds, flat/substituted thresholds and CI are also skipped conservatively.
   An equipped skill with `skill_cannot_be_stunned` or contact-phase immunity disables this slice for the build.
   Its precise active action phase is not tracked, so even an inactive equipped skill is conservatively excluded.

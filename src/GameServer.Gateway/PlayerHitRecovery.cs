@@ -21,7 +21,7 @@ sealed class PlayerHitRecovery
     {
         if (damage <= 0 || maximumLife == 0 || get("cannot_be_stunned") != 0
             || get("cannot_be_stunned_by_attacks") != 0 || get("cannot_be_stunned_by_hits_of_only_physical_damage") != 0
-            || get("maximum_energy_shield") > 0 || get("maximum_life_is_one") != 0
+            || EnergyShieldPresent(get) || get("maximum_life_is_one") != 0
             || get("avoid_interruption_%") != 0) return 0;
         // These need their own threshold calculation. Do not silently use life for a substituted threshold.
         if (get("stun_threshold_based_on_%_mana_instead_of_life") != 0
@@ -34,6 +34,9 @@ sealed class PlayerHitRecovery
         double chance = Math.Min(100, 200 * (damage * 1.25) / threshold);
         return chance <= 20 ? 0 : chance * (100 - Math.Clamp(get("avoid_stun_%"), 0, 100)) / 100;
     }
+
+    public static bool EnergyShieldPresent(Func<string, int> get, int equippedBase = 0) =>
+        equippedBase > 0 || get("maximum_energy_shield") > 0 || get("base_maximum_energy_shield") > 0;
 
     public static bool UnsupportedStat(string name) =>
         name.StartsWith("cannot_be_stunned_", StringComparison.Ordinal)

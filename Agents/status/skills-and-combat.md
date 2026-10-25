@@ -198,7 +198,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Ordinary physical melee hits can trigger native player TakeHit recovery through 0x1d1.
   Native proof stopped predictive walking and casting, blocked new actions, and cleared the recovery flag afterward.
   Server recovery cancels pending actions and channel hits and stops the walk estimate for the same interval.
-  Chance, avoidance, immunity and recovery have automated checks; integrated monster-hit checks are pending.
+  Actual physical monster hits stopped walking and cancelled a slow cast before release in copied-save live checks.
+  Released Fireball flight continued, and a stun-immune control took damage without recovery.
+  Chance, avoidance, immunity, recovery and delayed object walk-ups have automated checks.
   ES builds, substituted thresholds and unsupported conditional stun defences are skipped conservatively.
   See [11](../docs/protocol/11-skills.md), player hit recovery, for scope and protocol evidence.
   The player's life comes from the class/level/passive pools.

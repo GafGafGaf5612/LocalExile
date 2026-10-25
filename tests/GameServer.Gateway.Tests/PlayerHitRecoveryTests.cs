@@ -30,11 +30,20 @@ public class PlayerHitRecoveryTests
     [InlineData("cannot_be_stunned_by_hits_of_only_physical_damage", 1)]
     [InlineData("avoid_stun_%", 100)]
     [InlineData("maximum_energy_shield", 1)]
+    [InlineData("base_maximum_energy_shield", 1)]
     [InlineData("maximum_life_is_one", 1)]
     [InlineData("stun_threshold_based_on_%_mana_instead_of_life", 100)]
     [InlineData("additional_stun_threshold_based_on_%_of_energy_shield", 30)]
     public void Known_immunity_and_unsupported_pools_do_not_use_ordinary_life_rules(string key, int value) =>
         Assert.Equal(0, PlayerHitRecovery.Chance(1000, 100, Stats((key, value))));
+
+    [Fact]
+    public void Energy_shield_sources_are_excluded_without_needing_a_computed_final_pool()
+    {
+        Assert.True(PlayerHitRecovery.EnergyShieldPresent(Stats(("base_maximum_energy_shield", 17))));
+        Assert.True(PlayerHitRecovery.EnergyShieldPresent(Stats(), equippedBase: 4));
+        Assert.False(PlayerHitRecovery.EnergyShieldPresent(Stats()));
+    }
 
     [Fact]
     public void Conditional_defences_require_their_own_state_before_enabling_recovery()
@@ -92,5 +101,41 @@ public class PlayerHitRecoveryTests
         foreach (float seconds in new[] { 0, -1, float.NaN, float.PositiveInfinity })
             Assert.False(recovery.Begin(0, seconds));
         Assert.False(recovery.Active(0));
+    }
+
+    static ClientState ObjectWalkState()
+    {
+        var conn = new ClientState(new AreaLayout(0, "test", 100, 100, 30, 30, null, []), 0, 1)
+        { PlayerLife = 57, ActionCount = 4, ChannelSkill = 123 };
+        conn.Clock.Reset();
+        return conn;
+    }
+
+    [Fact]
+    public void Object_walk_rechecks_recovery_before_replacing_the_token_or_moving()
+    {
+        var conn = ObjectWalkState();
+        var before = conn.Walk.Position(0);
+        conn.HitRecovery.Begin(0, .5f);
+        Assert.False(global::Program.TryBeginObjectWalk(conn, 0, 70, 30, 2, out _));
+        Assert.Equal(4, conn.ActionCount);
+        Assert.Equal((ushort)123, conn.ChannelSkill);
+        Assert.Equal(before, conn.Walk.Position(1));
+        conn.HitRecovery.Clear();
+        Assert.True(global::Program.TryBeginObjectWalk(conn, 0, 70, 30, 2, out var walk));
+        Assert.Equal(5, walk.Action);
+        Assert.Equal((ushort)0, conn.ChannelSkill);
+        Assert.True(walk.Arrive > walk.Now);
+    }
+
+    [Fact]
+    public void An_old_dispatched_object_walk_cannot_acquire_a_new_token_after_recovery_expired()
+    {
+        var conn = ObjectWalkState();
+        // Shift the synthetic timeline below zero so its recovery has expired at the stopped clock's zero.
+        conn.HitRecovery.Begin(-1, .5f);
+        Assert.False(global::Program.TryBeginObjectWalk(conn, -.75, 70, 30, 2, out _));
+        Assert.Equal(4, conn.ActionCount);
+        Assert.True(global::Program.TryBeginObjectWalk(conn, 0, 70, 30, 2, out _));
     }
 }
