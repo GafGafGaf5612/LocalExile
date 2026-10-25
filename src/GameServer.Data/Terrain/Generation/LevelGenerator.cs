@@ -1060,10 +1060,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         }
     }
 
-    /// <summary><c>0x141feffb0</c> for the outer ground: the first fill tile of its ground.</summary>
+    /// <summary><c>0x141feffb0</c> for the outer ground: the first fill tile of its ground, or of the default ones when the
+    /// FillTiles do not name it (<c>0x141fefeb0</c>).</summary>
     internal static TileDef OuterTile(TerrainCache files, Dictionary<string, List<(int Weight, string Path, int Orientation)>> fills, GroundType ground)
     {
-        if (!fills.TryGetValue(ground.Name, out var list) || list.Count == 0)
+        if ((!fills.TryGetValue(ground.Name, out var list) && !fills.TryGetValue("default", out list)) || list.Count == 0)
             throw new InvalidOperationException("No fill tile found for outer fill ground type");
         return files.Tile(list[0].Path) ?? throw new FileNotFoundException(list[0].Path);
     }
