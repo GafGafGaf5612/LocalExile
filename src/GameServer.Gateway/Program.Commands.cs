@@ -824,16 +824,17 @@ partial class Program
         .Add("mobs", "/mobs (list spawned monsters)", async _ =>
             await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
                 string.Join(", ", conn.Monsters.Select(m =>
-                    $"0x{m.Key:x} {m.Value.Label} {m.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)}{(m.Value.Aggro ? " (chasing)" : "")}"))))
+                    $"0x{m.Key:x} {m.Value.Label} {m.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)}{(m.Value.Aggro ? " (chasing)" : "")}"))
+                + (MonsterEmerge.Buried(conn).Count is int buried and > 0 ? $"; {buried} buried" : "")))
         .Add("despawn", "/despawn [all | <id>] (default: the last one spawned)", async args =>
         {
             IEnumerable<uint> ids = args.Length == 0 ? conn.Monsters.Keys.TakeLast(1)
-                : args[0].Equals("all", StringComparison.OrdinalIgnoreCase) ? [.. conn.Monsters.Keys]
+                : args[0].Equals("all", StringComparison.OrdinalIgnoreCase) ? [.. conn.Monsters.Keys, .. MonsterEmerge.Buried(conn).Keys]
                 : [Convert.ToUInt32(args[0], args[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)];
             foreach (uint id in ids.ToList())
             {
                 bool removed;
-                lock (conn.Monsters) removed = conn.Monsters.Remove(id);
+                lock (conn.Monsters) removed = conn.Monsters.Remove(id) || MonsterEmerge.Buried(conn).Remove(id);
                 if (!removed) { await conn.Commands!.Reply($"No monster 0x{id:x}."); continue; }
                 await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove monster 0x{id:x}");
             }

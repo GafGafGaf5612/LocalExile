@@ -126,12 +126,14 @@ sealed class InstanceGround
 /// <summary>A living monster of an instance, as it was when the last connection left: re-created there with this life on
 /// the next entry, idle until the player comes in range. Dead monsters are not kept, so they stay dead.</summary>
 // shortcut: a /spawn_mob name is not kept (packs have none), add it when named monsters matter.
-sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life)
+// Buried: a monster that rises from the ground (MonsterEmerge.cs) and had not risen yet: re-created buried.
+sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life, bool Buried = false)
 {
-    public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now) =>
-        [.. monsters.Where(m => !m.Dead && m.Variety is not null).Select(m =>
+    public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now, IEnumerable<SpawnedMonster>? buried = null) =>
+        [.. monsters.Select(m => (m, Buried: false)).Concat((buried ?? []).Select(m => (m, Buried: true)))
+            .Where(e => !e.m.Dead && e.m.Variety is not null).Select(e =>
         {
-            var (x, y) = m.Walk.Position(now);
-            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life);
+            var (x, y) = e.m.Walk.Position(now);
+            return new SavedMonster(e.m.Variety!.Row, e.m.Level, e.m.Rarity, e.m.Hostile, x, y, e.m.Life, e.Buried);
         })];
 }
