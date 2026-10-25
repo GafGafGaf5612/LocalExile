@@ -30,6 +30,9 @@ AreaTransitionAnimation, SinPickup, BloodVortexGetUp, EpilogueKnockdown, Ancestr
 Move, Flee, StrafeLeft, StrafeRight, Advance, DoNothing, MonsterPickup), and the value is the action's
 **ActionTypes.dat `HASH16`**: Move = 10505 = **0x2909**, Interaction = 49766 = 0xc266 (id 0x0266). Traced live with
 `scripts/re/frida/trace-skills.js`: the player gets 12, a Hungry Corpse 9. Nothing on the wire is needed for them.
+`ot_components.py` extracts each type's list (`basic_actions` in `data/object-types.json`). Monsters that rise from the
+ground add `Emerge` (16641 = 0x4101, id **0x0101**), which the server starts with 0x1ab to raise them
+([10](10-chat-and-commands.md) §5).
 
 ## 3. Granted skills: Actor slot 20, flag 0x40
 

@@ -822,10 +822,9 @@ partial class Program
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
         .Add("mobs", "/mobs (list spawned monsters)", async _ =>
-            await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
-                string.Join(", ", conn.Monsters.Select(m =>
-                    $"0x{m.Key:x} {m.Value.Label} {m.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)}{(m.Value.Aggro ? " (chasing)" : "")}"))
-                + (MonsterEmerge.Buried(conn).Count is int buried and > 0 ? $"; {buried} buried" : "")))
+            await conn.Commands!.Reply(conn.Monsters.Count + MonsterEmerge.Buried(conn).Count == 0 ? "No monsters." :
+                string.Join(", ", conn.Monsters.Select(m => (m, Buried: false)).Concat(MonsterEmerge.Buried(conn).Select(m => (m, Buried: true))).Select(e =>
+                    $"0x{e.m.Key:x} {e.m.Value.Label} {e.m.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)}{(e.Buried ? " (buried)" : e.m.Value.Aggro ? " (chasing)" : "")}"))))
         .Add("despawn", "/despawn [all | <id>] (default: the last one spawned)", async args =>
         {
             IEnumerable<uint> ids = args.Length == 0 ? conn.Monsters.Keys.TakeLast(1)

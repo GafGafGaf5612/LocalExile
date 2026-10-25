@@ -527,7 +527,8 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                     else w.U8(0).U8(0);
                     break;
                 // 0x1421c24b0: u8 = state (low 7 bits, → +0x120) | bit 7 (+0x122, "transitioning"). States run 1..num_states
-                // (.ot Transitionable num_states, default 1); num_states = fully transitioned (create_transitioned).
+                // (.ot Transitionable num_states, default 2); num_states = fully transitioned (create_transitioned).
+                // Emerge monsters are created in 1, buried (Gateway MonsterEmerge).
                 // State 0 is invalid: the post-create slot 0x1421c26f0 runs event [(state − 1) × 0x18] and crashed in the
                 // event interpreter (0x141ded7b9).
                 case "Transitionable": w.U8((byte)(TransitionState & 0x7f)); break;

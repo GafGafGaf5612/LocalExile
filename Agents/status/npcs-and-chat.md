@@ -47,8 +47,6 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 - NPC dialogue options, shops, NPCs in other towns and outside towns ([17](../docs/protocol/17-npcs.md) "Open");
   the 346 monster varieties with NPC, ControlZone, BlightTower … components.
-  "Emerge" monsters (Gravel Eater …) are created but stay hidden until an Emerge action, which the server does not
-  send.
 - Chat lines: server text only appears as a message box.
   The chat-line message and the global channel join are unknown (the client logs "Timeout while joining global chat
   channel").

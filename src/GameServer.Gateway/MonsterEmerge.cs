@@ -80,7 +80,7 @@ sealed class MonsterEmerge(string folder = "data")
         {
             var at = m.Walk.Position(now);
             double d = Math.Sqrt((double)(at.X - player.X) * (at.X - player.X) + (double)(at.Y - player.Y) * (at.Y - player.Y));
-            if (d > Math.Min(Range, m.AggroRange)) continue;
+            if (d > (m.AggroRange > 0 ? Math.Min(Range, m.AggroRange) : Range)) continue;
             double seconds = m.Variety is { } v ? Seconds(v) : DefaultSeconds;
             risen.Add((id, m, at, seconds));
         }

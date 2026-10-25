@@ -229,7 +229,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   The player's life comes from the class/level/passive pools.
   The server has no simulation loop: hits use timers, attacks are bounded by a 30/s tick (`TickRate`), the AI runs
   every 500 ms.
-  Item mods count through the global item stats; "emerge" monsters stay hidden;
+  Item mods count through the global item stats;
   346 varieties with NPC / ControlZone / ... components are refused.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`;
   `DamageConversion` handles the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global
