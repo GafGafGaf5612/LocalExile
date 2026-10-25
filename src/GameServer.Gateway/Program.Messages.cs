@@ -139,6 +139,12 @@ partial class Program
                 await PickCosmetic(remote, stream, ciphers, conn, InstanceMicrotransactions.ReadSlot(bytes));
             else if (id == InstanceMicrotransactions.SkillPickId)
                 await PickSkillCosmetic(remote, stream, ciphers, conn, InstanceMicrotransactions.ReadSkillPick(bytes));
+            else if (id == InstanceProtocol.UseInstantSkillAtLocationId)
+            {
+                var (x, y, skill) = InstanceProtocol.ReadUseInstantSkillAtLocation(bytes);
+                Console.WriteLine($"[gateway] {remote} <= 0x0190 instant skill 0x{skill:x4} at ({x}, {y})");
+                if (Skills.IsGemSkill(skill)) _ = UseInstantSkillAtLocation(remote, stream, ciphers, conn, skill, (x, y));
+            }
             else if (id == InstanceProtocol.UseInstantSkillId)
             {
                 // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,

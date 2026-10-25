@@ -146,6 +146,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   the server applies them and answers S→C 0x1ce, which starts the skill bar's cooldown.
   Skill records carry the GEPL Cooldown and the stats the cooldown count, and the server refuses a skill until its
   cooldown is over.
+  Ground-target C→S 0x190 now frames its 12 bytes and routes ordinary Frostblink through mana/cooldown acceptance.
+  The ground 0x1ce uses the raw aim; the server mirrors native 32/42-cell distance limits and ends the old walk.
+  Placement requires a captured grid and clear terrain, barriers and endpoint clearance.
+  Action tokens and pending releases remain unchanged; other location instant movement is withheld.
+  Native packet/resolver experiments and automated checks pass; end-to-end Frostblink validation is pending.
+  Frostblink damage, chilled ground, enemy-dependent recovery and shared Blink cooldown groups remain unsupported.
   The skill bar keeps its slots when skills are re-sent or a gem is socketed again (the saved bar goes out as 0x53)
   ([11](../docs/protocol/11-skills.md) §9, §11).
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel (`ManaReservationFlat`

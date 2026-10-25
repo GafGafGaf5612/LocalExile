@@ -174,7 +174,7 @@ partial class Program
         var messages = InstanceProtocol.SplitClientMessages(all, out conn.Carry, out byte[] unknown);
         if (MoveTrace)
             foreach (var (id, bytes) in messages)
-                if (id is 0x0024 or 0x0025 or 0x0191)
+                if (id is 0x0024 or 0x0025 or 0x0190 or 0x0191)
                     Console.WriteLine($"[move-trace] qpc={readAt} recv 0x{id:x4} {Convert.ToHexString(bytes)}");
         foreach (var bytes in inbox.Post(messages, unknown, readAt))
         {

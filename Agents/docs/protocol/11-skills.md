@@ -394,13 +394,36 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   arrival, unlike a spell) and a spell casts from where it stands. An attack with "Always Attack Without Moving" on
   casts in place. On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server
   echoes 0x1ab in place.
-  An **instant** skill (stat `skill_is_instant`, below) is not sent this way: C→S **0x191** (8 bytes: u32 target
-  object id, u16 skill id; `InstanceProtocol.ReadUseInstantSkill`) uses it without an action or a sequence, so the
-  client keeps walking. The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
+  An **instant** skill (stat `skill_is_instant`, below) is not sent this way.
+  C→S **0x191** carries an object target (8 bytes: u32 object id, u16 skill id).
+  C→S **0x190** carries a ground aim (12 bytes: u32 x, u32 y, u16 skill id), without an action sequence.
+  Sender `0x1401232e0` selects 0x190 for target mode 4 and 0x191 for object/self modes 5/6.
+  The 0x190 class `0x1435c0718` writer `0x141f91f60` confirms network order and these widths.
+  Actual Frostblink Q sent `0190 0000011A 000000DC 0103`; unframed, this discarded the rest of its receive chunk.
+  Both messages now frame independently, including fragments and coalesced following messages.
+  Only an equipped Instant gem may use either route; location movement currently supports ordinary Frostblink only.
+  The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
   object header, u16 skill id, u16 sequence (0xffff), u16 flags (0x20 → u32 target object), compact target position;
   handler `0x142195880`): the client runs the skill's action without animation and consumes a use of the skill
   (actor vtable +0x198), which starts the skill bar's cooldown. Without it the tooltip showed the cooldown but the bar
   never ran it: the cooldown records had no entries (Frida, live 2026-10-21; not yet checked with 0x1ce).
+  A location acceptance has flags 0, no object id, sequence 0xffff and the original ground aim.
+  Ordinary Frostblink uses the existing mana and cooldown checks but skips the generic single-area hit approximation.
+  Its server movement commits inside the 0x1ce send gate after repeating life, area, gem and placement checks.
+  IceDash action `0x1412f1200` records its departure and aim; endpoint resolver `0x141bfe240` clamps distance
+  to an integer maximum `42 * (100 + skill_maximum_travel_distance_+%) / 100` and a 32-cell minimum.
+  Component rounding is `floor(component * factor + .5)` in `0x140671d00`, including negative components.
+  The server uses the same emitted player/skill stat precedence, refuses overflow and unsupported minimum/maximum cases,
+  and requires a captured grid, in-bounds aim/endpoint, clear straight terrain, quest barriers and endpoint clearance.
+  It rejects cases needing the client's terrain endpoint search instead of guessing a destination.
+  Manual native 0x1ce experiments confirmed near aim `(290,229) -> (300,220)` resolves to `(314,208)`;
+  far aim `(311,220) -> (200,220)` resolves to `(269,220)`.
+  While walking from `(279,221)`, aim `(310,220)` resolved to `(311,220)` and ended the old predicted Move.
+  These were protocol experiments, not end-to-end validation of the Gateway's new 0x190 route.
+  The server mirrors that walk stop with `Walk.Teleport`, preserving ActionCount, channel and pending release tokens.
+  End-to-end Frostblink verification is pending.
+  Departure/arrival damage, chilled ground, nearby-enemy cooldown recovery, shared Blink cooldown groups,
+  other location instant skills and complete movement restriction/terrain searches remain unimplemented.
 - **Hit reaction (live 2026-10-25).** A monster that takes a hit plays its rig's **TakeHit** clip with S→C **0x1b2**
   (`InstanceProtocol.AnimationUpdate`, kind 0): object header, u8 kind, u32 clip index (+0x24), u32 float bits (speed,
   +0x28). The index is 0-based into the actor's animation list, which is the rig `.amd`'s animations in file order
