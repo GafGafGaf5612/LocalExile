@@ -821,6 +821,8 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
+        .Add("tp", "/tp <x> <y> | <+dx> <+dy> | <id> | <name> [n] | list [filter] (dev: teleport to a cell, a monster, NPC, transition, waypoint or captured object, e.g. /tp RhoaChest 2)",
+            args => DevTeleport(remote, stream, ciphers, conn, args))
         .Add("mobs", "/mobs (list spawned monsters)", async _ =>
             await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
                 string.Join(", ", conn.Monsters.Select(m =>
