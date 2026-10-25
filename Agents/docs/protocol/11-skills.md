@@ -1017,8 +1017,12 @@ lightning 271/272 and chaos 275/276. These rows retain the existing main-hand an
 Per-use average (2044) and DPS (679) are hundredths; packet fractions are retained through the average, and DPS
 uses the skill's already-emitted `hundred_times_attacks_per_second` (678), rather than recalculating attack timing.
 Consequently DPS uses that rounded displayed rate, not a new precise action-rate calculation.
-A weapon packet averaging 7.14 becomes Burning Arrow average 12.852, displayed as 12.85 per use and 12.59 DPS at
-emitted APS 0.98; crit weighting, accuracy, target mitigation, integer-roll expectation and downtime are excluded.
+Copied-save GUI baseline: a 5-13 physical bow with Strength 14 showed 5-13 physical/total, per-use 9.18 and DPS 12.86
+for both ordinary attack and Burning Arrow, while Burning Arrow already showed its corrected APS 0.98.
+The preserved raw packet is 5.1-13.26; Burning Arrow resolves 9.18-23.868 fire, average 16.524.
+The new expected display is 9-23 fire/total, physical zero, per-use 16.52 and DPS 16.19 at emitted APS 0.98.
+That exact fixture is regression-tested; corrected native display verification remains pending.
+Crit weighting, accuracy, target mitigation, integer-roll expectation and downtime are excluded.
 Initial creation and refresh both pass raw `CharacterPlayerStats` plus the actual weapon into `GemSkills` separately
 from inherited final display stats. Derived hand ranges cannot feed back into the packet.
 Only attack gems receive this override; ordinary attacks, spells, non-attack actions and off-hand rows keep their

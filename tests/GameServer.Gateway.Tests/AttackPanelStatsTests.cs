@@ -55,6 +55,25 @@ public class AttackPanelStatsTests
     }
 
     [Fact]
+    public void Captured_five_to_thirteen_bow_fixture_scales_and_converts_the_inherited_physical_display()
+    {
+        var character = Values(("melee_physical_damage_+%", 2));
+        var weapon = Weapon(5, 13);
+        var ordinary = weapon.Stats(character, weapon.HitDamage(character)).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        Assert.Equal(918, ordinary[StatKeys.DisplayHundredTimesDamagePerSkillUse]);
+        var hit = Resolve("BurningArrow", character, weapon);
+        Assert.Equal(9.18, hit.MinTotal, 6);
+        Assert.Equal(23.868, hit.MaxTotal, 6);
+        Assert.Equal(16.524, hit.AverageTotal, 6);
+        var rows = Rows("BurningArrow", hit, 98);
+        Assert.Equal(9, rows["main_hand_minimum_total_damage"]);
+        Assert.Equal(23, rows["main_hand_maximum_fire_damage"]);
+        Assert.Equal(0, rows["main_hand_maximum_physical_damage"]);
+        Assert.Equal(1652, rows["display_hundred_times_damage_per_skill_use"]);
+        Assert.Equal(1619, rows["hundred_times_damage_per_second"]);
+    }
+
+    [Fact]
     public void Added_attack_damage_and_current_character_increases_are_scaled_before_conversion()
     {
         var player = Values(("damage_+%", 10), ("cold_damage_+%", 100),
