@@ -107,7 +107,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: Gateway (`ActivateRighteousFire`, `RunPlayerTick`), `SkillArea.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §12.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
-  every class's from its rig .amd), sped up by cast speed.
+  every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
   Docs: [11](../docs/protocol/11-skills.md) §9.
 
@@ -179,6 +179,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   the character panel's APS stays cached after a passive allocation (reopening the panel or switching its tab does not
   refresh it; only a relog does).
   ([11](../docs/protocol/11-skills.md) §4)
+- **Spell cast timing (#192).** Catalog base/virtual cast milliseconds now stay unchanged for native spell actions,
+  which apply cast speed themselves.
+  Server waits and displayed casts per second share `SpellCastTiming`; attacks keep their existing path.
+  The old -80% Fireball recovery capture lasted 18.75 seconds instead of 3.75 due to two divisions by 0.2.
+  Automated 0/+100/-80 timing, instant/channel classification, invalid-rate and existing aura/sum checks pass.
+  Corrected real-client clip duration and release alignment verification is pending.
+  Instant casts remain instant; channel damage cadence and conditional action-speed mechanics are unchanged.
+  Numeric server durations below 1 ms are floored, and invalid factors/unrepresentable waits produce no spell effect.
+  Code: `SpellCastTiming.cs`, Gateway (`GemSkills`, `CastMs`, `CastGemSkill`, `LaunchProjectile`, `AreaSkillHit`).
+  Docs: [11](../docs/protocol/11-skills.md) section 9.
 - **Critical strikes.** The server rolls unconditional crit passives: the equipped main hand's `WeaponTypes.dat`
   critical chance (permyriad) raised by generic/attack/melee/weapon-shape increased crit chance for attacks,
   each spell's extracted base chance, and 150% plus `base_critical_strike_multiplier_+`;

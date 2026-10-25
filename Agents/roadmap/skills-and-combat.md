@@ -28,6 +28,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
+- **Spell cast timing (#192):** native base milliseconds are preserved and cast speed adjusts server waits and
+  displayed rate once. Automated checks pass; verify +100% and -80% clip duration/release alignment in the client.
+  Instant casts and attack timing stay separate; conditional action-speed and special native mechanics remain open.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 
