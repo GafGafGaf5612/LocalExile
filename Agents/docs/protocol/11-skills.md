@@ -220,7 +220,13 @@ Native action code `0x141c06c2a..0x141c06c8e` reads 0x221a and divides by 1000 a
 The explicit 0x221a getter (`0x142706568..0x14270658f`) returns the stored value without another GEPL multiplier.
 Gem pacing, attack contact/projectile release and channel intervals share that duration; selected APS is `100 / seconds`.
 Ordinary attacks and non-attack skills retain their previous paths.
-Catalog, native-field, modifier-order, pacing/contact and spell-exclusion tests pass; native validation is pending.
+Native baseline before this fix: a 714 ms bow had stored speed 0%, base/total base 714 ms and APS 140 for both
+ordinary attacks and Burning Arrow, with actual native clip duration 0.714 seconds in each case.
+The corrected Burning Arrow fixture resolves total base 1020 ms, duration 1.02 seconds and APS 98, while the default
+attack remains 714 ms and APS 140. This expected after-state is regression-tested; live verification is pending.
+Local baseline captures are `logs/skill-timing-before-default-bow-real.json` and
+`logs/skill-timing-before-burning-arrow-real.json` in the integration checkout.
+Catalog, native-field, modifier-order, pacing/contact and spell-exclusion tests pass.
 This excludes support/conditional/per-charge speed, skill-specific attack-time overrides and off-hand alternation rules.
 Selected attack-gem damage ranges/DPS still inherit the existing weapon display; correcting those is separate work.
 No generator output changes are needed: the multiplier is already extracted.

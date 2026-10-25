@@ -122,6 +122,24 @@ public class SkillAttackTimingTests
         Assert.Equal(.7145 * .374, AttackTiming.ContactDelay(seconds, .374, 0), 8);
     }
 
+    [Fact]
+    public void Captured_714ms_bow_keeps_default_timing_but_Burning_Arrow_resolves_to_1020ms()
+    {
+        var weapon = new SkillCatalog.Unarmed(714, 2, 5, 8);
+        var player = new Dictionary<uint, int> { [StatKeys.MainHandAttackSpeedPct] = 0 };
+        var ordinary = weapon.Stats(player).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        Assert.Equal(714, ordinary[StatKeys.MainHandTotalAttackDurationMs]);
+        Assert.Equal(140, ordinary[StatKeys.HundredTimesAttacksPerSecond]);
+        var burning = new Dictionary<uint, int>(ordinary);
+        int effect = Skills.Value.EffectRow("BurningArrow");
+        SkillAttackTiming.Apply(Skills.Value, effect, 1, burning);
+        Assert.Equal(714, burning[StatKeys.MainHandAttackDurationMs]);
+        Assert.Equal(0, burning[StatKeys.MainHandAttackSpeedPct]);
+        Assert.Equal(1020, burning[StatKeys.MainHandTotalAttackDurationMs]);
+        Assert.Equal(98, burning[StatKeys.HundredTimesAttacksPerSecond]);
+        Assert.Equal(1.02, SkillAttackTiming.ForSkill(Skills.Value, effect, 1, weapon, player), 8);
+    }
+
     [Theory]
     [InlineData("Fireball")]
     [InlineData("ScorchingRay")]
