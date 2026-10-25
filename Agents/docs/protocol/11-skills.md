@@ -1004,6 +1004,29 @@ game has a spell form).
 sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
 the main hand is filled, since the server attacks with it; an empty packet adds no rows.
 
+**Selected attack-gem hit rows (#196)** (`AttackSkillHit`, `AttackPanelStats`): main-hand total and per-type
+ranges now use the same packet constructor as projectile and area attack combat.
+The constructor preserves the current order: the actual weapon's hit with character modifiers, flat added attack
+damage from character inputs, the skill's level-aware effectiveness, then conversion and gain-as-extra.
+Conversion retains `ConversionFor` precedence: player keys win and level-only skill keys fill gaps, without quality
+conversion. Skill-owned damage modifiers are not newly applied; this panel change preserves current combat rules.
+Burning Arrow level one uses effectiveness 18000 and 100% skill physical-to-fire conversion; Heavy Strike uses 12430.
+All twelve main-hand range fields are explicit and floored, including zeros for absent types after conversion.
+`CharacterPanelStats` reads whole-number total keys 670/671, physical 279/280, fire 267/268, cold 263/264,
+lightning 271/272 and chaos 275/276. These rows retain the existing main-hand and spell/secondary gates.
+Per-use average (2044) and DPS (679) are hundredths; packet fractions are retained through the average, and DPS
+uses the skill's already-emitted `hundred_times_attacks_per_second` (678), rather than recalculating attack timing.
+Consequently DPS uses that rounded displayed rate, not a new precise action-rate calculation.
+A weapon packet averaging 7.14 becomes Burning Arrow average 12.852, displayed as 12.85 per use and 12.59 DPS at
+emitted APS 0.98; crit weighting, accuracy, target mitigation, integer-roll expectation and downtime are excluded.
+Initial creation and refresh both pass raw `CharacterPlayerStats` plus the actual weapon into `GemSkills` separately
+from inherited final display stats. Derived hand ranges cannot feed back into the packet.
+Only attack gems receive this override; ordinary attacks, spells, non-attack actions and off-hand rows keep their
+existing display paths. Supports, conditional mechanics, off-hand alternation and broader modifier-scope corrections
+remain separate work. Existing character modifiers are preserved even where their weapon scope remains approximate.
+Real catalog, packet/source-isolation, conversion, added-damage, flooring, absent-type and native-table tests pass.
+Real-client skill selection, equipment refresh and relog verification is pending; no extracted data changes are needed.
+
 **Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
 `additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`
 (with `spell_block_differs_against_projectiles` 1, which shows the row), each capped at its maximum, and

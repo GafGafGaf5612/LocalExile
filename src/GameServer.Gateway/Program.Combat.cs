@@ -467,9 +467,8 @@ partial class Program
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
             var hit = projectileHitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
-                        Skills.DamageEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
+                () => AttackSkillHit.Resolve(WeaponFor(conn), CharacterPlayerStats(conn),
+                    Skills.EffectStats(gem.Effect, gem.Level), Stats, Skills.DamageEffectiveness(gem.Effect, gem.Level)),
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
@@ -554,8 +553,7 @@ partial class Program
         foreach (var (id, m) in targets)
         {
             DamagePacket hit = hitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
+                () => AttackSkillHit.Resolve(weapon, player, Skills.EffectStats(gem.Effect, gem.Level), Stats, effectiveness),
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));

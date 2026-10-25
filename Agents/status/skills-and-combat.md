@@ -172,6 +172,12 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack
   speed is summed into the client's `main_hand_attack_speed_+%`;
   dual wielding adds PoB's 10% more and the server's unarmed attack uses the same final value.
+  Selected attack-gem main-hand ranges now share the converted combat packet, including skill effectiveness.
+  All twelve ranges clear absent types; pre-crit averages retain fractions and DPS uses the emitted APS value.
+  Creation and refresh pass raw character stats and the actual weapon separately from inherited display values.
+  Packet, catalog, conversion, source-isolation and native row-format tests pass; real-client verification is pending.
+  Ordinary attacks, spells and off-hand display paths are unchanged.
+  Conditional/support effects, crit weighting and broader weapon modifier scope remain separate work.
   The default attack also sends the panel's `hundred_times_damage_per_second` and
   `display_hundred_times_damage_per_skill_use`.
   Live verified: the dual-wield character's APS follows the passives (2.93 → 2.98 after a node).
