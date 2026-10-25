@@ -35,4 +35,16 @@ public class GameDataFilesTests
         foreach (var (file, _) in GameDataFiles.All)
             Assert.Contains($"'{file.Replace('/', '\\')}'", script);
     }
+
+    [Fact]
+    public void The_pinned_program_catalogs_find_the_tables_from_the_test_binarys_working_directory()
+    {
+        // Program's catalogs keep the resolved absolute folder: a helper called from a test binary's working directory
+        // must still see the extracted tables. SuppressionChanceKeys reads the pinned Stats while Program initializes,
+        // so all three stat keys resolve when the tables are reachable (and stay empty on a fresh clone without them).
+        bool stats = File.Exists(Path.Combine(GameDataFiles.ResolveFolder(), "tables", "Stats.json"));
+        Assert.Equal(stats ? 3 : 0, Program.SuppressionChanceKeys.Length);
+        if (stats)
+            Assert.True(File.Exists(Path.Combine(GameDataFiles.ResolveFolder(), "tables", "MonsterTypes.json")));
+    }
 }

@@ -222,8 +222,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
-- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
-  yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
+- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour yet; each damage
+  type of a hit takes the monster's own base resistance, `HitMitigation`; the player's hit lands at the attack
+  animation's contact keyframe, a monster's still at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour
   and block.
   The player's life comes from the class/level/passive pools.
@@ -247,7 +248,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
   Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
-  application/duration and monster resistances ([20](../docs/protocol/20-damage.md)).
+  application/duration ([20](../docs/protocol/20-damage.md)).
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.

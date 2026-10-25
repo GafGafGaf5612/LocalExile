@@ -54,6 +54,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   packets.
   The default attack, Fireball and monster melee use packets and read the player's/skill's conversion stats
   ([20](../docs/protocol/20-damage.md)).
+  Player hits on monsters take the target's base resistance per type (`MonsterTypes.Resistances` →
+  `MonsterResistances` by the level's difficulty, `MonsterResistanceCatalog`/`HitMitigation`); monster armour is still
+  not modelled.
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);

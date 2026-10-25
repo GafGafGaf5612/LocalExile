@@ -137,7 +137,7 @@ partial class Program
         // Read before the hit is applied: a killing blow clears the target's impales.
         int impaleStacks = m.Impale.Stacks;
         double impaleStored = m.Impale.Bonus;
-        int damage = hit.RollTotal(Random.Shared);
+        int damage = MonsterDamage(m, hit, Random.Shared);
         bool critical = conn.Pools.AttackCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
@@ -473,7 +473,7 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            int damage = hit.RollTotal(Random.Shared);
+            int damage = MonsterDamage(m, hit, Random.Shared);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
@@ -559,7 +559,7 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            int damage = hit.RollTotal(Random.Shared);
+            int damage = MonsterDamage(m, hit, Random.Shared);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
@@ -761,6 +761,12 @@ partial class Program
         lock (conn.Monsters) hit = ApplyMonsterHitLocked(conn, m, damage);
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
     }
+
+    // The damage a player's outgoing hit deals to its monster: one roll per type, then each type's own base resistance
+    // (HitMitigation), summed to the total the critical multiplier later applies to. Damage over time has no resistance
+    // here and keeps its own path.
+    static int MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random) =>
+        HitMitigation.RollMitigated(hit, type => HitMitigation.Resistance(Monsters, m.Variety, m.Level, type), random);
 
     // The short state mutation is shared with projectile impact; no awaits under Monsters.
     static MonsterHit? ApplyMonsterHitLocked(ClientState conn, SpawnedMonster m, int damage)
