@@ -334,12 +334,12 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             return (Str(t) ?? "", key);
         }
         // 0x1429f31a0: a tile naming a base tile (u32 0) takes the base's data; a flags byte follows, each bit a group of
-        // fields the file gives itself. Bit 3: its own tag and key (as above, from byte 5); bit 1 marks fields the
-        // generator does not read (the file's own .tmd). The others are not ported.
+        // fields the file gives itself. Bit 3: its own tag and key (as above, from byte 5); bits 1 and 4 mark fields the
+        // generator does not read (the file's own .tmd; its hull, with a size the key gives). The others are not ported.
         if (Str(0) is { } basePath)
         {
             byte own = h[4];
-            if ((own & ~0x0a) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
+            if ((own & ~0x1a) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
             var baseTile = Tile(basePath) ?? throw new FileNotFoundException(basePath);
             var (ownTag, ownKey) = (own & 8) != 0 ? TagAndKey(5) : (baseTile.Tag, baseTile.Key);
             if (ownKey.Width != baseTile.Width || ownKey.Height != baseTile.Height)

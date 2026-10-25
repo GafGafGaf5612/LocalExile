@@ -90,8 +90,10 @@ WorldAreas row X ("Unknown sub world area"). A description starting "teleport" s
 (`0x142047540`) takes the queue and, for each, `0x142047090` → `0x142046340` with no topology: the world area's
 topologies as in §3 (`0x142027a20`), `Next(count)`, then `Next(840)` → `0x14299da50` with the picked topology's
 orientation mask; `0x1420457f0` adds its record. `2_8_5` (The Bath House) seed 1: the hideout's
-`hideout_baths_claim.dgr` is record 1 (draws #7, #8). Sub-areas of a `.tgr` primary are not ported (the Act 9
-`oasis_foothills_*.tgr`).
+`hideout_baths_claim.dgr` is record 1 (draws #7, #8). A `.tgr` primary with sub-areas (the Act 9
+`oasis_foothills_*.tgr` and the hideout claim) goes through the subgraph records like a `.dgr`'s (2026-10-25,
+`2_9_4`): the tile graph is laid out on the shared map at its view, and `0x142044f30` gives it its outer ground
+(`0x14201db80` without height fixing) and outer buffer with its own TileSet and FillTiles.
 
 **Secondary records** (`0x142047e50`, `DungeonTiler.PlaceSecondaries`): each record after the first gets parent
 +0x92 = its index ("Secondary graph: {}") and goes to a corner among those right of (x + w + 1, y) and below (x,
@@ -171,14 +173,17 @@ For a one-node graph (towns, hideouts):
    (`wildcard_double` in `deepstream_corner_bridge_1.arm`, `sewers_thick_wall_corridor` in `entrance_dry_2.arm`, …);
    no tile does, and the store compares keys with `memcmp`, so without the sort those slots find no tile.
    (2026-10-25; was the "no tile for slot" stop in `1_3_7`, `1_3_10_1`, `1_3_14_2`, `2_8_11`, `2_8_7_2`,
-   `2_11_endgame_town`.) A `.tdt` with a base tile (u32 0 names one) has another header layout (`02 01` size at
-   +25 in `sewerwall_thin_entrance_v02_01_nofeature.tdt`) the port does not read: its key comes out as 255 × 255,
-   which is `2_8_2_1`'s "no tile for slot".
+   `2_11_endgame_town`.) A `.tdt` with a base tile (u32 0 names one, `0x1429f31a0`) takes the base tile's data; a flags byte
+   follows, each bit a group of fields the file gives itself: bit 0 its mesh (u32) and vertex data, bit 3 its tag and
+   key (u32 tag then the 0x2e key bytes, as a plain tile's from offset 8), bit 4 its size and hull, bit 5 its
+   orientation restriction, bit 1 fields the generator does not read (its own `.tmd` is in the string table). The
+   port reads bits 1, 3 and 4 (4 only with the base's size) (2026-10-25: `2_8_2_1`'s `sewerwall_thin_entrance_v02_01_nofeature.tdt`, flags 0x0a; MapWorldsCourtyardOfWasting's `stonewall_to_venice_convex_combinationfence_01.tdt`, 0x1a;
+   `2_7_12_1`'s `WallChest_*.tdt` over the Vaal chest tiles) and stops on the others.
 5. **Fill**: the recorded cells plus every still-empty entry (ground "default"), sorted by (x, y), so column by
    column (`0x14212d520`); each empty one gets a tile from the master's FillTiles (.gft: quoted ground name, then
    "weight path") for its ground's name (.gt first line): `Next(total weight)`, then for a square tile `Next(8)` as
    its orientation (`0x141fecd00`; non-square tiles use `Next(840)` and a mask, not ported).
-6. **Mirror seams** (`0x142025440`, after `0x1420f8f20`, which draws only when +0xb0 lists cells): row by row, a
+6. **Mirror seams** (`0x142025440`, after the dungeon's `0x1420f8f20`, below): row by row, a
    placed tile larger than one entry, without a tag and not a plain fill tile (`0x14201d800`: no edges but wildcard
    ones, .et +0x48 bit 7, and one ground on all four corners), none of whose vertices took a room's own vertex ground
    (`0x142025fb0`), whose neighbour one tile size away
@@ -191,7 +196,10 @@ For a one-node graph (towns, hideouts):
 Lioneye's Watch (seed 1): topology (MT draw + 10 LCG bits), room `Next(1)`, 11 keyed slots, 82 fills, 3 seam
 repairs: the grid is final after 181 logical draws, all equal to the trace's. The client's next draws
 (`0x141530658`, `Next(100)` / `Next(110)`, ~300) and LCG bits at `0x142be7a0b` belong to later stages (meshes,
-doodads).
+doodads). The Aqueducts (`1_4_1`, `2_9_1`) draw, after the seams and before that mesh variation, 87–90 `rand()`
+ranges of 14 bits (`0x140e3b3f0`, from `0x140e3b43f`; values up to ~16 300); the callers that reach
+`0x140e3b3f0` through vtables (`0x1420e0d00`, `0x1420e2e10`, `0x1420e42b0`: float ranges × 1000, tile positions ×
+250 / 23) were not told apart. Their tiles and doodads match.
 
 ## 3c2. Dungeon layouts: several nodes (`DungeonLayout.cs`, `DungeonRoomSet.cs`)
 
@@ -491,7 +499,9 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    shrines (`0x1420f2340`), the pre-unique rooms (`0x1420f3100`, not ported), the **edge fill** (`0x141feed20` on the
    tiler +0x40 records, as for tile graphs, below), the records sorted by (x, y) (`0x14212d520`), the first
    **overlay** pass (`0x141ffe240` on the tiler's view with the context's placed rooms, `0x141fff1a0` with bit 1; as
-   for tile graphs), the **fill**, and the second overlay pass. The fill: the recorded cells (`0x1420eec10`, which also
+   for tile graphs), the **fill**, and the second overlay pass; map +0x10 (ground checks) is off from the overlays to
+   the second pass, as it is around the rooms' grounds (`0x1420f0e10`): after a tile graph subgraph's fill has turned
+   it on, `2_9_4`'s hideout claim fill would otherwise stop. The fill: the recorded cells (`0x1420eec10`, which also
    gives the footprint's vertices the height and flag 2), each still empty one filled by
    `0x141feb970` (as for tile graphs) for its ground, or its top-left vertex's ground when that vertex has flag 1,
    at the record's height (`0x1420f3de0` → `0x141fec8f0`: a given height is used, 0x80000000 = corners' middle).
@@ -503,7 +513,9 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    `0x1420f3480` calls it on the layout's view (its corner to step × size + overlap) with the placed rooms as the room
    list, so tiles inside a room never take the fallback and tiles touching a room's vertex ground stay. The one-node
    path runs it on the whole map with its one room. Then, after the subgraph (`0x142044f30`), the **outer ground**
-   (`0x14201db80`) over the subgraph's view (`0x141ffb6c0`): the layout inside the outer buffer, not the buffer.
+   (`0x14201db80`) over the subgraph's view (`0x141ffb6c0`): the layout inside the outer buffer, not the buffer. Its
+   tile is the first fill tile of the ground's name in the FillTiles, or of "default" when the FillTiles do not name
+   it (`0x141feffb0` → `0x141fefeb0`; `1_4_5_1`, 2026-10-25).
    Vertices with flag 1 get flag 2. When param_3 is 0 (`0x142044f30` passes its context's +8: a tile graph, whose
    outer ground never fixes heights), the outer ground's .gt has flag 1, or master +0x161, every spot on the tile's grid
    where it fits takes its first fill tile at orientation 0 (`0x14201e4f0`: its (w + 1) × (h + 1) vertices take the
@@ -522,9 +534,19 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    vertices spread outwards and the buffer is tiled. Then StoreyHeight scales every origin's height (`0x14204cbd0`).
 
 Not ported on this path (no draws in the cave): `0x1420f4010` / `0x1420f4ae0` (RoomOverlap), `0x1420f7960`,
-`0x1420f1590` / `0x1420f3100` (unique, pre-unique rooms), `0x1420f8f20` (the tiler +0xb0 cells that the tile
-listener `0x1420f1230` records for square tiles whose edges all have the tile's size and .et +0x4d: shuffled, each
-re-tiled with its sides' points moved, `0x140df93f0`; `1_3_5`). **Shrines**
+`0x1420f1590` / `0x1420f3100` (unique, pre-unique rooms). **Edge wiggle** (`0x1420f8f20`, after the second overlay
+pass, before the seams; 2026-10-25, `1_3_5`): the tiler's +0xb0 cells, a set sorted by x · 0x10000 + y
+(`0x14204e650`), come from the room tiliser (`0x1420ef310`: an untagged square slot key whose edges all have its size
+(.et +0x4b) and one of them a wiggle (.et +0x4d) of at least 2, or 1 for a shared border slot (`0x1420f0a70`), at
+the slot's view cell, before it is tiled) and from the listener `0x1420f1230` that the FillTiles block puts on its
+placer (shrines, edge fill, overlays, fill: an untagged tile (tile data +0x10) of that kind with any wiggle). Then
+`Next(count)` and a shuffle; each cell whose tile still qualifies at its origin (`0x1420ed900`) takes its turned key,
+`Next(4)` and a shuffle of the sides; a side with a wiggling edge takes the point `0x140df93f0` gives from the cell's
+view position (((y · 0x7bb + side · 0x10a3 + x · 0x337) mod 13) mod 3 · size + size / 2; sides 1 and 2 as the
+neighbour's sides 3 and 0, mirrored) when it differs and the cell one edge size across (`0x142fc00f8`) also
+qualifies: when the TileSet has untagged tiles for the moved key and for the neighbour's key with the point 3 · size
+− p − 1, the move stays. With any move the cell and then each moved neighbour (sides 0 … 3) get a tile from their
+lists (`Next(total weight)`), placed forced at their old height (`0x141ffb870`). **Shrines**
 (`0x1420f2340`, before the fill, 2026-10-25): with shrines rolled (pool +0x148), the RoomSet's "shrine" rooms whose
 unit size is not the layout's (the layout's own ones are `0x142103490`'s); the tiler's fill records (+0x58: x, y,
 ground, accessible, height) are shuffled in place (`Next(count)`, shuffle), then `0x1420f2620` twice (the second only
@@ -688,8 +710,9 @@ entries equal the client's final grid):
    `0x14211d240`; a two-edge key may move its first edge to the free neighbouring side). Rooms come from the master's
    RoomSet index (+0x1f8): per tag, every room in list order in orientations 0..7 with its own key's edges turned
    (weight from the list, 1 by default); a variant whose four edges are the key's adds the room turned by the node's
-   orientation (`0x14211fb20`; a symmetric room adds it twice). Any-orientation nodes (`0x14211fcc0`) and tile
-   candidates are not ported.
+   orientation (`0x14211fb20`; a symmetric room adds it twice). The RoomSet reads as a tile list (`0x142a0d950`:
+   weight, path, the rest of the line): orientation words after the path limit its variants (`1_1_9`'s
+   `waypoint.arm" I`: one candidate, not eight; 2026-10-25) and `//` lines are comments.
 5. **Pick** (`0x1421203f0`): `Next(total weight)` at `0x1421207cd`; the pick is centred on the node's tile (even sizes
    by the placement table), snapped to the alignment (`align<n>` description, else the largest edge size;
    `0x14202ecc0`), clamped to the graph, and must fit the map (`0x141d84e10`, entries free; `0x14211c820`, edge points
@@ -911,10 +934,17 @@ are the doodads, `0x142042fae`).
    heights agree, each side inside the map matches the edges across it (`0x141ffa390` / `0x141ff9cb0` /
    `0x141ff9ee0`)) is a spot of the group's weight. `0x141fffb70` draws spots (`Next(total)`), a group that still fits
    (`Next`), a room under its limit padded to 100 with nothing (`Next`; nothing closes the spot), its orientation
-   (`Next(840)`), removes the tiles and vertex grounds there and tilises the room (`0x141fea780`, `RoomTiler`, which
-   dungeons share). Open: in `1_3_8_1`, `2_8_12_1` and `2_8_7_1_` every draw matches, but at some corners of the temple
-   door overlays (`f` slots tagged "overlayblank") the client ends up with the column or statue tile that was there
-   before, not `overlay_blank.tdt` (19, 13 and 1 entries); other corners do hold `overlay_blank.tdt`.
+   (`Next(840)`), the room's height offset (`0x141ffe7e0`: per slot with a key, row by row, each key corner on the
+   room's border whose map vertex has a height (flag 2) gives map height − corner height − slot height; corners with
+   a none or flag-1 key ground must all agree, else the room is not placed, and give the offset; without them the
+   most common other value, ties the highest (a stable sort by count, `0x14200e820`), else 0; added to every slot
+   height; `1_1_8`), removes the tiles and vertex grounds there and tilises the room (`0x141fea780`, `RoomTiler`,
+   which dungeons share). A **saving** pass (`0x141fff1a0` param 3: the tile graph's second pass and both dungeon
+   passes) first notes, per spot entry row by row, every entry of each tile it removes (tile, orientation, height,
+   `0x142003c70`); after the room: an entry left empty is filled for its top-left vertex's ground (`0x141feb970`, open
+   when none or flag 4); one now holding the blank tile (`0x141d80a30` 2, `overlay_blank.tdt`) gets its old tile back
+   (`0x141ffb870`) when that was 1 × 1 without (non-wildcard) edges, else is emptied and filled. That keeps the
+   columns and statues at the temple door overlays' `f` corners (`1_3_8_1`, `2_8_12_1`, `2_8_7_1_`; 2026-10-25).
 5. **Fill** (`Fill.cs`, `0x141fef070`): map +0x10 off; every empty entry, row by row, gets a fill for the ground of its
    top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"; a line may end with an orientation,
    I, R90 … FR270, which the choice keeps (`0x141fecd00` then draws nothing; 8 without one): Act 4's
