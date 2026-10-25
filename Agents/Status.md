@@ -2,8 +2,7 @@
 
 Remember Password now returns and verifies the official client's 32-byte saved-login credential
 in account login 0x03 / result 0x04. It survives server restarts, is device/account-bound and
-is invalidated by changing the password. Covered by protocol/session tests; client verification
-requires one fresh typed-password login with the checkbox enabled. See [01](docs/protocol/01-login.md).
+is invalidated by changing the password. Covered by protocol/session tests and confirmed working by the user in the real client. See [01](docs/protocol/01-login.md).
 
 Where the project stands. Last updated 2026-10-21, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
@@ -14,8 +13,7 @@ Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows n
 `main_hand_weapon_type = 9`, required by the client's inventory gate; see [13](docs/protocol/13-items.md).
 
 Helena placement and hideout picker entry point (2026-10-25, awaiting client confirmation): Helena stands
-screen-right of Niko and Select Hideout opens the native window. Only the existing Lush Hideout is owned;
-switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
+screen-right of Niko and Select Hideout opens the native window. All exported personal templates are owned; selection, transfer and persistence are implemented. See [21](docs/protocol/21-hideouts.md).
 
 Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art. A live check found
 that source-only buffs hid the top-left icons; source and received buff instances now coexist,
