@@ -1201,15 +1201,13 @@ sealed class RoomSetIndex
 
     public RoomSetIndex(TerrainCache files, string roomSetPath)
     {
-        foreach (var line in TerrainText.Lines(files.Text(roomSetPath) ?? ""))
+        // The lines as a tile list's (0x142a0d950: weight, path, orientation words); only the orientations a line allows.
+        foreach (var (weight, path, mask) in files.TileList(roomSetPath))
         {
-            var t = TerrainText.Tokenize(line);
-            int q = t.FindIndex(x => x.Quoted);
-            if (q < 0) continue;
-            int weight = q > 0 && t[0].IsNumber ? t[0].Int : 1;
-            if (files.Room(TerrainText.Resolve(roomSetPath, t[q].Text)) is not { } room) continue;
+            if (files.Room(path) is not { } room) continue;
             if (!_byTag.TryGetValue(room.Tag, out var list)) _byTag[room.Tag] = list = [];
-            for (int o = 0; o < 8; o++) list.Add(new Variant(room, o, room.Key.Rotate(o).Edges, weight));
+            for (int o = 0; o < 8; o++)
+                if ((mask & 1 << o) != 0) list.Add(new Variant(room, o, room.Key.Rotate(o).Edges, weight));
         }
     }
 
