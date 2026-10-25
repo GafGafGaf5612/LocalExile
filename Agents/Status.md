@@ -407,4 +407,6 @@ Cyclone's additional melee-range and stage modifiers remain partial. See protoco
 
 New characters now receive the Twilight Strand ground weapon, wounded-exile/zombie skill-gem encounter, and support-gem chest using captured room placements. Existing saves retain their kit/progress. Tutorial popup acknowledgements and force walls remain unimplemented; see [opening encounter](docs/protocol/12-quests.md#opening-encounter-2026-10-25).
 
+Optional [native client control](docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated UI input. It targets the copied standalone 3.29.3b client and local services only.
+
 Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses. Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented. See [skills](docs/protocol/11-skills.md).
