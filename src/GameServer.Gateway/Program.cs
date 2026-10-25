@@ -667,6 +667,8 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             await ChooseNpcOption(remote, stream, ciphers, conn, InstanceNpcs.ReadOption(bytes));
         else if (id == InstanceHideouts.SelectId)
             await SelectHideout(remote, stream, ciphers, conn, InstanceHideouts.ReadSelect(bytes));
+        else if (id == InstanceBench.CraftId)
+            await CraftBench(remote, stream, ciphers, conn, InstanceBench.ReadCraft(bytes));
         else if (id == InstanceChat.ChatId)
         {
             var chat = InstanceChat.ReadChat(bytes);
@@ -1445,6 +1447,8 @@ static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCip
 // Purchase Items: the NPC's stock as one shop tab (S→C 0xc0, inventory manager 1), then S→C 0x8c opens the buy window on it.
 static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint npcObject, SpawnedNpc npc)
 {
+    await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
+    conn.BenchOpen = false;
     if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
     var notes = new List<string>();
     var items = ItemsOf(conn);
@@ -5969,6 +5973,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         return;
     }
     var type = Items.ByHash(used.Item.TypeHash);
+    bool isEssence = type is not null && Essences.Contains(type.Hash);
     if (type?.Id == CurrencyEffects.MirrorOfKalandra)
     {
         if (stashTab is not null || targetTab is not null) { Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra with the stash: not handled, use it in the inventory"); return; }
@@ -5990,13 +5995,13 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         CurrencyEffects.ChaosOrb => CurrencyEffects.Chaos(target.Item, Rolls, Random.Shared),
         CurrencyEffects.DivineOrb => Rolls.Reforge(target.Item, Random.Shared),
         CurrencyEffects.BlessedOrb => Rolls.Bless(target.Item, Random.Shared),
-        CurrencyEffects.OrbOfScouring => CurrencyEffects.Scouring(target.Item),
+        CurrencyEffects.OrbOfScouring => CurrencyEffects.Scouring(target.Item, Rolls),
         CurrencyEffects.OrbOfTransmutation => CurrencyEffects.Transmutation(target.Item, Rolls, Random.Shared),
         CurrencyEffects.OrbOfAlteration => CurrencyEffects.Alteration(target.Item, Rolls, Random.Shared),
         CurrencyEffects.OrbOfAugmentation => CurrencyEffects.Augmentation(target.Item, Rolls, Random.Shared),
         CurrencyEffects.RegalOrb => CurrencyEffects.Regal(target.Item, Rolls, Random.Shared),
         CurrencyEffects.ExaltedOrb => CurrencyEffects.Exalted(target.Item, Rolls, Random.Shared),
-        CurrencyEffects.OrbOfAnnulment => CurrencyEffects.Annulment(target.Item, Random.Shared),
+        CurrencyEffects.OrbOfAnnulment => CurrencyEffects.Annulment(target.Item, Rolls, Random.Shared),
         CurrencyEffects.ArmourersScrap => CurrencyEffects.ArmourerScrap(target.Item),
         CurrencyEffects.BlacksmithsWhetstone => CurrencyEffects.Whetstone(target.Item),
         CurrencyEffects.OrbOfChance => CurrencyEffects.Chance(target.Item, Rolls, Random.Shared),
@@ -6004,6 +6009,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
         CurrencyEffects.GemcuttersPrism => CurrencyEffects.Gemcutter(target.Item),
         CurrencyEffects.FracturingOrb => CurrencyEffects.Fracture(target.Item, Random.Shared),
         CurrencyEffects.VaalOrb => Items.ByHash(target.Item.TypeHash) is { } vaalType ? CurrencyEffects.Vaal(target.Item, vaalType, Rolls, Random.Shared) : null,
+        _ when isEssence => Essences.Apply(type!.Hash, target.Item, Random.Shared),
         _ => null,
     };
     if (result is null)
@@ -6013,7 +6019,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
                 $"sockets {target.Item.Sockets.Count}, roll cap {CurrencyEffects.MaximumSockets(target.Item, refusedType)}, " +
                 $"base cap {CurrencyEffects.SocketCapacity(target.Item, refusedType)}, gems {target.Item.Sockets.Count(s => s.Gem is not null)}");
         Console.WriteLine($"[gateway] {remote} <= 0x0071 use {type?.Name ?? $"0x{used.Item.TypeHash:x8}"} on item {use.TargetId}: " +
-            (type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
+            (isEssence || type?.Id is Wisdom or CurrencyEffects.ChromaticOrb or CurrencyEffects.JewellersOrb or CurrencyEffects.OrbOfFusing or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
                 ? "target refused (corrupted / mirrored / identified / wrong rarity / no explicit mods / unsupported sockets / maximum sockets / socketed gems / protected links)" : $"not handled: {hex}"));
         return;
     }
@@ -6061,7 +6067,7 @@ static async Task UseItemOn(string remote, NetworkStream stream, ConnectionCiphe
             if (PlayerInventories.ShowsOnModel(targetRow)) await SendEquipment(remote, stream, ciphers, conn, items);
         }
     }
-    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
+    Console.WriteLine($"[gateway] {remote} <= 0x0071 {type!.Name} ({used.Id}) on item {target.Id}: " + (isEssence || type.Id is Wisdom or CurrencyEffects.OrbOfAlchemy or CurrencyEffects.ChaosOrb or CurrencyEffects.DivineOrb or CurrencyEffects.BlessedOrb or CurrencyEffects.OrbOfScouring or CurrencyEffects.OrbOfTransmutation or CurrencyEffects.OrbOfAlteration or CurrencyEffects.OrbOfAugmentation or CurrencyEffects.RegalOrb or CurrencyEffects.ExaltedOrb or CurrencyEffects.OrbOfAnnulment or CurrencyEffects.ArmourersScrap or CurrencyEffects.BlacksmithsWhetstone or CurrencyEffects.OrbOfChance or CurrencyEffects.VaalOrb or CurrencyEffects.GlassblowersBauble or CurrencyEffects.GemcuttersPrism or CurrencyEffects.FracturingOrb
         ? string.Join("; ", identified.Item.Mods.Select(Items.Mods.Describe))
         : $"sockets {string.Join(" ", identified.Item.Sockets.Select(k => k.Colour))}; link groups {string.Join(",", identified.Item.Links ?? [])}"));
 }
@@ -6244,8 +6250,51 @@ static async Task OpenCraftingBench(string remote, NetworkStream stream, Connect
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.Closed || conn.ActionCount != action
         || !PlayerWalk.InWalkUpRange(stop, conn.CraftingBenchAt, ClientState.StashBlockerSize)) return;
+    conn.BenchOpen = true;
+    await RefreshBenchBalance(remote, stream, ciphers, conn);
     await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.CraftingBenchUi),
         "0x007b open the crafting bench window (type 0)");
+}
+
+static async Task CraftBench(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int Recipe, bool Replace) request)
+{
+    if (!conn.BenchOpen || HideoutCatalog.ByArea(conn.Layout.Hash) is null) return;
+    var items = ItemsOf(conn);
+    var stash = PersonalStashOf(conn);
+    var result = ItemMoves.CraftAtBench(items, stash, Bench, request.Recipe, request.Replace, Random.Shared);
+    if (result is null)
+    {
+        await RefreshBenchBalance(remote, stream, ciphers, conn);
+        await Send(remote, stream, ciphers, InstanceChat.ChatLine("Craft refused: incompatible item or insufficient currency in inventory and stash."), "bench craft refused");
+        return;
+    }
+    foreach (var payment in result.Payments)
+    {
+        if (payment.Inventory is { } paid)
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [.. paid.Removed, .. paid.Changed.Select(c => c.Id)], paid.Changed), "bench currency paid from inventory");
+        await SendStashPayment(remote, stream, ciphers, conn, stash, payment.Stash);
+    }
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.CraftingBench),
+        items.NextRevision(PlayerInventories.CraftingBench), [result.Changed.Id], [result.Changed]), $"bench recipe {request.Recipe}: crafted item {result.Changed.Id}");
+    await RefreshBenchBalance(remote, stream, ciphers, conn);
+}
+
+static async Task RefreshBenchBalance(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool clear = false)
+{
+    if (clear && !conn.BenchBalanceSent) return;
+    IReadOnlyList<InventoryItem> snapshot = clear ? [] : Saves.Atomically(() => BenchBalance.Snapshot(PersonalStashOf(conn), Items, Bench));
+    byte[] packet;
+    if (!conn.BenchBalanceSent)
+    {
+        packet = InstanceInventories.AddInventory(InstanceBench.BalanceInventoryId, InstanceBench.BalanceSlot, 0, snapshot);
+        conn.BenchBalanceSent = true;
+    }
+    else
+        packet = InstanceItems.InventoryChange(InstanceBench.BalanceInventoryId, ++conn.BenchBalanceRevision,
+            [.. conn.BenchBalanceItems.Select(i => i.Id)], snapshot);
+    conn.BenchBalanceItems = snapshot;
+    await Send(remote, stream, ciphers, packet, $"bench stash balance: {snapshot.Count} currency stack(s), {snapshot.Sum(i => (long)i.Item.StackSize)} units");
 }
 
 // A click on the guild stash (C→S 0x24): walk there, then its tab list (S→C 0x136 kind 1) and its panel (0x7b kind 2).
@@ -6631,6 +6680,8 @@ static async Task OpenTownPortal(string remote, NetworkStream stream, Connection
 // the tab carrying that affinity bit in the tab list, which only the account's last tab does (AccountStash.Records).
 static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
 {
+    await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
+    conn.BenchOpen = false;
     if (StashCatalog.In(conn.Layout.Hash) is not { } at) return;
     int action = Interlocked.Increment(ref conn.ActionCount);
     double now = conn.Clock.Elapsed.TotalSeconds;
@@ -7023,6 +7074,8 @@ sealed partial class Program
     // What dying monsters drop (ItemDrops.cs).
     // Magic and rare items (ItemRolls.cs).
     internal static readonly ItemRolls Rolls = new(Items);
+    internal static readonly EssenceCrafting Essences = new(Items, Rolls);
+    internal static readonly BenchCrafting Bench = new(Items, Rolls);
     internal static readonly ItemDrops Drops = new(Items, Rolls);
     // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
     // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
@@ -7642,6 +7695,10 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint GuildStashObject;
     public (int X, int Y) GuildStashAt;
     public uint CraftingBenchObject;
+    public bool BenchOpen;
+    public bool BenchBalanceSent;
+    public uint BenchBalanceRevision;
+    public IReadOnlyList<InventoryItem> BenchBalanceItems = [];
     public HideoutScene? Furniture;
     public (int X, int Y) CraftingBenchAt;
     public readonly HashSet<int> GuildStashTabsSent = [];
@@ -7662,7 +7719,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public HashSet<string> QuestFlags = [];
 
     /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
-    public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter];
+    public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter, .. Program.Bench.UnlockFlags];
     /// <summary>What the next Delve chart (S→C 0x240) carries; /delve_chart sets it (one cell at 0, 0 by default).</summary>
     public (uint A, ushort B, List<InstanceDelve.Cell> Cells) DelveChartProbe = (0, 0, [new(0, 0, 0, 0, 0)]);
 

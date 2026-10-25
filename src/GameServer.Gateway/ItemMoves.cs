@@ -92,6 +92,25 @@ static class ItemMoves
     /// <summary>A price paid: what it took from the main inventory's stacks and from the stash's (either may be null).</summary>
     public sealed record Price(PlayerInventories.Payment? Inventory, AccountStash.Payment? Stash);
 
+    public sealed record BenchResult(InventoryItem Changed, IReadOnlyList<Price> Payments);
+
+    /// <summary>All currencies and the crafted item commit together, including multi-currency flask crafts.</summary>
+    public static BenchResult? CraftAtBench(PlayerInventories items, AccountStash stash, BenchCrafting bench,
+        int recipe, bool replace, Random random) => Saves.Atomically<BenchResult?>(() =>
+    {
+        var targets = items.Items(PlayerInventories.CraftingBench);
+        if (targets.Count != 1 || bench.Apply(recipe, targets[0].Item, replace, random) is not { } craft) return null;
+        foreach (var (currency, amount) in craft.Costs)
+            if (amount < 0 || (long)items.Count(Main, currency) + stash.CountOf(currency) < amount) return null;
+        var payments = new List<Price>();
+        foreach (var (currency, amount) in craft.Costs)
+            if (amount > 0) payments.Add(Pay(items, stash, currency, amount)
+                ?? throw new InvalidOperationException("Bench payment changed after validation"));
+        var changed = items.Change(PlayerInventories.CraftingBench, targets[0].Id, _ => craft.Item)
+            ?? throw new InvalidOperationException("Bench item disappeared after payment");
+        return new(changed, payments);
+    });
+
     /// <summary>
     /// Pays <paramref name="amount"/> of a currency type: from the main inventory's stacks first, the rest from the stash's
     /// (any tab), as a vendor takes it. Null (nothing changes) when the two together hold fewer. Call it inside a

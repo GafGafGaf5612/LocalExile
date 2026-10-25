@@ -23,6 +23,7 @@ sealed class ModCatalog(string folder = "data")
         public IReadOnlyList<(string Tag, int Weight)> SpawnWeights { get; init; } = [];
         public IReadOnlyList<(string Tag, int Weight)> GenerationWeights { get; init; } = [];
         public bool EssenceOnly { get; init; }
+        public IReadOnlySet<string> Tags { get; init; } = new HashSet<string>();
 
         /// <summary>The weight for an item with these tags: the first spawn tag it has, times the first generation tag
         /// it has / 100; 0 when no spawn tag matches.</summary>
@@ -112,6 +113,10 @@ sealed class ModCatalog(string folder = "data")
                 SpawnWeights = Weights(r, "SpawnWeight_TagsKeys", "SpawnWeight_Values"),
                 GenerationWeights = Weights(r, "GenerationWeight_TagsKeys", "GenerationWeight_Values"),
                 EssenceOnly = r.GetProperty("IsEssenceOnlyModifier").GetBoolean(),
+                Tags = new[] { "TagsKeys", "ImplicitTagsKeys" }
+                    .Where(key => r.TryGetProperty(key, out _))
+                    .SelectMany(key => r.GetProperty(key).EnumerateArray().Select(k => k.GetInt32()))
+                    .Where(k => k >= 0 && k < tags.Count).Select(k => tags[k]).ToHashSet(),
             });
         }
         var byHash = new Dictionary<ushort, Mod>();

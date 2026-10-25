@@ -1,5 +1,24 @@
 # Status
 
+Ordinary crafting bench (2026-10-25, automated coverage; live client verification pending):
+all 765 active recipes and their 130 recipe flags are available. Exact modifiers, class masks,
+socket/link recipes, flask enchantments, replacement/removal and rare-affix rerolls are served.
+Payment combines main inventory and personal stash, including multiple tabs/currencies, and
+commits with the item atomically. Tests cover each recipe/class and failed-payment/save cases.
+See [21](docs/protocol/21-hideouts.md), Ordinary bench recipes and payment.
+
+Bench affordability correction: native bench counters exclude ordinary stash inventories.
+A separate, nonspendable currency-count view now publishes current personal stash totals on
+opening and refreshes after crafting, while actual main-inventory currency is counted once.
+Payment still uses only real items; large totals retain their full value. Automated checks pass;
+corrected live UI verification is pending. See [21](docs/protocol/21-hideouts.md), Bench affordability.
+
+Essence crafting (2026-10-25, automated verification; real-client use pending): all 105
+craftable essences resolve their exact class-specific guaranteed mod from Essences.dat,
+including tier-8 and Desolation. Normal/rare eligibility, random-mod level caps, fractures,
+metamod refusal and repeated consumption from the Essence tab are covered. Uses the
+existing currency path for ordinary and Shift application. See [13](docs/protocol/13-items.md).
+
 Remember Password now returns and verifies the official client's 32-byte saved-login credential
 in account login 0x03 / result 0x04. It survives server restarts, is device/account-bound and
 is invalidated by changing the password. Covered by protocol/session tests and confirmed working by the user in the real client. See [01](docs/protocol/01-login.md).
@@ -360,7 +379,7 @@ The standard bench spawns to the left of the guild stash in hideouts, using the 
 decoration's model and a walkable placement (placement confirmed in the real client).
 Clicking it now walks into interaction range and sends 0x7b kind 0x33, type 0 to open the ordinary
 crafting window. Automated checks cover the wire format; a live window-opening check is pending.
-Recipe unlocks and applying crafts are not implemented. See protocol/21-hideouts.md.
+Recipe unlocks and applying crafts are now implemented; see protocol/21-hideouts.md.
 
 ## Cyclone area of effect (2026-10-25)
 
@@ -370,3 +389,5 @@ none. Spell-only area does not affect the attack. Tested calculations; live visu
 The first live check found that direct radius alone did not scale the channelled visual; its
 conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
 Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
+
+- Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
