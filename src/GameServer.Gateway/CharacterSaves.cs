@@ -48,7 +48,8 @@ static class CharacterSaves
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
         SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null,
-        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null, OpeningTutorial? Tutorial = null)
+        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null, OpeningTutorial? Tutorial = null,
+        Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -75,6 +76,18 @@ static class CharacterSaves
 
     public static void Write(string character, Save save) =>
         Saves.Put(SaveDatabase.Table.Characters, character, JsonSerializer.Serialize(save, Opts));
+
+    public static void SetHideoutPlacement(string character, string area, string key, HideoutPlacement placement) =>
+        Update(character, save =>
+        {
+            var areas = save.HideoutPlacements is null
+                ? new Dictionary<string, Dictionary<string, HideoutPlacement>>() : new(save.HideoutPlacements);
+            var positions = areas.TryGetValue(area, out var prior)
+                ? new Dictionary<string, HideoutPlacement>(prior) : [];
+            positions[key] = placement;
+            areas[area] = positions;
+            return save with { HideoutPlacements = areas };
+        });
 
     public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
 

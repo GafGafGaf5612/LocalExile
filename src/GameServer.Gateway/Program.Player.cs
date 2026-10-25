@@ -580,6 +580,7 @@ partial class Program
     // (AOFile), class byte (IntegerId), attributes and unarmed attack; the name is the character's.
     static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        PrepareHideoutWaypoint(conn);
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
         var stats = CharacterPlayerStats(conn);
