@@ -297,6 +297,14 @@ weapons send nothing, and taking the bow off sends 0 through the cleared-stat li
 Weapon swaps physically exchange rows 2/3 with 14/15. Other weapon-stat enum values remain to be mapped.
 Automated coverage passes; in-client confirmation pending.
 
+### Bow model records
+
+A bow is not held in the main hand. The live server (Frida 2026-10-25) sends the bow's art in model slot 1 (left
+hand; type `0x68`, stance `0xff`), an arrow in slot 0 (right hand; type 14 `Bows`, stance 5 `Bow`, art
+`DefaultArrow` `0xB2F6`), and the quiver on the back in slot 7 (type `0x68`, stance `0xff`, art `DefaultQuiver`
+`0x328B`). `BowSetup` reproduces these entries; `ItemCatalog.Visual` maps the ItemVisualIdentity ids to their
+HASH16. Without them the bow appeared in the wrong hand and the arrow/quiver were missing or misplaced.
+
 ## 4a. Stacks
 
 Stackable types have a Stack component (its u16 is the stack size) and a CurrencyItems.dat **StackSize** above 1

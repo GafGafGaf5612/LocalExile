@@ -57,9 +57,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
-  energy shield, penetration, exposure, ailment application, added damage and support modifiers are not modelled.
-- **Start:** energy shield, penetration/exposure, the remaining conditional critical strike stats from the stats both
-  sides already carry; monster skills beyond the first granted effect (ranged, spells).
+  ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
+  Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
+- **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
+  from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
@@ -71,13 +72,18 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 
 ### Skill projectiles
 
-- **Known:** Fireball casts and flies as a server-made projectile object to the first intersected monster or wall
-  ([11](../docs/protocol/11-skills.md) §9–10).
-  Swept relative-motion checks now run throughout flight instead of reserving a launch-time target.
-  Pause, transfer and disconnect handling use the game clock and flight lifetime.
+- **Known:** Fireball and a bow's `DefaultArrow`/attack-gem projectiles are server-made objects
+  ([11](../docs/protocol/11-skills.md) §9–10); attack gems use the `attack1_bow` contact and the weapon's
+  damage; on natural ground the spawn height is the captured terrain height + 5 steps.
+  Ordinary player and skill projectile-speed bonuses affect flight and predicted arrival together; baseline/+100%/-50%
+  Fireball casts were checked live, while conditional/more/less speed and support application remain open.
+  Swept relative-motion checks run throughout flight to the first monster or wall contact, with pause, transfer
+  and disconnect handling through the game clock and flight lifetime. Default-attack arrows are visual only.
   Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
-  Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume checks passed.
-  Integer monster walk estimates, a shared collision radius and straight movement between samples still limit accuracy.
-- **Start:** height grids for more areas (or in the walk-map recorder), collision with doodads and objects that have
-  their own colliders.
-- **Done when:** Fireball looks like the real one in every area: over the terrain, stopping at walls and objects.
+  Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume passed before the
+  bow packet/height update; merged bow/collision integration needs a live recheck. Integer monster walk estimates,
+  a shared collision radius and straight movement between samples still limit accuracy.
+- **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
+  (or in the walk-map recorder), and collision with doodads and objects that have their own colliders.
+- **Done when:** Fireball and bow arrows look like the real ones in every area: at the caster's torso on terrain and
+  platforms, stopping at walls and objects.

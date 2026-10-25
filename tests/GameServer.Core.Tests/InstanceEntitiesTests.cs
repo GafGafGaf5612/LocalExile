@@ -23,6 +23,22 @@ public class InstanceEntitiesTests
     }
 
     [Theory]
+    [InlineData(-8)]
+    [InlineData(8)]
+    [InlineData(-15)]
+    public void Projectile_creation_and_impact_preserve_the_same_fixed_world_height(int worldZSteps)
+    {
+        // The blob uses little endian while 0x1b7 uses big endian. Both native handlers retain the marker
+        // and world-Z float directly; 0x1ba instead takes worldZSteps, without the marker's sign reversal.
+        byte[] blob = new ProjectileObject("Metadata/Projectiles/Fireball", 40, 30, Height: worldZSteps).Blob();
+        byte[] stop = InstanceProtocol.Teleport(0x3001, 40, 30, unchecked((uint)-worldZSteps), worldZSteps * 7.8125f);
+        Assert.Equal(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(18, 4)),
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(stop.AsSpan(20, 4)));
+        Assert.Equal(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(22, 4)),
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(stop.AsSpan(24, 4)));
+    }
+
+    [Theory]
     // Reference values from an independent MurmurHash2 implementation (seed 0).
     [InlineData("Metadata/Characters/Int/Int", 0x9c41993eu)]
     [InlineData("Metadata/Characters/Str/Str", 0xd7aa9065u)]

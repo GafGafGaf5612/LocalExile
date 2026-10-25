@@ -41,14 +41,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   Not yet: item mods/quality, shields or auras.
   Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
-- Gem skills: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
-  `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster;
-  the server creates the `Metadata/Projectiles/Fireball` object, flies it to the target at terrain height +
-  `Game_PROJECTILE_HEIGHT` where the area has a height grid (Lioneye's Watch, The Coast seed 1;
-  live 2026-10-18: above the ground at every level, at belly height), else on the terrain.
-  Moving-target collision is described under Partly working below.
-  A gem attack skill's hit is the weapon's damage × its `DamageEffectiveness` (Flicker Strike 77.3% at level
-  1, 308.9% at 20).
+- Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
+  `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; a bow's ordinary attack and attack
+  gems create `Metadata/Projectiles/DefaultArrow` (or the gem's own projectile) at the attack animation's `attack1_bow`
+  contact (0.374 of the attack time).
+  Attack gems deal the weapon's damage × `DamageEffectiveness` with the attack's crit; a bow arrow has no Fireball
+  impact.
+  Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
+  without a capture they use the bare offset.
   Code: `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`, `AreaSkillHit`), `ProjectileObject`.
   Docs: [11](../docs/protocol/11-skills.md) §9–10.
 - Resistances: the passive `base_resist_all_elements_%` / per-element `base_*_damage_resistance_%` are summed from the
@@ -196,15 +196,22 @@ Part of [Status](../Status.md); what to build next in this area is in
   Automated trajectory, wall, lifecycle and packet checks pass.
   Live checks verified a moving-away miss, a later-entry hit, first-wall contact, pause/resume and native glide stop.
   Raw fixed-height and terrain-sentinel stop packets preserved their fields and cleared native movement duration.
-  This retains the existing terrain-height model; broader height accuracy is unchanged.
+  These live collision and raw-stop checks preceded the bow packet/height update; merged bow/collision
+  integration still needs a live recheck. Fixed-height stops preserve the new creation marker/world-z pair.
+  Broader surface-height accuracy remains open (#182).
   Positions remain integer server walk estimates sampled about every 16 ms, with a shared collision radius
   and straight movement between samples.
   Sharp turns, scheduling stalls and client interpolation can still differ; official timing equivalence is unverified.
   Static walls use the captured two-dimensional projectile grid with diagonal-corner traversal and endpoint checks.
-  Areas without a height grid fly the fireball on the terrain.
+  Without a height grid, flight uses the bare hand offset; platforms and doodads need a surface-height model (#182).
   Height capture still uses `scripts/re/frida/capture-terrain-tiles.js` and `scripts/walkmaps/heights.py`.
   Doodad/object colliders, explosion area damage and pierce/chains remain unimplemented.
-  Code: `ProjectileFlight.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
+  Ordinary player and skill projectile-speed increases/reductions now share the flight and predicted-arrival speed.
+  The player's computed total is counted once; the skill's own level/quality bonus is added separately.
+  The development speed override retains priority.
+  Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline, 0.606 at +100% and 2.425 at -50%.
+  Conditional/more/less speed and support-gem application remain open.
+  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
@@ -225,7 +232,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   Righteous Fire's burn uses the DoT tick model.
   A damage-type immunity (`*_immunity`, `elemental_damage_immunity`) zeroes that type on the player's hits, from the
   same sources the panel's Immune rows use (`DamageImmunities.cs`).
-  Not yet: energy shield, penetration/exposure, added damage, increased/more support modifiers, ailment
+  Ordinary player energy shield derives from equipment, intelligence and passives.
+  It absorbs non-chaos hits before life and recovers through regeneration and delayed, damage-interrupted recharge.
+  The existing 16 ms elapsed-time loop supplies the client's native ES recovery prediction.
+  Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
+  Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
+  See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
+  Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
   application/duration and monster resistances ([20](../docs/protocol/20-damage.md)).
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
@@ -246,6 +259,9 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
+- Projectile spawn height on platforms and doodads: the protocol carries no player z and the server has no
+  surface-height model, so a projectile on the hideout waypoint platform spawns at the terrain height below it.
+  Tracked in issue #182.
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent;
   an effect object follows the player only by 0x1ba glides.
   Combat auras, Heralds and banners are not implemented; only the simple auras above use buffs.

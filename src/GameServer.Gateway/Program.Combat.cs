@@ -58,6 +58,8 @@ partial class Program
     static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
     {
+        int projectileEpoch;
+        lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
         var weapon = WeaponFor(conn);
         double now = conn.Clock.Elapsed.TotalSeconds, duration;
         lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn));
@@ -72,7 +74,7 @@ partial class Program
         int action = Interlocked.Increment(ref conn.ActionCount);
         (int X, int Y) target;
         lock (conn.Monsters) target = m.Walk.Position(now);
-        var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+        var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now, tolerance: m.StopRange - 2);
         Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
             $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
@@ -92,6 +94,10 @@ partial class Program
             InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
             $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife}), attack time {duration:0.000} s");
         if (m.Life == 0) return;
+        // A bow's ordinary attack shoots an arrow at the target: the client draws the projectile object we create
+        // (Projectiles.dat Metadata/Projectiles/DefaultArrow); the hit below keeps the swing's own timing.
+        if (WeaponProfileFor(conn).Bow && Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
+            _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), stop, target, damageTo: null, impact: "none", epoch: projectileEpoch);
         // The hit lands at the attack animation's contact keyframe (data/animation-contacts.json), not a fixed half: the
         // client stretches the clip to the attack time, so the blood and the weapon impact sound line up with the swing.
         await Task.Delay(TimeSpan.FromSeconds(AttackContactDelay(conn, duration, approach: true)));
@@ -196,7 +202,7 @@ partial class Program
             int action = Interlocked.Increment(ref conn.ActionCount);
             (int X, int Y) target;
             lock (conn.Monsters) target = m.Walk.Position(now);
-            var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+            var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now, tolerance: m.StopRange - 2);
             Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
                 $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s (t={now:0.000})");
             if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
@@ -417,28 +423,58 @@ partial class Program
         int action = conn.ActionCount;
         int epoch;
         lock (conn.Monsters) epoch = conn.ProjectileEpoch;
-        // Released at the cast animation's contact keyframe, which the client plays stretched to the cast time.
-        double release = Animations.SpellRelease(Skills.ClassFor(conn.ClassRow).AnimatedObject);
-        if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, CastMs(conn, gem.Effect) * release / 1000), epoch)
-            || conn.ActionCount != action)
-        { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
+        // Released at the action's contact keyframe. An attack gem (Burning Arrow, Caustic Arrow …) plays the weapon's
+        // attack1 animation, which the client stretches to the weapon's attack time: its contact is attack1_bow's 399/1066
+        // (0.374 for the Ranger) of that time. A spell plays its spell_projectile clip instead (Dex: 699/1133 = 0.617 of
+        // the cast). Using the spell fraction for a bow sent the arrow 0.617 of the action after the swing had already
+        // lowered the bow (live 2026-10-25: the client's create arrived ~600 ms after 0x1ab, while attack1_bow's contact is
+        // ~0.37 of it).
+        var cls = Skills.ClassFor(conn.ClassRow);
+        bool attack = gem.Name is not null && Skills.IsAttack(gem.Effect);
+        double releaseDelay = attack
+            ? AttackContactDelay(conn, WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn)), approach: false)
+            : CastMs(conn, gem.Effect) / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
+        if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, releaseDelay), epoch)
+            || conn.ActionCount != action) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
         // A worn skill effect (its skill_art_variation) flies its own projectile and explodes in its own art (SkillArt).
         int variation = SkillArtVariation(conn, gem.Gem);
         projectile = (Art.Projectile(projectile.Id, variation), projectile.Speed);
-        string impact = Art.AnimatedInPlaceOf(DefaultProjectileImpactAo, variation);
-        await FlyProjectile(remote, stream, ciphers, conn, projectile, from, to, impact: impact, damageTo: m =>
+        // The fireball explosion is only right for the Fireball spell; a bow's arrow (Burning Arrow, Caustic Arrow …)
+        // sticks and disappears on hit, so it gets no impact. Its burning/debuff is the monster's, not the arrow's.
+        string impact = projectile.Id.Contains("Fireball")
+            ? Art.AnimatedInPlaceOf(DefaultProjectileImpactAo, variation)
+            : "none";
+        // Keep the player's final speed separate from the skill's raw stats: the panel already includes the player's
+        // base speed, while a gem's own base speed (including quality) adds to that total instead of replacing it.
+        var playerSpeedStats = CharacterPlayerStats(conn);
+        var skillSpeedStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        int PlayerSpeedStat(string name) => Stats.Key(name) is uint key ? playerSpeedStats.GetValueOrDefault(key) : 0;
+        int SkillSpeedStat(string name) => Stats.Key(name) is uint key ? skillSpeedStats.GetValueOrDefault(key) : 0;
+        float speed = ProjectileSpeed.CellsPerSecond(projectile.Speed, PlayerSpeedStat, SkillSpeedStat,
+            Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));
+        await FlyProjectile(remote, stream, ciphers, conn, (projectile.Id, speed), from, to, impact: impact, damageTo: m =>
         {
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
-            // types separate so conversion and per-type mitigation apply.
+            // types separate so conversion and per-type mitigation apply. An attack gem (Burning Arrow, Caustic Arrow …) has
+            // no spell damage of its own: its hit is the weapon's, scaled by the skill's damage effectiveness, with the
+            // attack's crit — the same split AreaSkillHit makes for the non-projectile gems.
             var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             foreach (var (k, v) in Skills.EffectStats(gem.Effect, gem.Level, gem.Quality)) stats[k] = v;
-            var hit = SpellDamage.Packet(Skills.HitDamage(gem.Effect, gem.Level, gem.Quality),
-                    name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0, AddedEffectiveness(gem.Effect, gem.Level))
-                .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false));
+            var spellBase = Skills.HitDamage(gem.Effect, gem.Level, gem.Quality);
+            bool spell = spellBase.RollTotal(new Random(0)) > 0;
+            var hit = spell
+                ? SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
+                        AddedEffectiveness(gem.Effect, gem.Level))
+                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false))
+                : SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
+                        Skills.DamageEffectiveness(gem.Effect, gem.Level))
+                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true));
             int damage = hit.RollTotal(Random.Shared);
-            bool critical = conn.Pools.SpellCriticalStrikeChance > 0
-                && Random.Shared.Next(10_000) < conn.Pools.SpellCriticalStrikeChance;
-            if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.SpellCriticalStrikeMultiplier);
+            int chance = spell ? conn.Pools.SpellCriticalStrikeChance : conn.Pools.AttackCriticalStrikeChance;
+            bool critical = chance > 0 && Random.Shared.Next(10_000) < chance;
+            if (critical)
+                damage = DamageModel.CriticalDamage(damage,
+                    spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
             return (damage, critical);
         }, epoch: epoch);
     }
@@ -523,10 +559,20 @@ partial class Program
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
 
+    // A non-gem bow shot (the ordinary attack's DefaultArrow): the row's ProjectileSpeed with the player's own
+    // projectile-speed bonuses, resolved once at launch like a gem's projectile (ProjectileSpeed).
+    static (string Id, float CellsPerSecond) BowArrow(ClientState conn, (string Id, int Speed) arrow)
+    {
+        var stats = CharacterPlayerStats(conn);
+        int PlayerSpeedStat(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+        return (arrow.Id, ProjectileSpeed.CellsPerSecond(arrow.Speed, PlayerSpeedStat, _ => 0,
+            Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED")));
+    }
+
     // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
     // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
     static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        (string Id, int Speed) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)> damageTo,
+        (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo,
         int epoch, bool log = true, string? impact = null)
     {
         uint id;
@@ -546,13 +592,14 @@ partial class Program
         }
         double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        // Game_PROJECTILE_SPEED (cells per second) overrides the speed, e.g. to watch a slow projectile while testing.
-        float cellsPerSecond = float.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"), inv, out var ps) && ps > 0
-            ? ps : projectile.Speed / (250f / 23f);
-        if (!float.IsFinite(cellsPerSecond) || cellsPerSecond <= 0) return;
-        // It leaves a little ahead of the caster (Game_PROJECTILE_AHEAD cells, default 4) and flies toward the clicked point
-        // or monster and on to Game_PROJECTILE_RANGE cells (default 120, ~1.2 s at the real speed), clamped to the area.
-        double ahead = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_AHEAD"), inv, out var pa) ? pa : 4;
+        // One launch-time speed drives collision sweeps, the client's glide duration and the server's flight clock.
+        float cellsPerSecond = projectile.CellsPerSecond;
+        if (!float.IsFinite(cellsPerSecond) || cellsPerSecond < 0) return;
+        // It leaves a little ahead of the caster (Game_PROJECTILE_AHEAD cells, default 1.5) and flies toward the clicked
+        // point or monster and on to Game_PROJECTILE_RANGE cells (default 120, ~1.2 s at the real speed), clamped to the
+        // area. The Positioned x/y are whole grid cells, so an offset under one cell rounds back onto the player's own
+        // cell: the arrow then spawns inside the character and only becomes visible after it has flown out of the body.
+        double ahead = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_AHEAD"), inv, out var pa) ? pa : 1.5;
         double range = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_RANGE"), inv, out var pr) && pr > 0 ? pr : 120;
         ahead = Math.Min(ahead, aim - 1);
         from = ((int)Math.Round(from.X + dx / aim * ahead), (int)Math.Round(from.Y + dy / aim * ahead));
@@ -560,6 +607,7 @@ partial class Program
         if (TerrainHeights.Size(conn.Layout.Id, conn.Seed) is (int w, int h))
             foreach (var (d, lo, hi) in new[] { (dx, -from.X, w - 1 - from.X), (dy, -from.Y, h - 1 - from.Y) })
                 if (d != 0) length = Math.Min(length, Math.Max(0, (d > 0 ? hi : lo) / (d / aim)));
+        cellsPerSecond = ProjectileSpeed.ForFlightDistance(cellsPerSecond, length + 1);
         // Static walls cap the route; monsters are swept from observed positions during flight, not selected at launch.
         double hitRadius = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HIT_RADIUS"), inv, out var phr) && phr > 0 ? phr : 4;
         to = ((int)Math.Round(from.X + dx / aim * length), (int)Math.Round(from.Y + dy / aim * length));
@@ -569,17 +617,21 @@ partial class Program
         dx = to.X - from.X; dy = to.Y - from.Y;
         double cells = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
         // Positioned rotation = atan2(dx, -dy) (the player's own moves, traced live 2026-10-18: facing (+15, -18) read 0.668)
-        // Game_PROJECTILE_DIRECTION=1 sends the flight direction in Positioned's f1 0x04 block (ProjectileObject.Direction).
-        // Live 2026-10-18 it put the fireball under the ground, so it is off by default: the four floats are not a direction.
-        var direction = Environment.GetEnvironmentVariable("Game_PROJECTILE_DIRECTION") != "1" ? ((float, float, float, float)?)null
-            : ((float)(dx / cells), (float)(dy / cells), 0f, 0f);
-        // Hand height: the terrain's height at both ends (scripts/walkmaps capture) plus Game_PROJECTILE_HEIGHT steps of
-        // 7.8125 world units (default 8, ~60 units). Without a capture the projectile follows the terrain.
-        int up = int.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HEIGHT"), out int u) ? u : 8;
-        int? startHeight = TerrainHeights.At(conn.Layout.Id, conn.Seed, from.X, from.Y) is int t0 ? t0 + up : null;
-        int? endHeight = TerrainHeights.At(conn.Layout.Id, conn.Seed, to.X, to.Y) is int t1 ? t1 + up : startHeight;
-        if (startHeight is null) TerrainHeights.Forget(conn.Layout.Id, conn.Seed);
-        var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Direction: direction, Height: startHeight);
+        // Height: the captured terrain height plus Game_PROJECTILE_HEIGHT steps of 7.8125 world units (default 5, the
+        // height the live server's arrow flew at: i32 -5, f32 +39.0625). The protocol carries no player z (C→S
+        // 0x25/0x24 have only x,y, and the player's Positioned follows the terrain), so natural ground is the supported
+        // case; without a capture the bare offset is used. A platform/doodad is not in the terrain grid (the hideout's
+        // waypoint platform read z -78.37 while the terrain under it was 0..2 steps); that needs a server-side
+        // world/surface height model (issue #182).
+        int up = int.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HEIGHT"), out int u) ? u : 5;
+        int startHeight = (TerrainHeights.At(conn.Layout.Id, conn.Seed, from.X, from.Y) ?? 0) + up;
+        // The protocol's height is the object's world z in steps, and world z points DOWN: the Positioned blob's i32 is
+        // -z / 7.8125 and its f32 is z; 0x1ba's u32 is the same signed value. The live arrow's i32 -5 / f32 +39.0625 was
+        // z = +39.0625 with its player at z = +78.125 (5 steps above the feet). In the hideout the player's feet are at
+        // z = -78.37 (up), so the torso is at z = -117.4: i32 +15, f32 -117.1875, 0x1ba 0xfffffff1. Sending positive 15
+        // put the arrow at z = +117 (below the platform) — the client reads the height as signed world z.
+        int clientHeight = -startHeight;
+        var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Height: clientHeight);
         uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
         // All observations below are taken with the monster lock held, including the initial observation when the
         // glide reaches the send gate. The game clock, not time spent waiting for the gate, starts the flight.
@@ -588,7 +640,7 @@ partial class Program
         ProjectileFlight? flight = null;
         try
         {
-            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()), !log ? null :
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob(), headerU32: 0xffffffff), !log ? null :
                 $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})", still: () =>
                 {
                     lock (conn.Monsters)
@@ -600,8 +652,8 @@ partial class Program
                 });
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null :
                 $"0x01a9 projectile 0x{id:x} enters wake zone", still: Active);
-            await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: endHeight is int e ? (uint)e : TerrainHeight), !log ? null :
-                $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight?.ToString() ?? "terrain"} → {endHeight?.ToString() ?? "terrain"}" +
+            await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: unchecked((uint)clientHeight)), !log ? null :
+                $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight} up (client z {clientHeight})" +
                 (hitWall ? ", route ends at a wall" : ""), still: () =>
                 {
                     lock (conn.Monsters)
@@ -629,10 +681,10 @@ partial class Program
             if (step.TargetId != 0 || step.Wall)
             {
                 int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
-                // 0x1b7 copies Positioned's fixed-height pair directly; 0x1ba instead takes +terrain height and converts it.
-                int? fixedHeight = TerrainHeights.At(conn.Layout.Id, conn.Seed, x, y) is int impactHeight ? -(impactHeight + up) : null;
-                uint height = fixedHeight is int steps ? unchecked((uint)steps) : TerrainHeight;
-                float worldZ = fixedHeight is int zSteps ? zSteps * 7.8125f : 0;
+                // 0x1b7 copies the fixed pair directly: retain the same marker/world Z as creation, while
+                // 0x1ba takes the signed world-Z steps. Do not resample terrain and jump the impact vertically.
+                uint height = unchecked((uint)-clientHeight);
+                float worldZ = clientHeight * 7.8125f;
                 bool committed = false;
                 SpawnedMonster? target = null;
                 MonsterHit? hit = null;
@@ -648,7 +700,7 @@ partial class Program
                             lock (conn.Monsters)
                             {
                                 if (!Active() || conn.Paused) return false;
-                                if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
+                                if (damageTo is not null && step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
                                 {
                                     (damage, critical) = damageTo(target);
                                     hit = ApplyMonsterHitLocked(conn, target, damage);
@@ -664,7 +716,7 @@ partial class Program
                     await NotifyMonsterHit(remote, stream, ciphers, conn, step.TargetId, target, applied, damage,
                         $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
                 impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
-                if (impact != "none")
+                if (damageTo is not null && impact != "none")
                 {
                     if (!await SendVisual(InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
                         $"0x02ba projectile 0x{id:x} explodes ({impact})")) return;
@@ -676,6 +728,8 @@ partial class Program
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } // The old area's connection has gone.
     }
+
+    // Release and terminal visual lifetimes share the game clock and area epoch with an active flight.
     static async Task<bool> WaitProjectileTime(ClientState conn, double until, int epoch)
     {
         while (true)
@@ -689,8 +743,7 @@ partial class Program
         }
     }
 
-    // A hit on a monster for damage: its life goes down (0x1b1) and at 0 it dies (MonsterKilled). A monster another hit has
-    // killed meanwhile is left alone, so it dies only once (hits that land together).
+    // A hit on a living monster: life is mutated once under Monsters, then notifications await outside the lock.
     static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
         int damage, string by, bool log = true, bool melee = false, ushort sequence = 0)
     {
@@ -699,7 +752,7 @@ partial class Program
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
     }
 
-    // The short state mutation is shared with a projectile impact; no awaits under Monsters.
+    // The short state mutation is shared with projectile impact; no awaits under Monsters.
     static MonsterHit? ApplyMonsterHitLocked(ClientState conn, SpawnedMonster m, int damage)
     {
         if (m.Dead || m.Life == 0) return null;
