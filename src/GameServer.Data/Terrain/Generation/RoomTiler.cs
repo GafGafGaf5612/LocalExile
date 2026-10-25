@@ -20,12 +20,12 @@ sealed class RoomTiler(LevelRandom rng, TileGrid grid, int offsetX, int offsetY,
     /// <summary><c>0x141fea780</c>: every 'k' and 'f' slot, column by column. A slot without tag or edges whose corners share
     /// one ground is left for the fill (its entries remember the ground); any other picks a tile from the store:
     /// <c>Next(total weight)</c>.</summary>
-    public void Tilise(RoomDef room, int x0, int y0, int o, bool fillGrounds, IReadOnlyList<string> descriptions)
+    public void Tilise(RoomDef room, int x0, int y0, int o, bool fillGrounds, IReadOnlyList<string> descriptions, int height = 0)
     {
         // Map +0x10 is off while a room is tilised.
         bool check = grid.CheckGrounds;
         grid.CheckGrounds = false;
-        TiliseSlots(room, x0, y0, o, fillGrounds);
+        TiliseSlots(room, x0, y0, o, fillGrounds, height);
         // 0x141ffbd70: the room's own inner vertex grounds go in unchecked (0x141d85840), turned like a tile's.
         if (room.VertexGrounds.Length > 0)
             for (int v = 1; v < room.Height; v++)
@@ -41,7 +41,7 @@ sealed class RoomTiler(LevelRandom rng, TileGrid grid, int offsetX, int offsetY,
         Rooms.Add(new PlacedRoom(room, x0 + offsetX, y0 + offsetY, w, h, descriptions, o));
     }
 
-    void TiliseSlots(RoomDef room, int x0, int y0, int o, bool fillGrounds)
+    void TiliseSlots(RoomDef room, int x0, int y0, int o, bool fillGrounds, int height)
     {
         for (int col = 0; col < room.Width; col++)
             for (int row = 0; row < room.Height; row++)
@@ -72,7 +72,7 @@ sealed class RoomTiler(LevelRandom rng, TileGrid grid, int offsetX, int offsetY,
                     if (r < c.Weight) { pick = c; break; }
                     r -= c.Weight;
                 }
-                grid.Place(pick.Tile, pick.Orientation, x + offsetX, y + offsetY, (short)slot.Height);
+                grid.Place(pick.Tile, pick.Orientation, x + offsetX, y + offsetY, (short)(slot.Height + height));
                 TilePlaced?.Invoke(pick.Tile, pick.Orientation, x, y);
             }
     }

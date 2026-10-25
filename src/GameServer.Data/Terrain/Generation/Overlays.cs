@@ -270,7 +270,7 @@ sealed class Overlays
                 continue;
             }
             int o = LevelRandom.OrientationFromMask(chosen.OrientationMask, _rng.Next(840u));
-            if (!Height(chosen.Room, spot.X, spot.Y, o)) continue;
+            if (!Height(chosen.Room, spot.X, spot.Y, o, out int offset)) continue;
             var saved = new List<(int X, int Y, TileEntry Entry)>();
             for (int y = spot.Y; y < spot.Y + kh; y++)
                 for (int x = spot.X; x < spot.X + kw; x++)
@@ -293,7 +293,7 @@ sealed class Overlays
                     c.Ground = null;
                     c.Flags &= unchecked((byte)~1);
                 }
-            _tiler.Tilise(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, []);
+            _tiler.Tilise(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, [], offset);
             Mark(spot.X + _offsetX, spot.Y + _offsetY, spot.X + _offsetX + kw, spot.Y + _offsetY + kh, 1);
             if (saveTiles) Restore(saved);
             _placed[chosen] = _placed.GetValueOrDefault(chosen) + 1;
@@ -349,17 +349,41 @@ sealed class Overlays
         return list[^1];
     }
 
-    /// <summary><c>0x141ffe7e0</c>: the room's height offset from the map's vertex heights under its border slots. Only
-    /// the all-zero case is ported (offset 0).</summary>
-    bool Height(RoomDef room, int x, int y, int o)
+    /// <summary><c>0x141ffe7e0</c>: the room's height offset from the map's vertex heights under its border slots: for
+    /// each slot with a key (row by row), each key corner on the room's border whose map vertex has a height (flag 2)
+    /// gives map height − corner height − slot height. Corners whose key ground is none or flag 1 must all agree (else
+    /// the room is not placed) and give the offset; without them the most common value of the others (ties: the
+    /// highest), else 0.</summary>
+    bool Height(RoomDef room, int x, int y, int o, out int offset)
     {
-        for (int v = 0; v <= room.Height; v++)
-            for (int u = 0; u <= room.Width; u++)
+        offset = 0;
+        int? open = null;
+        var votes = new SortedDictionary<int, int>();
+        for (int row = 0; row < room.Height; row++)
+            for (int col = 0; col < room.Width; col++)
             {
-                var (dx, dy) = Orientation.MapVertex(o, u, v, room.Width, room.Height);
-                if (_grid.Corner(x + dx + _offsetX, y + dy + _offsetY).Height != 0)
-                    throw new NotSupportedException("overlay height offsets (0x141ffe7e0) are not ported");
+                var slot = room.Slots[col, row];
+                if (slot?.Key is not { } key || slot.Kind is not ('k' or 'f' or 's')) continue;
+                int sx = col + slot.ShiftX, sy = row + slot.ShiftY;
+                (int X, int Y)[] at = [(sx, sy), (sx + key.Width, sy), (sx + key.Width, sy + key.Height), (sx, sy + key.Height)];
+                for (int c = 0; c < 4; c++)
+                {
+                    var (cx, cy) = at[c];
+                    if (cx >= 1 && cx < room.Width && cy >= 1 && cy < room.Height) continue;
+                    var (dx, dy) = Orientation.MapVertex(o, cx, cy, room.Width, room.Height);
+                    int mx = x + dx + _offsetX, my = y + dy + _offsetY;
+                    if (!_grid.InsideCorners(mx, my) || (_grid.Corner(mx, my).Flags & 2) == 0) continue;
+                    int d = _grid.HeightAt(mx, my) - key.Heights[c] - slot.Height;
+                    if (key.Grounds[c] is not { } g || (Flags(g) & 1) != 0)
+                    {
+                        if (open is { } v && v != d) return false;
+                        open = d;
+                    }
+                    else votes[d] = votes.GetValueOrDefault(d) + 1;
+                }
             }
+        // 0x14200e820: a stable sort of the (value, count) pairs by count; the last one wins.
+        offset = open ?? (votes.Count == 0 ? 0 : votes.OrderBy(kv => kv.Value).Last().Key);
         return true;
     }
 
