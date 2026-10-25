@@ -148,7 +148,9 @@ public sealed record TileKey(int Width, int Height, int[] Edges, int[] Points, i
 }
 
 public sealed record RoomSlot(int Column, int Row, TileKey Key);
-public sealed record NamedPoint(float X, float Y, float Angle, string Name);
+/// <summary>A named point of a room; <paramref name="Section"/> is which of the file's point lists holds it (0x142a0ef50's
+/// index: 0 = spawn locations, room +0x188).</summary>
+public sealed record NamedPoint(float X, float Y, float Angle, string Name, int Section = 0);
 /// <summary>A doodad or server object of a room: cell, model, object type, angle (radians, as the client's placed doodads
 /// report it), scale (The Twilight Strand's force wall has 2.7), the flip flag (runtime +0x1c) and the fixed height
 /// (+0x10, null without one).</summary>
@@ -216,14 +218,19 @@ public sealed record RoomFile(int Version, IReadOnlyList<string> Dictionary, str
         }
         if (gridAt < 0) problem = "slot grid not found";
 
-        // Named points before the grid: x y angle "name".
+        // Named points before the grid: x y angle "name", in lists (0x142a0ef50): before version 32 each list starts with
+        // its count on a line of its own, from version 32 each ends with a line "-1".
         var points = new List<NamedPoint>();
-        int pointsEnd = gridAt < 0 ? lines.Length : gridAt;
+        int pointsEnd = gridAt < 0 ? lines.Length : gridAt, section = version >= 32 ? 0 : -1;
         for (int k = at; k < pointsEnd; k++)
         {
             var t = lines[k];
-            if (t.Count == 4 && t[0].IsNumber && t[1].IsNumber && t[2].IsNumber && t[3].Quoted)
-                points.Add(new NamedPoint(t[0].Float, t[1].Float, t[2].Float, t[3].Text));
+            if (t.Count == 1 && t[0].IsNumber && !t[0].Text.Contains('.'))
+            {
+                if (version < 32 || t[0].Int == -1) section++;
+            }
+            else if (t.Count == 4 && t[0].IsNumber && t[1].IsNumber && t[2].IsNumber && t[3].Quoted)
+                points.Add(new NamedPoint(t[0].Float, t[1].Float, t[2].Float, t[3].Text, Math.Max(0, section)));
         }
         // Doodads after the grid (0x142a0f3a0): x y, [has position, x y] (version ≥ 34), angle, [quaternion x y z w]
         // (≥ 17), flip, [wake group] (> 24), has fixed height, [height], [scale] (> 13), "model.ao", "Metadata/…type"

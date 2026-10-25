@@ -88,7 +88,7 @@ public sealed record RoomSlot(char Kind, int Column, int Row, TileKey? Key, stri
 /// <summary>A room (.arm): its tag, its own key (the first "k" line: size in tiles, outer edges, corners) and slot grid.</summary>
 public sealed record RoomDef(string Path, string Tag, TileKey Key, RoomSlot[,] Slots)
 {
-    /// <summary>How many named points the room has (room data +0x188, 0x30 bytes each).</summary>
+    /// <summary>How many spawn locations the room has (its first point list, room data +0x188, 0x30 bytes each).</summary>
     public int PointCount { get; init; }
 
     /// <summary>The room's unit overlap (room data +1, header after version 21).</summary>
@@ -519,7 +519,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         string?[] vertexGrounds = [];
         if (inner > 0 && last is not null && last.Count == inner && last.All(t => t.IsNumber && !t.Text.Contains('.')))
             vertexGrounds = [.. last.Select(t => Path(file, t.Int))];
-        return new RoomDef(path, file.Tag, roomKey, grid) { PointCount = file.Points.Count, VertexGrounds = vertexGrounds, Overlap = HeaderOverlap(text), Doodads = file.Doodads };
+        return new RoomDef(path, file.Tag, roomKey, grid) { PointCount = file.Points.Count(p => p.Section == 0), VertexGrounds = vertexGrounds, Overlap = HeaderOverlap(text), Doodads = file.Doodads };
     }
 
     /// <summary><c>0x141d808c0</c>, as <c>0x141ff3210</c> turns a room slot into its key: per side, no edge puts both

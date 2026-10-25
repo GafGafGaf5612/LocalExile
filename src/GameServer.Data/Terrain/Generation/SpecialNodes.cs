@@ -970,7 +970,8 @@ sealed class SpecialNodes(TerrainCache files, LevelRandom rng, List<string> note
             if (p.Key.Width >= 2 || p.Key.Height >= 2 || n.Degree != 0 || n.Tag.Length != 0 || grid[p.X + offsetX, p.Y + offsetY] is null)
                 grid.Place(tile, p.Orientation, p.X + offsetX, p.Y + offsetY, 0);
         }
-        else TiliseRoom(p.Room!, p.X, p.Y, p.Orientation, fillGrounds: true, p.Node.Descriptions);
+        // 0x142120fa0 calls 0x141fea780 with param_8 = 0: the room's plain slots leave their vertices without a ground.
+        else TiliseRoom(p.Room!, p.X, p.Y, p.Orientation, fillGrounds: false, p.Node.Descriptions);
         TrimPoints(p);
         var exits = Exits(p);
         MoveToExits(p, exits);

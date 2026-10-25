@@ -664,8 +664,12 @@ entries equal the client's final grid):
    fit (`0x142132b80`), then, from the room's position, the bare footprint (`0x142132a50`); "Overlapping node tiles"
    when neither does. The Coast seed 1 needs it: `stairs_high.arm`'s margin overlaps the `lgcliff_smcliff_2.arm`
    room tilised before it, and the room moves 3 tiles right and down. Then it is tilised column by column:
-   'k' and 'f' slots ("f N" is a 1 × 1 key with tag N and no edge points, e.g. `forcedblank`); a plain slot remembers
-   its ground for the fill, any other picks from the TileSet store (`Next(total)` at `0x141feadce`). Then internal
+   'k' and 'f' slots ("f N" is a 1 × 1 key with tag N and no edge points, e.g. `forcedblank`); a plain slot is left
+   for the fill and, here, writes no vertex grounds (`0x142120fa0` passes `0x141fea780` param_8 = 0; overlays pass 1,
+   and then its w columns × h + 1 rows take its ground through `0x141d85640`). The difference shows later: an edge tile
+   placed over such a vertex finds no ground there and writes its height (flag 2), which the fill's height and
+   candidates follow (The Broken Bridge `1_2_4`, `watercliff_1.arm`). Any other slot picks from the TileSet store
+   (`Next(total)` at `0x141feadce`). Then internal
    points inside the room go (`0x14211d420`), each edge's end offset becomes its side's direction and its exit is the
    key's edge point on that side (`0x14211d830`; points at 3, 11, 19 of each tile side, `0x142fa09b8`; virtual edges
    keep two end points, `0x14211e540`), and the node moves to its first edge's exit while every other edge gets a new
@@ -858,6 +862,11 @@ are the doodads, `0x142042fae`).
    top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"): tiles only → `Next(total)` and the
    orientation (`0x141fecd00`: fixed; square `Next(8)` where it fits; else `Next(840)` over the fitting codes), a failed
    choice leaving the list; with rooms, tiles and rooms together (`0x141fed100`, rooms `0x141fecf80` / `0x141fece90`).
+   Where the vertex is not open (a ground other than null or flag 4, or vertex flag 8), a room with spawn locations is
+   left out (`0x141fed2d0`: room data +0x188 not empty). That list is only the `.arm`'s first point list
+   (`0x142a0ef50` index 0, after the four exit lines; before version 32 each list starts with its count, from 32 each
+   ends with `-1`), not every named point: of Act 2's tent rooms only `tent_camp_1b` / `2b` / `6b` have one
+   (`"%area%-bandits"`); the others only have the `BanditAmbushPoint` list (index 3).
    A fill room (`0x141fe89e0`) tilises column by column: an empty fill slot ('s' slots and plain 'k' slots) takes a
    fill tile of its ground that fits the room's fill slots (`0x141fea4d0`, `0x141fe8660`), turned by the room; other
    slots take a TileSet tile (up to five draws until one fits); then map +0x10 goes on, the room's own inner vertex
