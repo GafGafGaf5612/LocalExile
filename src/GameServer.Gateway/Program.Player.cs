@@ -106,10 +106,32 @@ partial class Program
     static int UnreservedMana(ClientState conn) => Math.Max(0, (int)conn.Pools.Mana - ReservedMana(conn));
 
     // 0x1b1 for the mana pool: every update carries the reserved amount, or the client would clear it.
-    static Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        string? log = null) =>
-        Send(remote, stream, ciphers,
-            InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool), log);
+    static async Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+        string? log = null)
+    {
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool), log);
+        await SendPlayerEnergyShield(remote, stream, ciphers, conn);
+    }
+
+    static async Task SendPlayerEnergyShield(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        uint current; bool active, rateChanged;
+        var stats = CharacterPlayerStats(conn);
+        int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+        int rate = conn.PlayerLife == 0 ? 0 : (int)Math.Round(EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield,Get,conn.EnergyShield.Recharging));
+        lock (conn.Monsters)
+        {
+            if (conn.PlayerLife == 0) conn.EnergyShield.Empty();
+            current = conn.EnergyShield.Current; active = conn.EnergyShield.Recharging;
+            if (conn.SentEnergyShield == current && conn.SentRechargeActive == active && conn.SentEsRecoveryRate == rate) return;
+            conn.SentEnergyShield = current; conn.SentRechargeActive = active;
+            rateChanged = conn.SentEsRecoveryRate != rate;
+            conn.SentEsRecoveryRate = rate;
+        }
+        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, current, pool: 2), $"0x01b1 player energy shield {current}/{conn.Pools.EnergyShield}");
+        if (rateChanged && Stats.Key("energy_shield_recovery_per_minute") is uint key)
+            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(key, rate)]), null);
+    }
 
     // A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
     // the mana.
@@ -204,7 +226,9 @@ partial class Program
             conn.RighteousFire = new RighteousFireState(buff, aura, ringAo is null ? null : ring, skillId,
                 DamagePctPerMinute: Get("base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute", 4200),
                 BurnPctPerMinute: Get("base_nonlethal_fire_damage_%_of_maximum_life_taken_per_minute", 5400),
-                Radius: radius) { AuraVisual = auraVisual };
+                Radius: radius) { AuraVisual = auraVisual,
+                    EnergyShieldBurnPctPerMinute = Get("base_nonlethal_fire_damage_%_of_maximum_energy_shield_taken_per_minute", 4200),
+                    EnergyShieldDamagePctPerMinute = Get("base_righteous_fire_%_of_max_energy_shield_to_deal_to_nearby_per_minute", 4200) };
         }
         await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, buff, RighteousFireBuffRow, PlayerId, skillId, visual: buffVisual),
             $"0x01c1 player buff {buff}: righteous_fire (BuffDefinitions row {RighteousFireBuffRow}) from skill 0x{skillId:x4}, " +
@@ -305,8 +329,10 @@ partial class Program
     // The game clock excludes pause; scheduling/network delays change the step size, never the per-second rate.
     static async Task RunResourceRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        double lifeCarry = 0, manaCarry = 0, last = conn.Clock.Elapsed.TotalSeconds;
-        double ratesAt = double.NegativeInfinity, lifeRate = 0, manaRate = 0, burnPerLife = 0;
+        double lifeCarry = 0, manaCarry = 0, burnCarry = 0, last = conn.Clock.Elapsed.TotalSeconds;
+        double ratesAt = double.NegativeInfinity, lifeRate = 0, manaRate = 0, burnPerSecond = 0;
+        Dictionary<uint, int> recoveryStats = [];
+        int RecoveryStat(string name) => Stats.Key(name) is uint key ? recoveryStats.GetValueOrDefault(key) : 0;
         var cachedRf = conn.RighteousFire;
         while (!conn.Closed)
         {
@@ -321,10 +347,12 @@ partial class Program
             {
                 lifeRate = LifeRegenPerSecond(conn);
                 manaRate = ManaRegenPerSecond(conn);
-                burnPerLife = rf is null ? 0 : DamageModel.Mitigate(rf.BurnPctPerMinute / 6000.0,
+                recoveryStats = CharacterPlayerStats(conn);
+                burnPerSecond = rf is null ? 0 : DamageModel.Mitigate((conn.PlayerMaxLife * (double)rf.BurnPctPerMinute + conn.Pools.EnergyShield * (double)rf.EnergyShieldBurnPctPerMinute) / 6000.0,
                     Resistance(conn, DamageType.Fire), MaxResistance(conn, DamageType.Fire));
                 (ratesAt, cachedRf) = (now, rf);
             }
+            double recoveryFrom = last;
             var (life, mana, ended) = conn.FlaskEffects.Advance(last, now);
             last = now;
             uint lifeBefore, lifeAfter, manaBefore, manaAfter, manaCap;
@@ -337,23 +365,31 @@ partial class Program
                 dead = lifeBefore == 0;
                 if (dead)
                 {
-                    lifeCarry = manaCarry = 0;
+                    lifeCarry = manaCarry = burnCarry = 0;
+                    conn.EnergyShield.Empty();
                     lifeAfter = lifeBefore;
                     manaAfter = manaBefore;
                 }
                 else
                 {
+                    burnCarry += burnPerSecond * seconds;
+                    int burnWhole = (int)Math.Truncate(burnCarry); burnCarry -= burnWhole;
+                    int lifeBurn = conn.EnergyShield.Damage(burnWhole, false, now);
+                    conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
-                        life + (lifeRate - conn.PlayerMaxLife * burnPerLife) * seconds, ref lifeCarry, minimum: 1);
+                        life + lifeRate * seconds - lifeBurn, ref lifeCarry, minimum: 1);
                     conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
                         mana + manaRate * seconds, ref manaCarry);
                 }
             }
+            await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (dead)
             {
                 await EndFlaskEffects(remote, stream, ciphers, conn, [.. ended, .. conn.FlaskEffects.End(_ => true)], "death");
                 continue;
             }
+            if (rf is not null && lifeAfter == 1 && conn.EnergyShield.Current == 0)
+                await EndRighteousFire(remote, stream, ciphers, conn, "one life and no energy shield");
             if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
             if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
             bool lifeFull = lifeAfter == conn.PlayerMaxLife, manaFull = manaAfter == manaCap;
@@ -376,7 +412,7 @@ partial class Program
     static async Task BurnAround(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, RighteousFireState rf, double seconds)
     {
         double now = conn.Clock.Elapsed.TotalSeconds;
-        double perSecond = conn.PlayerMaxLife * rf.DamagePctPerMinute / 6000.0;
+        double perSecond = (conn.PlayerMaxLife * (double)rf.DamagePctPerMinute + conn.Pools.EnergyShield * (double)rf.EnergyShieldDamagePctPerMinute) / 6000.0;
         var playerStats = CharacterPlayerStats(conn);
         if (Stats.Key("delirium_aura_damage_over_time_+%_final") is uint moreDot)
             perSecond *= Math.Max(0, 1 + playerStats.GetValueOrDefault(moreDot) / 100.0);
@@ -508,6 +544,7 @@ partial class Program
         {
             if (conn.PlayerLife > 0) return;
             conn.PlayerLife = conn.PlayerMaxLife;
+            conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
             conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;
@@ -556,7 +593,7 @@ partial class Program
         // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
         lock (conn.Monsters) conn.SentStatKeys = [.. statList.Select(s => s.Item1), .. weaponStats.Select(s => s.Item1)];
         int reservedMana = ReservedMana(conn);
-        var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: pools.Life,
+        var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: conn.PlayerLife, EnergyShield: conn.EnergyShield.Current,
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,

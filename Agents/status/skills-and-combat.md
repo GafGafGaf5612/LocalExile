@@ -209,7 +209,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   Righteous Fire's burn uses the DoT tick model.
   A damage-type immunity (`*_immunity`, `elemental_damage_immunity`) zeroes that type on the player's hits, from the
   same sources the panel's Immune rows use (`DamageImmunities.cs`).
-  Not yet: energy shield, penetration/exposure, added damage, increased/more support modifiers, ailment
+  Ordinary player energy shield derives from equipment, intelligence and passives.
+  It absorbs non-chaos hits before life and recovers through regeneration and delayed, damage-interrupted recharge.
+  The existing 16 ms elapsed-time loop supplies the client's native ES recovery prediction.
+  Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
+  Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
+  See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
+  Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
   application/duration and monster resistances ([20](../docs/protocol/20-damage.md)).
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.

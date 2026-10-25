@@ -9,18 +9,26 @@ partial class Program
     // The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
     // row is used (its minimum roll, matching the item's default base percentile); local/global mods and quality are not
     // modelled. Shields are excluded for now. Inactive items (requirements not met) give none.
-    static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
+    static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
     {
         var items = ItemsOf(conn);
-        int armour = 0, evasion = 0;
-        foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots })
+        int armour = 0, evasion = 0, energyShield = 0;
+        foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots, PlayerInventories.Offhand1 })
             if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
                 && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
             {
                 armour += d.ArmourMin;
                 evasion += d.EvasionMin;
+                var local = ItemModStats.Local(equipped.Item, Items.Mods);
+                int flat = d.EnergyShieldMin + local.GetValueOrDefault("local_energy_shield")
+                    + local.GetValueOrDefault("local_evasion_rating_and_energy_shield");
+                int increase = local.GetValueOrDefault("local_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_energy_shield_+%")
+                    + local.GetValueOrDefault("local_evasion_and_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_evasion_and_energy_shield_+%");
+                // Armour quality is a separate multiplier since 3.25. Item's base percentile is currently zero (minimum).
+                if (local.GetValueOrDefault("local_no_energy_shield") == 0)
+                    energyShield += (int)(EnergyShield.Max(flat, increase) * (100L + equipped.Item.Quality) / 100);
             }
-        return (armour, evasion);
+        return (armour, evasion, energyShield);
     }
 
     // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
