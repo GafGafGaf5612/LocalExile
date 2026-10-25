@@ -207,7 +207,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   These live collision and raw-stop checks preceded the bow packet/height update; merged bow/collision
   integration still needs a live recheck.
   Creation, glide endpoint and stop now share one signed marker; packet tests cover positive, negative and zero height.
-  Static code and a raw A/B probe establish the glide sign; corrected normal-launch interpolation needs a live recheck.
+  Corrected normal launches retained marker 5/world z -39.0625 at creation, paused mid-flight and both contact stops.
   Broader surface-height accuracy remains open (#182).
   Positions remain integer server walk estimates sampled about every 16 ms, with a shared collision radius
   and straight movement between samples.

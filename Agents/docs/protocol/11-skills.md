@@ -682,8 +682,10 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   by 7.8125 (`0x1436a36b8`) and flips its sign (`0x1436b3520`) before render interpolation `0x141e4d510`.
   Using the opposite marker made a creation at -39.0625 glide toward +39.0625 before the stop reset its height.
   A raw same-path A/B probe showed marker -5 drifting toward positive z, while overriding the endpoint to +5
-  returned it toward -39.0625. The override followed an already-started glide, so that probe does not establish
-  perfectly flat motion from creation; the corrected normal launch still needs integrated live verification.
+  returned it toward -39.0625.
+  Corrected normal launches then retained marker 5/world z -39.0625 at creation, after the glide started,
+  during a paused mid-flight sample and at moving-monster and wall contact stops.
+  The same run verified a moving-away miss, a later-entry hit, pause/resume and zero native glide step after contact.
 - **Flight (live 2026-10-18).** S→C 0x1ba's float is the move's **duration in seconds**, not a speed: the handler
   passes distance / it as the speed, and the step walker sets Positioned +0x23c = that speed and +0x240 = the time per
   cell step (duration / the path's longest axis), advancing +0x244 by the frame time (`0x141e32710`). Sending the
