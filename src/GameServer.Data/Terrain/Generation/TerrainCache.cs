@@ -426,16 +426,17 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         return result;
     }
 
-    /// <summary>A fill tile list (.gft, version 2): a quoted ground name, then "weight path" lines.</summary>
-    public Dictionary<string, List<(int Weight, string Path)>> FillTiles(string path) => Get("gft", path, d =>
+    /// <summary>A fill tile list (.gft, version 2): a quoted ground name, then "weight path [orientation]" lines (I, R90 …
+    /// FR270; none = 8, any).</summary>
+    public Dictionary<string, List<(int Weight, string Path, int Orientation)>> FillTiles(string path) => Get("gft", path, d =>
     {
-        var groups = new Dictionary<string, List<(int, string)>>(StringComparer.Ordinal);
-        List<(int, string)>? current = null;
+        var groups = new Dictionary<string, List<(int, string, int)>>(StringComparer.Ordinal);
+        List<(int, string, int)>? current = null;
         foreach (var line in TerrainText.Lines(TerrainText.Decode(d)))
         {
             var t = TerrainText.Tokenize(line);
             if (t.Count == 1 && t[0].Quoted) groups[t[0].Text] = current = [];
-            else if (t.Count >= 2 && t[0].IsNumber && t[1].Quoted && current is not null) current.Add((t[0].Int, TerrainText.Resolve(path, t[1].Text)));
+            else if (t.Count >= 2 && t[0].IsNumber && t[1].Quoted && current is not null) current.Add((t[0].Int, TerrainText.Resolve(path, t[1].Text), t.Count > 2 ? Orientation.Parse(t[2].Text) : 8));
         }
         return groups;
     }) ?? [];

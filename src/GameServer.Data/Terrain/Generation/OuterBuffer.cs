@@ -11,7 +11,7 @@ namespace GameServer.Data.Terrain.Generation;
 /// The view is the subgraph record's rectangle (<c>0x141ffb7f0</c>: record +0x40 … +0x4c), the whole map for a tile
 /// graph and a one-record dungeon; <paramref name="left"/> … <paramref name="bottom"/> are in the view.</summary>
 sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View grid, int left, int top, int right, int bottom,
-    TileStore store, Dictionary<string, List<(int Weight, string Path)>> fills, List<string> notes)
+    TileStore store, Dictionary<string, List<(int Weight, string Path, int Orientation)>> fills, List<string> notes)
 {
     /// <summary>A rectangle of the map (<c>0x141ffb6c0</c>), read and written in its own coordinates.</summary>
     public sealed class View(TileGrid map, int x, int y, int width, int height)

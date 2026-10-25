@@ -4,7 +4,7 @@ namespace GameServer.Data.Terrain.Generation;
 /// tile or fill room for the ground of its top-left vertex from the master's FillTiles (.gft, master +0x218: per ground
 /// name, tiles and rooms with weights; no ground or one left out of keys is "default"), <c>0x141feb970</c>.</summary>
 sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offsetX, int offsetY, int width, int height, TileStore store,
-    Dictionary<string, List<(int Weight, string Path)>> fills, List<PlacedRoom> rooms, List<string> notes)
+    Dictionary<string, List<(int Weight, string Path, int Orientation)>> fills, List<PlacedRoom> rooms, List<string> notes)
 {
     /// <summary>A fill choice: a tile or a room, its orientation (8 = any) and weight (0x18 / 0x20-byte entries).</summary>
     sealed record Choice(TileDef? Tile, RoomDef? Room, int Orientation, int Weight);
@@ -40,11 +40,11 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
         if (!fills.TryGetValue(name, out var list) && !fills.TryGetValue("default", out list)) return null;
         var tiles = new List<Choice>();
         var rooms = new List<Choice>();
-        foreach (var (weight, path) in list)
+        foreach (var (weight, path, o) in list)
         {
             if (path.EndsWith(".arm", StringComparison.OrdinalIgnoreCase))
-                rooms.Add(new Choice(null, files.Room(path) ?? throw new FileNotFoundException(path), 8, weight));
-            else tiles.Add(new Choice(files.Tile(path) ?? throw new FileNotFoundException(path), null, 8, weight));
+                rooms.Add(new Choice(null, files.Room(path) ?? throw new FileNotFoundException(path), o, weight));
+            else tiles.Add(new Choice(files.Tile(path) ?? throw new FileNotFoundException(path), null, o, weight));
         }
         return (tiles, rooms);
     }

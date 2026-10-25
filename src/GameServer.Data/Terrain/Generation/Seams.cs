@@ -115,7 +115,8 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
     /// and lies outside rooms, every other edge point on that side gives the tiles of the changed key that make no seam
     /// up or left; drawn by weight (<c>Next(total)</c>), a choice stands when the neighbour, its key's opposite point
     /// moved to meet it, has tiles making no seam in any direction other than the choice mirrored: both are replaced
-    /// (the neighbour by <c>Next(total)</c>). A choice that fails leaves the list.</summary>
+    /// (the neighbour by <c>Next(total)</c>). A choice that fails takes the list's first entry of the same tile,
+    /// orientation and side out with it, only that one.</summary>
     void Fallback(int x, int y, int w, int h, TileKey key, int direction)
     {
         var choices = new List<(TileDef Tile, int Orientation, int Side, int Weight)>();
@@ -169,12 +170,10 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
                 notes.Add($"seam at ({x + offsetX}, {y + offsetY}): edge point fallback, side {ch.Side}");
                 return;
             }
-            for (int i = choices.Count - 1; i >= 0; i--)
-                if (choices[i].Tile == ch.Tile && choices[i].Orientation == ch.Orientation && choices[i].Side == ch.Side)
-                {
-                    total -= choices[i].Weight;
-                    choices.RemoveAt(i);
-                }
+            // Only the first entry of the same tile, orientation and side leaves (others for other edge points stay).
+            int first = choices.FindIndex(c => c.Tile == ch.Tile && c.Orientation == ch.Orientation && c.Side == ch.Side);
+            total -= choices[first].Weight;
+            choices.RemoveAt(first);
         }
     }
 

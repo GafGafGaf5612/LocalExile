@@ -61,7 +61,14 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         PostUniqueTiles.Run(rng, grid, buffer, buffer, Graph.Width, Graph.Height, Store, notes);
         // 0x142049d10 → 0x142044f30: per subgraph the outer ground (0x14201db80, needs the master's OuterGroundType) and
         // the outer buffer (0x14201ffa0).
-        if (master.ContainsKey("OuterGroundType")) throw new NotSupportedException("OuterGroundType (0x14201db80) is not ported");
+        if (master.TryGetValue("OuterGroundType", out var outerGround))
+        {
+            // 0x14201db80 over the subgraph's view, the layout inside the buffer: a tile graph passes param_3 = 0, so
+            // no height fixing.
+            var ground = files.Ground(TerrainText.Resolve(masterPath, outerGround)) ?? throw new FileNotFoundException(outerGround);
+            DungeonTiler.OuterGroundStart(grid, DungeonTiler.OuterTile(files, fills, ground),
+                (buffer, buffer, buffer + Graph.Width, buffer + Graph.Height), fixHeights: false);
+        }
         if (buffer != 0)
             new OuterBuffer(files, rng, new OuterBuffer.View(grid), buffer, buffer, buffer + Graph.Width, buffer + Graph.Height, Store, fills, notes).Run();
         // 0x142044f30 then runs the walkability pass (0x1420289a0) again for the primary record, over its whole
@@ -85,7 +92,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// goes on first. The walkability pass runs for the primary subgraphs and for a master that sets CountAsPrimary
     /// (taken to be +0x164). The post-unique tiles, outer ground and buffer and StoreyHeight are the caller's
     /// (<c>0x1420452e0</c>, <c>0x142044f30</c>, <c>0x14204cbd0</c>).</summary>
-    internal (string MasterPath, Dictionary<string, string> Master, Dictionary<string, List<(int Weight, string Path)>> Fills) Subgraph(
+    internal (string MasterPath, Dictionary<string, string> Master, Dictionary<string, List<(int Weight, string Path, int Orientation)>> Fills) Subgraph(
         string graphPath, int orientation, TileGrid grid, int x, int y, bool primary)
     {
         grid.CheckGrounds = true;
@@ -101,7 +108,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
 
     /// <summary><c>0x14203f890</c> → <c>0x142116600</c> on the view at (<paramref name="x"/>, <paramref name="y"/>) of
     /// <paramref name="shared"/>, or on a grid of its own (the view at the outer buffer) when null.</summary>
-    (string MasterPath, Dictionary<string, string> Master, Dictionary<string, List<(int Weight, string Path)>> Fills) Stages(
+    (string MasterPath, Dictionary<string, string> Master, Dictionary<string, List<(int Weight, string Path, int Orientation)>> Fills) Stages(
         string graphPath, int orientation, TileGrid? shared, int x, int y, bool primary)
     {
         Graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
@@ -205,7 +212,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         // pre-unique rooms (0x1421162d0), each tilised as a fill room (0x141fe89e0).
         var roomSet = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
         var placer = new Fill(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store,
-            gftPath is null ? new Dictionary<string, List<(int Weight, string Path)>>() : files.FillTiles(gftPath), special.Rooms, notes) { TilePlaced = painter };
+            gftPath is null ? new Dictionary<string, List<(int Weight, string Path, int Orientation)>>() : files.FillTiles(gftPath), special.Rooms, notes) { TilePlaced = painter };
         AreaUniqueRooms(placer);
         Shrines(roomSet, placer);
         PreUniqueRooms(roomSet, placer);

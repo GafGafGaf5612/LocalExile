@@ -467,8 +467,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    list, so tiles inside a room never take the fallback and tiles touching a room's vertex ground stay. The one-node
    path runs it on the whole map with its one room. Then, after the subgraph (`0x142044f30`), the **outer ground**
    (`0x14201db80`) over the subgraph's view (`0x141ffb6c0`): the layout inside the outer buffer, not the buffer.
-   Vertices with flag 1 get flag 2. When the outer ground's .gt has flag 1 (or master +0x161), every empty entry
-   takes its first fill tile at orientation 0, no draw. Otherwise the heights are fixed: row by row an empty entry
+   Vertices with flag 1 get flag 2. When param_3 is 0 (`0x142044f30` passes its context's +8: a tile graph, whose
+   outer ground never fixes heights), the outer ground's .gt has flag 1, or master +0x161, every spot on the tile's grid
+   where it fits takes its first fill tile at orientation 0 (`0x14201e4f0`: its (w + 1) × (h + 1) vertices take the
+   plain height, master +0x153, and flag 2), no draw (`1_4_4_1`, `1_4_4_3`: 3 × 3
+   `lava_thick_magma` outside the layout, before the outer buffer; `DungeonTiler.OuterGroundStart`). Otherwise the heights are fixed: row by row an empty entry
    with a flag-2 corner is ready at its corners' middle (max − (max − min) / 2; `0x14201ec30` / `0x14201e930`), the
    rest wait; the ready ones are laid (`0x14201e4f0`: all four vertices take the height and flag 2, then the tile)
    and the waiting ones tried again. For a w × h fill tile only entries on its grid settle ((x + a) % w = 0 and
@@ -859,7 +862,9 @@ are the doodads, `0x142042fae`).
    (`Next`), a room under its limit padded to 100 with nothing (`Next`; nothing closes the spot), its orientation
    (`Next(840)`), removes the tiles and vertex grounds there and tilises the room (`0x141fea780`).
 5. **Fill** (`Fill.cs`, `0x141fef070`): map +0x10 off; every empty entry, row by row, gets a fill for the ground of its
-   top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"): tiles only → `Next(total)` and the
+   top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"; a line may end with an orientation,
+   I, R90 … FR270, which the choice keeps (`0x141fecd00` then draws nothing; 8 without one): Act 4's
+   `lava_thick_magma_v01_01.tdt" I`): tiles only → `Next(total)` and the
    orientation (`0x141fecd00`: fixed; square `Next(8)` where it fits; else `Next(840)` over the fitting codes), a failed
    choice leaving the list; with rooms, tiles and rooms together (`0x141fed100`, rooms `0x141fecf80` / `0x141fece90`).
    Where the vertex is not open (a ground other than null or flag 4, or vertex flag 8), a room with spawn locations is
@@ -890,7 +895,9 @@ are the doodads, `0x142042fae`).
    took a room's own vertex ground (room data +0xe8, `0x142025fb0`) included; when no replacement exists and the tile is outside rooms, the
    edge-point fallback `0x142026bc0` runs: per other side with a non-virtual edge whose neighbour has the same size and
    no tag, every other edge point gives the tiles of the changed key making no seam up or left; `Next(total)` picks
-   one, which stands when the neighbour with the meeting point has tiles making no seam at all (`Next(total)`); both
+   one, which stands when the neighbour with the meeting point has tiles making no seam at all (`Next(total)`). A
+   choice that fails takes out only the list's first entry of the same tile, orientation and side (the same tile for
+   another edge point stays and can be drawn again; The Ledge `1_1_5`, `2_6_6`). When one stands, both
    are replaced (`0x1420264b0`, which gives vertices the new tile leaves groundless the most common ground nearby).
 7b. **Post-unique tiles** (`PostUniqueTiles.cs`, `0x14203ece0`, after the seams): each `postunique` tile of the
    TileSet (master +0x228) replaces one placed tile. Row by row over the view, every tile origin without a tag (tile

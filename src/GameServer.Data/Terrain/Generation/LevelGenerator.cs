@@ -193,7 +193,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     TileGrid _grid = null!;
     TileStore _store = null!;
-    Dictionary<string, List<(int Weight, string Path)>> _fills = null!;
+    Dictionary<string, List<(int Weight, string Path, int Orientation)>> _fills = null!;
     readonly List<(int X, int Y, string? Ground, short Height)> _pendingFills = [];
     int _overlap;
     bool _multi;
@@ -939,6 +939,59 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     readonly List<(int X, int Y, string? Ground, short Height, bool Accessible)> _fillRecords = [];
     readonly List<PlacedRoom> _fillRooms = [];
 
+    /// <summary><c>0x141feffb0</c> for the outer ground: the first fill tile of its ground.</summary>
+    internal static TileDef OuterTile(TerrainCache files, Dictionary<string, List<(int Weight, string Path, int Orientation)>> fills, GroundType ground)
+    {
+        if (!fills.TryGetValue(ground.Name, out var list) || list.Count == 0)
+            throw new InvalidOperationException("No fill tile found for outer fill ground type");
+        return files.Tile(list[0].Path) ?? throw new FileNotFoundException(list[0].Path);
+    }
+
+    // A 3 × 3 tile on a view whose origin and size are all 1 mod 3 goes on a grid of 3 that starts one entry out.
+    static int OuterAlign(TileDef tile, (int X0, int Y0, int X1, int Y1) view) =>
+        tile.Width == 3 && tile.Height == 3 && view.X0 % 3 == 1 && view.Y0 % 3 == 1 && (view.X1 - view.X0) % 3 == 1 && (view.Y1 - view.Y0) % 3 == 1 ? 1 : 0;
+
+    /// <summary><c>0x14201e4f0</c>'s test: inside the view (one entry more on each side on the grid of 3) on free entries.</summary>
+    internal static bool OuterFits(TileGrid grid, TileDef tile, (int X0, int Y0, int X1, int Y1) view, int a, int x, int y)
+    {
+        int rx = x - view.X0, ry = y - view.Y0, tw = tile.Width, th = tile.Height, vw = view.X1 - view.X0, vh = view.Y1 - view.Y0;
+        if (a == 0 ? rx < 0 || ry < 0 || rx + tw > vw || ry + th > vh : rx < -1 || ry < -1 || rx + tw > vw + 1 || ry + th > vh + 1)
+            return false;
+        for (int v = 0; v < th; v++)
+            for (int u = 0; u < tw; u++)
+                if (!grid.Inside(x + u, y + v) || grid[x + u, y + v] is not null) return false;
+        return true;
+    }
+
+    /// <summary><c>0x14201db80</c> up to the height fixing: the view's vertices with flag 1 get flag 2. Without
+    /// <paramref name="fixHeights"/> (a tile graph's call, param_3 = 0, or an outer ground with .gt flag 1) every spot on
+    /// the tile's grid where it fits takes the tile at orientation 0 (<c>0x14201e4f0</c>: the footprint's vertices take
+    /// the plain height, master +0x153 taken as 0, and flag 2), no draw, and null comes back; else the grid's start
+    /// (0, or 1 for a grid of 3 one entry out).</summary>
+    internal static int? OuterGroundStart(TileGrid grid, TileDef tile, (int X0, int Y0, int X1, int Y1) view, bool fixHeights)
+    {
+        var (x0, y0, x1, y1) = view;
+        int a = OuterAlign(tile, view), tw = tile.Width, th = tile.Height, vw = x1 - x0, vh = y1 - y0;
+        for (int y = y0; y <= y1; y++)
+            for (int x = x0; x <= x1; x++)
+                if ((grid.Corner(x, y).Flags & 1) != 0) grid.Corner(x, y).Flags |= 2;
+        if (fixHeights) return a;
+        for (int y = y0 - a; y < y1 - vh % th; y++)
+            for (int x = x0 - a; x < x1 - vw % tw; x++)
+                if (OuterFits(grid, tile, view, a, x, y))
+                {
+                    for (int v = 0; v <= th; v++)
+                        for (int u = 0; u <= tw; u++)
+                        {
+                            ref var c = ref grid.Corner(x + u, y + v);
+                            c.Height = 0;
+                            c.Flags |= 2;
+                        }
+                    grid.Place(tile, 0, x, y, 0);
+                }
+        return null;
+    }
+
     /// <summary><c>0x142044f30</c> → <c>0x14201db80</c>: with the master's OuterGroundType, the vertices with a ground
     /// get flag 2, then the empty entries take that ground's first fill tile (<c>0x141feffb0</c>; "any" orientation
     /// becomes 0), no draw. For a dungeon whose outer ground has no flag 1 (and master +0x161 clear, taken to be so)
@@ -954,33 +1007,10 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var ground = files.Ground(TerrainText.Resolve(masterPath, gt)) ?? throw new FileNotFoundException(gt);
         // The view is the subgraph's rectangle (0x141ffb6c0): the layout inside the outer buffer, which 0x14201ffa0 fills.
         var (x0, y0, x1, y1) = _view;
-        if (!_fills.TryGetValue(ground.Name, out var list) || list.Count == 0)
-            throw new InvalidOperationException("No fill tile found for outer fill ground type");
-        var tile = files.Tile(list[0].Path) ?? throw new FileNotFoundException(list[0].Path);
+        var tile = OuterTile(files, _fills, ground);
+        if (OuterGroundStart(_grid, tile, _view, fixHeights: (ground.Flags & 1) == 0) is not { } a) return;
         int tw = tile.Width, th = tile.Height, vw = x1 - x0, vh = y1 - y0;
-        // A 3 × 3 tile on a view whose origin and size are all 1 mod 3 goes on a grid of 3 that starts one entry out.
-        int a = tw == 3 && th == 3 && x0 % 3 == 1 && y0 % 3 == 1 && vw % 3 == 1 && vh % 3 == 1 ? 1 : 0;
-        // 0x14201e4f0's test: inside the view (one entry more on each side on the grid of 3) on free entries.
-        bool Fits(int x, int y)
-        {
-            int rx = x - x0, ry = y - y0;
-            if (a == 0 ? rx < 0 || ry < 0 || rx + tw > vw || ry + th > vh : rx < -1 || ry < -1 || rx + tw > vw + 1 || ry + th > vh + 1)
-                return false;
-            for (int v = 0; v < th; v++)
-                for (int u = 0; u < tw; u++)
-                    if (!_grid.Inside(x + u, y + v) || _grid[x + u, y + v] is not null) return false;
-            return true;
-        }
-        for (int y = y0; y <= y1; y++)
-            for (int x = x0; x <= x1; x++)
-                if ((_grid.Corner(x, y).Flags & 1) != 0) _grid.Corner(x, y).Flags |= 2;
-        if ((ground.Flags & 1) != 0)
-        {
-            for (int y = y0 - a; y < y1 - vh % th; y++)
-                for (int x = x0 - a; x < x1 - vw % tw; x++)
-                    if (Fits(x, y)) _grid.Place(tile, 0, x, y, 0);
-            return;
-        }
+        bool Fits(int x, int y) => OuterFits(_grid, tile, _view, a, x, y);
         // 0x14201e930: the written heights at the four corners of the tile covering the entry (1 × 1 when empty).
         int? Middle(int x, int y)
         {
