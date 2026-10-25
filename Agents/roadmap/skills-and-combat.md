@@ -28,6 +28,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
+- **Spell hit panel (#188):** selected-spell ranges now share combat's converted packet and hitless spells clear
+  inherited weapon hit damage. Automated checks pass; verify selection, equipment updates and relog in the client.
+  DPS remains a pre-crit/pre-mitigation average; crit weighting, integer-roll expectation, cooldowns and DoT/beam
+  displays remain separate work. Quality conversion and existing modifier precedence are unchanged.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 
