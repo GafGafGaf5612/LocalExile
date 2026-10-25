@@ -150,9 +150,15 @@ partial class Program
             t.BecomesWhenFull && Items.Row(t.FullStackRow) is { Supported: true } full ? () => ItemCatalog.Create(full) : null)
         : null;
 
+    // The weapon type of an equipment row's item (its BaseItemTypes row), or null: the active (not inactive) item.
+    static ItemCatalog.BaseType? HandType(ClientState conn, byte row) =>
+        ItemsOf(conn).Items(row).Where(i => !IsInactive(conn, i.Id))
+            .Select(i => Items.ByHash(i.Item.TypeHash)).FirstOrDefault();
+
     // The record's type is the item's ItemClasses row + 1: the client checks skills' weapon restrictions against it.
     static VisibleItem? LookOf(Item i) => Items.ByHash(i.TypeHash) is { } t
-        ? new VisibleItem(0, t.VisualIdentity, t.Stance, t.ClassRow is >= 0 and < 255 ? (byte)(t.ClassRow + 1) : (byte)1) : null;
+        ? new VisibleItem(0, t.VisualIdentity, t.Stance,
+            t.ClassRow is >= 0 and < 255 ? (byte)(t.ClassRow + 1) : (byte)1) : null;
 
     // What the model wears: the equipped items, dressed in the worn cosmetics (CosmeticEffects). A skin replaces the item's
     // art in its entry's first reference and a weapon effect fills the second; attachments and character effects fill the
@@ -160,6 +166,15 @@ partial class Program
     static IReadOnlyList<VisibleItem> Looks(ClientState conn, PlayerInventories items)
     {
         var looks = items.Equipped(LookOf).ToList();
+        // A bow is held in the left hand, and its model slot is not the main hand's: BowSetup holds the record the live server
+        // sends (the bow's art in slot 1, an arrow in slot 0 with the weapon type and stance, the quiver on the back in 7).
+        if (HandType(conn, PlayerInventories.Weapon1) is { Class: "Bow" } bow)
+        {
+            int quiver = looks.FindIndex(l => l.Slot == 1 && l.VisualIdentity != 0);
+            ushort quiverArt = quiver >= 0 ? looks[quiver].VisualIdentity : Items.Visual("DefaultQuiver") ?? 0x328b;
+            looks.RemoveAll(l => l.Slot is 0 or 1 or 7);
+            looks.AddRange(BowSetup.Entries(bow, Items.Visual("DefaultArrow") ?? 0xb2f6, quiverArt));
+        }
         var cosmeticSlots = CosmeticEffects.CosmeticOnlySlots.ToDictionary(s => s, VisibleItem.Empty);
         foreach (var worn in WornCosmetics(conn))
         {

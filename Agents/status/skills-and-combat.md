@@ -41,13 +41,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   Not yet: item mods/quality, shields or auras.
   Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
-- Gem skills: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
-  `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster;
-  the server creates the `Metadata/Projectiles/Fireball` object, flies it to the target at terrain height +
-  `Game_PROJECTILE_HEIGHT` where the area has a height grid (Lioneye's Watch, The Coast seed 1;
-  live 2026-10-18: above the ground at every level, at belly height), else on the terrain and hits the monster on
-  arrival; a gem attack skill's hit is the weapon's damage × its `DamageEffectiveness` (Flicker Strike 77.3% at level
-  1, 308.9% at 20).
+- Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
+  `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; a bow's ordinary attack and attack
+  gems create `Metadata/Projectiles/DefaultArrow` (or the gem's own projectile) at the attack animation's `attack1_bow`
+  contact (0.374 of the attack time).
+  Attack gems deal the weapon's damage × `DamageEffectiveness` with the attack's crit; a bow arrow has no Fireball
+  impact.
+  Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
+  without a capture they use the bare offset.
   Code: `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`, `AreaSkillHit`), `ProjectileObject`.
   Docs: [11](../docs/protocol/11-skills.md) §9–10.
 - Resistances: the passive `base_resist_all_elements_%` / per-element `base_*_damage_resistance_%` are summed from the
@@ -242,6 +243,9 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
+- Projectile spawn height on platforms and doodads: the protocol carries no player z and the server has no
+  surface-height model, so a projectile on the hideout waypoint platform spawns at the terrain height below it.
+  Tracked in issue #182.
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent;
   an effect object follows the player only by 0x1ba glides.
   Combat auras, Heralds and banners are not implemented; only the simple auras above use buffs.
