@@ -48,10 +48,18 @@ static class HideoutCatalog
 
     public static IReadOnlyList<Hideout> Hideouts => All.Value;
 
+    // Local server: every exported personal template is available, including UnlockMtx templates.
+    public static byte[] OwnedRows => SelectableRows(Hideouts);
+
+    public static byte[] SelectableRows(IEnumerable<Hideout> hideouts) =>
+        [.. hideouts.Select(h => h.Row).Where(row => row is >= 0 and <= 255).Distinct().Order().Select(row => (byte)row)];
+
     /// <summary>The hideout whose area this is, or null.</summary>
     public static Hideout? ByArea(ushort areaHash16) => Hideouts.FirstOrDefault(h => h.AreaHash16 == areaHash16);
 
     public static Hideout? Default => DefaultOf(Hideouts);
+
+    public static Hideout? Selected(string? area) => Hideouts.FirstOrDefault(h => h.AreaId == area) ?? Default;
 
     static Hideout? DefaultOf(IReadOnlyList<Hideout> list) => list.FirstOrDefault(h => h.AreaId == DefaultArea) ?? list.FirstOrDefault();
 

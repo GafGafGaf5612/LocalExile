@@ -487,15 +487,16 @@ sealed class SkillCatalog(string folder = "data")
         /// (the client puts only dual wielding's 10 there when it is not sent), the panel's "Attacks per Second" is
         /// hundred_times_attacks_per_second / 100.
         /// </summary>
-        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null)
+        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null, DamagePacket? totalHit = null)
         {
             var (min, max) = Damage(player);
             double attacksPerSecond = 1 / AttackSeconds(player);
-            double averageHit = (min + max) / 2.0;
+            double averageHit = totalHit?.AverageTotal ?? (min + max) / 2.0;
             return
             [
                 (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
-                (StatKeys.MainHandMinTotal, min), (StatKeys.MainHandMaxTotal, max),
+                (StatKeys.MainHandMinTotal, totalHit is null ? min : (int)Math.Floor(totalHit.MinTotal)),
+                (StatKeys.MainHandMaxTotal, totalHit is null ? max : (int)Math.Floor(totalHit.MaxTotal)),
                 (StatKeys.MainHandAttackDurationMs, AttackMs), (StatKeys.MainHandTotalAttackDurationMs, AttackMs),
                 (StatKeys.MainHandAttackSpeedPct, IncreasedAttackSpeed(player)),
                 (StatKeys.SkillUsesMainHand, 1),

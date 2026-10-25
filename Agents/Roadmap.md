@@ -17,11 +17,6 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 1. Quality of life
 
-### Switching hideout templates
-- **Known:** Helena now stands to Niko's screen-right and opens HideoutSelectionWindow (0x7b kind 0x22).
-  The owned list contains the default Lush Hideout. [21](docs/protocol/21-hideouts.md).
-- **Start:** map the selection request, persist the chosen template, and use it for /hideout, player keys and portals.
-
 ### Chat lines and the global channel
 - **Known:** C→S 0x15 (chat text) is parsed; command replies use S→C 0x17 (chat line). 0x12d shows BackendErrors rows, 0x157 is
   a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".
@@ -92,7 +87,7 @@ Items are in rough priority order within each section. "Known" says what is alre
   and six portals into the map ([21](docs/protocol/21-hideouts.md) §5). Its decoration (`data/hideouts.json`) lists every doodad with its type and model.
 - **Start:** create the decorations (`HideoutObject`, each type's components from data/object-types.json); the Edit
   mode's client messages (move, place, remove, save); maps: the arrival point, a return portal, fragments and device
-  recipes, map mods; log in to the hideout after logging out there; the hideout selection window.
+  recipes and map mods. Personal template selection and login to the selected home are implemented (see Status).
 - **Done when:** the hideout looks like the real one, can be edited and saved, and maps can be run from its device.
 
 ### NPCs: dialogue options, shops and the other towns
@@ -103,6 +98,14 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** talk options play their text, Nessa and Tarkleigh trade, and every town has its NPCs.
 
 ## 3. Gameplay
+
+- **Ordinary aura activation:** nine previously rejected self auras now share reservation, presentation and
+  the supported stat/damage paths. Remaining work: Discipline's ES pool, Pride's enemy debuff, conditional
+  consecrated ground, herald/minion/banner mechanics. See protocol/11-skills.md section 13.
+
+- **Aura caster art:** the distinct EPKFiles2 visuals are selected on activation and area restoration;
+  the live source-only regression is addressed with a separate received buff for the top-left icon,
+  awaiting confirmation. Radius-scaled aura rings, if added, still need their actual radius.
 
 - **Completed area fix:** Cyclone's `/set_aoe` final radius is now sent to the client and shared with hit selection;
   see Status and protocol/11-skills.md (live check pending).

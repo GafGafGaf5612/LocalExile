@@ -709,6 +709,44 @@ and radius scale. Live verification of this follow-up is pending.
 
 ## 13. Auras and reservation
 
+**Persistent toggles (2026-10-25).** CharacterSaves.ActiveAuras stores stable GrantedEffects Ids,
+updated transactionally on every successful toggle and cleared for an active aura when its gem leaves.
+On login/area connection, LoadProgress restores progress and evaluates usable gems first, then resolves
+saved aura ids to fresh skill and source/recipient buff ids. It checks total reservation against current
+mana, recalculates pools with the restored bonuses and initializes current mana to the unreserved amount.
+SendPlayer restores both buff records, so ground art, top-left icons and skill-bar indicators return.
+An absent/unusable gem or insufficient reservation skips that aura without discarding saved intent;
+it can return on a later login after requirements are met. Old saves without ActiveAuras start empty.
+
+**Expanded activation (2026-10-25).** Determination (buff 142), Grace (143), Discipline (148),
+Anger (149), Hatred (150), Wrath (151), Zealotry (1272), Malevolence (1274) and Envy (828)
+now use the same toggle/reservation/source-and-recipient lifecycle as the original eight auras.
+RequiredMana checks the uncapped total before adding an aura; ReservedMana remains capped for display.
+Previously clamping before validation made the insufficient-reservation check unreachable.
+Determination and Grace add their level/quality-based flat and more defences, including Iron Reflexes.
+Anger/Envy supply added attack/spell damage, Hatred feeds gain-as-extra conversion, Wrath adds attack
+lightning damage and more spell lightning damage, Zealotry supplies spell crit and more spell damage.
+Spell added damage uses the gem's damage effectiveness. Malevolence's more DoT affects the implemented
+Righteous Fire burn; its duration stat and Discipline's ES stats are published, but the server's ES pool,
+recharge, general DoT skills and Zealotry's conditional consecrated ground remain unimplemented.
+
+**Source and recipient pair (2026-10-25).** Sending only the source fixed ground art but the live
+client stopped showing top-left aura icons. Each self aura now owns two buff instances of its
+BuffDefinitions row: a source with bit0 art and explicit display state 0 (bit5), and an ordinary
+received buff with default display state 2 and bit3 skill association. The source is sent first;
+both ids are removed on toggle-off or gem removal and restored on area entry. The server retains
+one Aura record, so reservation and bonuses are counted once. Top-left recovery awaits live confirmation.
+
+**Caster visuals (2026-10-25, awaiting live verification).** BuffVisuals' EPKFiles1 is the common
+`affected_player.epk`; EPKFiles2 holds each aura's own art (Clarity, Vitality, Precision, Haste and
+the four Purities). `0x1416082d0` selects `m_AuraEffectPack` (row +0x20/+0x28) when Buff +0x30
+is nonzero, otherwise `m_EffectPack` (+0x10/+0x18). AddBuff bit0's first byte (+0x76) becomes
+that field via `0x141e07220` and `0x141e06290`. `auraSource: true` sends the complete bit0 group
+`u8 1, u32 0, u8 0, u16 0` before other optional fields. All supported self auras use this on
+activation and restoration; recipients and other buffs retain their existing default. These aura
+rows have no MiscAnimated3 ring, so the nonzero marker only selects their EPK art; a radius-scaled
+ring will require its actual radius rather than this marker. The skill-bar association is independent.
+
 - **Reservation is in the data.** `GrantedEffectsPerLevel` has `ManaReservationFlat` and
   `ManaReservationPercent` (permyriad: `5000` = 50%); `SkillCatalog.Reservation` reads them. Standard
   auras reserve 50%, Purity of Fire/Ice/Lightning and Discipline 35%, Heralds 25%; Clarity, Vitality and
@@ -746,14 +784,11 @@ and radius scale. Live verification of this follow-up is pending.
   apply these to `Pools` and `CharacterStats`.
 - **Not implemented yet.** Casting one of these logs that its reservation is known but its effect is not implemented and does not
   reserve mana:
-  - **Combat auras:** Anger, Hatred and Wrath need added elemental damage and Hatred's physical-as-extra-cold; Zealotry needs
-    more spell damage and spell crit; Pride needs an enemy physical-damage-taken debuff. The damage model has no added
-    elemental damage or enemy aura debuffs yet.
+  - **Enemy auras:** Pride still needs a radius- and time-dependent enemy physical-damage-taken debuff.
   - **Heralds:** Ash, Ice and Thunder need on-kill/overkill/shatter/storm effects; Agony and Purity need minions.
   - **Banners:** Defiance, Dread and War need the planted banner, stages and their pulses.
   - **Curse auras:** Blasphemy-style skills need the curse system.
-  - **Determination, Grace and Discipline:** the reservation is known, but armour, evasion as avoidance and energy shield
-    are not modelled; they are not in `AuraCatalog` yet.
+  - **Discipline:** activation, reservation and presentation work; the energy-shield pool/recharge mechanics remain open.
   - **Partial effects:** Purity of Elements' elemental-ailment immunity is not applied. Purity of Fire/Ice/Lightning
     max-resistance values are read at the gem's level (0 at level 1).
   - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;

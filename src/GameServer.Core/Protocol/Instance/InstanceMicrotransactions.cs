@@ -140,6 +140,20 @@ public static class InstanceMicrotransactions
     /// </summary>
     public const ushort HideoutsId = 0x1f5;
 
+    /// <summary>S→C 0x1f6: fixed 128-bit campaign hideout unlock mask, raw bytes (row 0 is byte 0 bit 0).
+    /// The picker reads this separately from the purchased-hideout list. Sending even an empty mask initializes
+    /// the session bitset before FUN_14216d800 indexes it.</summary>
+    public static byte[] HideoutUnlocks(IEnumerable<int> rows)
+    {
+        var bits = new byte[16];
+        foreach (int row in rows)
+        {
+            if (row is < 0 or >= 128) throw new ArgumentOutOfRangeException(nameof(rows), row, "Hideout unlock mask has 128 bits");
+            bits[row / 8] |= (byte)(1 << (row % 8));
+        }
+        return new LoginWriter().U16(0x1f6).Bytes(bits).ToArray();
+    }
+
     public static byte[] Hideouts(IReadOnlyList<byte> rows, bool guild = false)
     {
         var w = new LoginWriter().U16(HideoutsId).U8(guild ? (byte)1 : (byte)0);

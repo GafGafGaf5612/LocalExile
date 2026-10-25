@@ -64,7 +64,7 @@ static class CharacterStats
         int Accuracy = 0, int AccuracyPct = 0, int AccuracyPerLevel = 0,
         bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
-        int AuraEffectPct = 0, int AuraAreaPct = 0)
+        int AuraEffectPct = 0, int AuraAreaPct = 0, int ArmourMorePct = 0, int EvasionMorePct = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -114,16 +114,17 @@ static class CharacterStats
         // PoB CalcDefence: armour and evasion are flat defences raised by their increased modifiers. Evasion keeps the
         // character's 15 base and gains 1% per 5 dexterity; armour has no base outside items and passives.
         int armourPct = b.ArmourPct;
-        int armour = Math.Max(0, b.Armour * (100 + armourPct) / 100);
+        int armour = Math.Max(0, (int)(b.Armour * (100m + armourPct) * (100m + b.ArmourMorePct) / 10000m));
         int evasionPct = dex / 5 + b.EvasionPct;
         int evasionBase = BaseEvasion + b.Evasion;
-        int evasion = Math.Max(0, evasionBase * (100 + evasionPct) / 100);
+        int evasion = Math.Max(0, (int)(evasionBase * (100m + evasionPct) * (100m + b.EvasionMorePct) / 10000m));
         if (b.IronReflexes)
         {
             // Iron Reflexes converts all evasion rating to armour and removes dexterity's evasion bonus. The converted
             // evasion keeps the armour, evasion and shared defence increases (each once), but not dexterity.
             int convertedPct = armourPct + b.EvasionPct - b.SharedDefencesPct;
-            armour = Math.Max(0, armour + evasionBase * (100 + convertedPct) / 100);
+            armour = Math.Max(0, armour + (int)(evasionBase * (100m + convertedPct)
+                * (100m + b.EvasionMorePct) * (100m + b.ArmourMorePct) / 1000000m));
             evasionPct = b.EvasionPct;
             evasion = 0;
         }

@@ -1,5 +1,10 @@
 # Status
 
+Remember Password now returns and verifies the official client's 32-byte saved-login credential
+in account login 0x03 / result 0x04. It survives server restarts, is device/account-bound and
+is invalidated by changing the password. Covered by protocol/session tests; client verification
+requires one fresh typed-password login with the checkbox enabled. See [01](docs/protocol/01-login.md).
+
 Where the project stands. Last updated 2026-10-21, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
@@ -11,6 +16,25 @@ Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows n
 Helena placement and hideout picker entry point (2026-10-25, awaiting client confirmation): Helena stands
 screen-right of Niko and Select Hideout opens the native window. Only the existing Lush Hideout is owned;
 switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
+
+Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art. A live check found
+that source-only buffs hid the top-left icons; source and received buff instances now coexist,
+restore and end together. Icon restoration awaits client confirmation. See [11](docs/protocol/11-skills.md) section 13.
+
+Ordinary aura expansion (2026-10-25, awaiting client confirmation): Determination, Grace, Discipline,
+Anger, Hatred, Wrath, Zealotry, Malevolence and Envy now activate with reservation and paired visual/HUD buffs.
+Armour/evasion, added hit damage, gain-as-cold, spell damage/crit and RF's more DoT are connected.
+Discipline's ES pool/recharge and conditional effects remain partial. Reservation overflow is refused.
+See [11](docs/protocol/11-skills.md) section 13.
+
+Hideout picker crash fix (2026-10-25, awaiting client confirmation): initialize the campaign
+unlock bitset with S→C 0x1f6 on area entry, before Helena can open the picker. Missing data
+caused the confirmed client access violation at 0x14216d8b7. See [21](docs/protocol/21-hideouts.md).
+
+Saved aura toggles (2026-10-25, awaiting client confirmation): active effects persist per character
+and restore on relog, area entry and server restart, subject to usable gems and available reservation.
+Helena's picker now receives all 103 exported personal hideouts, including MTX templates; switching
+templates is still separate work. See [11](docs/protocol/11-skills.md) and [21](docs/protocol/21-hideouts.md).
 
 ## Works (verified with the real client)
 
@@ -273,7 +297,7 @@ switching and persistence remain open. See [21](docs/protocol/21-hideouts.md).
 - Waypoint travel to a generated area without a `-Walkmaps` capture for its seed puts the player at an arbitrary cell
   (The Submerged Passage, seed 1); quest flags are derived from visited areas and waypoints, not from quests
   ([16](docs/protocol/16-waypoints.md) "Open").
-- Hideouts: no decorations (trees, tents …), editing does nothing, logins never start in the hideout, only the Lush Hideout ([21](docs/protocol/21-hideouts.md) "Open").
+- Hideouts: decorative trees/tents and editing are not implemented. Personal template selection, saved home login and functional furniture placement are implemented ([21](docs/protocol/21-hideouts.md)).
 - Map device: a map without a walk-map capture puts the player at an arbitrary cell (Beach is captured); the arena gates
   land next to their pair, not on the telepads; fragments add nothing; the portals look like player portals; the open map is lost on a
   Gateway restart ([21](docs/protocol/21-hideouts.md) §5, "Open").
@@ -318,6 +342,12 @@ PR branch validation: build succeeded with zero warnings/errors; Core 307, Data 
 Gateway test artifacts were placed in the local workspace so the existing extracted data could be read.
 
 ## Hideout crafting bench placement (2026-10-25)
+
+Personal hideout selection now handles the native 0x254 request, saves the selected WorldAreas Id
+per character and transfers immediately. Auth uses the saved choice on login; world-panel travel,
+`/hideout` and map return portals use the same home. Functional furniture and all four NPCs are
+placed on the selected template's floor. Selection decoding, persistence and placement have
+automated coverage; the new transfer and reconnect path awaits user verification in the client.
 
 The standard bench spawns to the left of the guild stash in hideouts, using the existing
 decoration's model and a walkable placement (placement confirmed in the real client).

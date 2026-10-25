@@ -5,6 +5,14 @@ namespace GameServer.Gateway.Tests;
 public class HideoutCatalogTests
 {
     [Fact]
+    public void All_template_rows_are_owned_including_high_mtx_rows_without_duplicates()
+    {
+        var campaign = new HideoutCatalog.Hideout(0, 1, "Campaign", 1, "Campaign", []);
+        var mtx = campaign with { Row = 102, AreaId = "MTX" };
+        Assert.Equal(new byte[] { 0, 102 }, HideoutCatalog.SelectableRows([mtx, campaign, mtx]));
+        Assert.Empty(HideoutCatalog.SelectableRows([]));
+    }
+    [Fact]
     public void Crafting_bench_is_placed_left_of_guild_stash_with_its_original_appearance()
     {
         var bench = new HideoutCatalog.Doodad("Crafting Bench", 123, HideoutCatalog.CraftingBenchType,
