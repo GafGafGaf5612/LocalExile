@@ -9,7 +9,7 @@ partial class Program
     // and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x25 (move) → 0x1ab echo;
     // 0x24 on an area transition → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
     // Anything else is logged in hex: those are the next messages to map.
-    static async Task OnClientMessages(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+    internal static async Task OnClientMessages(string remote, NetworkStream stream, ConnectionCiphers ciphers,
         IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown, ClientState conn, long readAt = 0)
     {
         foreach (var (id, bytes) in messages)
@@ -36,13 +36,14 @@ partial class Program
                 // The ordinary attack on a ranged weapon: clicking the ground with the attack skill bound swings at the point
                 // and the client draws an arrow to it, instead of walking there (live 2026-10-25: the arrow stayed in the
                 // hand, because every non-gem ground click was movement).
-                if (use.SkillId == SkillCatalog.FirstSkillId && WeaponProfileFor(conn).Bow)
+                if (use.SkillId == SkillCatalog.FirstSkillId && WeaponProfileFor(conn, activeSet: true).Bow)
                 {
                     double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
                     double now = conn.Clock.Elapsed.TotalSeconds, next;
                     bool ready;
                     lock (conn.Monsters)
                     {
+                        if (conn.Paused) continue;
                         next = conn.NextAttackAt;
                         ready = AttackTiming.Ready(now, next, duration);
                         if (ready) conn.NextAttackAt = AttackTiming.After(now, next, duration);
@@ -52,14 +53,14 @@ partial class Program
                     lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
                     var (bx, by) = conn.Walk.Position(at);
                     conn.Walk.Order(bx, by, at);
-                    Interlocked.Increment(ref conn.ActionCount);
-                    await Send(remote, stream, ciphers,
-                        InstanceProtocol.ActionStarted(PlayerId, bx, by, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                        $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bx}, {by}) (t={at:0.000})");
-                    if (Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
-                        _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), (bx, by), (use.X, use.Y), damageTo: null, impact: "none", epoch: projectileEpoch);
+                    int action = Interlocked.Increment(ref conn.ActionCount);
                     conn.ChannelSkill = use.SkillId;
                     conn.ChannelSkillSequence = use.Slot;
+                    // Release work must not block serial input dispatch: resume/move can invalidate a queued echo.
+                    _ = ConfirmAndLaunchOrdinaryBow(remote, stream, ciphers, conn,
+                        InstanceProtocol.ActionStarted(PlayerId, bx, by, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
+                        $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bx}, {by}) (t={at:0.000})",
+                        (bx, by), (use.X, use.Y), duration, action, projectileEpoch);
                     continue;
                 }
                 // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an

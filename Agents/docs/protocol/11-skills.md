@@ -685,8 +685,36 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   speed (95.7) made each step take ~1 s, so the fireball crawled (~10 world units/s, sampled with Frida); sending
   distance / speed it flies at ~1000 units/s. The fireball now starts `Game_PROJECTILE_AHEAD` cells (1.5) in front of
   the caster and flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area), stopped by the first
-  monster or wall contact described above. Default-attack arrows are visual only: their damage retains the attack
-  contact timing and does not use the flight callback. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
+  monster or wall contact described above. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
+- **Ordinary bow attacks (#203, awaiting native after-check).** Ground and object uses share `LaunchOrdinaryBow`:
+  the action is confirmed, then the game clock waits for `attack1_bow` contact without the melee walk-in offset.
+  The original action, life and area epoch must still be valid at creation. An already-paused use is rejected before
+  changing action, walk or attack pacing; an accepted echo/creation queued behind a later pause waits for resume.
+  Ground confirmation runs outside serial input dispatch, so resume and a cancelling move remain processable.
+  After creation, later actions and player death do not cancel flight; pause freezes it and transfer/disconnect
+  invalidate it. The clicked monster is an aim: another monster can intercept, and walls or a moved-away target
+  can prevent damage. The object-use path returns before the old melee contact hit, so it cannot double-hit.
+  Current player position, weapon/raw damage, added damage, player-first default-skill conversion, accuracy,
+  attack crit chance/multiplier, impale chance and projectile speed are sampled after the contact wait, before
+  enqueueing creation. Aim remains the original aim. This is the selected release snapshot policy; native
+  equivalence for weapon/stat changes or instant movement before release has not been established.
+  At the actual send gate, one game-time sample drives the target observation and swept contact test. Target
+  evasion is checked there; on a hit, existing target impales are consumed, a new stack may be added, the packet
+  is rolled and crit applied, and life is committed with the arrow's stop packet. Paused or obsolete queued
+  samples consume no accuracy randomness or target state. A killing hit clears impales. Damage, accuracy,
+  crit and impale formulas retain the previous ordinary attack's approximations (including melee physical
+  increases on bows); this adds no new armour/resistance, entropy or support mechanics.
+  An evaded object is ignored for the rest of this straight flight, and a farther contact in the same sweep may
+  hit. This is a bounded policy supported by the current community
+  [Projectile](https://www.poewiki.net/wiki/Projectile) and [Avoidance](https://www.poewiki.net/wiki/Avoidance) pages;
+  older mirrored descriptions disagree, and no primary GGG statement or official-server trace was found.
+  Official evasion-continuation parity remains unverified. Null contact predicates preserve existing gem behavior.
+  Ordinary arrows send ranged life/flinch/death notifications without the melee `0x1af 0x4201` sound or Fireball
+  explosion. Before-controls on 2026-10-25 showed object arrows created at bow-clip elapsed ~0.012 s and melee
+  damage before flight impact, while a ground arrow crossed the same monster with no damage. Automated sweep,
+  release snapshot, actual send-gate lifecycle and paused-input dispatch checks cover the replacement path;
+  native after-checks remain pending. Surface/platform height, wands, supports, pierce, fork and chain are outside
+  this change.
 - **Still wrong.** Without a surface-height model the projectile uses the captured terrain height; on a platform or
   doodad (which the terrain grid does not include) it spawns below the player (issue #182). The direction floats of
   Positioned's f1 0x04 block are not used; sending (dx, dy, 0, 0) put the fireball under the ground, so the Gateway no
