@@ -80,10 +80,15 @@ public static class InstanceProtocol
         InstanceItems.InventoryRequestId => InstanceItems.InventoryRequestLength, InstanceItems.UseItemId => InstanceItems.UseItemLength, InstanceItems.UseItemOnId => InstanceItems.UseItemOnLength, InstanceItems.UseFlaskId => InstanceItems.UseFlaskLength, InstanceItems.UseItemTypeOnId => InstanceItems.UseItemTypeOnLength,
         InstanceItems.ItemActionId => InstanceItems.ItemActionLength, InstanceItems.SplitStackId => InstanceItems.SplitStackLength, InstanceItems.SocketGemId => 16,
         InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
+        InstanceItems.LevelUpGemId => 14, InstanceItems.LockGemId => InstanceItems.LockGemLength,
         InstanceEntities.AllocatePassiveId => 7, InstanceEntities.RefundPassiveId => InstanceEntities.RefundPassiveLength,
         InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength, InstanceStash.RequestTabId => InstanceStash.RequestTabLength, InstanceStash.MoveTabId => InstanceStash.MoveTabLength, InstanceStash.MoveToTabId => InstanceStash.MoveToTabLength, InstanceStash.TakeFromTabId => InstanceStash.TakeFromTabLength, InstanceMapDevice.ActivateId => InstanceMapDevice.ActivateLength,
         SwapWeaponsId => 3, ChannelUpdateId => 10, ChannelEndId => 2, LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, UseInstantSkillId => 8,
-        InstancePause.RequestId => InstancePause.RequestLength, _ => null,
+        InstancePause.RequestId => InstancePause.RequestLength, InstanceMicrotransactions.SlotId => InstanceMicrotransactions.SlotLength,
+        InstanceMicrotransactions.SkillPickId => InstanceMicrotransactions.SkillPickLength,
+        InstanceMicrotransactions.RequestId => InstanceMicrotransactions.RequestLength,
+        InstanceHideouts.SelectId => InstanceHideouts.SelectLength,
+        InstanceBench.CraftId => InstanceBench.CraftLength, _ => null,
     };
 
     /// <summary>
@@ -246,6 +251,19 @@ public static class InstanceProtocol
     /// </summary>
     public static byte[] LifeUpdate(uint objectId, uint current, uint reserved = 0, byte pool = 0, ushort u2a = 0, byte u2c = 0) =>
         new LoginWriter().U16(LifeUpdateId).U32(objectId).U32(0).U16(0).U32(current).U32(reserved).U8(pool).U16(u2a).U8(u2c).ToArray();
+
+    public const ushort AnimationUpdateId = 0x1b2;
+
+    /// <summary>
+    /// S→C 0x1b2 "InstanceClientAnimationUpdate" (world group; the handler maps it and 0x26f/0x270/0x271 to the
+    /// Animated component's <c>0x141e58ef0</c>): object header, u8 kind, then per kind — 0/1: u32 animation index
+    /// (+0x24) and u32 float bits (+0x28), 2: u32 float bits (+0x2c), 3: u32 float bits (+0x28). Kind 0 calls
+    /// <c>0x141dba530</c> ("play animation"), which bails when the index is past the actor's animation count, so a
+    /// wrong index is ignored rather than fatal (live 2026-10-25).
+    /// </summary>
+    public static byte[] AnimationUpdate(uint objectId, byte kind, uint index, float speed) =>
+        new LoginWriter().U16(AnimationUpdateId).U32(objectId).U32(0).U16(0).U8(kind).U32(index)
+            .U32(BitConverter.SingleToUInt32Bits(speed)).ToArray();
 
     public const ushort TeleportId = 0x1b7, MoveToId = 0x1ba, EnterWakeZoneId = 0x1a9, LeaveWakeZoneId = 0x1aa;
 

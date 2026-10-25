@@ -53,6 +53,9 @@ public class CtrlClickTests : IDisposable
     {
         var (items, stash) = (Items(), Stash());
         stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(40)), Shapes, out _);
+        // The spare slots under the crafting slot are full too, so only the own slot has room.
+        stash.Place(Currency, SpareSlot1, 0, new InventoryItem(2, 0, 0, Scrolls(50)), Shapes, out _);
+        stash.Place(Currency, SpareSlot2, 0, new InventoryItem(3, 0, 0, Scrolls(50)), Shapes, out _);
         var scrolls = items.Add(Main, 3, 2, Scrolls(30));
 
         var moved = ItemMoves.InventoryToStash(stash, items, Currency, scrolls.Id, Shapes, out _)!;
@@ -60,7 +63,7 @@ public class CtrlClickTests : IDisposable
         Assert.Equal(20, moved.LeftInInventory!.Item.StackSize);   // the slot holds 50
         var (again, stashAgain) = Reload();
         Assert.Equal(20, again.Items(Main).Single().Item.StackSize);
-        Assert.Equal(50, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
+        Assert.Equal(50, stashAgain.Inventory(Currency).Items.Single(i => i.X == 1).Item.StackSize);
         Assert.Null(ItemMoves.InventoryToStash(stashAgain, again, Currency, scrolls.Id, Shapes, out string why));   // full now
         Assert.Equal("the tab is full", why);
     }
@@ -74,7 +77,7 @@ public class CtrlClickTests : IDisposable
         items.Put(PlayerInventories.Cursor, new InventoryItem(items.NewItemId(), 0, 0, Scrolls(7)));
 
         // Dropped anywhere on the tab, one of the held stack: its slot is full, so nothing moves (nothing is swapped out).
-        Assert.Null(ItemMoves.HeldToStash(stash, items, Currency, 30, 0, one: true, Shapes, out _));
+        Assert.Null(ItemMoves.HeldToStash(stash, items, Currency, 54, 0, one: true, Shapes, out _));
 
         var (again, stashAgain) = Reload();
         Assert.Equal(50, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
@@ -236,5 +239,86 @@ public class CtrlClickTests : IDisposable
         Saves.FailWrite = null;
 
         Assert.Equal(10, Reload().Items.Items(Main).Single().Item.StackSize);
+    }
+
+    // Currency from the stash used on an inventory item (C→S 0x71 naming a stash tab): one leaves the tab's stack, the
+    // target changes, both saved together.
+    [Fact]
+    public void Currency_from_the_stash_is_spent_from_its_stack_and_changes_the_inventory_item()
+    {
+        var (items, stash) = (Items(), Stash());
+        var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(16)), Shapes, out _)!.Value.Placed;
+        var wand = items.Add(Main, 0, 0, Wand());
+
+        var (left, changed) = ItemMoves.UseAcross(items, stash, new(Currency, 0, inSlot.Id), new(null, Main, wand.Id), i => i with { ItemLevel = 77 })!.Value;
+
+        Assert.Equal((inSlot.Id, 15), (left!.Id, (int)left.Item.StackSize));
+        Assert.Equal(77, changed.Item.ItemLevel);
+        var (again, stashAgain) = Reload();
+        Assert.Equal(15, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
+        Assert.Equal(77, again.Items(Main).Single().Item.ItemLevel);
+    }
+
+    [Fact]
+    public void The_last_currency_from_the_stash_leaves_the_tab()
+    {
+        var (items, stash) = (Items(), Stash());
+        var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(1)), Shapes, out _)!.Value.Placed;
+        var wand = items.Add(Main, 0, 0, Wand());
+
+        var (left, _) = ItemMoves.UseAcross(items, stash, new(Currency, 0, inSlot.Id), new(null, Main, wand.Id), i => i with { ItemLevel = 77 })!.Value;
+
+        Assert.Null(left);
+        Assert.Empty(Reload().Stash.Inventory(Currency).Items);
+    }
+
+    [Fact]
+    public void Currency_from_the_stash_on_a_missing_item_or_a_failed_write_changes_nothing()
+    {
+        var (items, stash) = (Items(), Stash());
+        var inSlot = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(16)), Shapes, out _)!.Value.Placed;
+        var wand = items.Add(Main, 0, 0, Wand());
+
+        Assert.Null(ItemMoves.UseAcross(items, stash, new(Currency, 0, inSlot.Id), new(null, Main, wand.Id + 1000), i => i with { ItemLevel = 77 }));
+        Saves.FailWrite = k => k.Equals(_character, StringComparison.OrdinalIgnoreCase);   // the stash's write goes, the item's fails
+        Assert.ThrowsAny<IOException>(() => ItemMoves.UseAcross(items, stash, new(Currency, 0, inSlot.Id), new(null, Main, wand.Id), i => i with { ItemLevel = 77 }));
+        Saves.FailWrite = null;
+
+        var (again, stashAgain) = Reload();
+        Assert.Equal(16, stashAgain.Inventory(Currency).Items.Single().Item.StackSize);
+        Assert.NotEqual(77, again.Items(Main).Single().Item.ItemLevel);
+    }
+
+    // Crafting in the currency tab: the currency in its slot, the item in the crafting slot of the same tab.
+    [Fact]
+    public void Currency_from_its_slot_crafts_the_item_in_the_crafting_slot()
+    {
+        var stash = Stash();
+        var scrolls = stash.Place(Currency, 1, 0, new InventoryItem(1, 0, 0, Scrolls(16)), Shapes, out _)!.Value.Placed;
+        var wand = stash.Place(Currency, CraftingSlot, 0, new InventoryItem(2, 0, 0, Wand()), Shapes, out _)!.Value.Placed;
+
+        var (left, changed) = ItemMoves.UseAcross(Items(), stash, new(Currency, 0, scrolls.Id), new(Currency, 0, wand.Id), i => i with { ItemLevel = 77 })!.Value;
+
+        Assert.Equal(15, left!.Item.StackSize);
+        Assert.Equal((77, CraftingSlot), ((int)changed.Item.ItemLevel, (int)changed.X));
+        var tab = Reload().Stash.Inventory(Currency).Items;
+        Assert.Equal(15, tab.Single(i => i.Id == scrolls.Id).Item.StackSize);
+        Assert.Equal(77, tab.Single(i => i.Id == wand.Id).Item.ItemLevel);
+    }
+
+    [Fact]
+    public void Currency_from_the_inventory_crafts_an_item_in_the_stash()
+    {
+        var (items, stash) = (Items(), Stash());
+        var scrolls = items.Add(Main, 0, 0, Scrolls(3));
+        var wand = stash.Place(Currency, CraftingSlot, 0, new InventoryItem(2, 0, 0, Wand()), Shapes, out _)!.Value.Placed;
+
+        var (left, changed) = ItemMoves.UseAcross(items, stash, new(null, Main, scrolls.Id), new(Currency, 0, wand.Id), i => i with { ItemLevel = 77 })!.Value;
+
+        Assert.Equal(2, left!.Item.StackSize);
+        Assert.Equal(77, changed.Item.ItemLevel);
+        var (again, stashAgain) = Reload();
+        Assert.Equal(2, again.Items(Main).Single().Item.StackSize);
+        Assert.Equal(77, stashAgain.Inventory(Currency).Items.Single().Item.ItemLevel);
     }
 }

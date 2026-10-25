@@ -14,7 +14,7 @@ using GameServer.Core.World;
 /// (<see cref="InstanceControl"/>). Docs: Agents/docs/protocol/09-area-change.md.
 /// </summary>
 sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accounts = null,
-    IReadOnlyList<(string Id, ushort Hash16)>? towns = null)
+    IReadOnlyList<(string Id, ushort Hash16)>? towns = null, Func<string, ushort?>? loginHideout = null)
 {
     private readonly IReadOnlyList<(string Id, ushort Hash16)> _towns = towns ?? WorldAreaTowns.Default;
 
@@ -41,7 +41,8 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
             await _lock.WaitAsync();
             try
             {
-                Console.WriteLine($"[auth] {peer} => {LoginMessageFormat.Describe(message)}");
+                var logged = message is LoginResult result ? result with { Digest = [], Data = [] } : message;
+                Console.WriteLine($"[auth] {peer} => {LoginMessageFormat.Describe(logged)}");
                 byte[] wire = LoginMessage.Encode(message);
                 ciphers.Send.Process(wire);
                 await stream.WriteAsync(wire);
@@ -50,13 +51,13 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
         }
     }
 
-    /// <summary>Play (login 0x0e): the character enters its starting town; records the ticket and the login link.</summary>
+    /// <summary>Play (login 0x0e): enter the chosen home, or last town if none; record the ticket and login link.</summary>
     public (ushort Area, uint Ticket) AssignStart(LoginServerSession session, LoginLink link)
     {
         string character = session.CharacterName ?? "?";
         _links[character] = link;
-        // Every login starts at the character's last town, as in the real game (#4).
-        var inst = registry.Enter(WorldAreaTowns.LoginArea(session.CharacterLastTown, _towns), character);
+        // Explicitly selected homes take precedence; characters without a choice retain town progression.
+        var inst = registry.Enter(loginHideout?.Invoke(character) ?? WorldAreaTowns.LoginArea(session.CharacterLastTown, _towns), character);
         return (inst.AreaHash, NewTicket(session, character, inst));
     }
 
@@ -164,6 +165,14 @@ sealed class InstanceDirectory(InstanceRegistry registry, AccountService? accoun
                 if (_links.TryGetValue(info.Character, out var link)) link.Session.CharacterLevel = req.Level;
                 Console.WriteLine($"[auth] {info.Character} set to level {req.Level}");
                 return new ControlResponse { Ok = true, Character = info.Character, Level = req.Level };
+            }
+            case "set_portrait":
+            {
+                if (accounts is null) return new ControlResponse { Ok = false, Error = "no account store" };
+                var r = accounts.SetPortrait(info.Character, req.Portrait);
+                if (!r.Ok) return new ControlResponse { Ok = false, Error = r.Error.ToString() };
+                Console.WriteLine($"[auth] {info.Character}: portrait {req.Portrait}");
+                return new ControlResponse { Ok = true, Character = info.Character };
             }
             case "leave":
                 if (_latest.TryGetValue(info.Character, out uint latest) && latest != req.Ticket

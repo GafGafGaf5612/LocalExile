@@ -51,7 +51,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Quality | `0x14363acd8` | `0x1424aec50` | u8 |
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
-| SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: none), u32 +0x3c, u8 +0x10, u16 +0x40 |
+| SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: one level over the cap), u32 +0x3c the variant, u8 +0x10 flags (bit 2: level locked), u16 +0x40 |
 | Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue (seen), 4 white (assumed) |
 | Armour | `0x14363ad40` | `0x1424affc0` | u8 0..0x20 (stored at +0x28; 0x20 also sets +0x2a) |
 | LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
@@ -99,6 +99,49 @@ implicits again. Dev commands on the held item: `/mod [implicit|explicit|enchant
 `/rarity <normal|magic|rare|unique> [unid]`.
 
 ## 2b. Rolling magic and rare items
+
+### Essence crafting (2026-10-25)
+
+`EssenceCrafting.cs` reads the existing `tables/Essences.json`: BaseItemTypesKey identifies
+the consumed currency, and each equipment-class ModsKey resolves the exact guaranteed
+Mods.dat row. Quivers use Display_Quiver_ModsKey (there is no separate Quiver_ModsKey in
+this schema); Rune Daggers use Dagger, Warstaves use Staff, and thrusting swords use
+OneHandThrustingSword. All 105 craftable essences are included, including the four tier-8
+essences and tier-0 Essence of Desolation. Remnant of Corruption has no equipment mods
+and is deliberately not handled as item crafting currency.
+
+Normal equipment becomes identified rare. Tiers 5–8 and Desolation can also reforge rare
+equipment; magic, unique, corrupted, mirrored, incompatible classes/domains and the four
+standard metamods are refused without consuming currency. The guaranteed mod bypasses
+ordinary spawn weights and item-level requirements. Random affixes retain their normal
+base/tag weights and use min(item level, ItemLevelRestriction), when a restriction is set;
+the item's actual level stays unchanged. This is a cap on random properties, not a maximum
+target item level. Desolation's cap is 15 in this client's table.
+
+`ItemRolls.Roll` inserts the guaranteed affix before filling remaining prefix/suffix slots.
+Family conflicts are excluded, the usual three-prefix/three-suffix limits apply, fractured
+mods keep their values and positions, and a conflicting fracture refuses the craft. Existing
+implicit/enchant mods, sockets, gems, links and quality remain. The random affix-count
+distribution is the existing server distribution documented below, not a newly verified
+official distribution. Conditional combat effects still depend on the server's implementation
+of the corresponding stats; this change supplies their exact item modifiers.
+
+UseItemOn dispatches essences through the existing 0x71 / Shift 0x72 currency path,
+including currency in the Essence stash tab, item targets in stash/inventory, atomic saves,
+one-unit consumption and 0xbf item replacement. Failures never consume a stack unit.
+The extraction manifest explicitly checks Essences.json, and GameDataFiles warns if absent.
+
+Tests exercise every essence across supported equipment classes at item levels 1 and 100,
+raw-table class mappings, value ranges, random-mod caps, rarity/protection restrictions,
+fractures/metamods and repeated use directly from the Essence tab. Real-client application
+awaits the user's test after Gateway restart.
+
+References: [PoEDB essences](https://poedb.tw/us/Essence),
+[Desolation](https://poedb.tw/us/Essence_of_Desolation),
+[PoE Wiki mechanics](https://www.poewiki.net/wiki/Essence). Prefer this client's extracted
+rows over later website data when modifier values differ by game version.
+
+### Ordinary random affixes
 
 `ItemRolls.cs`. An affix can roll when its Mods.dat row has the base's BaseItemTypes **ModDomain** (1 items, flasks
 their own), GenerationType 1 (prefix) or 2 (suffix), Level at most the item level, is not essence-only, and has a
@@ -157,13 +200,28 @@ damage (11-skills.md §9).
   sent through `Item.LevelRequirementOf`): 0 for types with the flag at type data +0xcb; else
   `local_level_requirement_override` if non-zero; else max(the type's level, Mods.dat Level × 4 / 5 for every mod in all
   five lists) + `local_level_requirement_+`, at least 0. Gems send 0: their requirement comes from the SkillGem
-  component (`0x14246fff0`). The server also refuses 0x2a / 0x4a into equipment rows below it (`LevelTooLow`).
+  component (`0x14246fff0` for the level, `0x14246fc40` per attribute; [19](19-gems.md) §2). The server also refuses
+  0x2a / 0x4a into equipment rows below it (`LevelTooLow`).
 
 **Inactive items** (`ItemModStats.Inactive`): a worn item whose requirements stop being met (an attribute item taken
 off, a lower level) stays on but does nothing: no mod stats, no local weapon mods, no gem skills (their skill ids are
 kept). After each change, items that fall short are switched off one at a time, counting the attributes of every
 active item including their own, until all active items are satisfied; an inactive item comes back when the character
 and the other active items meet its requirement without its own attributes.
+
+A gem socketed in a worn item whose level or attribute requirement the character no longer meets makes that item
+inactive as well (`CharacterStatSources`: the gem's requirements are checked per socket with `GemRequirementsUnmet`),
+so the item counts for nothing and the Actor skill list leaves its gems out: with no skill, there is nothing for the
+client to cast ([19](19-gems.md) §2 "Requirements"). An inactive main-hand weapon is not there for the attack or for
+the weapon shape either: the default attack falls back to the class's unarmed hit (`WeaponFor`) and the shape passives
+read as unarmed (`WeaponProfileFor`).
+
+Open: the client still draws an inactive item on the character (a red wand stays in hand), and the server leaves it
+where it is. The state is reachable in the real game — a ring's +intelligence makes a gem's requirement met, the gem
+goes in, the ring comes off — the server now reproduces it (attributes included, checked live 2026-10-23 with
+`/set_stat intelligence` above and below a gem's requirement: the client reds the gem and the wand's mods stop
+counting, [19](19-gems.md) §2 "Requirements"). What the official client draws then is still to check there (the gem
+red, the wand still in hand). Moving the item out of its row is the only way to take its visual away (Roadmap "Gems 1").
 
 **Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).
@@ -205,12 +263,14 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x2a | 18 | `0x1435bf710` / `0x141f8feb0` | put the held item down: u32 inventory id, u32 x, u32 y (0, 0 for equipment), u8 Shift (1: one of a held stack, §4a), u8 (3), u8, u8. Sent for a click while holding on a cell; a click on an item sends 0x4a | 0xbf target (remove the displaced item, add the held one), 0xbf cursor (remove the held one, add the displaced one) |
 | 0x30 | 16 | `0x1435c0838` / `0x141f90650` | put the held gem into a socket: u32 inventory id, u32 item id, u32 socket index, u8, u8 | 0xbf cursor, 0xbf replacing the item |
 | 0x2f | 17 | — | take a socketed gem onto the empty cursor: u32 inventory id, u32 item id, u32 socket index, 3 bytes | 0xbf replacing the item, 0xbf cursor |
+| 0x31 | 14 | not traced | the **"+"** on a socketed gem ([19](19-gems.md) §4): u32 inventory id, u32 item id, u32 socket index | 0xbf replacing the item with the experience at the next level's threshold (the client derives the level), the 0x20 Actor update |
+| 0xd7 | 15 | not traced | a right-click on a socketed gem toggles its **level lock** ([19](19-gems.md) §4): u32 inventory id, u32 item id, u32 socket index, u8 locked | 0xbf replacing the item with SkillGem +0x10 bit 2 set or cleared |
 | 0x29 | 2 | `0x14316c930` (id only), sender `0x140117b80` | drop the held item into the world | 0xbf cursor, then a WorldItem (§5) |
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` / `0x141f90340`, senders `0x14215f520` / `0x14215f570` | inventory request, not mapped: u8, u32, u8 flag (0 / 1 by sender) | not handled |
 | 0x58 | 10 | `0x1435bf8a8` / `0x141f926a0` | use an item that needs no target (right-click): u32 inventory id, u32 item id, both big-endian | an Orb of Regret loses one item and adds one refund point (0xbf the stack, 0x33 the tree) |
-| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20) | a Scroll of Wisdom identifies the target (§2b); a Chromatic Orb gives every socket a new colour (`CurrencyEffects.Chromatic`: red / green / blue weighted by the base's strength / dexterity / intelligence requirement + 12, our own weights; never white, gems and links stay, always different from before; live 2026-10-21 the client sent it for boots and a helmet): 0xbf with the stack and the target |
-| 0x72 | 23 | not traced | the held currency used again with **Shift** (the client keeps it on the cursor while the inventory has more, live 2026-10-21): u32 its BaseItemTypes HASH32 (the type, not an item), u32 inventory id and u32 item id of the target, all big-endian, then u32 0, u8 1, u8 0, u8 7, u16 2 (unknown) | as 0x71, with a stack of that type from the inventories (the main inventory first) |
+| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20); the first inventory id is a stash tab (e.g. 2053) when the currency is right-clicked in the open stash (live 2026-10-23): one is taken off that tab's stack; the target inventory id can be a stash tab too, e.g. the currency tab's crafting slot (live 2026-10-23: currency in its slot used on the item in the crafting slot, both inventory ids 2053). `ItemMoves.UseAcross`: the currency and the target saved together, one 0xbf per place changed (one for both when they share it) | a Scroll of Wisdom identifies the target (§2b); a Chromatic Orb gives every socket a new colour (`CurrencyEffects.Chromatic`: red / green / blue weighted by the base's strength / dexterity / intelligence requirement + 12, our own weights; never white, gems and links stay, always different from before; live 2026-10-21 the client sent it for boots and a helmet): 0xbf with the stack and the target |
+| 0x72 | 23 | not traced | the held currency used again with **Shift** (the client keeps it on the cursor while the inventory has more, live 2026-10-21): u32 its BaseItemTypes HASH32 (the type, not an item), u32 inventory id and u32 item id of the target, all big-endian, then u32 0, u8 1, u8 0, u8 7, u16 2 (unknown) | as 0x71, with a stack of that type from the inventories (the main inventory first), then from the stash tabs |
 | 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | the held item clicked **on an item** (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 the clicked item's id, u8 flags (bit 2 = Shift; HNC bits 3-7), u8 (3), u16 (low byte first, differs every click, unknown) | a merge (0xbf the stack, 0xbf cursor), else a swap as 0x2a |
 | 0x7c | 17 | `0x1435bfdd8` / `0x141f90870`, sender `0x142165640` | split a stack (§4a): u32 inventory id, u32 item id, u32 amount, u8 (3), u16 (unknown); no HNC bits | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
 
@@ -220,7 +280,22 @@ instead and sends nothing unless Destroy is chosen (0x16 command 9).
 Rules the Gateway applies (`PlayerInventories.Place`): grids need the item inside the grid. When exactly one item is in
 the way it is swapped onto the cursor; two or more refuse. Single-item slots take the item at (0, 0) when its class fits
 (`Accepts`: the ItemClasses Id per equipment row; flasks only in the flask bar). A one-handed weapon put into an empty
-main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there.
+main hand's off hand goes to the main hand. Taking the main hand off moves the off hand's one-hander there. The two
+hands of a weapon set must fit together (`PlayerInventories.HandConflict`, 2026-10-23): a bow goes with an empty off hand
+or a quiver, another two-handed weapon only with an empty off hand; a quiver goes with a bow or an empty main hand, never
+with a one-handed weapon; a shield or a one-handed weapon not with a two-handed weapon. A drop that breaks this is
+refused (the item stays held). Before, only the class per row was checked, so a bow could go next to a shield or a
+sword and a one-handed weapon next to a quiver.
+
+### Client quiver eligibility
+
+`FUN_1421eca50` checks that a quiver (ItemClasses row + 1 = 21) sees player stat 3,
+`main_hand_weapon_type`, equal to **9**. This is a separate native enum: Bow's ItemClasses row + 1 is 14,
+and its model stance is 8. Sending the visual alone leaves inventory quivers red and prevents placement
+requests. `FinalPlayerStats` supplies 9 for an active, usable bow in row 2 (a value /set_stat set wins); other
+weapons send nothing, and taking the bow off sends 0 through the cleared-stat list (`PlayerStatsWithCleared`).
+Weapon swaps physically exchange rows 2/3 with 14/15. Other weapon-stat enum values remain to be mapped.
+Automated coverage passes; in-client confirmation pending.
 
 ## 4a. Stacks
 
@@ -244,7 +319,7 @@ tables; it changes nothing itself, the server's 0xbf does.
   Scroll of Wisdom, 20 shards → their orb, 100 splinters → their Breachstone or Emblem …). A stack that reaches its max
   by a merge or an add turns into one of that item in the same cell, with the same id (`PlayerInventories.Completed`).
 - **Adding** (`PlayerInventories.AddStacked`): items picked up from the ground into the main inventory, `/item <type>
-  <count>` (count = how many, up to 20 full stacks) and the sell window's reward go onto the stacks of their type first
+  <count>` (count = how many, up to a full main inventory: 60 stacks; the rest is reported as no room) and the sell window's reward go onto the stacks of their type first
   (fullest first), then as new stacks of at most the max in free cells. A ground stack is picked up only when all of it
   fits (`Fits`).
 
@@ -321,6 +396,14 @@ and values), a new rare name, implicits kept; the item ends identified. Anything
 the values of each explicit mod within its own tier; the mods, their order, implicits, rarity and name stay. A new tier
 would be a different mod, and the client reorders the tooltip by mod, so the lines would jump. An item without explicit
 mods is refused.
+
+### Blessed Orb (2026-10-23, not verified live yet)
+
+`CurrencyRerollImplicit`, same handler (0x71, 0x72 with Shift; one orb spent per use). Before, the Gateway logged it as
+"not handled" (live 2026-10-23, item 221). `ItemRolls.Bless` rerolls only the values of each implicit mod within its own
+tier, as the Divine Orb does for explicits; explicit, enchant and other mods, rarity and name stay. An item without an
+implicit mod is refused (nothing spent), and like every currency here but the Scroll of Wisdom it does nothing to a
+corrupted or mirrored item.
 
 ### Orb of Scouring (2026-10-21, verified live)
 
@@ -487,7 +570,9 @@ component by `0x141e80340`; `global_no_attribute_requirements` (0x2ee3) skips th
 `global_item_attribute_requirements_+%` (0x51a) scales it. The character panel shows `strength` / `dexterity` /
 `intelligence` (575 / 581 / 578), which a UI cache (`0x141e802d0`) reads when it is built. With only those three the
 panel said 32 Int while "Requires 14 Int" stayed red. The Gateway sends all six from Characters.dat (BaseStrength …), in
-the creation blob and again as 0x1b3 after entering.
+the creation blob and again as 0x1b3 after entering. A gem's attribute requirement is not the item curve: it is the
+client's own formula from the SkillGem component (`0x14246fc40`, [19](19-gems.md) §2), checked against the same three
+stats (the socket check at `0x1402ce738`).
 
 **The class byte** of the Player component is Characters.dat **IntegerId** (Marauder 1, Witch 3), not the row: with row
 1 the panel showed Marauder.
@@ -554,7 +639,7 @@ mana over 3 s, 6 of 24. A use with fewer charges than PerCharge, or while dead, 
    0x1b1. `Game_FLASK_BUFFS=0` recovers without the buffs.
    Being tested: the buff's duration, from which the orb may draw the recovery still to come. `Game_FLASK_BUFF_DURATION`
    picks the field: `ms` (default) flags bit1, u32 +0x68 = 3000; `f6c` flags bit7, f32 +0x6c = 3.0; `0` none.
-3. `RunFlaskRecovery` adds the recovery evenly from the use to its end, by the clock, every 20 ms while a flask
+3. `RunResourceRecovery` adds the recovery evenly from the use to its end, by the clock, every 16 ms while a flask
    recovers, and sends each whole point at once (S→C 0x1b1): the orb rises by +1 about every 43 ms for a Small Life
    Flask, not in the player tick's 250 ms steps of 6 (live 2026-10-20: those looked jerky). The buff comes off
    (S→C 0x1c2) when the time is up, the pool is full, or the player dies. Using a flask whose effect still runs
@@ -578,3 +663,9 @@ not known yet), and they fill up on entering a town or a hideout and on resurrec
   on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
   Gateway shows each client only its own player).
+
+### Currency metamod protection
+
+Currency mutations snapshot positive explicit metamod stats before changing the item. Scouring, Annulment, Divine and Chaos preserve existing prefixes/suffixes protected by their respective locks, as well as fractured affixes. Scouring removes the opposite-side protecting craft, retains quality, sockets, links and non-explicit mods, refuses uniques, and derives rarity from retained explicit count (0 normal, 1 magic, 2+ rare). Annulment retains rarity and also excludes attack/caster-tagged affixes when their cannot-roll craft is present. Exalt, Regal and Augment allow additions to a locked side, but filter cannot-roll attack/caster tags. Reforges use cannot-roll restrictions from retained crafts; an unprotected craft removed by Chaos does not restrict the new pool. Bench selective replacement uses the same protection and generation rules. Essence rejects the four outcome-changing metamods (multimod remains allowed). Socket/quality/implicit currencies do not alter explicit affixes.
+
+Regression coverage: MetacraftTests, real data prefix/suffix lock removal, Divine/Chaos preservation, annul tag protection and added-affix tag exclusion. These fixes do not implement currencies absent from UseItemOn, or replace the documented local Chance/Vaal outcome distributions with official probabilities. References: https://www.poewiki.net/wiki/Metamod and https://www.poewiki.net/wiki/Orb_of_Scouring.

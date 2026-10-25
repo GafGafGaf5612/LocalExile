@@ -89,6 +89,27 @@ public class ItemRollsTests
     }
 
     [Fact]
+    public void Blessed_orb_rerolls_only_the_implicit_values_within_their_tier()
+    {
+        var rng = new Random(4);
+        var item = Rolls.Roll(ItemCatalog.Create(Wand) with { ItemLevel = 70 }, ItemRarity.Rare, rng);
+        var implicitBefore = item.Mods.Single(m => m.Section == ModSection.Implicit);
+        var row = Catalog.Mods.ByHash(implicitBefore.Hash)!;
+        var seen = new HashSet<int>();
+        for (int i = 0; i < 50; i++)
+        {
+            var blessed = Rolls.Bless(item, rng)!;
+            var after = blessed.Mods.Single(m => m.Section == ModSection.Implicit);
+            Assert.Equal(implicitBefore.Hash, after.Hash);   // the same mod and tier
+            Assert.Equal(item.Mods.Where(m => m.Section != ModSection.Implicit), blessed.Mods.Where(m => m.Section != ModSection.Implicit));
+            Assert.InRange(after.Values[0], Math.Min(row.Stats[0].Min, row.Stats[0].Max), Math.Max(row.Stats[0].Min, row.Stats[0].Max));
+            seen.Add(after.Values[0]);
+        }
+        Assert.True(seen.Count > 1);   // the values do change
+        Assert.Null(Rolls.Bless(item with { Mods = [.. item.Mods.Where(m => m.Section != ModSection.Implicit)] }, rng));   // no implicit
+    }
+
+    [Fact]
     public void Rolled_values_stay_in_the_mods_ranges()
     {
         var item = Rolls.Roll(ItemCatalog.Create(Wand) with { ItemLevel = 70 }, ItemRarity.Rare, new Random(3));

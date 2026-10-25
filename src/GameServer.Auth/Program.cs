@@ -89,6 +89,8 @@ static async Task Serve(LoginServerKeys keys)
     var hideouts = GameServer.Core.World.WorldAreaHideouts.Load(Path.Combine("data", "tables", "WorldAreas.json"));
     // Game_SEED=<n> (dev) gives every new non-hideout instance that seed instead, for generation traces of one seed.
     uint? fixedSeed = uint.TryParse(Environment.GetEnvironmentVariable("Game_SEED"), out var s) ? s : null;
+    var hideoutAreas = GameServer.Core.World.WorldAreaHideouts.LoadAreas(Path.Combine("data", "tables", "WorldAreas.json"));
+    using var progress = new SaveDatabase(SaveDatabase.DefaultPath);
     var registry = new GameServer.Core.World.InstanceRegistry
     {
         SeedFor = fixedSeed is { } seed
@@ -99,7 +101,8 @@ static async Task Serve(LoginServerKeys keys)
         Towns = towns.Select(t => t.Hash16).ToHashSet(),
     };
     Console.WriteLine($"[auth] towns: {towns.Count} ({string.Join(", ", towns.Select(t => t.Id))})");
-    var directory = new InstanceDirectory(registry, accounts, towns);
+    var directory = new InstanceDirectory(registry, accounts, towns, character =>
+        CharacterHome.SelectedHideout(progress, character) is { } area && hideoutAreas.TryGetValue(area, out ushort hash) ? hash : null);
     _ = directory.ServeControlAsync(InstanceControl.Port);
     Console.WriteLine($"[auth] login server on tcp/{port}");
     // Game_LEAGUES: comma-separated base leagues (default Standard, Allflame), each with its Hardcore / SSF / Ruthless variants.

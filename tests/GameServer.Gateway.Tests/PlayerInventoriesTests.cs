@@ -151,6 +151,55 @@ public class PlayerInventoriesTests
         _ => new(1, 3, "Wand"),
     };
 
+    // Hands: a bow goes with an empty off hand or a quiver, a quiver only with a bow or an empty main hand.
+    const uint BowType = 0xb0b0b0b0, QuiverType = 0xb1b1b1b1, SwordType = 0xb2b2b2b2, ShieldType = 0xb3b3b3b3, AxeType = 0xb4b4b4b4;
+    static PlayerInventories.Shape? HandShapes(Item i) => i.TypeHash switch
+    {
+        BowType => new(2, 4, "Bow"),
+        QuiverType => new(2, 3, "Quiver"),
+        SwordType => new(1, 3, "One Hand Sword"),
+        ShieldType => new(2, 2, "Shield"),
+        AxeType => new(2, 4, "Two Hand Axe"),
+        _ => null,
+    };
+
+    static string? Equip(PlayerInventories items, byte row, uint type)
+    {
+        items.Put(PlayerInventories.Cursor, new InventoryItem(items.NewItemId(), 0, 0, new Item(type, ["Base"], 0x1)));
+        if (items.Place(row, 0, 0, HandShapes, out string why) is not null) return null;
+        items.PickUp(PlayerInventories.Cursor, items.Items(PlayerInventories.Cursor).Single().Id);   // clear the cursor
+        return why;
+    }
+
+    [Theory]
+    [InlineData(BowType, QuiverType, true)]          // a bow, then its quiver
+    [InlineData(QuiverType, BowType, true)]          // a quiver, then a bow
+    [InlineData(SwordType, QuiverType, false)]       // no quiver with a one-handed weapon
+    [InlineData(QuiverType, SwordType, false)]       // no one-handed weapon with a quiver
+    [InlineData(BowType, ShieldType, false)]         // a bow keeps the off hand for a quiver
+    [InlineData(ShieldType, BowType, false)]
+    [InlineData(AxeType, QuiverType, false)]         // other two-handed weapons need an empty off hand
+    public void Hands_take_a_bow_with_a_quiver_and_nothing_else_with_either(uint first, uint second, bool fits)
+    {
+        var items = NewInventories();
+        byte RowOf(uint type) => type is QuiverType or ShieldType ? PlayerInventories.Offhand1 : PlayerInventories.Weapon1;
+
+        Assert.Null(Equip(items, RowOf(first), first));
+        var why = Equip(items, RowOf(second), second);
+
+        Assert.Equal(fits, why is null);
+        Assert.Equal(fits ? 1 : 0, items.Items(RowOf(second)).Count(i => i.Item.TypeHash == second));
+    }
+
+    [Fact]
+    public void A_quiver_goes_alone_and_the_second_weapon_set_follows_the_same_rule()
+    {
+        var items = NewInventories();
+        Assert.Null(Equip(items, PlayerInventories.Offhand1, QuiverType));   // the main hand empty
+        Assert.Null(Equip(items, PlayerInventories.Weapon2, SwordType));
+        Assert.NotNull(Equip(items, PlayerInventories.Offhand2, QuiverType));
+    }
+
     InventoryItem Hold(PlayerInventories items, Item item)
     {
         var placed = items.Add(PlayerInventories.MainInventory, 11, 4, item);
@@ -448,7 +497,7 @@ public class PlayerInventoriesTests
     }
 
     [Fact]
-    public void Socketed_gems_come_with_their_item_and_socket()
+    public void Socketed_gems_come_with_their_row_item_and_socket()
     {
         var items = NewInventories();
         var fireball = new Item(0x11111111, ["Base", "SkillGem"], 0x1111);
@@ -459,7 +508,7 @@ public class PlayerInventoriesTests
         });
         items.Add(PlayerInventories.MainInventory, 0, 0, Wand() with { Sockets = [new(SocketColour.Blue, fireball)] });
 
-        Assert.Equal([(wand.Id, 0, fireball), (wand.Id, 2, clarity)], items.SocketedGemPlaces());
+        Assert.Equal([(PlayerInventories.Weapon1, wand.Id, 0, fireball), (PlayerInventories.Weapon1, wand.Id, 2, clarity)], items.SocketedGemPlaces());
     }
 
     [Fact]

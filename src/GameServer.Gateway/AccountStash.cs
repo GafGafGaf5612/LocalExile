@@ -355,8 +355,10 @@ sealed class AccountStash
     (int X, int Y)? CellIn(TabState t, Item item, int x, int y, out string why)
     {
         why = "";
+        if (_rules.TakesAnything(t.Saved.Type, x, y)) return (x, y);   // the currency tab's crafting slot: any item, where dropped
         if (!_rules.Holds(t.Saved.Type, item.TypeHash)) { why = $"the {TypeName(t)} tab doesn't hold that item"; return null; }
         if (!_rules.Slotted(t.Saved.Type)) return (x, y);
+        if (_rules.IsOverflowSlot(t.Saved.Type, x, y)) return (x, y);   // a spare cell under the crafting slot: where dropped
         if (_rules.SlotOf(t.Saved.Type, item.TypeHash) is not int slot) { why = $"the {TypeName(t)} tab has no slot for that item"; return null; }
         return (slot, 0);
     }
@@ -369,8 +371,10 @@ sealed class AccountStash
             ? [.. t.Items.Where(i => i.X == x && i.Y == y)]
             : [.. t.Items.Where(i => shapeOf(i.Item) is { } s && i.X < x + shape.Width && x < i.X + s.Width && i.Y < y + shape.Height && y < i.Y + s.Height)];
 
-    // How many of an item one cell of the tab holds: a currency tab's slot more than the item's own stack.
-    int MaxStack(TabState t, Item item, PlayerInventories.Shape shape) => _rules.MaxStack(t.Saved.Type, item.TypeHash) ?? shape.MaxStack;
+    // How many of an item one cell of the tab holds: a currency tab's slot more than the item's own stack (not its crafting
+    // slot, which holds any item at its own stack size).
+    int MaxStack(TabState t, Item item, PlayerInventories.Shape shape, int x, int y) =>
+        _rules.TakesAnything(t.Saved.Type, x, y) ? shape.MaxStack : _rules.MaxStack(t.Saved.Type, item.TypeHash) ?? shape.MaxStack;
 
     /// <summary>The item put into a tab at (x, y) (in a slotted tab, its own slot), and the one item it was dropped on
     /// (taken out, for the cursor), or null with the reason: the tab doesn't hold it, outside the grid or more than one
@@ -421,7 +425,7 @@ sealed class AccountStash
             if (tab < 0 || tab >= _tabs.Count || shapeOf(held.Item) is not { MaxStack: > 1 } shape) return null;
             var t = _tabs[tab];
             if (CellIn(t, held.Item, x, y, out _) is not var (cx, cy)) return null;
-            int max = MaxStack(t, held.Item, shape);
+            int max = MaxStack(t, held.Item, shape, cx, cy);
             if (InTheWay(t, cx, cy, shape, shapeOf) is not [var under] || under.Item.TypeHash != held.Item.TypeHash || under.Item.StackSize >= max) return null;
             int moved = Math.Min(Math.Min(held.Item.StackSize, most), max - under.Item.StackSize);
             var bigger = under with { Item = under.Item with { StackSize = (ushort)(under.Item.StackSize + moved) } };
@@ -442,8 +446,9 @@ sealed class AccountStash
     /// <summary>
     /// Puts <paramref name="item"/> (a stack of <see cref="Item.StackSize"/>, or any one item) into a tab the way Ctrl +
     /// click does: a stack first onto the tab's stacks of its type with room (fullest first), then into free cells (in a
-    /// slotted tab: its own slot), in one save. What does not fit is <see cref="Stacking.Left"/>; null (nothing changes)
-    /// with the reason when the tab doesn't hold the item. New items get stash ids.
+    /// slotted tab: its own slot, then the spare slots in screen order, <see cref="StashRules.OverflowSlots"/>), in one
+    /// save. What does not fit is <see cref="Stacking.Left"/>; null (nothing changes) with the reason when the tab doesn't
+    /// hold the item. New items get stash ids.
     /// </summary>
     public Stacking? AddStacked(int tab, Item item, Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
     {
@@ -458,11 +463,13 @@ sealed class AccountStash
             if (shapeOf(item) is not { } shape) { why = "unknown item type"; return null; }
             if (CellIn(t, item, 0, 0, out why) is not var (slotX, slotY)) return null;
             bool slotted = _rules.Slotted(t.Saved.Type);
-            int max = Math.Max(1, MaxStack(t, item, shape));
+            int max = Math.Max(1, MaxStack(t, item, shape, -1, -1));   // stacks into the item's own slot, never the crafting slot
             left = item.StackSize;
+            // A slotted tab's cells for it, in order: its own slot, then the spare slots (left to right, top to bottom).
+            List<(int X, int Y)> spots = slotted ? [(slotX, slotY), .. _rules.OverflowSlots(t.Saved.Type).Select(s => (s, 0))] : [];
             if (max > 1)
-                foreach (var s in t.Items.Where(i => i.Item.TypeHash == item.TypeHash && i.Item.StackSize < max && (!slotted || (i.X == slotX && i.Y == slotY)))
-                             .OrderByDescending(i => i.Item.StackSize).ToList())
+                foreach (var s in t.Items.Where(i => i.Item.TypeHash == item.TypeHash && i.Item.StackSize < max && (!slotted || spots.Contains((i.X, i.Y))))
+                             .OrderBy(i => slotted ? spots.IndexOf((i.X, i.Y)) : 0).ThenByDescending(i => i.Item.StackSize).ToList())
                 {
                     if (left == 0) break;
                     int take = Math.Min(left, max - s.Item.StackSize);
@@ -473,7 +480,7 @@ sealed class AccountStash
                     changed.Add(grown);
                 }
             while (left > 0 && (slotted
-                       ? (t.Items.Any(i => i.X == slotX && i.Y == slotY) ? null : ((byte)slotX, (byte)slotY))
+                       ? spots.Where(p => !t.Items.Any(i => i.X == p.X && i.Y == p.Y)).Select(p => ((byte, byte)?)((byte)p.X, (byte)p.Y)).FirstOrDefault()
                        : FreeCellIn(t, shape.Width, shape.Height, shapeOf)) is { } cell)
             {
                 int take = Math.Min(left, max);
@@ -486,6 +493,23 @@ sealed class AccountStash
         }
         if (changed.Count + added.Count > 0) Persist(tab);
         return new(changed, added, left);
+    }
+
+    /// <summary>Replaces an item in a tab with a changed copy (same id and cell), saved; null when it is not there (currency
+    /// used on an item in the stash, e.g. the currency tab's crafting slot).</summary>
+    public InventoryItem? Change(int tab, uint itemId, Func<Item, Item> change)
+    {
+        InventoryItem result;
+        lock (_lock)
+        {
+            if (tab < 0 || tab >= _tabs.Count) return null;
+            var items = _tabs[tab].Items;
+            int at = items.FindIndex(i => i.Id == itemId);
+            if (at < 0) return null;
+            result = items[at] = items[at] with { Item = change(items[at].Item) };
+        }
+        Persist(tab);
+        return result;
     }
 
     /// <summary>Takes <paramref name="amount"/> off a stack in a tab (a split: less than the whole stack). Returns the

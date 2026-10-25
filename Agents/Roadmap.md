@@ -17,6 +17,21 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 1. Quality of life
 
+Harvest station placement and native recipe browsing are implemented. Next: implement Harvest recipe execution and atomic lifeforce payment; see protocol/21-hideouts.md.
+
+### Switching hideout templates
+- **Known:** Helena now stands to Niko's screen-right and opens HideoutSelectionWindow (0x7b kind 0x22).
+  The owned list contains the default Lush Hideout. [21](docs/protocol/21-hideouts.md).
+- **Start:** map the selection request, persist the chosen template, and use it for /hideout, player keys and portals.
+
+The ordinary crafting bench's active recipes, unlocks and inventory/personal-stash payment
+are implemented (Status and protocol/21-hideouts.md). Disabled legacy recipes, map-device
+recipes and other specialised crafting stations are separate from the ordinary bench.
+
+Essence item crafting is implemented (105 currencies, class-specific guaranteed modifiers;
+see Status and protocol/13-items.md). Imprisoned essence encounters, Remnant of Corruption
+on monsters and stash-tab essence upgrading remain separate features.
+
 ### Chat lines and the global channel
 - **Known:** C→S 0x15 (chat text) is parsed; command replies use S→C 0x17 (chat line). 0x12d shows BackendErrors rows, 0x157 is
   a PvP challenge, 0x26 disconnects. The client logs "Timeout while joining global chat channel 820".
@@ -25,6 +40,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** command replies and server messages appear as chat lines, and the channel join stops timing out.
 
 ### A server tick loop
+- Continuous player recovery has its own 16 ms elapsed-game-time loop (regeneration, flasks and self RF);
+  implemented, awaiting real-client visual verification. See Status and protocol/20-damage.md.
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
 
@@ -141,7 +158,7 @@ Items are in rough priority order within each section. "Known" says what is alre
   and six portals into the map ([21](docs/protocol/21-hideouts.md) §5). Its decoration (`data/hideouts.json`) lists every doodad with its type and model.
 - **Start:** create the decorations (`HideoutObject`, each type's components from data/object-types.json); the Edit
   mode's client messages (move, place, remove, save); maps: the arrival point, a return portal, fragments and device
-  recipes, map mods; log in to the hideout after logging out there; the hideout selection window.
+  recipes and map mods. Personal template selection and login to the selected home are implemented (see Status).
 - **Done when:** the hideout looks like the real one, can be edited and saved, and maps can be run from its device.
 
 ### NPCs: dialogue options, shops and the other towns
@@ -152,6 +169,17 @@ Items are in rough priority order within each section. "Known" says what is alre
 - **Done when:** talk options play their text, Nessa and Tarkleigh trade, and every town has its NPCs.
 
 ## 3. Gameplay
+
+- **Ordinary aura activation:** nine previously rejected self auras now share reservation, presentation and
+  the supported stat/damage paths. Remaining work: Discipline's ES pool, Pride's enemy debuff, conditional
+  consecrated ground, herald/minion/banner mechanics. See protocol/11-skills.md section 13.
+
+- **Aura caster art:** the distinct EPKFiles2 visuals are selected on activation and area restoration;
+  the live source-only regression is addressed with a separate received buff for the top-left icon,
+  awaiting confirmation. Radius-scaled aura rings, if added, still need their actual radius.
+
+- **Completed area fix:** Cyclone's `/set_aoe` final radius is now sent to the client and shared with hit selection;
+  see Status and protocol/11-skills.md (live check pending).
 
 ### The player's real stats
 - **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §8); `/set_stat` takes names. The
@@ -177,8 +205,8 @@ Items are in rough priority order within each section. "Known" says what is alre
   visuals and `/auras`, awaiting live verification ([11](docs/protocol/11-skills.md) 13, [Status](Status.md)).
 - **Start:** the auras' 3D effects (BuffVisuals EPKs of the `IsSkillBuff` rows do not render, unlike Righteous Fire's);
   the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
-  Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar active border is still open: 0x25f is a
-  client UI event, not a server message. Support gems and gem levels come with the gem system ("Gems" below); party and
+   Determination/Grace/Discipline's armour/evasion/ES effects. The skill-bar indicator's buff association is implemented
+   (0x1c1 bit3; live check pending, see Status). Support gems come with the gem system ("Gems" below); party and
   minion auras and life reservation with their own systems.
 - **Done when:** the standard auras reserve correctly, their effects match PoB, and the character panel and HUD show the
   same reserved and unreserved values.
@@ -253,24 +281,21 @@ data is in [19](docs/protocol/19-gems.md).
 - **Known:** each socketed gem keeps its skill id while it stays socketed, and an aura or Righteous Fire ends with its
   gem (part (a)). Part (b): a gem's skill uses its level (from its experience) and quality, transfigured, Trarthan and
   Vaal gems grant their skills, the variant is the SkillGem data's u32, and `/gem` makes any gem
-  ([19](docs/protocol/19-gems.md) §1, §3); not yet checked with the real client.
+  ([19](docs/protocol/19-gems.md) §1, §3); not yet checked with the real client. Part (c), the requirements, is in:
+  the level is `PlayerLevelReq` (Haste 24 at gem level 1 … 70 at 20, as the client's tooltips) and the attributes are
+  the client's own formula, fitted from `0x14246fc40` and checked against 570 poedb tooltip cells with no mismatch
+  (`trunc((3·level_req + 11)·(percent/100)^0.9·k + 0.5)`, `k` 0.5 for supports and 0.7 for skills, none below 14). The
+  level stops a gem's experience at the first one the character does not meet; socketing below either is refused, and a
+  gem the character is below (after `/set_level` down) makes its item inactive: red on the client, its mods and gems not
+  counting, its skill gone from the list so it cannot be cast, and an inactive weapon falls back to the unarmed attack
+  (Status "Gem requirements"). Checked live 2026-10-23 for the level and the attributes (`/set_stat intelligence` above
+  and below the 155 a level 20 Fireball needs: at 130 the client reds the gem and the wand's mods stop counting). Left
+  open: the client still draws an inactive item worn (red wand in hand) — check with the official client what it does
+  there, and whether to move the item out of the row instead ([13](docs/protocol/13-items.md) §2d).
 - **Start:** check part (b) live (a level 20 Fireball's damage and cost, a quality aura, Ice Nova of Frostbolts, a Vaal
-  gem's two skills). Then (c) requirements: the level and attribute requirements, refusing to socket, and the disabled
-  state.
+  gem's two skills).
 - **Done when:** a `/gem` gem of any level and quality casts with that level's numbers, transfigured and Vaal gems grant
   the right skills, skill ids don't change when other gems move, and requirements match the tooltips and are enforced.
-
-### Gems 2: gem experience and levelling (#63)
-- **Known:** saves keep each gem's experience; character experience arrives in one place (`GainExperience`). In this
-  change: gems in equipped items already gain 10% of every kill's experience, saved with the character, sent as 0x00bf
-  item changes and levelled by the client itself ([19](docs/protocol/19-gems.md) §1, Status "Gem experience from
-  kills").
-- **Start:** whether `PlayerLevelReq` should stall the skill's level (the level against the character's). Then the
-  panel: research first the panel's client messages and where the lock is kept; level up, level all, lock (right click),
-  the locked list under the inventory (right click levels, Shift + right click unlocks), greyed when the requirements
-  aren't met.
-- **Done when:** killing monsters levels socketed gems the way the real game does, and locked gems stay locked across
-  logins.
 
 ### Gems 3: support gems and links (#64)
 - **Known:** the skill record has a support list ([11](docs/protocol/11-skills.md) §3); granting a support as a skill
@@ -348,3 +373,5 @@ data is in [19](docs/protocol/19-gems.md).
 - Rebuild the reverse-engineering setup from a fresh clone (Ghidra import, REA, Frida) and fix whatever the guide misses.
 - Unnamed fields: [04](docs/protocol/04-player-entity.md), [05](docs/protocol/05-inventories-and-ui.md) and
   [09](docs/protocol/09-area-change.md) list fields whose meaning is unknown. Naming them is a good first task.
+
+- Completed currency metacraft protection for supported explicit-affix currencies; specialized unsupported currencies and official Chance/Vaal outcome distributions remain separate work.

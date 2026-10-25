@@ -45,6 +45,10 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
     /// Trarthan or Vaal ones; SkillGem component +0x3c).</summary>
     public int GemVariant { get; init; }
 
+    /// <summary>SkillGem component +0x10: bit 2 (0x04) is the client's "level locked" (right-click on the gem; its level-up
+    /// check 0x142472db0 returns false then). The client's own bits 5 (variant) and 7 are not sent.</summary>
+    public byte GemFlags { get; init; }
+
     public ItemRarity Rarity { get; init; }
 
     /// <summary>Unidentified items carry no <see cref="ModSection.Explicit"/> list (the client does not read it).</summary>
@@ -150,7 +154,7 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
                 // 0x14246eb00: i32 experience (-1: one level over the cap), u32 +0x3c the variant (the copy 0x14246fa50
                 // checks it against the GemVariants count and sets +0x10 bit 5 when it is not 0), u8 +0x10, u16 +0x40 an
                 // IndexableSupportGems index (0: none).
-                case "SkillGem": w.I32(GemExperience).U32((uint)GemVariant).U8(0).U16(0); break;
+                case "SkillGem": w.I32(GemExperience).U32((uint)GemVariant).U8(GemFlags).U16(0); break;
                 // 0x1421e2e20: u8 = bit0/bit1 (special, nothing more) | socket count << 2 | link group count << 5; per socket
                 // u8 colour << 1 | has gem, then the gem (item data without the length prefix); then a u8 per link group
                 // (assumed: the group's socket count).
@@ -219,6 +223,18 @@ public sealed record Item(uint TypeHash, IReadOnlyList<string> Components, ushor
 /// </summary>
 public sealed record VisibleItem(byte Slot, ushort VisualIdentity, byte Stance = 0xff, byte Type = 1)
 {
+    /// <summary>
+    /// A worn skin (the first reference, 0x1424f3fc0 → entry +0x18): the cosmetic's ItemVisualIdentity HASH16 and its
+    /// MTXTypeGameSpecific HASH32, which the client also looks up for tiered cosmetics. 0 shows the item's own art.
+    /// </summary>
+    public ushort SkinVisual { get; init; }
+    public uint SkinHash { get; init; }
+
+    /// <summary>A worn effect (the second reference, 0x1424f4250 → entry +0x40): an ItemVisualEffect HASH16 (weapon
+    /// effects) and its MTXTypeGameSpecific HASH32; 0 for none.</summary>
+    public ushort EffectVisual { get; init; }
+    public uint EffectHash { get; init; }
+
     /// <summary>An empty slot (tag 0): what clears an unequipped item from the model. A slot left out of the list keeps
     /// whatever the model showed before.</summary>
     public static VisibleItem Empty(byte slot) => new(slot, 0);
@@ -226,7 +242,10 @@ public sealed record VisibleItem(byte Slot, ushort VisualIdentity, byte Stance =
     public void Write(BlobWriter w)
     {
         if (VisualIdentity == 0) { w.U8(Slot).U8(0); return; }
-        w.U8(Slot).U8(Type).U16(VisualIdentity).U32(0).U8(0).U16(0).U32(0).U8(0).U8(Stance).U16(VisualIdentity).U8(0);
+        w.U8(Slot).U8(Type)
+            .U16(SkinVisual != 0 ? SkinVisual : VisualIdentity).U32(SkinHash).U8(0)
+            .U16(EffectVisual).U32(EffectHash).U8(0)
+            .U8(Stance).U16(VisualIdentity).U8(0);
     }
 }
 
@@ -260,7 +279,28 @@ public sealed record InventoryItem(uint Id, byte X, byte Y, Item Item);
 public static class InstanceItems
 {
     public const ushort InventoryChangeId = 0xbf, PickUpItemId = 0x28, DropItemId = 0x29, PlaceItemId = 0x2a, InventoryRequestId = 0x2d,
-        ItemActionId = 0x4a, SplitStackId = 0x7c, CommandId = 0x16, SocketGemId = 0x30, UnsocketGemId = 0x2f;
+        ItemActionId = 0x4a, SplitStackId = 0x7c, CommandId = 0x16, SocketGemId = 0x30, UnsocketGemId = 0x2f,
+        LevelUpGemId = 0x31, LockGemId = 0xd7;
+
+    /// <summary>
+    /// C→S 0x31 (14 bytes, live 2026-10-23): the level-up arrow on a socketed gem with experience one below its next
+    /// level's threshold (the client's "+", 19-gems.md §4). u32 inventory id, u32 item id, u32 socket index.
+    /// </summary>
+    public static SocketGem ReadLevelUpGem(ReadOnlySpan<byte> m) => ReadSocketGem(m);
+
+    /// <summary>
+    /// C→S 0xd7 (15 bytes, live 2026-10-23): the gem's level lock toggled by a right-click. u32 inventory id, u32 item
+    /// id, u32 socket index, u8 locked (1 lock, 0 unlock; SkillGem +0x10 bit 2).
+    /// </summary>
+    public sealed record LockGem(uint InventoryId, uint ItemId, uint Socket, bool Locked);
+
+    public const int LockGemLength = 15;
+
+    public static LockGem ReadLockGem(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32(), r.U32(), r.U8() != 0);
+    }
 
     /// <summary>
     /// C→S 0x2f (17 bytes): take the gem out of a socket onto the cursor (a click on a socketed gem with nothing held).

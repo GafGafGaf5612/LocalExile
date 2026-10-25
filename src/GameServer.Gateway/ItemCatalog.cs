@@ -106,6 +106,20 @@ sealed class ItemCatalog
         /// <summary>A Vaal gem's own row (IsVaalVariant) or an awakened one (RegularVariant set).</summary>
         public bool IsVaalOrAwakened { get; init; }
 
+        /// <summary>SkillGems MtxSlotTypes: the MicrotransactionSkillGemEffectSlotTypes rows its Cosmetics tab skill slots
+        /// take (0 the skill's effect, 1 a totem skin).</summary>
+        public IReadOnlyList<int> MtxSlotTypes { get; init; } = [];
+
+        /// <summary>SkillGems StrengthRequirementPercent: the strength share of the gem's attribute requirement
+        /// (SkillCatalog.GemAttributeRequirement), 0 for a pure dexterity or intelligence gem.</summary>
+        public int StrengthPercent { get; init; }
+
+        /// <summary>SkillGems DexterityRequirementPercent (<see cref="StrengthPercent"/>).</summary>
+        public int DexterityPercent { get; init; }
+
+        /// <summary>SkillGems IntelligenceRequirementPercent (<see cref="StrengthPercent"/>).</summary>
+        public int IntelligencePercent { get; init; }
+
         public int MaxLevel => Thresholds.Count;
 
         /// <summary>The level as the client derives it (0x14246f900): the levels whose threshold the experience reaches, up
@@ -304,7 +318,13 @@ sealed class ItemCatalog
                 variants.Add(new GemVariant(i, name, effect, effect2, creatable));
             }
             result.TryAdd(baseRow, new GemType(baseRow, r.GetProperty("IsSupport").GetBoolean(), variants,
-                thresholds.GetValueOrDefault(expType) ?? []) { Colour = Row(r, "GemColour"), IsVaalOrAwakened = vaal || Row(r, "RegularVariant") >= 0 });
+                thresholds.GetValueOrDefault(expType) ?? [])
+            {
+                Colour = Row(r, "GemColour"), IsVaalOrAwakened = vaal || Row(r, "RegularVariant") >= 0,
+                MtxSlotTypes = r.TryGetProperty("MtxSlotTypes", out var st) ? [.. st.EnumerateArray().Select(t => t.GetInt32())] : [],
+                StrengthPercent = Row(r, "StrengthRequirementPercent"), DexterityPercent = Row(r, "DexterityRequirementPercent"),
+                IntelligencePercent = Row(r, "IntelligenceRequirementPercent"),
+            });
         }
         return result;
     }

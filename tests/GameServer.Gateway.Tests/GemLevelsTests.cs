@@ -115,10 +115,10 @@ public class GemLevelsTests
     [Fact]
     public void Saves_keep_the_variant()
     {
-        var gem = Gem("Ice Nova of Frostbolts", 12, 7);
+        var gem = Gem("Ice Nova of Frostbolts", 12, 7) with { GemFlags = 4 };
 
         var back = CharacterSaves.FromSaved(CharacterSaves.ToSaved(gem), Items)!;
 
-        Assert.Equal((gem.GemVariant, gem.GemExperience, gem.Quality), (back.GemVariant, back.GemExperience, back.Quality));
+        Assert.Equal((gem.GemVariant, gem.GemExperience, gem.Quality, gem.GemFlags), (back.GemVariant, back.GemExperience, back.Quality, back.GemFlags));
     }
 }

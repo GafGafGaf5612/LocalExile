@@ -92,6 +92,25 @@ static class ItemMoves
     /// <summary>A price paid: what it took from the main inventory's stacks and from the stash's (either may be null).</summary>
     public sealed record Price(PlayerInventories.Payment? Inventory, AccountStash.Payment? Stash);
 
+    public sealed record BenchResult(InventoryItem Changed, IReadOnlyList<Price> Payments);
+
+    /// <summary>All currencies and the crafted item commit together, including multi-currency flask crafts.</summary>
+    public static BenchResult? CraftAtBench(PlayerInventories items, AccountStash stash, BenchCrafting bench,
+        int recipe, bool replace, Random random) => Saves.Atomically<BenchResult?>(() =>
+    {
+        var targets = items.Items(PlayerInventories.CraftingBench);
+        if (targets.Count != 1 || bench.Apply(recipe, targets[0].Item, replace, random) is not { } craft) return null;
+        foreach (var (currency, amount) in craft.Costs)
+            if (amount < 0 || (long)items.Count(Main, currency) + stash.CountOf(currency) < amount) return null;
+        var payments = new List<Price>();
+        foreach (var (currency, amount) in craft.Costs)
+            if (amount > 0) payments.Add(Pay(items, stash, currency, amount)
+                ?? throw new InvalidOperationException("Bench payment changed after validation"));
+        var changed = items.Change(PlayerInventories.CraftingBench, targets[0].Id, _ => craft.Item)
+            ?? throw new InvalidOperationException("Bench item disappeared after payment");
+        return new(changed, payments);
+    });
+
     /// <summary>
     /// Pays <paramref name="amount"/> of a currency type: from the main inventory's stacks first, the rest from the stash's
     /// (any tab), as a vendor takes it. Null (nothing changes) when the two together hold fewer. Call it inside a
@@ -188,6 +207,34 @@ static class ItemMoves
             if (stash.Shrink(tab, itemId, amount) is not { } left) return null;
             var part = items.Put(Cursor, PlayerInventories.Completed(new InventoryItem(items.NewItemId(), 0, 0, source.Item with { StackSize = (ushort)amount }), shape));
             return (left, part);
+        });
+
+    /// <summary>Where an item is for <see cref="UseAcross"/>: a stash tab (<paramref name="Tab"/>) or a character
+    /// inventory row (<paramref name="Row"/>), and its id.</summary>
+    public readonly record struct Spot(int? Tab, byte Row, uint Id);
+
+    /// <summary>A currency item used on an item, each in a character inventory or a stash tab (C→S 0x71 naming a stash tab
+    /// for either: the currency tab's crafting slot, live 2026-10-23): one leaves the currency's stack (the last one removes
+    /// it) and the target becomes <paramref name="change"/>(target), together. Returns the currency's stack as it is now
+    /// (null when it is gone) and the changed target, or null when either is gone (nothing changes).</summary>
+    public static (InventoryItem? Left, InventoryItem Changed)? UseAcross(PlayerInventories items, AccountStash stash, Spot used, Spot target,
+        Func<Item, Item> change) =>
+        Saves.Atomically<(InventoryItem?, InventoryItem)?>(() =>
+        {
+            bool there(Spot s) => s.Tab is int t ? t >= 0 && t < stash.Count && stash.Inventory(t).Items.Any(i => i.Id == s.Id)
+                : items.Items(s.Row).Any(i => i.Id == s.Id);
+            if (!there(used) || !there(target)) return null;
+            InventoryItem? left = null;
+            if (used.Tab is int tab)
+            {
+                var stack = stash.Inventory(tab).Items.First(i => i.Id == used.Id);
+                if (stack.Item.StackSize <= 1) { if (stash.Take(tab, used.Id) is null) return null; }
+                else if ((left = stash.Shrink(tab, used.Id, 1)) is null) return null;
+            }
+            else if (items.ConsumeOne(used.Row, used.Id) is { } consumed) left = consumed.Left;
+            else return null;
+            var changed = target.Tab is int targetTab ? stash.Change(targetTab, target.Id, change) : items.Change(target.Row, target.Id, change);
+            return changed is null ? null : (left, changed);
         });
 
     /// <summary>

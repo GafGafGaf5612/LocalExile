@@ -13,7 +13,7 @@ internal static class Program
 
         usage:
           PoEDataExtractor list   <ggpk>
-          PoEDataExtractor cat    <ggpk> <index-path>
+          PoEDataExtractor cat    <ggpk> <index-path> [--out <file>]
           PoEDataExtractor decode <ggpk> [--schema <schema.min.json>] [--out <dir>]
         """;
 
@@ -73,6 +73,8 @@ internal static class Program
         Console.WriteLine($"path   : {args[2]}");
         Console.WriteLine($"size   : {data.Length} bytes");
         Console.WriteLine($"sha256 : {hash}");
+        if (GetOption(args, "--out") is { } outPath)
+            File.WriteAllBytes(outPath, data);
         return 0;
     }
 

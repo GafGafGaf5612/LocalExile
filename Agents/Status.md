@@ -1,9 +1,59 @@
 # Status
 
+Horticrafting Station: placed beside the ordinary bench in every selected hideout; interaction approaches and opens the native Harvest recipe browser (0x7b kind 0x39). Recipe execution/payment are not implemented. Automated coverage; station and window confirmed working in the real client. See protocol/21-hideouts.md.
+
+Ordinary crafting bench (2026-10-25, automated coverage; live client verification pending):
+all 765 active recipes and their 130 recipe flags are available. Exact modifiers, class masks,
+socket/link recipes, flask enchantments, replacement/removal and rare-affix rerolls are served.
+Payment combines main inventory and personal stash, including multiple tabs/currencies, and
+commits with the item atomically. Tests cover each recipe/class and failed-payment/save cases.
+See [21](docs/protocol/21-hideouts.md), Ordinary bench recipes and payment.
+
+Bench affordability correction: native bench counters exclude ordinary stash inventories.
+A separate, nonspendable currency-count view now publishes current personal stash totals on
+opening and refreshes after crafting, while actual main-inventory currency is counted once.
+Payment still uses only real items; large totals retain their full value. Automated checks pass;
+corrected live UI verification is pending. See [21](docs/protocol/21-hideouts.md), Bench affordability.
+
+Essence crafting (2026-10-25, automated verification; real-client use pending): all 105
+craftable essences resolve their exact class-specific guaranteed mod from Essences.dat,
+including tier-8 and Desolation. Normal/rare eligibility, random-mod level caps, fractures,
+metamod refusal and repeated consumption from the Essence tab are covered. Uses the
+existing currency path for ordinary and Shift application. See [13](docs/protocol/13-items.md).
+
+Remember Password now returns and verifies the official client's 32-byte saved-login credential
+in account login 0x03 / result 0x04. It survives server restarts, is device/account-bound and
+is invalidated by changing the password. Covered by protocol/session tests and confirmed working by the user in the real client. See [01](docs/protocol/01-login.md).
+
 Where the project stands. Last updated 2026-10-21, against client **3.29.3b**. Update this file in the same pull request
 as any change that makes something work, or that finds something broken.
 
 What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in [docs/README.md](docs/README.md).
+
+Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows now publish
+`main_hand_weapon_type = 9`, required by the client's inventory gate; see [13](docs/protocol/13-items.md).
+
+Helena placement and hideout picker entry point (2026-10-25, awaiting client confirmation): Helena stands
+screen-right of Niko and Select Hideout opens the native window. All exported personal templates are owned; selection, transfer and persistence are implemented. See [21](docs/protocol/21-hideouts.md).
+
+Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art. A live check found
+that source-only buffs hid the top-left icons; source and received buff instances now coexist,
+restore and end together. Icon restoration awaits client confirmation. See [11](docs/protocol/11-skills.md) section 13.
+
+Ordinary aura expansion (2026-10-25, awaiting client confirmation): Determination, Grace, Discipline,
+Anger, Hatred, Wrath, Zealotry, Malevolence and Envy now activate with reservation and paired visual/HUD buffs.
+Armour/evasion, added hit damage, gain-as-cold, spell damage/crit and RF's more DoT are connected.
+Discipline's ES pool/recharge and conditional effects remain partial. Reservation overflow is refused.
+See [11](docs/protocol/11-skills.md) section 13.
+
+Hideout picker crash fix (2026-10-25, awaiting client confirmation): initialize the campaign
+unlock bitset with S→C 0x1f6 on area entry, before Helena can open the picker. Missing data
+caused the confirmed client access violation at 0x14216d8b7. See [21](docs/protocol/21-hideouts.md).
+
+Saved aura toggles (2026-10-25, awaiting client confirmation): active effects persist per character
+and restore on relog, area entry and server restart, subject to usable gems and available reservation.
+Helena's picker now receives all 103 exported personal hideouts, including MTX templates; switching
+templates now uses the native selection request and persists the chosen home. See [11](docs/protocol/11-skills.md) and [21](docs/protocol/21-hideouts.md).
 
 ## Works (verified with the real client)
 
@@ -30,6 +80,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Monsters: `/spawn_mob <row, Id or name>[@level] [friendly] [rarity] [name]`, `/mobs`, `/despawn`, `/mob_walk`, `/ai`: any of 10 345 of the 10 691 MonsterVarieties at a level and rarity, with full life for its level, hostile (red) or friendly, that chases the player when near (Move action 0x1ab, client pathing) | `MonsterObject`, `MonsterCatalog.cs`, Gateway | [10](docs/protocol/10-chat-and-commands.md) §5 |
 | Monster packs in areas: on entry the area fills with its MonsterPacks at the area level (The Coast: crab and Drowned packs, some magic, at least 2 with a rare; cannibal packs at the bonfires) and the unique boss at the camp's `mapboss` point with its boss pack (Fire Fury beside the campfire, verified live 2026-10-18); room points are found by fitting rooms to the doodads `-Walkmaps` captures | `MonsterPacks.cs`, Gateway (`PopulateArea`), `scripts/walkmaps`, `scripts/re/atlas room-points` | [14](docs/protocol/14-monster-packs.md) |
 | Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's 10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks per Second), and the server lowers the monster's life 2–5 at the contact point; moving cancels; the dead monster's life bar hides | `GrantedSkill`, `SkillCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) |
+| Monster hit reaction: a hit that leaves a monster alive and takes at least a tenth of its max life plays one of its rig's TakeHit clips with the clip's own sound (S→C 0x1b2 kind 0; a pool picks one at random), and not again until that clip has played (at least 0.4 s); a killing blow gets no flinch. Verified live 2026-10-25 on the Sanctum zombie and the Goatman (melee and Holy Strike); the damage and clip-length gates are not yet checked live. Not yet: the weapon impact sound (the hit "clank") and blood/sparks, a separate client system whose server message is unknown | `HitReaction.cs`, `MonsterCatalog.TakeHit`, Gateway (`SendFlinch`), `scripts/re/monster_takehit.py` → `data/monster-takehit.json` | [11](docs/protocol/11-skills.md) |
 | Impale: a physical hit that rolls `impale_on_hit_%_chance` stores 10% of the hit's physical damage on the monster (five stacks, five hits each), and every later physical hit on it takes the stored damage again as extra physical before the roll; five stacks add half the impaling hit's damage — the mechanic behind the panel's Chance to Impale row, verified live 2026-10-20 (the bonus climbs 0.5 → 2 over five hits and a fresh target reopens at one stack) | `Impale.cs`, Gateway (`Attack`) | [11](docs/protocol/11-skills.md) §14 |
 | Offence panel damage rows: the hit the server swings with becomes `main_hand_minimum/maximum_total_damage` and the per-type minimum/maximum rows, with `skill_uses_main_hand` so the client shows them; whole numbers, main hand only, and an empty packet sends none | `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`) | [11](docs/protocol/11-skills.md) §14 |
 | Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` / `off_hand_accuracy_rating` and the Chance to Hit rows at the character's level; `/accuracy [level]` | `CharacterStats.cs`, `DamageModel.cs`, `MonsterCatalog.cs`, Gateway | [11](docs/protocol/11-skills.md) §4–5 |
@@ -38,7 +89,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Life and mana flasks: a flask key (C→S 0x70) spends the flask's charges and recovers Flasks.dat's life or mana over its time in a 20 ms loop, the orb rising by +1, with the flask_effect buff; every kill, town, hideout and resurrection fills the flasks | `Flasks.cs`, Gateway (`UseFlask`, `RunFlaskRecovery`) | [13](docs/protocol/13-items.md) §8 |
 | Items: the start kit (Characters.dat skill and support gems, two life flasks on keys 1–2 and a mana flask on key 5) in the inventories, and the class weapon with two linked sockets worn in the main hand (`Game_START_WEAPON=ground`: on the ground a few cells from the spawn until it is picked up); pick up (0x28), put down, swap and equip (0x2a, slot classes and attribute requirements checked by the client), one-hander off hand → main hand, socket and unsocket gems (0x30, 0x2f), drop to the ground outside town (0x29 → WorldItem) and pick up again (to the cursor with the inventory open, at the client's 22-cell range), Destroy in town (0x16 /destroy); stacks: merge a held stack onto one of its type up to the CurrencyItems StackSize (0x4a), split with Shift + click (0x7c), Shift + click while holding places one, full fragment / shard stacks become their item, pick-ups, `/item` and sale rewards fill existing stacks first; the equipped weapon on the model; active gems in equipment grant their skill; class attributes and the class on the character panel; `/item <row, Id or name> [count]` | `InstanceItems.cs`, Gateway (`ItemCatalog.cs`, `PlayerInventories.cs`) | [13](docs/protocol/13-items.md) §4a |
 | Item mods: rarity (normal, magic, rare, unique), identified, and the implicit, explicit, enchant, scourge and hidden mod lists in the Mods component; new items roll their BaseItemTypes implicits (Driftwood Wand 8-12% increased Spell Damage); magic names come from the affixes; rarity and mods are saved with the item (characters and stash); `/mod`, `/mods`, `/rarity` on the held item. Magic and rare items: affixes rolled from Mods.dat by domain, item level, the item's tags and families, rare names from Words.dat; equipment drops magic / rare and unidentified; a Scroll of Wisdom identifies (C→S 0x71); `/item <type> magic\|rare`, `/roll`. Equipped items' mods count on the character: global stats like a passive's (life, resistances, attributes, spell damage …), the main hand's local crit, attack speed and accuracy on the weapon. Not yet: local weapon damage and defence mods, uniques and special mods (#60) | `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`, `ItemCatalog.cs`, `CharacterSaves.cs`) | [13](docs/protocol/13-items.md) §2a-§2c |
-| Gem skills: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; the server creates the `Metadata/Projectiles/Fireball` object, flies it to the target at terrain height + `Game_PROJECTILE_HEIGHT` where the area has a height grid (Lioneye's Watch, The Coast seed 1; live 2026-10-18: above the ground at every level, at belly height), else on the terrain and hits the monster on arrival | `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`), `ProjectileObject` | [11](docs/protocol/11-skills.md) §9–10 |
+| Gem skills: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; the server creates the `Metadata/Projectiles/Fireball` object, flies it to the target at terrain height + `Game_PROJECTILE_HEIGHT` where the area has a height grid (Lioneye's Watch, The Coast seed 1; live 2026-10-18: above the ground at every level, at belly height), else on the terrain and hits the monster on arrival; a gem attack skill's hit is the weapon's damage × its `DamageEffectiveness` (Flicker Strike 77.3% at level 1, 308.9% at 20) | `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`, `AreaSkillHit`), `ProjectileObject` | [11](docs/protocol/11-skills.md) §9–10 |
 | Saving characters: items, equipment, sockets and the skill bar per character in `data/saves.db` (a new bar: the default attack on the left mouse button, gem skills into empty slots only, right mouse button first); the bar is restored with S→C 0x53 after login and area changes (binds are C→S 0x4e) | `CharacterSaves.cs`, `PlayerInventories.cs`, Gateway | [11](docs/protocol/11-skills.md) §11, [13](docs/protocol/13-items.md) §7 |
 | Logins start at the character's last town's spawn point, as in the real game (after logging out, Exit to Character Selection, a crash, a restart or a disconnect while dead); Auth records the town when a town ticket resolves (`Character.LastTown` in `data/saves.db`) | Auth (`InstanceDirectory`), `WorldAreaTowns.cs` | [09](docs/protocol/09-area-change.md) §4 |
 | Waypoints: the Waypoint object where the area's layout is captured (Lioneye's Watch built in), activated on entry (towns), within 25 cells or on click (the client plays the activation), saved per character; clicking opens the World panel in travel mode (S→C 0x7b), its pins and connection lines show from the character's visited areas and activated waypoints (S→C 0x4c, quest flags in the Player component via 0x2ba), and picking a pin (C→S 0x4d, Ctrl → instance chooser) takes the player next to the destination's waypoint; `/waypoints [all \| reset]` | `InstanceWaypoints.cs`, `WaypointCatalog.cs`, `AreaVisitFlags.cs`, Gateway | [16](docs/protocol/16-waypoints.md) |
@@ -47,6 +98,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Portal Scroll and the Portal skill (its 2.5 s cast): outside towns and hideouts a portal opens beside the player, replacing the previous one; from a map it leads to the hideout, anywhere else to the last town. That town or hideout gets a portal back, which brings the player to the portal's cell of the same instance; there the portal stands again (`OpenTownPortal`, `SpawnTownPortals`, `OpenPortals`; while the server runs, being tested 2026-10-23) | Gateway (`UsePortalScroll`, `UseMapReturnPortal`) | [21](docs/protocol/21-hideouts.md) §5 |
 | Hideouts: every character has the hideout unlocked (quest flags HideoutUnlocked, CanEditHideout …; league quest flags UnlockedHideouts, HaveHideout, UnlockedMapDevice in the Player component, sent as bit id − 1) and owns the Lush Hideout; `/hideout` (C→S 0x16 command 45) and the World panel's Hideout button (C→S 0x17a) take the player there (its own instance, seed 1) next to its waypoint; its Waypoint (with HideoutDoodad data), Stash, Nessa and map device come from its decoration (`scripts/re/atlas hideouts` → `data/hideouts.json`); the HUD shows the Edit button; the map device can be clicked and opens its window (S→C 0x7b kind 5); maps go into its slots, Activate (C→S 0x00d8) checks them (maps and map fragments only, one map), consumes them and opens six portals (MultiplexPortal + S→C 0x008f) into one instance of the map's area, each used once (the one taken stays gone); in the map, a portal back to the hideout, the map's own monster packs (Maps.dat) and its boss arena gates (teleports); Nessa sells Beach Maps; `/league_flag`, `/hideout_keys` (dev, answered in chat) | `HideoutCatalog.cs`, `InstanceHideouts.cs`, `WorldAreaHideouts.cs`, Gateway (`WarpToHideout`, `SpawnHideoutDoodads`, `UseMapDevice`, `ActivateMapDevice`, `UseMapPortal`), `MapDevice.cs` | [21](docs/protocol/21-hideouts.md) |
 | Shop portal effects as game data (dev): `/cosmetic list [filter]`, `/cosmetic portal <name, number or part of a name>` (`CosmeticCatalog.Matches`: an ambiguous piece lists the matching effects with their numbers instead of applying the first), `/cosmetic off`. A portal cosmetic is the portal's own 0x008f variation (+0x26, a `MicrotransactionPortalVariations` row), so the client draws the shop effect in place of the base portal — also for portals already standing, which are listed again — with no second object, store or balance (seen live 2026-10-21: the Black Hole effect replaces the base portal visual on all six portals — its flat disc is the real art, and the client keeps each rig's own orientation, ignoring the object's rotation and the portal type; `/portal_rotation` is the dev knob for a rig that does come out misoriented); the choice is saved per character (`PortalCosmetic` in the save, verified to survive a relog) | `Cosmetics.cs`, `InstanceMapDevice.Portal`, Gateway (`ResendMapPortals`, `/cosmetic`) | [21](docs/protocol/21-hideouts.md) §5 |
+| Microtransactions: every account owns every cosmetic the client can show (the 7721 `MtxTypes` rows with an `MtxTypeGameSpecific` row); the Microtransactions panel (N), the store's ALREADY OWNED marks and the Cosmetics tab (K) load (C→S 0x1f2 → S→C 0x1f4, hideout and guild lists empty via 0x1f5 / 0x1f4); a pick in the Cosmetics tab (C→S 0x1f9) is saved per character and worn (S→C 0x1f3, also on every area entry); in the world: equipment skins, weapon effects, attachments and character effects on the model (Inventories component references), footprints and apparitions through the stats, portals (the map device's), cursors and flask skins. Verified live 2026-10-23. Built, awaiting live verification: pets (spawned beside the player, following it, not blocking; not yet their idle-relaxed animations, e.g. the Goblin Troupe's song), the portrait (character panel and selection screen), skill effects (the Cosmetics tab's skill slots, picked with C→S 0x1fa, the effect's stats on that skill, Righteous Fire's ring and buff visuals, restyled at once while it burns, and the projectile and explosion of projectile skills such as Fireball) | `InstanceMicrotransactions.cs`, `Microtransactions.cs` (`MtxCatalog`, `CosmeticEffects`), Gateway (`AnswerMtxRequest`, `PickCosmetic`, `Looks`, `CosmeticStats`), `CharacterSaves.Cosmetics`, `PetObject`, `SpawnPets`, `RunPetFollow`, `SkillSlots` | [23](docs/protocol/23-microtransactions.md) |
 | Pause: the Escape menu outside towns and hideouts pauses the area (C→S 0x1d4 → S→C 0x1d3): the Gateway's clock stops, monsters neither move nor swing, regeneration and flasks wait, and the client pauses its world; closing the menu resumes | `InstancePause.cs`, Gateway (`SetPaused`) | [22](docs/protocol/22-pause.md) |
 | Gold: shared by the account's characters of one league (S→C 0x2a9), saved with that league's stash, sent on area entry; every league has its own stash and gold, Standard keeps the account's stash from before (`AccountStash.Key`); monsters drop piles of gold (normal 40%, magic 75%, rare and unique always; (3 + 1.2 × level) × 1/2/5/15, our own numbers, `ItemDrops.Gold`), and picking one up adds it to the gold; gold within 15 cells of the player is picked up by itself (player tick, `GoldAutoLootRange`); older per-character gold moves into the account at login; `/gold <±amount>` | `InstanceEntities.Gold`, `AccountStash`, Gateway | [04](docs/protocol/04-player-entity.md) §6 |
 | Dev account service: register, log in, create characters (JSON-lines over TCP) | `GameServer.Host`, `GameServer.DevClient` | [dev-server.md](docs/dev-server.md) |
@@ -60,10 +112,10 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 | Spell Suppression: the passive `base_spell_suppression_chance_%` is capped at 100% and a successful suppress takes 40% less spell damage plus `base_spell_damage_%_suppressed` (PoB `SuppressionChanceCap`/`SuppressionEffect`); `spell_suppression_chance_is_lucky` rolls twice and keeps the better roll (effective `1-(1-p)^2`), with an unlucky `p^2` dev mode; the conditional chance passives count while their condition holds: `spell_suppression_chance_%_while_on_full_life`, `_while_moving` (the walk estimate) and `_if_enemy_hit_recently` (an attack or spell hit in the last 4 s); `/suppression`, `/suppression_luck`, `/spellhit`. Not implemented: the full energy shield stats (no energy shield model), the other conditional effect stats, monster spell hits. The character panel gets the chance again within 250 ms of a condition changing (the player tick) | `CharacterStats.cs`, `DamageModel.cs`, Gateway | [11](docs/protocol/11-skills.md) §12 |
 | Movement speed: the passive `base_movement_velocity_+%` is summed into `Pools`, sent as the client's `movement_velocity_+%` and used by the server's walk copy (37 × (1 + pct / 100) cells/s); applied on login, level, passive and area changes; `/set_speed` adds its percentage on top; only unconditional passive increases are modelled (no action speed, more multipliers, gear/buff movement or the 128 cap yet) | `CharacterStats.cs`, Gateway (`ApplyMovementSpeed`) | [07](docs/protocol/07-latency-visibility-movement.md) §3 |
 | Block / Spell Block: passives' `additional_block_%` and `base_spell_block_%` are summed and capped at 75% / 90% (PoB `BlockChanceCap`), max-res passives `maximum_block_%` / `base_maximum_spell_block_%` raise the caps; a successful block prevents the hit, monster melee and `/blockhit` use it; `/block` shows both chances; an equipped shield adds its `ShieldTypes.Block` base and enables the shield-specific passives, staff passives apply with a staff, and dual wielding adds its inherent 20% attack block and dual-wield block/spell-block passives; Versatile Combatant reduces both maxima by 10% and converts overcapped attack block to spell block at 2% per 1%; lucky block uses 1-(1-p)^2 for attack/spell (dev `/block_luck`); the character panel gets `uncapped_attack_block_%` and `display_spell_block_chance` so it shows the uncapped value in parentheses and the spell block row | `CharacterStats.cs`, `DamageModel.cs`, Gateway | [11](docs/protocol/11-skills.md) §12 |
-| Character panel sums: about 150 panel stats that sum base forms are computed from passives, items and auras with their unconditional combined stats: stun, ailment avoidance, durations and effects (ignite, chill, freeze, shock, scorch, brittle, sap), ailment chances, penetration, leech, life/mana/ES on kill, rarity and quantity, cooldown, projectile speed, area, curse and flask effect, reflect, charge durations, cannot-be/immune flags; the main hand / off hand rows add that weapon's local stats; projectile block and chaos resistance against damage over time combine the pools with their stat. The rest of the 387 rows is tracked in issue #75 | `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`) | [11](docs/protocol/11-skills.md) §14 |
+| Character panel sums: about 150 panel stats that sum base forms are computed from passives, items and auras with their unconditional combined stats: stun, ailment avoidance, durations and effects (ignite, chill, freeze, shock, scorch, brittle, sap), ailment chances, penetration, leech, life/mana/ES on kill, rarity and quantity, cooldown, projectile speed, area, curse and flask effect, reflect, charge durations, cannot-be/immune flags (including the four damage immunities and physical immunity, from their base forms); the main hand / off hand rows add that weapon's local stats; projectile block and chaos resistance against damage over time combine the pools with their stat; the Defence tab's Life / Mana Regeneration per Second rows are the tick's own per-minute rates (`total_*_recovery_per_minute_from_regeneration`). The rest of the 387 rows is tracked in issue #75 | `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`) | [11](docs/protocol/11-skills.md) §14 |
 | Passive masteries: S→C 0x33 carries selected effects (`node \| effect << 16`) and C→S 0x35 selects the effect HASH16; a mastery node can be allocated normally and its effect selected/changed without spending another point. Block Mastery's four effects are implemented: max attack block +2, max spell block +2, 20 life + 20 mana on block, and +1% spell block per 5% attack block; the effects are saved with the character | `PassiveTree.cs`, `CharacterSaves.cs`, Gateway (`ChangePassives`, `PassivesMessage`) | [15](docs/protocol/15-progression.md) §2 |
 | Loot: dying monsters drop currency, flasks and equipment (our own table) around the corpse | `ItemDrops.cs`, Gateway (`DropLoot`) | [15](docs/protocol/15-progression.md) §3 |
-| Buffs (S→C 0x1c1 add, 0x1c2 remove) and Righteous Fire: cast on oneself, its buffs and the big burning circle (an effect object, `Metadata/Effects/PermanentServerEffect` with `rifire.ao`, following the player), 90% of life per second nonlethal burn on the player, 70% of life per second to monsters within 18 cells (they burn to death); server-side mana (cost, regeneration); `/god` | Gateway (`ActivateRighteousFire`, `RunPlayerTick`) | [11](docs/protocol/11-skills.md) §12 |
+| Buffs (S→C 0x1c1 add, 0x1c2 remove) and Righteous Fire: cast on oneself, its buffs and the big burning circle (an effect object, `Metadata/Effects/PermanentServerEffect` with `rifire.ao`, following the player), 90% of life per second nonlethal burn on the player, 70% of life per second to monsters within its radius (18 cells, grown by the player's area of effect stats, `SkillArea`; they burn to death), the circle scaled to that radius (MiscAnimated's reference radius, the uniform Positioned scale; matches the real game at level 1) and kept on the player every 100 ms; server-side mana (cost, regeneration); `/god` (also 200% increased area of effect), `/set_aoe` | Gateway (`ActivateRighteousFire`, `RunPlayerTick`), `SkillArea.cs` | [11](docs/protocol/11-skills.md) §12 |
 | Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms; every class's from its rig .amd), sped up by cast speed | `AnimationContacts.cs`, `scripts/re/anim_contacts.py` | [11](docs/protocol/11-skills.md) §9 |
 
 ## Partly working
@@ -71,19 +123,45 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - **Stable gem skill ids (tested, not yet checked with the real client).** Each gem keeps its skill id while it stays
   socketed (a gem moved through the cursor keeps its own; a gem swapped in never takes the old gem's id), so skill bar keys no longer move when other gems come or go; a skill that goes
   away ends its aura or Righteous Fire; one aura of a kind runs at a time (`GemSkillIds.cs`; [19](docs/protocol/19-gems.md) §3).
-- **Gem levels (tested, not yet checked with the real client).** A gem's level comes from its experience up to its
+- **Gem levels (tested, level 1 → 2 checked with the real client).** A gem's level comes from its experience up to its
   experience type's cap; its skill uses that level's cost, damage, reservation and cooldown, and its quality stats;
   transfigured and Trarthan gems grant their own skill, Vaal gems their Vaal skill and their base skill (refused without
   Vaal souls, which are not gathered yet); the variant is sent in the SkillGem data and saved; `/gem <name> [level]
-  [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](docs/protocol/19-gems.md) §1, §3). Not yet: requirements, supports, corruption.
+  [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](docs/protocol/19-gems.md) §1, §3). Not yet: supports, corruption.
+- **Gem requirements (tested, checked with the real client).** A gem's level requirement is the
+  character level of its level (GrantedEffectStatSetsPerLevel `PlayerLevelReq`; Haste 24 at gem level 1 . 70 at 20, the
+  client's tooltips), and its attribute requirements follow the client's own formula (`0x14246fc40`:
+  `trunc((3 * level_req + 11) * (percent/100)^0.9 * k + 0.5)`, `k` 0.7 for a skill and 0.5 for a support, none below 14;
+  fitted against 570 poedb tooltip cells with no mismatch: Haste 20 is 155 Dex, Clarity 20 119 Int, Fireball 20 155).
+  Socketing a gem the character is too low or too weak for is refused (0x30, `GemRequirementsUnmet`), and a gem its
+  requirements above the character's makes its item inactive, as a worn item the character is too low for is:
+  the client reds it ("Requires level 70"), the item's mods stop counting and its skills leave the Actor list, so there
+  is nothing to cast; a use that arrives anyway is refused without the action (no 0x1ab, and the mana pool again so the
+  client's predicted cost comes back; `GemDisabled`). An inactive main-hand weapon is ignored: the default attack falls
+  back to the class's unarmed hit, as if it were not worn. Checked live 2026-10-23 with a level 20 Fireball wand at
+  character level 10, and its attributes with `/set_stat intelligence 200` and then 130 (155 needed: the client reds
+  the gem, the wand's mods stop counting, a use is refused). In play the gem never gets there: its experience stalls
+  at the first level the character does not meet (`SkillCatalog.MaxLevelAt` in `GainGemExperience`, the game's rule; the
+  client derives levels from experience alone and would not stall by itself), and the level change re-sends the skills.
+  Not yet: supports don't stop applying when a gem is disabled, and a disabled gem's aura keeps running
+  ([19](docs/protocol/19-gems.md) 1, 3).
 - **Gem experience from kills (one gem in the first weapon set checked with the real client).** Every gem socketed in an
   equipped item, in either weapon set, gains 10% of a kill's monster experience (support gems included; inactive items,
   gems at their last level and corrupted gems over their cap nothing; quest levels and `/add_xp` give the gems nothing),
   sent with the kill as 0x00bf item changes, each item once, so the XP bars follow, and saved with the character
-  (`GainGemExperience`, `PlayerInventories.ChangeSocketedGems`; [19](docs/protocol/19-gems.md) §1). Checked live
-  2026-10-23: the client updates the XP bar in real time and levels the gem itself at the threshold; a level-up re-sends
-  the skills (0x02ba Actor), so the level's damage and costs apply at once. Not checked live yet: several gems in one
-  item, the second weapon set.
+  (`GainGemExperience`, `PlayerInventories.ChangeSocketedGems`; [19](docs/protocol/19-gems.md) §1). A kill's share stops
+  one point below the next threshold, where the client shows the "+": it does not level a gem by itself (checked live
+  2026-10-23). Not checked live yet: several gems in one item, the second weapon set.
+- **Gem level-up and the lock (checked with the real client).** Clicking the "+" sends C→S 0x31 (inventory, item, socket;
+  14 bytes); the server writes the next threshold into the gem, replaces the item (0xbf) and re-sends the skills (0x02ba
+  Actor), so the client derives the new level and its numbers at once, and refuses a gem at its last level, a locked one,
+  or one whose next level's requirements the character does not meet (`LevelUpGem`; the client's "+" check does not test
+  them, so the server answers with the missing level or attribute). A right-click sends C→S 0xd7 (the
+  same three u32s and a u8 lock flag; 15 bytes), kept in the SkillGem flags bit 2 (`Item.GemFlags`) and saved, so the
+  lock survives a login; the client greys the "+" while it is set (`LockGem`). Checked live 2026-10-23: level 1 → 2,
+  right-click, relogin, unlock, level again; a level-up refused at character level 31 (Fireball level 10 needs 32) and
+  with 70 Int (needs 75); `/gem_xp <amount|near>` sets the experience. Not checked: a gem in the inventory (not
+  socketed), which sent nothing in the captures.
 - **Saves in SQLite (tested, not yet checked with the real client).** Accounts, characters, character saves and stashes
   are rows in `data/saves.db` (WAL, synchronous=FULL); a stash is a header row and one row per tab. Every item, stash,
   gold, passive, quest flag and waypoint change is saved at once in a transaction. Stash moves, purchases, sales,
@@ -165,8 +243,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   the Life pool's reserved mana (and in every 0x1b1 mana update). Aura skills toggle on cast; Purity of
   Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste apply their gem's level and quality effects and
   buff icons; their 3D effects (`affected_player.epk`, `faster_attack.epk` …) do not render yet.
-  The skill-bar active border is not reproduced (0x25f is an internal UI event, not an instance/world message;
-  sending it crashed the client). Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
+   The skill-bar active frame and rotating circle now receive the buff's skill id/action hash association
+   (0x1c1 bit3), including area-entry restoration; automated checks pass, live icon verification pending.
+   Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners,
   curse auras, Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield
   are not applied), Purity ailment immunity, Reservation
   masteries 1/2/6, supports, party/minion auras and life reservation
@@ -258,7 +337,9 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
   and gain-as-extra. DoT is a single type with fractional tick carry, and `Ailments` has the ignite/bleed/poison base
   formulas. The default attack, Fireball and monster melee build packets and read the player's/skill's conversion
   stats; packet mitigation applies each type's own resistance, and the physical part then goes through armour.
-  Righteous Fire's burn uses the DoT tick model. Not yet: energy shield, penetration/exposure, added damage,
+  Righteous Fire's burn uses the DoT tick model. A damage-type immunity (`*_immunity`, `elemental_damage_immunity`)
+  zeroes that type on the player's hits, from the same sources the panel's Immune rows use (`DamageImmunities.cs`).
+  Not yet: energy shield, penetration/exposure, added damage,
   increased/more support modifiers, ailment application/duration and monster resistances
   ([20](docs/protocol/20-damage.md)).
 
@@ -283,7 +364,7 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 - Waypoint travel to a generated area without a `-Walkmaps` capture for its seed puts the player at an arbitrary cell
   (The Submerged Passage, seed 1); quest flags are derived from visited areas and waypoints, not from quests
   ([16](docs/protocol/16-waypoints.md) "Open").
-- Hideouts: no decorations (trees, tents …), editing does nothing, logins never start in the hideout, only the Lush Hideout ([21](docs/protocol/21-hideouts.md) "Open").
+- Hideouts: decorative trees/tents and editing are not implemented. Personal template selection, saved home login and functional furniture placement are implemented ([21](docs/protocol/21-hideouts.md)).
 - Map device: a map without a walk-map capture puts the player at an arbitrary cell (Beach is captured); the arena gates
   land next to their pair, not on the telepads; fragments add nothing; the portals look like player portals; the open map is lost on a
   Gateway restart ([21](docs/protocol/21-hideouts.md) §5, "Open").
@@ -295,8 +376,8 @@ What to build next is in [Roadmap.md](Roadmap.md). How the protocol works is in 
 
 ## Tests
 
-`dotnet test tests/GameServer.Core.Tests` (331 tests), `tests/GameServer.Data.Tests` (15) and
-`tests/GameServer.Gateway.Tests` (324: currency on items, gem levels, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
+`dotnet test tests/GameServer.Core.Tests` (378 tests), `tests/GameServer.Data.Tests` (15) and
+`tests/GameServer.Gateway.Tests` (376: currency on items (from the inventory or a stash tab), the currency tab's crafting slot, gem levels, gem requirements (level and attributes) and the level stall, the level-up stopped between two levels, the gem level-up and lock messages and the saved lock flag, quality and variants, stable gem skill ids, the save database and its transactions, stash tab rules, Ctrl + click moves, item moves with failing saves, inventory moves, stacks, the start weapon on the ground, flasks, arrival points,
 instance ground items and monsters, quests, passives, spell suppression, attack speed, critical strikes, accuracy,
 armour/evasion, item mods, auras, damage conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
@@ -310,6 +391,11 @@ guide.
 
 ## Doc caveats
 
+Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a
+16 ms elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are
+preserved. Implemented with regression tests; real-client visual verification after Gateway restart
+is pending. See [20](docs/protocol/20-damage.md), "Continuous resource updates".
+
 `docs/re/003`–`004` are early notes with known errors (for example "login is HTTPS"; it is custom TCP, see `re/007`). Treat them as history, not reference.
 
 ## Jeweller's Orb (2026-10-21)
@@ -321,3 +407,37 @@ capacity blocks further use. Local counts are 1/2/3/4/6. Probabilities are appro
 
 PR branch validation: build succeeded with zero warnings/errors; Core 307, Data 15, Gateway 210 tests passed.
 Gateway test artifacts were placed in the local workspace so the existing extracted data could be read.
+
+## Cyclone area of effect (2026-10-25)
+
+`/set_aoe` now resends Cyclone's calculated final radius in the skill record, using the same radius
+calculation for server hits. Cyclone/CycloneAltX use a 16-cell base when their exported stat set has
+none. Spell-only area does not affect the attack. Tested calculations; live visual check pending.
+The first live check found that direct radius alone did not scale the channelled visual; its
+conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
+Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
+
+## Hideout crafting bench placement (2026-10-25)
+
+Personal hideout selection now handles the native 0x254 request, saves the selected WorldAreas Id
+per character and transfers immediately. Auth uses the saved choice on login; world-panel travel,
+`/hideout` and map return portals use the same home. Functional furniture and all four NPCs are
+placed on the selected template's floor. Selection decoding, persistence and placement have
+automated coverage; the new transfer and reconnect path awaits user verification in the client.
+
+The standard bench spawns to the left of the guild stash in hideouts, using the existing
+decoration's model and a walkable placement (placement confirmed in the real client).
+Clicking it now walks into interaction range and sends 0x7b kind 0x33, type 0 to open the ordinary
+crafting window. Automated checks cover the wire format; a live window-opening check is pending.
+Recipe unlocks and applying crafts are now implemented; see protocol/21-hideouts.md.
+
+## Cyclone area of effect (2026-10-25)
+
+`/set_aoe` now resends Cyclone's calculated final radius in the skill record, using the same radius
+calculation for server hits. Cyclone/CycloneAltX use a 16-cell base when their exported stat set has
+none. Spell-only area does not affect the attack. Tested calculations; live visual check pending.
+The first live check found that direct radius alone did not scale the channelled visual; its
+conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
+Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
+
+- Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.

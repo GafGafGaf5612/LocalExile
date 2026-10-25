@@ -323,9 +323,20 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 - **Cast time.** The client reads **`virtual_base_spell_cast_time_ms`** (0x24b9) when it starts the cast; without it
   the cast was instant (`trace-skill-stats.js`). The Gateway sends GrantedEffects `CastTime` (750 ms) there and in
   `base_spell_cast_time_ms`, and `hundred_times_casts_per_second`. `mana_cost` (0x2e72) is what the client spends.
-- **Casting.** At the ground: C→S 0x25 with the gem skill's id; the server echoes 0x1ab from where the player stands (no
-  walk). On a monster: C→S 0x24; the server echoes 0x1ab aimed at it (no walk into range, unlike the default attack).
-  On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server echoes 0x1ab in place.
+- **Casting.** At the ground: C→S 0x25 with the gem skill's id. A **spell** stops where it stands and the server echoes
+  0x1ab from there (no walk). An **attack** (ActiveSkillType Attack: Holy Strike, Ground Slam …) follows bit 0 of the
+  message's flags, the client's **"Always Attack Without Moving"** setting (live 2026-10-25: 0x400 with it off, 0x401
+  with it on; the setting itself also arrives as C→S 0x16 command 8):
+  - bit 0 set: the player swings from where it stands; the server echoes 0x1ab there and pays at the swing.
+  - bit 0 clear: the client is **attack-moving** — it walks to the aimed point itself and sends no C→S 0x25 Move for
+    that walk. The server walks its estimate after it (`Walk.Order`) and answers 0x1ab from that estimate, like a
+    move's echo. A point with a living monster on it within the skill's hit radius is a swing (the client aims at the
+    cell, not at the object: Holy Strike on a monster sends 0x25, live 2026-10-25): the server walks into the
+    weapon's reach and only then pays and hits. An empty point never swings, so running costs no mana.
+  On a monster: C→S 0x24; an attack walks into the weapon's reach first (`Walk.Approach`, the swing is echoed on
+  arrival, unlike a spell) and a spell casts from where it stands. An attack with "Always Attack Without Moving" on
+  casts in place. On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server
+  echoes 0x1ab in place.
   An **instant** skill (stat `skill_is_instant`, below) is not sent this way: C→S **0x191** (8 bytes: u32 target
   object id, u16 skill id; `InstanceProtocol.ReadUseInstantSkill`) uses it without an action or a sequence, so the
   client keeps walking. The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
@@ -333,6 +344,29 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   handler `0x142195880`): the client runs the skill's action without animation and consumes a use of the skill
   (actor vtable +0x198), which starts the skill bar's cooldown. Without it the tooltip showed the cooldown but the bar
   never ran it: the cooldown records had no entries (Frida, live 2026-10-21; not yet checked with 0x1ce).
+- **Hit reaction (live 2026-10-25).** A monster that takes a hit plays its rig's **TakeHit** clip with S→C **0x1b2**
+  (`InstanceProtocol.AnimationUpdate`, kind 0): object header, u8 kind, u32 clip index (+0x24), u32 float bits (speed,
+  +0x28). The index is 0-based into the actor's animation list, which is the rig `.amd`'s animations in file order
+  (Sanctum zombie: `flinch_unarmed` = 156 of 249 in `Art/Models/MONSTERS/skeleton/rig.amd`; `flinch_pitchfork` = 151,
+  both played the flinch *with its SoundEvent* live). The handler (`0x141e58ef0`) calls `0x141dba530`, which ignores an
+  index past the actor's animation count — a wrong index costs nothing. `0x1b1` alone only stores the pool and runs the
+  death/revive slots, so a hit without 0x1b2 is silent and still. A killing blow gets no flinch (the client's death
+  runs instead). The reaction is gated like a stun: the hit must take at least a tenth of the monster's max life, and a
+  monster does not flinch again until its clip has played (its `.amd` length at speed 1, at least 0.4 s) — otherwise a
+  fast attack or a volley restarts the clip and its sound and keeps cutting the monster's own attack and walk animations
+  while the server still moves it. The flinch is checked again inside the connection's send gate, so a hit that kills
+  the monster meanwhile (marked Dead before its own 0x1b1 goes out) drops it rather than playing it over the death.
+  `data/monster-takehit.json` (`python -I scripts/re/monster_takehit.py`) holds each MonsterVarieties
+  row's index(es) and clip lengths: its `.act` maps `TakeHit` to a clip, and the `.ao`'s `AnimationController` names
+  the rig. A rig whose parsed animations do not add up to the `.amd`'s count line is skipped (a missed entry would shift
+  every later index to a wrong but in-range clip). 26 `.act`
+  files map a pool — `flinch_01, flinch_02, flinch_03`, or `flinch_small:max_duration=0.45, flinch_large:min_duration=0.45`
+  (the condition picks by the hit's stun duration, which the server does not model) — and the server picks one at random
+  per hit; every other variety has a single clip. An `@Name` alias is expanded to the whole list it names, and every
+  `extends` parent is followed (not just the first), with "nothing" ending the chain. The client also has the directional
+  types TakeHitForward/Backward/Left/Right, but the `.act` files that set them alias them all to `@TakeHit`, so they add
+  no variants. 0x262 (a Life "changed by" event with a signed delta) reaches the Life listeners but plays no flinch,
+  sound or blood.
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
@@ -361,7 +395,15 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 - **Mana.** The server keeps the player's mana (`PlayerMana`): a cast pays the skill's `mana_cost` first (refused
   without enough), and `RunPlayerTick` regenerates 1.75% of maximum mana per second (Character.ot
   `mana_regeneration_rate_per_minute_%` 105) plus `base_mana_regeneration_rate_per_minute`, raised by
-  `mana_regeneration_rate_+%`. Changes go out as 0x1b1 with pool 1.
+  `mana_regeneration_rate_+%`. Changes go out as 0x1b1 with pool 1. The same two formulas (`PanelStats.LifePerMinute`
+  and `ManaPerMinute`) are sent per minute as `total_life_recovery_per_minute_from_regeneration` and
+  `total_mana_recovery_per_minute_from_regeneration`, the Defence tab's Life / Mana Regeneration per Second rows,
+  which the client divides by 60 — so the panel shows the regeneration the tick applies. An **attack** also waits for
+  the shared attack timer (`AttackTiming`): the client re-aims a held attack every 50 ms, so before 2026-10-25 every
+  use was a swing (Holy Strike: twelve a second, 6 mana each). Attack gem skills and the default attack share
+  `ClientState.NextAttackAt`, a use may arrive a quarter of an attack early, and a use that arrives sooner is ignored:
+  no cost, no swing, no 0x1b1. The client does not deduct the cost itself (a live trace of its Life pool showed the
+  mana change at the server's 0x1b1), so no "cost back" update is needed.
 - **Damage** (`SpellDamage.cs`). A spell's hit is, per damage type, its `spell_minimum/maximum_base_{type}_damage`
   × (1 + `damage_+%` + `spell_damage_+%` + `elemental_damage_+%` for fire / cold / lightning + `{type}_damage_+%` +
   `projectile_damage_+%` for `base_is_projectile` skills), from the player's stats (passives, item mods, auras) under
@@ -370,6 +412,12 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
   DPS with the player's stats. Conversion is applied per type through `DamagePacket`; more multipliers and added
   damage are not modelled.
+- **Damage effectiveness** (2026-10-24). An attack gem's hit is the weapon's damage × its `DamageEffectiveness` (the
+  GESSPL row, permyriad: Flicker Strike 7730 at level 1, 30890 at 20, 69600 at 40 — the gem's "Deals 77.3% of base
+  Attack Damage"), through `SkillCatalog.DamageEffectiveness` and `SpellDamage.WithEffectiveness`. A row of 0 (the
+  default attack's) or a negative one (a few skills have them) scales nothing. A **spell**'s own base damage is already
+  final: its effectiveness is the added-damage one (Fireball 200%), and the GESSPL `BaseMultiplier` is 0 for every spell,
+  so spells are left alone until added damage is modelled.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
@@ -377,12 +425,16 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 
 Only projectile skills (Fireball) and Righteous Fire dealt damage: every other gem skill logged "no projectile". Now
 `AreaSkillHit` gives them one hit, after half the attack time (attacks) or the cast (spells), on every living monster
-within the skill's `active_skill_base_area_of_effect_radius` (halved to cells, at least 3; else 12 cells) of the aimed
+within the skill's `active_skill_base_area_of_effect_radius` (in cells, else 12, grown by area of effect as Righteous
+Fire's: `SkillArea`; halved before 2026-10-23, which the units do not support) of the aimed
 point, or of the player when a melee skill is aimed too far. Attacks use the default attack's hit (`WeaponFor`: the
 weapon in the hand by its WeaponTypes row with its local physical damage, added physical damage and attack speed mods,
 else the class's unarmed attack; the player's stats on top), spells `SkillCatalog.HitDamage` with the player's stats; both convert and crit.
-`base_deal_no_damage` skills (Portal) deal none. Not modelled: damage effectiveness, the skills' shapes (waves, cones,
-chains, leaps), stun, the accuracy roll. Being tested live.
+The player object of every area (`SendPlayer`) carries the same weapon attack, so the character panel's DPS includes the
+weapon's local mods from the start (until 2026-10-23 it started with the unarmed attack, and only an equipment change,
+`SendSkills`, brought the weapon's numbers).
+`base_deal_no_damage` skills (Portal) deal none. An attack's hit carries the skill's damage effectiveness (§9). Not
+modelled: the skills' shapes (waves, cones, chains, leaps), stun, and the accuracy roll. Being tested live.
 
 **Movement skills** (ActiveSkillType Movement: Leap Slam, Whirling Blades …): the server puts the player at the aimed
 cell when the skill starts (`SkillCatalog.IsMovement`); it kept the starting cell before, and a later resync pulled the
@@ -526,7 +578,7 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
 - **S→C 0x1c1** (world group, class `0x1435ddb78`, read `0x141fdf870`, world handler case 0x1c1 → Buffs component
   `0x141e11720`): object header (u32 id, u32, u16), u16 buff instance (+0x20), u16 BuffDefinitions row, u32 +0x64 (the
   source object), u16 +0x60 (the source skill), u8 flags (bit0: u8 u32 u8 u16; bit1: u32 +0x68; bit2: u16 stacks,
-  default 1; bit3: u16 u16; bit4: u16 BuffVisuals override, default the row's; bit5: u8 +0x80, default 2; bit6 → +0x81;
+  default 1; bit3: u16 u16; bit4: u16 BE BuffVisuals row override, default the row's, read after bit3's fields (a row past the table gives none); bit5: u8 +0x80, default 2; bit6 → +0x81;
   bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set (`__col44` in the vendored schema), one u32
   per GrantedStats entry when the row's `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. A row with either
   flag needs those fields, or the client misreads the message and the ones after it (the flask buffs, rows 5 and 9:
@@ -538,21 +590,44 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   `righteous_fire_aura` (row 13, BuffVisuals 19: the ignite flames, and for a player model EPKFiles2
   `ri_fire/player.epk`, the burning hands). Every 250 ms the player loses 90% of maximum life per second
   (`base_nonlethal_fire_damage_%_of_maximum_life_taken_per_minute` 5400; nonlethal, it stops at 1) and every hostile
-  monster within 18 cells plus its size loses 70% of the player's maximum life per second
+  monster within its radius plus its size loses 70% of the player's maximum life per second
   (`base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute` 4200) and carries `righteous_fire_aura` while
-  inside. It ends at death; casting it again does nothing.
+  inside. It ends at death; casting it again does nothing. **The radius** is `active_skill_base_area_of_effect_radius`
+  (18 at level 1; one unit is one cell) plus `active_skill_base_radius_+`, scaled as Path of Building's calcRadius:
+  floor(base × floor(100 × √(area modifier)) / 100), where the modifier is (1 + `base_skill_area_of_effect_+%` +
+  `skill_area_of_effect_+%` + `spell_area_of_effect_+%`) × each `…area_of_effect_+%_final`, then
+  × (1 + `active_skill_area_of_effect_radius_+%_final`), from the player's stats under the skill's (`SkillArea`).
+  Conditional area stats (per charge, per attribute, "recently") are not modelled.
+- **A worn Righteous Fire effect** (its `skill_art_variation`, [23](23-microtransactions.md) §3) swaps both buffs'
+  visuals through 0x1c1's BuffVisuals override and the ring's AO (`SkillArt`), also on the enemies' aura; NoRing
+  draws no ring. A pick while the fire burns lights it again with the new art (casting again while it burns does
+  nothing, so before 2026-10-23 a pick showed only after the fire ended).
 - **The big burning circle** is not a buff visual: it is MiscAnimated `RighteousFireRing`
   (`Metadata/Effects/Spells/ri_fire/rifire.ao`), an effect object of its own. The client's effect script
   (`0x142087910`) makes MiscAnimated effects as `Metadata/Effects/Effect`, `ServerEffect`, `PermanentServerEffect` …
   objects; `PermanentServerEffect` is Positioned, BaseEvents, Animated (Render client-only), so the Gateway creates one
   (`EffectObject`: the projectile's Positioned, Animated bit0 + the .ao path) under the player and glides it with 0x1ba
-  to where each move ends (`FollowRighteousFire`). It is created with Positioned flags0 0x80
+  every 100 ms to where the player will be 100 ms later along its path (`FollowRighteousFire`, `RunRingFollow`;
+  before 2026-10-23 it glided once per ground click to that walk's end, so a walk to a stash or an item, which comes as
+  C→S 0x24, left it behind, and the straight glide cut the path's corners). It is created with Positioned flags0 0x80
   (`EffectObject.FixedRotation`): without it each glide turned the ring to face the move, so it spun as the player
-  turned (live 2026-10-21). 0x2bb removes it when the fire ends. Live 2026-10-18: with only the
-  buffs the player had just the small ring at its feet; with the effect object the big circle shows at the right size
-  and follows the player, and monsters around burn to death.
-- **`/god`** toggles 1000% increased attack and cast speed, life and mana regeneration (below), +10 000
-  maximum life and +1000 to each attribute (`GodStats`, `PoolsFor`); `RunPlayerTick` applies the regeneration. Life
+  turned (live 2026-10-21). It is also scaled to the radius: Positioned flags0 0x20's uniform scale (+0x2b0, the
+  x / y stretches left at 1, [04](04-player-entity.md) §4.0). The art is drawn for the radius in its MiscAnimated row's
+  `__col4`, in world units (RighteousFireRing 400, RighteousFireRingWhite 200, the league avatars' blue ring 380, the
+  Vaal rings 500; 0 for art not scaled to an area); the meshes agree (`rifire.sm` ±463 with its flames at 380,
+  `rifire_white.sm` half that). Scale = radius × 250/23 / `__col4`: 0.49 for the default ring at 18 cells (1.8 m), 0.98
+  for the white one. Verified against a screenshot of the real game at level 1 (2026-10-23): with the health bar as the
+  ruler, the outer ring is about twice the inner flame ring (the `righteous_fire` buff's `bot_02.ao`). Before, all
+  three scale floats carried the scale, so the ring was drawn at its square (0.24) and hid under the inner ring.
+- **Units.** A radius stat is in cells (one cell = 250/23 world units), and the client's tooltip shows it as metres at
+  10 per metre (Righteous Fire's 18: "1.8 metres"). A world unit is about a centimetre (the Marauder's mesh,
+  `Warrior.sm`, is 190 tall), so 18 cells ≈ 196 world units ≈ 1.8–2 m. Live 2026-10-18: with only the
+  buffs the player had just the small ring at its feet; with the effect object the big circle shows and follows the
+  player, and monsters around burn to death.
+- **`/god`** toggles 1000% increased attack and cast speed, 200% increased area of effect
+  (`base_skill_area_of_effect_+%`), life and mana regeneration (below), +10 000
+  maximum life and +1000 to each attribute (`GodStats`, `PoolsFor`); `/set_aoe <percent> | off` sets the character's
+  increased area of effect in place of it (a burning Righteous Fire is lit again with the new radius); `RunPlayerTick` applies the regeneration. Life
   regenerates 100% of maximum life per second (`life_regeneration_rate_per_minute_%` 6000), not a flat 10 000: Righteous
   Fire burns 90% per second, which outran a flat 10 000 once passives raised life above 11 111.
 - **Resistances** (`CharacterStats`, `DamageModel`): the passives' `base_resist_all_elements_%` and
@@ -603,7 +678,78 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   (`base_block_luck`, `attack_block_luck`, `spell_block_luck`) uses `1 - (1 - p)²` (PoB CalcDefence); Svalinn's unique
   item modifiers themselves are not supported yet.
 
+### Cyclone area updates (2026-10-25)
+
+`/set_aoe` sends the increased-area input, but Cyclone's visual also needs the final
+`active_skill_area_of_effect_radius` in its granted skill record. The Gateway now computes and sends
+that radius together with its base for Cyclone/CycloneAltX. The hit-radius calculation uses the same
+base selection and `SkillArea.Radius`, so visual scaling and hit selection agree on the next cast.
+Turning the override off resends the character's own modifiers and the newly calculated radius.
+
+The exported Cyclone stat set has no explicit base radius. Use 16 cells for these two variants,
+matching [Path of Building's skill definitions](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Export/Skills/act_dex.txt);
+an explicit positive base stat takes precedence. Other skills keep their existing data/fallback base.
+Client evidence: `0x1414b13c0` reads final radius stat 0x4876 to scale its cyclone effect; the shared
+cyclone path `0x141d434c0` also reads 0x4876 (or the base 0x4875 in its conditional-radius path).
+Increased area is not increased radius: +300% area changes radius 16 → 32, +0% restores 16 without
+other modifiers. Tests cover this calculation, spell-area exclusion, explicit bases and the fallback.
+Additional melee-range/stage modifiers specific to Cyclone remain outside this initial area model.
+Live visual verification after restarting Gateway is pending.
+
+**Follow-up after live failure:** sending only 0x4875/0x4876 did not change the rendered channel.
+The live hit radius did change (24 → 42 cells after `/set_aoe 300` on the test character), so that
+was insufficient evidence for visual scaling. The conditional-radius helper `0x141939880` reads
+`total_skill_area_of_effect_radius_+%_including_final` (0x1591) on its normal branch and the
+aggregated `skill_area_of_effect_+%` (0xd7), rather than the base input 0x1b5, on its conditional
+branch. Cyclone's skill record now carries both derived values as well. +300% increased area is
++100% radius before other modifiers. Compute all outputs from the original inputs before writing
+the aggregated 0xd7, to avoid counting 0x1b5 twice. The server's hit calculation still uses the
+original input stats. `Cyclone area:` log lines record the transmitted base, radius, area increase
+and radius scale. Live verification of this follow-up is pending.
+Checked against the disassembly (2026-10-25): the conditional branch of `0x141939880` reads only 0xd7, never
+0x1b5, so the record's aggregated 0xd7 is not counted twice; its more multipliers are 0x1670, 0x16ee and 0x28d7.
+Its caller `0x141939aa0` adds `active_skill_base_radius_+` (0x16c4) to the base itself, so the record carries the
+base without it, as the server's `SkillArea.Radius` adds it to its own base.
+
 ## 13. Auras and reservation
+
+**Persistent toggles (2026-10-25).** CharacterSaves.ActiveAuras stores stable GrantedEffects Ids,
+updated transactionally on every successful toggle and cleared for an active aura when its gem leaves.
+On login/area connection, LoadProgress restores progress and evaluates usable gems first, then resolves
+saved aura ids to fresh skill and source/recipient buff ids. It checks total reservation against current
+mana, recalculates pools with the restored bonuses and initializes current mana to the unreserved amount.
+SendPlayer restores both buff records, so ground art, top-left icons and skill-bar indicators return.
+An absent/unusable gem or insufficient reservation skips that aura without discarding saved intent;
+it can return on a later login after requirements are met. Old saves without ActiveAuras start empty.
+
+**Expanded activation (2026-10-25).** Determination (buff 142), Grace (143), Discipline (148),
+Anger (149), Hatred (150), Wrath (151), Zealotry (1272), Malevolence (1274) and Envy (828)
+now use the same toggle/reservation/source-and-recipient lifecycle as the original eight auras.
+RequiredMana checks the uncapped total before adding an aura; ReservedMana remains capped for display.
+Previously clamping before validation made the insufficient-reservation check unreachable.
+Determination and Grace add their level/quality-based flat and more defences, including Iron Reflexes.
+Anger/Envy supply added attack/spell damage, Hatred feeds gain-as-extra conversion, Wrath adds attack
+lightning damage and more spell lightning damage, Zealotry supplies spell crit and more spell damage.
+Spell added damage uses the gem's damage effectiveness. Malevolence's more DoT affects the implemented
+Righteous Fire burn; its duration stat and Discipline's ES stats are published, but the server's ES pool,
+recharge, general DoT skills and Zealotry's conditional consecrated ground remain unimplemented.
+
+**Source and recipient pair (2026-10-25).** Sending only the source fixed ground art but the live
+client stopped showing top-left aura icons. Each self aura now owns two buff instances of its
+BuffDefinitions row: a source with bit0 art and explicit display state 0 (bit5), and an ordinary
+received buff with default display state 2 and bit3 skill association. The source is sent first;
+both ids are removed on toggle-off or gem removal and restored on area entry. The server retains
+one Aura record, so reservation and bonuses are counted once. Top-left recovery awaits live confirmation.
+
+**Caster visuals (2026-10-25, awaiting live verification).** BuffVisuals' EPKFiles1 is the common
+`affected_player.epk`; EPKFiles2 holds each aura's own art (Clarity, Vitality, Precision, Haste and
+the four Purities). `0x1416082d0` selects `m_AuraEffectPack` (row +0x20/+0x28) when Buff +0x30
+is nonzero, otherwise `m_EffectPack` (+0x10/+0x18). AddBuff bit0's first byte (+0x76) becomes
+that field via `0x141e07220` and `0x141e06290`. `auraSource: true` sends the complete bit0 group
+`u8 1, u32 0, u8 0, u16 0` before other optional fields. All supported self auras use this on
+activation and restoration; recipients and other buffs retain their existing default. These aura
+rows have no MiscAnimated3 ring, so the nonzero marker only selects their EPK art; a radius-scaled
+ring will require its actual radius rather than this marker. The skill-bar association is independent.
 
 - **Reservation is in the data.** `GrantedEffectsPerLevel` has `ManaReservationFlat` and
   `ManaReservationPercent` (permyriad: `5000` = 50%); `SkillCatalog.Reservation` reads them. Standard
@@ -620,10 +766,19 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   Purity of Fire/Ice/Lightning 145/146/147, Clarity 155, Vitality 153, Precision 1293) and is sent with
   S→C 0x1c1 with the player as source and the skill id as the source skill. A second cast removes it with
   0x1c2. The buff visual is the row's `BuffVisuals` (the `player_auras/...` EPKs); the server also sends
-  the final stats, because the client derives none of them. The skill-bar active border is not reproduced
-  yet: 0x25f is an internal UI event, not an instance/world message (both factories fall through to their
-  default case), so sending it crashed the 3.29.3b client; the Gateway does not send it. The client's
-  setter (`0x140ae4550`, skill id + ActionTypes HASH16) is not called by the buff add/remove events.
+   the final stats, because the client derives none of them. The skill-bar indicator uses the buff's separate
+   skill association (0x1c1 flags bit3): **u16 BE ActionTypes HASH16, then u16 BE server skill id**.
+   The Gateway sends it for activation and when restoring auras on area entry. Removing the buff removes
+   the association. The full action hash comes from GrantedEffects.ActiveSkill → ActiveSkills.ActionType
+   → ActionTypes.HASH16; it must not be masked to the basic-action id.
+   Client `0x140ad1400` draws `AuraFrame` and the rotating `AuraCircle` when `0x141e11180` finds an
+   IsSkillBuff whose +0x48/+0x4a match the skill's +0x40/+0x42. Reader `0x141fdf870` reads the action
+   hash into message +0x74 and skill id into +0x72; `0x141e11720` copies them to buff +0x4a/+0x48.
+   The mandatory source skill (+0x60) alone does not satisfy this check. Automated wire/lookup tests
+   cover the change; live icon verification is pending.
+   **Correction to the earlier notes:** 0x25f in `0x140ae1130`/`0x140ae4550` refers to Elemental
+   Overload (BuffDefinitions row 606, returned one-based by `0x142454bd0`), not an aura UI event or a
+   network opcode. Sending a standalone 0x25f packet is invalid and is not needed for aura indicators.
 - **Implemented effects.** Purity of Elements/Fire/Ice/Lightning add their resistances; Clarity and Vitality
   add their flat regeneration; Precision adds flat accuracy and increased critical strike chance; Haste adds
   attack, cast and movement speed. Generic
@@ -633,21 +788,17 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   apply these to `Pools` and `CharacterStats`.
 - **Not implemented yet.** Casting one of these logs that its reservation is known but its effect is not implemented and does not
   reserve mana:
-  - **Combat auras:** Anger, Hatred and Wrath need added elemental damage and Hatred's physical-as-extra-cold; Zealotry needs
-    more spell damage and spell crit; Pride needs an enemy physical-damage-taken debuff. The damage model has no added
-    elemental damage or enemy aura debuffs yet.
+  - **Enemy auras:** Pride still needs a radius- and time-dependent enemy physical-damage-taken debuff.
   - **Heralds:** Ash, Ice and Thunder need on-kill/overkill/shatter/storm effects; Agony and Purity need minions.
   - **Banners:** Defiance, Dread and War need the planted banner, stages and their pulses.
   - **Curse auras:** Blasphemy-style skills need the curse system.
-  - **Determination, Grace and Discipline:** the reservation is known, but armour, evasion as avoidance and energy shield
-    are not modelled; they are not in `AuraCatalog` yet.
+  - **Discipline:** activation, reservation and presentation work; the energy-shield pool/recharge mechanics remain open.
   - **Partial effects:** Purity of Elements' elemental-ailment immunity is not applied. Purity of Fire/Ice/Lightning
     max-resistance values are read at the gem's level (0 at level 1).
   - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;
     Reservation1 (damage per aura), Reservation2 (max resistances with reserved life and mana) and Reservation6 (aura
     duration) are not. Skill-specific reservation efficiency/effect stats are not modelled.
-  - **Systems:** supports, gem levels, party/minion auras, life reservation, and the skill-bar active border (0x25f is an
-    internal UI event, not an instance/world message; the client's setter is not reached by the buff events).
+  - **Systems:** supports, party/minion auras and life reservation.
 - **Dev check.** `/auras` prints the active auras, flat/percent reservation, reserved and unreserved mana,
   reservation efficiency and aura effect. Area changes recreate the player object, so `SendPlayer` puts the
   running auras' buffs back on it.

@@ -84,6 +84,27 @@ public sealed class AccountService(IAccountStore store, TimeProvider? clock = nu
     /// <summary>What the official client sends for a password: SHA-256 over its UTF-16LE text (client 0x140d05f70 → 0x140e23290).</summary>
     public static byte[] ClientPasswordDigest(string password) => SHA256.HashData(Encoding.Unicode.GetBytes(password));
 
+    /// <summary>Persistent device-bound credential for the client's Remember Password path.
+    /// Derived from the stored password verifier: survives restart, changes when the password changes.</summary>
+    public byte[] SavedClientCredential(Guid accountId, ReadOnlySpan<byte> machineA, ReadOnlySpan<byte> machineB)
+    {
+        var acc = store.GetAccount(accountId) ?? throw new InvalidOperationException("Account no longer exists");
+        if (machineA.Length != 32 || machineB.Length != 32) throw new ArgumentException("Expected 32-byte machine identifiers");
+        byte[] binding = [.. Encoding.UTF8.GetBytes("LocalExile saved login v1"), .. acc.Id.ToByteArray(), .. machineA, .. machineB];
+        return HMACSHA256.HashData(Convert.FromBase64String(acc.PasswordHash), binding);
+    }
+
+    public Result<Session> LoginWithSavedClientCredential(string name, ReadOnlySpan<byte> credential,
+        ReadOnlySpan<byte> machineA, ReadOnlySpan<byte> machineB)
+    {
+        var acc = store.FindAccount(name);
+        if (acc is null) return Result<Session>.Fail(AuthError.NotFound);
+        if (credential.Length != 32 || machineA.Length != 32 || machineB.Length != 32 ||
+            !CryptographicOperations.FixedTimeEquals(credential, SavedClientCredential(acc.Id, machineA, machineB)))
+            return Result<Session>.Fail(AuthError.BadCredentials);
+        return Result<Session>.Success(NewSession(acc));
+    }
+
     private Session NewSession(Account acc)
     {
         var now = _clock.GetUtcNow();
@@ -143,6 +164,20 @@ public sealed class AccountService(IAccountStore store, TimeProvider? clock = nu
             var c = store.FindCharacter(characterName);
             if (c is null) return Result<Character>.Fail(AuthError.NotFound);
             var u = c with { Level = level };
+            store.UpdateCharacter(u);
+            return Result<Character>.Success(u);
+        }
+    }
+
+    /// <summary>Records the character's worn portrait variation (0 = the class's own), found by name.</summary>
+    public Result<Character> SetPortrait(string characterName, ushort portrait)
+    {
+        lock (_gate)
+        {
+            var c = store.FindCharacter(characterName);
+            if (c is null) return Result<Character>.Fail(AuthError.NotFound);
+            if (c.Portrait == portrait) return Result<Character>.Success(c);
+            var u = c with { Portrait = portrait };
             store.UpdateCharacter(u);
             return Result<Character>.Success(u);
         }

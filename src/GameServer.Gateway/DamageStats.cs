@@ -9,6 +9,22 @@ using DamageType = GameServer.Core.World.DamageType;
 /// </summary>
 static class DamageStats
 {
+    public static DamagePacket Added(DamagePacket hit, Func<string, int> get, bool spell, double effectiveness = 1)
+    {
+        foreach (var type in Types)
+        {
+            string slug = Slug(type), prefix = spell ? "spell" : "attack";
+            var range = new DamageRange(get($"{prefix}_minimum_added_{slug}_damage"), get($"{prefix}_maximum_added_{slug}_damage"));
+            if (!spell)
+            {
+                int increased = get("damage_+%") + get("melee_damage_+%") + get($"{slug}_damage_+%")
+                    + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0);
+                range = range.Scale(Math.Max(0, 1 + increased / 100.0));
+            }
+            hit = hit.Add(type, range.Scale(effectiveness));
+        }
+        return hit;
+    }
     private static readonly DamageType[] Types =
         [DamageType.Physical, DamageType.Lightning, DamageType.Cold, DamageType.Fire, DamageType.Chaos];
 

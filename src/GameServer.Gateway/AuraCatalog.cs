@@ -1,14 +1,32 @@
 /// <summary>
 /// The auras the server models: their BuffDefinitions rows and their effects on the player. Reservation itself is
-/// data-driven (SkillCatalog.Reservation); this table holds the small, unconditional auras. The combat auras (added
-/// damage, heralds, banners) are deliberately not here yet.
+/// data-driven (SkillCatalog.Reservation). This table holds ordinary self auras; heralds, banners, minion summons
+/// and enemy debuff auras require their own mechanics rather than treating every reservation as a self buff.
 /// </summary>
 static class AuraCatalog
 {
     /// <summary>One active reservation skill: the skill id, its GrantedEffects row and id, its buff instance, and its gem's
     /// level and quality.</summary>
     public sealed record Aura(ushort SkillId, int Effect, string EffectId, string Name, ushort Buff, ushort BuffRow,
-        int ManaFlat, int ManaPercent, int Level = 1, int Quality = 0);
+        int ManaFlat, int ManaPercent, int Level = 1, int Quality = 0, ushort? SourceBuff = null);
+
+    // The source supplies the ground art; the received buff supplies the HUD icon and active-skill association.
+    // Distinct ids let both survive area restoration and end together without counting the aura's bonuses twice.
+    public static IEnumerable<byte[]> StartPackets(Aura aura, uint player, ushort? action)
+    {
+        if (aura.SourceBuff is ushort source)
+            yield return GameServer.Core.Protocol.Instance.InstanceEntities.AddBuff(player, source, aura.BuffRow,
+                player, aura.SkillId, auraSource: true, displayState: 0);
+        yield return GameServer.Core.Protocol.Instance.InstanceEntities.AddBuff(player, aura.Buff, aura.BuffRow,
+            player, aura.SkillId, activeSkill: action is ushort hash ? (aura.SkillId, hash) : null);
+    }
+
+    public static IEnumerable<byte[]> EndPackets(Aura aura, uint player)
+    {
+        yield return GameServer.Core.Protocol.Instance.InstanceEntities.RemoveBuff(player, aura.Buff);
+        if (aura.SourceBuff is ushort source)
+            yield return GameServer.Core.Protocol.Instance.InstanceEntities.RemoveBuff(player, source);
+    }
 
     /// <summary>The BuffDefinitions row that draws each aura's visual and buff icon.</summary>
     private static readonly Dictionary<string, ushort> BuffRows = new()
@@ -21,11 +39,30 @@ static class AuraCatalog
         ["Vitality"] = 153,
         ["Precision"] = 1293,
         ["Haste"] = 152,
+        ["Determination"] = 142,
+        ["Grace"] = 143,
+        ["Discipline"] = 148,
+        ["Anger"] = 149,
+        ["Hatred"] = 150,
+        ["Wrath"] = 151,
+        ["Zealotry"] = 1272,
+        ["Malevolence"] = 1274,
+        ["Envy"] = 828,
     };
 
     public static bool Supported(string effectId) => BuffRows.ContainsKey(effectId);
 
     public static ushort BuffRow(string effectId) => BuffRows[effectId];
+
+    public static IReadOnlyList<Aura> Restore(IEnumerable<string> saved, IEnumerable<Aura> available, CharacterStats.Pools pools)
+    {
+        var gems = available.Where(a => Supported(a.EffectId)).GroupBy(a => a.EffectId).ToDictionary(g => g.Key, g => g.First());
+        var restored = new List<Aura>();
+        foreach (string effect in saved.Distinct())
+            if (gems.TryGetValue(effect, out var aura) && RequiredMana(pools, restored.Append(aura)) <= pools.Mana)
+                restored.Add(aura);
+        return restored;
+    }
 
     /// <summary>
     /// The mana reserved by the active auras: flat reservations plus the percent reservations (permyriad) of the
@@ -33,6 +70,9 @@ static class AuraCatalog
     /// 1 + efficiency / 100; the final amount is rounded up to whole mana).
     /// </summary>
     public static int ReservedMana(CharacterStats.Pools pools, IEnumerable<Aura> auras)
+        => Math.Min((int)pools.Mana, RequiredMana(pools, auras));
+
+    public static int RequiredMana(CharacterStats.Pools pools, IEnumerable<Aura> auras)
     {
         double efficiency = Math.Max(-99, pools.ManaReservationEfficiencyPct) / 100.0 + 1;
         double flat = 0, percent = 0;
@@ -43,7 +83,7 @@ static class AuraCatalog
             percent += Math.Round(aura.ManaPercent / 100.0 / efficiency, 2, MidpointRounding.AwayFromZero);
         }
         double reserved = flat + pools.Mana * percent / 100.0;
-        return Math.Clamp((int)Math.Ceiling(reserved), 0, (int)pools.Mana);
+        return (int)Math.Clamp(Math.Ceiling(reserved), 0, int.MaxValue);
     }
 
     public static int UnreservedMana(CharacterStats.Pools pools, IEnumerable<Aura> auras) =>
@@ -56,10 +96,22 @@ static class AuraCatalog
         int fire = 0, cold = 0, lightning = 0, chaos = 0;
         int fireMax = 0, coldMax = 0, lightningMax = 0, chaosMax = 0;
         int accuracy = 0, criticalChance = 0, attackSpeed = 0, movementSpeed = 0;
+        int armour = 0, evasion = 0, armourMore = 0, evasionMore = 0, spellCrit = 0;
         foreach (var aura in auras)
         {
             switch (aura.EffectId)
             {
+                case "Determination":
+                    armour += Value(skills, stats, aura, "base_physical_damage_reduction_rating", auraEffectPct);
+                    armourMore += Value(skills, stats, aura, "determination_aura_armour_+%_final", auraEffectPct);
+                    break;
+                case "Grace":
+                    evasion += Value(skills, stats, aura, "base_evasion_rating", auraEffectPct);
+                    evasionMore += Value(skills, stats, aura, "grace_aura_evasion_rating_+%_final", auraEffectPct);
+                    break;
+                case "Zealotry":
+                    spellCrit += Value(skills, stats, aura, "spell_critical_strike_chance_+%", auraEffectPct);
+                    break;
                 case "PurityOfElements":
                     int all = Value(skills, stats, aura, "base_resist_all_elements_%", auraEffectPct);
                     fire += all;
@@ -93,8 +145,9 @@ static class AuraCatalog
         return new CharacterStats.Bonus(FireResistance: fire, ColdResistance: cold, LightningResistance: lightning,
             ChaosResistance: chaos, FireMaxResistance: fireMax, ColdMaxResistance: coldMax,
             LightningMaxResistance: lightningMax, ChaosMaxResistance: chaosMax,
-            Accuracy: accuracy, CriticalStrikeChancePct: criticalChance, SpellCriticalStrikeChancePct: criticalChance,
-            AttackSpeedPct: attackSpeed, MovementVelocityPct: movementSpeed);
+            Accuracy: accuracy, CriticalStrikeChancePct: criticalChance, SpellCriticalStrikeChancePct: criticalChance + spellCrit,
+            AttackSpeedPct: attackSpeed, MovementVelocityPct: movementSpeed, Armour: armour, Evasion: evasion,
+            ArmourMorePct: armourMore, EvasionMorePct: evasionMore);
     }
 
     /// <summary>The flat stat bonuses from the active auras (regeneration and Haste's cast speed), scaled by aura effect.</summary>
@@ -106,6 +159,32 @@ static class AuraCatalog
         {
             switch (aura.EffectId)
             {
+                case "Anger":
+                    Add("attack_minimum_added_fire_damage"); Add("attack_maximum_added_fire_damage");
+                    Add("spell_minimum_added_fire_damage"); Add("spell_maximum_added_fire_damage");
+                    break;
+                case "Hatred":
+                    Add("physical_damage_%_to_add_as_cold");
+                    break;
+                case "Wrath":
+                    Add("attack_minimum_added_lightning_damage"); Add("attack_maximum_added_lightning_damage");
+                    Add("wrath_aura_spell_lightning_damage_+%_final");
+                    break;
+                case "Envy":
+                    Add("attack_minimum_added_chaos_damage"); Add("attack_maximum_added_chaos_damage");
+                    Add("spell_minimum_added_chaos_damage"); Add("spell_maximum_added_chaos_damage");
+                    break;
+                case "Zealotry":
+                    Add("spell_damage_aura_spell_damage_+%_final");
+                    break;
+                case "Malevolence":
+                    Add("delirium_aura_damage_over_time_+%_final");
+                    Add("skill_effect_duration_+%", "delirium_skill_effect_duration_+%");
+                    break;
+                case "Discipline":
+                    Add("base_maximum_energy_shield");
+                    Add("energy_shield_recharge_rate_+%");
+                    break;
                 case "Clarity":
                     Add("base_mana_regeneration_rate_per_minute");
                     break;

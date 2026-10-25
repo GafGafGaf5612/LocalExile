@@ -8,12 +8,16 @@ static class GameDataFiles
     public static readonly (string File, string Feature)[] All =
     [
         ("data/tables/WorldAreas.json", "the game tables (stats, areas, waypoints, items, monsters, NPCs)"),
+        ("data/tables/Essences.json", "essence crafting and class-specific guaranteed modifiers"),
+        ("data/tables/CraftingBenchOptions.json", "crafting bench recipes, unlocks and costs"),
+        ("data/tables/CraftingItemClassCategories.json", "crafting bench item compatibility"),
         ("data/object-types.json", "monsters, NPCs, area transitions"),
         ("data/item-types.json", "items"),
         ("data/area-transitions.json", "area transitions of fixed layouts"),
         ("data/room-points.json", "unique bosses, The Twilight Strand's force wall"),
         ("data/hideouts.json", "hideouts"),
         ("data/animation-contacts.json", "class spell timing (the Witch's is used)"),
+        ("data/monster-takehit.json", "monster hit reactions (the TakeHit flinch and its sound)"),
     ];
 
     public static IEnumerable<(string File, string Feature)> Missing(string root = ".") =>

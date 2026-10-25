@@ -28,23 +28,28 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
     /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.
     /// Fractured mods stay, first, and count towards the affixes.</summary>
-    public Item Roll(Item item, ItemRarity rarity, Random rng, (int Count, int MaxEach)? shape = null)
+    public Item Roll(Item item, ItemRarity rarity, Random rng, (int Count, int MaxEach)? shape = null,
+        ModCatalog.Mod? guaranteed = null, int? maxModLevel = null, bool respectMetamods = false)
     {
         var fractured = item.FracturedIndexes();
-        var kept = item.Mods.Where((m, i) => m.Section != ModSection.Explicit || fractured.Contains(i)).ToList();
+        var rules = new MetacraftRules(item, catalog.Mods);
+        var kept = item.Mods.Where((m, i) => m.Section != ModSection.Explicit || fractured.Contains(i) || respectMetamods && rules.Protected(i)).ToList();
         var result = item with { Rarity = rarity, Mods = kept, NameWords = [] };
         if (catalog.ByHash(item.TypeHash) is not { } t || !t.Components.Contains("Mods") || rarity is not (ItemRarity.Magic or ItemRarity.Rare))
             return result;
         var (count, maxEach) = shape ?? (rarity == ItemRarity.Magic
             ? (rng.Next(1, 3), 1)
             : (rng.Next(12) switch { < 7 => 4, < 11 => 5, _ => 6 }, 3));
-        var pool = Pool(t, item.ItemLevel).ToList();
+        var generation = new MetacraftRules(item with { Mods = kept }, catalog.Mods);
+        var pool = Pool(t, Math.Min(item.ItemLevel, maxModLevel ?? item.ItemLevel))
+            .Where(p => !respectMetamods || generation.Allows(p.Mod)).ToList();
         var chosen = kept.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>().ToList();
         int keptCount = chosen.Count;
+        if (guaranteed is not null) chosen.Add(guaranteed);
         while (chosen.Count < count)
         {
             var allowed = pool.Where(p => chosen.Count(c => c.GenerationType == p.Mod.GenerationType) < maxEach &&
-                !chosen.Any(c => c.Families.Intersect(p.Mod.Families).Any())).ToList();
+                !chosen.Any(c => c.Hash == p.Mod.Hash || c.Families.Intersect(p.Mod.Families).Any())).ToList();
             if (allowed.Count == 0) break;
             chosen.Add(Pick(allowed, rng));
         }
@@ -55,17 +60,51 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
 
     /// <summary>Divine Orb: every explicit mod keeps its place and tier and rerolls only its values (a new tier would
     /// change the mod, and the client reorders the tooltip by mod). Null when the item has no explicit mods.</summary>
-    public Item? Reforge(Item item, Random rng) => item.Mods.Count(m => m.Section == ModSection.Explicit) <= item.FracturedCount ? null
-        : item with { Mods = [.. item.Mods.Select((m, i) => m.Section == ModSection.Explicit && !item.FracturedIndexes().Contains(i) && catalog.Mods.ByHash(m.Hash) is { } mod
-            ? mod.Roll(ModSection.Explicit, rng) : m)] };
+    public Item? Reforge(Item item, Random rng)
+    {
+        var rules = new MetacraftRules(item, catalog.Mods);
+        bool Mutable(int i) => item.Mods[i].Section == ModSection.Explicit && !rules.Protected(i) && catalog.Mods.ByHash(item.Mods[i].Hash) is not null;
+        if (!Enumerable.Range(0, item.Mods.Count).Any(Mutable)) return null;
+        return item with { Mods = [.. item.Mods.Select((m, i) => Mutable(i) ? catalog.Mods.ByHash(m.Hash)!.Roll(ModSection.Explicit, rng) : m)] };
+    }
+
+    public Item? Scour(Item item)
+    {
+        if (item.Rarity is not (ItemRarity.Magic or ItemRarity.Rare)) return null;
+        var rules = new MetacraftRules(item, catalog.Mods);
+        var kept = item.Mods.Where((m, i) => m.Section != ModSection.Explicit || rules.Protected(i)).ToArray();
+        int count = kept.Count(m => m.Section == ModSection.Explicit);
+        var rarity = count == 0 ? ItemRarity.Normal : count == 1 ? ItemRarity.Magic : ItemRarity.Rare;
+        if (kept.Length == item.Mods.Count && rarity == item.Rarity) return null;
+        return item with { Mods = kept, Rarity = rarity, Identified = true, NameWords = rarity == ItemRarity.Rare ? item.NameWords : [] };
+    }
+
+    public Item? Annul(Item item, Random rng)
+    {
+        if (item.Rarity is not (ItemRarity.Magic or ItemRarity.Rare)) return null;
+        var rules = new MetacraftRules(item, catalog.Mods);
+        var candidates = Enumerable.Range(0, item.Mods.Count).Where(i => item.Mods[i].Section == ModSection.Explicit && !rules.Protected(i)
+            && (catalog.Mods.ByHash(item.Mods[i].Hash) is not { } mod || rules.Allows(mod))).ToArray();
+        if (candidates.Length == 0) return null;
+        int removed = candidates[rng.Next(candidates.Length)];
+        return item with { Mods = [.. item.Mods.Where((_, i) => i != removed)] };
+    }
+
+    /// <summary>Blessed Orb: every implicit mod keeps its place and tier and rerolls only its values within the tier, as
+    /// <see cref="Reforge"/> does for explicits; explicit, enchant and other mods stay. Null when the item has no implicit
+    /// mod (nothing is spent).</summary>
+    public Item? Bless(Item item, Random rng) => !item.Mods.Any(m => m.Section == ModSection.Implicit) ? null
+        : item with { Mods = [.. item.Mods.Select(m => m.Section == ModSection.Implicit && catalog.Mods.ByHash(m.Hash) is { } mod
+            ? mod.Roll(ModSection.Implicit, rng) : m)] };
 
     /// <summary>One more explicit affix, drawn by weight from the base's pool at its item level: no family already on the
     /// item and at most <paramref name="maxEach"/> prefixes / suffixes. The old mods stay; null when nothing fits.</summary>
-    public Item? AddAffix(Item item, int maxEach, Random rng)
+    public Item? AddAffix(Item item, int maxEach, Random rng, bool respectMetamods = true)
     {
         if (catalog.ByHash(item.TypeHash) is not { } t) return null;
         var have = item.Mods.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>().ToList();
-        var allowed = Pool(t, item.ItemLevel).Where(p => have.Count(h => h.GenerationType == p.Mod.GenerationType) < maxEach &&
+        var rules = new MetacraftRules(item, catalog.Mods);
+        var allowed = Pool(t, item.ItemLevel).Where(p => (!respectMetamods || rules.Allows(p.Mod)) && have.Count(h => h.GenerationType == p.Mod.GenerationType) < maxEach &&
             !have.Any(h => h.Families.Intersect(p.Mod.Families).Any())).ToList();
         if (allowed.Count == 0) return null;
         var added = Pick(allowed, rng);
@@ -101,7 +140,7 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit && !fractured.Contains(p.i)).Select(p => p.i)
             .OrderBy(_ => rng.Next()).Take(count).ToHashSet();
         var result = item with { Mods = [.. item.Mods.Where((_, i) => !explicits.Contains(i))] };
-        for (int n = 0; n < explicits.Count && AddAffix(result, 3, rng) is { } added; n++) result = added;
+        for (int n = 0; n < explicits.Count && AddAffix(result, 3, rng, respectMetamods: false) is { } added; n++) result = added;
         return result;
     }
 

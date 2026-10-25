@@ -24,9 +24,12 @@ static class CharacterSaves
     public sealed record SavedItem(uint Type, byte ItemLevel = 1, byte Quality = 0, int Charges = 0, ushort StackSize = 1,
         List<SavedSocket>? Sockets = null, List<byte>? Links = null, int GemExperience = 0,
         ItemRarity Rarity = ItemRarity.Normal, bool Identified = true, List<SavedMod>? Mods = null, List<uint>? Name = null,
-        int GemVariant = 0, bool Corrupted = false, byte Fractured = 0, bool Mirrored = false);
+        int GemVariant = 0, bool Corrupted = false, byte Fractured = 0, bool Mirrored = false, byte GemFlags = 0);
 
     public sealed record SavedPlacement(uint Id, byte X, byte Y, SavedItem Item);
+
+    /// <summary>A worn cosmetic: the record picked (a MtxTypes row + 1) and the 0x1f9 option byte it was picked with.</summary>
+    public sealed record SavedCosmetic(uint Record, byte Option = 0);
 
     /// <summary>Skill bar: slot index → a GrantedEffects Id (skill ids change with the socketed gems, effects do not),
     /// "Action/&lt;ActionTypes Id&gt;" for a basic action ("Action/Move") or "" for a cleared slot. Experience: the
@@ -36,12 +39,16 @@ static class CharacterSaves
     /// (QuestFlags.dat Ids, 12-quests.md §5). Gold: only in older saves, see <see cref="TakeGold"/>. StartWeapon: the
     /// class's start weapon while it waits on the ground for the character to pick it up (<see cref="PlayerInventories.StartWeapon"/>).
     /// PortalCosmetic: the MicrotransactionPortalVariations row the character's portals use (null = the base effect), so a
-    /// /cosmetic portal choice survives a relog.</summary>
+    /// /cosmetic portal choice survives a relog. Cosmetics: what the Cosmetics tab (K) wears, MicrotransactionSlot Id →
+    /// the picked record (<see cref="MtxCatalog"/>: a MtxTypes row + 1). SkillCosmetics: the Cosmetics tab's skill
+    /// slots, <see cref="SkillCosmeticKey"/> (a gem's BaseItemTypes HASH32 and effect slot type) → the picked record
+    /// (every gem of that type wears it).</summary>
     public sealed record Save(Dictionary<byte, List<SavedPlacement>> Inventories, Dictionary<int, string>? SkillBar = null,
         uint? Experience = null, List<ushort>? Passives = null, List<string>? Waypoints = null, List<string>? Visited = null,
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
-        SavedItem? StartWeapon = null, ushort? PortalCosmetic = null)
+        SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null,
+        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -60,6 +67,16 @@ static class CharacterSaves
 
     public static void Write(string character, Save save) =>
         Saves.Put(SaveDatabase.Table.Characters, character, JsonSerializer.Serialize(save, Opts));
+
+    public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
+
+    /// <summary>Persist aura intent by stable GrantedEffects Id, never by a connection's skill or buff id.</summary>
+    public static void SetAuraActive(string character, string effect, bool active) => Update(character, save =>
+    {
+        var auras = (save.ActiveAuras ?? []).Where(id => id != effect).ToList();
+        if (active) auras.Add(effect);
+        return save with { ActiveAuras = auras };
+    });
 
     /// <summary>Records what a skill bar slot holds (see <see cref="Save.SkillBar"/>), keeping the saved items.</summary>
     public static void SetSkillBar(string character, byte slot, string entry) => Update(character, save =>
@@ -97,6 +114,38 @@ static class CharacterSaves
     /// effect, which is stored as no field so an older save keeps reading as the default.</summary>
     public static void SetPortalCosmetic(string character, ushort variation) =>
         Update(character, s => s with { PortalCosmetic = variation == 0 ? null : variation });
+
+    /// <summary>Records what a Cosmetics tab slot wears (null empties it), keeping the rest of the save.</summary>
+    public static void SetCosmetic(string character, byte slot, SavedCosmetic? worn) => Update(character, s =>
+    {
+        var cosmetics = s.Cosmetics is null ? new Dictionary<byte, SavedCosmetic>() : new Dictionary<byte, SavedCosmetic>(s.Cosmetics);
+        if (worn is null) cosmetics.Remove(slot); else cosmetics[slot] = worn;
+        return s with { Cosmetics = cosmetics.Count == 0 ? null : cosmetics };
+    });
+
+    /// <summary>A skill cosmetic's save key: the gem's BaseItemTypes HASH32 (hex) / its effect slot type
+    /// (MicrotransactionSkillGemEffectSlotTypes row).</summary>
+    public static string SkillCosmeticKey(uint gem, byte slotType) => $"{gem:x8}/{slotType}";
+
+    /// <summary>The gem HASH32 of a <see cref="SkillCosmeticKey"/>, or null for a key it did not write.</summary>
+    public static uint? SkillCosmeticGem(string key) =>
+        key.Split('/') is [var gem, _] && uint.TryParse(gem, System.Globalization.NumberStyles.HexNumber, null, out uint g) ? g : null;
+
+    /// <summary>Records what a gem type's skill slot wears (null empties it), keeping the rest of the save.</summary>
+    public static void SetSkillCosmetic(string character, uint gem, byte slotType, SavedCosmetic? worn) => Update(character, s =>
+    {
+        var skills = s.SkillCosmetics is null ? new Dictionary<string, SavedCosmetic>() : new Dictionary<string, SavedCosmetic>(s.SkillCosmetics);
+        if (worn is null) skills.Remove(SkillCosmeticKey(gem, slotType)); else skills[SkillCosmeticKey(gem, slotType)] = worn;
+        return s with { SkillCosmetics = skills.Count == 0 ? null : skills };
+    });
+
+    /// <summary>The character's skill cosmetics by <see cref="SkillCosmeticKey"/>; empty when none are saved.</summary>
+    public static IReadOnlyDictionary<string, SavedCosmetic> SkillCosmetics(string character) =>
+        Load(character)?.SkillCosmetics ?? new Dictionary<string, SavedCosmetic>();
+
+    /// <summary>The character's worn cosmetics by MicrotransactionSlot Id; empty when none are saved.</summary>
+    public static IReadOnlyDictionary<byte, SavedCosmetic> Cosmetics(string character) =>
+        Load(character)?.Cosmetics ?? new Dictionary<byte, SavedCosmetic>();
 
     /// <summary>The character's portal cosmetic, 0 (the base effect) when none is saved.</summary>
     public static ushort PortalCosmetic(string character) => Load(character)?.PortalCosmetic ?? 0;
@@ -203,7 +252,7 @@ static class CharacterSaves
         i.Sockets.Count == 0 ? null : [.. i.Sockets.Select(s => new SavedSocket(s.Colour, s.Gem is null ? null : ToSaved(s.Gem, mods)))],
         i.Links is null ? null : [.. i.Links], i.GemExperience, i.Rarity, i.Identified,
         [.. i.Mods.Select(m => new SavedMod(mods?.ByHash(m.Hash)?.Id ?? $"0x{m.Hash:x4}", m.Section, [.. m.Values]))],
-        i.NameWords.Count == 0 ? null : [.. i.NameWords], i.GemVariant, i.Corrupted, i.FracturedCount, i.Mirrored);
+        i.NameWords.Count == 0 ? null : [.. i.NameWords], i.GemVariant, i.Corrupted, i.FracturedCount, i.Mirrored, i.GemFlags);
 
     /// <summary>The item again, with its socketed gems and mods. A type, gem or mod the game data doesn't know throws
     /// <see cref="UnknownSavedItemException"/>: dropping it would lose it at the next save.</summary>
@@ -213,7 +262,7 @@ static class CharacterSaves
             throw new UnknownSavedItemException($"item type 0x{s.Type:x8}" + (catalog.Error is { } e ? $" ({e})" : ""));
         return ItemCatalog.Create(t) with
         {
-            ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience, GemVariant = s.GemVariant,
+            ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience, GemVariant = s.GemVariant, GemFlags = s.GemFlags,
             Sockets = [.. (s.Sockets ?? []).Select(k => new ItemSocket(k.Colour, k.Gem is null ? null : FromSaved(k.Gem, catalog)))],
             Links = s.Links, Rarity = s.Rarity, Identified = s.Identified, NameWords = s.Name ?? [], Corrupted = s.Corrupted, FracturedCount = s.Fractured, Mirrored = s.Mirrored,
         } is var item && s.Mods is null ? item : item with { Mods = [.. s.Mods.Select(m => FromSaved(m, catalog.Mods))] };

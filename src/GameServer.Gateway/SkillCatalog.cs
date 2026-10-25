@@ -169,8 +169,85 @@ sealed class SkillCatalog(string folder = "data")
         return 0;
     }
 
+    /// <summary>How far a gem's stored experience may level it (GrantedEffectStatSetsPerLevel PlayerLevelReq): its level
+    /// stalls at the first one the character's level does not meet, as the game's does. The client derives the level from
+    /// the experience alone (it does not stall), so the server stops the experience below that level's threshold
+    /// (Program.GainGemExperience). 1 when not even the first level's requirement is met (the character cannot use the
+    /// gem), 40 when the skill has none.</summary>
+    public int MaxLevelAt(int effectRow, int charLevel)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 40;
+        int statSet = t.StatSets[effectRow];
+        int max = 0;
+        foreach (var (ss, level, req) in t.GemLevelReqs)
+            if (ss == statSet && req <= charLevel && level > max) max = level;
+        return max > 0 ? max : 1;
+    }
+
+    /// <summary>The character level a gem needs at this level (GrantedEffectStatSetsPerLevel PlayerLevelReq): the
+    /// highest requirement of its levels at or below it, 0 when the skill has none.</summary>
+    public int PlayerLevelReq(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 0;
+        int statSet = t.StatSets[effectRow], req = 0;
+        foreach (var (ss, lvl, r) in t.GemLevelReqs)
+            if (ss == statSet && lvl <= level && r > req) req = r;
+        return req;
+    }
+
+    /// <summary>
+    /// A skill's damage effectiveness at a level (GrantedEffectStatSetsPerLevel DamageEffectiveness, permyriad: Flicker
+    /// Strike 7730 at level 1, 30890 at 20, 69600 at 40): an attack's share of the weapon's damage, the gem's "Deals
+    /// 77.3% of base Attack Damage" line. 0 when its row has none (the default attack) or carries a negative one, which a
+    /// few skills do; callers scale nothing then. A spell's own base damage is already final (see SpellDamage).
+    /// </summary>
+    public int DamageEffectiveness(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 0;
+        int row = PickLevel(t.StatSetsPerLevel, t.StatSets[effectRow], level);
+        return row >= 0 && row < t.Effectiveness.Count ? Math.Max(0, t.Effectiveness[row]) : 0;
+    }
+
+    /// <summary>A gem's requirement for one attribute at a level (0x14246fc40): the level requirement of that level
+    /// (PlayerLevelReq) through the client's curve (3 x requirement + 11), the gem's percentage share (SkillGems
+    /// Strength/Dexterity/IntelligenceRequirementPercent) raised to the power 0.9, and 0.5 for a support or 0.7 for a
+    /// skill, truncated. Below 14 the client hides it and the requirement is 0. Anchors from the client's tooltips:
+    /// 100% at requirement level 70 is 155 (Haste, Fireball), 75% is 119 (Clarity), 60%/40% are 98/68 (Anger), and a
+    /// support at 8 is 18 (Added Fire Damage Support).</summary>
+    public static int GemAttributeRequirement(int percent, int playerLevelReq, bool support)
+    {
+        if (percent <= 0) return 0;
+        int requirement = (int)((3 * playerLevelReq + 11) * MathF.Pow(percent / 100f, 0.9f) * (support ? 0.5f : 0.7f) + 0.5f);
+        return requirement < 14 ? 0 : requirement;
+    }
+
     /// <summary>The ActionTypes Id of a basic action's skill id (HASH16 &amp; 0x3fff: Move 0x2909), or null.</summary>
     public string? ActionName(ushort skillId) => _actions.Value.FirstOrDefault(a => a.Id == skillId).Name;
+
+    /// <summary>The full ActionTypes HASH16 for a GrantedEffects row, used with its server skill id by skill buffs.</summary>
+    public ushort? ActionHash(int effectRow) => _effectActions.Value.TryGetValue(effectRow, out ushort hash) ? hash : null;
+
+    private readonly Lazy<Dictionary<int, ushort>> _effectActions = new(() =>
+    {
+        string PathOf(string name) => Path.Combine(folder, "tables", name + ".json");
+        if (!File.Exists(PathOf("GrantedEffects")) || !File.Exists(PathOf("ActiveSkills")) || !File.Exists(PathOf("ActionTypes"))) return [];
+        using var effects = JsonDocument.Parse(File.ReadAllBytes(PathOf("GrantedEffects")));
+        using var active = JsonDocument.Parse(File.ReadAllBytes(PathOf("ActiveSkills")));
+        using var actions = JsonDocument.Parse(File.ReadAllBytes(PathOf("ActionTypes")));
+        var result = new Dictionary<int, ushort>();
+        int row = 0;
+        foreach (var effect in effects.RootElement.EnumerateArray())
+        {
+            int index = row++;
+            if (!effect.TryGetProperty("ActiveSkill", out var a) || a.ValueKind != JsonValueKind.Number
+                || a.GetInt32() < 0 || a.GetInt32() >= active.RootElement.GetArrayLength()) continue;
+            var entry = active.RootElement[a.GetInt32()];
+            if (!entry.TryGetProperty("ActionType", out var t) || t.ValueKind != JsonValueKind.Number
+                || t.GetInt32() < 0 || t.GetInt32() >= actions.RootElement.GetArrayLength()) continue;
+            result[index] = actions.RootElement[t.GetInt32()].GetProperty("HASH16").GetUInt16();
+        }
+        return result;
+    });
 
     /// <summary>A basic action's skill id by ActionTypes Id ("Move" → 0x2909), or null.</summary>
     public ushort? ActionSkillId(string name) => _actions.Value.FirstOrDefault(a => a.Name == name) is { Name: not null } a ? a.Id : null;
@@ -230,8 +307,14 @@ sealed class SkillCatalog(string folder = "data")
     /// where it was aimed.</summary>
     public bool IsMovement(int effectRow) => _movementEffects.Value.Contains(effectRow);
 
+    /// <summary>Whether a GrantedEffects row's skill is an attack (ActiveSkillType Attack: the default attack, Holy
+    /// Strike, Flicker Strike …): it swings with the weapon's attack time and its use is paced like the default
+    /// attack's, unlike a spell, which the client paces by its cast time.</summary>
+    public bool IsAttack(int effectRow) => _attackEffects.Value.Contains(effectRow);
+
     private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
     private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
+    private readonly Lazy<HashSet<int>> _attackEffects = new(() => EffectsOfType(folder, "Attack"));
 
     /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>
     static HashSet<int> EffectsOfType(string folder, string typeId)
@@ -404,15 +487,16 @@ sealed class SkillCatalog(string folder = "data")
         /// (the client puts only dual wielding's 10 there when it is not sent), the panel's "Attacks per Second" is
         /// hundred_times_attacks_per_second / 100.
         /// </summary>
-        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null)
+        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null, DamagePacket? totalHit = null)
         {
             var (min, max) = Damage(player);
             double attacksPerSecond = 1 / AttackSeconds(player);
-            double averageHit = (min + max) / 2.0;
+            double averageHit = totalHit?.AverageTotal ?? (min + max) / 2.0;
             return
             [
                 (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
-                (StatKeys.MainHandMinTotal, min), (StatKeys.MainHandMaxTotal, max),
+                (StatKeys.MainHandMinTotal, totalHit is null ? min : (int)Math.Floor(totalHit.MinTotal)),
+                (StatKeys.MainHandMaxTotal, totalHit is null ? max : (int)Math.Floor(totalHit.MaxTotal)),
                 (StatKeys.MainHandAttackDurationMs, AttackMs), (StatKeys.MainHandTotalAttackDurationMs, AttackMs),
                 (StatKeys.MainHandAttackSpeedPct, IncreasedAttackSpeed(player)),
                 (StatKeys.SkillUsesMainHand, 1),
@@ -487,6 +571,7 @@ sealed class SkillCatalog(string folder = "data")
     // StatSets: each GrantedEffects row's StatSet1 (-1 when none). Effects: per GrantedEffects row its StatSet1 and CastTime.
     // StatSetBase: per GrantedEffectStatSets row its ImplicitStats and (ConstantStats, ConstantStatsValues).
     // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
+    // Effectiveness: per GESSPL row its DamageEffectiveness (permyriad, the attack's share of the weapon's damage).
     // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
     // Reservations: per GEPL row the ManaReservationFlat and ManaReservationPercent (permyriad), parallel to PerLevel.
     // Cooldowns: per GEPL row its Cooldown (ms) and StoredUses, parallel to PerLevel. VaalSouls: per GEPL row its VaalSouls.
@@ -494,9 +579,9 @@ sealed class SkillCatalog(string folder = "data")
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
         List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
         List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
-        List<(int, int)[]> StatSetLevelStats, List<int> ManaCost,
+        List<(int, int)[]> StatSetLevelStats, List<(int StatSet, int GemLevel, int PlayerLevelReq)> GemLevelReqs, List<int> ManaCost,
         List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
-        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality)
+        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness)
     {
         public static Tables? Load(string folder)
         {
@@ -555,15 +640,19 @@ sealed class SkillCatalog(string folder = "data")
                     quality.TryAdd(Int(r, "GrantedEffectsKey"), Pairs(Ints(r, "StatsKeys"), Ints(r, "StatsValuesPermille")));
             }
             var setLevels = new List<(int, int)>();
+            var effectiveness = new List<int>();
             var levelStats = new List<(int, int)[]>();
+            var levelReqs = new List<(int, int, int)>();
             foreach (var r in s.RootElement.EnumerateArray())
             {
                 setLevels.Add((Int(r, "StatSet"), Int(r, "GemLevel")));
+                effectiveness.Add(Int(r, "DamageEffectiveness"));
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
                     .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
+                if (Int(r, "PlayerLevelReq") is >= 0 and var req) levelReqs.Add((Int(r, "StatSet"), Int(r, "GemLevel"), req));
             }
-            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, mana, reservations, cooldowns,
-                vaalSouls, quality);
+            return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, levelReqs, mana, reservations, cooldowns,
+                vaalSouls, quality, effectiveness);
         }
     }
 }
