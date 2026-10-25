@@ -195,8 +195,12 @@ once. The Gateway now sends the 0x20 update instead (above), which also removes 
    toward the monster and stops at the first cell within `MaxAttackDistance` (`WalkEstimator.Approach`).
 2. On arrival it starts the swing: the 0x1ab echo (from the stop cell, aimed at the monster). Echoing at the click made
    the client swing on the spot, out of range.
-3. Half an attack time later (the contact point, roughly) it rolls the accuracy check and, on a hit, lowers the
-   monster's life with 0x1b1. The chance is PoB's `calcs.hitChance`: `accuracy / (accuracy + (evasion / 5)^0.9) × 125`,
+3. At the swing's contact point it rolls the accuracy check and, on a hit, lowers the monster's life with 0x1b1. The
+   contact point is the active weapon's `attack1_<weapon>` clip contact keyframe (`AnimationContacts.AttackContact`:
+   its shield or dual-wield variant, then any attack1 of that weapon, else 0.4) as a fraction of the attack time, since
+   the client stretches the clip to it, plus 150 ms for the client's walk into range lagging the server's estimate
+   (`Game_HIT_OFFSET_MS`). It never lands later than the next held attack may start (a quarter early, less 50 ms:
+   `AttackTiming.ContactDelay`), because that attack cancels a hit still waiting. The chance is PoB's `calcs.hitChance`: `accuracy / (accuracy + (evasion / 5)^0.9) × 125`,
    rounded and clamped to 5..100, with the monster's `DefaultMonsterStats.Evasion` at its level. A miss is logged and
    sends no life update; spells do not roll accuracy and always hit.
 4. Any later player action (0x25 move, another 0x24) cancels steps 2 and 3 (`ClientState.ActionCount`).
@@ -367,6 +371,15 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   types TakeHitForward/Backward/Left/Right, but the `.act` files that set them alias them all to `@TakeHit`, so they add
   no variants. 0x262 (a Life "changed by" event with a signed delta) reaches the Life listeners but plays no flinch,
   sound or blood.
+- **Hit effects (2026-10-25).** The target's blood and the weapon impact sound come from S→C **0x1af** "action hit"
+  (`InstanceProtocol.ActionHit`; class `0x1435ddb38`, read `0x141fddba0` → `0x1419bd6f0`, Actor handler `0x1421940a0`
+  → `0x141e90f50`): object header (the attacker), u16 action sequence (must match the action's), u8, u8 skill index
+  (0 = the current action), u32 target id, u16 flags, u8 kind (bit 0: belongs to an action, bit 1: hit data follows).
+  With bit 1: a u16 if `flags & 0x400` (`flags >> 10 & 1` in the reader), u8 code, u8 hit angle (0..255 a full turn,
+  `atan2(dx, −dy)` from attacker to target), then a u16 for kind bit 2 and one for bit 3. The handler calls the
+  attacker's `ProcessDamagePackageInternal` (vtable +0x230), which plays the effects; 0x1b1 stays authoritative on
+  life. The server sends it before 0x1b1 on the default attack and on attack-gem hits (flags 0x4201, kind 3) and on a
+  monster's hit on the player (flags 0x4601 with u16 450, kind 2, sequence 0xffff); spells and projectiles skip it.
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
@@ -424,7 +437,8 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
 ## 9a. Gem skills without a projectile (first version, 2026-10-23)
 
 Only projectile skills (Fireball) and Righteous Fire dealt damage: every other gem skill logged "no projectile". Now
-`AreaSkillHit` gives them one hit, after half the attack time (attacks) or the cast (spells), on every living monster
+`AreaSkillHit` gives them one hit, at the attack's contact keyframe (attacks, as the default attack but without the
+walk-in offset) or after the cast (spells), on every living monster
 within the skill's `active_skill_base_area_of_effect_radius` (in cells, else 12, grown by area of effect as Righteous
 Fire's: `SkillArea`; halved before 2026-10-23, which the units do not support) of the aimed
 point, or of the player when a melee skill is aimed too far. Attacks use the default attack's hit (`WeaponFor`: the
@@ -861,8 +875,7 @@ on the Defence tab as Stun Recovery 30%, the four Avoidance rows at 20% and "Can
 
 ## Open
 
-- Attacks still land at half the attack time: use the attack animations' contact keyframes (data/animation-contacts.json)
-  as spells do; "more" multipliers; energy shield (Righteous Fire's ES parts are ignored).
+- Monster attacks still land at half the attack time (the player's use the contact keyframe); "more" multipliers; energy shield (Righteous Fire's ES parts are ignored).
 - A 30 Hz server loop: `TickRate` only bounds the attack time; hits use timers and the monster AI runs every 500 ms.
 - Monsters use only their first granted effect; no ranged or spell skills, no monster skill choice.
 - A damage model: armour, evasion, resistances, crits; the player's real life from level and stats.
