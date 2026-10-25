@@ -393,3 +393,5 @@ conditional path now also receives aggregate area (0xd7) and radius percentage (
 Cyclone's additional melee-range and stage modifiers remain partial. See protocol/11-skills.md.
 
 - Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
+
+Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses. Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented. See [skills](docs/protocol/11-skills.md).
