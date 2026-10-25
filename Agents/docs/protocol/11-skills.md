@@ -441,6 +441,9 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   TakeHit selected Witch clip 177 and cleared Actor `+0x219` bit 2 after the requested 429 ms recovery.
   A slow Fireball cast was cancelled before release, with no projectile created.
   An already released Fireball continued through recovery to impact and removal.
+  A bow-equipped copied character also lost a pending Burning Arrow before release after an actual monster hit.
+  An ordinary ground arrow request during recovery produced no action echo or projectile; a fresh request worked afterward.
+  Burning Arrow released before the hit continued to removal, while native recovery blocked the new arrow request.
   With `cannot_be_stunned = 1`, another actual 24 damage hit sent no 0x1d1 and did not set the recovery flag.
   Evidence: `logs/monster-hit-recovery-{walk,cast,flight,immune}.json` in the validation checkout.
   In contrast, 0x1b2 merely replaced the clip while movement or server cast release continued.
