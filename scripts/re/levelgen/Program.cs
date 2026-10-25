@@ -612,6 +612,11 @@ static void Generate(string areaId, uint seed, string? tracePath)
     List<(string? Ground, int Height, int Flags)>? fillCopy = null, paintCopy = null;
     LevelGenerator.FillStarting = (g, ox, oy, w, h) => fillCopy ??= ViewVertices(g, ox, oy, w, h);
     LevelGenerator.PaintStarting = (g, ox, oy, w, h) => paintCopy ??= ViewVertices(g, ox, oy, w, h);
+    // The trace's heights: per stage every entry's tile height (null when empty), and at "outer<" the vertices.
+    var heightCopies = new Dictionary<string, (int?[] Entries, List<(string? Ground, int Height, int Flags)> Vertices)>();
+    LevelGenerator.HeightStage = (name, g) => heightCopies[name] = (
+        [.. Enumerable.Range(0, g.Width * g.Height).Select(i => g[i % g.Width, i / g.Width] is { } e ? (int?)e.HeightOffset : null)],
+        ViewVertices(g, 0, 0, g.Width, g.Height));
     // Per layout (a composite map has one per subgraph): its stages, and its rooms once picked (which ends it).
     var dungeonLayouts = new List<(List<(string Name, int Draws, int[] Cells)> Stages, List<string>? Rooms)> { ([], null) };
     LevelGenerator.DungeonStage = (name, draws, cells) => dungeonLayouts[^1].Stages.Add((name, draws, cells));
@@ -639,6 +644,49 @@ static void Generate(string areaId, uint seed, string? tracePath)
     using var trace = JsonDocument.Parse(File.ReadAllText(tracePath));
     var t = trace.RootElement;
     Console.WriteLine($"client: {t.GetProperty("w")}x{t.GetProperty("h")}, tile hash {t.GetProperty("tileHash")}");
+    if (t.TryGetProperty("heights", out var heightStages) && heightStages.ValueKind == JsonValueKind.Array)
+    {
+        int tw = t.GetProperty("w").GetInt32();
+        foreach (var stage in heightStages.EnumerateArray())
+        {
+            string name = stage[0].GetString()!;
+            if (name == "outer-vertices" && heightCopies.TryGetValue("outer<", out var before))
+            {
+                var vdiffs = new List<string>();
+                int i = 0;
+                foreach (var v in stage[2].EnumerateArray())
+                {
+                    var (_, ph, pf) = before.Vertices[i];
+                    int ch = v[0].GetInt32(), cf = v[1].GetInt32();
+                    if (ch != ph || (cf & 3) != (pf & 3)) vdiffs.Add($"({i % (tw + 1)}, {i / (tw + 1)}) client h{ch} f{cf}, port h{ph} f{pf}");
+                    i++;
+                }
+                Console.WriteLine($"heights outer-vertices: {vdiffs.Count} vertices differ");
+                foreach (var d in vdiffs.Take(Environment.GetEnvironmentVariable("LEVELGEN_ALL") == "1" ? int.MaxValue : 12)) Console.WriteLine("  " + d);
+                continue;
+            }
+            if (!heightCopies.TryGetValue(name, out var copy)) continue;
+            // LEVELGEN_DUMP=x0,x1,y0,y1: the port's entry heights and vertex heights there at this stage.
+            if (Environment.GetEnvironmentVariable("LEVELGEN_DUMP") is { } dumpArea)
+            {
+                var r = dumpArea.Split(',').Select(int.Parse).ToArray();
+                Console.WriteLine($"port {name} entries / vertices:");
+                for (int y = r[2]; y < r[3]; y++)
+                    Console.WriteLine($"  {y,3} " + string.Join(" ", Enumerable.Range(r[0], r[1] - r[0]).Select(x => $"{copy.Entries[y * tw + x]?.ToString() ?? "-",3}")) +
+                        "   | " + string.Join(" ", Enumerable.Range(r[0], r[1] - r[0] + 1).Select(x => $"{copy.Vertices[y * (tw + 1) + x].Height,3}")));
+            }
+            var entryDiffs = new List<string>();
+            int k = 0;
+            foreach (var v in stage[2].EnumerateArray())
+            {
+                int? ch = v.ValueKind == JsonValueKind.Null ? null : v.GetInt32();
+                if (ch != copy.Entries[k]) entryDiffs.Add($"({k % tw}, {k / tw}) client {ch?.ToString() ?? "-"}, port {copy.Entries[k]?.ToString() ?? "-"}");
+                k++;
+            }
+            Console.WriteLine($"heights {name}: {entryDiffs.Count} entries differ");
+            foreach (var d in entryDiffs.Take(12)) Console.WriteLine("  " + d);
+        }
+    }
     // Draw by draw: the client's 'n' / 'u' / 'l' entries against the port's, until the first difference.
     var theirs = TraceDraws(t);
     var mine = rng.Log!;

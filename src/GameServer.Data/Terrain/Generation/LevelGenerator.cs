@@ -76,6 +76,10 @@ public static class LevelGenerator
     /// <c>dungeon.rooms</c>).</summary>
     public static Action<List<string>>? DungeonRooms;
 
+    /// <summary>Diagnostics: called with a stage name (as the trace's <c>heights</c>: "outer&lt;", "outer&gt;") and the
+    /// tile grid.</summary>
+    public static Action<string, TileGrid>? HeightStage;
+
     /// <summary>Generates the area. Pass <paramref name="rng"/> (seeded, with the area's randomness flag) to keep its draw
     /// log when generation stops at a part that is not ported, <paramref name="notes"/> to keep its notes and
     /// <paramref name="onStage"/> to see a tile graph at the stage boundaries the client trace records.</summary>
@@ -319,7 +323,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             // 0x1420452e0 after the layout: the TileSet's post-unique tiles over the subgraph's view (0x14203ece0).
             PostUniqueTiles.Run(rng, grid, vx, vy, vw, vh, store, notes);
         }
+        LevelGenerator.HeightStage?.Invoke("outer<", grid);
         for (int i = records.Count - 1; i >= 0; i--) outers[i]();
+        LevelGenerator.HeightStage?.Invoke("outer>", grid);
         // 0x142044f30 then: the walkability pass (0x1420289a0) over the rectangle of each primary record (the first,
         // generator +0x30 +9 taken to be 1) and of each later one whose master has CountAsPrimary (+0x164), then
         // 0x142028870 flags the map's border vertices. Only grounds and vertex flags change.
@@ -1086,13 +1092,26 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// <summary>The graph's grounds (+0xa0 top, +0xa8 bottom, +0xb0 default), the tiler's +0x30 / +0x28 / +0x20.</summary>
     (string? Top, string? Bottom, string? Default) _graphGrounds;
 
+    /// <summary>Room data +0xa (<c>0x141ff4e70</c>, which clears it first): a fill room (+9,
+    /// <see cref="DungeonRoomSet.IsFill"/>) whose slots' four key grounds are all in the room ground's class (none or .gt
+    /// flag 4, or neither). The "special" rooms of 1_3_9 (dockarm_end_special*.arm) do not have it.</summary>
+    bool OwnGround(DungeonRoom room)
+    {
+        if (!DungeonRoomSet.IsFill(room)) return false;
+        bool Open(string? g) => g is null || ((files.Ground(g)?.Flags ?? 0) & 4) != 0;
+        bool open = Open(room.Def!.Key.Grounds[0]);
+        foreach (var slot in room.Def.Slots)
+            if (slot is { Kind: not 'n', Key: { } key } && key.Grounds.Any(g => Open(g) != open)) return false;
+        return true;
+    }
+
     /// <summary><c>0x1420f0e10</c> per room, after the room vertex grounds: every vertex of the room (with RoomOverlap,
     /// not its left or top column when the room is not at the map's left or top, nor its right or bottom column when
     /// its cell is not the map's last) without a ground takes the graph's default ground; the top ground instead when
     /// its height is the highest of the layout (<c>0x141ffc700</c>), else the bottom ground when the lowest
     /// (<c>0x141ffc7d0</c>), unless the default is impassable_ground.gt. Written without the ground checks
-    /// (<c>0x141d85640</c> with map +0x10 clear). Not ported: room data +0xa with +0x13a (the room's own ground in place
-    /// of the default; taken as clear) and the master's level overrides +0x146 / +0x144.</summary>
+    /// (<c>0x141d85640</c> with map +0x10 clear). A room with room data +0xa (<see cref="OwnGround"/>) gives its own
+    /// ground (+0x13a) in place of the default. Not ported: the master's level overrides +0x146 / +0x144.</summary>
     void RoomGrounds(DungeonMap map, int step)
     {
         const string impassable = "Metadata/Terrain/impassable_ground.gt";
@@ -1121,6 +1140,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 yn -= p.Y < map.Height - 1 ? 1 : 0;
             }
             int ox = _ox + step * p.X, oy = _oy + step * p.Y;
+            // Room data +0xa with a ground at +0x13a (the key's first corner): the room's own ground in place of the default.
+            string? own = OwnGround(p.Room) && def.Key.Grounds[0] is { } rg ? rg : fallback;
             for (int v = y0; v < yn; v++)
                 for (int u = x0; u < xn; u++)
                 {
@@ -1128,7 +1149,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                     if (!_grid.InsideCorners(x, y)) continue;
                     ref var c = ref _grid.Corner(x, y);
                     if ((c.Flags & 1) != 0 && c.Ground is not null) continue;
-                    string? g = fallback;
+                    string? g = own;
                     if (!string.Equals(g, impassable, StringComparison.OrdinalIgnoreCase))
                     {
                         if (top is not null && c.Height == hi) g = top;

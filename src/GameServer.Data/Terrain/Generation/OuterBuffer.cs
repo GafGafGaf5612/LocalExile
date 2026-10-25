@@ -7,7 +7,9 @@ namespace GameServer.Data.Terrain.Generation;
 /// edge crosses outwards, an edge tile of that type with its point continued is drawn (<c>Next(total)</c>) and repeated
 /// out to the map's edge; elsewhere, where the two border vertices of the step agree, the first fill tile of the
 /// ground (<c>0x141feffb0</c>, orientation 8 taken as 0) is repeated outwards where it fits, at the height of the
-/// step's first border vertex (an edge tile: the lower of its two border vertices).
+/// step's vertex read before the walk outwards over tiles already there: on the view's top or bottom row for the top
+/// and bottom passes (the spread values), on the inner rectangle's left or right column for the side passes (an edge
+/// tile: the lower of its two border vertices).
 /// The view is the subgraph record's rectangle (<c>0x141ffb7f0</c>: record +0x40 … +0x4c), the whole map for a tile
 /// graph and a one-record dungeon; <paramref name="left"/> … <paramref name="bottom"/> are in the view.</summary>
 sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View grid, int left, int top, int right, int bottom,
@@ -224,7 +226,7 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View g
                     var tile = FirstFill(Ground(x, y));
                     if (tile.Width + x <= W)
                         for (int yy = 0; yy < y; yy += tile.Height)
-                            if (Fits(tile, x, yy)) Place(tile, 0, x, yy, grid.HeightAt(x, y));
+                            if (Fits(tile, x, yy)) Place(tile, 0, x, yy, grid.HeightAt(x, 0));
                     x += tile.Width;
                     continue;
                 }
@@ -253,7 +255,7 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View g
                     var tile = FirstFill(Ground(x, y));
                     if (tile.Width + x <= W)
                         for (int yy = y; yy + tile.Height <= H; yy += tile.Height)
-                            if (Fits(tile, x, yy)) Place(tile, 0, x, yy, grid.HeightAt(x, y));
+                            if (Fits(tile, x, yy)) Place(tile, 0, x, yy, grid.HeightAt(x, H));
                     x += tile.Width;
                     continue;
                 }
@@ -280,7 +282,7 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View g
                     var tile = FirstFill(Ground(x, y));
                     if (tile.Height + y <= H)
                         for (int xx = 0; xx < x; xx += tile.Width)
-                            if (Fits(tile, xx, y)) Place(tile, 0, xx, y, grid.HeightAt(x, y));
+                            if (Fits(tile, xx, y)) Place(tile, 0, xx, y, grid.HeightAt(left, y));
                     y += tile.Height;
                     continue;
                 }
@@ -307,7 +309,7 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View g
                     var tile = FirstFill(Ground(x, y));
                     if (tile.Height + y <= H)
                         for (int xx = x; xx + tile.Width <= W; xx += tile.Width)
-                            if (Fits(tile, xx, y)) Place(tile, 0, xx, y, grid.HeightAt(x, y));
+                            if (Fits(tile, xx, y)) Place(tile, 0, xx, y, grid.HeightAt(right, y));
                     y += tile.Height;
                     continue;
                 }
