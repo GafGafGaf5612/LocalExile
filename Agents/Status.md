@@ -34,7 +34,7 @@ caused the confirmed client access violation at 0x14216d8b7. See [21](docs/proto
 Saved aura toggles (2026-10-25, awaiting client confirmation): active effects persist per character
 and restore on relog, area entry and server restart, subject to usable gems and available reservation.
 Helena's picker now receives all 103 exported personal hideouts, including MTX templates; switching
-templates is still separate work. See [11](docs/protocol/11-skills.md) and [21](docs/protocol/21-hideouts.md).
+templates now uses the native selection request and persists the chosen home. See [11](docs/protocol/11-skills.md) and [21](docs/protocol/21-hideouts.md).
 
 ## Works (verified with the real client)
 
