@@ -145,7 +145,10 @@ public sealed class DoodadTable
             if (line.Length == 0 || line.StartsWith("//", StringComparison.Ordinal)) continue;
             var l = new Reader(line);
             string first = l.Word();
-            int weight = first == "All" ? -1 : int.Parse(first, CultureInfo.InvariantCulture);
+            // An int read by a stream (0x1403884e0): its leading digits, so "0.5" (act8/area9) is weight 0.
+            int digits = first.Length > 0 && first[0] is '-' or '+' ? 1 : 0;
+            while (digits < first.Length && char.IsAsciiDigit(first[digits])) digits++;
+            int weight = first == "All" ? -1 : int.Parse(first.AsSpan(0, digits), CultureInfo.InvariantCulture);
             l.SkipSpace();
             if (l.Peek() != '"') throw new InvalidDataException("Error: could not read doodad filename " + line);
             string model = l.Quoted();

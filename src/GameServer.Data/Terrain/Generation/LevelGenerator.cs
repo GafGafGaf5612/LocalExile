@@ -441,16 +441,17 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         }
         notes.Add($"dungeon tilising: {_borders.Count} shared border slots");
         TiliseBorders();
-        // With RoomOverlap (and master +0x167 clear, taken to be so) the door tiles; without, 0x1420f4d90 (master
-        // +0x250), not ported. 0x1420f7960 (master +0x248) is not ported either. Then 0x141ffbd70 per room: its
-        // inner vertex grounds, turned like a tile's.
+        // With RoomOverlap (and master +0x167 clear, taken to be so) the door tiles; without, 0x1420f4d90 only for a
+        // master with a DoorEdgeType (+0x250, the setter after OuterEdgeType's +0x248), not ported: none of the
+        // dungeon masters without RoomOverlap has one. 0x1420f7960 (OuterEdgeType) is not ported either. Then
+        // 0x141ffbd70 per room: its inner vertex grounds, turned like a tile's.
         if (_overlap != 0 && _doorTiles)
         {
             DoorTiles();
             BigDoorTiles();
         }
-        else if (_doorTiles && map.Rooms.Any(p => p.Room is not null))
-            throw new NotSupportedException("door tiles without RoomOverlap (0x1420edd50, 0x1420f4d90) are not ported");
+        else if (_doorTiles && master.ContainsKey("DoorEdgeType") && map.Rooms.Any(p => p.Room is not null))
+            throw new NotSupportedException("door tiles without RoomOverlap (DoorEdgeType, 0x1420edd50, 0x1420f4d90) are not ported");
         var roomVertices = new HashSet<(int X, int Y)>();
         foreach (var p in map.Rooms)
             if (p.Room?.Def is { VertexGrounds.Length: > 0 } def)

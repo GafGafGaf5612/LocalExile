@@ -427,7 +427,12 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots; `0x1420f4010`: per doorway the orientation, the
    sizes from the store's "door" sizes for its edges, `Next(n)` + shuffle, the key resized with points at none, the
    middle of the unit for odd units else `Next(len − size + 1)`, `Next(total)`; `0x1420f4ae0` for the big ones.
-   Without RoomOverlap (`0x1420edd50` / `0x1420f4d90`) not ported.
+   Without RoomOverlap (`0x1420f3480`: master +0x167 clear and RoomOverlap 0) only a master with a DoorEdgeType
+   (+0x250; the parser `0x142a06390` hands OuterGroundType, OuterEdgeType, DoorEdgeType, SwapDungeonDoorsFrom / To to
+   the master's setters +0x60..+0x80, and `0x1420f7960`, at +0x248, builds the outer edge) has door tiles
+   (`0x1420edd50` marks, `0x1420f4d90` pairs facing marks, `0x1420f4fd0` places): not ported, and only the dreadnought
+   hideout and the Lake league masters set one. Every other door TileSet without RoomOverlap gets no door tiles and
+   no draws (`1_4_1`, `2_7_11`, `2_8_8`, the Act 9 / 10 dungeons; until 2026-10-25 a stop).
 4. **Room vertex grounds** (`0x141ffbd70` per room), then the **room grounds** (`0x1420f0e10` per room, map +0x10
    off): every vertex of the room without a ground (flag 1 clear, or a null ground) takes the graph's DefaultGround
    (tiler +0x20 = graph +0xb0); TopGround (+0x30 = +0xa0) instead when its height is the highest of the view
@@ -967,6 +972,8 @@ y, +0x18 height, +0x1b orientation code). Order:
    Hulls are absent from the captured grids).
 2. Per record: **random doodads** of the master's `.ddt` (attempts = max density·w·h/1000) between a copy and a
    restore of the generator state (TLS +400), then **vertex doodads** ("All" groups, fixed lines) with normal draws.
+   A `.ddt` line's weight is an int read by a stream (`0x142a17320` → `0x1403884e0`): its leading digits, so the
+   `0.5` lines of `act8/area9/doodads.ddt` weigh 0 (taken to never be picked; no matching trace uses that table yet).
    Not ported (not hit by any matching trace): the entity exclusion circles and the `Next(10000)` falloff (lines
    274–550: entities with components 0x407c7f95 / 0x9e3b9e73, stats 0x25a4f824 / 0xc9c0b154 / 0xb36d48d9), the
    `0x14154c2d0` check after walk ≥ 5, the tile no-doodad bitmask (tile +0x150).
@@ -1151,9 +1158,13 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   the 197 seed-1 traces by hash (+5: EndGame Labyrinth `C_straight_bottleneck`, `EH_end_bottleneck`, `OH_branch`,
   `OH_branch_door`, `RT_straight_bottleneck`); `P_branch`, `P_branch_bottleneck_1` and `P_straight_bottleneck` now
   first differ in tiling (`0x1420f4807` / `0x1420f47d8`, with the 3_Labyrinth P traces). 2026-10-25,
-  DungeonFillRoomHeightOverride (§3c, fill rooms): **588 of 782 match** (+5, none lost), 113 of the 197 seed-1
+  DungeonFillRoomHeightOverride (§3c2, fill rooms): **588 of 782 match** (+5, none lost), 113 of the 197 seed-1
   traces by hash (+3: `1_3_2`, `1_5_8`, `2_10_1`); `1_4_5_1` now first differs at the doodads (`0x142042fae`),
-  `1_5_3` / `1_5_3b` stop at door tiles without RoomOverlap.
+  `1_5_3` / `1_5_3b` stop at door tiles without RoomOverlap. 2026-10-25, door tiles without RoomOverlap only with a
+  DoorEdgeType (§3c2, door tiles; was a stop in 9 traces / 9 oracle loads): **590 of 782 match** (+2, none lost), 115 of the
+  197 seed-1 traces by hash (+2: `2_7_11`, `2_8_8`); `1_5_3`, `1_5_3b`, `2_8_5`, `2_10_9` match every draw up to the
+  outer buffer of a sub-area subgraph or the doodads, `1_4_1` / `2_9_1` (`intro_1_1.dgr`) and `2_8_9` run to another
+  hash.
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds
