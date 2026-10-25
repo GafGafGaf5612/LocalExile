@@ -76,12 +76,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- Area transitions of a generated area need a `-Walkmaps` capture for its seed;
-  quest-gated ones are created but the way stays blocked: The Mud Flats' Submerged Passage has a client-side wall
-  until quest flag `a1q4-PlacedGlyphs`.
+- Area transitions of a generated area need a `-Walkmaps` capture for its seed.
   Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate appears without
   its animation; the Doorman and the opening tutorial's wall are not created ([12](../docs/protocol/12-quests.md) §6).
-  Only quest a1q1 is scripted; no quest log.
+  Only quests a1q1 and a1q4 are scripted; the client builds the quest tracker from the flags.
 - The client's lockstep network mode (also what "auto" picks on localhost): the player is drawn (the Gateway sends
   server frames) but cannot move or use objects.
   Only Predictive is supported; the Gateway asks for it once per connection
