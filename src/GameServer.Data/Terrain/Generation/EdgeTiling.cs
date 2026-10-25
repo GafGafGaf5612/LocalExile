@@ -261,7 +261,11 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offsetX, int offsetY
         ExtraPoint(node);
         var rec = Record(edge, end, node);
         if (rec.Points.Count == 0) return;
-        if (rec.Loop) throw new NotSupportedException("tiling a loop edge (0x14210e640, the PathInfo split) is not ported");
+        if (rec.Loop)
+        {
+            TiliseLoop(rec);
+            return;
+        }
         if (!Tilise(rec))
         {
             _failed.Add(rec);
@@ -270,6 +274,33 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offsetX, int offsetY
         }
         _done.Add(rec);
         for (int k = 1; k < rec.Cells.Count - 1; k++) _cost[rec.Cells[k].Y * W + rec.Cells[k].X] += 0x50;
+    }
+
+    /// <summary><c>0x14210d2e0</c> for a closed chain: the record splits at its middle point. The first half keeps
+    /// points [0, n / 2] and the bits before n / 2; the second takes the points and bits from n / 2 on, the edge's node
+    /// at this end as its last node, and the far node's first other edge (with its end at that node). Both are pathed
+    /// ("Could not tilise loop edge"); the second's cells but its first and last follow the first's, a last cell equal
+    /// to the first goes, and the loop is placed at once (not kept with the done paths).</summary>
+    void TiliseLoop(PathRecord rec)
+    {
+        var start = rec.End == 0 ? rec.Edge.A : rec.Edge.B;
+        var far = rec.End == 0 ? rec.Edge.B : rec.Edge.A;
+        var other = far.Slots.FirstOrDefault(e => e is not null && e != rec.Edge)
+            ?? throw new InvalidOperationException("Could not split PathInfo for loop edge");
+        int n = rec.Points.Count, mid = n >> 1;
+        var second = new PathRecord
+        {
+            Points = rec.Points.GetRange(mid, n - mid), Bits = mid < rec.Bits.Count ? rec.Bits.GetRange(mid, rec.Bits.Count - mid) : [],
+            LastNode = start, Edge = other, End = other.B == far ? 1 : 0, Loop = true,
+        };
+        rec.Points.RemoveRange(mid + 1, n - mid - 1);
+        if (mid < rec.Bits.Count) rec.Bits.RemoveRange(mid, rec.Bits.Count - mid);
+        if (!Tilise(rec) || !Tilise(second))
+            throw new InvalidOperationException($"Could not tilise loop edge starting at ({start.X}, {start.Y})");
+        if (second.Cells.Count > 2) rec.Cells.AddRange(second.Cells.GetRange(1, second.Cells.Count - 2));
+        if (rec.Cells.Count < 3) throw new InvalidOperationException($"Could not tilise loop edge starting at ({start.X}, {start.Y})");
+        if (rec.Cells[^1] == rec.Cells[0]) rec.Cells.RemoveAt(rec.Cells.Count - 1);
+        Place(rec);
     }
 
     /// <summary><c>0x14210b530</c> with <c>0x14210b340</c>: both ends' cells hold neighbouring placed tiles and every
@@ -701,8 +732,7 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offsetX, int offsetY
         if (!fixedPoints)
         {
             if (et.Wiggle != 0) throw new NotSupportedException($"edge wiggle ({et.Path}, 0x140df93f0) is not ported");
-            if (r.Loop) throw new NotSupportedException("the loop curve (0x14210e640) is not ported");
-            curve = Curve(r.Cells, s);
+            curve = r.Loop ? LoopCurve(r.Cells, s) : Curve(r.Cells, s);
         }
         int pointIndex = -1;
         for (int i = 0; i < edgePoints.Count && pointIndex < 0; i++)
@@ -784,6 +814,27 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offsetX, int offsetY
                     var b = (0.5f * w[j + 1].X, 0.5f * w[j + 1].Y);
                     w[j] = (b.Item1 + a.Item1, b.Item2 + a.Item2);
                 }
+            result.Add((w[0].X - mid.Item1, w[0].Y - mid.Item2));
+        }
+        return result;
+    }
+
+    /// <summary><c>0x14210e640</c>: as <see cref="Curve"/> for a closed chain: per cell, the 10-point window around it
+    /// wraps around the cell list (cell i − 4 + k, modulo the count).</summary>
+    static List<(float X, float Y)> LoopCurve(List<(int X, int Y)> cells, int s)
+    {
+        uint half = (uint)(s >> 1) & 0x7fffffff;
+        var centres = cells.Select(c => (((float)(uint)(c.X + half) + 0.5f) * 23f, ((float)(uint)(c.Y + half) + 0.5f) * 23f)).ToList();
+        int n = centres.Count;
+        var result = new List<(float X, float Y)>();
+        for (int i = 0; i < n; i++)
+        {
+            var w = new (float X, float Y)[10];
+            for (int k = 0; k < 10; k++) w[k] = centres[((i - 4 + k) % n + n) % n];
+            var mid = ((w[4].X + w[5].X) / 2f, (w[4].Y + w[5].Y) / 2f);
+            for (int k = 0; k < 10; k++)
+                for (int j = 0; j < 10 - k - 1; j++)
+                    w[j] = (0.5f * w[j + 1].X + 0.5f * w[j].X, 0.5f * w[j + 1].Y + 0.5f * w[j].Y);
             result.Add((w[0].X - mid.Item1, w[0].Y - mid.Item2));
         }
         return result;

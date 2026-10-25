@@ -758,6 +758,15 @@ are the doodads, `0x142042fae`).
    (`0x141ffbf40`, reading its opposite side) or the path's Bézier curve (`0x14210e9f0` / `0x14210f0f0`), or 3s/2 for
    types with flag 8; corner grounds from the type (`0x14210f2b0` / `0x14210f1b0`); `Next(total)` among untagged
    tiles. Tiles of an edge type listed in the FillTiles object (master +0x218, +0x140) are recorded for step 3.
+   **A closed chain** (its first point is its last, `0x14210d2e0`, 2026-10-25) splits at points[n / 2]: the first half
+   keeps points [0, n / 2] and the bits before n / 2, the second takes the points and bits from n / 2 on, the edge's
+   node at this end as its last node and the far node's first other slot edge (end 1 when that edge's B is the far
+   node), both as loops (no node or off-map cells at the ends). Both are pathed ("Could not tilise loop edge
+   starting at"; "Could not split PathInfo for loop edge" without another edge); the second's cells but its first and
+   last follow the first's, fewer than 3 cells is fatal, a last cell equal to the first goes, and the loop is placed at
+   once (kept off the done paths and their +0x50 costs). Its curve (`0x14210e640`) is the open one's with the
+   10-point window wrapping around the cells (cell i − 4 + k modulo the count), one point per cell. Was the stop of 7
+   logged loads (`1_2_8`, `2_6_10`, `2_7_8`, MapWorldsDunes, `1_2_7`).
 2. **Lonely nodes** (no edges, with descriptions): a room or tile as for the special nodes, tilised when one fits.
 3. **Vertex grounds** (`TileGrid` corners, `GroundStages.cs`). The map keeps (w + 1) × (h + 1) vertices (+0x50,
    3 bytes: ground index into the map's ground list +0x68, height, flags 1 = ground written, 2 = height written, 4 =
