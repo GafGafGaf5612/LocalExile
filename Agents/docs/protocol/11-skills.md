@@ -1020,8 +1020,13 @@ Consequently DPS uses that rounded displayed rate, not a new precise action-rate
 Copied-save GUI baseline: a 5-13 physical bow with Strength 14 showed 5-13 physical/total, per-use 9.18 and DPS 12.86
 for both ordinary attack and Burning Arrow, while Burning Arrow already showed its corrected APS 0.98.
 The preserved raw packet is 5.1-13.26; Burning Arrow resolves 9.18-23.868 fire, average 16.524.
-The new expected display is 9-23 fire/total, physical zero, per-use 16.52 and DPS 16.19 at emitted APS 0.98.
-That exact fixture is regression-tested; corrected native display verification remains pending.
+Actual native checks now show 9-23 fire/total, physical zero, per-use 16.52 and DPS 16.19 at emitted APS 0.98.
+Adding 5 flat cold attack damage showed cold 9-9, fire 9-23, total 18-32, per-use 25.52 and DPS 25.01.
+An actual noncritical server hit dealt 24 damage to an 86-life Ash Harvester.
+Clearing the added cold stat returned every cold field to zero and restored the 9-23 fire/total display.
+Relog retained Burning Arrow's 9-23, per-use 16.52 and DPS 16.19; ordinary attack stayed 5-13 physical,
+per-use 9.18, DPS 12.86 and APS 1.40.
+The fixture is also regression-tested.
 Crit weighting, accuracy, target mitigation, integer-roll expectation and downtime are excluded.
 Initial creation and refresh both pass raw `CharacterPlayerStats` plus the actual weapon into `GemSkills` separately
 from inherited final display stats. Derived hand ranges cannot feed back into the packet.
@@ -1029,7 +1034,9 @@ Only attack gems receive this override; ordinary attacks, spells, non-attack act
 existing display paths. Supports, conditional mechanics, off-hand alternation and broader modifier-scope corrections
 remain separate work. Existing character modifiers are preserved even where their weapon scope remains approximate.
 Real catalog, packet/source-isolation, conversion, added-damage, flooring, absent-type and native-table tests pass.
-Real-client skill selection, equipment refresh and relog verification is pending; no extracted data changes are needed.
+Native skill selection, stat refresh/clearing and relog checks passed; equipment UI refresh was not separately exercised.
+Local integration captures are `logs/attack-damage-burning-arrow-{default,added-cold,cleared,relog}.json`
+and `logs/attack-damage-server-hit.json`; no extracted data changes are needed.
 
 **Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
 `additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`
