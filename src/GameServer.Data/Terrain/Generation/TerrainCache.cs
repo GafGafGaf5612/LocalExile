@@ -317,26 +317,51 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             string s = table[(int)offset..(end < 0 ? table.Length : end)];
             return s.Length == 0 ? null : s;
         }
-        var key = new TileKey { Width = h[28], Height = h[29] };
-        for (int i = 0; i < 4; i++)
+        // The tag and key from byte t on: tag u32, edges 4 × u32, size 2 bytes, corner grounds 4 × u32, heights and
+        // both point sets 4 bytes each.
+        (string Tag, TileKey Key) TagAndKey(int t)
         {
-            key.Edges[i] = Str(12 + 4 * i);
-            string? ground = Str(30 + 4 * i);
-            key.Grounds[i] = Ground(ground) is { IgnoredInKeys: true } ? null : ground;
-            key.Heights[i] = (sbyte)h[46 + i];
-            key.PointA[i] = h[50 + i];
-            key.PointB[i] = h[54 + i];
+            var key = new TileKey { Width = h[t + 20], Height = h[t + 21] };
+            for (int i = 0; i < 4; i++)
+            {
+                key.Edges[i] = Str(t + 4 + 4 * i);
+                string? ground = Str(t + 22 + 4 * i);
+                key.Grounds[i] = Ground(ground) is { IgnoredInKeys: true } ? null : ground;
+                key.Heights[i] = (sbyte)h[t + 38 + i];
+                key.PointA[i] = h[t + 42 + i];
+                key.PointB[i] = h[t + 46 + i];
+            }
+            return (Str(t) ?? "", key);
         }
-        // The u16 after the key says which vertex blocks the tile has (bit 2 grounds, bit 1 heights); a tile with a base
-        // tile (u32 0 names one) is laid out differently and not ported.
-        ushort flags = Str(0) is null && h.Length >= 60 ? BinaryPrimitives.ReadUInt16LittleEndian(h.AsSpan(58)) : (ushort)0;
+        // 0x1429f31a0: a tile naming a base tile (u32 0) takes the base's data; a flags byte follows, each bit a group of
+        // fields the file gives itself. Bit 3: its own tag and key (as above, from byte 5); bit 1 marks fields the
+        // generator does not read (the file's own .tmd). The others are not ported.
+        if (Str(0) is { } basePath)
+        {
+            byte own = h[4];
+            if ((own & ~0x0a) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
+            var baseTile = Tile(basePath) ?? throw new FileNotFoundException(basePath);
+            var (ownTag, ownKey) = (own & 8) != 0 ? TagAndKey(5) : (baseTile.Tag, baseTile.Key);
+            if (ownKey.Width != baseTile.Width || ownKey.Height != baseTile.Height)
+                throw new NotSupportedException($"{path}: a tile over a base tile of another size is not ported");
+            return baseTile with
+            {
+                Path = path,
+                Tag = ownTag,
+                Key = ownKey,
+                ObjectsFile = table.Split('\0').FirstOrDefault(x => x.EndsWith(".tmd", StringComparison.OrdinalIgnoreCase)) ?? baseTile.ObjectsFile,
+            };
+        }
+        var (tag, key) = TagAndKey(8);
+        // The u16 after the key says which vertex blocks the tile has (bit 2 grounds, bit 1 heights).
+        ushort flags = h.Length >= 60 ? BinaryPrimitives.ReadUInt16LittleEndian(h.AsSpan(58)) : (ushort)0;
         var (grounds, heights) = (flags & 2) != 0 ? VertexBlock(h, table.Length, key.Width, key.Height, (flags & 1) != 0)
             : (flags & 1) != 0 ? (null, HeightBlock(h, table.Length, key)) : (null, null);
         // 0x1429f31a0: from version 10, a tile without a base tile has one more byte after the flags word, its
         // orientation restriction mask (tile data +0x171, set by 0x141d7d7e0).
         int version = (int)BinaryPrimitives.ReadUInt32LittleEndian(data);
-        byte restriction = Str(0) is null && version > 9 && h.Length >= 61 ? h[60] : (byte)0;
-        return new TileDef(path, Str(8) ?? "", key)
+        byte restriction = version > 9 && h.Length >= 61 ? h[60] : (byte)0;
+        return new TileDef(path, tag, key)
         {
             Restriction = restriction,
             VertexGrounds = grounds is null ? [] : [.. grounds.Select(o => o == uint.MaxValue ? null : TableString(table, o))],
