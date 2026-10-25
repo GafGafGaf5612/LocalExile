@@ -39,7 +39,14 @@ partial class Program
         {
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
             int value = int.Parse(args[1]);
-            lock (conn.Monsters) conn.PlayerStats[stat] = value;
+            lock (conn.Monsters)
+            {
+                conn.PlayerStats[stat] = value;
+                // The overcapped-resistance flags and the raw resistance/max inputs (ResistanceOvercap) rebuild the
+                // pools at once: the pools' evasion, the critical chances and the spell consumers read them. The
+                // explicit value replaces its own input, as it does for every stat the server sends.
+                conn.Pools = PoolsFor(conn, conn.Pools.Level);
+            }
             // The client's requirement checks (gear and gems) read virtual_strength/dexterity/intelligence_for_requirements,
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)

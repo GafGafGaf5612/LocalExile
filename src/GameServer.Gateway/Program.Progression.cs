@@ -80,7 +80,7 @@ partial class Program
         return ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
     }
 
-    static CharacterStats.Pools PoolsFor(ClientState conn, int level)
+    internal static CharacterStats.Pools PoolsFor(ClientState conn, int level)
     {
         // The stat sources first: they decide which worn items are inactive, which the weapon profile reads.
         var sources = CharacterStatSources(conn, level: level);
@@ -115,6 +115,13 @@ partial class Program
         if (conn.God)
             bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
                 Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };
+        // The overcapped-resistance flags' consumers (ResistanceOvercap), derived once per pool build from the final
+        // raw inputs: the resistances after the Kitava penalty and the per-type maxima, with an explicit dev stat
+        // (/set_stat) replacing its own contribution. Pools stores the derived increases, so the pools, the panel and
+        // the spell consumers read them from one place and nothing counts them twice.
+        Dictionary<uint, int> devStats;
+        lock (conn.Monsters) devStats = new(conn.PlayerStats);
+        bonus = ResistanceOvercap.Applied(bonus, sources, devStats, ResistancePenalty(conn), Stats);
         var pools = CharacterStats.For(Skills.ClassFor(conn.ClassRow), level, bonus);
         pools = pools with
         {
@@ -268,6 +275,8 @@ partial class Program
             + (weapons.Staff ? Get("staff_accuracy_rating_+%") : 0)
             + (weapons.Bow ? Get("bow_accuracy_rating_+%") : 0);
         int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
+        // The cold-and-lightning pair-resistance stat (Sea Legs' +40%): one input stat that both elements' pools take.
+        int pairRes = Get(ResistanceOvercap.ColdAndLightningResistance);
         // Reservation efficiency: generic efficiency applies to both pools; the mana/life-specific stats only to theirs.
         // Aura effect is the generic non-curse/aura effect; the Reservation mastery's self-aura effect is included.
         int manaReservation = Get("base_mana_reservation_efficiency_+%") + Get("base_reservation_efficiency_+%")
@@ -295,8 +304,8 @@ partial class Program
             EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
             FireResistance: allRes + Get("base_fire_damage_resistance_%"),
-            ColdResistance: allRes + Get("base_cold_damage_resistance_%"),
-            LightningResistance: allRes + Get("base_lightning_damage_resistance_%"),
+            ColdResistance: allRes + Get("base_cold_damage_resistance_%") + pairRes,
+            LightningResistance: allRes + Get("base_lightning_damage_resistance_%") + pairRes,
             ChaosResistance: Get("base_chaos_damage_resistance_%"),
             FireMaxResistance: allMax + allElemMax + Get("base_maximum_fire_damage_resistance_%"),
             ColdMaxResistance: allMax + allElemMax + Get("base_maximum_cold_damage_resistance_%"),
