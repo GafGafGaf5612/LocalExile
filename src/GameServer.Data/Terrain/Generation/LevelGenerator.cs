@@ -103,9 +103,8 @@ public static class LevelGenerator
         bool hideout = features.Any(f => f.Name == ExtraTerrainFeatures.DiscoverableHideout);
         var secondaries = SubAreas(files, area, topology.Graph, hideout, topologyVariant, rng, notes);
         var labyrinth = area.IsLabyrinth ? new LabyrinthPass(files.Raw, area.Id, area.IsLabyrinthBoss) : null;
-        bool dgr = topology.Graph.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase);
-        if (!dgr && secondaries.Count != 0)
-            throw new NotSupportedException($"{topology.Graph}: sub-area subgraphs beside a tile graph (0x142047540) are not ported");
+        // A tile graph with sub-areas goes through the subgraph records too (0x142049d10), as their primary.
+        bool dgr = topology.Graph.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase) || secondaries.Count != 0;
         TileGrid grid;
         IReadOnlyList<DoodadRecord> records;
         if (dgr)
@@ -307,10 +306,10 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 // The tile graph's special nodes do not take the pool's rows (not ported).
                 if (pool.Share != 0) throw new NotSupportedException($"{r.Path}: extra feature rooms in a tile graph subgraph are not ported");
                 var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout, Labyrinth = Labyrinth, Master = r.Parent < 0 ? Master : null, Town = Town };
-                gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
-                store = gen.Store;
+                var (_, _, tgFills) = gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
+                var tgStore = store = gen.Store;
                 roomsOf.Add(gen.Rooms);
-                outers.Add(() => OuterTileGraph(r));
+                outers.Add(() => OuterTileGraph(r, grid, tgStore, tgFills));
             }
             else
             {
@@ -444,7 +443,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                             _grid.ForceGround(_ox + step * p.X + dx, _oy + step * p.Y + dy, g);
                             roomVertices.Add((_ox + step * p.X + dx, _oy + step * p.Y + dy));
                         }
+        // Map +0x10 is off while the rooms' grounds go in (0x1420f3480).
+        bool checkGrounds = _grid.CheckGrounds;
+        _grid.CheckGrounds = false;
         RoomGrounds(map, step);
+        _grid.CheckGrounds = checkGrounds;
         var placed = _placed = [];
         foreach (var p in map.Rooms)
             if (p.Room?.Def is { } def)
@@ -466,12 +469,20 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index));
     }
 
-    /// <summary><c>0x142044f30</c> for a .tgr subgraph on the shared map: an OuterGroundType (<c>0x14201db80</c>) and
-    /// margins (<c>0x14201ffa0</c>) are not ported for one.</summary>
-    static void OuterTileGraph(Subgraph r)
+    /// <summary><c>0x142044f30</c> for a .tgr subgraph on the shared map: its outer ground (<c>0x14201db80</c>, a tile
+    /// graph's: no height fixing) over its view, then its outer buffer (<c>0x14201ffa0</c>) in its margins, with the tile
+    /// graph's TileSet and FillTiles.</summary>
+    void OuterTileGraph(Subgraph r, TileGrid grid, TileStore store, Dictionary<string, List<(int Weight, string Path, int Orientation)>> fills)
     {
-        if (r.Master.ContainsKey("OuterGroundType")) throw new NotSupportedException($"{r.Path}: the outer ground of a tile graph subgraph (0x14201db80) is not ported");
-        if (r.Margins != (0, 0, 0, 0)) throw new NotSupportedException($"{r.Path}: the outer buffer of a tile graph subgraph (0x14201ffa0) is not ported");
+        var view = (r.X + r.Margins.Left, r.Y + r.Margins.Top, r.X + r.W - r.Margins.Right, r.Y + r.H - r.Margins.Bottom);
+        if (r.Master.TryGetValue("OuterGroundType", out var outerGround))
+        {
+            var ground = files.Ground(TerrainText.Resolve(r.MasterPath, outerGround)) ?? throw new FileNotFoundException(outerGround);
+            OuterGroundStart(grid, OuterTile(files, fills, ground), view, fixHeights: false);
+        }
+        if (r.Margins == (0, 0, 0, 0)) return;
+        new OuterBuffer(files, rng, new OuterBuffer.View(grid, r.X, r.Y, r.W, r.H), view.Item1 - r.X, view.Item2 - r.Y,
+            view.Item3 - r.X, view.Item4 - r.Y, store, fills, notes).Run();
     }
 
     /// <summary><c>0x142044f30</c> for one subgraph: its outer ground (<c>0x14201db80</c>) over its view, then its outer
@@ -1308,6 +1319,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         if (_edgeRecords.Count != 0)
             new GroundStages(_grid, vx, vy, vx1 - vx, vy1 - vy, files).EdgePoints(
                 [.. _edgeRecords.Select(r => (r.X - vx, r.Y - vy, r.Index))], _edgePoints, fill.FillSide);
+        // Map +0x10 (ground checks) is off from the overlays to the second overlay pass.
+        bool check = _grid.CheckGrounds;
+        _grid.CheckGrounds = false;
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
         var tiler = new RoomTiler(rng, _grid, vx, vy, _store) { TilePlaced = Listen };
         var overlays = passes.Count == 0 ? null : new Overlays(files, rng, notes, _grid, vx, vy, vx1 - vx, vy1 - vy, tiler,
@@ -1322,6 +1336,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             fill.FillEntry(x - vx, y - vy, g, accessible, height);
         }
         foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays!.Run(pass, saveTiles: true);
+        _grid.CheckGrounds = check;
         return tiler.Rooms;
     }
 
