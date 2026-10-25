@@ -56,10 +56,13 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   ([20](../docs/protocol/20-damage.md)).
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
+  Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
+  Integrated monster-hit verification is pending.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   energy shield, penetration, exposure, ailment application, added damage and support modifiers are not modelled.
 - **Start:** energy shield, penetration/exposure, the remaining conditional critical strike stats from the stats both
   sides already carry; monster skills beyond the first granted effect (ranged, spells).
+  Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 

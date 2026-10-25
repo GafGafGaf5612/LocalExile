@@ -325,6 +325,11 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
 {
     foreach (var (id, bytes) in messages)
     {
+        // Native TakeHit blocks predicted action starts too. Buffered normal actions must not restart the server's
+        // movement/cast timeline during that same recovery. Flasks and instant skills retain their own paths.
+        if (id is InstanceProtocol.UseSkillAtLocationId or InstanceTransfer.UseSkillOnObjectId or InstanceProtocol.ChannelUpdateId)
+            lock (conn.Monsters)
+                if (conn.HitRecovery.BlocksInput(conn.ClockAt(readAt), conn.Clock.Elapsed.TotalSeconds)) continue;
         if (id == InstanceProtocol.UseSkillAtLocationId)
         {
             // Echo the action so the client runs it (Move on a ground click); an attack gem is paced and may be movement
@@ -356,12 +361,18 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 var here = conn.Walk.Position(at);
                 if (!MonsterAtAim(conn, gem, use.X, use.Y, at) || Dist(here, (use.X, use.Y)) > WeaponFor(conn).Range)
                 {
-                    Interlocked.Increment(ref conn.ActionCount);
-                    conn.Walk.Order(use.X, use.Y, at);
-                    conn.ChannelSkill = 0;
+                    int walkAction;
+                    lock (conn.Monsters)
+                    {
+                        if (conn.HitRecovery.BlocksInput(at, conn.Clock.Elapsed.TotalSeconds)) continue;
+                        walkAction = Interlocked.Increment(ref conn.ActionCount);
+                        conn.Walk.Order(use.X, use.Y, at);
+                        conn.ChannelSkill = 0;
+                    }
                     await Send(remote, stream, ciphers,
                         InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                        $"0x01ab {gem.Name}: attack-move to ({use.X}, {use.Y}) from ({here.X}, {here.Y}) (t={at:0.000})");
+                        $"0x01ab {gem.Name}: attack-move to ({use.X}, {use.Y}) from ({here.X}, {here.Y}) (t={at:0.000})",
+                        still: () => PlayerActionCurrent(conn, walkAction));
                     continue;
                 }
             }
@@ -373,28 +384,37 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
                 Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name}: ignored, the previous attack is still running (attack time {attackSeconds:0.00} s) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
                 continue;
             }
-            Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
-            var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
-            if (cast) conn.Walk.Order(px, py, at);
-            // A movement skill (Leap Slam …) takes the player to the aimed point: the server keeps the position the
-            // client will have, or a later resync would pull the player back to where the skill started.
-            if (gem.Name is not null && Skills.IsMovement(gem.Effect)
-                && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
-                conn.Walk.Teleport(use.X, use.Y, at);
+            int action;
+            int px, py;
+            lock (conn.Monsters)
+            {
+                if (conn.HitRecovery.BlocksInput(at, conn.Clock.Elapsed.TotalSeconds)) continue;
+                action = Interlocked.Increment(ref conn.ActionCount);
+                (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
+                if (cast) conn.Walk.Order(px, py, at);
+                // Movement skills keep the estimate at their destination, as before.
+                if (gem.Name is not null && Skills.IsMovement(gem.Effect)
+                    && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
+                    conn.Walk.Teleport(use.X, use.Y, at);
+                conn.ChannelSkill = cast ? use.SkillId : (ushort)0;
+                conn.ChannelSkillSequence = use.Slot;
+            }
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})");
-            conn.ChannelSkill = cast ? use.SkillId : (ushort)0;
-            conn.ChannelSkillSequence = use.Slot;
-            if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y), sequence: use.Slot);
+                $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})",
+                still: () => PlayerActionCurrent(conn, action));
+            if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y), sequence: use.Slot, actionToken: action);
             else await FollowRighteousFire(remote, stream, ciphers, conn);
+            if (!PlayerActionCurrent(conn, action)) continue;
             string mode = Environment.GetEnvironmentVariable("Game_MOVE_MODE") ?? "echo";
             if (mode == "teleport")
-                await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, use.X, use.Y), $"0x01b7 teleport to ({use.X}, {use.Y})");
+                await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, use.X, use.Y),
+                    $"0x01b7 teleport to ({use.X}, {use.Y})", still: () => PlayerActionCurrent(conn, action));
             else if (mode == "move")
             {
                 float speed = float.TryParse(Environment.GetEnvironmentVariable("Game_MOVE_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var sp) ? sp : 37f;
-                await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(PlayerId, use.X, use.Y, speed), $"0x01ba move to ({use.X}, {use.Y}) speed {speed}");
+                await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(PlayerId, use.X, use.Y, speed),
+                    $"0x01ba move to ({use.X}, {use.Y}) speed {speed}", still: () => PlayerActionCurrent(conn, action));
             }
         }
         else if (InstanceProtocol.IsLockstepMovement(id))
@@ -432,7 +452,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
         {
             var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
             // In the background: the player may first walk to the target, and the read loop must keep answering ticks.
-            _ = OnUseObject(remote, stream, ciphers, conn, use);
+            _ = OnUseObject(remote, stream, ciphers, conn, use, conn.ClockAt(readAt));
         }
         else if (id == InstanceProtocol.BindSkillId)
         {
@@ -596,14 +616,21 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             // skill hits around it (AreaSkillHit).
             var (cx, cy) = InstanceProtocol.ReadChannelUpdate(bytes);
             double t = conn.ClockAt(readAt);
-            conn.Walk.Teleport(cx, cy, t);
+            int channelAction;
+            lock (conn.Monsters)
+            {
+                if (conn.HitRecovery.BlocksInput(t, conn.Clock.Elapsed.TotalSeconds)) continue;
+                channelAction = conn.ActionCount;
+                conn.Walk.Teleport(cx, cy, t);
+            }
             var channelled = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == conn.ChannelSkill);
             if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
             {
                 double every;
                 lock (conn.Monsters) every = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
                 conn.NextChannelHitAt = t + every;
-                _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy), immediate: true, sequence: conn.ChannelSkillSequence);
+                _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy),
+                    immediate: true, sequence: conn.ChannelSkillSequence, actionToken: channelAction);
             }
         }
         else if (id == InstanceProtocol.ChannelEndId)
@@ -893,28 +920,38 @@ static async Task PopulateArea(string remote, NetworkStream stream, ConnectionCi
 
 // An area transition click. Plain: change area (0x2b2 now, the move itself once the client acknowledges with 0x2cb).
 // With Ctrl: list the destination's instances (0xae) for the client's instance chooser.
-static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
+static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    InstanceTransfer.UseSkillOnObject use, double requestedAt)
 {
+    lock (conn.Monsters)
+        if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
     if (InTown(conn) && (Skills.IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)) return;
     SpawnedMonster? target;
     lock (conn.Monsters) target = conn.Monsters.GetValueOrDefault(use.TargetId);
     if (target is not null)
     {
-        if (use.SkillId != SkillCatalog.FirstSkillId) await CastOn(remote, stream, ciphers, conn, use, target);
-        else await Attack(remote, stream, ciphers, conn, use, target);
+        if (use.SkillId != SkillCatalog.FirstSkillId) await CastOn(remote, stream, ciphers, conn, use, target, requestedAt);
+        else await Attack(remote, stream, ciphers, conn, use, target, requestedAt);
         return;
     }
     // A self-cast skill (Righteous Fire) targets the player itself: echo it in place, then cast.
     if (use.TargetId == PlayerId && Skills.IsGemSkill(use.SkillId))
     {
-        Interlocked.Increment(ref conn.ActionCount);
-        double at = conn.Clock.Elapsed.TotalSeconds;
-        var self = conn.Walk.Position(at);
-        conn.Walk.Order(self.X, self.Y, at);
+        int selfAction;
+        (int X, int Y) self;
+        lock (conn.Monsters)
+        {
+            if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
+            selfAction = Interlocked.Increment(ref conn.ActionCount);
+            double at = conn.Clock.Elapsed.TotalSeconds;
+            self = conn.Walk.Position(at);
+            conn.Walk.Order(self.X, self.Y, at);
+        }
         await Send(remote, stream, ciphers,
             InstanceProtocol.ActionStarted(PlayerId, self.X, self.Y, self.X, self.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: PlayerId),
-            $"0x01ab player skill 0x{use.SkillId:x4} cast on itself at ({self.X}, {self.Y})");
-        await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId, sequence: use.Sequence);
+            $"0x01ab player skill 0x{use.SkillId:x4} cast on itself at ({self.X}, {self.Y})",
+            still: () => PlayerActionCurrent(conn, selfAction));
+        await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId, sequence: use.Sequence, actionToken: selfAction);
         return;
     }
     if (conn.Instance.Ground.Get(use.TargetId) is { } ground)
@@ -1598,7 +1635,7 @@ static double AttackContactDelay(ClientState conn, double attackSeconds, bool ap
 // jitter); earlier repeats of 0x24 are ignored. At 0 the client's Life component runs its death; the corpse is
 // removed 10 s later.
 static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
+    InstanceTransfer.UseSkillOnObject use, SpawnedMonster m, double requestedAt)
 {
     var weapon = WeaponFor(conn);
     double now = conn.Clock.Elapsed.TotalSeconds, duration;
@@ -1611,10 +1648,16 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
             Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} ignored: {conn.NextAttackAt - now:0.000} s before the next attack");
             return;
         }
-    int action = Interlocked.Increment(ref conn.ActionCount);
-    (int X, int Y) target;
-    lock (conn.Monsters) target = m.Walk.Position(now);
-    var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+    int action;
+    (int X, int Y) target, here, stop;
+    double arrive;
+    lock (conn.Monsters)
+    {
+        if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
+        action = Interlocked.Increment(ref conn.ActionCount);
+        target = m.Walk.Position(now);
+        (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+    }
     Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
         $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
@@ -1632,7 +1675,8 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     }
     await Send(remote, stream, ciphers,
         InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
-        $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife}), attack time {duration:0.000} s");
+        $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife}), attack time {duration:0.000} s",
+        still: () => PlayerActionCurrent(conn, action));
     if (m.Life == 0) return;
     // The hit lands at the attack animation's contact keyframe (data/animation-contacts.json), not a fixed half: the
     // client stretches the clip to the attack time, so the blood and the weapon impact sound line up with the swing.
@@ -1665,18 +1709,9 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
     // hits, and the hit's own physical damage may store a new stack for the hits after it.
     double physical = hit[DamageType.Physical].Max;
-    double stored = m.Impale.Bonus;
-    if (stored > 0) hit = hit.Add(DamageType.Physical, new DamageRange(stored, stored));
-    m.Impale.AfterHit();
-    int impaleChance = Stats.Key("impale_on_hit_%_chance") is uint impaleKey ? player.GetValueOrDefault(impaleKey) : 0;
-    bool impaled = impaleChance > 0 && Random.Shared.Next(100) < impaleChance && m.Impale.Apply(physical);
-    // Read before the hit is applied: a killing blow clears the target's impales.
-    int impaleStacks = m.Impale.Stacks;
-    double impaleStored = m.Impale.Bonus;
-    int damage = hit.RollTotal(Random.Shared);
-    bool critical = conn.Pools.AttackCriticalStrikeChance > 0
-        && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
-    if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
+    double stored, impaleStored;
+    int impaleStacks, damage;
+    bool impaled, critical;
     lock (conn.Monsters)
     {
         if (m.Life == 0) return;
@@ -1685,6 +1720,18 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled by a later action");
             return;
         }
+        stored = m.Impale.Bonus;
+        if (stored > 0) hit = hit.Add(DamageType.Physical, new DamageRange(stored, stored));
+        m.Impale.AfterHit();
+        int impaleChance = Stats.Key("impale_on_hit_%_chance") is uint impaleKey ? player.GetValueOrDefault(impaleKey) : 0;
+        impaled = impaleChance > 0 && Random.Shared.Next(100) < impaleChance && m.Impale.Apply(physical);
+        // Read before the hit is applied: a killing blow clears the target's impales.
+        impaleStacks = m.Impale.Stacks;
+        impaleStored = m.Impale.Bonus;
+        damage = hit.RollTotal(Random.Shared);
+        critical = conn.Pools.AttackCriticalStrikeChance > 0
+            && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
+        if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
         (m.Life, stageStarts) = TakeDamageLocked(m, damage);
         life = m.Life;
         conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
@@ -1721,7 +1768,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
 // 2026-10-25 the attack cast at the click from out of reach: the mana was gone at once and the hit landed around the
 // player, hitting nothing. CastGemSkill pays the cost and runs the skill's effect (projectile, area hit, aura, self-cast).
 static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
+    InstanceTransfer.UseSkillOnObject use, SpawnedMonster m, double requestedAt)
 {
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId);
     // A movement attack (Flicker Strike, Leap Slam) closes the distance itself, and an attack used with "always attack
@@ -1735,10 +1782,16 @@ static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers 
         }
         var weapon = WeaponFor(conn);
         double now = conn.Clock.Elapsed.TotalSeconds;
-        int action = Interlocked.Increment(ref conn.ActionCount);
-        (int X, int Y) target;
-        lock (conn.Monsters) target = m.Walk.Position(now);
-        var (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+        int action;
+        (int X, int Y) target, here, stop;
+        double arrive;
+        lock (conn.Monsters)
+        {
+            if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
+            action = Interlocked.Increment(ref conn.ActionCount);
+            target = m.Walk.Position(now);
+            (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now);
+        }
         Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
             $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s (t={now:0.000})");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
@@ -1756,27 +1809,37 @@ static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers 
         }
         await Send(remote, stream, ciphers,
             InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
-            $"0x01ab player skill 0x{use.SkillId:x4} {gem.Name} on monster 0x{use.TargetId:x} ({m.Label}) from ({stop.X}, {stop.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4} (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
-        _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stop, target, use.TargetId, sequence: use.Sequence);
+            $"0x01ab player skill 0x{use.SkillId:x4} {gem.Name} on monster 0x{use.TargetId:x} ({m.Label}) from ({stop.X}, {stop.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4} (t={conn.Clock.Elapsed.TotalSeconds:0.000})",
+            still: () => PlayerActionCurrent(conn, action));
+        _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stop, target, use.TargetId, sequence: use.Sequence, actionToken: action);
         return;
     }
-    Interlocked.Increment(ref conn.ActionCount);
-    double castAt = conn.Clock.Elapsed.TotalSeconds;
-    (int X, int Y) aim;
-    lock (conn.Monsters) aim = m.Walk.Position(castAt);
-    var stand = conn.Walk.Position(castAt);
-    conn.Walk.Order(stand.X, stand.Y, castAt);
+    int castAction;
+    (int X, int Y) aim, stand;
+    lock (conn.Monsters)
+    {
+        if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
+        castAction = Interlocked.Increment(ref conn.ActionCount);
+        double castAt = conn.Clock.Elapsed.TotalSeconds;
+        aim = m.Walk.Position(castAt);
+        stand = conn.Walk.Position(castAt);
+        conn.Walk.Order(stand.X, stand.Y, castAt);
+    }
     await Send(remote, stream, ciphers,
         InstanceProtocol.ActionStarted(PlayerId, stand.X, stand.Y, aim.X, aim.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
-        $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({stand.X}, {stand.Y}) to ({aim.X}, {aim.Y}), flags 0x{use.Flags:x4}");
-    _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stand, aim, use.TargetId, sequence: use.Sequence);
+        $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({stand.X}, {stand.Y}) to ({aim.X}, {aim.Y}), flags 0x{use.Flags:x4}",
+        still: () => PlayerActionCurrent(conn, castAction));
+    _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stand, aim, use.TargetId, sequence: use.Sequence, actionToken: castAction);
 }
 
 // A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one). False when
 // it was refused (cooldown, mana), so its use is not confirmed to the client.
 static async Task<bool> CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0)
+    ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0, int? actionToken = null)
 {
+    int action = actionToken ?? conn.ActionCount;
+    lock (conn.Monsters)
+        if (actionToken is not null && (conn.ActionCount != action || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
     if (InTown(conn) || conn.PlayerLife == 0) return false;
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
     // A gem whose requirements the character's level does not meet is disabled: its skill stays on the skill bar but
@@ -1847,14 +1910,14 @@ static async Task<bool> CastGemSkill(string remote, NetworkStream stream, Connec
                 $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
     // The Portal skill: a town portal, as the Portal Scroll's, once its cast (2.5 s) is over.
+    if (actionToken is not null && !PlayerActionCurrent(conn, action)) return false;
     if (gem.Name is not null && Skills.EffectId(gem.Effect) == "Portal")
     {
         if (!PortalAllowed(conn)) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} Portal: not here"); return false; }
         int castMs = Skills.CastTimeMs(gem.Effect);
-        int action = conn.ActionCount;
         _ = Task.Delay(castMs).ContinueWith(async _ =>
         {
-            if (!conn.Closed && conn.ActionCount == action)
+            if (!conn.Closed && PlayerActionCurrent(conn, action))
                 await OpenTownPortal(remote, stream, ciphers, conn, from.X, from.Y, "Portal skill");
         });
         return true;
@@ -1862,7 +1925,7 @@ static async Task<bool> CastGemSkill(string remote, NetworkStream stream, Connec
     if (gem.Name is not null && IsRighteousFire(gem.Effect))
         await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
     else
-        await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId, sequence: sequence);
+        await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId, sequence: sequence, actionToken: action);
     return true;
 }
 
@@ -1946,26 +2009,27 @@ static IEnumerable<byte[]> AuraBuffs(AuraCatalog.Aura aura) =>
 // cell), stopping at the first wall or monster on its path; a monster takes the skill's damage packet
 // (SkillCatalog.HitDamage, after conversion). It explodes there; then the object is removed.
 static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-    ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0)
+    ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0, int? actionToken = null)
 {
+    int action = actionToken ?? conn.ActionCount;
+    if (conn.ActionCount != action) return;
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
     if (gem.Name is null) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4}: no gem skill"); return; }
     if (Skills.ProjectileFor(gem.Effect) is not { } projectile)
     {
         // Not a projectile skill (strikes, slams, areas): its hit lands on the monsters around the aimed point.
-        await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence);
+        await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence, actionToken: action);
         return;
     }
-    int action = conn.ActionCount;
     // Released at the cast animation's contact keyframe, which the client plays stretched to the cast time.
     double release = Animations.SpellRelease(Skills.ClassFor(conn.ClassRow).AnimatedObject);
     await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, CastMs(conn, gem.Effect) * release)));
-    if (conn.ActionCount != action || conn.Closed) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
+    if (!PlayerActionCurrent(conn, action) || conn.Closed) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
     // A worn skill effect (its skill_art_variation) flies its own projectile and explodes in its own art (SkillArt).
     int variation = SkillArtVariation(conn, gem.Gem);
     projectile = (Art.Projectile(projectile.Id, variation), projectile.Speed);
     string impact = Art.AnimatedInPlaceOf(DefaultProjectileImpactAo, variation);
-    await FlyProjectile(remote, stream, ciphers, conn, projectile, from, to, impact: impact, damageTo: m =>
+    await FlyProjectile(remote, stream, ciphers, conn, projectile, from, to, impact: impact, actionToken: action, damageTo: m =>
     {
         // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
         // types separate so conversion and per-type mitigation apply.
@@ -2014,7 +2078,7 @@ static bool MonsterAtAim(ClientState conn, (ushort Id, int Effect, string Name, 
 // cones, chains), stun, and the attack's accuracy roll.
 static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
-    bool immediate = false, ushort sequence = 0)
+    bool immediate = false, ushort sequence = 0, int? actionToken = null)
 {
     var skillStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
     // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
@@ -2031,7 +2095,8 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
     // A melee skill aimed far away still lands in front of the player.
     var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
-    int action = conn.ActionCount;
+    int action = actionToken ?? conn.ActionCount;
+    if (conn.ActionCount != action) return;
     // A channel's hits (Cyclone, C→S 0x197) land at once, where the player is.
     if (!immediate)
     {
@@ -2057,7 +2122,7 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
         int chance = spell ? conn.Pools.SpellCriticalStrikeChance : conn.Pools.AttackCriticalStrikeChance;
         bool critical = chance > 0 && Random.Shared.Next(10_000) < chance;
         if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
-        await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence);
+        await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence, actionToken: action);
     }
     Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
 }
@@ -2066,7 +2131,7 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
 // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
 static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     (string Id, int Speed) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)> damageTo,
-    bool log = true, string? impact = null)
+    bool log = true, string? impact = null, int? actionToken = null)
 {
     uint id = conn.NextObjectId++;
     double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
@@ -2125,8 +2190,13 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
     if (startHeight is null) TerrainHeights.Forget(conn.Layout.Id, conn.Seed);
     var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Direction: direction, Height: startHeight);
     uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
+    bool released = false;
     await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()), !log ? null :
-        $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})");
+        $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})",
+        still: () => released = !conn.Closed && (actionToken is not int token || PlayerActionCurrent(conn, token)));
+    // Creation is the release boundary. A hit that wins the send gate cancels an unreleased cast; a projectile
+    // already created keeps flying even if its caster is interrupted before the following wake/move packets.
+    if (!released) return;
     await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 projectile 0x{id:x} enters wake zone");
     // 0x1ba's float is the move's duration in seconds, not a speed (InstanceProtocol.MoveTo).
     await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: endHeight is int e ? (uint)e : TerrainHeight), !log ? null :
@@ -2158,13 +2228,13 @@ static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionC
 // A hit on a monster for damage: its life goes down (0x1b1) and at 0 it dies (MonsterKilled). A monster another hit has
 // killed meanwhile is left alone, so it dies only once (hits that land together).
 static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
-    int damage, string by, bool log = true, bool melee = false, ushort sequence = 0)
+    int damage, string by, bool log = true, bool melee = false, ushort sequence = 0, int? actionToken = null)
 {
     uint life;
     bool stageStarts;
     lock (conn.Monsters)
     {
-        if (m.Dead) return;
+        if (m.Dead || actionToken is int token && !PlayerActionCurrent(conn, token)) return;
         (m.Life, stageStarts) = TakeDamageLocked(m, damage);
         life = m.Life;
         conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
@@ -2206,6 +2276,47 @@ static async Task SendFlinch(string remote, NetworkStream stream, ConnectionCiph
     await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, (uint)flinch.Index, 1f),
         !log ? null : $"0x01b2 monster 0x{id:x} flinch (animation {flinch.Index}, {flinch.Seconds:0.00} s)",
         still: () => { lock (conn.Monsters) return m.Life > 0 && !m.Dead; });
+}
+
+// Native TakeHit owns the client's predictive cancellation and recovery lockout. Commit the matching server state
+// inside the send gate, so death or another recovery while this packet waits cannot send an obsolete flinch.
+static async Task SendPlayerHitRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    int damage)
+{
+    if (damage <= 0) return;
+    var stats = CharacterPlayerStats(conn);
+    if (stats.Any(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key)))) return;
+    // Skill immunity can depend on a native action's contact phase, which this server does not track yet.
+    // Conservatively skip builds with any equipped skill carrying it, rather than stun an uninterruptible phase.
+    if (GemSkillEffects(conn.Character).Any(g => Skills.EffectStats(g.Effect, g.Level, g.Quality)
+        .Any(s => s.Item2 != 0 && Stats.Name(s.Item1).StartsWith("skill_cannot_be_stunned", StringComparison.Ordinal)))) return;
+    int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+    double chance = PlayerHitRecovery.Chance(damage, conn.PlayerMaxLife, Get);
+    float seconds = PlayerHitRecovery.Duration(Get);
+    if (seconds <= 0 || Random.Shared.NextDouble() * 100 >= chance) return;
+    await Send(remote, stream, ciphers,
+        InstanceProtocol.ActorAnimation(PlayerId, seconds, PlayerHitRecovery.TakeHitAnimation),
+        $"0x01d1 player TakeHit recovery {seconds:0.000} s ({chance:0.#}% chance, {damage} physical damage)",
+        still: () =>
+        {
+            lock (conn.Monsters)
+            {
+                if (conn.Closed || conn.PlayerLife == 0 || !conn.HitRecovery.Begin(conn.Clock.Elapsed.TotalSeconds, seconds)) return false;
+                Interlocked.Increment(ref conn.ActionCount);
+                conn.ChannelSkill = 0;
+                double now = conn.Clock.Elapsed.TotalSeconds;
+                conn.NextAttackAt = now;
+                var at = conn.Walk.Position(now);
+                conn.Walk.Teleport(at.X, at.Y, now);
+                return true;
+            }
+        });
+}
+
+static bool PlayerActionCurrent(ClientState conn, int action)
+{
+    lock (conn.Monsters)
+        return conn.PlayerLife > 0 && conn.ActionCount == action && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds);
 }
 
 // A hit's damage off a monster's life (under the Monsters lock): the new life, and whether the hit starts its boss stage
@@ -5215,6 +5326,8 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         life = conn.PlayerLife;
         mana = conn.PlayerMana;
     }
+    if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+        await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);
     // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -5244,6 +5357,7 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     {
         if (conn.PlayerLife > 0) return;
         conn.PlayerLife = conn.PlayerMaxLife;
+        conn.HitRecovery.Clear();
         conn.AuraDeathHandled = false;
         conn.PlayerMana = (uint)UnreservedMana(conn);
         foreach (var m in conn.Monsters.Values) m.Aggro = false;
@@ -7813,6 +7927,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public double NextAttackAt;
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
     public int ActionCount;
+    public readonly PlayerHitRecovery HitRecovery = new();
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];

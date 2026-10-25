@@ -1,0 +1,96 @@
+namespace GameServer.Gateway.Tests;
+
+public class PlayerHitRecoveryTests
+{
+    static Func<string, int> Stats(params (string Key, int Value)[] values) =>
+        name => values.FirstOrDefault(v => v.Key == name).Value;
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(8, 0)]
+    [InlineData(9, 22.5)]
+    [InlineData(20, 50)]
+    [InlineData(40, 100)]
+    [InlineData(1000, 100)]
+    public void Physical_melee_chance_has_a_minimum_and_caps_at_100(int damage, double chance) =>
+        Assert.Equal(chance, PlayerHitRecovery.Chance(damage, 100, Stats()));
+
+    [Fact]
+    public void Threshold_and_avoidance_are_separate_from_the_minimum_chance()
+    {
+        Assert.Equal(25, PlayerHitRecovery.Chance(20, 100, Stats(("stun_threshold_+%", 100))));
+        Assert.Equal(12.5, PlayerHitRecovery.Chance(20, 100,
+            Stats(("stun_threshold_+%", 100), ("avoid_stun_%", 50))));
+        Assert.Equal(0, PlayerHitRecovery.Chance(20, 100, Stats(("stun_threshold_+%", -100))));
+    }
+
+    [Theory]
+    [InlineData("cannot_be_stunned", 1)]
+    [InlineData("cannot_be_stunned_by_attacks", 1)]
+    [InlineData("cannot_be_stunned_by_hits_of_only_physical_damage", 1)]
+    [InlineData("avoid_stun_%", 100)]
+    [InlineData("maximum_energy_shield", 1)]
+    [InlineData("maximum_life_is_one", 1)]
+    [InlineData("stun_threshold_based_on_%_mana_instead_of_life", 100)]
+    [InlineData("additional_stun_threshold_based_on_%_of_energy_shield", 30)]
+    public void Known_immunity_and_unsupported_pools_do_not_use_ordinary_life_rules(string key, int value) =>
+        Assert.Equal(0, PlayerHitRecovery.Chance(1000, 100, Stats((key, value))));
+
+    [Fact]
+    public void Conditional_defences_require_their_own_state_before_enabling_recovery()
+    {
+        Assert.True(PlayerHitRecovery.UnsupportedStat("cannot_be_stunned_when_on_low_life"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("avoid_stun_%_while_channelling"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("stun_threshold_+%_per_rage"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("stun_threshold_+"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("stun_threshold_increased_by_overcapped_fire_resistance"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("avoid_stun_35%_per_active_herald"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("enchantment_boots_stun_avoid_%_on_kill"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("skill_cannot_be_stunned_before_contact_point"));
+        Assert.True(PlayerHitRecovery.UnsupportedStat("stun_recovery_+%_per_frenzy_charge"));
+        Assert.False(PlayerHitRecovery.UnsupportedStat("cannot_be_stunned_by_spells"));
+        Assert.False(PlayerHitRecovery.UnsupportedStat("avoid_stun_%"));
+        Assert.False(PlayerHitRecovery.UnsupportedStat("base_avoid_stun_%"));
+    }
+
+    [Fact]
+    public void Recovery_uses_the_monster_melee_base_and_player_recovery_then_rounds_up_to_a_tick()
+    {
+        Assert.Equal(.429f, PlayerHitRecovery.Duration(Stats()));
+        Assert.Equal(.231f, PlayerHitRecovery.Duration(Stats(("stun_recovery_+%", 100))));
+        Assert.Equal(.858f, PlayerHitRecovery.Duration(Stats(("stun_duration_on_self_+%", 100))));
+        Assert.Equal(0, PlayerHitRecovery.Duration(Stats(("stun_recovery_+%", -100))));
+        Assert.Equal(0, PlayerHitRecovery.Duration(Stats(("stun_duration_on_self_+%", int.MaxValue))));
+    }
+
+    [Fact]
+    public void An_active_recovery_does_not_restart_or_extend_and_expiry_allows_the_next_one()
+    {
+        var recovery = new PlayerHitRecovery();
+        Assert.True(recovery.Begin(1, .5f));
+        Assert.False(recovery.Begin(1.4, .5f));
+        Assert.Equal(1.5, recovery.Until);
+        Assert.False(recovery.Active(1.5));
+        Assert.True(recovery.Begin(1.5, .5f));
+    }
+
+    [Fact]
+    public void Buffered_actions_from_before_or_during_recovery_cannot_restart_after_expiry()
+    {
+        var recovery = new PlayerHitRecovery(); recovery.Begin(1, .5f);
+        Assert.True(recovery.BlocksInput(.9, 1.1));
+        Assert.True(recovery.BlocksInput(1.4, 2));
+        Assert.False(recovery.BlocksInput(1.5, 2));
+        recovery.Clear();
+        Assert.False(recovery.BlocksInput(1, 2));
+    }
+
+    [Fact]
+    public void Invalid_duration_cannot_lock_input()
+    {
+        var recovery = new PlayerHitRecovery();
+        foreach (float seconds in new[] { 0, -1, float.NaN, float.PositiveInfinity })
+            Assert.False(recovery.Begin(0, seconds));
+        Assert.False(recovery.Active(0));
+    }
+}

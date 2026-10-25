@@ -282,6 +282,16 @@ public static class InstanceProtocol
 
     public const ushort AnimationUpdateId = 0x1b2;
 
+    public const ushort ActorAnimationId = 0x1d1;
+
+    /// <summary>S→C 0x1d1: object header, BE float duration, Animation.dat row (not a rig clip index), bool.
+    /// Actor handler 0x1421949c3 calls 0x141e95e60, which cancels predictive actions, selects the current stance's
+    /// animation and blocks action starts until recovery ends. Row 5 is TakeHit. The optional bool enables the
+    /// client's avoid-interruption check; the server normally decides eligibility itself.</summary>
+    public static byte[] ActorAnimation(uint objectId, float seconds, byte animationType, bool checkInterruption = false) =>
+        new LoginWriter().U16(ActorAnimationId).U32(objectId).U32(0).U16(0)
+            .U32(BitConverter.SingleToUInt32Bits(seconds)).U8(animationType).U8(checkInterruption ? (byte)1 : (byte)0).ToArray();
+
     /// <summary>
     /// S→C 0x1b2 "InstanceClientAnimationUpdate" (world group; the handler maps it and 0x26f/0x270/0x271 to the
     /// Animated component's <c>0x141e58ef0</c>): object header, u8 kind, then per kind — 0/1: u32 animation index
