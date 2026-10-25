@@ -76,7 +76,7 @@ sealed class ItemCatalog
     public BaseType? Find(string query)
     {
         var rows = _rows.Value.Rows;
-        if (int.TryParse(query, out int row)) return Row(row);
+        if (int.TryParse(query, out int row)) return Row(row) is { } numbered ? EmptyResonatorType(numbered) : null;
         foreach (Func<BaseType, bool> match in new Func<BaseType, bool>[]
         {
             t => t.Id.Equals(query, StringComparison.OrdinalIgnoreCase),
@@ -86,10 +86,24 @@ sealed class ItemCatalog
         })
         {
             var hits = rows.Where(match).ToList();
-            if (hits.Count > 0) return hits.FirstOrDefault(t => t.Supported) ?? hits[0];
+            if (hits.Count > 0) return EmptyResonatorType(hits.FirstOrDefault(t => t.Supported) ?? hits[0]);
         }
         return null;
     }
+
+    // Empty legacy resonators have no Stack component. Filled ones retain their original type.
+    public BaseType EmptyResonatorType(BaseType type) =>
+        ResonatorSockets(type) > 0 && !type.Components.Contains("Stack")
+            ? _rows.Value.Rows.FirstOrDefault(t => t.Id == type.Id.Replace("/DelveSocketable", "/DelveStackableSocketable")) ?? type
+            : type;
+
+    public static int ResonatorSockets(BaseType type) =>
+        type.Id.StartsWith("Metadata/Items/Delve/Delve", StringComparison.Ordinal)
+        && type.Id.Contains("SocketableCurrency", StringComparison.Ordinal)
+        && type.Id[^1] is >= '1' and <= '4' ? type.Id[^1] - '0' : 0;
+
+    public static IReadOnlyList<ItemSocket> ResonatorSocketList(BaseType type) =>
+        Enumerable.Range(0, ResonatorSockets(type)).Select(_ => new ItemSocket(SocketColour.Delve)).ToArray();
 
     /// <summary>A gem's variant (SkillGems GemVariants → GemEffects; the SkillGem component's u32 +0x3c is its index): its
     /// name, the GrantedEffects rows it grants (a Vaal gem's Vaal skill, then its base skill; -1 for none), and whether
@@ -335,6 +349,7 @@ sealed class ItemCatalog
     public (IReadOnlyList<ItemSocket> Sockets, IReadOnlyList<byte>? Links) DefaultSockets(BaseType t)
     {
         if (!t.Components.Contains("Sockets")) return ([], null);
+        if (ResonatorSockets(t) > 0) return (ResonatorSocketList(t), null);
         var colour = _requirements.Value.TryGetValue(t.Id, out var r)
             ? r.Str >= r.Dex && r.Str >= r.Int && r.Str > 0 ? SocketColour.Red
               : r.Dex >= r.Int && r.Dex > 0 ? SocketColour.Green : r.Int > 0 ? SocketColour.Blue : SocketColour.White
@@ -363,7 +378,8 @@ sealed class ItemCatalog
     public static Item Create(BaseType t, IReadOnlyList<ItemSocket>? sockets = null, IReadOnlyList<byte>? links = null) =>
         new(t.Hash, t.Components, t.VisualIdentity)
         {
-            Charges = t.MaxCharges, Sockets = sockets ?? [], Links = links,
+            Charges = t.MaxCharges, Sockets = ResonatorSockets(t) > 0 ? ResonatorSocketList(t) : sockets ?? [],
+            Links = ResonatorSockets(t) > 0 ? null : links,
             Mods = t.Components.Contains("Mods") ? [.. (t.Implicits ?? []).Select(m => m.Roll(ModSection.Implicit, Random.Shared))] : [],
         };
 

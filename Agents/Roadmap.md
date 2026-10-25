@@ -17,6 +17,8 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 1. Quality of life
 
+Aura intent persistence, town suppression and death reset are implemented; validate town/combat/character-switch round trips in the real client (protocol/11-skills.md).
+
 Harvest station placement and native recipe browsing are implemented. Next: implement Harvest recipe execution and atomic lifeforce payment; see protocol/21-hideouts.md.
 
 ### Switching hideout templates
@@ -44,6 +46,8 @@ on monsters and stash-tab essence upgrading remain separate features.
   implemented, awaiting real-client visual verification. See Status and protocol/20-damage.md.
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
+
+Delve slot bounds, empty resonator socket layouts and stackable migration are implemented; verify the corrected fossil/resonator presentation in the real client (18-stash.md).
 
 ### Stash: tab settings and the other special tabs
 - **Known:** the stash opens on the last tab, tabs load and items move by click and Ctrl + click

@@ -17,6 +17,11 @@ $out = Join-Path $repo 'logs'
 New-Item -ItemType Directory -Force $out | Out-Null
 
 function Need($ok, $message) { if (-not $ok) { throw "setup incomplete: $message (see Agents/GettingStarted.md)" } }
+function Select-LocalGateway {
+    # The client can use a cached gateway list even when the patch welcome needs no download.
+    & dotnet (Join-Path $repo 'src\GameServer.Patch\bin\Debug\net10.0\GameServer.Patch.dll') gateway (Join-Path $repo 'Client\Content.ggpk') --login '127.0.0.1:20493' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'could not select local login server; close all clients and retry' }
+}
 Need (Get-Command dotnet -ErrorAction SilentlyContinue) '.NET SDK not found (dotnet)'
 Need (Test-Path (Join-Path $repo 'data\login-keys.json')) 'data\login-keys.json missing: run GameServer.Auth keygen'
 Need (Test-Path (Join-Path $repo 'Client\Game.exe')) 'Client\Game.exe missing: copy the client and its PathOfExile.exe'
@@ -35,6 +40,7 @@ if ($ClientOnly) {
     foreach ($port in @(12995, 20493, 6112)) {
         Need (@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count -gt 0) "local servers must be running before -ClientOnly (missing port $port)"
     }
+    Select-LocalGateway
     $p = Start-Process (Join-Path $repo 'Client\Game.patched.exe') -ArgumentList '--patching-server', '127.0.0.1:12995' -WorkingDirectory (Join-Path $repo 'Client') -PassThru
     Write-Output "client pid $($p.Id)"
     return
@@ -98,6 +104,12 @@ function Start-Detached([string]$exe, [string[]]$arguments, [string]$log, [strin
 
 $bin = 'bin\Debug\net10.0'
 $serverArgs = @{ Auth = @('serve'); Patch = @(); Gateway = @() }
+# The cached gateway list can point elsewhere even when the patch welcome says no download is needed.
+# Select the local Auth explicitly before the patch server or client opens the GGPK.
+if (-not $NoClient) {
+    Select-LocalGateway
+}
+
 foreach ($s in 'Patch', 'Gateway', 'Auth') {
     if ($servers -notcontains $s) { continue }
     Start-Detached 'dotnet' (@("src\GameServer.$s\$bin\GameServer.$s.dll") + $serverArgs[$s]) `

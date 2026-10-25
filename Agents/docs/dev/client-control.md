@@ -22,7 +22,10 @@ already has it). Run from the repository root:
 `game:open` attaches to an existing client, or calls `live.ps1 -ClientOnly`. That switch starts only the copied client
 with the local patching-server argument and requires the local servers already running; it does not restart services,
 rebuild, extract data, or close an existing client. It waits up to 60 seconds for a native menu, so login can immediately
-follow its successful result. Startup asset loading still takes the client's normal time.
+follow its successful result. Before opening a closed client, it resets the cached GGPK gateway list to local Auth,
+as a normal startup does; an existing client returns before that write. Startup asset loading still takes the
+client's normal time. The gateway-reset integration has mocked startup coverage; fresh client startup against an
+already-running Patch service still needs live verification after merging upstream changes.
 
 Every command returns one JSON object: `ok`, `result` or `error`, and `elapsedMs`. `character:list` reads the list
 actually received by the client; entries have `index`, `name`, `league`, `level`, and `classId`. Play resolves the name
@@ -74,6 +77,8 @@ local development client; it has no official-service support.
 
 Checks: `node --check scripts/dev/client-control.js` and
 `.venv/Scripts/python.exe -m unittest discover -s scripts/dev -p test_client_control.py`.
+`powershell -NoProfile -File scripts/dev/test_live_client_only.ps1` checks closed/existing client startup,
+local gateway selection, and failed preflights with mocked processes and no GGPK writes.
 
 
 ## Targeted development interactions

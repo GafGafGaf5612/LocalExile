@@ -1,5 +1,15 @@
 # Status
 
+Delve stash correction: publishes the native 41 × 4 inventory bounds; all fossil/resonator slots retain the 5000 limit. Empty legacy resonators migrate to stackable types with 1–4 independent yellow/orange Delve sockets. Automated layout/merge/reload coverage; confirmed working by the user in the real client. See protocol/18-stash.md.
+
+NPC sale visibility: offered items are hidden from the main inventory and shown only in Your Offer. Their original cells/items remain reserved in the durable save; take-back/cancel restores the view, disconnect/crash preserves items, and acceptance exchanges items/payment in one save. Player-to-player trade remains unimplemented. Live visibility verification pending; see protocol/17-npcs.md.
+
+Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool initialization. Equipment contributes attributes before individual gem validation; saved auras remain candidates on town/hideout round trips. Regression covers fresh-connection Precision/Clarity equipment and all 17 supported self auras. Live retest pending.
+
+Aura lifecycle: towns suppress all aura effects/reservation while retaining per-character enabled intent. Exit/relogin/character return restores available remembered auras without rechecking cast affordability; manual activation still validates mana. Death clears saved/runtime auras; skill refresh resumes temporarily unavailable effects. Automated lifecycle coverage; live verification pending. See protocol/11-skills.md.
+
+Local startup explicitly resets the cached login gateway to loopback before launching the client, preventing a stale remote endpoint from causing DSA handshake failure (General Rhoa Failure #3). See protocol/01-login.md.
+
 Horticrafting Station: placed beside the ordinary bench in every selected hideout; interaction approaches and opens the native Harvest recipe browser (0x7b kind 0x39). Recipe execution/payment are not implemented. Automated coverage; station and window confirmed working in the real client. See protocol/21-hideouts.md.
 
 Ordinary crafting bench (2026-10-25, automated coverage; live client verification pending):
@@ -395,3 +405,5 @@ Cyclone's additional melee-range and stage modifiers remain partial. See protoco
 - Currency metamods: Scouring/Chaos/Divine/Annul respect prefix/suffix locks; annul and affix additions respect attack/caster restrictions. Scouring retains quality and refuses uniques. Real-data regression tests cover both lock directions.
 
 Optional [native client control](docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated UI input. It targets the copied standalone 3.29.3b client and local services only.
+
+Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses. Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented. See [skills](docs/protocol/11-skills.md).

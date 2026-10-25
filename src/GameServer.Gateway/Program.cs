@@ -207,6 +207,7 @@ static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
                     (fixedLevel.Ok ? "" : $"; not saved to the account: {fixedLevel.Error}"));
             }
             conn.PlayerLife = conn.PlayerMaxLife;
+            conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}, attack speed +{conn.Pools.AttackSpeedPct}%), league {conn.League ?? "?"}");
             // The read loop answers ticks; everything else runs in order on the handler task (ClientInbox, issue #46).
@@ -331,6 +332,7 @@ static async Task OnClientMessages(string remote, NetworkStream stream, Connecti
             var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);
             double at = conn.ClockAt(readAt);   // when the client applied the click, not when this handler runs
             // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
+            if (InTown(conn) && Skills.ActionName(use.SkillId) != "Move") continue;
             bool cast = Skills.IsGemSkill(use.SkillId);
             var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
             // A disabled gem's skill is not confirmed: the client animates the cast and sends the use anyway (it only reds
@@ -893,6 +895,7 @@ static async Task PopulateArea(string remote, NetworkStream stream, ConnectionCi
 // With Ctrl: list the destination's instances (0xae) for the client's instance chooser.
 static async Task OnUseObject(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
 {
+    if (InTown(conn) && (Skills.IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)) return;
     SpawnedMonster? target;
     lock (conn.Monsters) target = conn.Monsters.GetValueOrDefault(use.TargetId);
     if (target is not null)
@@ -1106,6 +1109,7 @@ static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphe
 // 0x84 with object 0, which ends the dialogue.
 static async Task CloseNpcDialogue(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
 {
+    if (conn.Sale is not null) await CloseSale(remote, stream, ciphers, conn, accepted: false);
     uint id = conn.TalkingTo;
     if (id != 0 && conn.InNpcTalk)
     {
@@ -1300,9 +1304,8 @@ static async Task CtrlBuyFromShop(string remote, NetworkStream stream, Connectio
 
 // An item goes into the sell offer (C→S 0xb2, or 0x2a on the offer inventory) from the inventory it is in (the cursor, or
 // the main inventory on a Ctrl-click); the NPC answers with one Scroll Fragment per offered item in its own offer. As in
-// 3.29 the item keeps its inventory cell until the sale ends (PlayerInventories.Offer), and the client keeps it there too:
-// no 0xbf takes it out of the inventory, so the client can draw its greyed imprint. A held item goes back to its cell
-// (0xbf: off the cursor, into the inventory) first.
+// the saved item and its inventory cell remain reserved until the sale ends (PlayerInventories.Offer).
+// The client sees the item only in its offer grid.
 static async Task OfferForSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale,
     uint fromInventory, uint itemId, byte x, byte y)
 {
@@ -1312,21 +1315,16 @@ static async Task OfferForSale(string remote, NetworkStream stream, ConnectionCi
         Console.WriteLine($"[gateway] {remote} sell offer: item {itemId} is not in inventory {fromInventory} (or no cell to wait in)");
         return;
     }
-    if (waits != row)
-    {
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(fromInventory, items.NextRevision(row), [offered.Id], []),
-            $"0x00bf inventory {fromInventory}: remove item {offered.Id} (offered from the cursor)");
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(waits), items.NextRevision(waits), [], [offered]),
-            $"0x00bf inventory {PlayerInventories.InventoryId(waits)}: item {offered.Id} waits at ({offered.X}, {offered.Y}) while offered");
-    }
+    // Keep the durable item in its reserved server cell, but show it only in the offer grid.
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(fromInventory, items.NextRevision(row), [offered.Id], []),
+        $"0x00bf inventory {fromInventory}: hide offered item {offered.Id}");
     var inOffer = offered with { X = x, Y = y };
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [], [inOffer], NpcShops.Manager),
         $"0x00bf sell offer: item {inOffer.Id} at ({x}, {y})");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
-// An offered item taken back (C→S 0xb3, or 0x28 on the offer inventory) is in its inventory cell again: it never left the
-// client's inventory, so only the offer changes.
+// Taking an offered item back restores its original inventory view and removes its offer entry.
 static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcSale sale, uint itemId)
 {
     var items = ItemsOf(conn);
@@ -1337,6 +1335,8 @@ static async Task TakeFromSale(string remote, NetworkStream stream, ConnectionCi
     }
     await Send(remote, stream, ciphers, InstanceItems.InventoryChange(sale.Mine, ++sale.MineRevision, [itemId], [], NpcShops.Manager),
         $"0x00bf sell offer: remove item {itemId} (back in inventory {PlayerInventories.InventoryId(row)} at ({back.X}, {back.Y}))");
+    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [back]),
+        $"0x00bf return item {back.Id} to inventory {PlayerInventories.InventoryId(row)}");
     await SendSaleReward(remote, stream, ciphers, conn, sale);
 }
 
@@ -1397,7 +1397,6 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
     if (accepted)
     {
         int count = items.Offered().Count;
-        var sold = items.OfferedInPlace();   // where the client still has them: they leave its inventory now
         var fragment = Items.Find(NpcShops.SellReward);
         PlayerInventories.Stacking? added = null;
         string? refused = count == 0 ? null
@@ -1411,21 +1410,20 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
             return;
         }
         Console.WriteLine($"[gateway] {remote} sale accepted: {count} item(s) sold for {count} × {NpcShops.SellReward}");
-        foreach (var group in sold.GroupBy(s => s.Row).Where(g => g.Key != PlayerInventories.MainInventory || added is not { Any: true }))
-            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(group.Key), items.NextRevision(group.Key),
-                [.. group.Select(s => s.Item.Id)], []), $"0x00bf inventory {PlayerInventories.InventoryId(group.Key)}: {group.Count()} item(s) sold");
-        // The main inventory's sold items and the reward in one 0xbf.
+        // Offered items were already removed from the client's inventory view.
         if (added is { Any: true })
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
                 items.NextRevision(PlayerInventories.MainInventory),
-                [.. sold.Where(s => s.Row == PlayerInventories.MainInventory).Select(s => s.Item.Id), .. added.RemovedIds], added.AddedItems),
+                added.RemovedIds, added.AddedItems),
                 $"0x00bf inventory 1: sold items out, {added.Changed.Count} stack(s) grown, {added.Added.Count} new (the NPC's offer)");
     }
     else if (sale is not null)
     {
-        // The offered items never left the client's inventory: nothing to send back.
-        int back = items.CancelOffers().Count;
-        if (back > 0) Console.WriteLine($"[gateway] {remote} sale cancelled: {back} offered item(s) stay where they are");
+        // Restore the hidden inventory view before closing the offer.
+        var returned = items.CancelOffers();
+        foreach (var group in returned.GroupBy(i => i.Row))
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(group.Key), items.NextRevision(group.Key),
+                [], [.. group.Select(i => i.Item)]), $"0x00bf sale cancelled: restore {group.Count()} item(s)");
     }
     lock (conn.Npcs) if (conn.Sale == sale) conn.Sale = null;
     await Send(remote, stream, ciphers, InstanceNpcs.TradeClose(0, accepted), $"0x00b9 sell window closed ({(accepted ? "accepted" : "cancelled")})");
@@ -1440,6 +1438,7 @@ static async Task CloseSale(string remote, NetworkStream stream, ConnectionCiphe
 // (an NPC sale) opens the sell window. Being tested.
 static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedNpc npc)
 {
+    if (conn.Sale is not null) await CloseSale(remote, stream, ciphers, conn, accepted: false);
     uint mine = NpcShops.FirstTabId + 0x10, theirs = mine + 1;
     ItemsOf(conn).CancelOffers();   // none should be left; a new sale must not count them
     lock (conn.Npcs) conn.Sale = new NpcSale(npc, mine, theirs);
@@ -1453,6 +1452,7 @@ static async Task OpenNpcSale(string remote, NetworkStream stream, ConnectionCip
 // Purchase Items: the NPC's stock as one shop tab (S→C 0xc0, inventory manager 1), then S→C 0x8c opens the buy window on it.
 static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint npcObject, SpawnedNpc npc)
 {
+    if (conn.Sale is not null) await CloseSale(remote, stream, ciphers, conn, accepted: false);
     await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
     conn.BenchOpen = false;
     if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
@@ -1777,6 +1777,7 @@ static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers 
 static async Task<bool> CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
     ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0)
 {
+    if (InTown(conn) || conn.PlayerLife == 0) return false;
     var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
     // A gem whose requirements the character's level does not meet is disabled: its skill stays on the skill bar but
     // cannot be used (the client shows the gem red but still sends the use; the server withholds the action, see
@@ -2344,7 +2345,8 @@ static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     var (mainLocal, offLocal) = HandLocalStats(conn);
     foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
         .Concat(PanelStats.FromPools(Get, conn.Pools))
-        .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana)))
+        .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana))
+        .Concat(ChargePanelStats.Compute(Get)))
         if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
     // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
     // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
@@ -2730,6 +2732,19 @@ static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiph
         $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats" +
         (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
     if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
+    IReadOnlyList<AuraCatalog.Aura> resumed = [];
+    lock (conn.Monsters)
+        if (conn.PlayerLife > 0 && !InTown(conn))
+            resumed = RestoreRememberedAuras(conn, CharacterSaves.Load(CharacterName(conn))?.ActiveAuras ?? []);
+    if (resumed.Count > 0)
+    {
+        foreach (var aura in resumed)
+            foreach (var packet in AuraBuffs(aura))
+                await Send(remote, stream, ciphers, packet, $"aura {aura.EffectId} resumes after skill refresh");
+        await SendCharacterStats(remote, stream, ciphers, conn, "remembered auras resumed");
+        await SendPlayerMana(remote, stream, ciphers, conn, "remembered aura reservation");
+    }
+
     // The update can take a bound skill off the skill bar (live 2026-10-21: Haste's slot emptied when its aura went on,
     // and came back with the area change's 0x53), and a gem socketed again does not get its slot back by itself, so the
     // saved bar goes out again. Not when a skill the saved bar never had was added: the client binds a new skill to a free
@@ -2758,7 +2773,6 @@ static async Task EndSkillEffects(string remote, NetworkStream stream, Connectio
     }
     foreach (var aura in ended)
     {
-        CharacterSaves.SetAuraActive(CharacterName(conn), aura.EffectId, false);
         foreach (var packet in AuraCatalog.EndPackets(aura, PlayerId))
             await Send(remote, stream, ciphers, packet, $"0x01c2 player aura {aura.Name} ends (its gem left)");
     }
@@ -2806,20 +2820,7 @@ static int LoadProgress(ClientState conn, int level)
             && Passives.FindEffect(kv.Value) is { } effect && Passives.IsEffectFor(kv.Key, effect))
             .ToDictionary(kv => kv.Key, kv => kv.Value);
         conn.Pools = PoolsFor(conn, level);
-        // Resolve saved effects against today's usable gems; connection-local skill/buff ids are rebuilt.
-        var candidates = new List<AuraCatalog.Aura>();
-        foreach (var gem in GemSkillEffects(conn.Character))
-            if (Skills.EffectId(gem.Effect) is { } effect && AuraCatalog.Supported(effect)
-                && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
-                candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
-                    reservation.Flat, reservation.Percent, gem.Level, gem.Quality, SourceBuff: conn.NextBuff++));
-        foreach (var aura in AuraCatalog.Restore(save?.ActiveAuras ?? [], candidates, conn.Pools))
-            conn.Auras[aura.SkillId] = aura;
-        if (conn.Auras.Count > 0)
-        {
-            conn.Pools = PoolsFor(conn, level);
-            Console.WriteLine($"[gateway] {CharacterName(conn)}: restored saved auras: {string.Join(", ", conn.Auras.Values.Select(a => a.EffectId))}");
-        }
+        RestoreRememberedAuras(conn, save?.ActiveAuras ?? []);
         conn.ApplyMovementSpeed();
     }
     return level;
@@ -2844,25 +2845,16 @@ static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<
                 ItemModStats.LevelRequirement(x.i.Item, t.DropLevel, Items.Mods))
             : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0)).ToList();
     var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
-    var inactive = ItemModStats.Inactive(worn, (c.Strength + ps + god, c.Dexterity + pd + god, c.Intelligence + pi + god),
-        level ?? conn.Pools.Level, i => ItemModStats.Attributes(i, Items.Mods), before);
-    // A gem socketed in a worn item whose requirements the character does not meet makes the whole item inactive, as an
-    // item the character is too low for: the client shows it red (the gem's level requirement), and the item's mods and
-    // its gems do nothing — a disabled gem's skill is not in the skill list at all, so it cannot be cast.
-    var gemDisabled = new Dictionary<uint, string>();
-    foreach (var place in items.SocketedGemPlaces())
-        if (GemRequirementsUnmet(conn, place.Gem) is { } why)
-        {
-            inactive.Add(place.ItemId);
-            gemDisabled[place.ItemId] = why;
-        }
+    var (inactive, active) = ItemModStats.ResolveEquipment(worn,
+        (c.Strength + ps + god, c.Dexterity + pd + god, c.Intelligence + pi + god), level ?? conn.Pools.Level, Items.Mods, before);
+    // Item activation depends on the item, not on socketed gems. Checking gems here used the previous
+    // connection's/initial pools and disabled the entire item's stats and unrelated gems before pools existed.
+    // Individual gem requirements are checked against the completed pools when socketing or casting.
     InactiveItems[CharacterName(conn)] = inactive;
     if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
         Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
-            string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w => gemDisabled.TryGetValue(w.Id, out var gem)
-                ? $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} ({gem})"
-                : $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
-    var active = worn.Where(w => !inactive.Contains(w.Id)).Select(w => w.Item);
+            string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
+                $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
     return ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
 }
 
@@ -3417,6 +3409,59 @@ static double ManaRegenPerSecond(ClientState conn)
 }
 
 // The mana the running auras reserve, and what is left for casting and regeneration.
+// Restoring an already enabled aura is not a fresh cast: transient mana availability must not discard its saved intent.
+static IReadOnlyList<AuraCatalog.Aura> RestoreRememberedAuras(ClientState conn, IEnumerable<string> saved)
+{
+    var wanted = saved.ToHashSet(StringComparer.Ordinal);
+    var candidates = new List<AuraCatalog.Aura>();
+    foreach (var gem in GemSkillEffects(conn.Character))
+        if (Skills.EffectId(gem.Effect) is { } effect && wanted.Contains(effect) && AuraCatalog.Supported(effect)
+            && !conn.Auras.Values.Any(a => a.EffectId == effect)
+            && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
+            candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
+                reservation.Flat, reservation.Percent, gem.Level, gem.Quality, SourceBuff: conn.NextBuff++));
+    var restored = AuraCatalog.Restore(saved, candidates, conn.Pools, InTown(conn));
+    foreach (var aura in restored) conn.Auras[aura.SkillId] = aura;
+    if (restored.Count > 0)
+    {
+        conn.Pools = PoolsFor(conn, conn.Pools.Level);
+        conn.ApplyMovementSpeed();
+        Console.WriteLine($"[gateway] {CharacterName(conn)}: restored saved auras: {string.Join(", ", restored.Select(a => a.EffectId))}");
+    }
+    return restored;
+}
+
+static bool InTown(ClientState conn) => WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true };
+
+static async Task EndAurasOnDeath(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+{
+    if (conn.PlayerLife != 0 || conn.AuraDeathHandled) return;
+    conn.AuraDeathHandled = true;
+    CharacterSaves.ClearActiveAuras(CharacterName(conn));
+    List<AuraCatalog.Aura> ended;
+    lock (conn.Monsters)
+    {
+        ended = [.. conn.Auras.Values];
+        conn.Auras.Clear();
+        conn.Pools = PoolsFor(conn, conn.Pools.Level);
+        conn.ApplyMovementSpeed();
+    }
+    foreach (var aura in ended)
+        foreach (var packet in AuraCatalog.EndPackets(aura, PlayerId))
+            await Send(remote, stream, ciphers, packet, $"aura {aura.EffectId} ends on death");
+    if (ended.Count > 0)
+    {
+        await SendCharacterStats(remote, stream, ciphers, conn, "auras cleared on death");
+        await SendPlayerMana(remote, stream, ciphers, conn, "aura reservation cleared on death");
+    }
+}
+
+static async Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label)
+{
+    await EndAurasOnDeath(remote, stream, ciphers, conn);
+    await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), label);
+}
+
 static int ReservedMana(ClientState conn)
 {
     lock (conn.Monsters) return AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
@@ -3587,6 +3632,7 @@ static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionC
         var rf = conn.RighteousFire;
         if (conn.PlayerLife == 0)
         {
+            await EndAurasOnDeath(remote, stream, ciphers, conn);
             if (rf is not null) await EndRighteousFire(remote, stream, ciphers, conn, "death");
             continue;
         }
@@ -4296,7 +4342,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
             $"0x01b1 player dev {type} hit for {dealt} ({amount} before {mitigation}), life {life}/{conn.PlayerMaxLife}");
         if (life == 0)
-            await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
+            await PlayerDied(remote, stream, ciphers, conn, $"0x0055 death screen ({conn.League ?? "?"} league, dev hit)");
         await conn.Commands!.Reply($"{type}: {amount} → {dealt} after {mitigation}; life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("suppression", "/suppression (Spell Suppression chance, roll and damage reduction)", async _ =>
@@ -4416,7 +4462,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
             $"0x01b1 player dev spell {type} hit for {dealt} ({amount} before {mitigation}, suppression {(suppressed ? "yes" : "no")}), life {life}/{conn.PlayerMaxLife}");
         if (life == 0)
-            await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev spell hit)");
+            await PlayerDied(remote, stream, ciphers, conn, $"0x0055 death screen ({conn.League ?? "?"} league, dev spell hit)");
         double effective = DamageModel.EffectiveSuppressionChance(chance, lucky, unlucky);
         await conn.Commands!.Reply($"{type} spell hit: {amount} → {dealt} after {mitigation}; " +
             $"suppression {(suppressed ? "rolled" : "not rolled")} ({chance}% chance, effective {effective:0.#}%" +
@@ -4503,7 +4549,7 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
             await SendPlayerMana(remote, stream, ciphers, conn,
                 $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
         if (life == 0)
-            await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league, dev block hit)");
+            await PlayerDied(remote, stream, ciphers, conn, $"0x0055 death screen ({conn.League ?? "?"} league, dev block hit)");
         await conn.Commands!.Reply($"{(spell ? "Spell" : "Attack")} hit: {amount} → {dealt}; {(blocked ? "blocked" : "not blocked")} ({chance}% chance); life {life}/{conn.PlayerMaxLife}.");
     })
     .Add("god", "/god (toggles: 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, 200% increased area of effect, +10 000 life, +1000 attributes)", async _ =>
@@ -5185,7 +5231,7 @@ static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCi
         await SendPlayerMana(remote, stream, ciphers, conn,
             $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
     if (life == 0)
-        await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), $"0x0055 death screen ({conn.League ?? "?"} league)");
+        await PlayerDied(remote, stream, ciphers, conn, $"0x0055 death screen ({conn.League ?? "?"} league)");
 }
 
 // The death screen's buttons (C→S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
@@ -5198,6 +5244,7 @@ static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphe
     {
         if (conn.PlayerLife > 0) return;
         conn.PlayerLife = conn.PlayerMaxLife;
+        conn.AuraDeathHandled = false;
         conn.PlayerMana = (uint)UnreservedMana(conn);
         foreach (var m in conn.Monsters.Values) m.Aggro = false;
     }
@@ -6356,6 +6403,8 @@ static async Task OpenHorticrafting(string remote, NetworkStream stream, Connect
     var (_, stop, arrive) = conn.Walk.WalkUpTo(conn.HorticraftingAt.X, conn.HorticraftingAt.Y, 8, now);
     if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
     if (conn.Closed || conn.ActionCount != action || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, 8)) return;
+    conn.BenchOpen = false;
+    await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
     await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HorticraftingUi),
         "0x007b open Horticrafting Station recipe browser");
 }
@@ -7807,6 +7856,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public ushort NextBuff = 1;
     public uint PlayerMaxLife => Pools.Life;
     // The player's life as the server keeps it (PlayerObject's Life, full on creation); 0 = dead.
+    public bool AuraDeathHandled;
     public uint PlayerLife;
     // The player's mana as the server keeps it: spent by gem skills (mana_cost), regenerated by RunPlayerTick.
     public uint PlayerMana;
