@@ -363,6 +363,10 @@ sealed class SkillCatalog(string folder = "data")
         return _projectiles.Value.TryGetValue(id, out int speed) ? (id, speed) : null;
     }
 
+    /// <summary>A Projectiles.dat row by its Id (<c>Metadata/Projectiles/DefaultArrow</c> for a bow's ordinary attack).</summary>
+    public (string Id, int Speed)? Projectile(string id) =>
+        _projectiles.Value.TryGetValue(id, out int speed) ? (id, speed) : null;
+
     private readonly Lazy<Dictionary<string, int>> _projectiles = new(() =>
     {
         string path = Path.Combine(folder, "tables", "Projectiles.json");

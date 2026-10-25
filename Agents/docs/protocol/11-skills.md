@@ -502,15 +502,16 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
 
 - **Object.** A 0x2b9 of the Projectiles.dat type named after the effect (`Metadata/Projectiles/Fireball`, hash of the
   path; the type register knows it from the table). `Metadata/Projectiles/Projectile` deserializes Positioned,
-  BaseEvents, Animated and Projectile, so the blob is Positioned, one Animated byte and the tasks byte
-  (`ProjectileObject`), then 0x1a9 (wake zone). The real link between a skill and its projectile is unknown; the
-  Gateway matches the Id.
+  Animated, BaseEvents and Projectile, so the blob is Positioned, one Animated byte and the tasks byte
+  (`ProjectileObject`; the Animated component is index 1), then 0x1a9 (wake zone). The real link between a skill and
+  its projectile is unknown; the Gateway matches the Id.
 - **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
   cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
   (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets
-  z = −height × 7.8125. With 0 the fireball sat under the ground and did not seem to move; with 0x7fffffff it flies
-  (slowed to 10 cells per second with `Game_PROJECTILE_SPEED` to watch it). Positioned's vtable +0xd8, which the move
-  calls when the flag byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
+  z = height × 7.8125, the height read as a signed world z (positive down; a negative value is above sea level).
+  With 0 the fireball sat under the ground and did not seem to move; with 0x7fffffff it flies (slowed to 10 cells per
+  second with `Game_PROJECTILE_SPEED` to watch it). Positioned's vtable +0xd8, which the move calls when the flag
+  byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
 - **Rotation.** Positioned rotation (+0x29c) = **atan2(dx, −dy)** in grid cells (the player's own moves traced with
   `trace-move.js`: facing (+15, −18) read 0.668).
 - **Ordinary speed modifiers (2026-10-25; automated and live Fireball checks).** `ProjectileSpeed` scales the
@@ -551,13 +552,14 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   it yet. Grids exist for Lioneye's Watch and The Coast seed 1.
 - **Explosion (live 2026-10-18).** Projectiles.dat names the impact as an animation of the projectile's own .ao
   (Fireball: ImpactAnimationIds `fireball_explode` → `point_impact.pet`). No server message found yet plays an
-  animation by name, so on a hit the server swaps the projectile's animated object instead: S→C 0x2ba to component 2
-  (Animated, in the order Positioned, BaseEvents, Animated, Projectile, Render) with flags bit0 and the path
+  animation by name, so on a hit the server swaps the projectile's animated object instead: S→C 0x2ba to component 1
+  (Animated, in the order Positioned, Animated, BaseEvents) with flags bit0 and the path
   `Metadata/Effects/Spells/fireball/explode_new2.ao`, whose default animation `animate` plays the `splode` particles
   and the End sound (reader `0x141e57490`: bit0 path, bit1 a 0x2c-table index, bit2 `0x141e5adb0` attachments; no
-  bit3 there). The object is removed 1.5 s later. `Game_PROJECTILE_IMPACT_AO` overrides the path (`none` turns it
-  off). `Metadata/Effects/Effect` (Positioned, BaseEvents, Animated, LimitedLifespan) would be the cleaner carrier but
-  is not known to be in the client's type register; an unknown type throws in `0x142187480`.
+  bit3 there). Only Fireball gets this explosion; a bow arrow's impact is `none` (it sticks/disappears and its
+  burning is the monster's debuff). The object is removed 1.5 s later. `Game_PROJECTILE_IMPACT_AO` overrides the path
+  (`none` turns it off). `Metadata/Effects/Effect` (Positioned, BaseEvents, Animated, LimitedLifespan) would be the
+  cleaner carrier but is not known to be in the client's type register; an unknown type throws in `0x142187480`.
 - **Tilt.** `Metadata/Projectiles/Projectile.ot` gives the client's Render `tilt_to_target` and
   `maintain_tilt_after_movement` (type data +0x76, +0x77; parser `0x1415ef5e0`). Render (`0x1415f53c0`) pitches the
   model by −`0x141e35c00`(Positioned, maintain): atan(dz / distance) of the current move, or, when not moving and
@@ -568,14 +570,15 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   entries (tile data pointer, +0x36 rotation code, +0x30 i16 height offset), result = the tile's height at the
   tile-local cell (`0x141d7d100`) + terrain +0x104 × the tile's offset; `0x141e35800` interpolates four cells. With a
   height grid (`TerrainHeights`, data/walkability/<area>_seed<seed>.heights.bin, int16 per cell, −32768 = unknown) the
-  Gateway sends the projectile at terrain + `Game_PROJECTILE_HEIGHT` steps (default 8) in Positioned's f0 0x04 fixed
-  height and in 0x1ba. Only Lioneye's Watch has a grid (−48..72), where skills cannot be used.
-- **Capturing heights from the client failed** (2026-10-18, four client crashes or hangs, so the walk-map recorder does
-  not do it): dumping every cell from Frida's thread at the first lookup worked in town but crashed on The Coast (the
-  terrain was still being built); a native listener on `0x141d84b00` that called the hooked function crashed at login;
-  delayed dumps hit unreadable tiles (access violations; the lookup is called with several terrain pointers) and hung
-  the client. Next: compute the heights offline from the tile files the atlas already reads (the .tdt heights and each
-  placed tile's height offset).
+  Gateway sends the projectile at terrain + `Game_PROJECTILE_HEIGHT` steps (default 5, the torso) as the signed world
+  z: Positioned f0 0x04's i32 is -z / 7.8125 and its f32 is z; 0x1ba carries the same signed z.
+  Without a grid it uses the bare offset.
+  The grid covers natural terrain, not doodads/platforms; the protocol carries no player z, so platforms and doodads
+  need a server-side world/surface height model (issue #182).
+- **Capturing heights from the client** (2026-10-18): direct dumps from Frida's thread crashed or hung the client
+  (the terrain was still being built; the lookup runs with several terrain pointers). The read-only capture below
+  (`capture-terrain-tiles.js` + `heights.py`, no calls into the client) works; an offline `.tdt` calculation is still
+  possible from the same tile files.
 - **Heights in the .tdt (decoded offline, 2026-10-18).** The binary parser is `0x1429f31a0`. After the header (§6 of
   08-area-transitions.md) come a u16 flags word, a hull-plane count byte (0 here), then a u16 subtile count (w × h)
   and one record per subtile, row by row: u16 flags, u8, [3 bytes if the high flag byte has bit 1, version ≥ 13],
@@ -592,20 +595,22 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   `scripts/re/frida/capture-terrain-tiles.js` dumps them on entry (no calls into the client; the client stayed up);
   `scripts/walkmaps/heights.py` applies the client's lookup (code tables `0x142fa04b0`, `0x142fb7f98`). The town
   capture reproduces the known grid exactly; The Coast seed 1 is 1725 × 1725, −37..90.
-- **Sign.** World z points down: the client's terrain z is −height × 7.8125 (`0x141e35800`), and Positioned's fixed
-  height is i32 z / 7.8125 with f32 z, as the area transitions send it. S→C 0x1ba takes +height. Sending +height in the
-  fixed height put the fireball under raised ground; with −height it flies above the ground at every level (belly
-  height with the default 8 steps).
+- **Sign.** World z points down and the protocol's height is a signed world z in 7.8125-unit steps, not a positive
+  "up" value: 0x1ba's u32 is that signed value (a positive height is below sea level, a negative one above), and
+  Positioned's f0 0x04 block is i32 -z / 7.8125 with f32 z. Sending the positive "height up" put the arrow at
+  z = +117 (under the hideout platform); the same value negated (0xfffffff1) put it at z = -117, the torso. The live
+  arrow's i32 -5 / f32 +39.0625 is z = +39.0625, five steps above a player at z = +78.125.
 - **Flight (live 2026-10-18).** S→C 0x1ba's float is the move's **duration in seconds**, not a speed: the handler
   passes distance / it as the speed, and the step walker sets Positioned +0x23c = that speed and +0x240 = the time per
   cell step (duration / the path's longest axis), advancing +0x244 by the frame time (`0x141e32710`). Sending the
   speed (95.7) made each step take ~1 s, so the fireball crawled (~10 world units/s, sampled with Frida); sending
-  distance / speed it flies at ~1000 units/s. The fireball now starts `Game_PROJECTILE_AHEAD` cells (4) in front of the
-  caster and, cast at the ground, flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area); cast at a
+  distance / speed it flies at ~1000 units/s. The fireball now starts `Game_PROJECTILE_AHEAD` cells (1.5) in front of
+  the caster and, cast at the ground, flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area); cast at a
   monster it stops there and hits. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
-- **Still wrong.** Without a height grid the fireball flies on the terrain. The
-  four floats of Positioned's f1 0x04 block (+0x2d8..+0x2e4, zero by default) are not the direction: (dx, dy, 0, 0) put
-  it under the ground (`Game_PROJECTILE_DIRECTION=1` sends them).
+- **Still wrong.** Without a surface-height model the projectile uses the captured terrain height; on a platform or
+  doodad (which the terrain grid does not include) it spawns below the player (issue #182). The direction floats of
+  Positioned's f1 0x04 block are not used; sending (dx, dy, 0, 0) put the fireball under the ground, so the Gateway no
+  longer sends them.
 
 ## 10a. Weapon restrictions: why a skill is greyed out
 
