@@ -77,6 +77,32 @@ public class PenetrationTests : IDisposable
     }
 
     [Fact]
+    public void Player_and_skill_penetration_on_the_same_stat_add_without_mutating_either_source()
+    {
+        Set("base_reduce_enemy_fire_resistance_%", 20);
+        var skill = new Dictionary<uint, int>
+        {
+            [_catalog.Key("base_reduce_enemy_fire_resistance_%")!.Value] = 10,
+            [_catalog.Key("base_penetrate_elemental_resistances_%")!.Value] = 5,
+            [_catalog.Key("base_attack_damage_penetrates_fire_resist_%")!.Value] = 7,
+        };
+        Assert.Equal(42, Penetration.Of(_stats, _catalog, attack: true, skill).Fire);
+        Assert.Equal(35, Penetration.Of(_stats, _catalog, attack: false, skill).Fire);
+        Assert.Equal(20, _stats[_catalog.Key("base_reduce_enemy_fire_resistance_%")!.Value]);
+        Assert.Equal(10, skill[_catalog.Key("base_reduce_enemy_fire_resistance_%")!.Value]);
+    }
+
+    [Fact]
+    public void A_skill_prohibition_blocks_player_penetration_and_keeps_attack_chaos()
+    {
+        Set("base_reduce_enemy_fire_resistance_%", 20);
+        Set("base_attack_damage_penetrates_chaos_resist_%", 30);
+        var skill = new Dictionary<uint, int> { [_catalog.Key("cannot_penetrate_or_ignore_elemental_resistances")!.Value] = 1 };
+        Assert.Equal(new Penetration.PerType(0, 0, 0, 30), Penetration.Of(_stats, _catalog, attack: true, skill));
+        Assert.Equal(default, Penetration.Of(_stats, _catalog, attack: false, skill));
+    }
+
+    [Fact]
     public void The_cannot_penetrate_flag_turns_every_elemental_penetration_off_and_keeps_chaos()
     {
         Set("base_reduce_enemy_fire_resistance_%", 10);

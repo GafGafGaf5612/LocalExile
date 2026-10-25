@@ -13,9 +13,9 @@ using DamageType = GameServer.Core.World.DamageType;
 /// The main_hand_/off_hand_ and local_ weapon-hand aliases are not read: the server attacks with the main hand's
 /// global stats, and a weapon-local scope guess would double-count. The non-base
 /// reduce_enemy_elemental/chaos_resistance_% variants (Penetration Support's own granted stat in this client) are a
-/// separate follow-up, as are the conditional variants (non-critical strikes, while affected by an aura, against
-/// chilled enemies) for the critical-strike resistance work (#216). Spells take the general stats only; chaos has no
-/// general stat in this client, only the attack-only one. Physical damage never penetrates, and "your hits cannot
+/// separate follow-up. The non-critical companion belongs to #216; aura and enemy-state conditions remain separate
+/// work. Spells take the supported general stats only; this consumer reads chaos from the attack-only stat.
+/// Physical damage never penetrates, and "your hits cannot
 /// penetrate or ignore elemental resistances" turns every elemental penetration off (chaos is not elemental).
 /// </summary>
 static class Penetration
@@ -35,10 +35,12 @@ static class Penetration
     }
 
     /// <summary>The penetration of one hit: the general stats on every hit, the attack-only ones added for an attack.
-    /// <paramref name="stats"/> is the hit's own merged stats (the player's, with the skill's own on top).</summary>
-    public static PerType Of(IReadOnlyDictionary<uint, int> stats, StatCatalog catalog, bool attack)
+    /// The player's and skill's contributions to the same raw penetration stat add, without overwriting either source.</summary>
+    public static PerType Of(IReadOnlyDictionary<uint, int> stats, StatCatalog catalog, bool attack,
+        IReadOnlyDictionary<uint, int>? skill = null)
     {
-        int Get(string name) => catalog.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+        int Get(string name) => catalog.Key(name) is uint key
+            ? stats.GetValueOrDefault(key) + (skill?.GetValueOrDefault(key) ?? 0) : 0;
         // "your hits cannot penetrate or ignore elemental resistances" (a flag stat): the whole elemental branch is
         // off, general and attack-only (PoB CalcOffence's CannotElePenIgnore); chaos is not elemental.
         bool elementalBlocked = Get("cannot_penetrate_or_ignore_elemental_resistances") != 0;

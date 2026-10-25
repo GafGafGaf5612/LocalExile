@@ -124,12 +124,10 @@ partial class Program
         }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var player = CharacterPlayerStats(conn);
-        // The hit's penetration: the player's stats (passives, items, auras) with the attack's own on top, so a
-        // skill-granted penetration stat counts; the attack-only variants apply (this is an attack).
-        var hitStats = new Dictionary<uint, int>(player);
-        if (attackEffect >= 0)
-            foreach (var (key, value) in Skills.EffectStats(attackEffect, 1)) hitStats.TryAdd(key, value);
-        var pen = Penetration.Of(hitStats, Stats, attack: true);
+        // Penetration sums player and skill sources even when they grant the same raw stat.
+        var ownPenetration = attackEffect >= 0
+            ? Skills.EffectStats(attackEffect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2) : null;
+        var pen = Penetration.Of(player, Stats, attack: true, ownPenetration);
         var hit = AttackHit(weapon, player)
             .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
         // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
@@ -470,10 +468,9 @@ partial class Program
             var own = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             int chance = projectileHitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
                 () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
-            foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
-            // The hit's penetration: the player's and the skill's stats; spells take the general stats only.
-            var pen = Penetration.Of(stats, Stats, attack: !spell);
+            var pen = Penetration.Of(stats, Stats, attack: !spell, own);
+            foreach (var (k, v) in own) stats[k] = v;
             var hit = projectileHitPlan.BuildHit(
                 () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
                         Skills.DamageEffectiveness(gem.Effect, gem.Level))
@@ -558,9 +555,8 @@ partial class Program
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int criticalChance = hitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
             () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats));
+        var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats);
         foreach (var (k, v) in skillStats) stats[k] = v;
-        // The hit's penetration: the player's and the skill's stats; spells take the general stats only.
-        var pen = Penetration.Of(stats, Stats, attack: !spell);
         foreach (var (id, m) in targets)
         {
             DamagePacket hit = hitPlan.BuildHit(

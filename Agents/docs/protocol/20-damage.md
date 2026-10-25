@@ -60,6 +60,12 @@ that capped value with no second clamp, as Path of Building's `calcResistForType
 494..509 and 3490..3500): the effective resistance can go below the floor, so penetration against a negative
 resistance deals more than the raw damage. Penetration is read per hit from the player's and the skill's own stats
 and never touches the rolled input; the critical multiplier still applies once, to the mitigated total.
+Player and skill contributions to the same raw penetration stat add in `Penetration.Of`.
+All three hit paths collect those contributions before the general damage-stat dictionary overlays skill values.
+Nine real-client checks read the target's native Life component after each authoritative update.
+A level-68 fire skeleton took 60 from fixed 100 fire, then 80, 90 and 100 as penetration sources stacked.
+The prohibition restored 60; its zero cold resistance took 100, then 120 with 20 cold penetration.
+Map Hillock's 25% chaos resistance took 75, then 105 with 30 attack chaos penetration.
 
 The unconditional stats the server reads (whole percents, this client's Stats.dat names):
 
@@ -74,8 +80,9 @@ The unconditional stats the server reads (whole percents, this client's Stats.da
 The `main_hand_…`/`off_hand_…` and `local_…` weapon-hand aliases are not read (the server attacks with the main
 hand's global stats, and a weapon-local scope guess would double-count), and neither are the non-base
 `reduce_enemy_elemental/chaos_resistance_%` variants (Penetration Support's own granted stat in this client) or the
-conditional ones (non-critical strikes, while affected by an aura, against chilled enemies) — those stay with the
-critical-strike resistance work (#216). Spells take the general stats only; chaos has no general stat in this
+conditional ones (non-critical strikes, while affected by an aura, against chilled enemies).
+The non-critical companion is handled by #216; aura and enemy-state conditions remain separate work.
+Spells take the supported general stats only; this consumer supports chaos through the attack-only stat in this
 client, only the attack-only one; physical damage never penetrates.
 
 The same packet is used for attacks, spells and monster hits. The caller decides whether the attack-only or spell-only

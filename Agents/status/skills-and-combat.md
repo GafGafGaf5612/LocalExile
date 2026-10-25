@@ -251,8 +251,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   Not yet: exposure, conditional penetration (non-critical strikes, aura conditions), added damage,
   increased/more support modifiers, ailment application/duration ([20](../docs/protocol/20-damage.md)).
   Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
-  attack-only variants, the cannot-penetrate flag; DoT and physical take none), with the real-table tests passing;
-  live verification against the real client is pending and coordinated outside this change.
+  attack-only variants, the cannot-penetrate flag; DoT and physical take none).
+  Player and skill contributions to the same raw penetration stat add without overwriting either source.
+  Nine native checks verified fixed 100-fire hits for 60 → 80 → 90 → 100 damage as penetration stacked,
+  the prohibition returning 60, cold penetration giving 120 against zero resistance, and chaos 75 → 105.
+  Each check read the actual native monster life after the authoritative update.
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.
