@@ -181,11 +181,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         shaping.RoundAll();
         onStage?.Invoke("beforeTiling", Graph);
         // The edge types whose tiles get their open sides filled (0x141feed20) are listed in the FillTiles object
-        // (master +0x218, +0x140); a .gft that names edge types is not ported.
+        // (master +0x218, +0x140).
         string? gftPath = master.TryGetValue("FillTiles", out var gft) ? TerrainText.Resolve(masterPath, gft) : null;
-        if (gftPath is not null && (files.Text(gftPath) ?? "").Contains(".et\"", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException($"{gftPath}: fill tiles with edge types (FillTiles +0x140, 0x141feed20) are not ported");
-        List<EdgePoint> edgePoints = [];
+        var edgePoints = gftPath is null ? [] : files.FillEdgeTypes(gftPath);
         var tiling = new EdgeTiling(Graph, grid, _ox, _oy, rng, e => files.Edge(e.Type) ?? throw new FileNotFoundException(e.Type), files, store, notes, edgePoints);
         tiling.Run();
         special.RunLonely();
@@ -205,7 +203,11 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         // default ground (+0xb0) on every vertex still without one.
         LevelGenerator.PaintStarting?.Invoke(grid, _ox, _oy, Graph.Width, Graph.Height);
         grounds.FillUnset(GraphGround(Graph.DefaultGround), GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), levels);
-        grounds.EdgePoints(tiling.EdgePointTiles, edgePoints);
+        if (tiling.EdgePointTiles.Count != 0)
+        {
+            var sideFill = new Fill(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store, files.FillTiles(gftPath!), special.Rooms, notes);
+            grounds.EdgePoints(tiling.EdgePointTiles, edgePoints, sideFill.FillSide);
+        }
         grounds.Unlock();
         // +0x90 / +0x94 = the levels: from here on the fill object's listener (0x141fef240) repaints the level grounds
         // under every tile that room tilising and the fill place.

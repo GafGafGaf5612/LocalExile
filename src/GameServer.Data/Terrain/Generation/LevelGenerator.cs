@@ -406,6 +406,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         _doorwayOf = new int[_grid.Width * _grid.Height];
         if (master.TryGetValue("EdgeCombination", out var ecf))
             _combiner = EdgeCombiner.Parse(files.Text(TerrainText.Resolve(masterPath, ecf)) ?? "", masterPath);
+        if (master.TryGetValue("FillTiles", out var edgeGft)) _edgePoints = files.FillEdgeTypes(TerrainText.Resolve(masterPath, edgeGft));
         // 0x1420f3480: 0x1420ef310 per room.
         foreach (var p in map.Rooms)
         {
@@ -582,7 +583,19 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 // slot height plus the tile's own, whatever grounds they have.
                 _grid.Place(tile, orientation, x, y, height);
                 _grid.SetHeight(x, y, height);
+                RecordEdgeTypes(key, x, y);
             }
+    }
+
+    /// <summary><c>0x1420f8df0</c>: a placed tile whose key has an edge type of the FillTiles object's +0x140 list on one to
+    /// three sides is recorded (tiler +0x40) once per such list entry, for the edge fill (<c>0x141feed20</c>).</summary>
+    void RecordEdgeTypes(TileKey key, int x, int y)
+    {
+        for (int i = 0; i < _edgePoints.Count; i++)
+        {
+            int n = key.Edges.Count(e => string.Equals(e, _edgePoints[i].Edge, StringComparison.OrdinalIgnoreCase));
+            if (n is >= 1 and <= 3) _edgeRecords.Add((x, y, i));
+        }
     }
 
     // 0x141fe89e0's offset of a slot's tile by (1 − w, 1 − h) per orientation, as 0x141fea780's (SpecialNodes).
@@ -909,6 +922,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     }
 
     readonly List<(int X, int Y, string? Ground, short Height, bool Accessible)> _fillRecords = [];
+    // Tiler +0x40 (0x1420f8df0): placed tiles with an edge type of the FillTiles object's +0x140 list.
+    readonly List<(int X, int Y, int Index)> _edgeRecords = [];
+    List<EdgePoint> _edgePoints = [];
     readonly List<PlacedRoom> _fillRooms = [];
 
     /// <summary><c>0x141feffb0</c> for the outer ground: the first fill tile of its ground.</summary>
@@ -1127,16 +1143,20 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// <summary><c>0x1420f3480</c>'s fill: after the shrines (<c>0x1420f2340</c>), the records sorted by (x, y)
     /// (<c>0x14212d520</c>); each still-empty one is filled (<c>0x1420f3de0</c> → <c>0x141feb970</c>) for its ground, or,
     /// without one, its top-left vertex's ground when that vertex has flag 1. The fill's view is the tiler's, so a tile
-    /// reaching more than one entry into the outer buffer does not fit. Not ported before it: <c>0x1420f1590</c>
-    /// and <c>0x1420f3100</c> (unique and pre-unique rooms) and the overlay passes.</summary>
+    /// reaching more than one entry into the outer buffer does not fit. All of it only with FillTiles (master +0x218).
+    /// Between the shrines and the fill the recorded edge tiles get their open sides filled (<c>0x141feed20</c>,
+    /// <see cref="GroundStages.EdgePoints"/>). Not ported before it: <c>0x1420f1590</c> and <c>0x1420f3100</c> (unique and
+    /// pre-unique rooms) and the overlay passes.</summary>
     void FillRecords(Dictionary<string, string> master, string masterPath)
     {
-        bool hasFills = master.TryGetValue("FillTiles", out var gft);
+        if (!master.TryGetValue("FillTiles", out var gft)) return;
         var (vx, vy, vx1, vy1) = _view;
         var fill = new Fill(files, rng, _grid, vx, vy, vx1 - vx, vy1 - vy, _store,
-            hasFills ? files.FillTiles(TerrainText.Resolve(masterPath, gft!)) : [], _fillRooms, notes);
+            files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes);
         Shrines(master, masterPath, fill);
-        if (!hasFills) return;
+        if (_edgeRecords.Count != 0)
+            new GroundStages(_grid, vx, vy, vx1 - vx, vy1 - vy, files).EdgePoints(
+                [.. _edgeRecords.Select(r => (r.X - vx, r.Y - vy, r.Index))], _edgePoints, fill.FillSide);
         foreach (var (x, y, ground, height, accessible) in _fillRecords.OrderBy(r => r.X).ThenBy(r => r.Y))
         {
             if (_grid[x, y] is not null) continue;
@@ -1246,7 +1266,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// the other corners have one height, all at 0 with that height added to the tile's. A tile placed with moved
     /// points (or for a neighbour) is forced; then the neighbours across the moved sides take the middle point too
     /// (<c>0x1420f5b20</c>). <paramref name="adjacent"/> is that call's flag: no point moves, no neighbours.
-    /// Not ported: the descriptions' objects (<c>0x141d83f10</c>) and the edge-type records of <c>0x1420f8df0</c>.</summary>
+    /// Then the edge-type records (<c>0x1420f8df0</c>). Not ported: the descriptions' objects (<c>0x141d83f10</c>).</summary>
     bool PlaceOverlap(TileKey key, string tag, int x, int y, int height, bool adjacent = false)
     {
         var work = key.Clone();
@@ -1323,7 +1343,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var (tile, orientation) = Weighted(found, (int)rng.Next((uint)found.Sum(c => c.Weight)));
         _grid.Place(tile, orientation, x, y, (short)height, force: moved.Count != 0 || adjacent);
         _grid.SetHeight(x, y, (short)height);
-        if (!adjacent) Adjacent(work, x, y, moved);
+        if (!adjacent)
+        {
+            Adjacent(work, x, y, moved);
+            RecordEdgeTypes(key, x, y);
+        }
         return true;
     }
 

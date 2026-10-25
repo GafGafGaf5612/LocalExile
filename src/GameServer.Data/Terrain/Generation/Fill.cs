@@ -126,6 +126,60 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
         return Entry(x, y) is null ? FillEntry(x, y, ground, open, height) : 0;
     }
 
+    /// <summary><c>0x141fed640</c>: the fill of the empty entry beside an edge tile's open side
+    /// (<see cref="GroundStages.EdgePoints"/>), at the given height. As <see cref="FillEntry"/>, but a choice reaching
+    /// across the side is shifted to end at the entry (side 0: up by its height − 1; side 3: left by its width − 1),
+    /// "open" comes from the ground alone (none or flag 4), and no room is left out for its spawn points
+    /// (<c>0x141fee9f0</c>).</summary>
+    internal void FillSide(int x, int y, string? ground, short height, int side)
+    {
+        if (!grid.Inside(x + offsetX, y + offsetY) || Entry(x, y) is not null) return;
+        if (ground is not null && (Flags(ground) & 0x10) != 0) ground = null;
+        bool open = ground is null || (Flags(ground) & 4) != 0;
+        var group = Group(ground) ?? throw new InvalidOperationException(
+            $"No fill tiles or fill rooms for ground type \"{(ground is null ? "default" : files.Ground(ground)?.Name)}\" at ({x}, {y})");
+        Choice? chosen = null;
+        int o = 8;
+        var list = group.Rooms.Count == 0 ? group.Tiles : [.. group.Tiles.Where(c => c.Weight != 0)];
+        foreach (var c in group.Rooms)
+        {
+            var k = c.Room!.Key;
+            if (k.Edges.Any(e => e is not null && files.Edge(e)?.Wildcard != true))
+                throw new InvalidOperationException($"Room in fill tile list has edge(s) in its Room Tile Key: {c.Room.Path}");
+            if (k.Grounds.Any(rg => Unsuited(rg, ground)))
+                throw new InvalidOperationException($"Fill room {c.Room.Path} is not compatable with ground type {ground ?? "(default)"}");
+            if (c.Weight != 0) list.Add(c);
+        }
+        int total = list.Sum(c => c.Weight);
+        bool copied = group.Rooms.Count != 0;
+        while (list.Count > 0)
+        {
+            var c = Pick(list, (int)rng.Next((uint)total));
+            o = c.Tile is not null ? TileOrientation(c, x, y, side) : RoomOrientation(c.Room!, c.Orientation, x, y, side);
+            if (o != 8) { chosen = c; break; }
+            if (!copied) { list = [.. list]; copied = true; }
+            Without(list, c, ref total);
+        }
+        if (chosen is null) return;
+        if (chosen.Tile is { } tile)
+        {
+            var (w, h) = Orientation.Size(o, tile.Width, tile.Height);
+            var (ax, ay) = Anchor(x, y, w, h, side);
+            grid.Place(tile, o, ax + offsetX, ay + offsetY, height);
+            TilePlaced?.Invoke(tile, o, ax, ay);
+            return;
+        }
+        var room = chosen.Room!;
+        var (rw, rh) = Orientation.Size(o, room.Width, room.Height);
+        var (rx, ry) = Anchor(x, y, rw, rh, side);
+        notes.Add($"edge fill room {Path.GetFileName(room.Path)} o{o} at ({rx + offsetX}, {ry + offsetY})");
+        FillRoom(room, rx, ry, o, height, ground, open);
+    }
+
+    /// <summary><c>0x141fee460</c> / <c>0x141fee670</c>: a w × h choice beside side 0 or 3 ends at the entry.</summary>
+    static (int X, int Y) Anchor(int x, int y, int w, int h, int side) =>
+        (side == 3 ? x + 1 - w : x, side == 0 ? y + 1 - h : y);
+
     /// <summary><c>0x141fe89e0</c> for a room placed before the fill (the tile graph's shrines and pre-unique rooms):
     /// see <see cref="FillRoom"/>.</summary>
     internal void PlaceRoom(RoomDef room, int x, int y, int o, short height, string? ground, bool open) =>
@@ -165,20 +219,22 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
 
     /// <summary><c>0x141fecd00</c>: a fixed orientation if the tile fits so; a square tile <c>Next(8)</c> when it fits;
     /// any other the orientations it fits in (even codes for its own size, odd for the turned one), <c>Next(840)</c>.</summary>
-    int TileOrientation(Choice c, int x, int y)
+    int TileOrientation(Choice c, int x, int y, int side = -1)
     {
         var tile = c.Tile!;
-        if (c.Orientation != 8) return TileFits(tile, x, y, c.Orientation) ? c.Orientation : 8;
-        if (tile.Width == tile.Height) return TileFits(tile, x, y, 0) ? (int)rng.Next(8u) : 8;
-        byte mask = (byte)((TileFits(tile, x, y, 0) ? 0x55 : 0) | (TileFits(tile, x, y, 1) ? 0xaa : 0));
+        if (c.Orientation != 8) return TileFits(tile, x, y, c.Orientation, side) ? c.Orientation : 8;
+        if (tile.Width == tile.Height) return TileFits(tile, x, y, 0, side) ? (int)rng.Next(8u) : 8;
+        byte mask = (byte)((TileFits(tile, x, y, 0, side) ? 0x55 : 0) | (TileFits(tile, x, y, 1, side) ? 0xaa : 0));
         return mask == 0 ? 8 : LevelRandom.OrientationFromMask(mask, rng.Next(840u));
     }
 
     /// <summary><c>0x141fecc10</c> → <c>0x141ffbbe0</c>: within the view give or take one entry, and the map area is free
-    /// (<c>0x141d84ed0</c> with the ground checks off; <c>0x141feb800</c> only looks at the entry itself, which is empty).</summary>
-    bool TileFits(TileDef tile, int x, int y, int o)
+    /// (<c>0x141d84ed0</c> with the ground checks off; <c>0x141feb800</c> only looks at the entry itself, which is empty).
+    /// Beside an edge tile's side (<c>0x141fee460</c>) the tile is first shifted to end at the entry.</summary>
+    bool TileFits(TileDef tile, int x, int y, int o, int side = -1)
     {
         var (w, h) = Orientation.Size(o, tile.Width, tile.Height);
+        (x, y) = Anchor(x, y, w, h, side);
         if (x < -1 || y < -1 || x + w > width + 1 || y + h > height + 1) return false;
         return AreaFree(x + offsetX, y + offsetY, w, h);
     }
@@ -195,19 +251,21 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
 
     /// <summary><c>0x141fecf80</c>: a fixed orientation if the room fits so; a square room <c>Next(8)</c> when it fits;
     /// any other the orientations it fits in, <c>Next(840)</c>.</summary>
-    int RoomOrientation(RoomDef room, int fixedO, int x, int y)
+    int RoomOrientation(RoomDef room, int fixedO, int x, int y, int side = -1)
     {
-        if (fixedO != 8) return RoomFits(room, x, y, fixedO) ? fixedO : 8;
-        if (room.Width == room.Height) return RoomFits(room, x, y, 0) ? (int)rng.Next(8u) : 8;
-        byte mask = (byte)((RoomFits(room, x, y, 0) ? 0x55 : 0) | (RoomFits(room, x, y, 1) ? 0xaa : 0));
+        if (fixedO != 8) return RoomFits(room, x, y, fixedO, side) ? fixedO : 8;
+        if (room.Width == room.Height) return RoomFits(room, x, y, 0, side) ? (int)rng.Next(8u) : 8;
+        byte mask = (byte)((RoomFits(room, x, y, 0, side) ? 0x55 : 0) | (RoomFits(room, x, y, 1, side) ? 0xaa : 0));
         return mask == 0 ? 8 : LevelRandom.OrientationFromMask(mask, rng.Next(840u));
     }
 
-    /// <summary><c>0x141fece90</c>: the turned room lies inside the view on free entries.</summary>
-    bool RoomFits(RoomDef room, int x, int y, int o)
+    /// <summary><c>0x141fece90</c>: the turned room lies inside the view on free entries (<c>0x141fee670</c>: shifted
+    /// to end at the entry beside an edge tile's side).</summary>
+    bool RoomFits(RoomDef room, int x, int y, int o, int side = -1)
     {
         var (w, h) = Orientation.Size(o, room.Width, room.Height);
-        return x < width && x + w <= width && y < height && y + h <= height && AreaFree(x + offsetX, y + offsetY, w, h);
+        (x, y) = Anchor(x, y, w, h, side);
+        return x >= 0 && y >= 0 && x + w <= width && y + h <= height && AreaFree(x + offsetX, y + offsetY, w, h);
     }
 
     // 0x141fea4d0's per-orientation shift of a tile in a slot by (1 − w, 1 − h).

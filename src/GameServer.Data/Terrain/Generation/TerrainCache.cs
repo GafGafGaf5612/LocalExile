@@ -436,9 +436,25 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         {
             var t = TerrainText.Tokenize(line);
             if (t.Count == 1 && t[0].Quoted) groups[t[0].Text] = current = [];
+            // An edge type header ("path.et" mode, 0x141fef920) files its lines under its own key (+0x40 / +0xc0),
+            // which no ported stage reads.
+            else if (t.Count == 2 && t[0].Quoted && t[1].IsNumber) current = null;
             else if (t.Count >= 2 && t[0].IsNumber && t[1].Quoted && current is not null) current.Add((t[0].Int, TerrainText.Resolve(path, t[1].Text), t.Count > 2 ? Orientation.Parse(t[2].Text) : 8));
         }
         return groups;
+    }) ?? [];
+
+    /// <summary>A fill tile list's edge type headers ("path.et" mode), in file order: the FillTiles object's +0x140 list
+    /// (<c>0x141fef920</c>), whose edge tiles get their open sides filled (<c>0x141feed20</c>).</summary>
+    public List<EdgePoint> FillEdgeTypes(string path) => Get("gft-et", path, d =>
+    {
+        var list = new List<EdgePoint>();
+        foreach (var line in TerrainText.Lines(TerrainText.Decode(d)))
+        {
+            var t = TerrainText.Tokenize(line);
+            if (t.Count == 2 && t[0].Quoted && t[1].IsNumber) list.Add(new EdgePoint(TerrainText.Resolve(path, t[0].Text), t[1].Int));
+        }
+        return list;
     }) ?? [];
 
     /// <summary>A room (.arm): its dictionary, tag, size and slot grid. Slot keys are resolved to paths.</summary>

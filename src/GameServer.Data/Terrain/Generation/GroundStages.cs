@@ -336,8 +336,10 @@ sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, in
     /// <summary><c>0x141feed20</c>: each edge tile recorded for an EdgePoints edge type (<see cref="EdgePoint"/>)
     /// whose key has that type on exactly two sides: on each side without an edge, the neighbouring entry gets a fill
     /// tile for the side's ground (mode 2: the side's first corner; otherwise the type's first (mode 0) or second
-    /// ground, when both corners of the side have it), unless the entry has a tile (<c>0x141fed640</c>, not ported).</summary>
-    public void EdgePoints(IReadOnlyList<(int X, int Y, int Index)> records, IReadOnlyList<EdgePoint> points)
+    /// ground, when both corners of the side have it and the entry lies in the view), at the tile's height plus that
+    /// corner's, unless the entry has a tile (<c>0x141fed640</c>, <see cref="Fill.FillSide"/>).</summary>
+    public void EdgePoints(IReadOnlyList<(int X, int Y, int Index)> records, IReadOnlyList<EdgePoint> points,
+        Action<int, int, string?, short, int> fill)
     {
         bool check = grid.CheckGrounds;
         grid.CheckGrounds = false;
@@ -360,8 +362,7 @@ sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, in
                     if (key.Grounds[s] != want || key.Grounds[(s + 1) & 3] != want) continue;
                     if ((uint)nx >= (uint)width || (uint)ny >= (uint)height) continue;
                 }
-                if (Entry(nx, ny) is null)
-                    throw new NotSupportedException($"edge point fill at ({nx}, {ny}) next to {Path.GetFileName(e.Tile.Path)} o{e.Orientation} at ({x}, {y}) side {s} mode {point.Mode} for {point.Edge} (0x141fed640) is not ported");
+                fill(nx, ny, key.Grounds[s], (short)(e.HeightOffset + key.Heights[s]), s);
             }
         }
         grid.CheckGrounds = check;
