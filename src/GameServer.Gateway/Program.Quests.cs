@@ -90,7 +90,13 @@ partial class Program
         AreaTransitionCatalog.IdOf(transition.DestinationHash16) is { } dest ? Quests.FlagToEnter(conn.Layout.Id, dest) : null;
 
     static bool TransitionShown(ClientState conn, AreaTransitionObject transition) =>
-        TransitionFlag(conn, transition) is not { } flag || conn.QuestFlags.Contains(flag);
+        TransitionFlag(conn, transition) is not { } flag || ClientHasQuestFlag(conn, flag);
+
+    // A quest flag as the client has it: the character's own, or one the World panel's access flags carry (an activated
+    // waypoint's area, 16-waypoints.md §4: the Submerged Passage's waypoint brings a1q4-PlacedGlyphs). The client opens
+    // its ways by these, so the server's checks follow them.
+    static bool ClientHasQuestFlag(ClientState conn, string flag) =>
+        conn.QuestFlags.Contains(flag) || Quests.Rows([flag]) is [int row] && PlayerQuestFlags(conn).Contains(row);
     static async Task SpawnOpeningTutorial(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         if (conn.Layout.Id != TutorialObjects.Strand || CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { } tutorial) return;
@@ -255,7 +261,7 @@ partial class Program
         try
         {
             conn.Glyphs = layout;
-            bool placed = conn.QuestFlags.Contains(GlyphQuest.PlacedGlyphs);
+            bool placed = ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs);
             if (!placed) SetPassageBlockers(conn, true);
             foreach (var nest in layout.Nests)
             {
@@ -345,7 +351,7 @@ partial class Program
     static async Task DropGlyph(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, GlyphQuest.Nest nest)
     {
         int g = nest.Glyph;
-        if (conn.QuestFlags.Contains(GlyphQuest.PlacedGlyphs) || conn.QuestFlags.Contains(GlyphQuest.HaveGlyph[g])) return;
+        if (ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs) || conn.QuestFlags.Contains(GlyphQuest.HaveGlyph[g])) return;
         if (Items.Find(GlyphQuest.Glyphs[g]) is not { Supported: true } type)
         {
             Console.WriteLine($"[gateway] {remote} a1q4: {GlyphQuest.Glyphs[g]} is not in the item data");
