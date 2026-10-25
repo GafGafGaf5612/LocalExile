@@ -104,9 +104,6 @@ Items are in rough priority order within each section. "Known" says what is alre
 
 ## 3. Gameplay
 
-- **Completed area fix:** Cyclone's `/set_aoe` final radius is now sent to the client and shared with hit selection;
-  see Status and protocol/11-skills.md (live check pending).
-
 ### The player's real stats
 - **Known:** client stat key = Stats.dat row + 1 ([11](docs/protocol/11-skills.md) §8); `/set_stat` takes names. The
   server must send final values (the client derives none): the attack's are computed in `SkillCatalog.Unarmed.Stats`.
