@@ -515,10 +515,13 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   A manual wire experiment replaced Frostblink's active entry with remaining 2.5/total 3/rate 2, retaining exactly one
   entry and native base 3000; this verified the reader, not the production refresh path
   (`logs/cooldown-manual-actor40-progress.json` in the validation checkout).
-  The cooldown-state trailer has layout, active/expired/zero/pause, rate-roundtrip and queued encrypted-send tests;
-  its production-path real-client rate-change recheck is pending.
-  Frostblink remains a catalog/math fixture only: actual location-instant input uses unsupported C→S 0x190 (12 bytes),
-  which is outside this change; it has no successful runtime cooldown claim.
+  The production Dash rate-change check now passes: an actual Q use retained native base 2500/total 2.5 seconds,
+  and +100% recovery at 0.5 seconds changed the one existing entry from rate 1 to rate 2 without resetting progress.
+  A raw retry at 1.3 seconds was refused without an echo or mana cost; at 1.7 seconds the native entry was empty and
+  the next use succeeded. Exactly two accepted uses produced two action echoes and two mana costs.
+  Artifact: `logs/cooldown-after-dash-rate-change-fixed.json` in the validation checkout.
+  Layout, active/expired/zero/pause, rate-roundtrip and queued encrypted-send checks also pass.
+  Frostblink's C→S 0x190 location-instant handling belongs to a separate contribution; it is not implemented here.
   [PoB](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Modules/CalcOffence.lua)
   also divides base duration by recovery, then rounds ordinary one-use durations to its server tick.
   This server keeps its existing continuous game clock and does not claim that tick boundary behavior.

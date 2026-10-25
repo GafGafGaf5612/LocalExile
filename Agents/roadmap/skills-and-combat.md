@@ -30,10 +30,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   `SkillCatalog.Unarmed.Stats`.
   Ordinary one-use cooldown recovery now shares the native base/rate and a server base-time budget, with atomic
   preflight before action side effects.
-  Initial Dash recovery, early raw rejection and pause pass live; native mid-cooldown state refresh has automated
-  layout/send-gate checks and awaits its live rate-change recheck.
+  Initial Dash recovery, early raw rejection, pause and native mid-cooldown rate changes pass live alongside
+  layout/send-gate checks; remaining base progress is retained without consuming another use.
   Remaining cooldown work includes multi-use recharge, shared groups, bypass, typed/conditional/more recovery,
-  official tick boundaries and Frostblink's unsupported location-instant C→S 0x190 path.
+  official tick boundaries and the separate location-instant C→S 0x190 contribution.
   See [11](../docs/protocol/11-skills.md) §9.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.

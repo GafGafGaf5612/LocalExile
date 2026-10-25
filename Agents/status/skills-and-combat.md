@@ -151,10 +151,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   Real-client Dash initial +100%/-50% recovery, early raw rejection without movement/echo/mana, and pause checks pass.
   The native positive-rate cache required an explicit cooldown-state refresh after skill-stat changes;
   this preserves remaining/total base time at the send gate without consuming another use.
-  Wire, active/expired/zero-rate and queued encrypted-send checks pass; its live rate-change recheck is pending.
+  Native Dash mid-cooldown recovery changes now pass live: one entry changes rate with base/total/progress preserved,
+  early input has no echo/cost, and reuse succeeds after native expiry.
+  Wire, active/expired/zero-rate and queued encrypted-send checks also pass.
   Multi-use, duplicate same-effect gems, shared groups, extra uses, bypass, typed/conditional/more recovery and official
   tick equivalence remain outside this slice.
-  Frostblink's location-instant 0x190 input is unsupported and has no runtime verification claim.
+  Frostblink's location-instant 0x190 input is a separate contribution and is not implemented in this slice.
   The skill bar keeps its slots when skills are re-sent or a gem is socketed again (the saved bar goes out as 0x53)
   ([11](../docs/protocol/11-skills.md) §9, §11).
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel (`ManaReservationFlat`
