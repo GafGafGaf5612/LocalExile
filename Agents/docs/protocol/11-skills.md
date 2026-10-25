@@ -256,7 +256,19 @@ This adds no beam or damage-over-time implementation.
 The copied-save baseline recorded stored spell chance 500 for both Fireball and Freezing Pulse,
 and the selected Freezing Pulse panel still showed main-hand rows (main-hand crit 830).
 Native getters also read the stored 500; evidence is `logs/spell-crit-baseline.json` in the validation checkout.
-Catalog, raw-source, aura, flag, rounding and roll-boundary checks are automated; native selected-skill checks are pending.
+Copied-save native panel/getter checks now show Fireball 5%, Freezing Pulse and Ice Nova 7.5%, and Arc 6%.
+With 100% increased generic crit they show Fireball 10% and Freezing Pulse 15%; adding another 100% spell crit gives
+15% and 22.5%, respectively, so the inputs add once.
+`global_cannot_crit = 1` makes the native skill chance zero and hides its critical row.
+After clearing those modifiers and relogging, Freezing Pulse still shows 7.5%.
+Scorching Ray remains explicitly zero with 100000% increased generic crit; its actual cast caused no weapon hit or
+critical roll against a nearby 86-life Ash Harvester.
+On the same connection, Fireball with that increased chance dealt a logged 22-damage critical hit, leaving 64 life.
+The final Arc/Ice Nova and hitless-spell checks used the reviewed type-routing fix.
+Evidence: validation `logs/spell-crit-{after-default,after-generic100,after-combined100,after-disabled,after-relog,
+final-arc-ice,final-scorching-ray}.json`, `spell-critical-live-summary.json` and `live-gateway.log`.
+Native probes reported no errors.
+Catalog, raw-source, aura, flag, rounding, hit routing and roll-boundary checks are also automated.
 Timed, charge, enemy-state, lucky/more and added-base critical mechanics remain outside this slice.
 `/crit` prints the attack values and the legacy pooled 5%-base spell reference, not the selected gem's chance.
 

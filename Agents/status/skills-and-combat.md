@@ -188,7 +188,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Precision and Zealotry retain their existing bonuses without counting them twice.
   Actual Spell skill types set the panel's casting flag; attacks and non-spell warcries keep it clear.
   Hitless spells and unsupported action types cannot fall through to weapon damage or attack critical rolls.
-  The per-skill calculation and panel gates have automated checks; native selected-skill verification is pending.
+  Native panel/getter checks show Fireball 5%, Freezing Pulse and Ice Nova 7.5%, and Arc 6%, including after relog.
+  Combined generic/spell bonuses add once; the no-crit flag clears the native chance and hides its row.
+  A hitless Scorching Ray cast dealt no weapon damage, while the same connection's Fireball dealt a critical hit.
+  Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
   Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
 - **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` +
