@@ -66,6 +66,11 @@ static int Dispatch(string[] args)
                     if (fs.TryReadFile(args[1], out var data)) File.WriteAllBytes(args[2], data);
                     else Console.WriteLine($"{args[1]}: not found");
                 break;
+            case "objects":
+                // objects [area regex]: the port's area transitions and waypoints (AreaObjects) against the client's
+                // <area>_seed<seed>.transitions.json, for every capture and oracle load the last gate run matched.
+                Objects(args.Length > 1 ? args[1] : ".");
+                break;
             case "tile":
                 // tile <.tdt>…: a tile's tag and key as the generator reads them.
                 if ((fs = OpenGame()) is not null)
@@ -286,6 +291,61 @@ static void Oracle(string filter)
     }
     Console.WriteLine($"{match} of {total} match");
     foreach (var (k, n) in reasons.OrderByDescending(r => r.Value)) Console.WriteLine($"  {n} × {k}");
+}
+
+static void Objects(string filter)
+{
+    var pairs = LoggedHashes(out _, out _, null);
+    var fs = OpenGame();
+    var files = Files();
+    string root = Root();
+    int loads = 0, same = 0, missing = 0, extra = 0, moved = 0, objects = 0;
+    foreach (var ((areaId, seed), (level, hash)) in pairs)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(areaId, filter)) continue;
+        string capture = Path.Combine(root, "data", "walkability", $"{areaId}_seed{seed}.transitions.json");
+        if (!File.Exists(capture)) continue;
+        GenerationResult result;
+        try
+        {
+            result = LevelGenerator.Generate(files, AreaInfo.Load(p => fs.TryReadFile(p, out var d) ? d : null, areaId, level), seed);
+            if (result.Grid.Hash() != hash) continue;
+        }
+        catch (Exception) { continue; }
+        finally { ResetHooks(); }
+        loads++;
+        using var doc = JsonDocument.Parse(File.ReadAllText(capture));
+        var theirs = doc.RootElement.GetProperty("objects").EnumerateArray()
+            .Select(o => (Type: o.GetProperty("objectType").GetString()!, Model: o.GetProperty("model").GetString()!,
+                X: o.GetProperty("x").GetInt32(), Y: o.GetProperty("y").GetInt32(), R: o.GetProperty("rotation").GetSingle(),
+                Z: o.TryGetProperty("z", out var z) && z.ValueKind == JsonValueKind.Number ? z.GetSingle() : float.NaN)).ToList();
+        var mine = AreaObjects.Transitions(files, result);
+        objects += theirs.Count;
+        var left = mine.ToList();
+        var notes = new List<string>();
+        foreach (var t in theirs)
+        {
+            var m = left.FirstOrDefault(p => p.Type == t.Type && string.Equals(p.Model, t.Model, StringComparison.OrdinalIgnoreCase) && p.X == t.X && p.Y == t.Y);
+            if (m is not null)
+            {
+                left.Remove(m);
+                float dr = MathF.Abs(m.Rotation - t.R) % (2 * MathF.PI);
+                if (dr > 0.01f && MathF.Abs(dr - 2 * MathF.PI) > 0.01f) notes.Add($"rotation {m.Rotation:0.###} vs {t.R:0.###} {Path.GetFileName(t.Model)}");
+                if (!float.IsNaN(t.Z)) notes.Add($"z {m.Z:0.##} vs {t.Z:0.##}");
+                same++;
+                continue;
+            }
+            var near = left.FirstOrDefault(p => p.Type == t.Type && string.Equals(p.Model, t.Model, StringComparison.OrdinalIgnoreCase));
+            if (near is not null) { moved++; left.Remove(near); notes.Add($"moved {Path.GetFileName(t.Model)}: ({near.X}, {near.Y}) vs ({t.X}, {t.Y})"); }
+            else { missing++; notes.Add($"missing {t.Type.Split('/')[^1]} {Path.GetFileName(t.Model)} at ({t.X}, {t.Y})"); }
+        }
+        extra += left.Count;
+        foreach (var p in left) notes.Add($"extra {p.Type.Split('/')[^1]} {Path.GetFileName(p.Model)} at ({p.X}, {p.Y})");
+        var shown = notes.Where(n => !n.StartsWith("z ")).ToList();
+        Console.WriteLine($"{areaId} seed {seed}: {theirs.Count} captured, {mine.Count} placed" + (shown.Count == 0 ? "" : ": " + string.Join("; ", shown.Take(4))) +
+            (notes.FirstOrDefault(n => n.StartsWith("z ")) is { } zn ? $" [{zn}]" : ""));
+    }
+    Console.WriteLine($"{loads} matching loads with a capture: {same} of {objects} objects placed exactly, {moved} moved, {missing} missing, {extra} extra");
 }
 
 static void Walk(string? areaId, uint seed)
@@ -565,6 +625,8 @@ static void Generate(string areaId, uint seed, string? tracePath)
     {
         foreach (var n in notes) Console.WriteLine("  " + n);
         Console.WriteLine($"stopped: {e.Message}");
+        // LEVELGEN_STACK=1: where in the port it stopped.
+        if (Environment.GetEnvironmentVariable("LEVELGEN_STACK") == "1") Console.WriteLine(e.StackTrace);
         partial = (e as PartialGenerationException)?.Grid;
     }
     if (result is not null)

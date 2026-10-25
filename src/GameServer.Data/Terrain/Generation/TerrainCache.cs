@@ -288,7 +288,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             .ToList();
     }
 
-    bool IsTransitionType(string type)
+    public bool IsTransitionType(string type)
     {
         if (_transitionTypes.TryGetValue(type, out bool known)) return known;
         bool result = false;

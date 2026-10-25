@@ -157,28 +157,39 @@ static class Gate
 
     static string Reason(Exception e) => $"{e.GetType().Name}: {e.Message.Split('\n')[0]}";
 
+    /// <summary>A logged load: its tile hash against the log's; with a trace of it (every logged load has one since
+    /// the capture tours) and another hash or a stop, also the draws against the trace and the first difference, as for
+    /// a capture.</summary>
     static Result Oracle(string areaId, uint seed, int level, uint hash)
     {
-        var area = AreaInfo.Load(Shared.Read, areaId, level);
-        var result = LevelGenerator.Generate(Shared.Files(), area, seed);
-        return new Result(result.Grid.Hash() == hash ? "match" : "mismatch");
+        string stem = Path.Combine(Shared.Root(), "data", "walkability", $"{areaId}_seed{seed}");
+        bool traced = File.Exists(stem + ".gen.json");
+        try
+        {
+            var result = LevelGenerator.Generate(Shared.Files(), AreaInfo.Load(Shared.Read, areaId, level), seed);
+            if (result.Grid.Hash() == hash) return new Result("match");
+            if (!traced) return new Result("mismatch");
+        }
+        catch (Exception) when (traced) { }
+        finally { Shared.ResetHooks(); }
+        return Capture(areaId, seed, hash) with { Walk = -1, Projectile = -1, Placed = 0, Matched = 0, Captured = 0 };
     }
 
-    static Result Capture(string areaId)
+    static Result Capture(string areaId, uint seed = 1, uint? loggedHash = null)
     {
         var files = Shared.Files();
-        string stem = Path.Combine(Shared.Root(), "data", "walkability", $"{areaId}_seed1");
+        string stem = Path.Combine(Shared.Root(), "data", "walkability", $"{areaId}_seed{seed}");
         using var trace = JsonDocument.Parse(File.ReadAllText(stem + ".gen.json"));
         var t = trace.RootElement;
         int level = t.TryGetProperty("level", out var l) ? l.GetInt32() : 1;
-        uint clientHash = t.GetProperty("tileHash").GetUInt32();
+        uint clientHash = loggedHash ?? t.GetProperty("tileHash").GetUInt32();
         var area = AreaInfo.Load(Shared.Read, areaId, level);
-        var rng = new LevelRandom(1, area.RandomnessDisabled) { Log = [] };
+        var rng = new LevelRandom(seed, area.RandomnessDisabled) { Log = [] };
         GenerationResult? result = null;
         string hash;
         try
         {
-            result = LevelGenerator.Generate(files, area, 1, rng: rng);
+            result = LevelGenerator.Generate(files, area, seed, rng: rng);
             hash = result.Grid.Hash() == clientHash ? "match" : "mismatch";
         }
         catch (Exception e) { hash = "stop: " + Reason(e); }
@@ -283,6 +294,16 @@ static class Gate
         Console.WriteLine("first differences (traces not fully matching), by the client's caller:");
         foreach (var g in diffs)
             Console.WriteLine($"  {g.Count(),3} × {g.Key}: {string.Join(", ", g.Select(p => p.Key["capture ".Length..]).Take(8))}{(g.Count() > 8 ? ", …" : "")}");
+        // Every logged load whose tile hash is wrong, by the first difference against its own trace: the work queue
+        // by how many loads one cause holds back.
+        var loads = now.Where(p => p.Key.StartsWith("oracle ") && !p.Value.HashOk && p.Value.TraceDraws > 0)
+            .GroupBy(p => (p.Value.FirstDiff ?? "every draw matches").Replace(" (port stopped)", "")).OrderByDescending(g => g.Count()).Take(20);
+        Console.WriteLine("logged loads with another tile hash, by the client's caller at the first difference (areas):");
+        foreach (var g in loads)
+        {
+            var areas = g.Select(p => p.Key.Split(' ')[1]).Distinct().ToList();
+            Console.WriteLine($"  {g.Count(),3} × {g.Key} ({areas.Count}): {string.Join(", ", areas.Take(8))}{(areas.Count > 8 ? ", …" : "")}");
+        }
         var stops = now.Where(p => p.Value.Hash.StartsWith("stop")).GroupBy(p => Normalise(p.Value.Hash)).OrderByDescending(g => g.Count()).Take(12);
         Console.WriteLine("stops (traces and oracle), by reason:");
         foreach (var g in stops) Console.WriteLine($"  {g.Count(),3} × {g.Key}");
