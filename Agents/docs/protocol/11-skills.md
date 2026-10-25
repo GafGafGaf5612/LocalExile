@@ -60,7 +60,7 @@ byte f0:
 ```
 u8 n,  n × skill record (0x142196ce0, through 0x1421981d0: insert sorted by id, replacing an equal id, then slot 7)
 u8 m,  m × (u32 ActiveSkills row (0x101-byte rows), u32, u32) → manager +0x188, the Vaal souls (not used)
-u32 k, k × (u16 skill id, u32 c, c × (u32, u32, u32, u32))     (not used)
+u32 k, k × (u16 skill id, u32 c, c × (f32 remaining base s, f32 total base s, f32 rate, u32 flags))
 ```
 
 Skill record (`0x142196ce0`):
@@ -482,12 +482,31 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   Constructor `0x141eebed0` reads skill +0xc8 unless an override applies.
   `0x141eebfe0` takes the cooldown object at record +0x10 in RCX, recovery percent in EDX and group propagation in R8B;
   it stores base ms / 1000 and `(100 + percent) / 100` separately.
-  Tick `0x141eebdb0..0x141eebdc8` subtracts elapsed time times rate; `0x141eeb7aa..0x141eeb7e7` refreshes active rates.
+  Tick `0x141eebdb0..0x141eebdc8` subtracts elapsed time times rate.
+  `0x141eeb7aa..0x141eeb7e7` can refresh active rates, but ordinary skill replacement does not call it for a positive
+  rate change: `0x141eead13..0x141eead4a` only checks base/count changes or an existing zero rate.
+  Likewise, SkillStats' `0x14219465b..0x1421946d7` checks modifier/count/override changes, not recovery percentage.
+  Therefore updated 3398 alone leaves an active native entry at its old positive rate.
+  The cooldown-only Actor 0x40 trailer above fixes that without replacing a skill or consuming another use.
+  `0x142197d24..0x142197e7b` reads its entries; `0x142197f90..0x142197fd8` replaces the matching cooldown's vector.
+  `InstanceEntities.PlayerSingleUseCooldowns` sends remaining/total **base** seconds, recovery rate, flags `0xffffffff`.
+  An empty vector clears a use that expired while the update waited; native base duration and group are untouched.
+  Only eligible spent uses whose original action/instant acknowledgement reached its gate can request this refresh.
+  The packet's factory samples game time under `Monsters` at the actual send gate, after the skill-stat update.
+  Rejected/unacknowledged uses and unchanged rates send nothing; a refresh replaces one entry, including zero-rate
+  transitions, rather than appending or restarting it.
   Pre-fix real-client Dash at +100% held base 2.5 s/rate 2 and completed natively within 1.4 s, but a raw 0x25 retry
   was echoed/moved before the server rejected it for 1132 ms remaining (`logs/cooldown-before-dash-plus100.json`).
   Automated checks cover 0/+100/-50%, source aggregation, quality, changing rates, pause,
   and atomic stale-use rejection.
-  Post-fix real-client validation is pending.
+  Real-client Dash checks pass for initial +100% (retry at 1.4 s), -50% (3 s refused, 5.2 s accepted), and an early
+  0.3 s raw request with no echo, movement or mana charge.
+  Pause held native remaining base time exactly through 1.2 s of wall time and refused the paused retry.
+  Artifacts: `logs/cooldown-after-dash-{plus100,minus50,early,pause}.json` in the validation checkout.
+  The initial rate-change check exposed the native positive-rate cache above: the server changed rate at 0.5 s,
+  while the client retained rate 1 (`logs/cooldown-after-dash-rate-change.json`).
+  The cooldown-state trailer now has layout, active/expired/zero/pause and queued encrypted-send tests;
+  its real-client rate-change recheck is pending.
   Frostblink remains a catalog/math fixture only: actual location-instant input uses unsupported C→S 0x190 (12 bytes),
   which is outside this change; it has no successful runtime cooldown claim.
   [PoB](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Modules/CalcOffence.lua)

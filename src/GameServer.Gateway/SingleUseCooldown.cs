@@ -32,15 +32,21 @@ readonly record struct SingleUseCooldown(int BaseMilliseconds, int RecoveryPerce
 
 /// <summary>Elapsed game-time budget, used under the connection's Monsters lock. Rate changes settle the old rate
 /// first, preserving progress through equipment/stat refreshes and pause.</summary>
-sealed class SingleUseCooldownState(double at, double rate, double remainingBaseMilliseconds = 0)
+sealed class SingleUseCooldownState(double at, double rate, double remainingBaseMilliseconds = 0,
+    int totalBaseMilliseconds = 0)
 {
     public double RemainingBaseMilliseconds { get; private set; } = remainingBaseMilliseconds;
+    public int TotalBaseMilliseconds { get; private set; } = totalBaseMilliseconds;
     public double Rate { get; private set; } = rate;
+    public int UseVersion { get; private set; }
+    double? nativeRate;
+    double spentRate;
     double lastAt = at;
 
     public void Refresh(double now, double rate)
     {
         RemainingBaseMilliseconds = Math.Max(0, RemainingBaseMilliseconds - Math.Max(0, now - lastAt) * 1000 * Rate);
+        if (Ready && nativeRate == Rate) nativeRate = null; // Both clocks completed at the same rate.
         lastAt = Math.Max(lastAt, now);
         Rate = Math.Max(0, rate);
     }
@@ -52,19 +58,40 @@ sealed class SingleUseCooldownState(double at, double rate, double remainingBase
         Refresh(now, plan.RecoveryRate);
         if (!Ready) return false;
         RemainingBaseMilliseconds = plan.BaseMilliseconds;
+        TotalBaseMilliseconds = plan.BaseMilliseconds;
+        spentRate = Rate;
+        nativeRate = null; // No native entry may be fabricated before the original acknowledgement reaches its gate.
+        UseVersion++;
         return true;
     }
+
+    public void ConfirmNativeUse(int version)
+    {
+        if (version == UseVersion && nativeRate is null) nativeRate = spentRate;
+    }
+    public bool NeedsNativeRefresh => nativeRate is double previous && previous != Rate;
+    public void NativeRefreshed() => nativeRate = Ready ? null : Rate;
 }
 
 /// <summary>One accepted use, reserved before ordinary action side effects. Async continuations keep this original
 /// witness; a later action may cancel it, but cancellation never refunds an accepted use.</summary>
-sealed record CooldownUseTicket(int Effect, int ActionToken, int ProjectileEpoch, bool Instant, bool Reserved = true)
+sealed record CooldownUseTicket(int Effect, int ActionToken, int ProjectileEpoch, bool Instant, bool Reserved = true,
+    SingleUseCooldownState? State = null, int UseVersion = 0)
 {
     bool consumed;
     public bool Current(ClientState conn)
     {
         lock (conn.Monsters) return conn.ProjectileActive(ProjectileEpoch) && conn.PlayerLife > 0
-            && (Instant || conn.ActionCount == ActionToken);
+            && (Instant || conn.ActionCount == ActionToken) && (State is null || !Reserved || State.UseVersion == UseVersion);
+    }
+    public bool CommitNativeUse(ClientState conn)
+    {
+        lock (conn.Monsters)
+        {
+            if (!Current(conn)) return false;
+            if (Reserved) State?.ConfirmNativeUse(UseVersion);
+            return true;
+        }
     }
     public bool TryExecute(ClientState conn, int effect)
     {

@@ -1,3 +1,7 @@
+using System.Net.Sockets;
+using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Protocol.Login;
+
 partial class Program
 {
     static SingleUseCooldown? CooldownFor(ClientState conn, int effect, int level, int quality) =>
@@ -11,7 +15,8 @@ partial class Program
         {
             double legacyRemaining = Math.Max(0, conn.SkillReadyAt.GetValueOrDefault(effect) - now);
             state = new(now, plan.RecoveryRate, double.IsFinite(legacyRemaining)
-                ? legacyRemaining * 1000 * (plan.RecoveryRate > 0 ? plan.RecoveryRate : 1) : plan.BaseMilliseconds);
+                ? legacyRemaining * 1000 * (plan.RecoveryRate > 0 ? plan.RecoveryRate : 1) : plan.BaseMilliseconds,
+                plan.BaseMilliseconds);
             conn.SingleUseCooldowns[effect] = state;
         }
         state.Refresh(now, plan.RecoveryRate);
@@ -26,17 +31,19 @@ partial class Program
         lock (conn.Monsters)
         {
             ticket = null;
+            SingleUseCooldownState? state = null;
             if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0 || conn.Paused
                 || actionToken is int original && conn.ActionCount != original) return false;
             if (plan is { } cooldown)
             {
                 double now = conn.Clock.Elapsed.TotalSeconds;
-                var state = CooldownStateLocked(conn, effect, cooldown, now);
+                state = CooldownStateLocked(conn, effect, cooldown, now);
                 if (reserve ? !state.TryUse(now, cooldown) : !state.Ready) return false;
                 conn.SkillReadyAt[effect] = now + state.RemainingSeconds;
             }
             sideEffects();
-            if (plan is not null) ticket = new(effect, conn.ActionCount, conn.ProjectileEpoch, instant, reserve);
+            if (plan is not null) ticket = new(effect, conn.ActionCount, conn.ProjectileEpoch, instant, reserve,
+                state, state!.UseVersion);
             return true;
         }
     }
@@ -59,5 +66,41 @@ partial class Program
                 if (plan is null) conn.SingleUseCooldowns.Remove(effect); // Unsupported mechanics retain the legacy path.
             }
         }
+    }
+
+    internal static byte[]? NativeCooldownRefresh(ClientState conn, int epoch, IReadOnlyList<(ushort Id, int Effect)> skills)
+    {
+        lock (conn.Monsters)
+        {
+            if (!conn.ProjectileActive(epoch)) return null;
+            double now = conn.Clock.Elapsed.TotalSeconds;
+            var updates = new List<SingleUseCooldownUpdate>();
+            var synchronized = new List<SingleUseCooldownState>();
+            foreach (var (id, effect) in skills)
+            {
+                if (!conn.ClientSkillIds.Contains(id) || !conn.SingleUseCooldowns.TryGetValue(effect, out var state)) continue;
+                state.Refresh(now, state.Rate);
+                if (!state.NeedsNativeRefresh) continue;
+                updates.Add(new(id, state.Ready ? 0 : (float)(state.RemainingBaseMilliseconds / 1000),
+                    state.TotalBaseMilliseconds / 1000f, (float)state.Rate));
+                synchronized.Add(state);
+            }
+            if (updates.Count == 0) return null;
+            var bytes = InstanceEntities.PlayerSingleUseCooldowns(PlayerId, updates);
+            foreach (var state in synchronized) state.NativeRefreshed();
+            return bytes;
+        }
+    }
+
+    static Task SendNativeCooldownRefresh(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        lock (conn.Monsters)
+            if (!conn.SingleUseCooldowns.Values.Any(s => s.NeedsNativeRefresh)) return Task.CompletedTask;
+        var skills = GemSkillEffects(conn.Character).Where(g => CooldownFor(conn, g.Effect, g.Level, g.Quality) is not null)
+            .Select(g => (g.Id, g.Effect)).ToArray();
+        int epoch;
+        lock (conn.Monsters) epoch = conn.ProjectileEpoch;
+        return Send(remote, stream, ciphers, [], "0x02ba player active cooldown progress/rate refresh",
+            atGate: () => NativeCooldownRefresh(conn, epoch, skills));
     }
 }

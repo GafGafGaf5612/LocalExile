@@ -148,8 +148,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Ordinary one-use spells/attacks now resolve player and skill generic recovery once, and the server keeps remaining
   base-time budget through stat changes and pause.
   Preflight reserves before action/movement/echo side effects; queued effects retain the original action/area ticket.
-  Automated checks pass; post-fix real-client Dash recovery and early raw retry validation are pending.
-  The pre-fix native Dash base 2.5 s/rate 2 completed while the server still rejected the retry after echoing/moving.
+  Real-client Dash initial +100%/-50% recovery, early raw rejection without movement/echo/mana, and pause checks pass.
+  The native positive-rate cache required an explicit cooldown-state refresh after skill-stat changes;
+  this preserves remaining/total base time at the send gate without consuming another use.
+  Wire, active/expired/zero-rate and queued encrypted-send checks pass; its live rate-change recheck is pending.
   Multi-use, duplicate same-effect gems, shared groups, extra uses, bypass, typed/conditional/more recovery and official
   tick equivalence remain outside this slice.
   Frostblink's location-instant 0x190 input is unsupported and has no runtime verification claim.

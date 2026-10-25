@@ -229,7 +229,7 @@ partial class Program
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
                 $"0x01ab player skill 0x{use.SkillId:x4} {gem.Name} on monster 0x{use.TargetId:x} ({m.Label}) from ({stop.X}, {stop.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4} (t={conn.Clock.Elapsed.TotalSeconds:0.000})",
-                still: () => cooldownUse?.Current(conn) ?? true);
+                still: () => cooldownUse?.CommitNativeUse(conn) ?? true);
             _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stop, target, use.TargetId, sequence: use.Sequence,
                 actionToken: action, cooldownUse: cooldownUse);
             return;
@@ -247,7 +247,7 @@ partial class Program
         await Send(remote, stream, ciphers,
             InstanceProtocol.ActionStarted(PlayerId, stand.X, stand.Y, aim.X, aim.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
             $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({stand.X}, {stand.Y}) to ({aim.X}, {aim.Y}), flags 0x{use.Flags:x4}",
-            still: () => spellUse?.Current(conn) ?? true);
+            still: () => spellUse?.CommitNativeUse(conn) ?? true);
         _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stand, aim, use.TargetId, sequence: use.Sequence,
             actionToken: spellUse?.ActionToken, cooldownUse: spellUse);
     }
@@ -281,6 +281,8 @@ partial class Program
         if (cooldownUse is not null)
         {
             if (!cooldownUse.TryExecute(conn, gem.Effect)) return false;
+            if (!cooldownUse.Instant) await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
+            if (!Current()) return false;
         }
         else if (gem.Name is not null && CooldownFor(conn, gem.Effect, gem.Level, gem.Quality) is not null)
             return false;
@@ -379,9 +381,12 @@ partial class Program
         if (!TryBeginCooldownUse(conn, gem.Effect, gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
             true, () => { }, out var cooldownUse)) return;
         if (await CastGemSkill(remote, stream, ciphers, conn, skillId, at, at, targetId, cooldownUse: cooldownUse))
+        {
             await Send(remote, stream, ciphers, InstanceProtocol.InstantAction(PlayerId, skillId, at.X, at.Y, targetId),
                 $"0x01ce player skill 0x{skillId:x4}: instant action (its use and cooldown)",
-                still: () => cooldownUse?.Current(conn) ?? true);
+                still: () => cooldownUse?.CommitNativeUse(conn) ?? true);
+            await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
+        }
     }
 
     // Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them
