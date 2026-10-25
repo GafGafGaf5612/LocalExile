@@ -92,10 +92,10 @@ public class InstanceMovementTests
     [Fact]
     public void Splitter_frames_known_messages_and_keeps_partials()
     {
-        // 0x0099 then a tick, as one live chunk; then a tick cut in two.
-        byte[] chunk = Convert.FromHexString("0099000001340334000100013400010101000129" + "001B0005768AF5" + "001B00");
+        // 0x0099, the two chat channel joins and 0x0129, then a tick, as one live chunk; then a tick cut in two.
+        byte[] chunk = Convert.FromHexString("00990000" + "01340334000100" + "01340334010100" + "0129" + "001B0005768AF5" + "001B00");
         var msgs = InstanceProtocol.SplitClientMessages(chunk, out byte[] partial, out byte[] unknown);
-        Assert.Equal(new ushort[] { 0x0099, 0x001b }, msgs.Select(m => m.Id));
+        Assert.Equal(new ushort[] { 0x0099, 0x0134, 0x0134, 0x0129, 0x001b }, msgs.Select(m => m.Id));
         Assert.Equal("001B00", Convert.ToHexString(partial));
         Assert.Empty(unknown);
 
