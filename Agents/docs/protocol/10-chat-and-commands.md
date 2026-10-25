@@ -208,6 +208,12 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
     buried monster when the player comes within 24 cells, or its aggro range if shorter (`MonsterEmerge.cs`). Until
     then it is not among the connection's monsters, so no attack, skill, projectile or aura reaches it. Types that list
     `num_states` (SpiderBoss, Tukohama's totem: 3) are created transitioned as before.
+    Live 2026-10-25 (`scripts/re/frida/trace-actions.js`, `trace-action-start.js`, `trace-skills.js`): a Gravel Eater
+    gets the basic actions 0x101 (action 0x4101, Emerge) and 0x239b (Emerge2) besides its granted skill 0x102; the
+    0x1ab starts action 0x4101 (usable, result 1), the buried monster (invisible) comes out of the ground within the
+    second and spits at the player.
+    Dripping Dead (Mud Flats) and the Twilight Strand's Drowned rose the same way from their packs, and a risen monster
+    kept by the instance came back standing (created in state 2).
 - **Animated path.** Not sent (flags 0): the type supplies the animated object. `Game_MONSTER_AO=1` sends the variety's
   first `AOFiles` path instead (bit 0), which also works for plain monsters but is not needed.
 - **StateMachine** (live vtable `ClientInternalStateMachine` `0x1435da8b8`, slot 17 `0x142191f10` → base
