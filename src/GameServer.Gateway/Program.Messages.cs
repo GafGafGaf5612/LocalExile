@@ -48,6 +48,8 @@ partial class Program
                         if (ready) conn.NextAttackAt = AttackTiming.After(now, next, duration);
                     }
                     if (!ready) continue;
+                    int projectileEpoch;
+                    lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
                     var (bx, by) = conn.Walk.Position(at);
                     conn.Walk.Order(bx, by, at);
                     Interlocked.Increment(ref conn.ActionCount);
@@ -55,7 +57,7 @@ partial class Program
                         InstanceProtocol.ActionStarted(PlayerId, bx, by, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                         $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bx}, {by}) (t={at:0.000})");
                     if (Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
-                        _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), (bx, by), (use.X, use.Y), damageTo: null, impact: "none");
+                        _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), (bx, by), (use.X, use.Y), damageTo: null, impact: "none", epoch: projectileEpoch);
                     conn.ChannelSkill = use.SkillId;
                     conn.ChannelSkillSequence = use.Slot;
                     continue;

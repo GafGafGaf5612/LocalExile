@@ -58,6 +58,8 @@ partial class Program
     static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, SpawnedMonster m)
     {
+        int projectileEpoch;
+        lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
         var weapon = WeaponFor(conn);
         double now = conn.Clock.Elapsed.TotalSeconds, duration;
         lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn));
@@ -95,7 +97,7 @@ partial class Program
         // A bow's ordinary attack shoots an arrow at the target: the client draws the projectile object we create
         // (Projectiles.dat Metadata/Projectiles/DefaultArrow); the hit below keeps the swing's own timing.
         if (WeaponProfileFor(conn).Bow && Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
-            _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), stop, target, damageTo: null, impact: "none");
+            _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), stop, target, damageTo: null, impact: "none", epoch: projectileEpoch);
         // The hit lands at the attack animation's contact keyframe (data/animation-contacts.json), not a fixed half: the
         // client stretches the clip to the attack time, so the blood and the weapon impact sound line up with the swing.
         await Task.Delay(TimeSpan.FromSeconds(AttackContactDelay(conn, duration, approach: true)));
@@ -421,6 +423,8 @@ partial class Program
         var projectileHitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
         if (!projectileHitPlan.CanHit) return;
         int action = conn.ActionCount;
+        int epoch;
+        lock (conn.Monsters) epoch = conn.ProjectileEpoch;
         // Released at the action's contact keyframe. An attack gem (Burning Arrow, Caustic Arrow …) plays the weapon's
         // attack1 animation, which the client stretches to the weapon's attack time: its contact is attack1_bow's 399/1066
         // (0.374 for the Ranger) of that time. A spell plays its spell_projectile clip instead (Dex: 699/1133 = 0.617 of
@@ -432,8 +436,8 @@ partial class Program
         double releaseDelay = attack
             ? AttackContactDelay(conn, WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn)), approach: false)
             : CastMs(conn, gem.Effect) / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
-        await Task.Delay(TimeSpan.FromSeconds(Math.Max(0.001, releaseDelay)));
-        if (conn.ActionCount != action || conn.Closed) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
+        if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, releaseDelay), epoch)
+            || conn.ActionCount != action) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
         // A worn skill effect (its skill_art_variation) flies its own projectile and explodes in its own art (SkillArt).
         int variation = SkillArtVariation(conn, gem.Gem);
         projectile = (Art.Projectile(projectile.Id, variation), projectile.Speed);
@@ -477,7 +481,7 @@ partial class Program
                 damage = DamageModel.CriticalDamage(damage,
                     spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
             return (damage, critical);
-        });
+        }, epoch: epoch);
     }
 
     // The radius in cells of a gem skill's hit around its aimed point (AreaSkillHit): its own
@@ -579,13 +583,28 @@ partial class Program
     // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
     static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo,
-        bool log = true, string? impact = null)
+        int epoch, bool log = true, string? impact = null)
     {
-        uint id = conn.NextObjectId++;
+        uint id;
+        lock (conn.Monsters) id = conn.NextObjectId++;
+        bool Active() => conn.ProjectileActive(epoch);
+        if (!Active()) return;
+        async Task<bool> SendVisual(byte[] bytes, string? line, Action? commit = null)
+        {
+            bool sent = false;
+            while (!sent && Active())
+            {
+                await Send(remote, stream, ciphers, bytes, line,
+                    still: () => sent = conn.TryCommitProjectileVisual(epoch, commit));
+                if (!sent) await Task.Delay(16);
+            }
+            return sent;
+        }
         double dx = to.X - from.X, dy = to.Y - from.Y, aim = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        // One launch-time speed drives predicted collisions, the client's glide duration and the server's flight delay.
+        // One launch-time speed drives collision sweeps, the client's glide duration and the server's flight clock.
         float cellsPerSecond = projectile.CellsPerSecond;
+        if (!float.IsFinite(cellsPerSecond) || cellsPerSecond < 0) return;
         // It leaves a little ahead of the caster (Game_PROJECTILE_AHEAD cells, default 1.5) and flies toward the clicked
         // point or monster and on to Game_PROJECTILE_RANGE cells (default 120, ~1.2 s at the real speed), clamped to the
         // area. The Positioned x/y are whole grid cells, so an offset under one cell rounds back onto the player's own
@@ -598,35 +617,13 @@ partial class Program
         if (TerrainHeights.Size(conn.Layout.Id, conn.Seed) is (int w, int h))
             foreach (var (d, lo, hi) in new[] { (dx, -from.X, w - 1 - from.X), (dy, -from.Y, h - 1 - from.Y) })
                 if (d != 0) length = Math.Min(length, Math.Max(0, (d > 0 ? hi : lo) / (d / aim)));
-        // The rounded endpoint can add less than one cell. Guard only speeds whose resulting flight would exceed
-        // Task.Delay's maximum duration; valid slow test overrides (e.g. 0.001 cells/s) retain their exact value.
         cellsPerSecond = ProjectileSpeed.ForFlightDistance(cellsPerSecond, length + 1);
-        // Collision: the first living monster within Game_PROJECTILE_HIT_RADIUS cells (default 4: the row's CollisionRadius
-        // 2 plus a monster's body) of the projectile when it passes, using where the monster will be by then. Checked once at
-        // launch, half a cell at a time along the path; a monster that walks into the path later is not hit. Walls and
-        // doodads: the first cell the area's projectile grid blocks (ProjectileGrid; without one nothing blocks).
+        // Static walls cap the route; monsters are swept from observed positions during flight, not selected at launch.
         double hitRadius = double.TryParse(Environment.GetEnvironmentVariable("Game_PROJECTILE_HIT_RADIUS"), inv, out var phr) && phr > 0 ? phr : 4;
-        double launched = conn.Clock.Elapsed.TotalSeconds;
-        uint hitId = 0;
-        bool hitWall = false;
-        lock (conn.Monsters)
-            for (double s = 0; s <= length && hitId == 0 && !hitWall; s += 0.5)
-            {
-                double px = from.X + dx / aim * s, py = from.Y + dy / aim * s, at = launched + s / cellsPerSecond;
-                if (ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, (int)Math.Round(px), (int)Math.Round(py)) == true)
-                {
-                    hitWall = true;
-                    length = Math.Max(0, s - 0.5);
-                    break;
-                }
-                foreach (var (mid, mon) in conn.Monsters)
-                {
-                    if (mon.Dead || mon.Life == 0) continue;
-                    var (mx, my) = mon.Walk.Position(at);
-                    if ((mx - px) * (mx - px) + (my - py) * (my - py) <= hitRadius * hitRadius) { hitId = mid; length = s; break; }
-                }
-            }
         to = ((int)Math.Round(from.X + dx / aim * length), (int)Math.Round(from.Y + dy / aim * length));
+        bool hitWall;
+        (to, hitWall) = ProjectileFlight.ClipWall(from, to,
+            (x, y) => ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, x, y) == true);
         dx = to.X - from.X; dy = to.Y - from.Y;
         double cells = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
         // Positioned rotation = atan2(dx, -dy) (the player's own moves, traced live 2026-10-18: facing (+15, -18) read 0.668)
@@ -646,58 +643,139 @@ partial class Program
         int clientHeight = -startHeight;
         var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Height: clientHeight);
         uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
-        // The 0x2b9 entity header's u32 at +0x14 is 0xffffffff in every message the official server sends (dump
-        // 2026-10-25, world handler), not 0 as CreateObject's default. It is almost certainly the "no parent/owner" sentinel;
-        // sending 0 for a projectile left the arrow unparented to object 0 and it never drew.
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob(), headerU32: 0xffffffff), !log ? null :
-            $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y}) height {startHeight} up (client z {clientHeight})");
-        // The client warns "ObjectInWakeZone was called on an object ... that was already in the wake zone" for a projectile
-        // (client log 2026-10-25), but without the message the arrow is not drawn at all: keep it.
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 projectile 0x{id:x} enters wake zone");
-        // 0x1ba is the projectile's flight (11-skills.md §10): the float is the move's DURATION in seconds (the client's
-        // step walker divides distance by it to get the speed), and the u32 +0x28 is the object's world z in steps (signed,
-        // positive down; 0x7fffffff = follow the terrain). Same client z as the Positioned fixed height above.
-        await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: unchecked((uint)clientHeight)), !log ? null :
-            $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells in {cells / cellsPerSecond:0.000}s, height {startHeight} up (client z {clientHeight})" +
-            (hitId != 0 ? $", will hit monster 0x{hitId:x}" : hitWall ? ", will hit a wall" : ""));
-        await Task.Delay(TimeSpan.FromSeconds(cells / cellsPerSecond));
-        if (conn.Closed) return;
-        SpawnedMonster? m = null;
-        if (hitId != 0) lock (conn.Monsters) m = conn.Monsters.GetValueOrDefault(hitId);
-        if (m is not null && m.Life > 0 && damageTo is not null)
+        // All observations below are taken with the monster lock held, including the initial observation when the
+        // glide reaches the send gate. The game clock, not time spent waiting for the gate, starts the flight.
+        List<ProjectileFlight.Target> Targets(double at) => [.. conn.Monsters
+            .Where(m => !m.Value.Dead && m.Value.Life > 0).Select(m => new ProjectileFlight.Target(m.Key, m.Value.Walk.Position(at), m.Value.Walk))];
+        ProjectileFlight? flight = null;
+        try
         {
-            var (damage, critical) = damageTo(m);
-            await HitMonster(remote, stream, ciphers, conn, hitId, m, damage, $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob(), headerU32: 0xffffffff), !log ? null :
+                $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})", still: () =>
+                {
+                    lock (conn.Monsters)
+                    {
+                        if (!Active()) return false;
+                        conn.ProjectileObjects.Add(id);
+                        return true;
+                    }
+                });
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null :
+                $"0x01a9 projectile 0x{id:x} enters wake zone", still: Active);
+            await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, to.X, to.Y, (float)(cells / cellsPerSecond), u28: unchecked((uint)clientHeight)), !log ? null :
+                $"0x01ba projectile 0x{id:x} to ({to.X}, {to.Y}), {cells:0.0} cells at {cellsPerSecond:0.0} cells/s, height {startHeight} up (client z {clientHeight})" +
+                (hitWall ? ", route ends at a wall" : ""), still: () =>
+                {
+                    lock (conn.Monsters)
+                    {
+                        if (!Active()) return false;
+                        double at = conn.Clock.Elapsed.TotalSeconds;
+                        flight = new(from, to, cellsPerSecond, at, hitRadius, hitWall, Targets(at));
+                        return true;
+                    }
+                });
+            if (flight is null) return;
+            ProjectileFlight.Step step;
+            while (true)
+            {
+                await Task.Delay(16);
+                lock (conn.Monsters)
+                {
+                    if (!Active()) return;
+                    if (conn.Paused) continue;
+                    double now = conn.Clock.Elapsed.TotalSeconds;
+                    step = flight.Advance(now, Targets(now));
+                }
+                if (step.Finished) break;
+            }
+            if (step.TargetId != 0 || step.Wall)
+            {
+                int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
+                // 0x1b7 copies the fixed pair directly: retain the same marker/world Z as creation, while
+                // 0x1ba takes the signed world-Z steps. Do not resample terrain and jump the impact vertically.
+                uint height = unchecked((uint)-clientHeight);
+                float worldZ = clientHeight * 7.8125f;
+                bool committed = false;
+                SpawnedMonster? target = null;
+                MonsterHit? hit = null;
+                int damage = 0;
+                bool critical = false;
+                while (!committed && Active())
+                {
+                    // 0x1b7 relocates and cancels the existing glide (0x141e31200 -> 0x141e35250). Commit the hit
+                    // under the same gate and short monster lock; a pause/transfer while waiting defers/cancels it.
+                    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y, height, worldZ), !log ? null :
+                        $"0x01b7 projectile 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})", still: () =>
+                        {
+                            lock (conn.Monsters)
+                            {
+                                if (!Active() || conn.Paused) return false;
+                                if (damageTo is not null && step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
+                                {
+                                    (damage, critical) = damageTo(target);
+                                    hit = ApplyMonsterHitLocked(conn, target, damage);
+                                }
+                                committed = true;
+                                return true;
+                            }
+                        });
+                    if (!committed) await Task.Delay(16);
+                }
+                if (!committed) return;
+                if (hit is { } applied && target is not null)
+                    await NotifyMonsterHit(remote, stream, ciphers, conn, step.TargetId, target, applied, damage,
+                        $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
+                impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
+                if (damageTo is not null && impact != "none")
+                {
+                    if (!await SendVisual(InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
+                        $"0x02ba projectile 0x{id:x} explodes ({impact})")) return;
+                    if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + 1.5, epoch)) return;
+                }
+            }
+            await SendVisual(InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}",
+                () => conn.ProjectileObjects.Remove(id));
         }
-        // The impact: on a monster or a wall the projectile's model becomes the explosion (Game_PROJECTILE_IMPACT_AO overrides
-        // it; "none" turns it off), which plays its default animation; the object goes 1.5 s later. At the end of its range it
-        // just goes. A hitless flight (the default attack's arrow, whose damage the swing already dealt) only goes.
-        impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
-        if (damageTo is not null && (hitId != 0 || hitWall) && impact != "none")
-        {
-            await Send(remote, stream, ciphers, InstanceEntities.AnimatedModel(id, ProjectileObject.AnimatedComponentIndex, impact),
-                $"0x02ba projectile 0x{id:x} explodes ({impact})");
-            await Task.Delay(1500);
-            if (conn.Closed) return;
-        }
-        await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x}");
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } // The old area's connection has gone.
     }
 
-    // A hit on a monster for damage: its life goes down (0x1b1) and at 0 it dies (MonsterKilled). A monster another hit has
-    // killed meanwhile is left alone, so it dies only once (hits that land together).
+    // Release and terminal visual lifetimes share the game clock and area epoch with an active flight.
+    static async Task<bool> WaitProjectileTime(ClientState conn, double until, int epoch)
+    {
+        while (true)
+        {
+            lock (conn.Monsters)
+            {
+                if (!conn.ProjectileActive(epoch)) return false;
+                if (!conn.Paused && conn.Clock.Elapsed.TotalSeconds >= until) return true;
+            }
+            await Task.Delay(16);
+        }
+    }
+
+    // A hit on a living monster: life is mutated once under Monsters, then notifications await outside the lock.
     static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
         int damage, string by, bool log = true, bool melee = false, ushort sequence = 0)
     {
-        uint life;
-        bool stageStarts;
-        lock (conn.Monsters)
-        {
-            if (m.Dead) return;
-            (m.Life, stageStarts) = TakeDamageLocked(m, damage);
-            life = m.Life;
-            conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
-            if (life == 0) { m.Aggro = false; m.Dead = true; }
-        }
+        MonsterHit? hit;
+        lock (conn.Monsters) hit = ApplyMonsterHitLocked(conn, m, damage);
+        if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
+    }
+
+    // The short state mutation is shared with projectile impact; no awaits under Monsters.
+    static MonsterHit? ApplyMonsterHitLocked(ClientState conn, SpawnedMonster m, int damage)
+    {
+        if (m.Dead || m.Life == 0) return null;
+        (m.Life, bool starts) = TakeDamageLocked(m, damage);
+        conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
+        if (m.Life == 0) { m.Aggro = false; m.Dead = true; }
+        return new(m.Life, starts);
+    }
+
+    static async Task NotifyMonsterHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
+        MonsterHit hit, int damage, string by, bool log = true, bool melee = false, ushort sequence = 0)
+    {
+        var (life, stageStarts) = hit;
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(id, [(StatKeys.HideMiniLifeBar, 1)]),
                 !log ? null : $"0x01b3 monster 0x{id:x} hide_mini_life_bar = 1");

@@ -250,7 +250,7 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x01d4 pause: in a town or hideout, not paused");
             return;
         }
-        if (pause) conn.Clock.Stop(); else conn.Clock.Start();
+        lock (conn.Monsters) { if (pause) conn.Clock.Stop(); else conn.Clock.Start(); }
         await Send(remote, stream, ciphers, InstancePause.State(pause), $"0x01d3 {(pause ? "paused" : "resumed")} (C→S 0x01d4 {(pause ? 1 : 0)})");
     }
 
@@ -263,6 +263,7 @@ partial class Program
     // loop, the monster AI tick and the transfer timer all send).
     // `still`, when given, is checked inside the connection's send gate and drops the packet when false: a packet decided
     // before another task's packets were sent can check that it still applies (SendFlinch).
+    // Projectile impacts commit their short locked damage mutation inside this gate before relocation.
     static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
         Func<bool>? still = null)
     {

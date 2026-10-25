@@ -75,12 +75,17 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 
 ### Skill projectiles
 
-- **Known:** Fireball and a bow's `DefaultArrow`/attack-gem projectiles are server-made objects and hit the targeted
-  monster ([11](../docs/protocol/11-skills.md) §9–10); attack gems use the `attack1_bow` contact and the weapon's
+- **Known:** Fireball and a bow's `DefaultArrow`/attack-gem projectiles are server-made objects
+  ([11](../docs/protocol/11-skills.md) §9–10); attack gems use the `attack1_bow` contact and the weapon's
   damage; on natural ground the spawn height is the captured terrain height + 5 steps.
   Ordinary player and skill projectile-speed bonuses affect flight and predicted arrival together; baseline/+100%/-50%
   Fireball casts were checked live, while conditional/more/less speed and support application remain open.
-  Collision is still selected at launch, so later direction changes can cause damage after a visual miss.
+  Swept relative-motion checks run throughout flight to the first monster or wall contact, with pause, transfer
+  and disconnect handling through the game clock and flight lifetime. Default-attack arrows are visual only.
+  Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
+  Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume passed before the
+  bow packet/height update; merged bow/collision integration needs a live recheck. Integer monster walk estimates,
+  a shared collision radius and straight movement between samples still limit accuracy.
 - **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
   (or in the walk-map recorder), and collision with doodads and objects that have their own colliders.
 - **Done when:** Fireball and bow arrows look like the real ones in every area: at the caster's torso on terrain and

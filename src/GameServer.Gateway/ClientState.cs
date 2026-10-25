@@ -72,6 +72,8 @@ sealed class OpenShop(SpawnedNpc npc, Dictionary<uint, (uint Tab, InventoryItem 
     readonly Dictionary<uint, uint> _revisions = [];
 }
 
+readonly record struct MonsterHit(uint Life, bool StageStarts);
+
 sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, int stopRange, uint maxLife)
 {
     public MonsterAttack? Attack { get; init; }
@@ -144,6 +146,45 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     // The Escape menu's pause (C→S 0x1d4) stops the Clock: walks, cooldowns and flask effects stand still meanwhile.
     public bool Paused => !Clock.IsRunning;
+    // A transfer invalidates flights even during the gap after PendingTransfer is consumed by Transfer.
+    // Guarded by Monsters, like projectile impact commits and pause changes.
+    public bool LeavingArea;
+    public int ProjectileEpoch;
+    public readonly HashSet<uint> ProjectileObjects = [];
+
+    public bool ProjectileActive(int epoch)
+    {
+        lock (Monsters) return !Closed && !LeavingArea && ProjectileEpoch == epoch;
+    }
+
+    // Called inside the send gate. A queued terminal visual must survive pause and retry after resume;
+    // its registry removal cannot commit until that packet is accepted.
+    public bool TryCommitProjectileVisual(int epoch, Action? commit = null)
+    {
+        lock (Monsters)
+        {
+            if (!ProjectileActive(epoch) || Paused) return false;
+            commit?.Invoke();
+            return true;
+        }
+    }
+
+    public bool TryBeginAreaChange(PendingTransfer transfer, out uint[] projectiles)
+    {
+        lock (Monsters)
+        {
+            projectiles = [];
+            if (Closed || PendingTransfer is not null || LeavingArea) return false;
+            PendingTransfer = transfer;
+            LeavingArea = true;
+            ProjectileEpoch++;
+            projectiles = [.. ProjectileObjects];
+            ProjectileObjects.Clear();
+            return true;
+        }
+    }
+
+    public void ResumeAfterFailedTransfer() { lock (Monsters) LeavingArea = false; }
 
     /// <summary>The <see cref="Clock"/> time of a Stopwatch timestamp in the past (a socket read); now when 0 or paused.</summary>
     public double ClockAt(long timestamp)
