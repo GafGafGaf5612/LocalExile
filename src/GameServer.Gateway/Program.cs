@@ -834,6 +834,7 @@ static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCi
         {
             Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
             Life = Math.Min(damagedLife ?? life, life), Stage = stageSkill is null ? null : stage, States = variety.StateMachine,
+            HitAnimations = Monsters.TakeHit(variety.Id),
         };
     // A kept monster that was hit: its life as a hit sets it (0x1b1).
     if (damagedLife < life)
@@ -1641,6 +1642,8 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(use.TargetId, [(StatKeys.HideMiniLifeBar, 1)]),
             $"0x01b3 monster 0x{use.TargetId:x} hide_mini_life_bar = 1");
+    // The hit reaction: one of the rig's TakeHit clips and its SoundEvent (0x1b2).
+    await SendFlinch(remote, stream, ciphers, conn, use.TargetId, m, damage, log: true);
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
         $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}" +
         (stored > 0 ? $", impale +{stored:0.#} ({impaleStacks} stack(s))" : "") +
@@ -2103,10 +2106,28 @@ static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiph
     if (life == 0)
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(id, [(StatKeys.HideMiniLifeBar, 1)]),
             !log ? null : $"0x01b3 monster 0x{id:x} hide_mini_life_bar = 1");
+    // The hit reaction: one of the rig's TakeHit clips and its SoundEvent (0x1b2), as in Attack.
+    await SendFlinch(remote, stream, ciphers, conn, id, m, damage, log);
     await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life),
         !log && life > 0 ? null : $"0x01b1 monster 0x{id:x} hit by {by} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
     if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
     if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
+}
+
+// The hit reaction: one of the rig's TakeHit clips and its SoundEvent, S→C 0x1b2 kind 0 (see Attack and HitMonster).
+// A killing blow gets none: the client's Life component runs the death instead, and the flinch would only be cut off.
+// The gates (HitReaction) keep it a stun-like reaction rather than a loop; see that class. The monster is checked again
+// inside the send gate: a hit that kills it meanwhile marks it Dead before it sends its own 0x1b1, so the flinch either
+// goes out before the death or not at all.
+static async Task SendFlinch(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
+    SpawnedMonster m, int damage, bool log)
+{
+    HitAnimation? clip;
+    lock (conn.Monsters) clip = HitReaction.TryFlinch(m, damage, conn.Clock.Elapsed.TotalSeconds, Random.Shared);
+    if (clip is not { } flinch) return;
+    await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, (uint)flinch.Index, 1f),
+        !log ? null : $"0x01b2 monster 0x{id:x} flinch (animation {flinch.Index}, {flinch.Seconds:0.00} s)",
+        still: () => { lock (conn.Monsters) return m.Life > 0 && !m.Dead; });
 }
 
 // A hit's damage off a monster's life (under the Monsters lock): the new life, and whether the hit starts its boss stage
@@ -4566,6 +4587,23 @@ static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiph
         await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, x, y, skill, 0xffff, 0x0408),
             $"0x01ab monster 0x{id:x} action skill 0x{skill:x4} from {from} to ({x}, {y})");
     })
+    // Animation probe: play animation index `id` on the nearest living monster (0x1b2 kind 0). The Animated handler
+    // bounds-checks the index against the actor's animation count, so an out-of-range value is ignored.
+    .Add("anim", "/anim <index> [speed] (0x1b2 kind 0: play an animation on the nearest monster)", async args =>
+    {
+        if (args.Length < 1 || !uint.TryParse(args[0], out uint index)) throw new ArgumentException("an animation index");
+        float speed = args.Length > 1 ? float.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture) : 1f;
+        var here = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
+        uint? pick;
+        lock (conn.Monsters)
+            pick = conn.Monsters.Where(kv => kv.Value.Life > 0)
+                .OrderBy(kv => Dist(here, kv.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)))
+                .Select(kv => (uint?)kv.Key).FirstOrDefault();
+        if (pick is not { } id) { await conn.Commands!.Reply("No living monster nearby."); return; }
+        await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, index, speed),
+            $"0x01b2 monster 0x{id:x} play animation {index} at speed {speed}");
+        await conn.Commands!.Reply($"0x1b2 anim {index} (speed {speed}) -> monster 0x{id:x}");
+    })
     .Add("mob_tp", "/mob_tp [id] (0x1b7 next to you; default the last monster)", async args =>
     {
         if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
@@ -5059,12 +5097,16 @@ static (int X, int Y) NextToPlayer(ClientState conn)
 
 // One sender at a time per connection: the Salsa20 keystream must be applied and written in the same order (the read
 // loop, the monster AI tick and the transfer timer all send).
-static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log)
+// `still`, when given, is checked inside the connection's send gate and drops the packet when false: a packet decided
+// before another task's packets were sent can check that it still applies (SendFlinch).
+static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
+    Func<bool>? still = null)
 {
     var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
     await gate.WaitAsync();
     try
     {
+        if (still is not null && !still()) return;
         if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
         string? trace = MoveTrace && bytes.Length >= 6 && (bytes[0] << 8 | bytes[1]) is 0x01ab or 0x01b7 or 0x01ba
             ? Convert.ToHexString(bytes) : null;
@@ -7239,6 +7281,9 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public bool Hostile { get; init; } = true;
     // What it is, for the experience and items its death gives (null for monsters made without a variety).
     public MonsterCatalog.Variety? Variety { get; init; }
+    // Its TakeHit clips (index in the rig's animation list, length) for 0x1b2: the flinch and its sound on a hit that
+    // passes HitReaction's gates. One clip for most varieties; a few have a pool the server picks from.
+    public IReadOnlyList<HitAnimation> HitAnimations { get; init; } = [];
     public byte Level { get; init; } = 1;
     public MonsterRarity Rarity { get; init; }
     // Damage over time not yet applied (fractions of a point between ticks).
@@ -7253,6 +7298,9 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public int StopRange => stopRange;
     public uint MaxLife { get; } = maxLife;
     public uint Life = maxLife;
+    // Until when its last flinch plays (Clock seconds; HitReaction): no new flinch before. Guarded by the Monsters
+    // lock.
+    public double FlinchUntil = double.NegativeInfinity;
     public bool Aggro, Dead;
     public (int X, int Y)? LastTarget;
     // A boss's stage (BossFights) and whether a hit has started it.

@@ -23,8 +23,44 @@ sealed class MonsterCatalog(string folder = "data")
 
     private readonly Lazy<(List<Variety> Rows, string? Error)> _rows = new(() => Load(folder));
     private readonly Lazy<LifeTables?> _life = new(() => LifeTables.Load(folder));
+    private readonly Lazy<Dictionary<string, HitAnimation[]>> _takeHit = new(() => LoadTakeHit(folder));
 
     public string? Error => _rows.Value.Error;
+
+    /// <summary>
+    /// The variety's TakeHit clips: their indexes in its rig's animation list and their lengths
+    /// (data/monster-takehit.json, written by <c>python -I scripts/re/monster_takehit.py</c>). S→C 0x1b2 kind 0 plays
+    /// one of them on the Animated component and the clip's own SoundEvents play with it, when a hit passes
+    /// <see cref="HitReaction"/>'s gates. Most varieties map one clip; a few map a pool (the .act's
+    /// "flinch_small:max_duration=…, flinch_large:min_duration=…" or "flinch_01, flinch_02, flinch_03"), from which the
+    /// server picks one per flinch. Empty without the file or the
+    /// row (the monster then just does not flinch). A clip without a length (a file from before "lengths") has 0 s, so
+    /// the 0.4 s minimum applies.
+    /// </summary>
+    public IReadOnlyList<HitAnimation> TakeHit(string id) => _takeHit.Value.GetValueOrDefault(id) ?? [];
+
+    static Dictionary<string, HitAnimation[]> LoadTakeHit(string folder)
+    {
+        string path = Path.Combine(folder, "monster-takehit.json");
+        if (!File.Exists(path)) return [];
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+        var result = new Dictionary<string, HitAnimation[]>();
+        foreach (var p in doc.RootElement.EnumerateObject())
+        {
+            // "lengths" (ms) runs parallel to "indexes".
+            JsonElement[] lengths = p.Value.TryGetProperty("lengths", out var l) && l.ValueKind == JsonValueKind.Array
+                ? [.. l.EnumerateArray()] : [];
+            double Seconds(int i) =>
+                i < lengths.Length && lengths[i].ValueKind == JsonValueKind.Number ? lengths[i].GetDouble() / 1000 : 0;
+            if (p.Value.TryGetProperty("indexes", out var list) && list.ValueKind == JsonValueKind.Array)
+                result[p.Name] = [.. list.EnumerateArray().Select((e, i) => (e, i))
+                    .Where(x => x.e.ValueKind == JsonValueKind.Number)
+                    .Select(x => new HitAnimation(x.e.GetInt32(), Seconds(x.i)))];
+            else if (p.Value.TryGetProperty("index", out var one) && one.ValueKind == JsonValueKind.Number)
+                result[p.Name] = [new HitAnimation(one.GetInt32(), Seconds(0))];
+        }
+        return result;
+    }
 
     /// <summary>
     /// The maximum life the client gives a monster of this variety at this level, before mods: the client's Monster type
