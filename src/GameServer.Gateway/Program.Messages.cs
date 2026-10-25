@@ -45,13 +45,15 @@ partial class Program
                 {
                     double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
                     if (!TryBeginBowAttack(conn, at, duration, use.SkillId, use.Slot, out var bow)) continue;
+                    int projectileEpoch;
+                    lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
                     await Send(remote, stream, ciphers,
                         InstanceProtocol.ActionStarted(PlayerId, bow.X, bow.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                         $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bow.X}, {bow.Y}) (t={at:0.000})",
                         still: () => PlayerActionCurrent(conn, bow.Action));
                     if (Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
                         _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), (bow.X, bow.Y), (use.X, use.Y),
-                            damageTo: null, impact: "none", actionToken: bow.Action);
+                            damageTo: null, impact: "none", actionToken: bow.Action, epoch: projectileEpoch);
                     continue;
                 }
                 // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an

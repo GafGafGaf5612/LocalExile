@@ -324,8 +324,12 @@ partial class Program
     // 0x2b2 now; the move itself (0x27) once the client acknowledges with 0x2cb.
     static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
     {
-        if (conn.PendingTransfer is not null) return; // the client repeats 0x24 until something happens
-        conn.PendingTransfer = t;
+        if (!conn.TryBeginAreaChange(t, out var projectiles)) return;
+        // Remove outstanding visuals while the old world still exists, before 0x2b2. If Auth refuses the transfer,
+        // their canceled tasks must not leave permanent projectile/explosion objects in the retained world.
+        foreach (uint id in projectiles)
+            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove projectile 0x{id:x} (leaving area)",
+                still: () => !conn.Closed);
         await Send(remote, stream, ciphers, InstanceTransfer.ChangeArea(t.Area), $"0x02b2 change area to 0x{t.Area:x4} ({why})");
         // If the client never acknowledges, move it anyway after a moment.
         _ = Task.Delay(2000).ContinueWith(async _ => { if (conn.PendingTransfer is { } p) await Transfer(remote, stream, ciphers, conn, p); });
@@ -334,7 +338,11 @@ partial class Program
     // Auth moves the player and issues the destination ticket; 0x27 sends the client there (it reconnects to this Gateway).
     static async Task Transfer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t)
     {
-        conn.PendingTransfer = null;
+        lock (conn.Monsters)
+        {
+            if (!ReferenceEquals(conn.PendingTransfer, t)) return; // the acknowledgement and fallback timer can race
+            conn.PendingTransfer = null;
+        }
         var r = await InstanceControl.CallAsync(new ControlRequest
         {
             Op = "transfer", Ticket = conn.Ticket, Area = t.Area, Instance = t.Instance, New = t.New,
@@ -342,6 +350,7 @@ partial class Program
         t.Done?.Invoke(r);
         if (!r.Ok)
         {
+            conn.ResumeAfterFailedTransfer();
             Console.WriteLine($"[gateway] {remote} transfer failed: {r.Error}");
             return;
         }

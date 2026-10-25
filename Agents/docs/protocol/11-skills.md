@@ -617,22 +617,64 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (4,294,967,294 ms) gets a distance-dependent lower speed bound, before collision prediction. The bound includes
   endpoint rounding and is a numeric guard, not a measured official minimum speed.
   More/less modifiers, conditional and per-charge speed, support-gem application and special projectile speed
-  rules remain unimplemented. Collision is still predicted only at launch, with the limitations below.
+  rules remain unimplemented.
   Live validation used a copied OfflineWitch database and three Fireball casts over the same 116-cell path.
   At 0/+100/-50% raw player speed, the logs reported 95.7/191.4/47.8 cells per second; the actual 0x1ba payloads
   carried durations 1.212375/0.606187/2.424749 seconds. Before the patch, both 0 and +100% used 95.7 cells per second.
   These checks cover travel timing, not moving-target collision or pixel-level matching with the official game.
-- **Hit (live 2026-10-18).** At launch the server walks the path cell by cell and stops it at the first living
-  monster within 4 cells (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2) of where the projectile will
-  be, using where that monster will be by then. Ground and monster casts alike: the projectile flies to the hit (else
-  to its range), the monster loses the skill's fire damage (0x1b1), a kill is removed 10 s later. A monster that walks
-  into the path after launch is not hit. A monster selected at launch can still take damage after changing course
-  away from the predicted impact; ordinary speed modifiers do not fix this collision limitation.
+- **Hit (reworked 2026-10-25).** `ProjectileFlight` advances from the
+  connection's elapsed game clock, polled about every 16 ms. For each interval it solves the earliest intersection
+  of the projectile segment and each living monster's observed movement segment in relative coordinates, with the
+  existing 4-cell radius (`Game_PROJECTILE_HIT_RADIUS`; the row's CollisionRadius is 2). It keeps previous samples
+  across movement orders, rather than choosing a future target at launch. A monster can walk out of a formerly
+  predicted hit, walk into the path later, or intercept before a farther monster. Removed/dead monsters are omitted;
+  new objects and replaced walk estimators are tested only at the current endpoint, without inventing past motion.
+  The first contact stops the flight; range expiry without a contact removes it without an explosion.
+  Live at 10 cells/s on The Twilight Strand: a monster ordered from (330, 220) to (330, 240) after release was
+  missed, and the projectile reached the wall at (369, 220).
+  Ordering the monster from (330, 240) into the ray after release produced a hit at (326, 220).
+  These checks used actual monster movement orders; nearer interceptors and dead targets also have automated coverage.
+- **Stopping at contact (static evidence and live verification, 2026-10-25).** The initial 0x1ba goes to the
+  range/static-wall endpoint. At a discovered contact, S→C **0x1b7** relocates it to the rounded contact cell with the appropriate height,
+  then the Animated swap below plays its impact. The 3.29.3b Positioned handler's switch (`0x141e30c90`) maps 0x1b7
+  to `0x141e30da7`: it stores the height at +0x290 and trailing u32 at +0x2b4, then calls `0x141e31200`. That routine's
+  tail (`0x141e3162f`) calls `0x141e35250`, which clears the movement durations at +0x240/+0x280 and movement flags.
+  Thus the explosion does not continue along the old glide. `InstanceProtocol.Teleport` now accepts an optional
+  fixed-height marker and float world z; existing calls retain their two zero fields.
+  Unlike 0x1ba, 0x1b7 copies the fixed pair directly. For signed world-z steps `s`, send
+  marker `-s` and float world z `s * 7.8125`, preserving the projectile creation pair and fixed flight height.
+  Terrain is not resampled at impact, so sloping ground does not make the explosion jump vertically.
+  The height getter (`0x141e35800`) compares +0x290 with 0x7fffffff first; that sentinel selects terrain sampling
+  and ignores +0x2b4. Current flights use a fixed height, including the bare offset without a height grid.
+  Every other marker immediately returns the float at +0x2b4; sending a non-sentinel marker with a zero float
+  would snap the effect to world z zero.
+  Live contact probes read zero native movement duration at both the monster and wall impacts.
+  Separate raw 0x1b7 probes preserved marker/float pairs (-8, -62.5), (8, 62.5) and the terrain sentinel,
+  with native movement duration zero in each case.
+  These raw probes establish copy/stop semantics, independently of the marker/world-z relation in the
+  creation blob. The moving-target and raw-stop live checks preceded the bow packet/height update; the merged
+  bow/collision path needs a fresh live integration check. Broader surface-height accuracy remains open (#182).
+  Impact damage is committed under the send gate and a short monster lock, rechecking connection/area/pause and
+  target life. Packet writes and hit notifications await outside the monster lock. A transfer invalidates flights
+  even after its pending ticket is consumed and removes outstanding projectile/impact objects before 0x2b2;
+  a failed transfer permits new flights without reviving old ones or leaving their visuals behind.
+  Cast release, flight and the explosion's 1.5-second lifetime use game time and wait through pause.
+  Terminal model swaps and removals recheck pause inside the send gate and retry after resume;
+  a transfer cancels the retry and takes ownership of visual cleanup.
+  Live pause held the projectile at (289, 220) for 1.2 seconds, with no removal until the game resumed.
+  Local validation captures: `logs/projectile-collision-live.json` and `logs/projectile-fixed-height-live.json`.
+  These remain estimates: monster positions are integer `WalkEstimator` samples, movement between samples is a
+  straight chord, the radius is shared across monsters, and the client has its own cell stepping/network delay.
+  Static wall checks use a captured two-dimensional grid, not object/doodad colliders or three-dimensional geometry.
+  Sharp turns between samples or long scheduling stalls can still differ from the client. This is not an official
+  collision/tick-rate implementation; explosion area damage, pierce/chains and object-owned colliders are unchanged.
 - **Walls (live 2026-10-18).** The client's walkability provider (walk-map hook `0x1410ddcfd`) returns a second grid
   of the same size at +0x20/+0x28: what stops projectiles. 0 blocks, 1..5 (a distance gradient like the walk map's) lets
   them through. On The Coast seed 1 every walkable cell is open in it, cliffs and rocks are 0 in both, and 1.44 M cells
   the walk map blocks (the sea) are open. `scripts/walkmaps` saves it as `<area>_seed<seed>.projectile.bin`
-  (`ProjectileGrid`); the path stops half a cell before the first blocking cell and explodes there. Live: the fireball
+  (`ProjectileGrid`). Static routes use a supercover grid trace with exact rational boundary comparisons,
+  including non-45-degree diagonal corner cells, clipped to
+  an open cell before the first blocker; the moving-target sweep uses that same endpoint. Earlier live checks: the fireball
   explodes on cliffs and flies over the sea. Doodads and objects with their own colliders (not in the grid) do not stop
   it yet. Grids exist for Lioneye's Watch and The Coast seed 1.
 - **Explosion (live 2026-10-18).** Projectiles.dat names the impact as an animation of the projectile's own .ao
@@ -690,8 +732,9 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   cell step (duration / the path's longest axis), advancing +0x244 by the frame time (`0x141e32710`). Sending the
   speed (95.7) made each step take ~1 s, so the fireball crawled (~10 world units/s, sampled with Frida); sending
   distance / speed it flies at ~1000 units/s. The fireball now starts `Game_PROJECTILE_AHEAD` cells (1.5) in front of
-  the caster and, cast at the ground, flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area); cast at a
-  monster it stops there and hits. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
+  the caster and flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area), stopped by the first
+  monster or wall contact described above. Default-attack arrows are visual only: their damage retains the attack
+  contact timing and does not use the flight callback. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
 - **Still wrong.** Without a surface-height model the projectile uses the captured terrain height; on a platform or
   doodad (which the terrain grid does not include) it spawns below the player (issue #182). The direction floats of
   Positioned's f1 0x04 block are not used; sending (dx, dy, 0, 0) put the fireball under the ground, so the Gateway no

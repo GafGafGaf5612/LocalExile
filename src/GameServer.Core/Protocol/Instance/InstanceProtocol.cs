@@ -363,8 +363,11 @@ public static class InstanceProtocol
     /// u8 flags, bit0 set by the "Resurrect in Town" button, clear for the checkpoint one.</summary>
     public static bool ReadResurrectInTown(ReadOnlySpan<byte> m) => (m[2] & 1) != 0;
 
-    public static byte[] Teleport(uint objectId, int x, int y) =>
-        new LoginWriter().U16(TeleportId).U32(objectId).U32(0).U16(0).U32((uint)x).U32((uint)y).U32(0).U32(0).ToArray();
+    /// <summary>Relocate and stop a glide. Unlike MoveTo, height is Positioned's signed fixed-height marker and
+    /// worldZ is its float z, copied directly by the client. Marker 0x7fffffff selects terrain and ignores worldZ.</summary>
+    public static byte[] Teleport(uint objectId, int x, int y, uint height = 0, float worldZ = 0) =>
+        new LoginWriter().U16(TeleportId).U32(objectId).U32(0).U16(0).U32((uint)x).U32((uint)y)
+            .U32(height).U32(BitConverter.SingleToUInt32Bits(worldZ)).ToArray();
 
     /// <summary>The network's signed compact int (writer 0x141fa3c50, reader 0x141fa3d60): 1 byte for -0x40..0x3f, then
     /// 2/3/4 bytes with prefixes 0x80/0xc0/0xe0 (6/5/4 value bits in the first byte), else 0xf0 + 4 bytes, big-endian.</summary>

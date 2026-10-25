@@ -195,17 +195,33 @@ Part of [Status](../Status.md); what to build next in this area is in
   Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
   Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
-- **Projectiles.** Areas without a height grid (`scripts/re/frida/capture-terrain-tiles.js` +
-  `scripts/walkmaps/heights.py`) fly the fireball on the terrain;
-  it hits the first monster or wall on its path (checked at launch;
-  walls from the projectile grid, Lioneye's Watch and The Coast seed 1) and explodes there, but doodads with their own
-  colliders do not stop it ([11](../docs/protocol/11-skills.md) §10).
+- **Projectiles.** Moving targets are checked throughout flight by sweeping observed relative movement.
+  A monster can change course away from a hit, enter the path later, or intercept before a farther target.
+  The client glide is stopped at the contact cell before impact with a height-preserving 0x1b7.
+  Cast release, flight and explosion cleanup use game time and wait through pause.
+  Area changes remove outstanding visuals before handoff and invalidate flights even if the transfer fails.
+  Disconnects cancel outstanding flight tasks.
+  Automated trajectory, wall, lifecycle and packet checks pass.
+  Live checks verified a moving-away miss, a later-entry hit, first-wall contact, pause/resume and native glide stop.
+  Raw fixed-height and terrain-sentinel stop packets preserved their fields and cleared native movement duration.
+  These live collision and raw-stop checks preceded the bow packet/height update; merged bow/collision
+  integration still needs a live recheck. Fixed-height stops preserve the new creation marker/world-z pair.
+  Broader surface-height accuracy remains open (#182).
+  Positions remain integer server walk estimates sampled about every 16 ms, with a shared collision radius
+  and straight movement between samples.
+  Sharp turns, scheduling stalls and client interpolation can still differ; official timing equivalence is unverified.
+  Static walls use the captured two-dimensional projectile grid with diagonal-corner traversal and endpoint checks.
+  Without a height grid, flight uses the bare hand offset; platforms and doodads need a surface-height model (#182).
+  Height capture still uses `scripts/re/frida/capture-terrain-tiles.js` and `scripts/walkmaps/heights.py`.
+  Doodad/object colliders, explosion area damage and pierce/chains remain unimplemented.
   Ordinary player and skill projectile-speed increases/reductions now share the flight and predicted-arrival speed.
   The player's computed total is counted once; the skill's own level/quality bonus is added separately.
   The development speed override retains priority.
   Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline, 0.606 at +100% and 2.425 at -50%.
   Conditional/more/less speed and support-gem application remain open.
-  Code: `ProjectileSpeed.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`).
+  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
+  `InstanceProtocol.Teleport`.
+  Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
   yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour
