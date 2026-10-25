@@ -419,9 +419,19 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   Manual native 0x1ce experiments confirmed near aim `(290,229) -> (300,220)` resolves to `(314,208)`;
   far aim `(311,220) -> (200,220)` resolves to `(269,220)`.
   While walking from `(279,221)`, aim `(310,220)` resolved to `(311,220)` and ended the old predicted Move.
-  These were protocol experiments, not end-to-end validation of the Gateway's new 0x190 route.
+  These manual protocol experiments establish resolver and walk-stop behavior separately from production validation.
   The server mirrors that walk stop with `Walk.Teleport`, preserving ActionCount, channel and pending release tokens.
-  End-to-end Frostblink verification is pending.
+  End-to-end stationary validation subsequently passed with actual Q input from `(280,220)`:
+  raw aim `(308,221)` resolved to native/server `(312,221)`.
+  Requests after 0.3 seconds, with noninstant Fireball, or with an unsigned-invalid x coordinate were rejected.
+  Rejections sent no confirmation and changed no mana or position.
+  A retry after 3.2 seconds aimed at `(300,220)` and reached native/server `(280,218)`.
+  Exactly two accepted uses paid 12 mana each, generated two ground confirmations and consumed two native uses.
+  The combined validation also included the separate #197 cooldown progress synchronization after each acceptance;
+  its record retained base 3000 ms, total 3 seconds and rate 1.
+  No 0x190 request remained unframed.
+  Evidence: `logs/instant-location-live-default.json` in the integration validation checkout.
+  Production Frostblink use during an active walk has not been measured; the walking evidence above is manual native RE.
   Departure/arrival damage, chilled ground, nearby-enemy cooldown recovery, shared Blink cooldown groups,
   other location instant skills and complete movement restriction/terrain searches remain unimplemented.
 - **Hit reaction (live 2026-10-25).** A monster that takes a hit plays its rig's **TakeHit** clip with S→C **0x1b2**

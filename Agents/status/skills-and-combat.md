@@ -150,7 +150,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   The ground 0x1ce uses the raw aim; the server mirrors native 32/42-cell distance limits and ends the old walk.
   Placement requires a captured grid and clear terrain, barriers and endpoint clearance.
   Action tokens and pending releases remain unchanged; other location instant movement is withheld.
-  Native packet/resolver experiments and automated checks pass; end-to-end Frostblink validation is pending.
+  Actual Q input and a cooldown retry matched native/server positions, with two 12-mana costs and two confirmations.
+  Early retry, noninstant Fireball and unsigned-invalid coordinate requests changed no position or mana.
+  Manual native experiments separately verified near/far clamps and the old predicted walk ending after a blink.
+  Production movement during an active walk has not been measured.
   Frostblink damage, chilled ground, enemy-dependent recovery and shared Blink cooldown groups remain unsupported.
   The skill bar keeps its slots when skills are re-sent or a gem is socketed again (the saved bar goes out as 0x53)
   ([11](../docs/protocol/11-skills.md) §9, §11).
