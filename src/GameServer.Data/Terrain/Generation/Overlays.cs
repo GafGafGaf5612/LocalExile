@@ -12,8 +12,9 @@ sealed record OverlayGroup(TileKey Key, byte Flags, List<OverlayRoom> Rooms)
 }
 
 /// <summary>One room of a group (0x30 bytes): the room, its limit ("limit=", +8), the orientations under which its key
-/// is the group's (+0xa, a mask) and the line's weight (+0x28).</summary>
-sealed record OverlayRoom(RoomDef Room, int Limit, byte OrientationMask, int Weight);
+/// is the group's (+0xa, a mask), the line's weight (+0x28) and the tile tags it requires under it ("!tag" words, +0x10;
+/// <c>0x142000c50</c>).</summary>
+sealed record OverlayRoom(RoomDef Room, int Limit, byte OrientationMask, int Weight, IReadOnlyList<string> Requires);
 
 /// <summary>The overlays of <c>0x142116600</c> (<c>0x141ffe240</c> sets up, <c>0x141fff1a0</c> runs a pass): rooms
 /// whose one key matches the map at a spot (its corner grounds and heights, <c>0x141ffa7b0</c>) replace the tiles
@@ -31,14 +32,14 @@ sealed class Overlays
     readonly List<string> _notes;
     readonly TileGrid _grid;
     readonly int _offsetX, _offsetY, _width, _height;
-    readonly SpecialNodes _special;
+    readonly RoomTiler _tiler;
     readonly byte[] _excluded;
     readonly Dictionary<OverlayRoom, int> _placed = [];
 
     public Overlays(TerrainCache files, LevelRandom rng, List<string> notes, TileGrid grid, int offsetX, int offsetY, int width, int height,
-        SpecialNodes special, IReadOnlyList<PlacedRoom> rooms, int roomOverlap)
+        RoomTiler tiler, IReadOnlyList<PlacedRoom> rooms, int roomOverlap)
     {
-        (_files, _rng, _notes, _grid, _offsetX, _offsetY, _width, _height, _special) = (files, rng, notes, grid, offsetX, offsetY, width, height, special);
+        (_files, _rng, _notes, _grid, _offsetX, _offsetY, _width, _height, _tiler) = (files, rng, notes, grid, offsetX, offsetY, width, height, tiler);
         // 0x141ffe240: rooms of nodes with descriptions 0x10; rooms 4 (shrunk by the master's RoomOverlap when the room's
         // own overlap, room data +1, is the same) and 8; tiles with a tag 2; extra features 0x20 (none in the ported areas).
         _excluded = new byte[width * height];
@@ -134,9 +135,11 @@ sealed class Overlays
             var room = files.Room(path) ?? throw new FileNotFoundException(path);
             byte roomFlags = flags, mask = 0;
             int limit = 0;
+            var requires = new List<string>();
             foreach (var word in args)
             {
                 if (word.Contains("SuppressUnderlying")) continue;
+                if (word.Length > 1 && word[0] == '!') { requires.Add(word[1..]); continue; }
                 if (word.StartsWith("limit=", StringComparison.Ordinal)) { limit = Math.Min(255, int.Parse(word[6..])); continue; }
                 if (word.Length > 1 && word[0] is '+' or '-') { roomFlags = Flag(roomFlags, word); continue; }
                 int o = Orientation.Parse(word);
@@ -154,7 +157,7 @@ sealed class Overlays
                 // The same room under another orientation with this key only adds the orientation.
                 int at = group.Rooms.FindIndex(r => r.Room == room);
                 if (at >= 0) group.Rooms[at] = group.Rooms[at] with { OrientationMask = (byte)(group.Rooms[at].OrientationMask | 1 << o) };
-                else group.Rooms.Add(new OverlayRoom(room, limit, (byte)(1 << o), weight));
+                else group.Rooms.Add(new OverlayRoom(room, limit, (byte)(1 << o), weight, requires));
             }
         }
         if (order == 2) throw new NotSupportedException("overlay SizeOrder is not ported");
@@ -244,6 +247,7 @@ sealed class Overlays
             foreach (var room in group.Rooms)
             {
                 if (room.Limit != 0 && _placed.GetValueOrDefault(room) >= room.Limit) continue;
+                if (room.Requires.Count != 0 && !HasTags(room.Requires, spot.X, spot.Y, kw, kh)) continue;
                 if ((group.Flags & 0x40) != 0) throw new NotSupportedException("MatchAllTileKeys overlays (0x142000f60) are not ported");
                 if (room.Weight != 0) rooms.Add(room);
             }
@@ -271,11 +275,22 @@ sealed class Overlays
                     c.Ground = null;
                     c.Flags &= unchecked((byte)~1);
                 }
-            _special.TiliseRoom(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, []);
+            _tiler.Tilise(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, []);
             Mark(spot.X + _offsetX, spot.Y + _offsetY, spot.X + _offsetX + kw, spot.Y + _offsetY + kh, 1);
             _placed[chosen] = _placed.GetValueOrDefault(chosen) + 1;
             _notes.Add($"overlay {Path.GetFileName(chosen.Room.Path)} o{o} at ({spot.X + _offsetX}, {spot.Y + _offsetY})");
         }
+    }
+
+    /// <summary><c>0x142000c50</c>: every required tag (a multiset) is on a tile whose origin lies in the w × h area at
+    /// view position (x, y), one tile per occurrence.</summary>
+    bool HasTags(IReadOnlyList<string> tags, int x, int y, int w, int h)
+    {
+        var left = tags.ToList();
+        for (int v = y; v < y + h; v++)
+            for (int u = x; u < x + w; u++)
+                if (Entry(u, v) is { IsOrigin: true } e && e.Tile.Tag.Length != 0) left.Remove(e.Tile.Tag);
+        return left.Count == 0;
     }
 
     static T Pick<T>(List<T> list, Func<T, int> weight, int r)

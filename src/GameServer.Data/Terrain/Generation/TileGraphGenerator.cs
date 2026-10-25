@@ -223,7 +223,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         PreUniqueRooms(roomSet, placer);
         // 0x141ffe240, then the first overlay pass (0x141fff1a0 with bit 1).
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
-        var overlays = new Overlays(files, rng, notes, grid, _ox, _oy, Graph.Width, Graph.Height, special, [.. special.Rooms],
+        var overlays = new Overlays(files, rng, notes, grid, _ox, _oy, Graph.Width, Graph.Height, special.Tiler, [.. special.Rooms],
             int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
         foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays.Run(pass, afterFill: false);
         onStage?.Invoke("overlays", Graph);

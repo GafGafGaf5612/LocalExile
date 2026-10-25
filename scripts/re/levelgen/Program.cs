@@ -666,8 +666,8 @@ static void Generate(string areaId, uint seed, string? tracePath)
                 continue;
             }
             if (!heightCopies.TryGetValue(name, out var copy)) continue;
-            // LEVELGEN_DUMP=x0,x1,y0,y1: the port's entry heights and vertex heights there at this stage.
-            if (Environment.GetEnvironmentVariable("LEVELGEN_DUMP") is { } dumpArea)
+            // LEVELGEN_HEIGHTS=x0,x1,y0,y1: the port's entry heights and vertex heights there at this stage.
+            if (Environment.GetEnvironmentVariable("LEVELGEN_HEIGHTS") is { } dumpArea)
             {
                 var r = dumpArea.Split(',').Select(int.Parse).ToArray();
                 Console.WriteLine($"port {name} entries / vertices:");

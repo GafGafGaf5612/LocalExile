@@ -445,9 +445,6 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                             roomVertices.Add((_ox + step * p.X + dx, _oy + step * p.Y + dy));
                         }
         RoomGrounds(map, step);
-        FillRecords(master, masterPath);
-        // 0x1420f8f20 (draws only when +0xb0 lists cells, not ported), then the mirror seams (0x142025440) over the
-        // layout's view, with the placed rooms as its room list.
         var placed = _placed = [];
         foreach (var p in map.Rooms)
             if (p.Room?.Def is { } def)
@@ -455,9 +452,14 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 var (w, h) = Orientation.Size(p.Orientation, def.Width, def.Height);
                 placed.Add(new PlacedRoom(def, _ox + step * p.X, _oy + step * p.Y, w, h, p.Descriptions, p.Orientation));
             }
+        var overlayRooms = FillRecords(master, masterPath, placed);
+        // 0x1420f8f20 (draws only when +0xb0 lists cells, not ported), then the mirror seams (0x142025440) over the
+        // layout's view, with the placed rooms as its room list.
         new Seams(files, rng, _grid, _ox, _oy, step * map.Width + map.Overlap, step * map.Height + map.Overlap, _store, placed, roomVertices,
             _graphGrounds, notes).Run();
-        // The fill's rooms (.gft lines naming an .arm) join the record's rooms after the layout's, for the doodad stage.
+        // The overlays' rooms and the fill's rooms (.gft lines naming an .arm) join the record's rooms after the
+        // layout's, for the doodad stage.
+        placed.AddRange(overlayRooms);
         placed.AddRange(_fillRooms);
         foreach (var p in map.Rooms)
             if (p.Room is null && p.Descriptions.Count != 0)
@@ -1166,11 +1168,13 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// without one, its top-left vertex's ground when that vertex has flag 1. The fill's view is the tiler's, so a tile
     /// reaching more than one entry into the outer buffer does not fit. All of it only with FillTiles (master +0x218).
     /// Between the shrines and the fill the recorded edge tiles get their open sides filled (<c>0x141feed20</c>,
-    /// <see cref="GroundStages.EdgePoints"/>). Not ported before it: <c>0x1420f1590</c> and <c>0x1420f3100</c> (unique and
-    /// pre-unique rooms) and the overlay passes.</summary>
-    void FillRecords(Dictionary<string, string> master, string masterPath)
+    /// <see cref="GroundStages.EdgePoints"/>); then the first overlay pass (<c>0x141ffe240</c> on the tiler's view with the
+    /// layout's rooms and the shrines, <c>0x141fff1a0</c> with bit 1), and after the fill the second (bit 2). Returns the
+    /// overlays' rooms. Not ported before it: <c>0x1420f1590</c> and <c>0x1420f3100</c> (unique and pre-unique
+    /// rooms).</summary>
+    List<PlacedRoom> FillRecords(Dictionary<string, string> master, string masterPath, List<PlacedRoom> layoutRooms)
     {
-        if (!master.TryGetValue("FillTiles", out var gft)) return;
+        if (!master.TryGetValue("FillTiles", out var gft)) return [];
         var (vx, vy, vx1, vy1) = _view;
         var fill = new Fill(files, rng, _grid, vx, vy, vx1 - vx, vy1 - vy, _store,
             files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes);
@@ -1178,12 +1182,19 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         if (_edgeRecords.Count != 0)
             new GroundStages(_grid, vx, vy, vx1 - vx, vy1 - vy, files).EdgePoints(
                 [.. _edgeRecords.Select(r => (r.X - vx, r.Y - vy, r.Index))], _edgePoints, fill.FillSide);
+        var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
+        var tiler = new RoomTiler(rng, _grid, vx, vy, _store);
+        var overlays = passes.Count == 0 ? null : new Overlays(files, rng, notes, _grid, vx, vy, vx1 - vx, vy1 - vy, tiler,
+            [.. layoutRooms, .. _fillRooms], int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
+        foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays!.Run(pass, afterFill: false);
         foreach (var (x, y, ground, height, accessible) in _fillRecords.OrderBy(r => r.X).ThenBy(r => r.Y))
         {
             if (_grid[x, y] is not null) continue;
             var g = ground ?? ((_grid.Corner(x, y).Flags & 1) != 0 ? _grid.Corner(x, y).Ground : null);
             fill.FillEntry(x - vx, y - vy, g, accessible, height);
         }
+        foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays!.Run(pass, afterFill: true);
+        return tiler.Rooms;
     }
 
     /// <summary><c>0x1420f2340</c>: with shrines rolled (pool +0x148), the RoomSet's "shrine" rooms (+0x118) whose unit
