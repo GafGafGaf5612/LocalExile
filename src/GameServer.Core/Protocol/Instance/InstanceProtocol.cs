@@ -218,6 +218,34 @@ public static class InstanceProtocol
     public static byte[] ActionTarget(uint objectId, ushort sequence, int x, int y) =>
         new LoginWriter().U16(ActionTargetId).U32(objectId).U32(0).U16(0).U16(sequence).U32((uint)x).U32((uint)y).ToArray();
 
+    public const ushort ActionHitId = 0x1af;
+
+    /// <summary>
+    /// S→C 0x1af "action hit" (class 0x1435ddb38, read 0x141fddba0 → 0x1419bd6f0; Actor handler 0x1421940a0 → 0x141e90f50):
+    /// the hit result of an action. The object header names the attacker; then u16 action sequence (+0x40, must match the
+    /// action's +0x11a), u8 (+0x43), u8 skill index (+0x42, 0 = the actor's current action), u32 target object id (+0x44),
+    /// u16 flags (+0x36), u8 kind bits (bit 0: the message belongs to an action, bit 1: the hit data follows, bits 2/3: a
+    /// further u16 each), then u8 (+0x39) and u8 hit angle (+0x3a: 0..255 = a full turn). The handler looks the action up,
+    /// picks the damage stat container (or the one the action's sequence names) and calls the attacker Actor's
+    /// ProcessDamagePackageInternal (vtable +0x230, 0x141e91580): the client applies the hit locally, which is what plays
+    /// the blood particles and the weapon impact sound ("bonk") on the target. Server life (0x1b1) stays authoritative.
+    /// </summary>
+    public static byte[] ActionHit(uint objectId, ushort sequence, uint targetObjectId, byte actionByte = 0,
+        byte skillIndex = 0, ushort flags = 0, byte kind = 0x03, byte code = 0, byte angle = 0, ushort u34 = 0,
+        ushort u3c = 0, ushort u3e = 0)
+    {
+        var w = new LoginWriter().U16(ActionHitId).U32(objectId).U32(0).U16(0)
+            .U16(sequence).U8(actionByte).U8(skillIndex).U32(targetObjectId).U16(flags).U8(kind);
+        if ((kind & 0x02) != 0)
+        {
+            if ((flags & 0x400) != 0) w.U16(u34);
+            w.U8(code).U8(angle);
+            if ((kind & 0x04) != 0) w.U16(u3c);
+            if ((kind & 0x08) != 0) w.U16(u3e);
+        }
+        return w.ToArray();
+    }
+
     public const ushort InstantActionId = 0x1ce;
 
     /// <summary>

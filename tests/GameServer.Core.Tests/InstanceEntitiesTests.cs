@@ -122,6 +122,18 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Action_hit_layout()
+    {
+        // header, u16 sequence, u8 action byte, u8 skill index, u32 target, u16 flags, u8 kind (3 = has an action and
+        // hit data), then the hit code and the angle byte; big-endian.
+        Assert.Equal("01AF" + "00003000" + "00000000" + "0000" + "0007" + "00" + "00" + "00003001" + "0000" + "03" + "00" + "80",
+            Convert.ToHexString(InstanceProtocol.ActionHit(0x3000, 7, 0x3001, angle: 0x80)));
+        // Without the hit-data bit only the first part is written.
+        Assert.Equal("01AF" + "00003000" + "00000000" + "0000" + "0007" + "00" + "00" + "00003001" + "0000" + "01",
+            Convert.ToHexString(InstanceProtocol.ActionHit(0x3000, 7, 0x3001, kind: 0x01)));
+    }
+
+    [Fact]
     public void Action_started_on_an_object_carries_its_id_after_the_flags()
     {
         string hex = Convert.ToHexString(InstanceProtocol.ActionStarted(0x1000, 1, 2, 3, 4, 0x4000, 7, 0x0408, targetObjectId: 0x3000));
