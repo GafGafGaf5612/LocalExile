@@ -337,10 +337,15 @@ partial class Program
 
     // An instant skill (C→S 0x191): its effect, then S→C 0x1ce, which has the client run the skill's action without animation
     // and consume a use of it: the skill bar's cooldown starts (the tooltip showed the cooldown, the bar did not run it).
-    static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    internal static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, uint targetId, (int X, int Y) at)
     {
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        if (gem.Name is not null && InstantLocationSkill.Supported(Skills, gem.Effect))
+        {
+            await UseInstantSkillAtLocation(remote, stream, ciphers, conn, skillId, default, targetId);
+            return;
+        }
         if (gem.Name is null || !InstantLocationSkill.ObjectTargetSupported(Skills, gem.Effect)) return;
         int epoch;
         lock (conn.Monsters)
@@ -355,7 +360,7 @@ partial class Program
     }
 
     static async Task UseInstantSkillAtLocation(string remote, NetworkStream stream, ConnectionCiphers ciphers,
-        ClientState conn, ushort skillId, (uint X, uint Y) aim)
+        ClientState conn, ushort skillId, (uint X, uint Y) aim, uint? targetObjectId = null)
     {
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
         if (gem.Name is null || !InstantLocationSkill.Supported(Skills, gem.Effect)) return;
@@ -371,20 +376,37 @@ partial class Program
         lock (conn.Monsters)
         {
             epoch = conn.ProjectileEpoch;
-            if (!InstantLocationSkill.TryResolve(conn, epoch, aim, InTown(conn), CurrentStats(), out from, out to)) return;
+            if (targetObjectId is uint target)
+            {
+                if (!InstantLocationSkill.TryResolveObject(conn, epoch, target, InTown(conn), CurrentStats(),
+                    out from, out to, out _)) return;
+            }
+            else if (!InstantLocationSkill.TryResolve(conn, epoch, aim, InTown(conn), CurrentStats(), out from, out to)) return;
         }
         if (!await CastGemSkill(remote, stream, ciphers, conn, skillId, from, to, locationInstant: true)) return;
         bool accepted = false;
         // Keep the raw aim: IceDash resolves it from the client's position when 0x1ce runs. Sending an already rounded
         // endpoint can normalize a short diagonal twice and move another cell. Resolve the server copy at this gate too.
-        await Send(remote, stream, ciphers, InstanceProtocol.InstantAction(PlayerId, skillId, (int)aim.X, (int)aim.Y),
-            $"0x01ce player skill 0x{skillId:x4}: instant location ({aim.X}, {aim.Y}), movement only", still: () =>
+        await Send(remote, stream, ciphers, [],
+            $"0x01ce player skill 0x{skillId:x4}: instant {(targetObjectId is uint id ? $"on 0x{id:x}" : $"location ({aim.X}, {aim.Y})")}, movement only", atGate: () =>
             {
                 lock (conn.Monsters)
                 {
                     var current = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
-                    if (current != gem || GemDisabled(conn, gem.Effect) is not null) return false;
-                    return accepted = InstantLocationSkill.TryCommit(conn, epoch, aim, InTown(conn), CurrentStats(), out _);
+                    if (current != gem || GemDisabled(conn, gem.Effect) is not null) return null;
+                    (int X, int Y) rawAim;
+                    if (targetObjectId is uint target)
+                    {
+                        if (!InstantLocationSkill.TryCommitObject(conn, epoch, target, InTown(conn), CurrentStats(),
+                            out rawAim, out _)) return null;
+                    }
+                    else
+                    {
+                        if (!InstantLocationSkill.TryCommit(conn, epoch, aim, InTown(conn), CurrentStats(), out _)) return null;
+                        rawAim = ((int)aim.X, (int)aim.Y);
+                    }
+                    accepted = true;
+                    return InstanceProtocol.InstantAction(PlayerId, skillId, rawAim.X, rawAim.Y, targetObjectId);
                 }
             });
         if (accepted) await FollowRighteousFire(remote, stream, ciphers, conn);

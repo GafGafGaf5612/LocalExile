@@ -60,6 +60,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
   Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
   Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
+  Its hovered stationary-monster 0x191 path now uses the native size-aware object aim and object-bound confirmation.
+  Automated acceptance/queued rejection checks and manual native endpoint experiments pass; production Q is pending.
+  Moving targets, coincident random aim and partial object-candidate terrain fallback remain outside this path.
   Production use during an active walk still needs measurement; native manual walk-stop experiments passed.
   Its departure/arrival damage, chilled ground, enemy-dependent recovery and shared Blink groups remain open.
   Extend terrain and movement restrictions from native evidence before accepting other instant movement skills.

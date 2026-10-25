@@ -16,7 +16,7 @@ public class InstantLocationSkillTests
         { PlayerSent = true, PlayerLife = 100 };
 
     [Theory]
-    [InlineData("Frostblink", true, false)]
+    [InlineData("Frostblink", true, true)]
     [InlineData("FrostblinkAltX", false, false)]
     [InlineData("FrostblinkMercenary", false, false)]
     [InlineData("Fireball", false, false)]

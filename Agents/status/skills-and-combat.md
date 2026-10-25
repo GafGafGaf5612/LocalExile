@@ -153,6 +153,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   Actual Q input and a cooldown retry matched native/server positions, with two 12-mana costs and two confirmations.
   Early retry, noninstant Fireball and unsigned-invalid coordinate requests changed no position or mana.
   Manual native experiments separately verified near/far clamps and the old predicted walk ending after a blink.
+  Hovered-monster Frostblink sends 0x191 and now shares movement acceptance, with an object-bound 0x1ce.
+  Its size-aware object candidate trace precedes the distance clamp;
+  it does not reuse the monster centre as a ground aim.
+  Both preflight and the send gate require a living known-size monster with no active walk, and recheck placement.
+  Invalid preflight changes no mana/cooldown; later invalidation withholds confirmation under the existing cost policy.
+  Automated actual-send tests cover current target/player sampling, target death/walk, pause, transfer, barriers and unequip.
+  Four manual native object confirmations verified clear near/far/diagonal/off-axis endpoints; a reflected terrain
+  fallback is deliberately rejected. Production hovered-Q validation remains pending.
   Production movement during an active walk has not been measured.
   Frostblink damage, chilled ground, enemy-dependent recovery and shared Blink cooldown groups remain unsupported.
   The skill bar keeps its slots when skills are re-sent or a gem is socketed again (the saved bar goes out as 0x53)

@@ -334,6 +334,10 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x1432823d0` | Vt | IceDash action, installed by factory `0x1412805a0` |
 | `0x1412f1200` | Fn | IceDash start: departure at action +0x318, aim at +0x320 |
 | `0x141bfe240` | Fn | blink endpoint: max 42 cells scaled by stat 11856, min 32, then terrain validation |
+| `0x142195ab1..0x142195b0e` | Code | object instant confirmation binds target and reads its Positioned cell |
+| `0x141bfe610` | Fn | object blink aim: minimum vector, size-aware extension, candidate trace before clamp |
+| `0x141c02050` | Fn | object blink candidate Bresenham trace, retaining the last terrain/target-valid cell |
+| `0x141c02c30` | Fn | candidate target-footprint check through `0x141c03c80` |
 | `0x140671d00` | Fn | normalized cell vector: floor(component * scale + .5), including negative components |
 | `0x141ee97f0` | Fn | create the action for a skill id |
 | `0x142192860` | Fn | ClientActor ctor: basic actions from the type's u16 list (`type+0xf8`) |

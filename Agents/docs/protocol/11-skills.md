@@ -401,7 +401,7 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   The 0x190 class `0x1435c0718` writer `0x141f91f60` confirms network order and these widths.
   Actual Frostblink Q sent `0190 0000011A 000000DC 0103`; unframed, this discarded the rest of its receive chunk.
   Both messages now frame independently, including fragments and coalesced following messages.
-  Only an equipped Instant gem may use either route; location movement currently supports ordinary Frostblink only.
+  Only an equipped Instant gem may use either route; movement currently supports ordinary Frostblink only.
   The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
   object header, u16 skill id, u16 sequence (0xffff), u16 flags (0x20 → u32 target object), compact target position;
   handler `0x142195880`): the client runs the skill's action without animation and consumes a use of the skill
@@ -421,6 +421,37 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   While walking from `(279,221)`, aim `(310,220)` resolved to `(311,220)` and ended the old predicted Move.
   These manual protocol experiments establish resolver and walk-stop behavior separately from production validation.
   The server mirrors that walk stop with `Walk.Teleport`, preserving ActionCount, channel and pending release tokens.
+  Hovering a monster sends Frostblink as **0x191**, rather than 0x190; the former nonmovement-only gate rejected it.
+  The object confirmation uses flags 0x20 and the target id, with its raw cell as the coordinate fallback.
+  Handler `0x142195ab1..0x142195b0e` binds the entity through `0x14193e0a0` and replaces the packet aim with its
+  Positioned cell. IceDash `0x141bfe1e0` and `0x141bfe240` then route a bound object through `0x141bfe610` before
+  applying the usual distance limits. Simply passing the monster's centre to the ground resolver is incorrect.
+  The object resolver first extends a short direction to 32 cells, rounds its components, then normalizes that
+  rounded vector again and extends it by player Positioned size + target Positioned size + 2.
+  Positioned size is `object_size - 1`; the normal player has size 1, and Ash Harvester ObjectSize 3 gives size 2.
+  `0x141c02050` traces those candidates in inclusive Bresenham order, retaining the last valid cell.
+  Its first terrain-layer threshold can abort the trace; other terrain or target-footprint failures skip a cell.
+  The target-footprint check is `0x141c02c30 -> 0x141c03c80`; the outer resolver may then search terrain again.
+  The server accepts only a wholly clear candidate extension and the existing conservative final placement.
+  Partial traces, coincident targets requiring seeded random direction, unknown sizes and other object types reject.
+  Both preflight and the actual confirmation gate require a living monster whose current walk has ended.
+  The object id makes the client resolve its target again on delivery, so moving-target parity is not claimed.
+  At the gate the current equipped gem, player/area state, target, sizes, raw cell and placement are checked again;
+  one game-time sample observes both walkers. No invalid preflight pays mana or reserves a cooldown.
+  A start invalidated after payment retains the existing accepted-use cost policy, but sends no late confirmation.
+  The object route skips generic area damage and preserves action/channel tokens, as the ground route does.
+  Manual native object confirmations from `(280,220)` with player/target sizes 1/2 established these clear cases:
+  target `(300,220)` traces `(312,220)..(317,220)` and lands `(317,220)`;
+  target `(330,220)` traces `(330,220)..(335,220)` and lands at the 42-cell clamp `(322,220)`;
+  target `(300,240)` traces `(303,243)..(307,247)` and lands `(307,247)`;
+  target `(300,230)` traces `(309,234)..(314,236)` and lands `(314,236)`.
+  The last case distinguishes normalizing the rounded minimum vector from reusing the original direction.
+  Reflected target `(260,220)` computed `(248,220)..(243,220)`, but terrain retained `(248,220)` and the native
+  fallback landed `(264,220)`; the server rejects such partial traces instead of guessing that fallback.
+  Evidence is `logs/instant-location-object-manual-{near,far,diagonal,offaxis,reflected}.json` in integration.
+  These are injected native protocol experiments, without server movement or production cost acceptance.
+  Actual hovered Q before this extension produced 0x191, no confirmation, no cost and no movement;
+  production hovered-Q validation of the new route remains pending.
   End-to-end stationary validation subsequently passed with actual Q input from `(280,220)`:
   raw aim `(308,221)` resolved to native/server `(312,221)`.
   Requests after 0.3 seconds, with noninstant Fireball, or with an unsigned-invalid x coordinate were rejected.
@@ -431,7 +462,8 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   its record retained base 3000 ms, total 3 seconds and rate 1.
   No 0x190 request remained unframed.
   Evidence: `logs/instant-location-live-default.json` in the integration validation checkout.
-  Production Frostblink use during an active walk has not been measured; the walking evidence above is manual native RE.
+  Production ground Frostblink use during an active walk has not been measured;
+  the walking evidence is manual native RE.
   Departure/arrival damage, chilled ground, nearby-enemy cooldown recovery, shared Blink cooldown groups,
   other location instant skills and complete movement restriction/terrain searches remain unimplemented.
 - **Hit reaction (live 2026-10-25).** A monster that takes a hit plays its rig's **TakeHit** clip with S→C **0x1b2**
