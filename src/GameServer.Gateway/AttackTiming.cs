@@ -14,4 +14,18 @@ static class AttackTiming
 
     /// <summary>When the attack after this one may start: one attack time after the later of now and the previous one.</summary>
     public static double After(double now, double next, double seconds) => Math.Max(now, next) + seconds;
+
+    /// <summary>How long before the next use may arrive a pending hit has landed at the latest (seconds): the next use
+    /// starts a new action, which cancels a hit still waiting.</summary>
+    public const double LandMargin = 0.05;
+
+    /// <summary>When an attack's hit lands after its swing starts (seconds): <paramref name="contact"/> (the animation's
+    /// contact keyframe, a fraction of the attack) of the attack time plus <paramref name="offset"/>, never below 0 and
+    /// never after the next use may arrive (a quarter of an attack early, less <see cref="LandMargin"/>).</summary>
+    public static double ContactDelay(double seconds, double contact, double offset)
+    {
+        double latest = Math.Max(0, seconds * (1 - EarlyAllowance) - LandMargin);
+        double delay = seconds * contact + offset;
+        return double.IsFinite(delay) ? Math.Clamp(delay, 0, latest) : Math.Min(seconds / 2, latest);
+    }
 }

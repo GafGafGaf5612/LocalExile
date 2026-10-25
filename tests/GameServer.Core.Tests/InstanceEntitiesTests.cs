@@ -131,6 +131,11 @@ public class InstanceEntitiesTests
         // Without the hit-data bit only the first part is written.
         Assert.Equal("01AF" + "00003000" + "00000000" + "0000" + "0007" + "00" + "00" + "00003001" + "0000" + "01",
             Convert.ToHexString(InstanceProtocol.ActionHit(0x3000, 7, 0x3001, kind: 0x01)));
+        // flags 0x400 puts a u16 (+0x34) before the hit code (reader 0x1419bd6f0: flags >> 10 & 1), as the monster hit
+        // on the player sends it; kind bits 2/3 add a u16 each after the angle.
+        Assert.Equal("01AF" + "00003000" + "00000000" + "0000" + "FFFF" + "00" + "00" + "00003001" + "4601" + "0E" + "01C2" + "00" + "40" + "0001" + "0002",
+            Convert.ToHexString(InstanceProtocol.ActionHit(0x3000, 0xffff, 0x3001, flags: 0x4601, kind: 0x0e, u34: 450, angle: 0x40,
+                u3c: 1, u3e: 2)));
     }
 
     [Fact]

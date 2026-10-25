@@ -44,7 +44,8 @@ $env:Game_GATEWAY_ENTER = '1'      # also send 0x21 (enter area). Leave unset to
 ```
 
 Gateway env: `Game_MOVE_MODE` = `echo` (default: only the 0x1ab echo), `move` (also 0x1ba, `Game_MOVE_SPEED`) or
-`teleport` (0x1b7); `Game_PLAYER_AO` overrides the Animated path.
+`teleport` (0x1b7); `Game_PLAYER_AO` overrides the Animated path; `Game_HIT_OFFSET_MS` (default 150) delays the
+default attack's hit past its contact keyframe ([11](../protocol/11-skills.md) §5).
 
 `live.ps1` stops anything on ports 20493, 12995, 8080 and 6112 and the client, builds Auth, Patch and Gateway, starts all
 three (logs in `Tools/re/out/live-*.log`), waits for the patch server and launches the client. Then:

@@ -1574,21 +1574,25 @@ static byte HitAngle(int dx, int dy)
 // A positive offset on the hit's contact timing (seconds): the client starts its swing a beat after the server's 0x1ab
 // echo (the walk estimate leads the client's own walk, so the contact keyframe alone leaves the blood early). A fixed
 // offset is a compromise over the variable walk-sync; Game_HIT_OFFSET_MS overrides it (150 ms here covers most of the
-// walk-into-range error without overshooting a swing).
+// walk-into-range error without overshooting a swing). A value that is not a finite number keeps the default.
 static double HitContactOffsetSeconds() =>
-    (double.TryParse(Environment.GetEnvironmentVariable("Game_HIT_OFFSET_MS"), System.Globalization.CultureInfo.InvariantCulture, out var hitOff) ? hitOff : 150) / 1000.0;
+    (double.TryParse(Environment.GetEnvironmentVariable("Game_HIT_OFFSET_MS"), System.Globalization.CultureInfo.InvariantCulture, out var hitOff)
+        && double.IsFinite(hitOff) ? hitOff : 150) / 1000.0;
 
-// The attack's contact time in seconds: the attack time scaled to the weapon's attack1 contact keyframe, plus the offset.
-static double AttackContactDelay(ClientState conn, SkillCatalog.Unarmed weapon)
+// The attack's contact time in seconds (AttackTiming.ContactDelay): the attack time scaled to the active weapon's attack1
+// contact keyframe, plus the walk-in offset for an attack that approached its target first, and always before the next
+// attack may start (which would cancel the hit).
+static double AttackContactDelay(ClientState conn, double attackSeconds, bool approach)
 {
     string ao = Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? Skills.ClassFor(conn.ClassRow).AnimatedObject;
-    return weapon.AttackSeconds(CharacterPlayerStats(conn)) * Animations.AttackContact(ao, WeaponProfileFor(conn)) + HitContactOffsetSeconds();
+    double contact = Animations.AttackContact(ao, WeaponProfileFor(conn, activeSet: true));
+    return AttackTiming.ContactDelay(attackSeconds, contact, approach ? HitContactOffsetSeconds() : 0);
 }
 
 // The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). The client walks into range
 // first, so the server walks its estimate too (WalkEstimator.Approach, reach = the weapon's MaxAttackDistance in cells,
 // centre to centre) and only then starts the swing: it echoes the action aimed at the monster (0x1ab, flags | 0x80 +
-// target id) and, at the contact point (half the attack time), lowers the monster's life (0x1b1) by the unarmed damage
+// target id) and, at the contact point (AttackContactDelay: the attack animation's contact keyframe), lowers the monster's life (0x1b1) by the unarmed damage
 // (Characters.dat MinDamage..MaxDamage raised by the increased melee physical damage stats). Any later action (a move, another click) cancels both.
 // One attack per attack time (WeaponSpeed ms scaled by the player's attack speed stats, a quarter early allowed for
 // jitter); earlier repeats of 0x24 are ignored. At 0 the client's Life component runs its death; the corpse is
@@ -1632,7 +1636,7 @@ static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers 
     if (m.Life == 0) return;
     // The hit lands at the attack animation's contact keyframe (data/animation-contacts.json), not a fixed half: the
     // client stretches the clip to the attack time, so the blood and the weapon impact sound line up with the swing.
-    await Task.Delay(TimeSpan.FromSeconds(AttackContactDelay(conn, weapon)));
+    await Task.Delay(TimeSpan.FromSeconds(AttackContactDelay(conn, duration, approach: true)));
     uint life;
     bool stageStarts = false;
     int accuracy, evasion;
@@ -2020,7 +2024,9 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     bool spell = spellBase.RollTotal(new Random(0)) > 0;
     var weapon = WeaponFor(conn);
     double delay;
-    lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0 : AttackContactDelay(conn, weapon);
+    // An attack lands at its contact keyframe; the player swings where it stands, so without the walk-in offset.
+    lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0
+        : AttackContactDelay(conn, weapon.AttackSeconds(CharacterPlayerStats(conn)), approach: false);
     int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
     // A melee skill aimed far away still lands in front of the player.
     var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
@@ -5329,7 +5335,9 @@ static (Dictionary<string, int> Main, Dictionary<string, int> Off) HandLocalStat
     return (Local(2, 14), Local(3, 15));
 }
 
-static WeaponProfile WeaponProfileFor(ClientState conn)
+// activeSet: only the hands' rows (the active weapon set), for what the player swings now (the attack animation);
+// otherwise both sets, as the passive conditions read them.
+static WeaponProfile WeaponProfileFor(ClientState conn, bool activeSet = false)
 {
     var items = ItemsOf(conn);
     // An inactive weapon (requirements not met) is not there at all: the class is unarmed, as the default attack's
@@ -5345,16 +5353,16 @@ static WeaponProfile WeaponProfileFor(ClientState conn)
         main is { } m && off is { } o && OneHand(m) && OneHand(o);
     var main1 = At(2);
     var off1 = At(3);
-    var main2 = At(14);
-    var off2 = At(15);
+    var main2 = activeSet ? null : At(14);
+    var off2 = activeSet ? null : At(15);
     var all = new[] { main1, off1, main2, off2 }.OfType<ItemCatalog.BaseType>().ToList();
     var dual = Pair(main1, off1) || Pair(main2, off2);
     var claws = (main1?.Class == "Claw" && off1?.Class == "Claw") || (main2?.Class == "Claw" && off2?.Class == "Claw");
     var unarmed = main1 is null && main2 is null;
-    var mainItem = items.Items(2).Concat(items.Items(14)).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
+    var mainItem = items.Items(2).Concat(activeSet ? [] : items.Items(14)).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
     var local = mainItem is null ? [] : ItemModStats.Local(mainItem, Items.Mods);
     return new WeaponProfile(
-        Shield: HasShield(conn),
+        Shield: activeSet ? off1?.Class == "Shield" : HasShield(conn),
         DualWield: dual,
         Staff: all.Any(t => t.Class is "Staff" or "Warstaff"),
         Bow: all.Any(t => t.Class == "Bow"),
