@@ -714,7 +714,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   damage before flight impact, while a ground arrow crossed the same monster with no damage. On the combined
   runtime, actual right-click ground/object after-checks each caused one hit only at the native arrow stop:
   ground aim (363,224) hit at (296,221) for 13; object aim (300,220) hit at (296,220) for 6, without melee
-  `0x1af 0x4201`. Creation was in `attack1_bow`, clip elapsed ~0.466/~0.448 rather than ~0.013; the expected clip contact
+  `0x1af 0x4201`. Creation was in `attack1_bow`, clip elapsed ~0.466/~0.448 rather than ~0.013;
+  the expected clip contact
   is ~0.399, so frame/server scheduling delay remains visible and exact native timing equivalence is not claimed.
   A wall before the selected object stopped the arrow at (318,276) without damage; previously the selected
   monster still took damage. A nearer interceptor took one 7-damage hit while the selected target was untouched.
