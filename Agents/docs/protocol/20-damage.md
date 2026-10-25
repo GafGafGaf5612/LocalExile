@@ -50,11 +50,12 @@ as in Path of Building. Gains are added to the destination without reducing the 
 "gain as extra" rule.
 
 A player hit on a monster rolls each type once and then takes the monster's own base resistance on each type
-(MonsterResistanceCatalog, §4), before the critical multiplier and the life update. The critical strike is decided
-before this pass — the roll keeps its single draw, only ahead of the per-type rolls — because the critical-strike
-elemental rules resolve each type's final resistance with the hit's own boolean (§4). A monster's attack on the
-player does the mirror pass through the player's resistances. Damage over time is outside this pass: it has no hit,
-and Righteous Fire's monster burn keeps its per-tick percentage-of-life model with no resistance.
+(MonsterResistanceCatalog, §4), before the critical multiplier and the life update. The draw order is unchanged: the
+packet rolls first, the existing single critical draw follows in its original place, and the mitigation then
+resolves with that boolean on the already-rolled packet without a second roll — the critical-strike elemental rules
+need the hit's own critical boolean (§4). A monster's attack on the player does the mirror pass through the player's
+resistances. Damage over time is outside this pass: it has no hit, and Righteous Fire's monster burn keeps its
+per-tick percentage-of-life model with no resistance.
 
 The same packet is used for attacks, spells and monster hits. The caller decides whether the attack-only or spell-only
 stats apply; `DamageStats` reads the Stats.dat names:
@@ -111,9 +112,9 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   `MonsterCatalog.BaseResistance`, the shared pass is `HitMitigation`). Without the extracted tables every type reads
   0, so hits land as they did before. Spawned-monster resistance modifiers, exposure and curses are outside the base
   table, and monster armour is not modelled yet.
-- The critical-strike elemental rules resolve each type's final resistance before that pass (`HitResistances`, the
-  shared Gateway helper is `MonsterDamage`). Inevitable Judgement (the Inquisitor's AscendancyInquisitor8 notable,
-  graph node 48214) grants `critical_strikes_ignore_elemental_resistances` and
+- The critical-strike elemental rules resolve each type's final resistance before that pass applies it
+  (`HitResistances`, the shared Gateway helper is `MonsterDamage`). Inevitable Judgement (the Inquisitor's
+  AscendancyInquisitor8 notable, graph node 48214) grants `critical_strikes_ignore_elemental_resistances` and
   `non_critical_strikes_penetrate_elemental_resistances_%` 10 through the ordinary player stats; the attack-only
   `attack_critical_strikes_ignore_elemental_resistances` (Stats row 12971) and the suppressor
   `cannot_penetrate_or_ignore_elemental_resistances` (row 12051) are supported the same way. A critical elemental

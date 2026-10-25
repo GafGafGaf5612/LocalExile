@@ -24,7 +24,15 @@ static class HitMitigation
 
     /// <summary>One roll per type of the hit, then each type's own resistance, kept fractional per type and summed;
     /// the total rounds once, exactly the rounding the unmitigated <c>RollTotal</c> path had. The critical strike
-    /// multiplier applies to this total afterwards.</summary>
+    /// multiplier applies to this total afterwards. The hit paths roll first and then use <see cref="Mitigated"/>,
+    /// so the critical draw can keep its original place after the per-type rolls.</summary>
     public static int RollMitigated(DamagePacket hit, Func<DamageType, DamageModel.ResistanceValue> resistance, Random random) =>
         (int)Math.Round(DamageModel.Mitigate(hit.Roll(random), resistance).MinTotal);
+
+    /// <summary>The mitigation of an already-rolled hit: each type's own resistance, kept fractional per type and
+    /// summed, the total rounded once. It draws nothing — the packet was rolled before — so the critical-strike
+    /// elemental rules resolve with the hit's own critical boolean without a second roll (even a fixed range
+    /// consumes a draw when rolled).</summary>
+    public static int Mitigated(DamagePacket rolled, Func<DamageType, DamageModel.ResistanceValue> resistance) =>
+        (int)Math.Round(DamageModel.Mitigate(rolled, resistance).MinTotal);
 }

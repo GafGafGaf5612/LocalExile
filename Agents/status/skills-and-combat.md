@@ -233,8 +233,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Item mods count through the global item stats; "emerge" monsters stay hidden;
   346 varieties with NPC / ControlZone / ... components are refused.
 - **Critical-strike elemental resistance rules (Inevitable Judgement, native check pending).** The hit's
-  already-rolled critical boolean decides before the resistance pass (one roll, ahead of the per-type rolls): a
-  critical elemental hit with `critical_strikes_ignore_elemental_resistances` mitigates with an effective resistance
+  already-rolled critical boolean decides the resistance: the packet rolls once (the original per-type draws), the
+  existing single critical draw keeps its original place after them, and the mitigation resolves on the
+  already-rolled packet without a second roll — a critical elemental hit with
+  `critical_strikes_ignore_elemental_resistances` mitigates with an effective resistance
   of zero, negative included, overriding any penetration; the attack-only variant covers attacks only; a
   non-critical elemental hit keeps its capped resistance and `non_critical_strikes_penetrate_elemental_resistances_%`
   (10) subtracts after the cap, stacked with the hit's general penetration;

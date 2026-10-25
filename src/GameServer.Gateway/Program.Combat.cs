@@ -138,13 +138,14 @@ partial class Program
         // Read before the hit is applied: a killing blow clears the target's impales.
         int impaleStacks = m.Impale.Stacks;
         double impaleStored = m.Impale.Bonus;
-        // The critical strike is decided before the resistance pass, so the elemental rules resolve with the hit's
-        // own critical boolean (Inevitable Judgement); the roll keeps its single draw, only ahead of the per-type
-        // rolls, which changes no probability.
+        // The packet rolls once (the original per-type draws), the existing single critical draw follows in its
+        // original place, and the mitigation then resolves with that boolean on the already-rolled packet without
+        // a second roll — the critical-strike elemental rules read the hit's own critical boolean (Inevitable
+        // Judgement).
+        var rolled = hit.Roll(Random.Shared);
         bool critical = conn.Pools.AttackCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
-        var (damage, resistance) = MonsterDamage(m, hit, Random.Shared,
-            new HitResistances.Strike(Critical: critical, Attack: true), HitResistMods(player));
+        var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: true, HitResistMods(player));
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
         lock (conn.Monsters)
         {
@@ -479,13 +480,13 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            // The critical strike is decided before the resistance pass (the elemental rules read the hit's own
-            // critical boolean); the roll keeps its single draw, only ahead of the per-type rolls.
+            // The packet rolls once, the existing single critical draw follows in its original place, and the
+            // mitigation resolves with that boolean on the already-rolled packet without a second roll.
+            var rolled = hit.Roll(Random.Shared);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
-            var (damage, resistance) = MonsterDamage(m, hit, Random.Shared,
-                new HitResistances.Strike(Critical: critical, Attack: !spell), HitResistMods(stats));
+            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, HitResistMods(stats));
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
                     spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
@@ -569,13 +570,13 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            // The critical strike is decided before the resistance pass (the elemental rules read the hit's own
-            // critical boolean); the roll keeps its single draw, only ahead of the per-type rolls.
+            // The packet rolls once, the existing single critical draw follows in its original place, and the
+            // mitigation resolves with that boolean on the already-rolled packet without a second roll.
+            var rolled = hit.Roll(Random.Shared);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
-            var (damage, resistance) = MonsterDamage(m, hit, Random.Shared,
-                new HitResistances.Strike(Critical: critical, Attack: !spell), mods);
+            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods);
             if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
             await HitMonster(remote, stream, ciphers, conn, id, m, damage,
                 $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is { } note ? $", {note}" : "")}", melee: !spell, sequence: sequence);
@@ -777,25 +778,27 @@ partial class Program
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
     }
 
-    // The damage a player's outgoing hit deals to its monster: one roll per type, then each type's own base
+    // The damage a player's outgoing hit deals to its monster: the already-rolled packet, each type's own base
     // resistance resolved through the hit's critical-strike elemental rules (HitResistances: Inevitable Judgement's
     // critical ignore and the non-critical penetration, which stacks with any general penetration the caller put
-    // on the target's ResistanceValue), summed to the total the critical multiplier later applies to. The critical
-    // boolean is the hit's own, decided before the resistance pass; damage over time has no resistance here and
-    // keeps its own path. Every outgoing hit — the default attack, gem projectile and area hits — shares this one
-    // helper. The resistance text names what the rules changed ("fire 40 ignored", "cold 40→30 (pen 10)") so a
-    // live hit shows the target's resistance and the ignore decision, or null when every type mitigated plainly.
-    internal static (int Damage, string? Resistance) MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random,
-        HitResistances.Strike strike, HitResistances.Mods mods)
+    // on the target's ResistanceValue), summed with the total rounded once. It draws nothing: the packet was rolled
+    // before, so the existing single critical draw keeps its original place after the per-type rolls and the
+    // mitigation uses its boolean. Damage over time has no resistance here and keeps its own path. Every outgoing
+    // hit — the default attack, gem projectile and area hits — shares this one helper. The resistance text names
+    // what the rules changed ("fire 40 ignored", "cold 40→30 (pen 10)") so a live hit shows the target's
+    // resistance and the ignore decision, or null when every type mitigated plainly.
+    internal static (int Damage, string? Resistance) MonsterDamage(SpawnedMonster m, DamagePacket rolled,
+        bool critical, bool attack, HitResistances.Mods mods)
     {
         var described = new List<string>();
+        var strike = new HitResistances.Strike(Critical: critical, Attack: attack);
         Func<DamageType, DamageModel.ResistanceValue> resolve = type =>
         {
             var value = HitMitigation.Resistance(Monsters, m.Variety, m.Level, type);
-            if (hit[type].Max > 0 && HitResistances.Describe(type, value, strike, mods) is { } note) described.Add(note);
+            if (rolled[type].Max > 0 && HitResistances.Describe(type, value, strike, mods) is { } note) described.Add(note);
             return HitResistances.Effective(type, value, strike, mods);
         };
-        return (HitMitigation.RollMitigated(hit, resolve, random),
+        return (HitMitigation.Mitigated(rolled, resolve),
             described.Count > 0 ? string.Join(", ", described) : null);
     }
 

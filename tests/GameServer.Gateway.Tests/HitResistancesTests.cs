@@ -104,6 +104,44 @@ public class HitResistancesTests
     }
 
     [Fact]
+    public void The_mitigation_draws_nothing_and_keeps_the_roll_then_crit_order()
+    {
+        // The pre-change sequence: one roll per type, then the single crit draw. The hit path now rolls the packet
+        // once, draws the crit in the same place, and mitigates the already-rolled packet: the same-seed result and
+        // the following RNG state must match, because even a fixed range consumes a draw when rolled.
+        var hit = DamagePacket.Of(DamageType.Fire, 3, 10).Add(DamageType.Physical, new DamageRange(2, 8));
+        int seed = 20_261_026;
+        var reference = new Random(seed);
+        int expectedRolled = hit.RollTotal(reference);
+        int expectedCritDraw = reference.Next(10_000);
+        var random = new Random(seed);
+        var rolled = hit.Roll(random);
+        int critDraw = random.Next(10_000);
+        int mitigated = HitMitigation.Mitigated(rolled, _ => default);
+        Assert.Equal(expectedRolled, (int)rolled.MinTotal);
+        Assert.Equal(expectedRolled, mitigated);
+        Assert.Equal(expectedCritDraw, critDraw);
+        // The mitigation consumed no draw: the next draw from the same stream matches the reference state.
+        Assert.Equal(reference.Next(), random.Next());
+        // With the rules active the same sequence also holds through the shared helper: the same three draws (the
+        // packet roll and the crit draw), the deterministic mitigation, and the stream state right after them.
+        var catalogue = new MonsterCatalog(SyntheticFolder());
+        var monster = new SpawnedMonster("test", new WalkEstimator(0, 0, 37), 20, 2, 100) { Variety = Type(), Level = 1 };
+        var ruled = new Random(seed);
+        var rolledRuled = hit.Roll(ruled);
+        bool criticalRuled = ruled.Next(10_000) < 10_000;
+        var (damage, _) = Program.MonsterDamage(monster, rolledRuled, criticalRuled, attack: true, Judgement());
+        var expected = HitMitigation.Mitigated(rolledRuled, type => HitResistances.Effective(type,
+            HitMitigation.Resistance(catalogue, Type(), 1, type),
+            new HitResistances.Strike(Critical: criticalRuled, Attack: true), Judgement()));
+        Assert.Equal(expected, damage);
+        var ruledReference = new Random(seed);
+        hit.RollTotal(ruledReference);
+        ruledReference.Next(10_000);
+        Assert.Equal(ruledReference.Next(), ruled.Next());
+    }
+
+    [Fact]
     public void The_shared_monster_damage_resolves_the_real_skeletons_fire_with_the_stat_keys()
     {
         if (Data() is null) return; // Real-client cross-check is optional on a fresh clone.
@@ -112,30 +150,30 @@ public class HitResistancesTests
         // The keys as the player's stats carry them (Inevitable Judgement: ignore 1, penetration 10), read the same
         // way the hit paths read a stats dictionary.
         var judgement = Program.HitResistMods(new Dictionary<uint, int> { [3626] = 1, [3885] = 10 });
-        // Level 46 (cruel) gives the skeleton 20% fire. A critical 100 fire hit ignores it entirely.
-        var (ignored, note) = Program.MonsterDamage(m, DamagePacket.Of(DamageType.Fire, 100, 100), new Random(7),
-            Hit(critical: true), judgement);
+        // Level 46 (cruel) gives the skeleton 20% fire. A critical 100 fire hit ignores it entirely; the packet is
+        // rolled once and the mitigation runs on the already-rolled packet.
+        var rolled = DamagePacket.Of(DamageType.Fire, 100, 100).Roll(new Random(7));
+        var (ignored, note) = Program.MonsterDamage(m, rolled, critical: true, attack: true, judgement);
         Assert.Equal(100, ignored);
         Assert.Equal("fire 20 ignored", note);
         // Non-critical keeps the 20% and the 10 penetration subtracts after the cap: 20 − 10 = 10%.
-        var (penetrated, penNote) = Program.MonsterDamage(m, DamagePacket.Of(DamageType.Fire, 100, 100), new Random(7),
-            Hit(), judgement);
+        var (penetrated, penNote) = Program.MonsterDamage(m, rolled, critical: false, attack: true, judgement);
         Assert.Equal(90, penetrated);
         Assert.Equal("fire 20→10 (pen 10)", penNote);
         // A critical hit with only the penetration stat takes no penetration (the stat's condition is a negated
         // CriticalStrike) and names nothing.
-        var (critPen, critPenNote) = Program.MonsterDamage(m, DamagePacket.Of(DamageType.Fire, 100, 100), new Random(7),
-            Hit(critical: true), Program.HitResistMods(new Dictionary<uint, int> { [3885] = 10 }));
+        var (critPen, critPenNote) = Program.MonsterDamage(m, rolled, critical: true, attack: true,
+            Program.HitResistMods(new Dictionary<uint, int> { [3885] = 10 }));
         Assert.Equal(80, critPen);
         Assert.Null(critPenNote);
         // The suppressor keeps the plain 20% on the critical hit too.
-        var (held, heldNote) = Program.MonsterDamage(m, DamagePacket.Of(DamageType.Fire, 100, 100), new Random(7),
-            Hit(critical: true), Program.HitResistMods(new Dictionary<uint, int> { [3626] = 1, [3885] = 10, [12052] = 1 }));
+        var (held, heldNote) = Program.MonsterDamage(m, rolled, critical: true, attack: true,
+            Program.HitResistMods(new Dictionary<uint, int> { [3626] = 1, [3885] = 10, [12052] = 1 }));
         Assert.Equal(80, held);
         Assert.Equal("fire 20 (cannot penetrate or ignore)", heldNote);
         // Physical is outside the elemental rules even on a critical hit with the ignore (its base here is 0).
-        var (physical, physicalNote) = Program.MonsterDamage(m, DamagePacket.Of(DamageType.Physical, 100, 100),
-            new Random(7), Hit(critical: true), judgement);
+        var physicalRolled = DamagePacket.Of(DamageType.Physical, 100, 100).Roll(new Random(7));
+        var (physical, physicalNote) = Program.MonsterDamage(m, physicalRolled, critical: true, attack: true, judgement);
         Assert.Equal(100, physical);
         Assert.Null(physicalNote);
     }
