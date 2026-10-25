@@ -1,6 +1,7 @@
 using DamageModel = GameServer.Core.World.DamageModel;
 using DamagePacket = GameServer.Core.World.DamagePacket;
 using DamageType = GameServer.Core.World.DamageType;
+using HitResistances = GameServer.Core.World.HitResistances;
 
 /// <summary>
 /// The mitigation of the player's outgoing hits. Every damage type of a rolled hit is reduced by the target monster's
@@ -8,7 +9,9 @@ using DamageType = GameServer.Core.World.DamageType;
 /// DefaultMonsterStats.Difficulty columns), the same per-type pass the monster swings use against the player's
 /// resistances. Without the extracted tables every type reads 0, so a fresh clone's hits land unchanged.
 /// Penetration subtracts from the capped base in <see cref="DamageModel"/>; damage over time and the physical part
-/// have no penetration (physical has no base resistance here at all).
+/// have no penetration (physical has no base resistance here at all). A hit's critical-strike elemental rules
+/// (Inevitable Judgement's ignore and non-critical penetration) resolve their per-type final resistance through
+/// <see cref="HitResistances"/> before the same pass applies it.
 /// </summary>
 static class HitMitigation
 {
@@ -19,8 +22,9 @@ static class HitMitigation
             ? new DamageModel.ResistanceValue(value)
             : default;
 
-    /// <summary>One roll per type of the hit, then each type's own resistance, summed to whole damage. The critical
-    /// strike multiplier applies to this total afterwards, exactly one roll and one rounding per type as before.</summary>
+    /// <summary>One roll per type of the hit, then each type's own resistance, kept fractional per type and summed;
+    /// the total rounds once, exactly the rounding the unmitigated <c>RollTotal</c> path had. The critical strike
+    /// multiplier applies to this total afterwards.</summary>
     public static int RollMitigated(DamagePacket hit, Func<DamageType, DamageModel.ResistanceValue> resistance, Random random) =>
         (int)Math.Round(DamageModel.Mitigate(hit.Roll(random), resistance).MinTotal);
 }

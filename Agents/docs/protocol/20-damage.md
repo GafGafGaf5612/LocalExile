@@ -38,7 +38,7 @@ base skill/weapon damage by type
   → conversion (source is consumed; converted damage can convert again)
   → increased / more multipliers per type
   → critical strike
-  → per-type resistance / mitigation
+  → per-type resistance / mitigation (the critical-strike elemental rules resolve first, §4)
   → roll a whole number per type and send the life change
 ```
 
@@ -50,9 +50,11 @@ as in Path of Building. Gains are added to the destination without reducing the 
 "gain as extra" rule.
 
 A player hit on a monster rolls each type once and then takes the monster's own base resistance on each type
-(MonsterResistanceCatalog, §4), before the critical multiplier and the life update. A monster's attack on the player
-does the mirror pass through the player's resistances. Damage over time is outside this pass: it has no hit, and
-Righteous Fire's monster burn keeps its per-tick percentage-of-life model with no resistance.
+(MonsterResistanceCatalog, §4), before the critical multiplier and the life update. The critical strike is decided
+before this pass — the roll keeps its single draw, only ahead of the per-type rolls — because the critical-strike
+elemental rules resolve each type's final resistance with the hit's own boolean (§4). A monster's attack on the
+player does the mirror pass through the player's resistances. Damage over time is outside this pass: it has no hit,
+and Righteous Fire's monster burn keeps its per-tick percentage-of-life model with no resistance.
 
 The same packet is used for attacks, spells and monster hits. The caller decides whether the attack-only or spell-only
 stats apply; `DamageStats` reads the Stats.dat names:
@@ -109,6 +111,18 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   `MonsterCatalog.BaseResistance`, the shared pass is `HitMitigation`). Without the extracted tables every type reads
   0, so hits land as they did before. Spawned-monster resistance modifiers, exposure and curses are outside the base
   table, and monster armour is not modelled yet.
+- The critical-strike elemental rules resolve each type's final resistance before that pass (`HitResistances`, the
+  shared Gateway helper is `MonsterDamage`). Inevitable Judgement (the Inquisitor's AscendancyInquisitor8 notable,
+  graph node 48214) grants `critical_strikes_ignore_elemental_resistances` and
+  `non_critical_strikes_penetrate_elemental_resistances_%` 10 through the ordinary player stats; the attack-only
+  `attack_critical_strikes_ignore_elemental_resistances` (Stats row 12971) and the suppressor
+  `cannot_penetrate_or_ignore_elemental_resistances` (row 12051) are supported the same way. A critical elemental
+  hit mitigates with an effective resistance of zero, negative included, and overrides penetration; a non-critical
+  elemental hit keeps its capped resistance and the percentage subtracts after the cap, stacked with any general
+  penetration the caller put on the target's `ResistanceValue` (the unconditional pen stats are a separate change
+  over the same pass); the suppressor restores the plain capped resistance. Physical, chaos and damage over time are
+  outside the rules, and a target's own "resistance cannot be penetrated" is a penetration guard only, never ignore
+  protection. The hit's 0x1b1 log line names what the rules changed ("fire 40 ignored", "cold 40→30 (pen 10)").
 - `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
   `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
   `MitigatePhysical`.
@@ -136,8 +150,9 @@ also check pause, flasks and RF. The new visual behavior awaits that real-client
 
 ## 6. Not modelled yet
 
-- Energy shield, penetration, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base
-  resistances are in, §4).
+- Energy shield, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base resistances
+  are in, §4). The unconditional penetration stats are not consumed yet; the critical-strike elemental rules are
+  (§4).
 - Added flat damage from supports/items, increased/more modifiers per type, damage effectiveness, and skill-specific
   added-damage scaling.
 - Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.

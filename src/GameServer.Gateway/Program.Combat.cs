@@ -7,6 +7,7 @@ using DamageModel = GameServer.Core.World.DamageModel;
 using DamageType = GameServer.Core.World.DamageType;
 using DamagePacket = GameServer.Core.World.DamagePacket;
 using DamageRange = GameServer.Core.World.DamageRange;
+using HitResistances = GameServer.Core.World.HitResistances;
 
 partial class Program
 {
@@ -137,9 +138,13 @@ partial class Program
         // Read before the hit is applied: a killing blow clears the target's impales.
         int impaleStacks = m.Impale.Stacks;
         double impaleStored = m.Impale.Bonus;
-        int damage = MonsterDamage(m, hit, Random.Shared);
+        // The critical strike is decided before the resistance pass, so the elemental rules resolve with the hit's
+        // own critical boolean (Inevitable Judgement); the roll keeps its single draw, only ahead of the per-type
+        // rolls, which changes no probability.
         bool critical = conn.Pools.AttackCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
+        var (damage, resistance) = MonsterDamage(m, hit, Random.Shared,
+            new HitResistances.Strike(Critical: critical, Attack: true), HitResistMods(player));
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
         lock (conn.Monsters)
         {
@@ -171,6 +176,7 @@ partial class Program
             $"0x01af player hit on monster 0x{use.TargetId:x} (sequence 0x{use.Sequence:x4})");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
             $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}" +
+            (resistance is { } note ? $", {note}" : "") +
             (stored > 0 ? $", impale +{stored:0.#} ({impaleStacks} stack(s))" : "") +
             (impaled ? $", impaled ({impaleStacks} stack(s), {impaleStored:0.#} stored)" : "") +
             $", life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
@@ -473,14 +479,17 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            int damage = MonsterDamage(m, hit, Random.Shared);
+            // The critical strike is decided before the resistance pass (the elemental rules read the hit's own
+            // critical boolean); the roll keeps its single draw, only ahead of the per-type rolls.
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
+            var (damage, resistance) = MonsterDamage(m, hit, Random.Shared,
+                new HitResistances.Strike(Critical: critical, Attack: !spell), HitResistMods(stats));
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
                     spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
-            return (damage, critical);
+            return (damage, critical, resistance);
         }, epoch: epoch);
     }
 
@@ -551,6 +560,7 @@ partial class Program
         int criticalChance = hitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
             () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats));
         foreach (var (k, v) in skillStats) stats[k] = v;
+        var mods = HitResistMods(stats);
         foreach (var (id, m) in targets)
         {
             DamagePacket hit = hitPlan.BuildHit(
@@ -559,12 +569,16 @@ partial class Program
                 spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
                         AddedEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
-            int damage = MonsterDamage(m, hit, Random.Shared);
+            // The critical strike is decided before the resistance pass (the elemental rules read the hit's own
+            // critical boolean); the roll keeps its single draw, only ahead of the per-type rolls.
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
+            var (damage, resistance) = MonsterDamage(m, hit, Random.Shared,
+                new HitResistances.Strike(Critical: critical, Attack: !spell), mods);
             if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
-            await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence);
+            await HitMonster(remote, stream, ciphers, conn, id, m, damage,
+                $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is { } note ? $", {note}" : "")}", melee: !spell, sequence: sequence);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
@@ -582,7 +596,7 @@ partial class Program
     // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
     // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
     static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo,
+        (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical, string? Resistance)>? damageTo,
         int epoch, bool log = true, string? impact = null)
     {
         uint id;
@@ -700,6 +714,7 @@ partial class Program
                 MonsterHit? hit = null;
                 int damage = 0;
                 bool critical = false;
+                string? resistance = null;
                 while (!committed && Active())
                 {
                     // 0x1b7 relocates and cancels the existing glide (0x141e31200 -> 0x141e35250). Commit the hit
@@ -712,7 +727,7 @@ partial class Program
                                 if (!Active() || conn.Paused) return false;
                                 if (damageTo is not null && step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
                                 {
-                                    (damage, critical) = damageTo(target);
+                                    (damage, critical, resistance) = damageTo(target);
                                     hit = ApplyMonsterHitLocked(conn, target, damage);
                                 }
                                 committed = true;
@@ -724,7 +739,7 @@ partial class Program
                 if (!committed) return;
                 if (hit is { } applied && target is not null)
                     await NotifyMonsterHit(remote, stream, ciphers, conn, step.TargetId, target, applied, damage,
-                        $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
+                        $"{projectile.Id}{(critical ? " (critical)" : "")}{(resistance is { } note ? $", {note}" : "")}", log);
                 impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
                 if (damageTo is not null && impact != "none")
                 {
@@ -762,11 +777,33 @@ partial class Program
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
     }
 
-    // The damage a player's outgoing hit deals to its monster: one roll per type, then each type's own base resistance
-    // (HitMitigation), summed to the total the critical multiplier later applies to. Damage over time has no resistance
-    // here and keeps its own path.
-    static int MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random) =>
-        HitMitigation.RollMitigated(hit, type => HitMitigation.Resistance(Monsters, m.Variety, m.Level, type), random);
+    // The damage a player's outgoing hit deals to its monster: one roll per type, then each type's own base
+    // resistance resolved through the hit's critical-strike elemental rules (HitResistances: Inevitable Judgement's
+    // critical ignore and the non-critical penetration, which stacks with any general penetration the caller put
+    // on the target's ResistanceValue), summed to the total the critical multiplier later applies to. The critical
+    // boolean is the hit's own, decided before the resistance pass; damage over time has no resistance here and
+    // keeps its own path. Every outgoing hit — the default attack, gem projectile and area hits — shares this one
+    // helper. The resistance text names what the rules changed ("fire 40 ignored", "cold 40→30 (pen 10)") so a
+    // live hit shows the target's resistance and the ignore decision, or null when every type mitigated plainly.
+    internal static (int Damage, string? Resistance) MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random,
+        HitResistances.Strike strike, HitResistances.Mods mods)
+    {
+        var described = new List<string>();
+        Func<DamageType, DamageModel.ResistanceValue> resolve = type =>
+        {
+            var value = HitMitigation.Resistance(Monsters, m.Variety, m.Level, type);
+            if (hit[type].Max > 0 && HitResistances.Describe(type, value, strike, mods) is { } note) described.Add(note);
+            return HitResistances.Effective(type, value, strike, mods);
+        };
+        return (HitMitigation.RollMitigated(hit, resolve, random),
+            described.Count > 0 ? string.Join(", ", described) : null);
+    }
+
+    // The hit's critical-strike elemental resistance stats by name: the generic and the attack-only critical ignore,
+    // the non-critical penetration and their suppressor (Inevitable Judgement grants the generic ignore and the 10
+    // penetration; the passive's stat values reach the hit through the ordinary player stats).
+    internal static HitResistances.Mods HitResistMods(IReadOnlyDictionary<uint, int> stats) =>
+        HitResistances.Mods.From(stats, Stats.Key);
 
     // The short state mutation is shared with projectile impact; no awaits under Monsters.
     static MonsterHit? ApplyMonsterHitLocked(ClientState conn, SpawnedMonster m, int damage)

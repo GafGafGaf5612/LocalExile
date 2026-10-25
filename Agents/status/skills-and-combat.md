@@ -232,6 +232,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   every 500 ms.
   Item mods count through the global item stats; "emerge" monsters stay hidden;
   346 varieties with NPC / ControlZone / ... components are refused.
+- **Critical-strike elemental resistance rules (Inevitable Judgement, native check pending).** The hit's
+  already-rolled critical boolean decides before the resistance pass (one roll, ahead of the per-type rolls): a
+  critical elemental hit with `critical_strikes_ignore_elemental_resistances` mitigates with an effective resistance
+  of zero, negative included, overriding any penetration; the attack-only variant covers attacks only; a
+  non-critical elemental hit keeps its capped resistance and `non_critical_strikes_penetrate_elemental_resistances_%`
+  (10) subtracts after the cap, stacked with the hit's general penetration;
+  `cannot_penetrate_or_ignore_elemental_resistances` restores the plain capped resistance.
+  Physical, chaos and damage over time are outside the rules; Inevitable Judgement (graph node 48214) grants the
+  generic ignore and the 10 penetration through the ordinary passive stat sum.
+  The shared helper (`HitResistances`, the Gateway's `MonsterDamage`) covers the default attack, gem projectile and
+  area hits; the 0x1b1 log names the decision ("fire 40 ignored", "cold 40→30 (pen 10)").
+  Core and Gateway checks pass, including the real catalog's fire skeleton and the node's exact stat keys; the
+  real-client hit proof is pending and coordinated by the parent.
+  Code: `HitResistances.cs`, `HitMitigation.cs`, Gateway (`MonsterDamage`).
+  Docs: [20](../docs/protocol/20-damage.md) §4.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`;
   `DamageConversion` handles the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global
   precedence, the 100% cap and gain-as-extra.
@@ -247,7 +262,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
-  Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
+  Not yet: the unconditional penetration stats, exposure, added damage, increased/more support modifiers, ailment
   application/duration ([20](../docs/protocol/20-damage.md)).
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
