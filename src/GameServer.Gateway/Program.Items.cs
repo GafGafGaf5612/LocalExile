@@ -309,8 +309,17 @@ partial class Program
         if (conn.Instance.IsStartWeapon(CharacterName(conn), id) && items.ClaimStartWeapon())
             Console.WriteLine($"[gateway] {remote} start weapon picked up");
 
-        var placed = KeepOnGroundIfNotSaved(conn, ground, () => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item)));
+        var placed = KeepOnGroundIfNotSaved(conn, ground, () =>
+        {
+            InventoryItem Put() => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
+            if (CharacterSaves.Load(CharacterName(conn))?.Tutorial is { } tutorial)
+                foreach (bool support in new[] { false, true })
+                    if (conn.Instance.IsStartWeapon(TutorialObjects.DropKey(CharacterName(conn), tutorial, support), id))
+                        return TutorialObjects.Claim(CharacterName(conn), support, ground.Item, Put);
+            return Put();
+        }, id);
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
+        if (placed is null) return;
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
             toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
     }
@@ -328,12 +337,13 @@ partial class Program
 
     // A pickup whose save fails puts the item back on the ground before the error closes the connection: it left the ground
     // first, and the items are loaded again as saved (Saves).
-    static T KeepOnGroundIfNotSaved<T>(ClientState conn, WorldItemObject ground, Func<T> pickUp)
+    static T KeepOnGroundIfNotSaved<T>(ClientState conn, WorldItemObject ground, Func<T> pickUp, uint? originalId = null)
     {
         try { return pickUp(); }
         catch
         {
-            conn.Instance.Ground.Add(ground);
+            if (originalId is uint id) conn.Instance.Ground.Restore(id, ground);
+            else conn.Instance.Ground.Add(ground);
             throw;
         }
     }

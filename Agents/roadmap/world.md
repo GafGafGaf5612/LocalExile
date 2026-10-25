@@ -45,6 +45,8 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   This follows the real game on purpose: the area and position a character was in are not saved, because the real
   client never logs anyone into them.
   New characters start on The Twilight Strand and log in there until they enter a town;
+  the ground weapon, dying-exile/zombie skill-gem encounter and support chest are implemented and live-checked.
+  Tutorial popup acknowledgements and force walls 1/2 remain open, and placements still need local captures.
   Hillock's death (quest a1q1) opens the gate into Lioneye's Watch ([12](../docs/protocol/12-quests.md) §6).
   The death screen's "Resurrect in Town" goes to the last town, with a loading screen, and is not offered before the
   character has one; "Resurrect at Checkpoint" goes next to the area's activated waypoint, else to the area's arrival

@@ -47,6 +47,11 @@ partial class Program
         conn.InNpcTalk = false;
         conn.NpcFinishFlag = null;
         conn.NpcRewardOffer = null;
+        if (npc.Npc.Id == TutorialObjects.Exile)
+        {
+            await TalkToWoundedExile(remote, stream, ciphers, conn, id, npc);
+            return;
+        }
         await Send(remote, stream, ciphers, InstanceNpcs.Talk(id), $"0x0084 talk to npc 0x{id:x} {npc.Npc.Name}",
             still: () => PlayerActionCurrent(conn, action));
     }
@@ -58,7 +63,7 @@ partial class Program
     {
         if (conn.Sale is not null) await CloseSale(remote, stream, ciphers, conn, accepted: false);
         uint id = conn.TalkingTo;
-        if (id != 0 && conn.InNpcTalk)
+        if (id != 0 && conn.InNpcTalk && !IsWoundedExile())
         {
             conn.InNpcTalk = false;
             if (conn.NpcFinishFlag is { } finish)
@@ -74,6 +79,11 @@ partial class Program
         conn.NpcFinishFlag = null;
         conn.NpcRewardOffer = null;
         await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 object 0: npc dialogue closed (0x85)");
+
+        bool IsWoundedExile()
+        {
+            lock (conn.Npcs) return conn.Npcs.GetValueOrDefault(id)?.Npc.Id == TutorialObjects.Exile;
+        }
     }
 
     // C→S 0x82: an option picked in the NPC dialogue window (an NPCTalk row of the NPC talked to).
@@ -83,6 +93,7 @@ partial class Program
         SpawnedNpc? npc;
         lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(id);
         if (npc is null) { Console.WriteLine($"[gateway] {remote} <= 0x0082 npc option {index}: no NPC dialogue open"); return; }
+        if (npc.Npc.Id == TutorialObjects.Exile) return;
         var talk = Npcs.Value.TalkOf(npc.Npc, index);
         Console.WriteLine($"[gateway] {remote} <= 0x0082 npc {npc.Npc.Name} option {index}: " +
             (talk is null ? "no NPCTalk row" : $"NPCTalk row {talk.Row} \"{talk.Option}\" ({talk.Category}), text audio [{string.Join(", ", talk.TextAudio)}]"));

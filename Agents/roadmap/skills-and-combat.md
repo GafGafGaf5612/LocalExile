@@ -64,6 +64,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
   from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
   Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.
+  Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.
+  Native skill switching, combined bonuses, no-crit, relog and hitless-spell controls are verified.
+  Added-base, lucky/more and conditional crit remain separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
