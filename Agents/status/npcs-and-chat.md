@@ -8,7 +8,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Chat commands `/commands` (`/com`; paged, `/com <name>` for one), `/raw <hex>`, `/set_stat`, `/set_speed`,
   `/set_level <1 to 100>` (saved to the account, sent in place), `/add_passive_points <n>`, `/add_passive <id>`
   (replies as chat lines).
-  Code: `Program.cs` (`Commands`), `ChatCommands.cs`.
+  Code: `Program.Commands.cs` (`Commands`), `ChatCommands.cs`.
   Docs: [10](../docs/protocol/10-chat-and-commands.md).
 - NPCs in Lioneye's Watch: Tarkleigh, Nessa and Bestel at their real-game cells, with name, minimap icon and idle
   model; clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
