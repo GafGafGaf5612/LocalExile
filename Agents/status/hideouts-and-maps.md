@@ -35,6 +35,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 - **Waypoint arrival.** Hideout entry uses the exact saved waypoint cell for spawn and movement origin,
   including login and returns from other areas.
+  Live player and waypoint records used the same saved cell.
 
 - Hideout editing moves and rotates installed furniture, the waypoint and NPCs through native C→S 0x5b.
   Placements persist per character/template; runtime interactions and path blockers follow the moved objects.

@@ -20,7 +20,7 @@ Omitting the stat-set reference desynchronizes the Actor record and crashes the 
 The native reader is `0x142196ce0`, calling `0x1424a0dc0` and `0x1424a0990`.
 The constructor at `0x141ee73d0` receives a support vector with stride 0x78.
 GrantedEffects supplies the native skill-bar letter and attribute colour; no client assets are changed.
-The real client accepted Cyclone with Increased Area of Effect and constructed one support entry.
+The real client accepted Cyclone with Increased Area of Effect and later constructed five support entries.
 
 ## Modelled effects
 
