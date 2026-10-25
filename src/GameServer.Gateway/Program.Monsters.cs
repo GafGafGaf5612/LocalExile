@@ -209,7 +209,7 @@ partial class Program
         await WhilePaused(conn);   // a swing started just before the pause lands after it
         double now = conn.Clock.Elapsed.TotalSeconds;
         uint life, mana, manaBefore;
-        int rawDamage = 0, damage = 0;
+        int rawDamage = 0, damage = 0, chaosDamage = 0;
         bool blocked;
         lock (conn.Monsters)
         {
@@ -242,20 +242,22 @@ partial class Program
             foreach (var (type, range) in mitigated.Components)
             {
                 int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
+                if (type == DamageType.Chaos) chaosDamage += value;
                 damage += type == DamageType.Physical
                     ? DamageModel.MitigatePhysical(value, conn.Pools.Armour)
                     : value;
             }
             blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
-            if (blocked) damage = 0;
+            if (blocked) { damage = 0; chaosDamage = 0; }
             manaBefore = conn.PlayerMana;
             int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
             int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
-            conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - damage + gainedLife));
+            conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(damage - chaosDamage, false, now) - conn.EnergyShield.Damage(chaosDamage, true, now) + gainedLife));
             conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
             life = conn.PlayerLife;
             mana = conn.PlayerMana;
         }
+        await SendPlayerEnergyShield(remote, stream, ciphers, conn);
         if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
             await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);
         // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.

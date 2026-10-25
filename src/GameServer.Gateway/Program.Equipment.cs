@@ -20,18 +20,26 @@ partial class Program
     // The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
     // row is used (its minimum roll, matching the item's default base percentile); local/global mods and quality are not
     // modelled. Shields are excluded for now. Inactive items (requirements not met) give none.
-    static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
+    static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
     {
         var items = ItemsOf(conn);
-        int armour = 0, evasion = 0;
-        foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots })
+        int armour = 0, evasion = 0, energyShield = 0;
+        foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots, PlayerInventories.Offhand1 })
             if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
                 && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
             {
                 armour += d.ArmourMin;
                 evasion += d.EvasionMin;
+                var local = ItemModStats.Local(equipped.Item, Items.Mods);
+                int flat = d.EnergyShieldMin + local.GetValueOrDefault("local_energy_shield")
+                    + local.GetValueOrDefault("local_evasion_rating_and_energy_shield");
+                int increase = local.GetValueOrDefault("local_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_energy_shield_+%")
+                    + local.GetValueOrDefault("local_evasion_and_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_evasion_and_energy_shield_+%");
+                // Armour quality is a separate multiplier since 3.25. Item's base percentile is currently zero (minimum).
+                if (local.GetValueOrDefault("local_no_energy_shield") == 0)
+                    energyShield += (int)(EnergyShield.Max(flat, increase) * (100L + equipped.Item.Quality) / 100);
             }
-        return (armour, evasion);
+        return (armour, evasion, energyShield);
     }
 
     // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
@@ -153,9 +161,15 @@ partial class Program
             t.BecomesWhenFull && Items.Row(t.FullStackRow) is { Supported: true } full ? () => ItemCatalog.Create(full) : null)
         : null;
 
+    // The weapon type of an equipment row's item (its BaseItemTypes row), or null: the active (not inactive) item.
+    static ItemCatalog.BaseType? HandType(ClientState conn, byte row) =>
+        ItemsOf(conn).Items(row).Where(i => !IsInactive(conn, i.Id))
+            .Select(i => Items.ByHash(i.Item.TypeHash)).FirstOrDefault();
+
     // The record's type is the item's ItemClasses row + 1: the client checks skills' weapon restrictions against it.
     static VisibleItem? LookOf(Item i) => Items.ByHash(i.TypeHash) is { } t
-        ? new VisibleItem(0, t.VisualIdentity, t.Stance, t.ClassRow is >= 0 and < 255 ? (byte)(t.ClassRow + 1) : (byte)1) : null;
+        ? new VisibleItem(0, t.VisualIdentity, t.Stance,
+            t.ClassRow is >= 0 and < 255 ? (byte)(t.ClassRow + 1) : (byte)1) : null;
 
     // What the model wears: the equipped items, dressed in the worn cosmetics (CosmeticEffects). A skin replaces the item's
     // art in its entry's first reference and a weapon effect fills the second; attachments and character effects fill the
@@ -163,6 +177,15 @@ partial class Program
     static IReadOnlyList<VisibleItem> Looks(ClientState conn, PlayerInventories items)
     {
         var looks = items.Equipped(LookOf).ToList();
+        // A bow is held in the left hand, and its model slot is not the main hand's: BowSetup holds the record the live server
+        // sends (the bow's art in slot 1, an arrow in slot 0 with the weapon type and stance, the quiver on the back in 7).
+        if (HandType(conn, PlayerInventories.Weapon1) is { Class: "Bow" } bow)
+        {
+            int quiver = looks.FindIndex(l => l.Slot == 1 && l.VisualIdentity != 0);
+            ushort quiverArt = quiver >= 0 ? looks[quiver].VisualIdentity : Items.Visual("DefaultQuiver") ?? 0x328b;
+            looks.RemoveAll(l => l.Slot is 0 or 1 or 7);
+            looks.AddRange(BowSetup.Entries(bow, Items.Visual("DefaultArrow") ?? 0xb2f6, quiverArt));
+        }
         var cosmeticSlots = CosmeticEffects.CosmeticOnlySlots.ToDictionary(s => s, VisibleItem.Empty);
         foreach (var worn in WornCosmetics(conn))
         {

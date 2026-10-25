@@ -30,6 +30,26 @@ sealed class ItemCatalog
         _weaponCrits = new(() => LoadWeaponCrits(folder));
         _defences = new(() => LoadDefences(folder));
         _flasks = new(() => LoadFlasks(folder, _rows.Value.Rows));
+        _visualsById = new(() => LoadVisualsById(folder));
+    }
+
+    private readonly Lazy<Dictionary<string, ushort>> _visualsById;
+
+    /// <summary>An ItemVisualIdentity row's HASH16 by its Id (DefaultArrow, DefaultQuiver …): the hashes the client
+    /// looks an art up by. Null when the table is missing or has no such row.</summary>
+    public ushort? Visual(string id) => _visualsById.Value.TryGetValue(id, out ushort hash) && hash != 0 ? hash : null;
+
+    static Dictionary<string, ushort> LoadVisualsById(string folder)
+    {
+        var map = new Dictionary<string, ushort>(StringComparer.Ordinal);
+        string path = Path.Combine(folder, "tables", "ItemVisualIdentity.json");
+        if (!File.Exists(path)) return map;
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in doc.RootElement.EnumerateArray())
+            if (r.GetProperty("Id").GetString() is { Length: > 0 } id
+                && r.GetProperty("HASH16") is { ValueKind: JsonValueKind.Number } h)
+                map.TryAdd(id, (ushort)h.GetInt32());
+        return map;
     }
 
     public sealed record BaseType(int Row, string Id, string Name, uint Hash, byte Width, byte Height, ushort VisualIdentity,

@@ -107,6 +107,7 @@ partial class Program
                         (fixedLevel.Ok ? "" : $"; not saved to the account: {fixedLevel.Error}"));
                 }
                 conn.PlayerLife = conn.PlayerMaxLife;
+                conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
                 conn.AuraDeathHandled = false;
                 conn.PlayerMana = (uint)UnreservedMana(conn);
                 Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {Skills.ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}, attack speed +{conn.Pools.AttackSpeedPct}%), league {conn.League ?? "?"}");

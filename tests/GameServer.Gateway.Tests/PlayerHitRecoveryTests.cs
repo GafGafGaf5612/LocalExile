@@ -138,4 +138,25 @@ public class PlayerHitRecoveryTests
         Assert.Equal(4, conn.ActionCount);
         Assert.True(global::Program.TryBeginObjectWalk(conn, 0, 70, 30, 2, out _));
     }
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(-1, -.75)]
+    public void Bow_ground_attacks_cannot_reserve_pacing_or_a_new_token_from_recovery_input(double began, double requestedAt)
+    {
+        var conn = ObjectWalkState();
+        var before = conn.Walk.Position(0);
+        conn.HitRecovery.Begin(began, .5f);
+        Assert.False(global::Program.TryBeginBowAttack(conn, requestedAt, 1, 0x102, 7, out _));
+        Assert.Equal(4, conn.ActionCount);
+        Assert.Equal(0, conn.NextAttackAt);
+        Assert.Equal((ushort)123, conn.ChannelSkill);
+        Assert.Equal(before, conn.Walk.Position(1));
+        conn.HitRecovery.Clear();
+        Assert.True(global::Program.TryBeginBowAttack(conn, 0, 1, 0x102, 7, out var bow));
+        Assert.Equal(5, bow.Action);
+        Assert.Equal((ushort)0x102, conn.ChannelSkill);
+        Assert.True(conn.NextAttackAt > 0);
+        Assert.False(global::Program.TryBeginBowAttack(conn, 0, 1, 0x102, 8, out _));
+        Assert.Equal(5, conn.ActionCount);
+    }
 }

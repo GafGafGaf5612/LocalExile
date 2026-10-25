@@ -38,14 +38,32 @@ partial class Program
                     await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (disabled skill, cost back)");
                     continue;
                 }
+                // The ordinary attack on a ranged weapon: clicking the ground with the attack skill bound swings at the point
+                // and the client draws an arrow to it, instead of walking there (live 2026-10-25: the arrow stayed in the
+                // hand, because every non-gem ground click was movement).
+                if (use.SkillId == SkillCatalog.FirstSkillId && WeaponProfileFor(conn).Bow)
+                {
+                    double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+                    if (!TryBeginBowAttack(conn, at, duration, use.SkillId, use.Slot, out var bow)) continue;
+                    await Send(remote, stream, ciphers,
+                        InstanceProtocol.ActionStarted(PlayerId, bow.X, bow.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
+                        $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bow.X}, {bow.Y}) (t={at:0.000})",
+                        still: () => PlayerActionCurrent(conn, bow.Action));
+                    if (Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
+                        _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), (bow.X, bow.Y), (use.X, use.Y),
+                            damageTo: null, impact: "none", actionToken: bow.Action);
+                    continue;
+                }
                 // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an
                 // attack-move: the client walks to the aimed point itself and sends no C→S 0x25 Move for that walk, so the
                 // server walks its own estimate after it and echoes from there. A point with a living monster on it is a
                 // swing (the client aims at the cell, not at the object); an empty point is movement only, so running costs
                 // no mana. Before 2026-10-25 every use swung, which paid the cost at the click and echoed the server's stale
                 // position, and the client snapped the player back onto it (live trace: up to 98 cells).
+                // A ranged weapon (a bow) fires at the point instead: arrows flew nowhere while this branch walked the
+                // player, since the projectile is launched by the cast below (live 2026-10-25).
                 bool attack = cast && gem.Name is not null && Skills.IsAttack(gem.Effect);
-                if (attack && (use.Flags & 0x1) == 0 && !Skills.IsMovement(gem.Effect))
+                if (attack && (use.Flags & 0x1) == 0 && !Skills.IsMovement(gem.Effect) && WeaponProfileFor(conn).Melee)
                 {
                     var here = conn.Walk.Position(at);
                     if (!MonsterAtAim(conn, gem, use.X, use.Y, at) || Dist(here, (use.X, use.Y)) > WeaponFor(conn).Range)
