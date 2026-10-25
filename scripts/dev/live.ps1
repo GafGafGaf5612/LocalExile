@@ -81,6 +81,13 @@ function Start-Detached([string]$exe, [string[]]$arguments, [string]$log, [strin
 
 $bin = 'bin\Debug\net10.0'
 $serverArgs = @{ Auth = @('serve'); Patch = @(); Gateway = @() }
+# The cached gateway list can point elsewhere even when the patch welcome says no download is needed.
+# Select the local Auth explicitly before the patch server or client opens the GGPK.
+if (-not $NoClient) {
+    & dotnet (Join-Path $repo "src\GameServer.Patch\$bin\GameServer.Patch.dll") gateway (Join-Path $repo 'Client\Content.ggpk') --login '127.0.0.1:20493' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'could not select local login server; close all clients and retry' }
+}
+
 foreach ($s in 'Patch', 'Gateway', 'Auth') {
     if ($servers -notcontains $s) { continue }
     Start-Detached 'dotnet' (@("src\GameServer.$s\$bin\GameServer.$s.dll") + $serverArgs[$s]) `

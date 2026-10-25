@@ -924,3 +924,16 @@ on the Defence tab as Stun Recovery 30%, the four Avoidance rows at 20% and "Can
 ## Standard maximum-charge rows
 
 `ChargePanelStats.Compute` derives the three standard maximum-charge display values from base three plus unconditional modifiers. The current values remain zero; conditional modifiers, replacement charges and gain/expiry mechanics are outside this change. Verified on the native Charges tab with all three baseline rows at `0 / 3`; eight focused modifier tests cover the formulas.
+### Aura lifecycle: town suppression and death
+
+ActiveAuras records per-character enabled intent by GrantedEffects Id. LoadProgress restores every remembered aura whose gem is available, using fresh connection skill/buff ids. Restoration is not a new cast and does not drop saved auras when their combined reservation exceeds a transient mana pool; displayed reservation is clamped to maximum mana. New manual activations still validate the full reservation.
+
+Campaign towns (WorldAreas.IsTown via WaypointCatalog) instantiate no aura runtime entries: no reservation, bonuses, source/recipient buffs, icons or floor effects. Saved intent stays untouched and restores automatically in hideouts, maps and campaign combat areas. Ground skill requests allow only Move in towns; gem/default attacks on objects and the shared gem cast entry point are refused there. NPC, stash and waypoint interactions remain available.
+
+Skill removal suspends runtime effects without deleting enabled intent. A skill-list refresh resumes remembered effects when their gems become available again. Manual toggles update intent normally. Actual death paths clear saved intent and runtime auras before the death screen; the player tick also handles death cleanup. Resurrection resets the per-death cleanup guard but does not reactivate cleared auras. Switching characters never changes another character's intent. AuraSaveTests cover independent characters, town round trips, all enabled effects despite transient reservation limits, fresh runtime ids and death reset. Live lifecycle verification pending.
+
+#### Aura restoration bootstrap correction
+
+A real town/hideout round trip restored only Vitality despite saved Precision and Clarity. The log marked the body armour inactive because Precision needed 22 dexterity while initial pools still contained the class base 14. CharacterStatSources was checking socketed gems against stale/uninitialized pools while constructing those very pools, then disabling the entire item's global modifiers and all its gems.
+
+Item activation now uses only the equipment's own requirements. Gem requirements remain enforced individually at socketing/casting against completed pools; an unavailable gem no longer suppresses its host armour, unrelated gems or their attributes. This removes the circular initialization gate on aura candidates. AuraEquipmentRestoreTests reproduces the fresh-connection equipment case and restores all 17 supported self auras, including 34 distinct source/recipient buff packets after town suppression. Restoration has no aura-count limit.
