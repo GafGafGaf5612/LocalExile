@@ -343,8 +343,9 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   rest): every placed room (those placed in the pass too) whose two corner grounds along a side are the same (room
   data +0x13a = the room key's corners TL, TR, BR, BL, turned: table 0x142fbe348 = inverse orientation, then
   rows 0 1 2 3 / 1 2 3 0 / 2 3 0 1 / 3 0 1 2 / 1 0 3 2 / 2 1 0 3 / 3 2 1 0 / 0 3 2 1) offers each cell across that
-  side (right, bottom, left, top) at the level of the exit there (master DungeonFillRoomHeightOverride, +0x159 /
-  +0x14d, not ported) to `0x1421096f0`: a free cell (0) takes a fill room of that ground. Fill rooms (room data +9,
+  side (right, bottom, left, top) at the level of the exit there (room +0x12 plus the exit's height), or, when the
+  master has DungeonFillRoomHeightOverride (+0x159 set; taken to be set by the key), at its level (+0x14d, a byte:
+  0 or 2 in 3.29) on every side, to `0x1421096f0`: a free cell (0) takes a fill room of that ground. Fill rooms (room data +9,
   `0x141ff4e70`: four equal corner grounds, no exits, +0x40 clear, taken to be no tag and not unique) are filed by
   `0x141ff5760` per ground into a size list (room set +0x98: (w, h) and, not square, (h, w), each at the room's
   weight) and per (ground, size) into a room list (+0xd8: mask all for square, else & 0x55 at (w, h), & 0xaa at
@@ -1149,7 +1150,10 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   (WorldAreas +0x192, §3; the `0x142107272` cluster, EndGame Labyrinth): **583 of 782 match** (+5, none lost), 110 of
   the 197 seed-1 traces by hash (+5: EndGame Labyrinth `C_straight_bottleneck`, `EH_end_bottleneck`, `OH_branch`,
   `OH_branch_door`, `RT_straight_bottleneck`); `P_branch`, `P_branch_bottleneck_1` and `P_straight_bottleneck` now
-  first differ in tiling (`0x1420f4807` / `0x1420f47d8`, with the 3_Labyrinth P traces).
+  first differ in tiling (`0x1420f4807` / `0x1420f47d8`, with the 3_Labyrinth P traces). 2026-10-25,
+  DungeonFillRoomHeightOverride (§3c, fill rooms): **588 of 782 match** (+5, none lost), 113 of the 197 seed-1
+  traces by hash (+3: `1_3_2`, `1_5_8`, `2_10_1`); `1_4_5_1` now first differs at the doodads (`0x142042fae`),
+  `1_5_3` / `1_5_3b` stop at door tiles without RoomOverlap.
   2026-10-23 (session 3s: shrine rooms, sub-area records beside the primary, shuffle and unique groups, the empty
   extra door type, template nodes): 104 of 710 match (was 90; new: `1_1_9a` seed 3101637759, `1_4_2` seeds 1,
   1017325810, `1_4_6_1` seed 1, `1_4_6_2` seed 1, `1_4_6_3` seeds 1, 778578247, 2425308814, `1_5_5` seeds

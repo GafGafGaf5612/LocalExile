@@ -517,11 +517,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var swap = (master.TryGetValue("SwapDungeonDoorsFrom", out var from) ? TerrainText.Resolve(masterPath, from) : null,
             master.TryGetValue("SwapDungeonDoorsTo", out var to) ? TerrainText.Resolve(masterPath, to) : null);
         var groups = master.TryGetValue("FileGroups", out var fgp) ? FileGroups(TerrainText.Resolve(masterPath, fgp)) : null;
-        if (master.ContainsKey("DungeonFillRoomHeightOverride"))
-            throw new NotSupportedException("DungeonFillRoomHeightOverride (0x142108f70's fixed level) is not ported");
+        // Master +0x159 / +0x14d: the fill rooms' fixed level (0x142108f70), taken to be set by the key.
+        sbyte? fillLevel = master.TryGetValue("DungeonFillRoomHeightOverride", out var fh) ? (sbyte)byte.Parse(fh.Trim()) : null;
         var outerGround = master.TryGetValue("OuterGroundType", out var og) ? TerrainText.Resolve(masterPath, og) : null;
         new DungeonLayout(files, rng, notes, graph, roomSet, map, graphOrientation, swap, LevelGenerator.DungeonStage,
-            groups is null ? null : g => groups.GetValueOrDefault(g), outerGround, pool).Run();
+            groups is null ? null : g => groups.GetValueOrDefault(g), outerGround, pool, fillLevel).Run();
         return map;
     }
 

@@ -106,7 +106,8 @@ sealed class DungeonMap(int width, int height, int unit, int overlap)
 /// Ported in client order; the next part that is not ported throws <see cref="NotSupportedException"/>.</summary>
 sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> notes, TileGraph graph, DungeonRoomSet roomSet,
     DungeonMap map, int graphOrientation, (string? From, string? To) swapDoors, Action<string, int, int[]>? onCells = null,
-    Func<string, IReadOnlyList<string>?>? fileGroup = null, string? outerGround = null, ExtraRoomPool? pool = null)
+    Func<string, IReadOnlyList<string>?>? fileGroup = null, string? outerGround = null, ExtraRoomPool? pool = null,
+    sbyte? fillLevel = null)
 {
     /// <summary>The layout's +0x40: per file group, the files its graph nodes took (<c>0x1421052e0</c>).</summary>
     readonly Dictionary<string, List<string>> _groupsUsed = [];
@@ -286,8 +287,9 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
 
     /// <summary><c>0x142108f70</c>: every placed room (rooms placed during the pass included) whose two corner grounds
     /// on a side are the same (room data +0x13a, the room key's corners turned by the orientation) offers each cell
-    /// across that side, at the level of the exit there, to <see cref="FillCell"/> with that ground, when the
-    /// ground's .gt flag 2 equals <paramref name="flag2"/>. Sides in the order right, bottom, left, top.</summary>
+    /// across that side, at the level of the exit there (the master's DungeonFillRoomHeightOverride instead when it
+    /// has one: +0x159 set, the level at +0x14d), to <see cref="FillCell"/> with that ground, when the ground's .gt
+    /// flag 2 equals <paramref name="flag2"/>. Sides in the order right, bottom, left, top.</summary>
     bool FillRoomPass(bool flag2)
     {
         ReadOnlySpan<byte> inverse = [0, 3, 2, 1, 4, 5, 6, 7, 8];
@@ -303,7 +305,7 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
             int w = p.Width, h = p.Height, n = p.Exits.Length;
             bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
             bool Wanted(string? g) => (g is not null && (files.Ground(g)!.Flags & 2) != 0) == flag2;
-            sbyte Level(int e) => (sbyte)(p.Level + p.Exits[e].Height);
+            sbyte Level(int e) => fillLevel ?? (sbyte)(p.Level + p.Exits[e].Height);
             if (p.X + w < map.Width && Same(c[1], c[2]) && Wanted(c[1]))
                 for (int v = 0; v < h; v++) placed |= FillCell(p.X + w, p.Y + v, c[1], Level(w + v));
             if (p.Y + h < map.Height && Same(c[2], c[3]) && Wanted(c[2]))
