@@ -195,7 +195,9 @@ public sealed class TileGraph
             for (int k = 0; k < count; k++) s[k] = Int() + 1;
             slots.Add(s);
             n.Tag = Next().Text;
-            n.Orientation = ParseOrientation(Next().Text);
+            // 0x14299d980's table: I … FR270, "(any)" = 8, "(best)" = 9 (taken as 8 in tile graphs, not looked at there).
+            string ow = Next().Text;
+            n.Orientation = g.IsDungeon && ow == "(best)" ? (byte)9 : ParseOrientation(ow);
             int descriptions = Int();
             for (int k = 0; k < descriptions; k++) n.Descriptions.Add(Next().Text);
             n.Exist = Int();

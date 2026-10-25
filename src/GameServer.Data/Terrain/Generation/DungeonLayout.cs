@@ -1603,9 +1603,19 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
     /// that room, <c>Next(total)</c> once more (<c>0x142108920</c>).</summary>
     (DungeonRoom Room, int Orientation, int W, int H) PickRoom(GraphNode n, ref int x, ref int y)
     {
-        if (n.Orientation == 9) throw new NotSupportedException($"{n}: dungeon nodes of any orientation with edge directions (0x142104990) are not ported");
         var wanted = NodeExits(n);
-        var candidates = roomSet.Variants(n.Tag, t => Directional(t)).Where(v => v.Room.Weight != 0 && Holds(v.Exits, wanted)).ToList();
+        var variants = roomSet.Variants(n.Tag, t => Directional(t)).Where(v => v.Room.Weight != 0);
+        List<(DungeonRoom Room, int Orientation, int W, int H, RoomExit[] Exits)> candidates;
+        if (n.Orientation == 9)
+        {
+            // 0x142104990's "(best)" branch: one wanted exit per side (BestExits); rooms with exactly those on their sides
+            // (0x141ff81b0, callback 0x142012ab0), else rooms whose other sides only end (callback 0x142012bc0).
+            var sides = BestExits(n) ?? throw new NotSupportedException($"{n}: two edges of a \"(best)\" node want one side; the room lookup comes back empty (not ported)");
+            var all = variants.ToList();
+            candidates = all.Where(v => SidesHold(v.Exits, v.W, v.H, sides, endOk: false)).ToList();
+            if (candidates.Count == 0) candidates = all.Where(v => SidesHold(v.Exits, v.W, v.H, sides, endOk: true)).ToList();
+        }
+        else candidates = variants.Where(v => Holds(v.Exits, wanted)).ToList();
         if (candidates.Count == 0)
             // 0x141d8b750: the generator's extra room pool (+0x40, filled per graph by 0x14204bfa0 / 0x141d8bba0;
             // the Labyrinth's "secret" rooms), every orientation at weight 1.
@@ -1614,7 +1624,7 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         var fits = new List<(DungeonRoom Room, int Orientation, int W, int H, int X, int Y, bool Mismatch)>();
         foreach (var (r, o, w, h, _) in candidates)
         {
-            if (n.Orientation != 8 && o != n.Orientation) continue;
+            if (n.Orientation < 8 && o != n.Orientation) continue;
             // 0x1421062e0 reads the graph's orientation (+0x58), not the node's.
             var (ax, ay) = Anchor(graphOrientation, nx, ny, w, h);
             if (RoomFits(r, o, w, h, ax, ay, wanted.Count, out bool mismatch)) fits.Add((r, o, w, h, ax, ay, mismatch));
@@ -1650,6 +1660,61 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
             exits.Add(new RoomExit(e.Type, (sbyte)(Math.Max(e.A.Height, e.B.Height) - n.Height), chirality));
         }
         return exits;
+    }
+
+    /// <summary><c>0x142104990</c> for a "(best)" node (orientation 9): every slot edge offers the sides its first step
+    /// leaves by (from the node to the edge's next point: left or right by x, up or down by y), each with the angle to
+    /// that axis (<c>0x14299d730</c> against (±100, 0) / (0, ±100)). Sorted by angle, largest first (a stable insertion
+    /// sort, <c>0x14212e040</c>), they are taken from the back: an edge whose side is still free takes it (type,
+    /// chirality as for a fixed node, height the higher of its two nodes', the node's own not taken off) and its other
+    /// offers go. Null when an edge finds no free side.</summary>
+    RoomExit?[]? BestExits(GraphNode n)
+    {
+        var offers = new List<(GraphEdge Edge, int Side, ushort Angle)>();
+        foreach (var e in n.Slots)
+        {
+            if (e is null) continue;
+            var (px, py) = e.A == n ? (e.Points.Count == 0 ? (e.B.X, e.B.Y) : e.Points[0]) : (e.Points.Count == 0 ? (e.A.X, e.A.Y) : e.Points[^1]);
+            int dx = px - n.X, dy = py - n.Y;
+            if (dx < 0) offers.Add((e, 3, GraphGeometry.Angle(dx, dy, -100, 0)));
+            else if (dx > 0) offers.Add((e, 1, GraphGeometry.Angle(dx, dy, 100, 0)));
+            if (dy < 0) offers.Add((e, 0, GraphGeometry.Angle(dx, dy, 0, -100)));
+            else if (dy > 0) offers.Add((e, 2, GraphGeometry.Angle(dx, dy, 0, 100)));
+        }
+        // Stable, largest angle first.
+        offers = [.. offers.Select((o, i) => (o, i)).OrderByDescending(t => t.o.Angle).ThenBy(t => t.i).Select(t => t.o)];
+        var sides = new RoomExit?[4];
+        while (offers.Count != 0)
+        {
+            var (e, side, _) = offers[^1];
+            offers.RemoveAt(offers.Count - 1);
+            if (sides[side] is not null) continue;
+            bool chirality = Directional(e.Type) && ((e.A == n) ^ (e.Chirality != 0));
+            sides[side] = new RoomExit(e.Type, (sbyte)Math.Max(e.A.Height, e.B.Height), chirality);
+            offers.RemoveAll(o => o.Edge == e);
+        }
+        return sides.Count(x => x is not null) == n.Slots.Count(x => x is not null) ? sides : null;
+    }
+
+    /// <summary><c>0x142012ab0</c> / <c>0x142012bc0</c>: on each side of the turned room (top [0, w), right [w, w + h),
+    /// bottom, left) an exit equal to that side's wanted one (an empty side wants an exit without a type). With
+    /// <paramref name="endOk"/> a side without a wanted exit passes when its exits have no type or one that can end
+    /// (.et flag 0x10).</summary>
+    bool SidesHold(RoomExit[] exits, int w, int h, RoomExit?[] sides, bool endOk)
+    {
+        int[] bounds = [0, w, w + h, 2 * w + h, exits.Length];
+        for (int s = 0; s < 4; s++)
+        {
+            var want = sides[s] ?? new RoomExit(null, 0, false);
+            bool found = false;
+            for (int i = bounds[s]; i < bounds[s + 1] && !found; i++)
+                found = string.Equals(exits[i].Type, want.Type, StringComparison.OrdinalIgnoreCase) && exits[i].Height == want.Height && exits[i].Chirality == want.Chirality;
+            if (found) continue;
+            if (!endOk || sides[s] is not null) return false;
+            for (int i = bounds[s]; i < bounds[s + 1]; i++)
+                if (exits[i].Type is { } t && !CanEnd(t)) return false;
+        }
+        return true;
     }
 
     /// <summary><c>0x141ff8900</c>: every wanted exit takes one of the room's exits with the same type, height and

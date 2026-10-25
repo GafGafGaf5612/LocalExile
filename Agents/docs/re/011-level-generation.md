@@ -270,8 +270,17 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   (not a blank) whose facing exit has another type is a mismatch (doors of rooms.et = layout +0x20, or of an .et
   with flag 0x10, aside). Mismatched entries go when some entry has none. Empty → "No suitable room found". Then
   `Next(total)`, the anchor (`0x1421062e0`, graph orientation), and once more when a side neighbour holds that room
-  (`0x142108920`). Orientation 9 (`0x142104990`'s first branch: the slot edges sorted by the direction to their next
-  point, `0x141ff81b0`) is not ported.
+  (`0x142108920`). Orientation 9 is the word `(best)` (`0x14299d980`'s table at 0x142fe0d50: I, R90, R180, R270, FI,
+  FR90, FR180, FR270, `(any)`, `(best)`; common in .dgr files, e.g. Maligaro's Sanctum's `fleshaltar`). For it
+  `0x142104990` wants one exit per side: each slot edge offers the side(s) its first step leaves by (to its first
+  point, or the other node: left / right by x, up / down by y, each with `0x14299d730`'s angle to (±100, 0) /
+  (0, ±100)); the offers, stably sorted by angle largest first (`0x14212e040`), are taken from the back, an edge taking
+  its side when still free and dropping its other offers. The exit's height is the higher of the edge's nodes', the
+  node's own not taken off. With every edge placed, `0x141ff81b0` (callback `0x142012ab0`) keeps the tag's (room,
+  orientation) entries with exactly the wanted exit on each side (top [0, w), right [w, w + h), bottom, left; an empty
+  side wants an untyped exit); none → the same with callback `0x142012bc0`, where a side without a wanted exit also
+  passes when its exits are untyped or can end (.et flag 0x10). An edge left without a side (the lookup comes back
+  empty) is not ported. Orientation 9 then counts as any for `0x1421298e0` (`DungeonLayout.BestExits`).
 - **Node door type** (`0x142003740`, after the room pick of `0x142106b00`, and in `0x142107130` once a blank's
   rectangle fits): the node's four edge slots (+0x58) with an extra door % (+0x54) are weighted by it, `Next(total)`
   picks one, and its extra door type (+0x70) becomes the room's +0x48 type; with none, no draw and the default
