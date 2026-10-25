@@ -1121,6 +1121,13 @@ static async Task ChooseNpcOption(string remote, NetworkStream stream, Connectio
     if (talk is null) return;
     switch (talk.Category)
     {
+        case "SelectHideout":
+            conn.InNpcTalk = false;
+            conn.TalkingTo = 0;
+            await Send(remote, stream, ciphers, InstanceNpcs.Talk(0), "0x0084 close NPC dialogue for hideout selection");
+            await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceNpcs.HideoutSelectionUi,
+                talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
+            break;
         case "Gossip" or "Quests" or "QuestReward" when talk.TextAudio.Count > 0:
             // 0x84 with the row's index: the client opens the dialogue window on that NPCTalk row (its text and audio).
             conn.InNpcTalk = true;
@@ -1925,16 +1932,14 @@ static async Task LaunchProjectile(string remote, NetworkStream stream, Connecti
 }
 
 // The radius in cells of a gem skill's hit around its aimed point (AreaSkillHit): its own
-// active_skill_base_area_of_effect_radius, else 12, grown by the player's area of effect stats under the skill's own
+// active_skill_base_area_of_effect_radius, else Cyclone's 16 or the generic 12, grown by the player's area stats
 // (SkillArea). The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23).
-static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell)
+static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell, int effect)
 {
-    const int AreaSkillRadius = 12;
-    int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
     var areaStats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
     foreach (var (k, v) in skillStats) areaStats[k] = v;
-    return SkillArea.Radius(Stat("active_skill_base_area_of_effect_radius") is int r and > 0 ? r : AreaSkillRadius,
-        name => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0, spell);
+    int Get(string name) => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0;
+    return SkillArea.Radius(SkillArea.BaseRadius(Skills.EffectId(effect), Get), Get, spell);
 }
 
 // Whether a living monster stands within a gem attack's hit radius of a ground point. The client sends a point with a
@@ -1943,7 +1948,7 @@ static bool MonsterAtAim(ClientState conn, (ushort Id, int Effect, string Name, 
     int x, int y, double at)
 {
     var stats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-    int radius = SkillRadius(conn, stats, spell: false);
+    int radius = SkillRadius(conn, stats, spell: false, gem.Effect);
     lock (conn.Monsters)
         return conn.Monsters.Any(m => !m.Value.Dead && m.Value.Life > 0
             && Dist(m.Value.Walk.Position(at), (x, y)) <= radius);
@@ -1970,7 +1975,7 @@ static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCi
     var weapon = WeaponFor(conn);
     double delay;
     lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0 : weapon.AttackSeconds(CharacterPlayerStats(conn)) / 2;
-    int radius = SkillRadius(conn, skillStats, spell);
+    int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
     // A melee skill aimed far away still lands in front of the player.
     var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
     int action = conn.ActionCount;
@@ -2227,7 +2232,13 @@ static List<(uint, int)> PlayerStatsWithCleared(ClientState conn)
 static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
 {
     var stats = CharacterPlayerStats(conn);
-    foreach (var (k, v) in WeaponFor(conn).Stats(stats)) stats[k] = v;
+    // Quivers are gated by main_hand_weapon_type on the client, independently of the model's weapon stance. Only the
+    // bow's value is known, so other weapons send nothing (a value /set_stat set stays); taking the bow off clears the
+    // 9 sent before through PlayerStatsWithCleared.
+    var mainHand = ActiveMainHand(conn);
+    if (Stats.Key("main_hand_weapon_type") is uint weaponTypeKey && WeaponTypeStats.BowType(mainHand?.Type?.Class) is int bowType)
+        stats.TryAdd(weaponTypeKey, bowType);
+    foreach (var (k, v) in WeaponOf(conn, mainHand).Stats(stats)) stats[k] = v;
     foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
     return stats.Select(kv => (kv.Key, kv.Value));
 }
@@ -2404,6 +2415,22 @@ static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint,
         // A spell's tooltip DPS is its own hit (SpellDamage) × casts per second, not the default attack's values that
         // came with the player's stats.
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        // Cyclone's client effect reads the final radius, not the increased-area input. Match AreaSkillHit.
+        if (SkillArea.IsCyclone(Skills.EffectId(effect)))
+        {
+            int baseRadius = SkillArea.BaseRadius(Skills.EffectId(effect), Get);
+            int increased = SkillArea.Increased(Get, spell: false);
+            int radiusPercent = SkillArea.RadiusPercent(Get, spell: false);
+            int radius = SkillArea.Radius(baseRadius, Get, spell: false);
+            if (Stats.Key("active_skill_base_area_of_effect_radius") is uint baseKey) stats[baseKey] = baseRadius;
+            if (Stats.Key("active_skill_area_of_effect_radius") is uint radiusKey)
+                stats[radiusKey] = radius;
+            // Channelled Cyclone's conditional-radius path reads these derived stats instead of 0x4876.
+            // Compute them before writing skill_area_of_effect_+%, or the base increase would count twice.
+            if (Stats.Key("total_skill_area_of_effect_radius_+%_including_final") is uint scaleKey) stats[scaleKey] = radiusPercent;
+            if (Stats.Key("skill_area_of_effect_+%") is uint areaKey) stats[areaKey] = increased;
+            Console.WriteLine($"[gateway] Cyclone area: base {baseRadius}, radius {radius}, increased area {increased}%, radius scale {radiusPercent}%");
+        }
         if (SpellDamage.Hit(Get) is { Max: > 0 } hit && Get("hundred_times_casts_per_second") is int cps and > 0)
         {
             var (perUse, perSecond) = SpellDamage.Display(hit, cps / 100.0);
@@ -4745,7 +4772,9 @@ static async Task AnswerMtxRequest(string remote, NetworkStream stream, Connecti
         await Send(remote, stream, ciphers, InstanceMicrotransactions.Added([], InstanceMicrotransactions.StoreSecond),
             "0x01f4 microtransactions: the guild's list, empty");
     if (asked.HasFlag(InstanceMicrotransactions.Lists.Hideouts))
-        await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts([]), "0x01f5 unlocked hideouts: none");
+        await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts(
+            HideoutCatalog.Default is { Row: >= 0 and <= 255 } ownedHideout ? [(byte)ownedHideout.Row] : []),
+            "0x01f5 unlocked hideouts: current default");
     if (asked.HasFlag(InstanceMicrotransactions.Lists.GuildHideouts))
         await Send(remote, stream, ciphers, InstanceMicrotransactions.Hideouts([], guild: true), "0x01f5 guild hideouts: none");
 }
@@ -5156,14 +5185,20 @@ static (int Armour, int Evasion) EquippedBaseDefences(ClientState conn)
 // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
 // The local stats of the active main hand and off hand items (the first weapon set, else the second), for the panel's
 // hand rows (PanelStats).
+// The item in the main hand (row 2, the active set) and its base type, unless its requirements are not met.
+static (Item Item, ItemCatalog.BaseType? Type)? ActiveMainHand(ClientState conn) =>
+    ItemsOf(conn).Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id))
+        .Select(i => ((Item, ItemCatalog.BaseType?)?)(i.Item, Items.ByHash(i.Item.TypeHash))).FirstOrDefault();
+
 // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, its
 // physical damage with the weapon's own local mods (local_physical_damage_+%, local_minimum / maximum_added_physical_damage)
 // and its attack time with local_attack_speed_+%; no weapon, the class's unarmed attack.
-static SkillCatalog.Unarmed WeaponFor(ClientState conn)
+static SkillCatalog.Unarmed WeaponFor(ClientState conn) => WeaponOf(conn, ActiveMainHand(conn));
+
+static SkillCatalog.Unarmed WeaponOf(ClientState conn, (Item Item, ItemCatalog.BaseType? Type)? mainHand)
 {
     var unarmed = Skills.UnarmedFor(conn.ClassRow);
-    var item = ItemsOf(conn).Items(PlayerInventories.Weapon1).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault();
-    if (item is null || Items.ByHash(item.TypeHash) is not { } type || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return unarmed;
+    if (mainHand is not var (item, type) || type is null || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return unarmed;
     var local = ItemModStats.Local(item, Items.Mods);
     double scale = 1 + local.GetValueOrDefault("local_physical_damage_+%") / 100.0;
     int lo = (int)((min + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
