@@ -7,7 +7,8 @@ partial class Program
     // Monsters that rise from the ground (MonsterEmerge.cs); loaded with the first monster spawned.
     internal static readonly MonsterEmerge Emerges = new();
 
-    // Starts the connection's emerge watch for a monster just created buried (SpawnMonster), unless it already runs.
+    // Starts the connection's emerge watch for a monster just created waiting to rise (SpawnMonster), unless it already
+    // runs.
     static void WatchBuried(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         bool start;
@@ -15,10 +16,12 @@ partial class Program
         if (start) _ = RunEmergeWatch(remote, stream, ciphers, conn);
     }
 
-    // Every 250 ms: the buried monsters near the player rise (MonsterEmerge.RiseLocked). For each, S→C 0x1ab starts its
-    // Emerge basic action in place (the .act's Emerge clip plays from the paused first frame), 0x2ba steps its
-    // Transitionable to the transitioned state (on_transition: EnableTargetable), and when the clip has played 0x1ac ends
-    // the action; meanwhile it is busy, so the AI only chases and attacks after it. Paused with the AI (/ai off) or the game.
+    // Every 250 ms: the monsters waiting near the player, and lurking ones that were hit, rise (MonsterEmerge.RiseLocked).
+    // For each, S→C 0x1ab starts its Emerge basic action in place (the .act's Emerge clip plays from the paused first
+    // frame), 0x2ba steps its Transitionable to the transitioned state (on_transition: EnableTargetable), and when the clip
+    // has played (game time) 0x1ac ends the action; meanwhile it is busy, so the AI only chases and attacks after it.
+    // Rising does not wait for the AI (/ai off still lets a /spawn_mob emerge monster rise next to the player); it waits
+    // while the game is paused or the player is dead.
     static async Task RunEmergeWatch(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         try
@@ -26,7 +29,7 @@ partial class Program
             while (!conn.Closed)
             {
                 await Task.Delay(250);
-                if (!conn.AiEnabled || conn.Paused || conn.PlayerLife == 0) continue;
+                if (conn.Paused || conn.PlayerLife == 0) continue;
                 double now = conn.Clock.Elapsed.TotalSeconds;
                 List<(uint Id, SpawnedMonster Monster, (int X, int Y) At, double Seconds)> risen;
                 bool watching;
@@ -48,16 +51,20 @@ partial class Program
         if (Emerges.SkillId is not ushort skill || m.Variety is not { } v) return;
         try
         {
-            await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, at.X, at.Y, at.X, at.Y, skill, 0xffff, 0x0408),
-                $"0x01ab monster 0x{id:x} ({m.Label}) emerges at ({at.X}, {at.Y}): Emerge action 0x{skill:x4}, {seconds:0.00} s");
             int index = v.ComponentsOrBase.ToList().IndexOf("Transitionable");
             byte state = MonsterEmerge.RisenState(v);
-            await Send(remote, stream, ciphers, InstanceEntities.TransitionableUpdate(id, (byte)index, state),
-                $"0x02ba monster 0x{id:x} ({m.Label}) Transitionable → {state} (targetable)");
-            await Task.Delay(TimeSpan.FromSeconds(seconds));
-            await WhilePaused(conn);
-            lock (conn.Monsters) if (m.Dead || conn.Closed) return;
-            await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(id), $"0x01ac monster 0x{id:x} ({m.Label}) emerge action ended");
+            var messages = MonsterEmerge.RiseMessages(id, at, skill, (byte)index, state);
+            await Send(remote, stream, ciphers, messages[0],
+                $"0x01ab monster 0x{id:x} ({m.Label}) emerges at ({at.X}, {at.Y}): Emerge action 0x{skill:x4}, {seconds:0.00} s");
+            await Send(remote, stream, ciphers, messages[1], $"0x02ba monster 0x{id:x} ({m.Label}) Transitionable → {state} (targetable)");
+            // The clip's length in game time, like BusyUntil: a pause stops it.
+            double end = conn.Clock.Elapsed.TotalSeconds + seconds;
+            while (!conn.Closed && conn.Clock.Elapsed.TotalSeconds < end) await Task.Delay(50);
+            // Not for a monster that died or was removed (/despawn) meanwhile.
+            bool Still() { lock (conn.Monsters) return !conn.Closed && !m.Dead && conn.Monsters.GetValueOrDefault(id) == m; }
+            if (!Still()) return;
+            await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(id), $"0x01ac monster 0x{id:x} ({m.Label}) emerge action ended",
+                still: Still);
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
         {

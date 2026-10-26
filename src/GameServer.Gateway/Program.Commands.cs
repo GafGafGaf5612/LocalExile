@@ -822,15 +822,28 @@ partial class Program
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
         .Add("mobs", "/mobs (list spawned monsters)", async _ =>
-            await conn.Commands!.Reply(conn.Monsters.Count + MonsterEmerge.Buried(conn).Count == 0 ? "No monsters." :
-                string.Join(", ", conn.Monsters.Select(m => (m, Buried: false)).Concat(MonsterEmerge.Buried(conn).Select(m => (m, Buried: true))).Select(e =>
-                    $"0x{e.m.Key:x} {e.m.Value.Label} {e.m.Value.Walk.Position(conn.Clock.Elapsed.TotalSeconds)}{(e.Buried ? " (buried)" : e.m.Value.Aggro ? " (chasing)" : "")}"))))
+        {
+            // Copied under the lock: the AI and the emerge watch change both lists.
+            List<string> listed;
+            lock (conn.Monsters)
+            {
+                var buried = MonsterEmerge.Buried(conn);
+                var waiting = new HashSet<SpawnedMonster>(MonsterEmerge.Unrisen(conn), ReferenceEqualityComparer.Instance);
+                double now = conn.Clock.Elapsed.TotalSeconds;
+                listed = [.. conn.Monsters.Concat(buried).Select(m =>
+                    $"0x{m.Key:x} {m.Value.Label} {m.Value.Walk.Position(now)}" +
+                    (waiting.Contains(m.Value) ? buried.ContainsKey(m.Key) ? " (buried)" : " (lurking)" : m.Value.Aggro ? " (chasing)" : ""))];
+            }
+            await conn.Commands!.Reply(listed.Count == 0 ? "No monsters." : string.Join(", ", listed));
+        })
         .Add("despawn", "/despawn [all | <id>] (default: the last one spawned)", async args =>
         {
-            IEnumerable<uint> ids = args.Length == 0 ? conn.Monsters.Keys.TakeLast(1)
-                : args[0].Equals("all", StringComparison.OrdinalIgnoreCase) ? [.. conn.Monsters.Keys, .. MonsterEmerge.Buried(conn).Keys]
-                : [Convert.ToUInt32(args[0], args[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)];
-            foreach (uint id in ids.ToList())
+            List<uint> ids;
+            lock (conn.Monsters)
+                ids = args.Length == 0 ? [.. conn.Monsters.Keys.Concat(MonsterEmerge.Buried(conn).Keys).OrderBy(k => k).TakeLast(1)]
+                    : args[0].Equals("all", StringComparison.OrdinalIgnoreCase) ? [.. conn.Monsters.Keys, .. MonsterEmerge.Buried(conn).Keys]
+                    : [Convert.ToUInt32(args[0], args[0].StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16 : 10)];
+            foreach (uint id in ids)
             {
                 bool removed;
                 lock (conn.Monsters) removed = conn.Monsters.Remove(id) || MonsterEmerge.Buried(conn).Remove(id);
@@ -885,7 +898,7 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y), $"0x01b7 teleport monster 0x{id:x} to ({x}, {y})");
             lock (conn.Monsters) conn.Monsters[id].Walk = conn.NewWalk(x, y, conn.Monsters[id].Walk.Speed);
         })
-        .Add("ai", "/ai [on|off] (monsters chase you when you come near)", async args =>
+        .Add("ai", "/ai [on|off] (monsters chase you when you come near; emerge monsters rise either way)", async args =>
         {
             if (args.Length > 0) conn.AiEnabled = !args[0].Equals("off", StringComparison.OrdinalIgnoreCase);
             await conn.Commands!.Reply($"Monster AI is {(conn.AiEnabled ? "on" : "off")}.");

@@ -1,36 +1,50 @@
+using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.World;
 
 namespace GameServer.Gateway.Tests;
 
 /// <summary>
-/// Monsters that rise from the ground (MonsterEmerge.cs): which varieties are created buried, how long they take to
-/// rise, and that a buried monster stays out of the connection's monsters (so nothing hits it) until the player is near.
+/// Monsters that rise from the ground (MonsterEmerge.cs): which types wait buried or lurking, how long they take to
+/// rise, that a buried monster stays out of the connection's monsters (so nothing hits it) until the player is near, and
+/// that a lurking one stays hittable and rises when hit.
 /// </summary>
 public class MonsterEmergeTests : IDisposable
 {
     readonly string _folder = Path.Combine(Path.GetTempPath(), $"localexile-emerge-{Guid.NewGuid():n}");
 
     const string GravelEaterType = "Metadata/Monsters/SandSpitterEmerge/SandSpitterEmerge";
+    const string TideStriderType = "Metadata/Monsters/WaterElemental/WaterElementalHidden";
+    const string HillockType = "Metadata/Monsters/ZombieBoss/ZombieBoss";
     static readonly string[] EmergeComponents = [.. MonsterObject.BaseComponents, "Transitionable"];
+
+    // Entries as scripts/re/ot_components.py writes them (data/object-types.json, 3.29.3b), cut to the fields used.
+    const string Base = "\"read\": 12, \"components\": [\"Positioned\", \"Stats\", \"ObjectMagicProperties\", \"BaseEvents\", " +
+        "\"Pathfinding\", \"Buffs\", \"Life\", \"Animated\", \"Inventories\", \"Actor\", \"Monster\", \"Transitionable\", \"Render\", \"Targetable\"]";
+    const string Actions = "\"basic_actions\": [\"Move\", \"Flee\", \"StrafeLeft\", \"StrafeRight\", \"Advance\", \"DoNothing\", \"MonsterPickup\", \"Emerge\"]";
+    static readonly string Types = $$"""
+        {"types": [
+          {"type": "{{GravelEaterType}}", {{Base}}, {{Actions}}, "transitionable": {"num_states": 1, "no_serialise": false},
+           "client_transitionable": {"create_untransitioned": "PlayAnimation( emerge ); PauseAnimation();",
+             "create_transitioned": "EnableTargetable();", "on_transition": "EnableTargetable();"}, "client_targetable": false},
+          {"type": "{{TideStriderType}}", {{Base}}, {{Actions}}, "transitionable": {"num_states": 1, "no_serialise": false},
+           "client_transitionable": {"create_untransitioned": "PlayAnimation( emerge ); PauseAnimation();"}, "client_targetable": null},
+          {"type": "Metadata/Monsters/RootSpider/RootSpiderHidden", {{Base}}, {{Actions}}, "transitionable": {"num_states": 1},
+           "client_transitionable": {"create_untransitioned": "PlayAnimation( emerge ); PauseAnimation(); DisableTargetable(); RemoveCollidability();",
+             "on_transition": "EnableTargetable();"}, "client_targetable": null},
+          {"type": "{{HillockType}}", {{Base}}, "basic_actions": ["Move", "Flee", "Revive"], "transitionable": {"num_states": 1},
+           "client_transitionable": {"on_transition": "HideMeshSegment( ZombieBoss_mesh|Sword|SwordShape );"}, "client_targetable": null},
+          {"type": "Metadata/Monsters/SwordStageWithEmerge", {{Base}}, {{Actions}}, "transitionable": {"num_states": 1},
+           "client_transitionable": {"on_transition": "HideMeshSegment( ZombieBoss_mesh|Sword|SwordShape );"}, "client_targetable": null},
+          {"type": "Metadata/Monsters/Spiders/SpiderBoss/SpiderBoss", {{Base}}, {{Actions}}, "transitionable": {"num_states": 3},
+           "client_transitionable": {"create_untransitioned": "PlayAnimation( emerge ); PauseAnimation();"}, "client_targetable": false}
+        ]}
+        """;
 
     public MonsterEmergeTests()
     {
         Directory.CreateDirectory(Path.Combine(_folder, "tables"));
-        // The shapes scripts/re/ot_components.py, scripts/re/monster_takehit.py and the table extractor write.
-        File.WriteAllText(Path.Combine(_folder, "object-types.json"), $$"""
-            {"types": [
-              {"type": "{{GravelEaterType}}", "read": 12, "basic_actions": ["Move", "Emerge", "Emerge2"],
-               "components": ["Positioned", "Stats", "ObjectMagicProperties", "BaseEvents", "Pathfinding", "Buffs", "Life",
-                              "Animated", "Inventories", "Actor", "Monster", "Transitionable", "Render", "Targetable"]},
-              {"type": "Metadata/Monsters/NoAction", "read": 12, "basic_actions": ["Move"],
-               "components": ["Positioned", "Stats", "ObjectMagicProperties", "BaseEvents", "Pathfinding", "Buffs", "Life",
-                              "Animated", "Inventories", "Actor", "Monster", "Transitionable"]},
-              {"type": "Metadata/Monsters/ClientOnly", "read": 11, "basic_actions": ["Emerge"],
-               "components": ["Positioned", "Stats", "ObjectMagicProperties", "BaseEvents", "Pathfinding", "Buffs", "Life",
-                              "Animated", "Inventories", "Actor", "Monster", "Transitionable"]}
-            ]}
-            """);
+        File.WriteAllText(Path.Combine(_folder, "object-types.json"), Types);
         File.WriteAllText(Path.Combine(_folder, "monster-takehit.json"), """
             {"Metadata/Monsters/SandSpitterEmerge/SandSpitterEmergeStandard":
                {"index": 12, "indexes": [12], "lengths": [1000], "emerge": {"clip": "emerge", "index": 10, "length": 1000}},
@@ -47,10 +61,16 @@ public class MonsterEmergeTests : IDisposable
     }
 
     static MonsterCatalog.Variety Variety(string id = "Metadata/Monsters/SandSpitterEmerge/SandSpitterEmergeStandard",
-        string type = GravelEaterType, IReadOnlyList<string>? components = null, byte states = 1) =>
-        new(513, id, "Gravel Eater", type, null, components ?? EmergeComponents, TransitionStates: states, AggroRange: 105);
+        string type = GravelEaterType, IReadOnlyList<string>? components = null, byte states = 1, int aggro = 105) =>
+        new(513, id, "Gravel Eater", type, null, components ?? EmergeComponents, TransitionStates: states, AggroRange: aggro);
 
     MonsterEmerge Emerge() => new(_folder);
+
+    static JsonElement Entry(string type)
+    {
+        using var doc = JsonDocument.Parse(Types);
+        return doc.RootElement.GetProperty("types").EnumerateArray().First(t => t.GetProperty("type").GetString() == type).Clone();
+    }
 
     [Fact]
     public void The_emerge_action_is_the_basic_actions_skill_id()
@@ -59,28 +79,41 @@ public class MonsterEmergeTests : IDisposable
     }
 
     [Fact]
-    public void A_type_with_the_emerge_action_and_two_transitionable_states_is_created_buried()
+    public void The_client_scripts_decide_who_waits_buried_or_lurking()
     {
-        var e = Emerge();
-        var gravelEater = Variety();
-        Assert.True(e.Burrows(gravelEater));
-        Assert.Equal(1, e.CreateState(gravelEater, buried: true));
-        // Kept after rising: created transitioned, so the client runs create_transitioned (EnableTargetable).
-        Assert.Equal(2, e.CreateState(gravelEater, buried: false));
+        // Untargetable while it waits: nothing may reach it on the server either.
+        Assert.Equal(EmergeKind.Buried, MonsterEmerge.KindOf(Entry(GravelEaterType)));
+        Assert.Equal(EmergeKind.Buried, MonsterEmerge.KindOf(Entry("Metadata/Monsters/RootSpider/RootSpiderHidden")));
+        // Frozen in its emerge pose but targetable on the client: it stays hittable.
+        Assert.Equal(EmergeKind.Lurking, MonsterEmerge.KindOf(Entry(TideStriderType)));
+        // Hillock's Transitionable is his sword stage (BossFights), not an emerge, with or without the Emerge action.
+        Assert.Equal(EmergeKind.None, MonsterEmerge.KindOf(Entry(HillockType)));
+        Assert.Equal(EmergeKind.None, MonsterEmerge.KindOf(Entry("Metadata/Monsters/SwordStageWithEmerge")));
+        // num_states given: created transitioned as before.
+        Assert.Equal(EmergeKind.None, MonsterEmerge.KindOf(Entry("Metadata/Monsters/Spiders/SpiderBoss/SpiderBoss")));
     }
 
     [Fact]
-    public void Types_the_server_cannot_raise_keep_their_own_state()
+    public void Varieties_take_their_types_kind_but_unique_monsters_keep_their_own_entrance()
     {
         var e = Emerge();
-        var noAction = Variety("Metadata/Monsters/X/NoActionEmerge", "Metadata/Monsters/NoAction");
-        var clientOnly = Variety("Metadata/Monsters/X/ClientOnlyEmerge", "Metadata/Monsters/ClientOnly");
-        var threeStates = Variety(states: 3);
-        Assert.False(e.Burrows(noAction));
-        Assert.False(e.Burrows(clientOnly));
-        Assert.False(e.Burrows(threeStates));
-        Assert.Equal(3, e.CreateState(threeStates, buried: false));
-        Assert.Equal(1, e.CreateState(noAction, buried: false));
+        Assert.Equal(EmergeKind.Buried, e.Kind(Variety()));
+        Assert.Equal(EmergeKind.Lurking, e.Kind(Variety("Metadata/Monsters/WaterElemental/WaterElementalTidal", TideStriderType)));
+        Assert.Equal(EmergeKind.Buried, e.Kind(Variety(), MonsterRarity.Rare));
+        Assert.Equal(EmergeKind.None, e.Kind(Variety(), MonsterRarity.Unique));
+        Assert.Equal(EmergeKind.None, e.Kind(Variety("Metadata/Monsters/ZombieBoss/ZombieBossHillockNormal", HillockType)));
+        Assert.Equal(EmergeKind.None, e.Kind(Variety(states: 3)));
+    }
+
+    [Fact]
+    public void New_monsters_wait_in_state_1_and_kept_risen_ones_come_back_in_state_2()
+    {
+        var gravelEater = Variety();
+        Assert.Equal(1, MonsterEmerge.CreateState(gravelEater, EmergeKind.Buried, unrisen: true));
+        Assert.Equal(2, MonsterEmerge.CreateState(gravelEater, EmergeKind.Buried, unrisen: false));
+        Assert.Equal(2, MonsterEmerge.CreateState(gravelEater, EmergeKind.Lurking, unrisen: false));
+        // Not an emerge monster: the type's own state, as before.
+        Assert.Equal(3, MonsterEmerge.CreateState(Variety(states: 3), EmergeKind.None, unrisen: true));
     }
 
     [Fact]
@@ -88,8 +121,9 @@ public class MonsterEmergeTests : IDisposable
     {
         var e = Emerge();
         Assert.True(e.CanPlace(Variety()));
-        // An "Emerge" variety the server cannot raise would stay buried for good.
-        Assert.False(e.CanPlace(Variety("Metadata/Monsters/X/NoActionEmerge", "Metadata/Monsters/NoAction")));
+        Assert.True(e.CanPlace(Variety("Metadata/Monsters/WaterElemental/WaterElementalSubmerged_", TideStriderType)));
+        // An "Emerge" variety whose Transitionable the server does not play would wait for good.
+        Assert.False(e.CanPlace(Variety("Metadata/Monsters/X/ThreeStateEmerge", states: 3)));
         // Without a Transitionable it is an ordinary monster.
         Assert.True(e.CanPlace(Variety("Metadata/Monsters/X/DwellerEmerge", "Metadata/Monsters/Dweller", MonsterObject.BaseComponents)));
     }
@@ -104,35 +138,68 @@ public class MonsterEmergeTests : IDisposable
     }
 
     [Fact]
-    public void Without_the_data_nothing_burrows()
+    public void Without_the_data_nothing_waits()
     {
         var e = new MonsterEmerge(Path.Combine(_folder, "missing"));
         Assert.Null(e.SkillId);
-        Assert.False(e.Burrows(Variety()));
-        Assert.Equal(1, e.CreateState(Variety(), buried: false));
+        Assert.Equal(EmergeKind.None, e.Kind(Variety()));
     }
 
-    static SpawnedMonster Buried(int x, int y) =>
-        new("Gravel Eater@2", new WalkEstimator(x, y, 20, null, 2000, 2000), aggroRange: 105, stopRange: 3, maxLife: 30)
+    [Fact]
+    public void The_rise_is_the_emerge_action_then_the_transition()
+    {
+        var messages = MonsterEmerge.RiseMessages(0x3000, (10, 11), 0x0101, 11, 2);
+        Assert.Equal(new[] { 0x1ab, 0x2ba }, messages.Select(m => m[0] << 8 | m[1]));
+        Assert.Equal(Convert.ToHexString(InstanceProtocol.ActionStarted(0x3000, 10, 11, 10, 11, 0x0101, 0xffff, 0x0408)),
+            Convert.ToHexString(messages[0]));
+        Assert.Equal(Convert.ToHexString(InstanceEntities.TransitionableUpdate(0x3000, 11, 2)), Convert.ToHexString(messages[1]));
+        Assert.Equal(0x1ac, InstanceProtocol.ActionEnded(0x3000) is var end ? end[0] << 8 | end[1] : 0);
+    }
+
+    static ClientState Conn() => new(new AreaLayout(1, "test", 200, 200, 10, 10, null, []), 1, 1);
+
+    static SpawnedMonster Monster(int x, int y, int aggro = 105, uint life = 30) =>
+        new("Gravel Eater@2", new WalkEstimator(x, y, 20, null, 2000, 2000), aggroRange: aggro, stopRange: 3, maxLife: 30)
         {
-            Variety = Variety(), Level = 2,
+            Variety = Variety(), Level = 2, Life = life,
         };
+
+    [Fact]
+    public void Spawning_puts_a_buried_monster_aside_and_a_lurking_one_among_the_monsters_but_busy()
+    {
+        var conn = Conn();
+        var buried = Monster(10, 10);
+        var lurking = Monster(20, 20);
+        var risen = Monster(30, 30);
+        lock (conn.Monsters)
+        {
+            Assert.True(MonsterEmerge.AddLocked(conn, 0x3000, buried, EmergeKind.Buried, unrisen: true));
+            Assert.True(MonsterEmerge.AddLocked(conn, 0x3001, lurking, EmergeKind.Lurking, unrisen: true));
+            Assert.False(MonsterEmerge.AddLocked(conn, 0x3002, risen, EmergeKind.Buried, unrisen: false));
+        }
+        Assert.Same(buried, Assert.Single(MonsterEmerge.Buried(conn)).Value);
+        Assert.False(conn.Monsters.ContainsKey(0x3000));   // nothing targets a buried monster
+        Assert.Same(lurking, conn.Monsters[0x3001]);       // a lurking one can be hit
+        Assert.True(double.IsPositiveInfinity(lurking.BusyUntil));   // but the AI leaves it until it rises
+        Assert.Same(risen, conn.Monsters[0x3002]);
+        Assert.Equal(0, risen.BusyUntil);
+        Assert.Equal(new[] { buried, lurking }, MonsterEmerge.Unrisen(conn));
+    }
 
     [Fact]
     public void A_buried_monster_rises_only_when_the_player_is_near_and_then_joins_the_monsters()
     {
         var e = Emerge();
-        var conn = new ClientState(new AreaLayout(1, "test", 200, 200, 10, 10, null, []), 1, 1);
-        var near = Buried(100, 100);
-        var far = Buried(100, 160);
+        var conn = Conn();
+        var near = Monster(100, 100);
+        var far = Monster(100, 160);
         lock (conn.Monsters)
         {
-            MonsterEmerge.Buried(conn)[0x3000] = near;
-            MonsterEmerge.Buried(conn)[0x3001] = far;
+            MonsterEmerge.AddLocked(conn, 0x3000, near, EmergeKind.Buried, true);
+            MonsterEmerge.AddLocked(conn, 0x3001, far, EmergeKind.Buried, true);
             Assert.True(MonsterEmerge.StartWatch(conn));
             Assert.False(MonsterEmerge.StartWatch(conn));   // one watch per connection
         }
-        Assert.Empty(conn.Monsters);   // nothing targets a buried monster
 
         var risen = e.RiseLocked(conn, (100, 100 - MonsterEmerge.Range), now: 5, out bool watching);
 
@@ -151,12 +218,50 @@ public class MonsterEmergeTests : IDisposable
     }
 
     [Fact]
-    public void Buried_monsters_are_kept_buried_with_the_instance()
+    public void A_lurking_monster_rises_when_hit_from_afar()
     {
-        var risen = Buried(10, 10);
-        var buried = Buried(50, 50);
-        var saved = SavedMonster.Save([risen], now: 0, buried: [buried]);
-        Assert.Equal([false, true], saved.Select(s => s.Buried));
-        Assert.Equal((50, 50), (saved[1].X, saved[1].Y));
+        var e = Emerge();
+        var conn = Conn();
+        var lurking = Monster(100, 100);
+        lock (conn.Monsters) MonsterEmerge.AddLocked(conn, 0x3000, lurking, EmergeKind.Lurking, true);
+        Assert.Empty(e.RiseLocked(conn, (100, 180), now: 1, out bool watching));
+        Assert.True(watching);
+
+        lurking.Life = 20;   // a spell from 80 cells away
+        var (id, m, _, _) = Assert.Single(e.RiseLocked(conn, (100, 180), now: 2, out watching));
+        Assert.Equal(0x3000u, id);
+        Assert.Equal(2 + 1.0 + 0.3, m.BusyUntil, 3);
+        Assert.False(watching);
+    }
+
+    [Fact]
+    public void A_short_aggro_range_is_the_reach()
+    {
+        var e = Emerge();
+        var conn = Conn();
+        lock (conn.Monsters) MonsterEmerge.AddLocked(conn, 0x3000, Monster(100, 100, aggro: 10), EmergeKind.Buried, true);
+        Assert.Empty(e.RiseLocked(conn, (100, 115), now: 1, out _));   // within 24, beyond its 10
+        Assert.Single(e.RiseLocked(conn, (100, 109), now: 2, out _));
+    }
+
+    [Fact]
+    public void Monsters_waiting_to_rise_are_kept_waiting_and_risen_ones_come_back_risen()
+    {
+        var conn = Conn();
+        var risen = Monster(10, 10);
+        var buried = Monster(50, 50);
+        var lurking = Monster(70, 70);
+        lock (conn.Monsters)
+        {
+            MonsterEmerge.AddLocked(conn, 0x3000, risen, EmergeKind.Buried, unrisen: false);
+            MonsterEmerge.AddLocked(conn, 0x3001, buried, EmergeKind.Buried, unrisen: true);
+            MonsterEmerge.AddLocked(conn, 0x3002, lurking, EmergeKind.Lurking, unrisen: true);
+        }
+        var saved = SavedMonster.Save(conn.Monsters.Values, now: 0, MonsterEmerge.Unrisen(conn));
+
+        Assert.Equal([(10, false), (70, true), (50, true)], saved.Select(s => (s.X, s.Unrisen)));
+        // The risen one is re-created transitioned: the client runs create_transitioned (EnableTargetable).
+        Assert.Equal(2, MonsterEmerge.CreateState(Variety(), Emerge().Kind(Variety()), saved[0].Unrisen));
+        Assert.Equal(1, MonsterEmerge.CreateState(Variety(), Emerge().Kind(Variety()), saved[2].Unrisen));
     }
 }
