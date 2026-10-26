@@ -18,6 +18,14 @@ Without a1q4's flag an invisible wall in front of the cave stops the player (§2
 A quest's progress is the set of its flags; the quest log shows the first `QuestStates` row (by `Order`) whose
 `FlagsPresent` are all set and whose `FlagsMissing` are all clear.
 
+Quest rewards are `QuestRewardOffers` rows (their `QuestFlag` is the offer's "taken" flag) with their `QuestRewards`
+rows: `__col1 + 1` is the choice's inventory id, `Reward` the item, `RewardLevel` the gem's level or the item's level,
+`Characters` the class rows (empty for any) and `__col5` the rarity. NPCTalk's `QuestRewardOffersKey` points at the
+offer, and the row's QuestFlag1/2 lists decide when the client shows it. The Gateway offers every table row whose
+items it can build (`QuestRewardCatalog.Create`: level-1 items and normal flasks at their row's level); an offer with
+no such row opens nothing, and rows it cannot build yet (offer 8's level-8 magic armours, offer 15's magic belts) are
+skipped, so there is no per-offer allow list. Checked live 2026-10-26: offer 3 (Tarkleigh's a1q4 "Glyph Reward").
+
 ### a1q4's flags
 
 | QuestFlags row | Id | Set when |

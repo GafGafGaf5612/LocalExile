@@ -189,6 +189,43 @@ test the threshold: with `remaining = next − experience` it wants `remaining <
 exercised live (experience one below the threshold); whether the client also draws the "+" for the last quarter of a
 level's bar is not checked, and the server only ever leaves a gem one point below the threshold.
 
+## 5. Getting gems (quest rewards and vendors, 2026-10-26)
+
+Quest rewards are the first acquisition path (`QuestRewardCatalog`, [12](12-quests.md) §1). `QuestRewardOffers` has
+140 offers; the gem ones give level-1 gems filtered by the `Characters` class rows (Witch's a1q4 offer 3 is Frost
+Bomb, Orb of Storms, Summon Raging Spirit, Contagion, Detonate Dead and Flame Wall). Talking to the NPC opens the
+window the client's NPCTalk row names (`QuestRewardOffersKey`); taking a choice puts the item in the main inventory and
+sets the offer's `QuestFlag` (the "taken" flag) in one save. The Gateway now offers every table row whose items
+`Create` can build (level-1 items and normal flasks), instead of the hardcoded offers 0/1/2/8; unbuildable rows
+(level-8 magic armours, magic belts) are skipped, as are offers with no buildable choice. Checked live 2026-10-26 on
+offer 3 after `/quest_flag a1q4-PlacedGlyphs`: the six Witch gems, claim, flag and repeat refusal.
+
+**Vendors.** The currency/flask/jewellery vendors that also sell gems (`GemVendorStock.Sells`: Nessa, Yeena,
+Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) give seven tabs - Red/Green/Blue Skills and Support, White
+Skills - of level-1 gems, each at the price of its level-1 requirement tier: 1–7 Scroll of Wisdom, 8–15 Orb of
+Transmutation, 16–27 Orb of Alteration, 28–37 Orb of Chance, 38+ Orb of Alchemy ([17](17-npcs.md) §5,
+`GemVendorStock.Price`). A quest unlocks its gems once its reward is
+shown or was taken; act vendors filter that set to the character's class and to `ItemCatalog.ShopGems` (creatable,
+dropping, not Vaal or awakened). Siosa (after `a3q12-DeliveredPages`) and Lilly Roth (after
+`UnlockedLillyGemShop`) ignore the class restriction, and Lilly also the quest completion; the 3.29 cross-class
+additions put Faster Attacks on Nessa after a1q2 and Faster Casting on Yeena after a2q4 (`GemVendorStock`).
+Checked live 2026-10-26 on Nessa: the Witch's stock was the six a1q1 gems plus the six a1q4 gems, then the six a1q2
+gems and Faster Attacks Support after `/quest_flag a1q2-KilledBrutus`; the a1q1/a1q4 gems cost 1 Scroll of Wisdom and
+the a1q2 ones plus Faster Attacks 1 Orb of Transmutation, as their requirement tiers say. Lilly is
+unit-tested only (the Act 6 town has no walk-map capture and spawns the player in water) and Siosa is not placed (The
+Library is not reachable).
+**Drops.** A monster's item drops include a gem 4% of the time (`ItemDrops`, our rate until the game's drop pools are
+known): a gem from `GemSources.DropPool` whose `DropLevel` is at most the monster's level, at gem level 1 and with no
+rarity roll. The pool is the obtainable gems only: every class's quest reward gems
+(`QuestRewardOffers`), the starting gems (Characters `StartSkillGem`/`StartSupportGem`) and the drop-only exceptional
+supports (Empower, Enhance, Enlighten). The data's Graft skills (the Chayula gems), item-granted and legacy skills
+(Envy, Death Aura, Quickstep, the single-level rows) and placeholders such as "..." never drop. Because of the level
+gate a low-level monster only drops low-drop-level gems. Checked by `GemDropsTests` and live 2026-10-26 (rare monsters
+dropped normal skill and support gems). The first live attempt dropped the data's item-granted/legacy rows (Envy,
+Death Aura, "...") at monster level 1 and led to this pool.
+
+Still placeholder: every gem costs 1 Scroll of Wisdom at the vendors.
+
 ## Open
 
 - What IndexableSupportGems (+0x40) is for; the u8's other bits.

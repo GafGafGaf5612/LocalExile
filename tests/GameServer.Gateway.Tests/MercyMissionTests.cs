@@ -97,12 +97,6 @@ public class MercyMissionTests : IDisposable
             Assert.False(MercyMission.MovesItems(id), $"0x{id:x}");
     }
 
-    [Fact] public void TheRewardAllowListHasNessasTwoMedicineChestOffers()
-    {
-        foreach (int offer in new[] { 0, MercyMission.RewardOffer, MercyMission.SupportRewardOffer, 8 }) Assert.True(QuestRewardCatalog.Implemented(offer));
-        foreach (int offer in new[] { 3, 4, 5, 7, 9 }) Assert.False(QuestRewardCatalog.Implemented(offer));
-    }
-
     [Fact] public void TheFlagSnapshotIsACopyTakenUnderTheWritersLock()
     {
         var conn = new ClientState(new AreaLayout(61641, "1_1_2a", 10, 10, 1, 1, null, []), 1, 1);
