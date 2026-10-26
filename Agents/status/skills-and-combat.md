@@ -116,6 +116,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   contact (0.374 of the attack time).
   Attack gems deal the weapon's damage × `DamageEffectiveness` with the attack's crit; a bow arrow has no Fireball
   impact.
+  Fireball's impact explodes: an area hit of its radius (`active_skill_base_area_of_effect_radius`) on an enemy or a
+  wall, excluding the projectile's own target; the explosion art is a standalone effect object and the projectile is
+  removed at the impact.
   Ordinary bow ground/object attacks now share contact-time release and damage at the actual flight collision
   (#203, automated and native collision/release/pause checks pass).
   Object uses no longer also deal a melee contact hit.
