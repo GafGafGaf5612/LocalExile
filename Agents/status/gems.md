@@ -17,8 +17,18 @@ Nothing yet.
   Claiming puts the item in the main inventory and sets the flag in one save; a second claim is refused
   (`QuestRewardCatalog`; [12](../docs/protocol/12-quests.md) §1, [19](../docs/protocol/19-gems.md) §5).
   Live: Tarkleigh's "Glyph Reward" after `/quest_flag a1q4-PlacedGlyphs` — six Witch gems, claim, repeat refused.
-  Still placeholder: the act vendors (Nessa sells every gem at level 1), Siosa/Lilly and gem drops
-  ([19](../docs/protocol/19-gems.md) §5).
+  Still placeholder: gem drops ([19](../docs/protocol/19-gems.md) §5).
+
+- **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).** The currency/flask/jewellery vendors
+  that also sell gems give seven tabs of level-1 gems at 1 Scroll of Wisdom each. The stock is the gems of every
+  completed quest offer (reward shown or taken), filtered to the character's class and to the client's shop list;
+  Siosa (after "A Fixture of Fate") and Lilly Roth (after `UnlockedLillyGemShop`) ignore class, and Lilly also the
+  quest completion; Faster Attacks (Nessa, after a1q2) and Faster Casting (Yeena, after a2q4) are the 3.29 cross-class
+  additions.
+  Live: Nessa listed the Witch's a1q1 + a1q4 gems, then the a1q2 gems and Faster Attacks Support after the flag.
+  Not live-checked: Lilly (the Act 6 town is not captured and spawns the player in water) and Siosa (The Library is
+  not reachable); every gem still costs 1 Scroll of Wisdom; no gem drops.
+  (`GemVendorStock`, `NpcShops.Tabs`; [17](../docs/protocol/17-npcs.md) §5, [19](../docs/protocol/19-gems.md) §5).
 
 - **Linked support gems.** Native compatibility, link groups, duplicate families and skill-bar support records
   are implemented; Cyclone with Increased Area of Effect was read successfully by the real client.

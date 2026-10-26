@@ -68,10 +68,11 @@ What is known about the client and the data is in [19](../docs/protocol/19-gems.
 ### Gems later: quality, getting gems, corruption, bonus levels
 
 - **Quality** from Gemcutter's Prism needs currency on items (C→S 0x4a, "Items" above).
-- **Getting gems:** quest rewards are in (every `QuestRewardOffers` row the server can build, by class: Hillock's,
-  a1q4's and a1q5's, and the later acts' gem offers; [19](../docs/protocol/19-gems.md) §5).
-  Remaining: the Act 1–4 vendors' class/quest progression (Nessa currently sells every gem at level 1), Siosa (Act 3
-  after "A Fixture of Fate") and Lilly Roth (Act 6 and later), and gem drops.
+- **Getting gems:** quest rewards and the town gem vendors are in (every `QuestRewardOffers` row the server can build,
+  by class; the vendors' completed-quest/class progression, Siosa and Lilly, and the 3.29 cross-class supports;
+  [19](../docs/protocol/19-gems.md) §5).
+  Remaining: gem drops; the vendors' real currency prices (1 Scroll of Wisdom each today); a live check of Lilly and
+  Siosa once Act 6 and The Library are reachable (the towns have no walk-map capture yet).
 - **Corruption and Vaal skills:** Vaal Orb outcomes on gems (one level over the cap, quality up to 23%, the Vaal
   variant), the Lapidary Lens's double corruption, and Vaal souls for the Vaal skills.
   Goes with item corruption (#60).

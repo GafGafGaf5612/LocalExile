@@ -181,10 +181,17 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   it: the client decides that itself, no server message needed (live 2026-10-20).
 - **Stock** is the server's (NPCShop only names shops): `NpcShops.Stock`.
 - **Several tabs**: one manager-1 inventory per tab (S→C 0xc0, ids from 0x400), all listed in 0x8c with their names
-  (the m × (compact uint index, wstr name, u8) list). `NpcShops.Tabs`: the NPC's stock in "Goods", and Nessa also sells
-  every shop gem (`ItemCatalog.ShopGems`: creatable, dropping, not Vaal or awakened, one per name) in seven tabs by
-  SkillGems GemColour and IsSupport: Red Skills, Red Support, Green Skills, Green Support, Blue Skills, Blue Support,
-  White Skills (2026-10-21). 1 Scroll of Wisdom each, as everything.
+  (the m × (compact uint index, wstr name, u8) list). `NpcShops.Tabs`: the NPC's stock in "Goods", and a gem vendor
+  (`GemVendorStock.Sells`: Nessa, Yeena, Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) also sells gems in seven
+  tabs by SkillGems GemColour and IsSupport: Red Skills, Red Support, Green Skills, Green Support, Blue Skills, Blue
+  Support, White Skills (2026-10-21; 3.29 progression 2026-10-26). 1 Scroll of Wisdom each, as everything.
+  The gem stock is `GemVendorStock`: the level-1 gems of every quest reward offer the character has completed (the
+  offer's reward is shown or was taken), filtered to the character's class, restricted to `ItemCatalog.ShopGems`
+  (creatable, dropping, not Vaal or awakened). Siosa (after `a3q12-DeliveredPages`) and Lilly Roth (after
+  `UnlockedLillyGemShop`) ignore the class restriction, and Lilly also the quest completion; the 3.29 cross-class
+  additions put Faster Attacks on Nessa after a1q2 and Faster Casting on Yeena after a2q4. Live 2026-10-26: Nessa
+  listed the Witch's a1q1 and a1q4 gems, then the a1q2 gems plus Faster Attacks after the flag; Lilly is unit-tested
+  only (the Act 6 town has no walk-map capture and spawns the player in water).
   Nessa's goods use exact MapWorlds base identifiers, one ordinary white item per display name, ordered by tier/name.
   UniqueMaps supplies one identified unique item per name, with Words HASH32 and ItemVisualIdentity HASH16.
   These are catalogue identities; complete unique modifier sets and unique-area device routing remain unimplemented.

@@ -37,10 +37,11 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-- Quest reward offers 0 and 8 open the native reward inventory and grant class-filtered normal level-one gems.
+- Quest rewards open the native reward inventory for every `QuestRewardOffers` row whose items the server can build,
+  and grant the class-filtered choices (level-one gems, normal flasks; unbuildable magic armour rows are skipped).
   The item and claimed flag are saved together, with duplicate, prerequisite, full-inventory and save-failure guards.
-  Tarkleigh's Freezing Pulse and Nessa's Combustion Support claims were checked live on a disposable character.
-  Other offers and offer 8's magic-armour choices remain unimplemented.
+  Tarkleigh's Freezing Pulse and Nessa's Combustion Support claims were checked live on a disposable character, and
+  Tarkleigh's a1q4 Glyph Reward on 2026-10-26.
   See [quest rewards](../docs/protocol/17-npcs.md#quest-dialogue-and-first-rewards-2026-10-25).
 - NPC sale visibility: offered items are hidden from the main inventory and shown only in Your Offer.
   Their original cells/items remain reserved in the durable save;
@@ -55,7 +56,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Nessa's shop tabs:** Goods contains her supplies and the legacy MapWorlds catalogue, with automatic extra pages.
   Ordinary maps are white and deduplicated by name; 28 unique names have unique rarity, name and artwork.
   Full unique modifier sets and unique-area routing remain open.
-  Gem tabs remain Red / Green / Blue Skills and Support and White Skills, 1 Scroll of Wisdom each.
+  The gem vendors (Nessa, Yeena, Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) have the seven gem tabs, with
+  the completed-quest/class progression, Siosa's and Lilly's all-class stock and the 3.29 cross-class supports
+  (`GemVendorStock`); 1 Scroll of Wisdom each. Nessa was checked live 2026-10-26; Lilly and Siosa are unit-tested only
+  (their areas are not reachable/captured yet).
   Shops send one inventory per tab and their names in 0x8c.
   See [17](../docs/protocol/17-npcs.md) §5.
 

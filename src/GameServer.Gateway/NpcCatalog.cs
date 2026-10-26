@@ -82,6 +82,10 @@ sealed class NpcCatalog
     public bool HasAvailableReward(Npc npc, int offer, IReadOnlySet<string> flags) =>
         _talk.Values.Any(t => t.Npc == TalkSource(npc).Row && t.RewardOffer == offer && t.Available(flags));
 
+    /// <summary>The quest reward offers any NPC currently shows (the quests complete), for the vendors' gem stock.</summary>
+    public IReadOnlySet<int> AvailableRewards(IReadOnlySet<string> flags) =>
+        _talk.Values.Where(t => t.RewardOffer is { } offer && t.Available(flags)).Select(t => t.RewardOffer!.Value).ToHashSet();
+
     /// <summary>The NPC whose NPCTalk rows (and shop) this one uses: itself, or for a copy without rows of its own (the
     /// hideout Kirac, NPCs.dat row 412) the first row of the same name that has them (Kirac, 410).</summary>
     public Npc TalkSource(Npc npc) => _talk.Keys.Any(k => k.Npc == npc.Row) ? npc
