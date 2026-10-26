@@ -114,7 +114,7 @@ sealed class ItemDrops(ItemCatalog catalog, ItemRolls? rolls = null, string fold
         else if (equipment.Where(e => e.DropLevel <= level).ToList() is { Count: > 0 } e)
             type = e[rng.Next(e.Count)].Type;
         if (type is null) return null;
-        var (sockets, links) = catalog.DefaultSockets(type);
+        var (sockets, links) = catalog.DefaultSockets(type, level);
         var item = ItemCatalog.Create(type, sockets, links) with
         {
             // A dropped gem is unlevelled, like a vendor's: its level comes from its experience (ItemCatalog.GemLevel).

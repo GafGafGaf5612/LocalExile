@@ -973,20 +973,11 @@ sealed class PlayerInventories
         ItemCatalog.BaseType? Gem(string column) =>
             row.GetProperty(column) is { ValueKind: JsonValueKind.Number } k
                 ? catalog.Row(g.RootElement[k.GetInt32()].GetProperty("BaseItemTypesKey").GetInt32()) : null;
-        // A gem's socket colour: its largest attribute requirement (SkillGems Strength/Dexterity/IntelligenceRequirementPercent).
-        SocketColour Colour(string column)
-        {
-            if (row.GetProperty(column) is not { ValueKind: JsonValueKind.Number } k) return SocketColour.Blue;
-            var gem = g.RootElement[k.GetInt32()];
-            int str = gem.GetProperty("StrengthRequirementPercent").GetInt32(), dex = gem.GetProperty("DexterityRequirementPercent").GetInt32(),
-                @int = gem.GetProperty("IntelligenceRequirementPercent").GetInt32();
-            return str >= dex && str >= @int ? SocketColour.Red : dex >= @int ? SocketColour.Green : SocketColour.Blue;
-        }
-        // The start weapon with two linked sockets in the start gems' colours (the Witch: blue, blue), empty, for its gems.
+        // The start weapon with two linked white sockets (3.29: gems fit any colour), empty, for its gems.
         if (row.GetProperty("StartWeapons").EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Number } w &&
             catalog.Row(w.GetInt32()) is { Supported: true } weapon)
         {
-            var item = ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]);
+            var item = ItemCatalog.Create(weapon, [new(SocketColour.White), new(SocketColour.White)], [2]);
             // Pending until the character picks it up from the beach.
             inv._startWeapon = item;
         }

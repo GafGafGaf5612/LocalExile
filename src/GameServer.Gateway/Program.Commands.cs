@@ -132,12 +132,13 @@ partial class Program
                 if (stacked.Left > 0) await conn.Commands!.Reply($"No room for {stacked.Left} of them");
                 return;
             }
-            var (sockets, links) = Items.DefaultSockets(type);
+            int itemLevel = Math.Clamp(conn.Pools.Level, 1, 100);
             var added = new List<InventoryItem>();
             for (int i = 0; i < count; i++)
             {
                 if (items.FreeCell(PlayerInventories.MainInventory, type.Width, type.Height, ShapeOf) is not { } cell) break;
-                var created = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)Math.Clamp(conn.Pools.Level, 1, 100) };
+                var (sockets, links) = Items.DefaultSockets(type, itemLevel);
+                var created = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)itemLevel };
                 if (rolled != ItemRarity.Normal) created = Rolls.Roll(created, rolled, Random.Shared);
                 added.Add(items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, created)));
             }
