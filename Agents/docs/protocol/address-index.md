@@ -110,7 +110,9 @@ G = global / static data.
 | `0x1435a6ba0`, `0x1435a0078`, `0x143468920`, `0x14346c238` | Vt | Pathfinding, comp7, comp10, comp11 |
 | `0x1400f0f00` | Fn | empty `ret` (no-op slot) |
 | `0x141e3f4a0` | Fn | StateMachine update reader (vtable `0x1435da8b8` / `0x1435a14e0` +0xa0, S→C 0x2ba): the creation blob's states and timers again; changed values run their events (boss life bar, [12](12-quests.md) §6) |
+| `0x141e42410` | Fn | Transitionable component constructor: state `+0x120` = 1, `+0x121` = the type's `transition_on_damage_taken` |
 | `0x141e42a80` | Fn | Transitionable .ot keys: `num_states` (2..127, else "That number of states is unsupported"), `transition_on_damage_taken` |
+| `0x141e42d50` | Fn | Transitionable type constructor (vtable `0x1435a0a60`): `num_states` (`+0xb0`) defaults to **2** ([10](10-chat-and-commands.md) §5, emerge monsters) |
 | `0x141d876e0` | Fn | TriggerableBlockage: blocks the cells of the Animated model's footprint at the object's grid position ([12](12-quests.md) §6) |
 | `0x1421c2310` | Fn | Transitionable update reader (vtable `0x1435dd290` +0xa0, S→C 0x2ba): u8 target state, steps toward it ([12](12-quests.md) §6) |
 | `0x141e44290` | Fn | TriggerableBlockage reader: u8 blocked, then only while blocked u8 count + count × u8 |

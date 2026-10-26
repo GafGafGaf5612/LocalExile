@@ -139,12 +139,19 @@ sealed class InstanceGround
 /// <summary>A living monster of an instance, as it was when the last connection left: re-created there with this life on
 /// the next entry, idle until the player comes in range. Dead monsters are not kept, so they stay dead.</summary>
 // shortcut: a /spawn_mob name is not kept (packs have none), add it when named monsters matter.
-sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life)
+// Unrisen: a monster that rises from the ground (MonsterEmerge.cs) and had not risen yet: re-created waiting.
+sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life, bool Unrisen = false)
 {
-    public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now) =>
-        [.. monsters.Where(m => !m.Dead && m.Variety is not null).Select(m =>
+    /// <summary>The living monsters: <paramref name="monsters"/> (the connection's) and the ones waiting to rise
+    /// (<paramref name="unrisen"/>: the buried ones and the lurking ones, which are among the connection's too).</summary>
+    public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now, IEnumerable<SpawnedMonster>? unrisen = null)
+    {
+        var waiting = new HashSet<SpawnedMonster>(unrisen ?? [], ReferenceEqualityComparer.Instance);
+        var all = monsters.ToList();
+        return [.. all.Concat(waiting.Where(m => !all.Contains(m))).Where(m => !m.Dead && m.Variety is not null).Select(m =>
         {
             var (x, y) = m.Walk.Position(now);
-            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life);
+            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life, waiting.Contains(m));
         })];
+    }
 }

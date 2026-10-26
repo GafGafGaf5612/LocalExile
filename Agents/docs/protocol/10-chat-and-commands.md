@@ -167,14 +167,14 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/goto <area id or name>` | change area as if through an area transition (e.g. `/goto 1_1_3`; ids from the atlas), [08](08-area-transitions.md) §7 |
 | `/tp <x> <y> \| <+dx> <+dy> \| <id> \| <name> [n] \| list [filter]` | dev: 0x1b7 teleports the player within the area, for testing without walking. A cell lands on itself when walkable, else on the nearest walkable cell; a value with + or - is relative to the player on that axis. A name (whole, else a part, any case) or id lands next to a monster, NPC, area transition (`transition to <area>`), the `waypoint`, the `arrival` point or an object of the area's walk-map capture (`RhoaChest`, `GlyphWall`: the last part of its object type); `n` picks the n-th of equal names. `/tp list` shows them. The current action ends and the server's position estimate moves with the player (`TeleportTargets.cs`) |
 | `/transition [pos … \| rot <deg> \| z <z \| none> \| model <path \| none> \| index <n>]` | show or change the first area transition (re-created), [08](08-area-transitions.md) §5 |
-| `/mobs` | lists the monsters spawned on this connection |
-| `/despawn [all \| <id>]` | S→C 0x2bb (remove object, header only) for the last spawned monster, all of them, or one id |
+| `/mobs` | lists the monsters spawned on this connection; emerge monsters that have not risen are marked "(buried)" or "(lurking)" |
+| `/despawn [all \| <id>]` | S→C 0x2bb (remove object, header only) for the last spawned monster, all of them (buried ones too), or one id |
 | `/mob_walk [0x<id>] [skill hex]` | 0x1ab: the monster starts its Move action (skill 0x2909) toward the player; it walks, animated, along the client's path |
 | `/mob_move [0x<id>] [cells/s]` | 0x1ba: slides the monster in a straight line (probe; no animation or pathing) |
 | `/mob_tp [0x<id>]` | 0x1b7: teleports the monster next to the player |
 | `/npc <row, Id or name> [rotation°]`, `/npcs`, `/pos` | creates an NPC next to the player ([17](17-npcs.md)), lists the NPCs, prints the player's cell |
 | `/sockets [colours]` | the held item's sockets and links: R, G, B, W, linked within a word and unlinked between words (`/sockets RRGBBB` a 6-link, `/sockets RRG B` a 3-link and a single); without colours it shows the layout. Up to the base's socket capacity; gems stay in their sockets ([13](13-items.md) §7) |
-| `/ai [on\|off]` | monster AI for this connection (on by default): monsters chase the player (below) |
+| `/ai [on\|off]` | monster AI for this connection (on by default): monsters chase the player (below); emerge monsters rise either way |
 | `/cosmetic portal <name, number or part of a name>`, `/cosmetic list [filter]`, `/cosmetic off` | the shop's portal effects, as game data ([21](21-hideouts.md) §5). Several effects containing what was typed are listed with their numbers rather than the first being picked |
 
 Every player can use every command; there are no permissions yet.
@@ -247,14 +247,51 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   about 2 minutes); without it, it assumes the base list and refuses StateMachine types.
 - **Transitionable** (`ClientInternalTransitionable` `0x1435dd290`, slot 17 `0x1421c24b0`): u8 = state (low 7 bits,
   `+0x120`) | bit 7 (`+0x122`, transition in progress). States run **1..num_states** (.ot `Transitionable { num_states
-  = N }`, default 1, the type's `+0xb0`); `num_states` = fully transitioned (`create_transitioned`), lower =
-  untransitioned (`create_untransitioned`). The post-create slot `0x1421c26f0` always runs the event at index
-  `(state − 1)` of a 0x18-byte array, so **state 0 is invalid**: it read a garbage script pointer and crashed in the
-  animation-event interpreter (`0x141ded7b9`, live 2026-10-17, Alira and Gravel Eater). The Gateway sends
-  `num_states` (extracted by `ot_components.py` as `transitionable.num_states`).
-  - "Emerge" monsters (Gravel Eater, Disbanded Dead …) are created and stay hidden or lie as a corpse: their .ot pauses
-    the `emerge` animation at creation and only their `Emerge` action (`on_transition`) shows them. That needs the
-    server to start the action.
+  = N }`, the type's `+0xb0`); `num_states` = fully transitioned (`create_transitioned`), lower =
+  untransitioned (`create_untransitioned`). Without the key `num_states` is **2** (the type constructor `0x141e42d50`
+  writes 2; the key itself only takes 2..127, `0x141e42a80`). The post-create slot `0x1421c26f0` always runs the event
+  at index `(state − 1)` of a 0x18-byte array, so **state 0 is invalid**: it read a garbage script pointer and crashed
+  in the animation-event interpreter (`0x141ded7b9`, live 2026-10-17, Alira and Gravel Eater). The Gateway sends
+  `num_states` as `ot_components.py` extracts it (`transitionable.num_states`), which is 1 when the .ot has no key: for
+  those types that is the untransitioned state.
+  - **Emerge monsters** (Gravel Eater, Dripping Dead, the Twilight Strand's Drowned, Tide Strider …). 2 571 types
+    have the basic action `Emerge` (ActionTypes HASH16 16641 = 0x4101, skill id **0x0101**, [11](11-skills.md) §2;
+    most inherit it), 424 of them also a Transitionable, and 340 of those leave out `num_states`. What makes one an
+    emerge monster is its client script: in **143 types** `create_untransitioned` plays a clip and pauses it
+    (`PlayAnimation( emerge ); PauseAnimation();`), so in state 1 the monster waits below ground, in the water or as a
+    corpse. The others use the Transitionable for something else (Hillock's sword stage, [12](12-quests.md) §6) and are
+    created as before. `ot_components.py` extracts the client scripts (`client_transitionable`) and Targetable's key
+    (`client_targetable`) into `data/object-types.json`; `MonsterEmerge.cs` sorts the 143:
+    - **Buried** (74 types, 187 varieties: Gravel Eater, Dripping Dead, Strand Drowned, Devourer …): the client keeps
+      them untargetable while they wait (`targetable = false`, or DisableTargetable in `create_untransitioned`) and
+      `on_transition = { EnableTargetable(); }`. The server keeps them out of the connection's monsters until they
+      rise, so no attack, skill, projectile or aura reaches them either.
+    - **Lurking** (69 types, 115 varieties: Tide Strider, Blood Elemental, Dreadwheel …): the client shows them frozen
+      in the first frame of the clip but targetable. They stay among the connection's monsters and can be hit; the AI
+      leaves them alone until they rise, and they rise when hit.
+    - **Unique monsters** keep their own state (no rise): a boss's entrance (Kitava's 7 s `phase1_transition_in`, the
+      Daughters of Merveil, the Conqueror Wurm) belongs to its fight's script.
+
+    The server raises one:
+    1. S→C **0x1ab** on the monster with skill 0x0101, its own cell as start and target, sequence 0xffff, flags 0x0408:
+       the client plays the .act's `Emerge` clip (Gravel Eater: `emerge`, 1.0 s; Dripping Dead: `grasp_emerge`, 3.7 s).
+    2. S→C **0x2ba** to its Transitionable with state 2: `on_transition` makes it targetable.
+    3. When the clip has played, S→C **0x1ac**, as after Hillock's stage; the monster then chases and attacks like any
+       other. Live, its first attack still found the Emerge action current and replaced it, so whether 0x1ac is needed
+       here is not settled.
+    Which monster rises when is the official server's (its `.ais` AI files are not in the client); the Gateway raises
+    one when the player comes within 24 cells, or its aggro range if shorter, or when a lurking one is hit. The clip's
+    time is game time (a pause stops it). Rising does not depend on `/ai`: a `/spawn_mob` emerge monster rises next to
+    the player at once. Types that list `num_states` (SpiderBoss, Tukohama's totem: 3) are created transitioned as
+    before.
+    Live 2026-10-25 (`scripts/re/frida/trace-actions.js`, `trace-action-start.js`, `trace-skills.js`): a Gravel Eater
+    gets the basic actions 0x101 (action 0x4101, Emerge) and 0x239b (Emerge2) besides its granted skill 0x102; the
+    0x1ab starts action 0x4101 (usable, result 1), the buried monster (invisible) comes out of the ground within the
+    second and spits at the player.
+    Dripping Dead (Mud Flats) and the Twilight Strand's Drowned rose the same way from their packs, and a risen monster
+    kept by the instance came back standing (created in state 2).
+    Tidal Island's 35 Tide Striders wait lurking: only their red life bars show over the water; a Fireball from 27
+    cells (beyond the 24) hit one, it rose at once, chased and attacked.
 - **Animated path.** Not sent (flags 0): the type supplies the animated object. `Game_MONSTER_AO=1` sends the variety's
   first `AOFiles` path instead (bit 0), which also works for plain monsters but is not needed.
 - **StateMachine** (live vtable `ClientInternalStateMachine` `0x1435da8b8`, slot 17 `0x142191f10` → base
@@ -306,5 +343,5 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 
 - The chat line's flags, and the language names of 0x134's language byte (the official text ends with one).
 - Monsters: **skills** (their GrantedEffects, so they fight back), mods (the
-  ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
+  ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the 346
   varieties with other components (NPC, ControlZone, …), AI and combat.

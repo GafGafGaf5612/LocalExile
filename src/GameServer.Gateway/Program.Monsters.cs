@@ -10,9 +10,13 @@ partial class Program
     // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
-        byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null)
+        byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null,
+        bool? unrisen = null)
     {
         uint id = conn.NextObjectId++;
+        // A monster that rises from the ground starts waiting to rise, unless it was kept after rising (MonsterEmerge.cs).
+        var emerge = Emerges.Kind(variety, rarity);
+        bool waits = emerge != EmergeKind.None && (unrisen ?? true);
         // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife) and the rarity's
         // monster_life_+%_final_from_rarity, which goes on its Stats; other mods are not sent yet.
         int rarityLife = MonsterCatalog.RarityLifePct(rarity);
@@ -46,7 +50,7 @@ partial class Program
             (stats ??= []).Add((StatKeys.MonsterLifeFromRarityPct, rarityLife));
             stats.Add((StatKeys.MaximumLife, (int)life));
         }
-        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
+        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, MonsterEmerge.CreateState(variety, emerge, waits), team,
             skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats);
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
@@ -55,16 +59,17 @@ partial class Program
         uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
         // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()), !log ? null :
-            $"0x02b9 create {rarity}{(friendly ? " friendly" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
+            $"0x02b9 create {rarity}{(friendly ? " friendly" : "")}{(waits ? $" {emerge.ToString().ToLowerInvariant()}" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 monster 0x{id:x} enters wake zone");
         lock (conn.Monsters)
-            conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
+            MonsterEmerge.AddLocked(conn, id, new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
                 variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
             {
                 Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
                 Life = Math.Min(damagedLife ?? life, life), Stage = stageSkill is null ? null : stage, States = variety.StateMachine,
                 HitAnimations = Monsters.TakeHit(variety.Id),
-            };
+            }, emerge, waits);
+        if (waits) WatchBuried(remote, stream, ciphers, conn);
         // A kept monster that was hit: its life as a hit sets it (0x1b1).
         if (damagedLife < life)
             await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, damagedLife.Value), !log ? null : $"0x01b1 monster 0x{id:x} life {damagedLife}/{life}");
@@ -84,7 +89,7 @@ partial class Program
             conn.MonstersPlaced = true;
             foreach (var s in saved)
                 if (Monsters.Find(s.Variety.ToString()) is { } kept)
-                    await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life);
+                    await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life, unrisen: s.Unrisen);
             Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: {saved.Count} kept from the instance");
             return;
         }
@@ -93,8 +98,8 @@ partial class Program
         conn.MonstersPlaced = true;
         if (Packs.For(layout.Id) is not { } area || (area.Scattered.Count == 0 && area.Bosses.Count == 0)) return;
         if (Monsters.Error is { } error) { Console.WriteLine($"[gateway] {remote} area monsters: {error}"); return; }
-        // Emerge monsters (Gravel Eater …) stay hidden without the Emerge action the server does not send yet.
-        bool Spawnable(int row) => Monsters.Find(row.ToString()) is { Supported: true } v && !v.Id.Contains("Emerge", StringComparison.OrdinalIgnoreCase);
+        // Emerge monsters (Gravel Eater, Tide Strider …) are placed waiting and rise near the player (MonsterEmerge.cs).
+        bool Spawnable(int row) => Monsters.Find(row.ToString()) is { Supported: true } v && Emerges.CanPlace(v);
         var notes = new List<string>();
         var points = AreaPopulation.LoadPoints(layout.Id, conn.Seed, notes);
         var spawns = AreaPopulation.Plan(area, layout.GridW, layout.GridH, walkable, (layout.SpawnX, layout.SpawnY),
@@ -110,6 +115,7 @@ partial class Program
         }
         Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: created {spawns.Count} at level {level}: " +
             string.Join(", ", spawns.GroupBy(s => s.Pack).Select(g => $"{g.Key} × {g.Count()}")) +
+            $"; waiting to rise: {MonsterEmerge.Unrisen(conn).Count} ({MonsterEmerge.Buried(conn).Count} buried)" +
             $"; unique: {string.Join(", ", spawns.Where(s => s.Rarity == MonsterRarity.Unique).Select(s => $"{Monsters.Find(s.Variety.ToString())!.Name} at ({s.X}, {s.Y})").DefaultIfEmpty("none"))}");
     }
 
