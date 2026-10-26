@@ -15,13 +15,14 @@ static class SupportedAttackDamage
         return hit.Select((type, range) =>
         {
             string slug = type.ToString().ToLowerInvariant();
-            int increased = get("damage_+%") + get("attack_damage_+%") + get($"{slug}_damage_+%")
+            double increased = (double)get("damage_+%") + get("attack_damage_+%") + get($"{slug}_damage_+%")
                 + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0)
                 + (types.Contains(19) ? get("melee_damage_+%") : 0)
                 + (types.Contains(19) && type == DamageType.Physical ? get("melee_physical_damage_+%") : 0)
                 + (types.Contains(7) ? get("area_damage_+%") : 0)
-                + (types.Contains(2) ? get("projectile_damage_+%") : 0);
-            return range.Scale(Math.Max(0, 1 + increased / 100.0));
+                + (types.Contains(2) ? get("projectile_damage_+%") : 0)
+                + DamageStats.SpellAttackIncrease(get);
+            return DamageStats.IncreaseAttackRange(range, increased);
         });
     }
 }

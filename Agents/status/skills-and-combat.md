@@ -32,6 +32,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   Recheck that composition natively.
   Code: `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
+- Whisperer "your mind is destroyed": resolved spell increases/reductions also scale attacks at 150% of their value.
+  Weapon, added-damage and supported attack constructors share the fractional additive contribution.
+  Native panel and target-life checks verify 100 to 250, additive 230, a half-percent endpoint of 203 and reductions.
+  Removal and relog clear the effect; ordinary bows retain release snapshots and supported spells remain isolated.
+  The native check uses development stat inputs; Phrecia node selection and the rest of Whisperer remain separate.
+  Code: `DamageStats`, `SkillCatalog.Unarmed.HitDamage`, `SupportedAttackDamage`.
+  Docs: [20](../docs/protocol/20-damage.md) §2c.
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
   Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses
   send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` /

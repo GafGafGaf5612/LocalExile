@@ -529,8 +529,9 @@ sealed class SkillCatalog(string folder = "data")
         /// <summary>The physical hit packet: Characters.dat MinDamage..MaxDamage × (1 + increased / 100).</summary>
         public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player)
         {
-            double scale = Math.Max(0, 100 + IncreasedDamage(player)) / 100.0;
-            return DamagePacket.Of(DamageType.Physical, new DamageRange(MinDamage * scale, MaxDamage * scale));
+            double increased = IncreasedDamage(player) + DamageStats.SpellAttackIncrease(player);
+            return DamagePacket.Of(DamageType.Physical,
+                DamageStats.IncreaseAttackRange(new(MinDamage, MaxDamage), increased));
         }
 
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,
