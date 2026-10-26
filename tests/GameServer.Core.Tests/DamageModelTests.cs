@@ -17,6 +17,24 @@ public class DamageModelTests
     }
 
     [Fact]
+    public void Resistance_overcap_is_the_uncapped_value_above_its_maximum()
+    {
+        // PoB CalcDefence.lua: ResistOverCap = max(0, total - max).
+        Assert.Equal(0, DamageModel.Overcap(50, 75));
+        Assert.Equal(0, DamageModel.Overcap(75, 75));
+        Assert.Equal(45, DamageModel.Overcap(120, 75));
+    }
+
+    [Fact]
+    public void Resistance_overcap_caps_the_maximum_at_90_and_never_goes_negative()
+    {
+        Assert.Equal(80, DamageModel.Overcap(170, 100));
+        Assert.Equal(0, DamageModel.Overcap(90, 90));
+        // Below the maximum nothing is overcapped, even after a campaign penalty drives the value negative.
+        Assert.Equal(0, DamageModel.Overcap(-60, 75));
+    }
+
+    [Fact]
     public void A_hit_is_reduced_by_the_capped_resistance()
     {
         Assert.Equal(100, DamageModel.Mitigate(100, 0));
@@ -85,6 +103,11 @@ public class DamageModelTests
     [InlineData(830, 50, 12.45)]
     [InlineData(0, 200, 0)]
     [InlineData(500, 10000, 100)]
+    [InlineData(650, 1, 6.57)]
+    [InlineData(500, int.MaxValue, 100)]
+    [InlineData(500, int.MinValue, 0)]
+    [InlineData(0, int.MaxValue, 0)]
+    [InlineData(int.MaxValue, int.MaxValue, 100)]
     public void Critical_strike_chance_is_the_base_raised_by_increased(int basePerMyriad, int increased, double expected)
     {
         Assert.Equal(expected, DamageModel.CriticalStrikeChance(basePerMyriad, increased), 2);
@@ -129,6 +152,26 @@ public class DamageModelTests
         Assert.Equal(90, DamageModel.ArmourReduction(1_000_000, 1));
         Assert.Equal(830, DamageModel.MitigatePhysical(1000, 1000));
         Assert.Equal(0, DamageModel.MitigatePhysical(0, 1000));
+    }
+
+    [Fact]
+    public void Additional_physical_damage_reduction_adds_to_armour_and_shares_its_cap()
+    {
+        // PoB CalcDefence: min(DamageReductionMax, armourReduct + reduction). Three Endurance Charges: 12%.
+        Assert.Equal(880, DamageModel.MitigatePhysical(1000, 0, 12));
+        Assert.Equal(710, DamageModel.MitigatePhysical(1000, 1000, 12));   // 17% armour + 12%
+        Assert.Equal(100, DamageModel.MitigatePhysical(1000, 1_000_000, 12));   // 90% cap, not 102%
+        Assert.Equal(100, DamageModel.MitigatePhysical(1000, 0, 95));
+        Assert.Equal(830, DamageModel.MitigatePhysical(1000, 1000, -5));   // a negative reduction does not add damage
+    }
+
+    [Fact]
+    public void Additional_elemental_damage_reduction_applies_after_resistance_up_to_90_percent()
+    {
+        // 1000 fire at 75% resistance is 250; 12% elemental damage reduction takes it to 220.
+        Assert.Equal(220, DamageModel.Reduce(DamageModel.Mitigate(1000, 75), 12));
+        Assert.Equal(100, DamageModel.Reduce(1000, 120));
+        Assert.Equal(0, DamageModel.Reduce(0, 12));
     }
 
     [Fact]

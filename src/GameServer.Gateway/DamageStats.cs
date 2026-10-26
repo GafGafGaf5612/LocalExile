@@ -13,6 +13,11 @@ static class DamageStats
     /// 11882): PassiveSkills.dat graph id 22720, Whisperer "we know all", grants row 11881 with the value 6.</summary>
     public const string MaxManaAddedLightning = "attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana";
 
+    // Raw attack-only added damage, before increases, effectiveness, support restrictions and conversion.
+    // Read maximum mana, so spending or reserving the current pool cannot change the grant.
+    public static double ManaAddedLightning(Func<string, int> get) =>
+        get("maximum_mana") is > 0 and var mana ? mana * (get(MaxManaAddedLightning) / 100.0) : 0;
+
     public static DamagePacket Added(DamagePacket hit, Func<string, int> get, bool spell, bool melee,
         double effectiveness = 1)
     {
@@ -24,17 +29,9 @@ static class DamageStats
             {
                 if (type == DamageType.Lightning)
                 {
-                    int manaPercent = get(MaxManaAddedLightning);
-                    if (manaPercent != 0 && get("maximum_mana") is > 0 and var maxMana)
-                    {
-                        // PoB ModParser 16de4b82 lines 5636–5639 maps the node's value to BOTH LightningMin and
-                        // LightningMax as BASE with PercentStat Mana (the maximum, not the current pool) and ModFlag
-                        // Attack. The pools' maximum_mana is already the full pool, so spending and reserving mana
-                        // never change the bonus. Applied before the increases, so increased/decreased attack damage
-                        // scales it like any other added lightning; later conversion treats it as lightning too.
-                        double added = maxMana * (manaPercent / 100.0);
-                        range = range.Add(new DamageRange(added, added));
-                    }
+                    // PoB ModParser 16de4b82 lines 5636–5639 grants both attack LightningMin and LightningMax.
+                    double added = ManaAddedLightning(get);
+                    range = range.Add(new DamageRange(added, added));
                 }
 
                 // attack_damage_+% is a plain Attack-flag increase: every attack, no inference from the weapon or the
@@ -63,6 +60,15 @@ static class DamageStats
         DamageType.Chaos => "chaos",
         _ => throw new ArgumentOutOfRangeException(nameof(type)),
     };
+
+    /// <summary>Existing combat precedence: player keys win, then the skill fills missing conversion inputs.</summary>
+    public static DamageConversion Conversion(IReadOnlyDictionary<uint, int> player, IEnumerable<(uint, int)> own,
+        StatCatalog catalog, bool attack)
+    {
+        var stats = new Dictionary<uint, int>(player);
+        foreach (var (key, value) in own) stats.TryAdd(key, value);
+        return Conversion(stats, catalog, attack);
+    }
 
     /// <summary>Conversion for a hit. <paramref name="attack"/> selects the attack-only stats; spells use the spell
     /// stats instead. Conditional stats (while affected by an aura, against a frozen enemy, …) are ignored.</summary>

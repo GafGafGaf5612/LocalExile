@@ -1,4 +1,6 @@
 using GameServer.Core.World;
+using GameServer.Core.Protocol.Instance;
+using System.Reflection;
 using DamageType = GameServer.Core.World.DamageType;
 
 namespace GameServer.Gateway.Tests;
@@ -235,5 +237,43 @@ public class ManaAddedLightningTests
         Assert.Equal("we know all", node.Name);
         // The damage stat itself; the node's base_mana_cost_-% drawback is another change's scope.
         Assert.Contains(((uint)11882, 6), node.Stats);
+    }
+
+    [Theory]
+    [InlineData("BurningArrow", false, false, 1.8, false)]
+    [InlineData("Cyclone", true, false, 1, false)]
+    [InlineData("Fireball", false, true, 1, false)]
+    [InlineData("BurningArrow", false, false, 1.8, true)]
+    public void Actual_supported_skill_path_keeps_mana_context_effectiveness_and_spell_isolation(
+        string effect, bool melee, bool spell, double effectiveness, bool brutality)
+    {
+        TestSaves.Ensure();
+        string character = "ManaSupported" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var conn = new ClientState(new(0, "ManaTest", 128, 128, 32, 32, null, []), 0, 1)
+            { Character = character, ClassRow = 1,
+                Pools = new(100, 50, 1000, 0, 0, Strength: 1000, Dexterity: 1000, Intelligence: 1000) };
+            void Set(string name, int value) => conn.PlayerStats[Program.Stats.Key(name)!.Value] = value;
+            Set("maximum_mana", 1000);
+            Set("attack_damage_+%", 50);
+            Set("melee_damage_+%", 50);
+            var gem = ItemCatalog.Create(Program.Items.Find($"Metadata/Items/Gems/SkillGem{effect}")!);
+            var body = ItemCatalog.Create(Program.Items.Find("Metadata/Items/Armours/BodyArmours/BodyStr1")!) with
+            { Sockets = [new(SocketColour.White, gem)] };
+            if (brutality)
+                body = body with { Links = [2], Sockets = [new(SocketColour.White, gem),
+                    new(SocketColour.White, ItemCatalog.Create(Program.Items.Find("Brutality Support")!))] };
+            PlayerInventories.For(character, Program.Items).Add(PlayerInventories.BodyArmour, 0, 0, body);
+            var method = typeof(Program).GetMethod("SupportedHit", BindingFlags.Static | BindingFlags.NonPublic)!;
+            DamagePacket Hit() => (DamagePacket)method.Invoke(null, [conn, Program.GemSkillIdPool.Value[0]])!;
+            var baseline = Hit();
+            Set(DamageStats.MaxManaAddedLightning, 6);
+            var granted = Hit();
+            double expected = spell || brutality ? 0 : 60 * (melee ? 2 : 1.5) * effectiveness;
+            Assert.Equal(expected, granted[DamageType.Lightning].Min - baseline[DamageType.Lightning].Min, 6);
+            Assert.Equal(expected, granted[DamageType.Lightning].Max - baseline[DamageType.Lightning].Max, 6);
+        }
+        finally { PlayerInventories.Forget(character); }
     }
 }

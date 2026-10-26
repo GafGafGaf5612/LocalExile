@@ -81,8 +81,13 @@ At 6% of a 1000 mana pool (Whisperer "we know all", PassiveSkills.dat graph id 2
 added lightning, not 1-60.
 The pool bonus joins the added range before the increases, so the increased attack-damage stats and later
 conversion treat it like any other added lightning, and a fractional result is only rounded at the existing roll
-and panel stages (`AttackHit` is the shared attack packet constructor, so ordinary attacks and attack gem
-projectile/area hits agree).
+and panel stages.
+Ordinary attacks use `AttackHit` or the bow release snapshot; attack gems retain main's `SupportedHit` pipeline.
+Both constructors read the same raw `DamageStats.ManaAddedLightning` grant before increases and effectiveness.
+Support restrictions, support multipliers, conversion, target blocking and post-hit stages remain in that pipeline.
+This stack does not introduce the separate derived-damage engine from archival PR #206.
+Automated production-path cases cover ranged and melee gems, effectiveness and a spell isolation control.
+Native evidence in this section belongs to original head `378ffde`; supported-skill composition needs a new native check.
 `attack_damage_+%` scales the added range for every attack.
 `melee_damage_+%` applies only in explicit melee context: the default attack uses its active weapon profile,
 and attack gems use `ActiveSkillType Melee` through `SkillCatalog.IsMelee`.

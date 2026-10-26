@@ -4,6 +4,17 @@ using GameServer.Core.Protocol.Login;
 
 partial class Program
 {
+    // Until the ES pool integration owns stun avoidance, exclude any known source, including raw aura/item ES and
+    // active armour/shield bases which the standalone server does not yet fold into maximum_energy_shield.
+    static bool PlayerHasEnergyShieldForRecovery(ClientState conn, Func<string, int> get)
+    {
+        if (PlayerHitRecovery.EnergyShieldPresent(get)) return true;
+        return ItemModStats.EquipmentRows.SelectMany(ItemsOf(conn).Items)
+            .Where(i => !IsInactive(conn, i.Id)).Any(i =>
+                Items.ByHash(i.Item.TypeHash) is { } type && Items.Defences(type) is { EnergyShieldMin: > 0 }
+                || ItemModStats.Local(i.Item, Items.Mods).GetValueOrDefault("local_energy_shield") > 0);
+    }
+
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
     // The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
@@ -212,20 +223,22 @@ partial class Program
             $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
         // The socketed gems may have changed: the Cosmetics tab's skill slots follow them.
         await SendWornCosmetics(remote, stream, ciphers, conn, "equipment changed");
-        conn.Pools = PoolsFor(conn, conn.Pools.Level);
-        lock (conn.Monsters) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+        // Under the Monsters lock, as every pools writer (a utility flask that ends recomputes under it too).
+        lock (conn.Monsters) { RecomputePoolsAndSpeed(conn); conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn)); }
         await SendSkills(remote, stream, ciphers, conn);
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
             "0x01b3 player stats (equipment)");
         await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
     }
 
-    // Dev commands (/mod, /rarity): changes the held item and replaces it on the cursor (0xbf removing and adding its id).
-    static async Task ChangeHeldItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Func<Item, Item> change, string what)
+    // Dev commands (/mod, /rarity, /sockets): changes the held item and replaces it on the cursor (0xbf removing and adding
+    // its id). The item needs the component the change is about.
+    static async Task ChangeHeldItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Func<Item, Item> change, string what,
+        string component = "Mods")
     {
         var items = ItemsOf(conn);
         if (items.Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
-        if (!held.Item.Components.Contains("Mods")) { await conn.Commands!.Reply($"{Items.ByHash(held.Item.TypeHash)?.Name} has no Mods component"); return; }
+        if (!held.Item.Components.Contains(component)) { await conn.Commands!.Reply($"{Items.ByHash(held.Item.TypeHash)?.Name} has no {component} component"); return; }
         if (items.Change(PlayerInventories.Cursor, held.Id, change) is not { } changed) return;
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
             items.NextRevision(PlayerInventories.Cursor), [held.Id], [changed]), $"0x00bf cursor: item {held.Id} {what}");
