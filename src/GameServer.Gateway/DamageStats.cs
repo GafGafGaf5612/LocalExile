@@ -9,6 +9,28 @@ using DamageType = GameServer.Core.World.DamageType;
 /// </summary>
 static class DamageStats
 {
+    public const string SpellDamageIncreasesApplyToAttacks150 =
+        "additive_spell_damage_modifiers_apply_to_attack_damage_at_150%_value";
+
+    // This stat is a flag. Transfer increased/reduced spell damage into the attack's increased bucket,
+    // retaining half-percent values; spell-only more multipliers and speed never enter this contribution.
+    public static double SpellAttackIncrease(Func<string, int> get) =>
+        SpellAttackIncrease(get(SpellDamageIncreasesApplyToAttacks150), get("spell_damage_+%"));
+
+    public static double SpellAttackIncrease(IReadOnlyDictionary<uint, int>? stats) =>
+        SpellAttackIncrease(stats?.GetValueOrDefault(StatKeys.SpellDamageIncreasesApplyToAttacks150) ?? 0,
+            stats?.GetValueOrDefault(StatKeys.SpellDamagePct) ?? 0);
+
+    static double SpellAttackIncrease(int enabled, int increased) => enabled != 0 ? increased * 1.5 : 0;
+
+    public static DamageRange IncreaseAttackRange(DamageRange range, double increased)
+    {
+        // Multiply before dividing: 200 * 101.5 / 100 is exactly 203, whereas 200 * 1.015 can fall below it
+        // and the panel's final floor would disagree with the hit roll. Non-integral damage stays fractional.
+        double percent = Math.Max(0, 100.0 + increased);
+        return new(range.Min * percent / 100.0, range.Max * percent / 100.0);
+    }
+
     /// <summary>"Attack skills have added lightning damage equal to % of maximum mana" (Stats.dat row 11881, client key
     /// 11882): PassiveSkills.dat graph id 22720, Whisperer "we know all", grants row 11881 with the value 6.</summary>
     public const string MaxManaAddedLightning = "attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana";
@@ -39,10 +61,11 @@ static class DamageStats
                 // so the caller passes whether this swing is actually melee: the default attack and the panel's
                 // main-hand rows by their weapon profile (an inactive weapon is not there; unarmed is melee) and an
                 // attack gem by its own ActiveSkillType Melee classification.
-                int increased = get("damage_+%") + get("attack_damage_+%") + (melee ? get("melee_damage_+%") : 0)
+                double increased = (double)get("damage_+%") + get("attack_damage_+%") + (melee ? get("melee_damage_+%") : 0)
                     + get($"{slug}_damage_+%")
-                    + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0);
-                range = range.Scale(Math.Max(0, 1 + increased / 100.0));
+                    + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0)
+                    + SpellAttackIncrease(get);
+                range = IncreaseAttackRange(range, increased);
             }
             hit = hit.Add(type, range.Scale(effectiveness));
         }
