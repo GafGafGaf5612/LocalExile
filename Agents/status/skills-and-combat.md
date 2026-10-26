@@ -104,6 +104,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   entropy counter before damage, and `/defences` shows armour, physical reduction and the chance to evade a reference
   monster.
   Iron Reflexes converts all evasion to armour and drops dexterity's evasion bonus.
+  Chaos Inoculation sets maximum life to 1 (after the life modifiers) and grants chaos immunity in the damage model
+  and the panel's Immune row; energy shield remains the pool. The pre-CI life used for stun/ailment thresholds and the
+  low-life condition are not modelled.
   Not yet: item mods/quality, shields or auras.
   Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
@@ -234,6 +237,52 @@ Part of [Status](../Status.md); what to build next in this area is in
   Helena's picker now receives all 103 exported personal hideouts, including MTX templates;
   switching templates now uses the native selection request and persists the chosen home.
   See [11](../docs/protocol/11-skills.md) and [21](../docs/protocol/21-hideouts.md).
+- **Extra projectiles (2026-10-26, awaiting live check).** A projectile skill now fires one projectile object per
+  `number_of_additional_projectiles` from the player's stats (passives, wand mastery, items, auras) plus the skill's
+  supports, evenly spread around the aim (`projectile_spread_radius` when the skill has it in degrees, else 10°;
+  `Game_PROJECTILE_SPREAD=<degrees>` overrides the gap for debugging). The client creates none of them: every
+  projectile is a server object, so before this only the centre one existed.
+  Not modelled: skills' own `total_number_of_projectiles_to_fire`, Barrage-style sequential volleys,
+  `multiple_projectiles_projectile_spread_+%`, pierce/fork/chain and per-projectile accuracy.
+  Code: `ProjectileSpread.cs`, Gateway (`LaunchProjectile`).
+  Docs: [11](../docs/protocol/11-skills.md) §10.
+- **Pierce (2026-10-26, awaiting live check).** Pierce Support's `projectile_base_number_of_targets_to_pierce` (2 at
+  level 1, 4 at level 20) and the other pierce stats give a projectile a hit budget (1 + pierce): it passes through
+  that many monsters, each hit landing as the client's projectile reaches its cell, with the support's more Projectile
+  Damage already in `SupportedHit`. `always_pierce` (Freezing Pulse) is unlimited. The return leg uses the same
+  budget, while Returning Projectiles Support's `returning_projectiles_always_pierce` hits every target. Candidates
+  are those seen along the launch line (the server's walk estimates); a target that moves into the line later is not
+  picked up. Kinetic Blast's explosions are created on every collision, including a pierced one (wiki), but the
+  collision's target is excluded from its own explosions; the projectile's direct hit now lands on it instead.
+  Not modelled: pierce chance, per-skill pierce overrides other than `always_pierce`, forked/chained
+  pierce and piercing projectile visuals beyond the object flying on.
+  Code: Gateway (`LaunchProjectile`, `FlyProjectile`), `GemSupportDamage`.
+  Docs: [11](../docs/protocol/11-skills.md) §10.
+- **Returning projectiles (2026-10-26, awaiting live check; poewiki "Return", "Returning Projectiles Support").** After a
+  collision with a target, with terrain, or at maximum distance a projectile returns when the player's or the skill's
+  stats allow it: `projectiles_return`, `attack_projectiles_return` (attacks only) and `projectile_return_%_chance`;
+  `skill_projectiles_cannot_return` disables it, and `Game_PROJECTILE_RETURN=1/0` forces the decision for a check.
+  The same object flies back to the caster and 15 m (150 cells, `Game_PROJECTILE_RETURN_DISTANCE`) past them, then is
+  removed; `returned_projectile_speed_+%` scales the flight. Only one return per projectile. Wiki exceptions: Spark
+  and the other self-moving/rain/tornado secondary projectiles cannot return, Freezing Pulse returns only from a
+  collision, and Fireball explodes after the return instead of at the first hit. The return leg now deals damage to
+  the monsters along it (not the one it returned from): Returning Projectiles Support's
+  `support_return_returning_projectiles_damage_+%_final` (-70..-66% less, i.e. ×0.3..×0.34) and the game's returning
+  finals multiply the hit, `returning_projectiles_always_pierce` hits every target (without it only the first), and a
+  simultaneous volley's hits are shotgun-limited on the way out and on the way back. Not modelled: damage timing along
+  the return is applied when the return starts, ailments, pierce/fork/chain priority and repeat returns.
+  Code: `ProjectileReturn.cs`, Gateway (`LaunchProjectile`, `FlyProjectile`, `AreaSkillHit`).
+  Docs: [11](../docs/protocol/11-skills.md) §10.
+- **Kinetic Blast projectile display (2026-10-26, awaiting live check).** The gem's effect is ClusterBurst, and 3.29
+  names no `Projectiles.dat` row for it, so the Gateway now falls back to the wand attack's
+  `Metadata/Projectiles/WandProjectile` (3260) and plays `Metadata/Effects/Spells/cluster_burst/big.ao` where it
+  lands, including a ground cast: the landing runs one area hit of the skill's radius (its secondary explosions are
+  still not modelled). An attack gem's release is not cancelled by the attack-move's later move order any more:
+  holding a move button and firing used to spend the mana and launch nothing (2026-10-26). The burst's effect object
+  is removed 0.35 s after the impact (its animation is 200 ms) so its last frame does not stay on screen, and the
+  projectile goes at once.
+  Code: `SkillCatalog.ProjectileFor`, Gateway (`LaunchProjectile`, `AreaSkillHit`).
+  Docs: [11](../docs/protocol/11-skills.md) §10.
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
   `skill_is_instant`, so the client sends them as C→S 0x191 and keeps walking;
   the server applies them and answers S→C 0x1ce, which starts the skill bar's cooldown.

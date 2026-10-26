@@ -245,6 +245,10 @@ the same hit-chance formula as accuracy, so the chance to evade is `100 - Accura
 (`DamageModel.EvadeChance`). Monster melee rolls the same formula against `DefaultMonsterStats.Accuracy` at the
 monster's level and evades before damage; physical monster hits then go through armour and block. `/defences` prints
 both against a reference monster of the character's level. Life and mana still ignore passives and items.
+**Chaos Inoculation** (`keystone_chaos_inoculation`) applies to that life: maximum life becomes 1 after the life
+modifiers (the character's energy shield stays the real pool), and the player is immune to chaos damage through the
+same damage-immunity table as the panel's `chaos_damage_immunity` row. The pre-CI maximum life that the game uses for
+stun and ailment thresholds is not modelled.
 
 The default attack's damage (`Unarmed.HitDamage`) is a physical `DamagePacket`: MinDamage..MaxDamage × (1 +
 (`damage_+%` + `physical_damage_+%` + `melee_damage_+%` + `melee_physical_damage_+%`) / 100). The packet goes through
@@ -973,7 +977,27 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   path; the type register knows it from the table). `Metadata/Projectiles/Projectile` deserializes Positioned,
   Animated, BaseEvents and Projectile, so the blob is Positioned, one Animated byte and the tasks byte
   (`ProjectileObject`; the Animated component is index 1), then 0x1a9 (wake zone). The real link between a skill and
-  its projectile is unknown; the Gateway matches the Id.
+  its projectile is unknown; the Gateway matches the Id. Multiple projectiles are one object each, spread around the
+  aim (`ProjectileSpread`: `number_of_additional_projectiles`, `projectile_spread_radius` or 10°,
+  `Game_PROJECTILE_SPREAD`): the client fires none of its own. Kinetic Blast's effect is ClusterBurst, which names no
+  Projectiles row, so it falls back to the wand attack's `Metadata/Projectiles/WandProjectile` (3260) and plays
+  `Metadata/Effects/Spells/cluster_burst/big.ao` where it lands; a landing on bare ground runs one area hit of the
+  skill's radius (its secondary explosions are not modelled).
+- **Pierce.** Pierce Support's `projectile_base_number_of_targets_to_pierce` (2 at level 1, 4 at level 20) and the other
+  pierce stats give a hit budget of 1 + pierce: the projectile passes through that many monsters, each hit landing as
+  the glide reaches its cell; the support's more Projectile Damage is part of `SupportedHit`. `always_pierce` is
+  unlimited. The return leg uses the same budget; Returning Projectiles Support's `returning_projectiles_always_pierce`
+  hits all targets. Targets are those seen along the launch line.
+- **Returning projectiles.** A projectile whose stats allow it (`projectiles_return`, `attack_projectiles_return`,
+  `projectile_return_%_chance`; `skill_projectiles_cannot_return` forbids; `Game_PROJECTILE_RETURN` forces) returns
+  from a target/terrain collision or from maximum distance (Freezing Pulse only from a collision), flies back to the
+  caster and 15 m (150 cells) past them, and is then removed (`Game_PROJECTILE_RETURN_DISTANCE` in cells,
+  `returned_projectile_speed_+%`). Only one return per projectile; Spark and the other self-moving/rain/tornado
+  secondary projectiles cannot return; Fireball explodes after the return. The return leg damages every monster along
+  it except the one it returned from, with Returning Projectiles Support's less Damage
+  (`support_return_returning_projectiles_damage_+%_final`), and `returning_projectiles_always_pierce` lets it hit all
+  of them (otherwise the first only). A simultaneous volley is shotgun-limited to one hit per target, out and back.
+  Damage timing along the return is applied when the return starts; ailments are not modelled.
 - **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
   cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
   (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets

@@ -391,15 +391,26 @@ sealed class SkillCatalog(string folder = "data")
 
     /// <summary>A projectile type for an effect: the Projectiles.dat row whose Id is Metadata/Projectiles/(GrantedEffects
     /// Id), e.g. Fireball → Metadata/Projectiles/Fireball at speed 1040, or null. The real link between a skill and its
-    /// projectile is not known yet.</summary>
+    /// projectile is not known yet; the Gateway matches the Id, and <see cref="ProjectileFallbacks"/> covers the gems
+    /// whose row is not named after their effect. Kinetic Blast (ClusterBurst) fires the wand attack's own projectile
+    /// (3.29 has no ClusterBurst row); its explosion is a separate impact art (Program.Combat).</summary>
     public (string Id, int Speed)? ProjectileFor(int effectRow)
     {
         if (_tables.Value is not { } t) return null;
         string? effect = t.EffectRows.FirstOrDefault(kv => kv.Value.Row == effectRow).Key;
         if (effect is null) return null;
-        string id = "Metadata/Projectiles/" + effect;
+        string id = ProjectileFallbacks.GetValueOrDefault(effect, "Metadata/Projectiles/" + effect);
         return _projectiles.Value.TryGetValue(id, out int speed) ? (id, speed) : null;
     }
+
+    // Granted effects whose Projectiles.dat row is not named after them, by effect Id. Kinetic Blast's effect is
+    // ClusterBurst (the skill data names no row); it uses the wand attack's projectile at the same 3260 speed.
+    static readonly Dictionary<string, string> ProjectileFallbacks = new()
+    {
+        ["KineticBlast"] = "Metadata/Projectiles/WandProjectile",
+        ["KineticBlastAltX"] = "Metadata/Projectiles/WandProjectile",
+        ["KineticBlastAltY"] = "Metadata/Projectiles/WandProjectile",
+    };
 
     /// <summary>A Projectiles.dat row by its Id (<c>Metadata/Projectiles/DefaultArrow</c> for a bow's ordinary attack).</summary>
     public (string Id, int Speed)? Projectile(string id) =>

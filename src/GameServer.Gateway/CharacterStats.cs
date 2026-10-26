@@ -54,7 +54,7 @@ static class CharacterStats
     /// increased and more multipliers, critical strike chance and multiplier, and the Accuracy Mastery's conversions.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
         int Mana = 0, int ManaPct = 0, int Armour = 0, int ArmourPct = 0, int Evasion = 0, int EvasionPct = 0,
-        int SharedDefencesPct = 0, bool IronReflexes = false,
+        int SharedDefencesPct = 0, bool IronReflexes = false, bool ChaosInoculation = false,
         int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
         int FireMaxResistance = 0, int ColdMaxResistance = 0, int LightningMaxResistance = 0, int ChaosMaxResistance = 0,
@@ -115,7 +115,8 @@ static class CharacterStats
         var b = bonus ?? Bonus.None;
         level = Math.Clamp(level, 1, Progression.MaxLevel);
         int str = c.Strength + b.Strength, dex = c.Dexterity + b.Dexterity, intel = c.Intelligence + b.Intelligence;
-        uint life = (uint)Math.Max(1, (c.BaseMaxLife + 12 * level + str / 2 + b.Life) * (100 + b.LifePct) / 100);
+        uint life = b.ChaosInoculation ? 1
+            : (uint)Math.Max(1, (c.BaseMaxLife + 12 * level + str / 2 + b.Life) * (100 + b.LifePct) / 100);
         uint mana = b.ManaPerFourStrength == 0
             ? (uint)Math.Max(0, (c.BaseMaxMana + 6 * level + intel / 2 + b.Mana) * (100 + b.ManaPct) / 100)
             : StrengthMana.Maximum(c.BaseMaxMana + 6L * level + intel / 2 + b.Mana,
