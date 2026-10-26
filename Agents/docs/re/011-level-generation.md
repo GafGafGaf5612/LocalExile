@@ -555,7 +555,13 @@ pass, before the seams; 2026-10-25, `1_3_5`): the tiler's +0xb0 cells, a set sor
 (`0x14204e650`), come from the room tiliser (`0x1420ef310`: an untagged square slot key whose edges all have its size
 (.et +0x4b) and one of them a wiggle (.et +0x4d) of at least 2, or 1 for a shared border slot (`0x1420f0a70`), at
 the slot's view cell, before it is tiled) and from the listener `0x1420f1230` that the FillTiles block puts on its
-placer (shrines, edge fill, overlays, fill: an untagged tile (tile data +0x10) of that kind with any wiggle). Then
+placer (shrines, edge fill, overlays, fill: an untagged tile (tile data +0x10) of that kind with any wiggle; the
+listener's second part, with heights (map +0x20) and a graph TopGround or BottomGround (tiler +0x30 / +0x28), gives
+every vertex of the placed tile without a ground the top ground at or above the level at listener +0x1c, else the
+bottom ground at or below the one at +0x20: the levels of the room grounds, `0x141ffc700` / `0x141ffc7d0` unless
+master +0x146 / +0x144 set them, as `0x1420f3480` builds it. MapWorldsCourtyardOfWasting's fill rooms
+(`FillPark_13.arm`, slots one level down) take the graph's `deep_snow.gt` there before the fill ground; without it
+the "DeepSnow" doodads at (424, 355) and on were missing, 2026-10-26). Then
 `Next(count)` and a shuffle; each cell whose tile still qualifies at its origin (`0x1420ed900`) takes its turned key,
 `Next(4)` and a shuffle of the sides; a side with a wiggling edge takes the point `0x140df93f0` gives from the cell's
 view position (((y · 0x7bb + side · 0x10a3 + x · 0x337) mod 13) mod 3 · size + size / 2; sides 1 and 2 as the
@@ -1163,22 +1169,24 @@ y, +0x18 height, +0x1b orientation code). Order:
    `0.5` lines of `act8/area9/doodads.ddt` weigh 0 (taken to never be picked; no matching trace uses that table yet).
    Not ported (not hit by any matching trace): the entity exclusion circles and the `Next(10000)` falloff (lines
    274–550: entities with components 0x407c7f95 / 0x9e3b9e73, stats 0x25a4f824 / 0xc9c0b154 / 0xb36d48d9), the
-   `0x14154c2d0` check after walk ≥ 5, the tile no-doodad bitmask (tile +0x150). `0x14154c2d0` (map + 0x108 locked)
+   tile no-doodad bitmask (tile +0x150). **Entity veto** (ported 2026-10-26), for a point on no ground or a flag-4
+   one after walk ≥ 5 (with generator +9 set `0x141d889c0` instead, not ported): `0x14154c2d0` (map + 0x108 locked)
    goes over the map's per-tile entity lists in a square of 5 + `DAT_143a5fe58` − 2 world units about the point
-   (`0x141379fc0`): an entity whose Chebyshev distance from the point less its size (+0x1e3) is under 5 vetoes it
-   (`1_3_10_1` seed 1: `animated_forestcave_waterdrips.ao` at (621, 1009), walk exactly 5, is placed by the port
-   only). Per entity (`0x141379fc0`): position +0x294 / +0x298, the per-tile list sorted by a layer byte (bit 7 skips
-   unless asked), an entity of size −1 never vetoes, and one whose +0x2c0 / +0x2c1 flag (by +0x1e6 bit 7) is 1 is
-   skipped. Every doodad is an entity (`0x142042360` creates one per doodad), but taking every placed doodad as size 0
-   is wrong: in `1_3_10_1` seed 1 a room doodad (`sewerplant_thin1.ao`) and a random `animated_forestcave_waterdrips.ao`
-   3 units away do not veto, while the random `animated_forestcave_waterdripswide.ao` 4 units from (621, 1009) would
-   explain its veto (2026-10-26; the entity size or the list insertion is not known). The bitmask applies when the
-   doodad table (+0x138 bit 0, the flag after the default clear radius) or the tile (+0x16d bit 0x10) asks for it: the
-   point turned into the tile's frame indexes a palette-packed byte array (`0x141d901f0`: one value, or 1, 2 or 4 bits
-   per cell with a palette of 2, 4 or 16, or a byte each) over w·23 × h·23 cells, non-zero vetoes; the tile under
-   (621, 1009), `sewerwall_straight_v01_01.tdt`, has flags 0x416 (no 0x1000). Open (MapWorldsCourtyardOfWasting seed
-   1): the client draws the "DeepSnow" group at (424, 355), whose nearest vertex (18, 15) lies in the fill room
-   `FillPark_13.arm` at (12, 12) on a Blank tile; the port has no ground there.
+   (`0x141379fc0`): an entity whose Chebyshev distance from the point less its size (+0x1e3) is under 5 vetoes it.
+   Per entity: position +0x294 / +0x298, the per-tile list sorted by a layer byte (bit 7 skips unless asked), an
+   entity of size −1 never vetoes, and one whose +0x2c0 / +0x2c1 flag (by +0x1e6 bit 7) is 1 is skipped. The size is
+   the Positioned component's: `0x141e2e960` (the Positioned constructor) copies its data's +0x10, the type's
+   `object_size`. The port counts the room objects whose type's Positioned has `blocking = true`, at their object_size
+   (0 without one), taking the skip flag to be "not blocking" (its writer was not found): `1_3_10_1` seed 1 vetoes
+   (621, 1009) for the `BioWallBlocker` objects of `biowall_waypoint_1.arm` (object_size 5, blocking, a line of
+   `dead_seagull_v01_03.ao` 8 units apart) 7 units away, while static `Doodad`s (object_size 2: room doodads, random
+   doodads) 2 to 4 units away never veto, nor Act 8's `ToxicDoodad` / `NonToxicDoodad` (object_size 0, not blocking;
+   counting every non-static positioned type lost six traces: 1_2_7, 1_3_7, 2_6_13, 2_8_2_1, 2_8_2_2, 2_8_13). The
+   bitmask applies when the doodad table (+0x138 bit 0, the flag after the default clear radius) or the tile
+   (+0x16d bit 0x10) asks for it: the point turned into the tile's frame indexes a palette-packed byte array
+   (`0x141d901f0`: one value, or 1, 2 or 4 bits per cell with a palette of 2, 4 or 16, or a byte each) over
+   w·23 × h·23 cells, non-zero vetoes; the tile under (621, 1009), `sewerwall_straight_v01_01.tdt`, has flags 0x416
+   (no 0x1000).
 3. The deferred list `0x142041d40` (groups shuffled by `Next(count)`, no two within 3 × 3): not ported.
 4. After the stage, generator vtable +0x50 (`0x142041950`, world vtable +0x28) and +0x20 = **`0x142041200`, the
    tiles' own objects**: row by row, every tile origin (+0x34 / +0x35 zero) whose tile data has +0x178 or +0x180;
