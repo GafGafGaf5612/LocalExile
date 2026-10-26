@@ -117,10 +117,16 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Ordinary player and skill projectile-speed bonuses affect flight and predicted arrival together; baseline/+100%/-50%
   Fireball casts were checked live, while conditional/more/less speed and support application remain open.
   Swept relative-motion checks run throughout flight to the first monster or wall contact, with pause, transfer
-  and disconnect handling through the game clock and flight lifetime. Default-attack arrows are visual only.
+  and disconnect handling through the game clock and flight lifetime. Ordinary ground/object bow arrows now
+  share delayed release and collision damage, with release snapshots and original-action guards through creation
+  (#203, automated and native ground/object, wall/interceptor, cancellation and pause checks pass).
+  The separate object-use melee contact hit is removed.
+  Accuracy misses continue past the evading object under a current-wiki-supported bounded policy; official-server
+  continuation and snapshot parity still need evidence. Combined-only Frostblink controls preserve a released
+  arrow and resample the origin after a framed pre-release blink; they do not add standalone Frostblink support.
   Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
   Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume passed before the
-  bow packet/height update; merged bow/collision integration and corrected glide height need a live recheck.
+  bow packet/height update; ordinary bows were rechecked above, while attack-gem composition remains open.
   Integer monster walk estimates,
   a shared collision radius and straight movement between samples still limit accuracy.
 - **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas

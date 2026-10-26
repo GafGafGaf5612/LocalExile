@@ -18,7 +18,7 @@ partial class Program
         lock (conn.Monsters)
         {
             double now = conn.Clock.Elapsed.TotalSeconds;
-            if (conn.Closed || conn.PlayerLife == 0 || conn.HitRecovery.BlocksInput(requestedAt, now)
+            if (conn.Closed || conn.Paused || conn.PlayerLife == 0 || conn.HitRecovery.BlocksInput(requestedAt, now)
                 || !AttackTiming.Ready(now, conn.NextAttackAt, duration)) return false;
             conn.NextAttackAt = AttackTiming.After(now, conn.NextAttackAt, duration);
             int action = Interlocked.Increment(ref conn.ActionCount);
@@ -79,18 +79,19 @@ partial class Program
     // One attack per attack time (WeaponSpeed ms scaled by the player's attack speed stats, a quarter early allowed for
     // jitter); earlier repeats of 0x24 are ignored. At 0 the client's Life component runs its death; the corpse is
     // removed 10 s later.
-    static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    internal static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, SpawnedMonster m, double requestedAt)
     {
         int projectileEpoch;
         lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
         var weapon = WeaponFor(conn);
+        bool bow = WeaponProfileFor(conn, activeSet: true).Bow;
         double now = conn.Clock.Elapsed.TotalSeconds, duration;
         lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn));
         // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
         // full attack time, so accept it up to a quarter of an attack early.
         lock (conn.Monsters)
-            if (!AttackTiming.Ready(now, conn.NextAttackAt, duration))
+            if ((bow && conn.Paused) || !AttackTiming.Ready(now, conn.NextAttackAt, duration))
             {
                 Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} ignored: {conn.NextAttackAt - now:0.000} s before the next attack");
                 return;
@@ -107,8 +108,12 @@ partial class Program
         }
         Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
             $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
-        if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
-        if (conn.ActionCount != action) { Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled before the swing"); return; }
+        if (arrive > now)
+        {
+            if (bow) { if (!await WaitProjectileTime(conn, arrive, projectileEpoch)) return; }
+            else await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+        }
+        if (conn.ActionCount != action || (bow && !OrdinaryBowReleaseCurrent(conn, action, projectileEpoch))) { Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled before the swing"); return; }
         now = conn.Clock.Elapsed.TotalSeconds;
         lock (conn.Monsters)
         {
@@ -120,15 +125,20 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} out of reach: {Dist(stop, target):0.0} > {weapon.Range}");
             return;
         }
-        await Send(remote, stream, ciphers,
-            InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
-            $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife}), attack time {duration:0.000} s",
-            still: () => PlayerActionCurrent(conn, action));
+        var actionBytes = InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId);
+        string actionLog = $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife}), attack time {duration:0.000} s";
+        if (bow)
+        {
+            if (!await SendOrdinaryBowAction(remote, stream, ciphers, conn, actionBytes, actionLog, action, projectileEpoch)) return;
+        }
+        else await Send(remote, stream, ciphers, actionBytes, actionLog, still: () => PlayerActionCurrent(conn, action));
         if (m.Life == 0) return;
-        // A bow's ordinary attack shoots an arrow at the target: the client draws the projectile object we create
-        // (Projectiles.dat Metadata/Projectiles/DefaultArrow); the hit below keeps the swing's own timing.
-        if (WeaponProfileFor(conn).Bow && Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
-            _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), stop, target, damageTo: null, impact: "none", epoch: projectileEpoch, actionToken: action);
+        // A bow's target is an aim, not a reserved hit: its released arrow owns collision and damage.
+        if (bow)
+        {
+            await LaunchOrdinaryBow(remote, stream, ciphers, conn, stop, target, duration, action, projectileEpoch);
+            return;
+        }
         // The hit lands at the attack animation's contact keyframe (data/animation-contacts.json), not a fixed half: the
         // client stretches the clip to the attack time, so the blood and the weapon impact sound line up with the swing.
         await Task.Delay(TimeSpan.FromSeconds(AttackContactDelay(conn, duration, approach: true)));
@@ -746,21 +756,11 @@ partial class Program
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
 
-    // A non-gem bow shot (the ordinary attack's DefaultArrow): the row's ProjectileSpeed with the player's own
-    // projectile-speed bonuses, resolved once at launch like a gem's projectile (ProjectileSpeed).
-    static (string Id, float CellsPerSecond) BowArrow(ClientState conn, (string Id, int Speed) arrow)
-    {
-        var stats = CharacterPlayerStats(conn);
-        int PlayerSpeedStat(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
-        return (arrow.Id, ProjectileSpeed.CellsPerSecond(arrow.Speed, PlayerSpeedStat, _ => 0,
-            Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED")));
-    }
-
     // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
     // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
-    static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    internal static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo,
-        int epoch, bool log = true, string? impact = null, int? actionToken = null)
+        int epoch, bool log = true, string? impact = null, int? actionToken = null, OrdinaryBowShot? ordinaryShot = null)
     {
         uint id;
         lock (conn.Monsters) id = conn.NextObjectId++;
@@ -825,17 +825,21 @@ partial class Program
         bool released = false;
         try
         {
-            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob(), headerU32: 0xffffffff), !log ? null :
-                $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})", still: () =>
-                {
-                    lock (conn.Monsters)
+            while (!released && Active() && (actionToken is not int original || OrdinaryBowReleaseCurrent(conn, original, epoch)))
+            {
+                await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob(), headerU32: 0xffffffff), !log ? null :
+                    $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})", still: () =>
                     {
-                        if (!Active() || actionToken is int token && !PlayerActionCurrent(conn, token)) return false;
-                        conn.ProjectileObjects.Add(id);
-                        released = true;
-                        return true;
-                    }
-                });
+                        lock (conn.Monsters)
+                        {
+                            if (!Active() || (actionToken is int token && (!OrdinaryBowReleaseCurrent(conn, token, epoch) || conn.Paused))) return false;
+                            conn.ProjectileObjects.Add(id);
+                            released = true;
+                            return true;
+                        }
+                    });
+                if (!released) await Task.Delay(16);
+            }
             if (!released) return;
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null :
                 $"0x01a9 projectile 0x{id:x} enters wake zone", still: Active);
@@ -852,10 +856,47 @@ partial class Program
                     }
                 });
             if (flight is null) return;
-            ProjectileFlight.Step step;
+            ProjectileFlight.Step step = default;
+            bool committed = false;
+            SpawnedMonster? target = null;
+            MonsterHit? hit = null;
+            int damage = 0;
+            bool critical = false;
             while (true)
             {
                 await Task.Delay(16);
+                if (ordinaryShot is not null)
+                {
+                    // Accuracy and the accepted contact's impale/life effects share the actual relocation gate.
+                    // A queued sample invalidated by pause/transfer consumes no RNG or target state. A miss can
+                    // accept a later contact in this same sweep, without an intermediate packet or melee hit.
+                    await Send(remote, stream, ciphers, [], null, atGate: () =>
+                    {
+                        lock (conn.Monsters)
+                        {
+                            if (!Active() || conn.Paused) return null;
+                            bool Accept(uint targetId) => conn.Monsters.TryGetValue(targetId, out var monster)
+                                && !monster.Dead && monster.Life > 0
+                                && ordinaryShot.Hits(Monsters.BaseEvasion(monster.Level) ?? 0, Random.Shared);
+                            double now = conn.Clock.Elapsed.TotalSeconds;
+                            step = flight.Advance(now, Targets(now), Accept);
+                            if (!step.Finished || (step.TargetId == 0 && !step.Wall)) return null;
+                            if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
+                            {
+                                (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared);
+                                hit = ApplyMonsterHitLocked(conn, target, damage);
+                                if (target.Life == 0) target.Impale.Clear();
+                            }
+                            committed = true;
+                            int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
+                            if (log) Console.WriteLine($"[gateway] {remote} => arrow 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})");
+                            return height.StopAt(id, x, y);
+                        }
+                    });
+                    if (!Active()) return;
+                    if (step.Finished) break;
+                    continue;
+                }
                 lock (conn.Monsters)
                 {
                     if (!Active()) return;
@@ -869,11 +910,6 @@ partial class Program
             {
                 int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
                 // Copy creation's marker/world-Z pair at contact; do not resample terrain at impact.
-                bool committed = false;
-                SpawnedMonster? target = null;
-                MonsterHit? hit = null;
-                int damage = 0;
-                bool critical = false;
                 while (!committed && Active())
                 {
                     // 0x1b7 relocates and cancels the existing glide (0x141e31200 -> 0x141e35250). Commit the hit

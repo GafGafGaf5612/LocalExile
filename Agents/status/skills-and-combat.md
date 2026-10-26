@@ -47,6 +47,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   contact (0.374 of the attack time).
   Attack gems deal the weapon's damage × `DamageEffectiveness` with the attack's crit; a bow arrow has no Fireball
   impact.
+  Ordinary bow ground/object attacks now share contact-time release and damage at the actual flight collision
+  (#203, automated and native collision/release/pause checks pass).
+  Object uses no longer also deal a melee contact hit.
   Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
   without a capture they use the bare offset.
   Code: `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`, `AreaSkillHit`), `ProjectileObject`.
@@ -279,11 +282,30 @@ Part of [Status](../Status.md); what to build next in this area is in
   Cast release, flight and explosion cleanup use game time and wait through pause.
   Area changes remove outstanding visuals before handoff and invalidate flights even if the transfer fails.
   Disconnects cancel outstanding flight tasks.
+  Ordinary bows snapshot current position, weapon and offensive inputs after their release wait, retaining the
+  original aim; target evasion and impales resolve at the accepted collision's actual send gate.
+  An evaded target is skipped once per straight flight, including a later hit within the same swept interval.
+  This is a current-wiki-supported policy; official-server evasion continuation and snapshot equivalence remain
+  unverified. Already-paused uses are rejected; accepted queued confirmations run outside
+  ground input dispatch and can wait for resume or original-token cancellation.
+  Actual queued-send tests cover pause, action replacement, death and transfer, plus released arrows surviving
+  later actions/player death. Ordinary hits use ranged notifications, preserve existing damage/crit/impale
+  approximations and clear impales on death. Native before-controls confirmed the old visual-only ground arrow
+  and independent melee contact hit on object use. On the combined runtime, native ground/object right-clicks
+  each dealt one hit only at the arrow stop (13 at (296,221), 6 at (296,220)), without melee `0x1af 0x4201`.
+  Creation now occurs in the bow clip near contact; frame/server scheduling delay remains visible.
+  Native wall-before-object, nearer interceptor, moving-away miss, framed Move before/after release, flight pause,
+  release pause and paused raw ground/object dispatch controls passed. Added cold removed after release stayed
+  in the arrow's 112-damage killing hit, with one 4-XP award (loot unmeasured).
+  Combined-only Frostblink checks passed: actual Q after release preserved the old hit; a timed framed `0x190`
+  before release changed the sampled origin while retaining the original aim. Combined recovery controls
+  cancelled a pending release, denied recovery-time input and accepted fresh input after expiry; an already
+  released arrow still stopped/removed. These checks compose separate Frostblink/recovery contributions.
   Automated trajectory, wall, lifecycle and packet checks pass.
   Live checks verified a moving-away miss, a later-entry hit, first-wall contact, pause/resume and native glide stop.
   Raw fixed-height and terrain-sentinel stop packets preserved their fields and cleared native movement duration.
-  These live collision and raw-stop checks preceded the bow packet/height update; merged bow/collision
-  integration still needs a live recheck.
+  Earlier Fireball/raw-stop checks preceded the bow packet/height update; the ordinary bow controls above cover
+  its combined path on natural ground. Attack-gem height/collision composition still needs a live recheck.
   Creation, glide endpoint and stop now share one signed marker; packet tests cover positive, negative and zero height.
   Corrected normal launches retained marker 5/world z -39.0625 at creation, paused mid-flight and both contact stops.
   Broader surface-height accuracy remains open (#182).
@@ -299,7 +321,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   The development speed override retains priority.
   Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline, 0.606 at +100% and 2.425 at -50%.
   Conditional/more/less speed and support-gem application remain open.
-  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
+  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `OrdinaryBowShot.cs`, `Program.Bows.cs`,
+  `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
