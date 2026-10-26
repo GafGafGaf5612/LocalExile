@@ -416,9 +416,10 @@ partial class Program
                 await CtrlBuyFromShop(remote, stream, ciphers, conn, InstanceNpcs.ReadCtrlBuy(bytes));
             else if (id == InstanceStash.TakeFromTabId)
             {
-                var (tab, item, a, b, c, d) = InstanceStash.ReadTakeFromTab(bytes);
-                Console.WriteLine($"[gateway] {remote} <= 0x00e3 take item {item} from stash tab {tab} ({a:x2} {b:x2} {c:x2} {d:x2})");
-                await TakeFromStash(remote, stream, ciphers, conn, tab, item);
+                var move = InstanceStash.ReadTakeFromTab(bytes);
+                Console.WriteLine($"[gateway] {remote} <= 0x00e3 take item {move.ItemId} from stash tab {move.Tab} " +
+                    $"({move.Kind:x2} {move.TokenLo:x2} {move.TokenHi:x2} {move.Bulk:x2}, {(move.Bulk != 0 ? "bulk" : "one stack")})");
+                await TakeFromStash(remote, stream, ciphers, conn, move.Tab, move.ItemId, all: move.Bulk != 0);
             }
             else if (id == InstanceMapDevice.ActivateId)
                 await ActivateMapDevice(remote, stream, ciphers, conn, InstanceMapDevice.ReadActivate(bytes));
@@ -523,6 +524,8 @@ partial class Program
                     await SpawnOpeningTutorial(remote, stream, ciphers, conn);
                     await SpawnGlyphQuest(remote, stream, ciphers, conn);
                     await SpawnHideoutDoodads(remote, stream, ciphers, conn);
+                    // All stationary objects must exist before validating the arrival cell.
+                    await PushOutOfCollision(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);
                     _ = RunMonsterRegeneration(remote, stream, ciphers, conn);
@@ -530,6 +533,7 @@ partial class Program
                     _ = RunMercyMission(remote, stream, ciphers, conn);
                     _ = RunServerFrames(remote, stream, ciphers, conn);
                     _ = RunMonsterAi(remote, stream, ciphers, conn);
+                    _ = RunLivingCollisions(remote, stream, ciphers, conn);
                     _ = RunPlayerTick(remote, stream, ciphers, conn);
                     _ = RunResourceRecovery(remote, stream, ciphers, conn);
                     _ = RunCharges(remote, stream, ciphers, conn);

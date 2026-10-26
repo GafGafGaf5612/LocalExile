@@ -4,7 +4,10 @@ namespace GameServer.Gateway.Tests;
 
 public class TeleportTargetsTests
 {
-    const ushort Town = 0x235c;
+    // Select an unmapped synthetic destination so real extracted area names cannot change these label controls.
+    static readonly ushort Town = Enumerable.Range(0, ushort.MaxValue + 1).Select(n => (ushort)n)
+        .First(hash => AreaTransitionCatalog.IdOf(hash) is null);
+    static string Transition => $"transition to 0x{Town:x4}";
 
     // A 200 x 200 area whose walkable cells are x >= 50; the player starts at the spawn (70, 70); one exit at (40, 20)
     // and a waypoint at (150, 150).
@@ -68,7 +71,7 @@ public class TeleportTargetsTests
         var conn = Conn();
         Assert.Equal("GlyphWall at (180, 60)", Tp(conn, "glyph")!.Next);
         Assert.Equal("waypoint at (150, 150)", Tp(conn, "waypoint")!.Next);
-        Assert.Equal("transition to 0x235c at (40, 20)", Tp(conn, "transition")!.Next);
+        Assert.Equal($"{Transition} at (40, 20)", Tp(conn, "transition")!.Next);
         Assert.Null(TeleportTargets.Resolve(conn, ["Hillock"], Places(conn), out string? error));
         Assert.Contains("/tp list", error);
     }
@@ -79,7 +82,7 @@ public class TeleportTargetsTests
         var conn = Conn();
         lock (conn.Monsters) conn.Monsters[0x3001] = new SpawnedMonster("Gravel Eater", conn.NewWalk(160, 40, 10), 30, 2, 100);
         Assert.Equal("Gravel Eater at (160, 40)", TeleportTargets.Resolve(conn, ["0x3001"], TeleportTargets.Candidates(conn, "none"), out _)!.Next);
-        Assert.Equal("transition to 0x235c at (40, 20)", Tp(conn, "0x2000")!.Next);
+        Assert.Equal($"{Transition} at (40, 20)", Tp(conn, "0x2000")!.Next);
         Assert.Equal("Gravel Eater at (160, 40)", TeleportTargets.Resolve(conn, ["gravel"], TeleportTargets.Candidates(conn, "none"), out _)!.Next);
     }
 
@@ -99,7 +102,7 @@ public class TeleportTargetsTests
                 TeleportTargets.CapturedObjects("1_1_3", 1, folder));
             Assert.Empty(TeleportTargets.CapturedObjects("1_1_3", 2, folder));
             var all = TeleportTargets.Candidates(Conn(), folder);
-            Assert.Equal(["transition to 0x235c", "waypoint", "arrival", "GlyphWall", "RhoaChest"], all.Select(c => c.Name));
+            Assert.Equal([Transition, "waypoint", "arrival", "GlyphWall", "RhoaChest"], all.Select(c => c.Name));
         }
         finally { Directory.Delete(folder, true); }
     }
@@ -111,7 +114,7 @@ public class TeleportTargetsTests
         string list = TeleportTargets.List(places, null);
         Assert.Contains("RhoaChest (100, 30)", list);
         Assert.Contains("RhoaChest 2 (120, 90)", list);
-        Assert.Contains("transition to 0x235c 0x2000 (40, 20)", list);
+        Assert.Contains($"{Transition} 0x2000 (40, 20)", list);
         Assert.Equal("RhoaChest (100, 30)\nRhoaChest 2 (120, 90)", TeleportTargets.List(places, "rhoa"));
         Assert.Equal("No places.", TeleportTargets.List(places, "nothing"));
     }

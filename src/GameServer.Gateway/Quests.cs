@@ -97,7 +97,7 @@ static class Quests
     /// </summary>
     public static class League
     {
-        public const int UnlockedHideouts = 3, HaveHideout = 200, UnlockedMapDevice = 350;
+        public const int HaveGuild = 2, UnlockedHideouts = 3, HaveHideout = 200, UnlockedMapDevice = 350;
 
         /// <summary>Niko met in a map: his Delve options (View Subterranean Chart, Visit Mine Encampment) need it. NPCTalk
         /// columns 15-18 are league quest flag ids (16 required, 18 refused: the first-meeting "Talk to Niko" has 68 there).</summary>

@@ -865,7 +865,12 @@ partial class Program
             float speed = sp is null ? 20f : float.Parse(sp, System.Globalization.CultureInfo.InvariantCulture);
             var (x, y) = NextToPlayer(conn);
             await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, x, y, speed), $"0x01ba move monster 0x{id:x} to ({x}, {y}) speed {speed}");
-            lock (conn.Monsters) conn.Monsters[id].Walk = conn.NewWalk(x, y, conn.Monsters[id].Walk.Speed);
+            lock (conn.Monsters)
+            {
+                conn.Monsters[id].Walk = conn.NewMonsterWalk(id, x, y, conn.Monsters[id].Walk.Speed,
+                    LivingCollision.Size(conn.Monsters[id]), conn.Monsters[id].Rarity == MonsterRarity.Unique);
+                conn.Monsters[id].CollisionPosition = (x, y);
+            }
         })
         // Action probe: start the monster's Move action (0x1ab) toward the player, like the echo of a player's click. The skill
         // id is the player's Move (0x2909) unless given (hex); sequence 0xffff (the monster is not client-predicted).
@@ -904,7 +909,12 @@ partial class Program
             if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
             var (x, y) = NextToPlayer(conn);
             await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y), $"0x01b7 teleport monster 0x{id:x} to ({x}, {y})");
-            lock (conn.Monsters) conn.Monsters[id].Walk = conn.NewWalk(x, y, conn.Monsters[id].Walk.Speed);
+            lock (conn.Monsters)
+            {
+                conn.Monsters[id].Walk = conn.NewMonsterWalk(id, x, y, conn.Monsters[id].Walk.Speed,
+                    LivingCollision.Size(conn.Monsters[id]), conn.Monsters[id].Rarity == MonsterRarity.Unique);
+                conn.Monsters[id].CollisionPosition = (x, y);
+            }
         })
         .Add("ai", "/ai [on|off] (monsters chase you when you come near; emerge monsters rise either way)", async args =>
         {
