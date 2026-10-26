@@ -187,14 +187,13 @@ partial class Program
         // _recovery_per_minute_from_flask. Without it the client misread the message and showed no life change after it
         // (live 2026-10-20).
         uint perMinute = (uint)Math.Round((use.LifePerUse > 0 ? use.LifePerUse : use.ManaPerUse) * 60 / use.Seconds);
-        // Being tested: the duration, from which the orb could draw the life still to come. Game_FLASK_BUFF_DURATION picks
-        // the field: "ms" (default) u32 +0x68 in milliseconds (flags bit1), "f6c" f32 +0x6c in seconds (bit7), "0" none.
-        string durationField = Environment.GetEnvironmentVariable("Game_FLASK_BUFF_DURATION") ?? "ms";
-        uint? u68 = durationField == "ms" ? (uint)Math.Round(use.Seconds * 1000) : null;
-        float? f6c = durationField == "f6c" ? (float)use.Seconds : null;
+        // The duration (+0x68, f32 seconds) and the flask-bar cell (source skill): the timer bar under the flask (Flasks.Buff).
+        // Game_FLASK_BUFF_DURATION=0 sends no duration (before 2026-10-25 a u32 in milliseconds went there, which the client
+        // read as a float of almost 0 s).
+        bool withDuration = Environment.GetEnvironmentVariable("Game_FLASK_BUFF_DURATION") != "0";
         if (FlaskBuffs)
-            await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, buff, row, PlayerId, values: [perMinute], u68: u68, f6c: f6c),
-                $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, duration field {durationField}");
+            await Send(remote, stream, ciphers, Flasks.Buff(PlayerId, buff, row, (byte)slot, withDuration ? use.Seconds : null, [perMinute]),
+                $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, {(withDuration ? $"{use.Seconds:0.##} s" : "no duration")}");
     }
 
     // Gives each life, mana and utility flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them (or, for

@@ -41,17 +41,12 @@ partial class Program
             conn.ApplyMovementSpeed();
         }
         Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {utility.BuffId} for {seconds:0.##} s: " +
-            string.Join(", ", stats.Select(s => $"{s.Stat} {s.Value}")));
+            string.Join(", ", stats.Select(s => $"{s.Stat} {s.Value}")) + $"; walk estimate {conn.Walk.Speed:0.##} cells/s");
         if (started.Replaced is { } replaced) await SendUtilityFlaskEnd(remote, stream, ciphers, replaced, $"replaced by flask {slot}");
-        // The duration (flags bit1, u32 +0x68, milliseconds): the client's buff timer. Game_FLASK_BUFF_DURATION picks the
-        // field as for life flasks ("f6c": f32 +0x6c in seconds; "0": none).
-        string durationField = Environment.GetEnvironmentVariable("Game_FLASK_BUFF_DURATION") ?? "ms";
-        uint? u68 = durationField == "ms" ? (uint)Math.Round(seconds * 1000) : null;
-        float? f6c = durationField == "f6c" ? (float)seconds : null;
-        await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, effect.Buff, utility.BuffRow, PlayerId, u68: u68, f6c: f6c),
-            $"0x01c1 player buff {effect.Buff}: {utility.BuffId} (BuffDefinitions row {utility.BuffRow}), {seconds:0.##} s, duration field {durationField}");
+        await Send(remote, stream, ciphers, Flasks.Buff(PlayerId, effect.Buff, utility.BuffRow, (byte)slot, seconds),
+            $"0x01c1 player buff {effect.Buff}: {utility.BuffId} (BuffDefinitions row {utility.BuffRow}), {seconds:0.##} s");
         if (utility.Extra is { } x && effect.ExtraBuff is ushort extraBuff)
-            await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, extraBuff, x.BuffRow, PlayerId, u68: u68, f6c: f6c),
+            await Send(remote, stream, ciphers, InstanceEntities.AddBuff(PlayerId, extraBuff, x.BuffRow, PlayerId, u68: BitConverter.SingleToUInt32Bits((float)seconds)),
                 $"0x01c1 player buff {extraBuff}: {x.BuffId} (BuffDefinitions row {x.BuffRow}) from {type.Name}");
         await SendCharacterStats(remote, stream, ciphers, conn, $"{type.Name} on");
         if (started.StartTicker) _ = RunUtilityFlasks(remote, stream, ciphers, conn);
@@ -77,7 +72,7 @@ partial class Program
                         conn.ApplyMovementSpeed();
                     }
                     foreach (var e in ended) await SendUtilityFlaskEnd(remote, stream, ciphers, e, dead ? "death" : "its time is up");
-                    await SendCharacterStats(remote, stream, ciphers, conn, $"{string.Join(", ", ended.Select(e => e.Name))} off");
+                    await SendCharacterStats(remote, stream, ciphers, conn, $"{string.Join(", ", ended.Select(e => e.Name))} off, walk estimate {conn.Walk.Speed:0.##} cells/s");
                 }
                 if (stop) break;
             }

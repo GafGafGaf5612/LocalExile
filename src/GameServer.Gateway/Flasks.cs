@@ -18,6 +18,14 @@ static class Flasks
     public static Item Gain(Item flask, Flask f, int charges) =>
         flask with { Charges = (int)Math.Min(f.MaxCharges, (long)flask.Charges + charges) };
 
+    /// <summary>A flask's buff on the player (S→C 0x1c1): its duration in flags bit1's field, which the client reads as an
+    /// f32 in seconds (+0x68, reader 0x141fdf870; without it +infinity), and the flask-bar cell as the source skill (+0x60):
+    /// the client draws the effect's draining timer bar under that flask (live 2026-10-25). <paramref name="values"/>: the
+    /// IsRecovery rows' one u32 per GrantedStats entry.</summary>
+    public static byte[] Buff(uint player, ushort buff, ushort row, byte slot, double? seconds, IReadOnlyList<uint>? values = null) =>
+        InstanceEntities.AddBuff(player, buff, row, player, slot, values,
+            u68: seconds is double s ? BitConverter.SingleToUInt32Bits((float)s) : null);
+
     // shortcut: the real game's charges per kill are not known yet; "rarity" grows with rarity.
     /// <summary>Charges every flask gains when the player kills a monster: all it holds (int.MaxValue, the default), or
     /// with <paramref name="mode"/> "rarity" (Game_FLASK_KILL_CHARGES) 1 normal, 2 magic, 5 rare, 10 unique.</summary>

@@ -26,6 +26,18 @@ public class FlasksTests
     }
 
     [Fact]
+    public void A_flask_buff_carries_its_duration_as_seconds_and_its_flask_bar_cell_as_source_skill()
+    {
+        // flask_effect_life for the flask in cell 1: flags bit1, f32 3.0 (0x40400000) at +0x68, not 3000 milliseconds;
+        // source skill 0x0001 (the cell); then the recovery per minute and the empty list.
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0002" + "0005" + "00001000" + "0001" + "02" + "40400000" + "00000578" + "00000000",
+            Convert.ToHexString(Flasks.Buff(0x1000, 2, 5, 1, 3.0, [1400])));
+        // Without a duration (Game_FLASK_BUFF_DURATION=0) the client keeps +infinity.
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0002" + "0079" + "00001000" + "0002" + "00" + "00000000",
+            Convert.ToHexString(Flasks.Buff(0x1000, 2, 121, 2, null)));
+    }
+
+    [Fact]
     public void A_use_spends_its_charges_and_needs_enough_of_them()
     {
         Assert.Equal(14, Flasks.Spend(LifeFlask(21), SmallLife)!.Charges);
