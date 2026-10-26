@@ -6,6 +6,10 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 
 ## 5. Project
 
+- Define native graph integration separately from the [read-only analysis exporter](../docs/dev/passive-graph-data.md).
+  Standard startup must preserve the installed 3.29.3b client archive.
+  Any client archive mutation requires separate maintainer agreement; automatic graph installation is not approved.
+  Analysis artifacts alone provide no installed gameplay support or native proof.
 - Rebuild the reverse-engineering setup from a fresh clone (Ghidra import, REA, Frida) and fix whatever the guide
   misses.
 - Unnamed fields: [04](../docs/protocol/04-player-entity.md), [05](../docs/protocol/05-inventories-and-ui.md) and

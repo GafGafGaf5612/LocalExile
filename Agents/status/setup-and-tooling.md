@@ -19,7 +19,13 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-Nothing yet.
+- Read-only passive graph tooling exports pinned 3.29.3b topology and a merged PSG as `data/` analysis artifacts.
+  Parsing and merging have automated round-trip, malformed-input and ordinary-tree preservation coverage.
+  The exporter refuses modified source graphs and never installs its output into the client archive.
+  This is data tooling only; Gateway consumers and native integration remain later work.
+  This standalone layer has no new native launch proof; client archive mutation requires separate agreement.
+  Code: `PassiveSkillGraph.cs`, `AdditionalAscendancyGraph.cs`, `GameFileSystem.cs`, `scripts/re/passive-graphs`.
+  Docs: [passive graph data guide](../docs/dev/passive-graph-data.md).
 
 ## Not working yet
 

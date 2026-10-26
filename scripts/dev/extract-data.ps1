@@ -41,6 +41,9 @@ $manifest = @(
     @{ Name = 'monster-takehit'; Outputs = @('data\monster-takehit.json'); Runner = 'python'
        Args = @('scripts/re/monster_takehit.py'); Version = 3; Needs = @('tables')
        UsedBy = 'monster hit reaction: each variety''s TakeHit clip indexes in its rig and their lengths (11-skills.md, 0x1b2)' }
+    @{ Name = 'passive-graphs'; Outputs = @('data\passive-skill-graphs.json', 'data\phrecia-passive-skillgraph.psg'); Runner = 'dotnet'
+       Args = @('run', '--project', 'scripts/re/passive-graphs', '--', 'Client/Content.ggpk', 'data/passive-skill-graphs.json'); Version = 3; Needs = @('tables')
+       UsedBy = 'read-only passive graph analysis artifacts; not installed or consumed by gameplay' }
 )
 
 function Need($ok, $message) { if (-not $ok) { throw "setup incomplete: $message (see Agents/GettingStarted.md)" } }
