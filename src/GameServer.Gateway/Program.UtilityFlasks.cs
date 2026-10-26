@@ -64,6 +64,7 @@ partial class Program
     {
         conn.Pools = PoolsFor(conn, conn.Pools.Level);
         conn.ApplyMovementSpeed();
+        conn.Phasing = UtilityFlasks.Phasing(conn.UtilityFlaskEffects.Stats());
     }
 
     // Ends the utility flask effects whose time is up (by the connection clock: a pause holds them), whose flask left its

@@ -103,7 +103,7 @@ static class UtilityFlasks
         "basalt_flask_armour_+%_final", "stibnite_flask_evasion_rating_+%_final",
         "base_movement_velocity_+%", "attack_speed_+%", "base_cast_speed_+%",
         "critical_strike_chance_+%", "base_spell_suppression_chance_%", "damage_+%",
-        "physical_damage_reduction_rating_+%", "evasion_rating_+%", "base_item_found_rarity_+%",
+        "physical_damage_reduction_rating_+%", "evasion_rating_+%", "base_item_found_rarity_+%", "phase_through_objects",
     };
 
     /// <summary>The flask buff flag that stands for Onslaught (the Silver Flask's flask_utility_haste has no stats of its
@@ -176,7 +176,7 @@ static class UtilityFlasks
         double effect = Math.Max(0, 100 + increasedEffect) / 100.0;
         bool Applies(string stat) => SupportOf(stat) != Support.Unsupported;
         List<Source> stats = [.. u.Stats.Where(s => Applies(s.Stat))
-            .Select(s => new Source($"buff {u.BuffRow}", s.Stat, Scale(s.Value, effect)))];
+            .Select(s => new Source($"buff {u.BuffRow}", s.Stat, s.Stat == "phase_through_objects" ? s.Value : Scale(s.Value, effect)))];   // a flag
         // Onslaught has its own effect stat (onslaught_effect_+%), not the flask's.
         if (u.Extra is { } x) stats.AddRange(x.Stats.Where(s => Applies(s.Stat)).Select(s => new Source($"buff {x.BuffRow}", s.Stat, s.Value)));
         // The flask's "during effect" mods, scaled by increased effect too (poewiki, Quality: increased flask effect
@@ -340,6 +340,9 @@ static class UtilityFlasks
                     or "critical_strike_chance_+%" or "damage_+%" or "base_item_found_rarity_+%" => stat,
                 "base_cast_speed_+%" => "cast_speed_+%",
                 "life_regeneration_rate_per_minute_%" => stat,   // consecrated ground (FlaskGrounds)
+                // Quartz: the client's Pathfinding reads virtual_phase_through_objects (0x141e9cd68: +0x52e "Phase Through
+                // Objects", which picks its blocker filter, 0x141e7b77c).
+                "phase_through_objects" => "virtual_phase_through_objects",
                 _ when PanelOnly.Contains(stat) => stat,
                 _ => null,
             };
@@ -347,6 +350,11 @@ static class UtilityFlasks
         }
         return result.Select(kv => (kv.Key, kv.Value));
     }
+
+    /// <summary>Whether the running flasks make the player phase (Quartz Flask: phase_through_objects): monsters do not
+    /// block the walk (ClientState.Blockers), as the client's pathfinder with its phasing flag. NPCs and stashes still do
+    /// (which objects the client's phasing filter lets through is not traced).</summary>
+    public static bool Phasing(IEnumerable<(string Stat, int Value)> stats) => stats.Any(s => s.Stat == "phase_through_objects" && s.Value > 0);
 
     /// <summary>The Ward the running flasks grant (Iron Flask: base_ward; the Ward suffix: ward_+%): the one place to
     /// connect them to Ward once PR #206 brings it (its Bonus.Ward / WardPct). Until then nothing applies them.</summary>

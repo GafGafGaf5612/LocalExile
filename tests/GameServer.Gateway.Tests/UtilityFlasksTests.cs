@@ -68,7 +68,7 @@ public class UtilityFlasksTests
             ["Granite Flask"] = ("base_physical_damage_reduction_rating 1500 M", 6, 30, 60),
             ["Quicksilver Flask"] = ("base_movement_velocity_+% 40 M", 6, 30, 60),
             ["Amethyst Flask"] = ("base_chaos_damage_resistance_% 35 M", 6.5, 35, 65),
-            ["Quartz Flask"] = ("phase_through_objects 1 U, base_spell_suppression_chance_% 10 M", 6, 30, 60),
+            ["Quartz Flask"] = ("phase_through_objects 1 M, base_spell_suppression_chance_% 10 M", 6, 30, 60),
             ["Jade Flask"] = ("base_evasion_rating 1500 M", 6, 30, 60),
             ["Basalt Flask"] = ("basalt_flask_armour_+%_final 20 M", 8, 40, 60),
             ["Aquamarine Flask"] = ("base_frozen_effect_on_self_+% -60 P", 8, 20, 50),
@@ -113,7 +113,7 @@ public class UtilityFlasksTests
             ["Granite Flask"] = (6, 9.36, "base_physical_damage_reduction_rating 1875"),
             ["Quicksilver Flask"] = (6, 9.36, "base_movement_velocity_+% 50"),
             ["Amethyst Flask"] = (6.5, 10.14, "base_chaos_damage_resistance_% 43"),
-            ["Quartz Flask"] = (6, 9.36, "base_spell_suppression_chance_% 12"),
+            ["Quartz Flask"] = (6, 9.36, "phase_through_objects 1, base_spell_suppression_chance_% 12"),
             ["Jade Flask"] = (6, 9.36, "base_evasion_rating 1875"),
             ["Basalt Flask"] = (8, 12.48, "basalt_flask_armour_+%_final 25"),
             ["Aquamarine Flask"] = (8, 12.48, "base_frozen_effect_on_self_+% -75"),
@@ -188,18 +188,45 @@ public class UtilityFlasksTests
     [Fact]
     public void Quality_and_duration_multiply_and_flask_effect_scales_the_stats()
     {
-        var u = Utility(("base_movement_velocity_+%", 40), ("phase_through_objects", 1));
+        var u = Utility(("base_movement_velocity_+%", 40), ("phase_through_objects", 1), ("not_a_flask_stat", 5));
 
         var plain = UtilityFlasks.For(u, Flask(), new Dictionary<string, int>(), None);
         Assert.Equal(6.0, plain.Seconds, 6);
-        Assert.Equal([("base_movement_velocity_+%", 40)], Plain(plain.Stats));
+        Assert.Equal([("base_movement_velocity_+%", 40), ("phase_through_objects", 1)], Plain(plain.Stats));   // unsupported ones left out
 
         // Path of Building Item.lua: base × (1 + increased) × (1 + quality) × (1 + more).
         Assert.Equal(7.2, UtilityFlasks.For(u, Flask(quality: 20), new Dictionary<string, int>(), None).Seconds, 6);
         Assert.Equal(6 * 1.3 * 1.2, UtilityFlasks.For(u, Flask(quality: 20), new Dictionary<string, int> { ["local_flask_duration_+%"] = 30 }, None).Seconds, 6);
         var tradeOff = UtilityFlasks.For(u, Flask(), new Dictionary<string, int> { ["local_flask_duration_+%"] = -33, ["local_flask_effect_+%"] = 25 }, None);
         Assert.Equal(4.02, tradeOff.Seconds, 6);
-        Assert.Equal([("base_movement_velocity_+%", 50)], Plain(tradeOff.Stats));
+        Assert.Equal([("base_movement_velocity_+%", 50), ("phase_through_objects", 1)], Plain(tradeOff.Stats));
+        // Reduced effect does not take a flag away.
+        var weaker = UtilityFlasks.For(u, Flask(), new Dictionary<string, int> { ["local_flask_effect_+%"] = -25 }, None);
+        Assert.Equal([("base_movement_velocity_+%", 30), ("phase_through_objects", 1)], Plain(weaker.Stats));
+    }
+
+    [Fact]
+    public void Quartz_makes_the_player_phase_and_the_client_reads_the_virtual_stat()
+    {
+        var quartz = UtilityFlasks.For(Of("Quartz Flask")!, Flask(), new Dictionary<string, int>(), None).Stats.Select(s => (s.Stat, s.Value)).ToList();
+        Assert.True(UtilityFlasks.Phasing(quartz));
+        Assert.False(UtilityFlasks.Phasing([("base_movement_velocity_+%", 40)]));
+        var names = StatNames.Value;
+        Assert.Contains(("virtual_phase_through_objects", 1), UtilityFlasks.RawStats(quartz, names).Select(r => (names.Name(r.Key), r.Value)));
+        Assert.Equal(10, UtilityFlasks.Apply(CharacterStats.Bonus.None, quartz).SpellSuppressionChance);
+    }
+
+    [Fact]
+    public void A_phasing_player_walks_through_monsters_but_not_npcs()
+    {
+        var conn = Connection();
+        conn.SetBlocker(0x2100, 30, 30, ClientState.NpcBlockerSize);
+        var variety = new MonsterCatalog.Variety(0, "Metadata/Monsters/Test", "test", "Test", null, null);
+        lock (conn.Monsters)
+            conn.Monsters[0x3000] = new SpawnedMonster("m", new GameServer.Core.World.WalkEstimator(50, 50, 8), 10, 1, 100) { Variety = variety };
+        Assert.Equal(2, conn.Blockers.Count);
+        conn.Phasing = true;
+        Assert.Equal((30, 30), (Assert.Single(conn.Blockers).X, conn.Blockers[0].Y));
     }
 
     [Fact]
