@@ -307,7 +307,7 @@ Generic and applicable typed inputs are summed as signed `long` values before th
 large positive and negative inputs may cancel before clamping.
 Native checks recorded below belong to the original PR head `8c4c62d`.
 The shared half-up midpoint and resolved stack need a new native check; automated coverage establishes the contract.
-Signed increases are summed in 64 bits before their final stored percentage is clamped to the integer range.
+Signed increases stay in 64 bits through the pool and player-plus-skill sum; only final native values are bounded.
 Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
 Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.
 Twelve real-client checks used a fresh synthetic character and read the client's received stat values.

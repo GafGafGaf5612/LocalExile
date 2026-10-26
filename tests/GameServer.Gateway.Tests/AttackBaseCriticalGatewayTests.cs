@@ -100,14 +100,14 @@ public sealed class AttackBaseCriticalGatewayTests : IDisposable
     }
 
     [Theory]
-    [InlineData(int.MaxValue, 0, 0, 50, int.MaxValue, int.MaxValue, 10000, 10000)]
-    [InlineData(int.MaxValue, 0, 50, 0, int.MaxValue, int.MaxValue, 10000, 10000)]
-    [InlineData(int.MinValue, 0, -50, -50, int.MinValue, int.MinValue, 0, 0)]
+    [InlineData(int.MaxValue, 0, 0, 50, int.MaxValue, (long)int.MaxValue + 50, 10000, 10000)]
+    [InlineData(int.MaxValue, 0, 50, 0, (long)int.MaxValue + 50, int.MaxValue, 10000, 10000)]
+    [InlineData(int.MinValue, 0, -50, -50, (long)int.MinValue - 50, (long)int.MinValue - 50, 0, 0)]
     [InlineData(int.MaxValue, 50, -int.MaxValue, int.MinValue, 50, -1, 1350, 495)]
     [InlineData(int.MinValue, -50, int.MaxValue, int.MaxValue, -51, -1, 441, 495)]
     [InlineData(100, 0, 50, 50, 150, 150, 2250, 1250)]
     public void Actual_pools_sum_signed_critical_increases_before_clamping(int generic, int attack, int wand, int spell,
-        int attackIncrease, int spellIncrease, int attackChance, int spellChance)
+        long attackIncrease, long spellIncrease, int attackChance, int spellChance)
     {
         var conn = Character(true);
         Set(conn, AttackBaseCriticalStrike.WeaponOverrideStat, 900);

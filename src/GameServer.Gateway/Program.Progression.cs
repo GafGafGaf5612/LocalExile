@@ -133,8 +133,8 @@ partial class Program
             Evasion = bonus.Evasion + aura.Evasion,
             ArmourMorePct = aura.ArmourMorePct,
             EvasionMorePct = aura.EvasionMorePct,
-            CriticalStrikeChancePct = (int)Math.Clamp(attackIncrease, int.MinValue, int.MaxValue),
-            SpellCriticalStrikeChancePct = (int)Math.Clamp(spellIncrease, int.MinValue, int.MaxValue),
+            CriticalStrikeChancePct = attackIncrease,
+            SpellCriticalStrikeChancePct = spellIncrease,
             AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
             MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
         };
@@ -156,9 +156,9 @@ partial class Program
             // Blind Prophet's Sightless) replaces the armed weapon's base, already with its local mods, and unarmed
             // melee uses its own Behemoth base. Neither base is a spell value; the spell route stays on SpellCriticalStrike.
             AttackCriticalStrikeChance = AttackBaseCriticalStrike.Chance(!activeWeapon.Unarmed,
-                activeWeapon.Critical, attackIncrease, RawCritical),
+                activeWeapon.Critical, pools.CriticalStrikeChancePct, RawCritical),
             SpellCriticalStrikeChance = SpellCriticalStrike.Chance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
-                RawCritical, playerIncrease: spellIncrease)
+                RawCritical, playerIncrease: pools.SpellCriticalStrikeChancePct)
         };
         int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
         int rawAttack = pools.BlockChanceUncapped + shieldBlock;
@@ -244,9 +244,8 @@ partial class Program
         int attackSpeedMore = (int)Math.Round(((weapons.DualWield || weapons.Unarmed ? 1.10 : 1.0) * (1 + weapons.LocalAttackSpeedPct / 100.0) - 1) * 100);
         // Unconditional critical strike chance and multiplier passives: generic, attack/melee/weapon-shape and spell.
         // Timed or enemy-state conditions are not modelled.
-        int criticalChance = AttackBaseCriticalStrike.IncreasedPct(weapons, Get);
-        int spellCriticalChance = (int)Math.Clamp((long)Get("critical_strike_chance_+%")
-            + Get("spell_critical_strike_chance_+%"), int.MinValue, int.MaxValue);
+        long criticalChance = AttackBaseCriticalStrike.IncreasedSum(weapons, name => Get(name));
+        long spellCriticalChance = (long)Get("critical_strike_chance_+%") + Get("spell_critical_strike_chance_+%");
         int criticalMultiplier = Get("base_critical_strike_multiplier_+")
             + (weapons.Melee ? Get("melee_critical_strike_multiplier_+") + Get("melee_weapon_critical_strike_multiplier_+") : 0)
             + (weapons.OneHandMelee ? Get("one_handed_melee_critical_strike_multiplier_+") : 0)

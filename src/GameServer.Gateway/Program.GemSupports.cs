@@ -130,11 +130,12 @@ partial class Program
             var weapon = WeaponProfileFor(conn, activeSet: true);
             int basis = AttackBaseCriticalStrike.OfMainHand(!weapon.Unarmed, weapon.Critical, Player);
             int totalBase = (int)Math.Clamp((long)basis + Own("additional_base_critical_strike_chance"), int.MinValue, int.MaxValue);
-            long increased = AttackBaseCriticalStrike.IncreasedSum(weapon, name => (long)Player(name) + Own(name));
+            long increased = conn.Pools.CriticalStrikeChancePct
+                + AttackBaseCriticalStrike.IncreasedSum(weapon, name => Own(name));
             return GameServer.Core.World.DamageModel.CriticalStrikeChancePerMyriad(totalBase, increased);
         }
         return SpellCriticalStrike.Chance((Skills.SpellCritChance(gem.Effect, gem.Level) ?? 0)
-            + Own("additional_base_critical_strike_chance"), Stats, player, gem.Stats);
+            + Own("additional_base_critical_strike_chance"), Stats, player, gem.Stats, conn.Pools.SpellCriticalStrikeChancePct);
     }
 
     static (int Flat, int Percent)? SupportedReservation(ClientState conn, ushort skillId)

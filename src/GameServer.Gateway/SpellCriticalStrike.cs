@@ -18,9 +18,9 @@ static class SpellCriticalStrike
     }
 
     public static int Chance(int? basePerMyriad, StatCatalog stats, IReadOnlyDictionary<uint, int> player,
-        IReadOnlyDictionary<uint, int> skill) => Chance(basePerMyriad,
+        IReadOnlyDictionary<uint, int> skill, long? playerIncrease = null) => Chance(basePerMyriad,
             name => stats.Key(name) is uint k ? player.GetValueOrDefault(k) : 0,
-            name => stats.Key(name) is uint k ? skill.GetValueOrDefault(k) : 0);
+            name => stats.Key(name) is uint k ? skill.GetValueOrDefault(k) : 0, playerIncrease);
 
     public static bool Hits(int chance, int roll) => roll is >= 0 and < RollSize && roll < Math.Clamp(chance, 0, RollSize);
 }
