@@ -137,12 +137,13 @@ disconnects with code 0xf through `0x142149ca0`, which sets state 1) and when th
   4 more bytes) every 100–500 ms, then also 0x31 (skill/inventory actions) and 0xc7 (queued u16 + u8) when it has
   them. Seen live: `001B 00 702FB779`, `001B 00 0324B665`, ….
 
-C→S messages seen so far: 0x0F, 0x0E (plaintext), 0x7d, 0x1b, 0x25, 0x015a, 0x01ef, 0x0099, 0x004e. The Gateway answers
+C→S messages seen so far: 0x0F, 0x0E (plaintext), 0x7d, 0x1b, 0x25, 0x015a, 0x01ef, 0x0099, 0x004e, 0x0134
+(chat channel join, [10](10-chat-and-commands.md) §2), 0x0129. The Gateway answers
 every 0x1b with 0x1c, whose u32 must carry idle HNC bytes: see [07](07-latency-visibility-movement.md).
 
 ## 8. Our Gateway
 
-`src/GameServer.Gateway/Program.cs`, per connection:
+`src/GameServer.Gateway/Program.Connection.cs` (`HandleAsync`), per connection. `Program` is one partial class split by feature: `Program.cs` holds the startup and the shared constants and catalogs, `Program.<Feature>.cs` the handlers (`Messages` the C→S dispatch, `Combat`, `Monsters`, `Items`, `Stash`, `Npcs`, `Travel`, `Portals`, `Commands` …), `ClientState.cs` the per-connection state:
 
 1. read until `TryReadOpening` succeeds (30 bytes) → `keyring.Ciphers(opening.Ticket)`
 2. send `00 11` plaintext

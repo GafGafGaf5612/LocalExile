@@ -20,7 +20,21 @@ static class SkillArea
         "support_concentrated_effect_skill_area_of_effect_+%_final", "skill_area_of_effect_+%_final_from_skill_specific_stat",
     ];
 
-    /// <summary>The combined increased-area input before more multipliers.</summary>
+    /// <summary>The base form of increased area: the player's goes into the panel total <c>skill_area_of_effect_+%</c>
+    /// (PanelStats), a skill's own (gem quality) stays in it.</summary>
+    public const string BaseIncreased = "base_skill_area_of_effect_+%";
+
+    /// <summary>The player's final stats without the base form of increased area (<paramref name="baseKey"/>), which
+    /// the panel total already counts: a skill's own base can then be laid over them and <see cref="Increased"/>
+    /// counts each source once.</summary>
+    public static Dictionary<uint, int> WithoutPlayerBase(Dictionary<uint, int> playerFinal, uint? baseKey)
+    {
+        if (baseKey is uint key) playerFinal.Remove(key);
+        return playerFinal;
+    }
+
+    /// <summary>The combined increased-area input before more multipliers: a skill's own base (when the stats hold
+    /// one) plus the player's total, with the spell-only increase for spells.</summary>
     public static int Increased(Func<string, int> get, bool spell) =>
         get("base_skill_area_of_effect_+%") + get("skill_area_of_effect_+%") + (spell ? get("spell_area_of_effect_+%") : 0);
 

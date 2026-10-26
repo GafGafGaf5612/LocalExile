@@ -11,6 +11,7 @@ static class HideoutCatalog
 {
     /// <summary>The first campaign hideout (Hideouts row 0, found in The Dread Thicket): every character's.</summary>
     public const string DefaultArea = "HideoutForest";
+    public const string HeistLockerType = "Metadata/MiscellaneousObjects/Heist/HeistStash_Hideout";
     public const string HorticraftingType = "Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout";
     public const string CraftingBenchType = "Metadata/Terrain/Missions/Hideouts/Objects/HideoutCraftingBench";
 
@@ -30,7 +31,10 @@ static class HideoutCatalog
     }
 
     /// <summary>A doodad of a hideout's decoration, in area grid cells; Rotation in radians (the file's r / 65536 turns).</summary>
-    public sealed record Doodad(string Name, uint Hash, string? Type, string? Model, int X, int Y, float Rotation, int Variation);
+    public sealed record Doodad(string Name, uint Hash, string? Type, string? Model, int X, int Y, float Rotation, int Variation)
+    {
+        public double CollisionRadius { get; init; }
+    }
 
     /// <summary>One hideout: Hash16 is its Hideouts.dat key (the Player component's), AreaHash16 its WorldAreas row's.</summary>
     public sealed record Hideout(int Row, ushort Hash16, string AreaId, ushort AreaHash16, string Name, IReadOnlyList<Doodad> Doodads)
@@ -116,7 +120,11 @@ static class HideoutCatalog
                 var (type, models) = doodadTypes.GetValueOrDefault(hash);
                 string? model = models is { Length: > 0 } ? models[Math.Clamp(fv, 0, models.Length - 1)] : null;
                 doodads.Add(new Doodad(d.GetProperty("name").GetString() ?? "", hash, type, model, d.GetProperty("x").GetInt32(), d.GetProperty("y").GetInt32(),
-                    d.GetProperty("r").GetInt32() / 65536f * 2 * MathF.PI, fv));
+                    d.GetProperty("r").GetInt32() / 65536f * 2 * MathF.PI, fv)
+                {
+                    CollisionRadius = model is not null && doc.RootElement.TryGetProperty("collisionRadii", out var radii)
+                        && radii.TryGetProperty(model, out var radius) ? radius.GetDouble() : 0
+                });
             }
             string area = h.GetProperty("area").GetString() ?? "";
             for (int i = 0; i < doodads.Count; i++)

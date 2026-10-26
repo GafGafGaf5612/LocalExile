@@ -1,4 +1,6 @@
 using System.Text;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 
 namespace Atlas;
@@ -35,9 +37,58 @@ static class HideoutFiles
         {
             note = "Hideouts.dat rows with their area and default decoration (HideoutFile): doodads with MtxTypeGameSpecific hash, grid x/y, rotation r (65536 = a turn), variation fv. scripts/re/atlas hideouts.",
             hideouts = list,
+            collisionRadii = StationaryCollisionRadii(files, root),
         }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
         Console.WriteLine($"{output}: {list.Count} hideouts, {doodads} doodads");
         if (files.Missing.Count > 0) Console.WriteLine($"missing: {string.Join(", ", files.Missing.Keys)}");
+    }
+
+    static Dictionary<string, double> StationaryCollisionRadii(GameFiles files, string root)
+    {
+        using var table = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(root, "data", "tables", "HideoutDoodads.json")));
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        var models = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in table.RootElement.EnumerateArray())
+        {
+            string type = row.GetProperty("InheritsFrom").GetString() ?? "";
+            if (!type.EndsWith("MappingDevice", StringComparison.Ordinal)
+                && !type.EndsWith("HideoutCraftingBench", StringComparison.Ordinal)) continue;
+            foreach (var model in row.GetProperty("Variation_AOFiles").EnumerateArray()) models.Add(model.GetString() ?? "");
+        }
+        using var types = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(root, "data", "object-types.json")));
+        foreach (var type in types.RootElement.GetProperty("types").EnumerateArray())
+            if (type.GetProperty("components").EnumerateArray().Any(c => c.GetString() == "NPC")
+                && type.TryGetProperty("positioned", out var p) && p.TryGetProperty("static", out var isStatic)
+                && isStatic.GetString() == "true" && type.TryGetProperty("animated_object", out var model)
+                && model.GetString() is { Length: > 0 } path) models.Add(path);
+        double Radius(string path, HashSet<string> chain)
+        {
+            if (!chain.Add(path) || files.Bytes(path) is not { } bytes) return 0;
+            string text = bytes.AsSpan().StartsWith(Encoding.Unicode.Preamble)
+                ? Encoding.Unicode.GetString(bytes) : Encoding.UTF8.GetString(bytes);
+            double radius = 0;
+            foreach (Match parent in Regex.Matches(text, "extends\\s*\"([^\"]+)\""))
+            {
+                string name = parent.Groups[1].Value;
+                if (name != "nothing") radius = Math.Max(radius, Radius(name.EndsWith(".ao") ? name : name + ".ao", chain));
+            }
+            foreach (Match match in Regex.Matches(text, "walk_(tri|circle)\\s*=\\s*\"([^\"]+)\""))
+            {
+                var values = match.Groups[2].Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(v => double.Parse(v, CultureInfo.InvariantCulture)).ToArray();
+                int step = match.Groups[1].Value == "circle" ? 3 : 2;
+                for (int i = 0; i + step - 1 < values.Length; i += step)
+                    radius = Math.Max(radius, Math.Sqrt(values[i] * values[i] + values[i + 1] * values[i + 1])
+                        + (step == 3 ? Math.Max(0, values[i + 2]) : 0));
+            }
+            return radius;
+        }
+        foreach (string path in models)
+        {
+            double radius = Radius(path, new(StringComparer.Ordinal));
+            if (radius > 0 && double.IsFinite(radius)) result[path] = radius;
+        }
+        return result;
     }
 
     public sealed record Doodad(string Name, uint Hash, int X, int Y, int R, int Fv);

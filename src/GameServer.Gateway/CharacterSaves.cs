@@ -24,7 +24,7 @@ static class CharacterSaves
     public sealed record SavedItem(uint Type, byte ItemLevel = 1, byte Quality = 0, int Charges = 0, ushort StackSize = 1,
         List<SavedSocket>? Sockets = null, List<byte>? Links = null, int GemExperience = 0,
         ItemRarity Rarity = ItemRarity.Normal, bool Identified = true, List<SavedMod>? Mods = null, List<uint>? Name = null,
-        int GemVariant = 0, bool Corrupted = false, byte Fractured = 0, bool Mirrored = false, byte GemFlags = 0);
+        int GemVariant = 0, bool Corrupted = false, byte Fractured = 0, bool Mirrored = false, byte GemFlags = 0, ushort? Visual = null);
 
     public sealed record SavedPlacement(uint Id, byte X, byte Y, SavedItem Item);
 
@@ -48,13 +48,22 @@ static class CharacterSaves
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
         SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null,
-        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null)
+        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null, OpeningTutorial? Tutorial = null,
+        Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
     }
 
     public static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
+
+    /// <summary>Deferred class gems and progress for new characters. Null preserves older pre-granted starter kits.</summary>
+    public sealed record OpeningTutorial(SavedItem SkillGem, SavedItem SupportGem,
+        bool Talked = false, bool ZombieKilled = false, bool ChestOpened = false, bool SkillClaimed = false, bool SupportClaimed = false,
+        string? Id = null);
+    public static void ChangeTutorial(string character, Func<OpeningTutorial, OpeningTutorial> change) =>
+        Update(character, s => s.Tutorial is { } tutorial ? s with { Tutorial = change(tutorial) } : s);
+    public static void SetTutorial(string character, OpeningTutorial tutorial) => Update(character, s => s with { Tutorial = tutorial });
 
     /// <summary>The character's save, or null when it has none, with the experience gained since it was last saved
     /// (<see cref="AddExperience"/>): every write that loads it saves that too. A save that can't be read throws
@@ -68,7 +77,21 @@ static class CharacterSaves
     public static void Write(string character, Save save) =>
         Saves.Put(SaveDatabase.Table.Characters, character, JsonSerializer.Serialize(save, Opts));
 
+    public static void SetHideoutPlacement(string character, string area, string key, HideoutPlacement placement) =>
+        Update(character, save =>
+        {
+            var areas = save.HideoutPlacements is null
+                ? new Dictionary<string, Dictionary<string, HideoutPlacement>>() : new(save.HideoutPlacements);
+            var positions = areas.TryGetValue(area, out var prior)
+                ? new Dictionary<string, HideoutPlacement>(prior) : [];
+            positions[key] = placement;
+            areas[area] = positions;
+            return save with { HideoutPlacements = areas };
+        });
+
     public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
+
+    public static void ClearActiveAuras(string character) => Update(character, save => save with { ActiveAuras = [] });
 
     /// <summary>Persist aura intent by stable GrantedEffects Id, never by a connection's skill or buff id.</summary>
     public static void SetAuraActive(string character, string effect, bool active) => Update(character, save =>
@@ -252,7 +275,7 @@ static class CharacterSaves
         i.Sockets.Count == 0 ? null : [.. i.Sockets.Select(s => new SavedSocket(s.Colour, s.Gem is null ? null : ToSaved(s.Gem, mods)))],
         i.Links is null ? null : [.. i.Links], i.GemExperience, i.Rarity, i.Identified,
         [.. i.Mods.Select(m => new SavedMod(mods?.ByHash(m.Hash)?.Id ?? $"0x{m.Hash:x4}", m.Section, [.. m.Values]))],
-        i.NameWords.Count == 0 ? null : [.. i.NameWords], i.GemVariant, i.Corrupted, i.FracturedCount, i.Mirrored, i.GemFlags);
+        i.NameWords.Count == 0 ? null : [.. i.NameWords], i.GemVariant, i.Corrupted, i.FracturedCount, i.Mirrored, i.GemFlags, i.Rarity == ItemRarity.Unique ? i.VisualIdentity : null);
 
     /// <summary>The item again, with its socketed gems and mods. A type, gem or mod the game data doesn't know throws
     /// <see cref="UnknownSavedItemException"/>: dropping it would lose it at the next save.</summary>
@@ -260,11 +283,15 @@ static class CharacterSaves
     {
         if (catalog.ByHash(s.Type) is not { } t)
             throw new UnknownSavedItemException($"item type 0x{s.Type:x8}" + (catalog.Error is { } e ? $" ({e})" : ""));
+        bool emptyResonator = ItemCatalog.ResonatorSockets(t) > 0 && (s.Sockets ?? []).All(k => k.Gem is null);
+        if (emptyResonator) t = catalog.EmptyResonatorType(t);
         return ItemCatalog.Create(t) with
         {
+            VisualIdentity = s.Visual ?? t.VisualIdentity,
             ItemLevel = s.ItemLevel, Quality = s.Quality, Charges = s.Charges, StackSize = s.StackSize, GemExperience = s.GemExperience, GemVariant = s.GemVariant, GemFlags = s.GemFlags,
-            Sockets = [.. (s.Sockets ?? []).Select(k => new ItemSocket(k.Colour, k.Gem is null ? null : FromSaved(k.Gem, catalog)))],
-            Links = s.Links, Rarity = s.Rarity, Identified = s.Identified, NameWords = s.Name ?? [], Corrupted = s.Corrupted, FracturedCount = s.Fractured, Mirrored = s.Mirrored,
+            Sockets = emptyResonator ? ItemCatalog.ResonatorSocketList(t)
+                : [.. (s.Sockets ?? []).Select(k => new ItemSocket(k.Colour, k.Gem is null ? null : FromSaved(k.Gem, catalog)))],
+            Links = emptyResonator ? null : s.Links, Rarity = s.Rarity, Identified = s.Identified, NameWords = s.Name ?? [], Corrupted = s.Corrupted, FracturedCount = s.Fractured, Mirrored = s.Mirrored,
         } is var item && s.Mods is null ? item : item with { Mods = [.. s.Mods.Select(m => FromSaved(m, catalog.Mods))] };
     }
 

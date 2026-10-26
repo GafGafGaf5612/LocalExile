@@ -33,7 +33,7 @@ sealed class InstanceStore(TimeProvider clock, TimeSpan lifetime)
     }
 }
 
-sealed class InstanceState
+sealed partial class InstanceState
 {
     public InstanceGround Ground { get; } = new();
     /// <summary>The living monsters as the last connection left them (issue #12), or null before the first connection
@@ -62,6 +62,30 @@ sealed class InstanceState
     {
         lock (_startWeapons) return _startWeapons.TryGetValue(character, out var placed) && placed.Id == id;
     }
+
+    readonly HashSet<(int X, int Y)> _openedChests = [];
+
+    /// <summary>Opens the quest chest standing at this cell (a Rhoa Nest): true the first time in this instance.</summary>
+    public bool OpenChest(int x, int y)
+    {
+        lock (_openedChests) return _openedChests.Add((x, y));
+    }
+
+    public bool ChestOpened(int x, int y)
+    {
+        lock (_openedChests) return _openedChests.Contains((x, y));
+    }
+
+    public uint? PlaceTutorialItem(string key, WorldItemObject item)
+    {
+        lock (_startWeapons)
+        {
+            if (_startWeapons.TryGetValue(key, out var placed) && Ground.Get(placed.Id) is not null) return null;
+            uint id = Ground.Add(item);
+            _startWeapons[key] = (id, item.Item);
+            return id;
+        }
+    }
 }
 
 /// <summary>An instance's items on the ground. Their object ids come from their own range, so they stay the same for every
@@ -71,6 +95,11 @@ sealed class InstanceGround
     public const uint FirstItemId = 0x100000;
     readonly Dictionary<uint, WorldItemObject> _items = [];
     uint _nextId = FirstItemId;
+
+    public void Restore(uint id, WorldItemObject item)
+    {
+        lock (_items) _items[id] = item;
+    }
 
     public uint Add(WorldItemObject item)
     {
@@ -110,12 +139,22 @@ sealed class InstanceGround
 /// <summary>A living monster of an instance, as it was when the last connection left: re-created there with this life on
 /// the next entry, idle until the player comes in range. Dead monsters are not kept, so they stay dead.</summary>
 // shortcut: a /spawn_mob name is not kept (packs have none), add it when named monsters matter.
-sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life)
+// Unrisen: a monster that rises from the ground (MonsterEmerge.cs) and had not risen yet: re-created waiting.
+sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life, bool Unrisen = false)
 {
-    public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now) =>
-        [.. monsters.Where(m => !m.Dead && m.Variety is not null).Select(m =>
+    /// <summary>Its mods as rolled (MonsterMods.cs): the same affixes, values and rare name on the next entry.</summary>
+    public MonsterModSet Mods { get; init; } = MonsterModSet.None;
+
+    /// <summary>The living monsters: <paramref name="monsters"/> (the connection's) and the ones waiting to rise
+    /// (<paramref name="unrisen"/>: the buried ones and the lurking ones, which are among the connection's too).</summary>
+    public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now, IEnumerable<SpawnedMonster>? unrisen = null)
+    {
+        var waiting = new HashSet<SpawnedMonster>(unrisen ?? [], ReferenceEqualityComparer.Instance);
+        var all = monsters.ToList();
+        return [.. all.Concat(waiting.Where(m => !all.Contains(m))).Where(m => !m.Dead && m.Variety is not null).Select(m =>
         {
             var (x, y) = m.Walk.Position(now);
-            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life);
+            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life, waiting.Contains(m)) { Mods = m.Mods };
         })];
+    }
 }

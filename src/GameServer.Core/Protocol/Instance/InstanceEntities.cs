@@ -57,7 +57,8 @@ public static class InstanceEntities
     /// <summary>
     /// S→C 0x1c1 (world group, class 0x1435ddb78, read 0x141fdf870; world handler case 0x1c1 → the object's Buffs
     /// component, 0x141e11720): object header, u16 buff instance (+0x20, what 0x1c2 removes), u16 BuffDefinitions row,
-    /// u32 +0x64 (the source object), u16 +0x60 (the source skill), u8 flags (bit0 u8 u32 u8 u16, bit1 u32 +0x68, bit2
+    /// u32 +0x64 (the source object), u16 +0x60 (the source skill; a flask buff's flask-bar cell), u8 flags (bit0 u8 u32
+    /// u8 u16, bit1 +0x68: an f32 duration in seconds, default +infinity, so <paramref name="u68"/> takes its bits, bit2
     /// u16 stacks +0x70 (default 1), bit3 u16 ActionTypes HASH16 +0x74 then u16 skill id +0x72 (the active icon),
     /// bit4 u16 BuffVisuals override (default the row's), bit5 u8 +0x80
     /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32
@@ -67,7 +68,7 @@ public static class InstanceEntities
     /// </summary>
     public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
         IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null, ushort? visual = null,
-        (ushort Id, ushort Action)? activeSkill = null, bool auraSource = false, byte? displayState = null)
+        (ushort Id, ushort Action)? activeSkill = null, bool auraSource = false, byte? displayState = null, ushort? stacks = null)
     {
         // flags bit1: u32 +0x68; bit7: f32 +0x6c (read right after bit1's field); bit4: u16 BE a BuffVisuals row in place
         // of the BuffDefinitions row's (+0x38; read after bits 2 and 3, a row past the table keeps none): a skill
@@ -75,7 +76,7 @@ public static class InstanceEntities
         // Bit3 associates a skill buff with the skill-bar icon: ActionTypes HASH16 first, then the server skill id.
         // SourceSkill alone identifies the caster's source and does not enable AuraFrame/AuraCircle.
         byte flags = (byte)((u68 is null ? 0 : 0x02) | (f6c is null ? 0 : 0x80) | (visual is null ? 0 : 0x10)
-            | (activeSkill is null ? 0 : 0x08) | (auraSource ? 0x01 : 0) | (displayState is null ? 0 : 0x20));
+            | (activeSkill is null ? 0 : 0x08) | (auraSource ? 0x01 : 0) | (displayState is null ? 0 : 0x20) | (stacks is null ? 0 : 0x04));
         var w = new LoginWriter().U16(AddBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).U16(buffRow).U32(sourceId).U16(sourceSkill).U8(flags);
         // Nonzero +0x76 becomes Buff +0x30: Render selects EPKFiles2 (m_AuraEffectPack), rather than
         // EPKFiles1 (m_EffectPack). All four bit0 fields must precede the remaining optional fields.
@@ -83,6 +84,7 @@ public static class InstanceEntities
         if (auraSource) w.U8(1).U32(0).U8(0).U16(0);
         if (u68 is { } a) w.U32(a);
         if (f6c is { } f) w.U32(BitConverter.SingleToUInt32Bits(f));
+        if (stacks is { } n) w.U16(n);   // bit2: the stacks (charges) count, after bit7's field and before bit3's
         if (activeSkill is { } skill) w.U16(skill.Action).U16(skill.Id);
         if (visual is { } v) w.U16(v);
         if (displayState is { } state) w.U8(state);
@@ -234,6 +236,25 @@ public static class InstanceEntities
         foreach (var s in skills) PlayerObject.WriteSkillRecord(w, s);
         foreach (var id in removed) w.U16(id);
         return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.U8(0).U8(0).ToArray());
+    }
+
+    /// <summary>Actor 0x40's cooldown trailer (0x142197d24..0x142197fd8), without replacing any skill.
+    /// Existing entries are replaced, not consumed/appended: remaining and total BASE seconds, recovery rate, flags.
+    /// A zero remaining budget clears the entry vector. Native skill base duration and cooldown group stay intact.</summary>
+    public static byte[] PlayerSingleUseCooldowns(uint playerId, IReadOnlyList<SingleUseCooldownUpdate> cooldowns)
+    {
+        var w = new BlobWriter().U8(0x40).U8(0).U8(0).U8(0).U32((uint)cooldowns.Count);
+        foreach (var c in cooldowns)
+        {
+            if (!float.IsFinite(c.RemainingBaseSeconds) || c.RemainingBaseSeconds < 0
+                || !float.IsFinite(c.TotalBaseSeconds) || c.TotalBaseSeconds <= 0
+                || !float.IsFinite(c.RecoveryRate) || c.RecoveryRate < 0)
+                throw new ArgumentOutOfRangeException(nameof(cooldowns));
+            w.U16(c.SkillId).U32(c.RemainingBaseSeconds > 0 ? 1u : 0u);
+            if (c.RemainingBaseSeconds > 0)
+                w.F32(c.RemainingBaseSeconds).F32(c.TotalBaseSeconds).F32(c.RecoveryRate).U32(0xffffffff);
+        }
+        return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.ToArray());
     }
 
     /// <summary>
@@ -503,13 +524,12 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 // flags; flags1 0x02 + (hidden 0, shown 1) as for the player.
                 case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(Team).U8(0).U8(0x02).U8(0).U8(1); break;
                 case "Stats": w.Stats(Stats).U32(0).U32(0).U8(0); break;
-                // base magic properties (0x142201d70): u16 flags (bits 0-2 rarity → +0x7c, 0 = normal; bit 3 identified
-                // → +0x78, which gates the bit 7 / bit 8 / bit 5 sections, all off here), u8 +0x7a; then the own flags.
-                // Without bit 3 the client tags the monster "Unidentified". Identified, bit 7 (0x80) adds a name: u32
-                // UTF-16 unit count + units (→ +0x18), what rare and unique monsters show.
+                // base magic properties (0x142201d70, Instance.MagicProperties): u16 flags (bits 0-2 rarity → +0x7c,
+                // 0 = normal; bit 3 identified → +0x78, which gates the name and the explicit list), u8 +0x7a, the mod
+                // lists; then the own flags. Without bit 3 the client tags the monster "Unidentified". Bit 7 (0x80)
+                // adds a custom name: u32 UTF-16 unit count + units (→ +0x18); bit 8 a rare name from Words.dat keys.
                 case "ObjectMagicProperties":
-                    w.U16((ushort)((ushort)Rarity | Identified | (Name is null ? 0 : CustomName))).U8(0);
-                    if (Name is not null) w.WStr32(Name);
+                    MagicProperties.Write(w, (byte)Rarity, identified: true, Mods, NameWords, Name);
                     w.U8(0);
                     break;
                 case "Buffs": w.U16(0); break;
@@ -527,7 +547,8 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                     else w.U8(0).U8(0);
                     break;
                 // 0x1421c24b0: u8 = state (low 7 bits, → +0x120) | bit 7 (+0x122, "transitioning"). States run 1..num_states
-                // (.ot Transitionable num_states, default 1); num_states = fully transitioned (create_transitioned).
+                // (.ot Transitionable num_states, default 2); num_states = fully transitioned (create_transitioned).
+                // Emerge monsters are created in 1, buried (Gateway MonsterEmerge).
                 // State 0 is invalid: the post-create slot 0x1421c26f0 runs event [(state − 1) × 0x18] and crashed in the
                 // event interpreter (0x141ded7b9).
                 case "Transitionable": w.U8((byte)(TransitionState & 0x7f)); break;
@@ -545,9 +566,13 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 
     private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
 
+    /// <summary>The monster's mods in ObjectMagicProperties' lists (Gateway MonsterModCatalog): the rarity's own mods
+    /// and the rolled affixes, one value per stat of each Mods.dat row.</summary>
+    public IReadOnlyList<ItemMod> Mods { get; init; } = [];
 
-    /// <summary>ObjectMagicProperties flags bit 3: identified (+0x78); bit 7: a custom name follows.</summary>
-    const ushort Identified = 0x08, CustomName = 0x80;
+    /// <summary>A rare monster's name: Words.dat HASH32 keys (flags bit 8), prefix then suffix; a custom
+    /// <see cref="Name"/> wins.</summary>
+    public IReadOnlyList<uint> NameWords { get; init; } = [];
 }
 
 /// <summary>
@@ -594,37 +619,42 @@ public sealed record PetObject(int GridX, int GridY, uint Owner, IReadOnlyList<s
 }
 
 /// <summary>
-/// A projectile (experimental): a 0x2b9 object of a Projectiles.dat type (`Metadata/Projectiles/Fireball`, registered from
-/// the table like MonsterVarieties rows), whose .ot chain `Metadata/Projectiles/Projectile` deserializes Positioned,
-/// BaseEvents, Animated and Projectile; BaseEvents and Projectile (vtable 0x1435a0d10, a 0x20-byte component) read
-/// nothing. The Gateway moves it with S→C 0x1ba (the move does run: live 2026-10-18).
-/// <para><see cref="Direction"/>, when set, goes in Positioned's f1 0x04 block (4 × f32 → +0x2d8..+0x2e4, zero by default:
-/// the writer 0x141e2fdc0 sets the flag only when +0x2d8 or +0x2dc is non-zero). Not the flight direction: (dx, dy, 0, 0)
-/// put the fireball under the ground (live 2026-10-18); without the block its model points down.</para>
-/// <para><see cref="Height"/>, when set, is a terrain height (steps of 7.8125, up is positive, as 0x141d84b00 and S→C
-/// 0x1ba use them) sent as Positioned's fixed height (f0 0x04: i32 +0x290 = z / 7.8125, f32 +0x2b4 = world z, as the area
-/// transitions send it). World z points down, so z = −height × 7.8125 (the client's terrain z, 0x141e35800): sending
-/// +height put the fireball under raised ground (live 2026-10-18).</para>
+/// A skill's projectile (a Projectiles.dat type, e.g. `Metadata/Projectiles/BurningArrow`): the object the live server
+/// creates for a shot. Frida 2026-10-25 on a real Burning Arrow (player object dump of the client's CreateObject): the
+/// object has three components ? Positioned, Animated, BaseEvents ? and its whole blob is 28 bytes:
+/// <code>
+/// 02 00                     object flags 0x02, base data 0
+/// &lt;i32 x&gt;&lt;i32 y&gt;&lt;f32 rotation&gt;&lt;u16 0&gt;   Positioned
+/// 04 00                     f0 0x04: a fixed height follows; f1 0: no direction floats, no extra visibility bytes
+/// &lt;i32 -z/7.8125&gt;&lt;f32 z&gt;
+/// 40                        Animated: the projectile's own art (Projectiles.dat AOFiles), flags 0x40
+/// 00                        tasks
+/// </code>
+/// Both height fields are the same world z in two forms: the f32 is z itself and the i32 is -z / 7.8125. World z
+/// points <b>down</b>, and z is an absolute world coordinate (the live arrow's i32 -5 / f32 +39.0625 was z = +39.0625;
+/// its player stood at z = +78.125, so the arrow was 5 steps above the feet). On raised ground z is negative: the
+/// hideout's player at z = -78.37 gets the torso at z = -117.1875, i.e. i32 +15 / f32 -117.1875.
+/// Height takes z / 7.8125; the 0x1ba endpoint instead takes the encoded i32 marker (+15 in that example),
+/// and the native move negates it to recover world z. 0x1b7 copies the encoded marker and float pair directly.
+/// <see cref="AnimatedComponentIndex"/> is the index the impact's animation update (0x2ba) must use.
 /// </summary>
 public sealed record ProjectileObject(string TypePath, int GridX, int GridY, float Rotation = 0, ushort Team = 0,
-    (float X, float Y, float Z, float W)? Direction = null, int? Height = null)
+    int? Height = null)
 {
-    /// <summary>Animated in the object's component order (Positioned, BaseEvents, Animated, Projectile, Render).</summary>
-    public const byte AnimatedComponentIndex = 2;
+    /// <summary>Animated in the object's component order (Positioned, Animated, BaseEvents).</summary>
+    public const byte AnimatedComponentIndex = 1;
 
     public byte[] Blob()
     {
         var w = new BlobWriter();
-        w.U8(0).U8(0);                                                              // object flags, base data entry count
-        // Positioned: x, y, rotation, team, f0 (0x04 fixed height), f1 (0x02 visibility, 0x04 the four floats), then the
-        // f1 0x04 block, the f0 0x04 height (read in that order, before f0 0x40, f1 0x01 and f1 0x02), then visibility:
-        // shown (as monsters).
-        w.I32(GridX).I32(GridY).F32(Rotation).U16(Team).U8((byte)(Height is null ? 0 : 0x04)).U8((byte)(Direction is null ? 0x02 : 0x06));
-        if (Direction is { } d) w.F32(d.X).F32(d.Y).F32(d.Z).F32(d.W);
-        if (Height is int h) w.I32(-h).F32(-h * 7.8125f);                         // z points down: up is negative
-        w.U8(0).U8(1);
-        w.U8(0);                                                                    // Animated: the type's own
-        w.U8(0);                                                                    // tasks
+        w.U8(0x02).U8(0);                                          // object flags 0x02, base data 0 (the live projectile's)
+        // Positioned: x, y, rotation, team, f0 0x04 (a fixed height follows), f1 0 (no extra visibility bytes) - exactly
+        // the live server's 28-byte projectile (Frida 2026-10-25). The two visibility bytes and f1 0x02 were wrong and
+        // made the arrow invisible (it never drew because the blob was 30 bytes and the components no longer lined up).
+        w.I32(GridX).I32(GridY).F32(Rotation).U16(Team).U8((byte)(Height is null ? 0 : 0x04)).U8(0);
+        if (Height is int h) w.I32(-h).F32(h * 7.8125f);           // h = z / 7.8125 (z points down): i32 -h, f32 z
+        w.U8(0x40);                                                // Animated: the projectile's own art (Projectiles.dat AOFiles)
+        w.U8(0);                                                   // tasks
         return w.ToArray();
     }
 }
@@ -737,14 +767,25 @@ public sealed record StateMachineData(IReadOnlyList<int> SharedStates, int Share
 /// which the client uses in its skill messages; the action id (+0x42) comes from the data (GEPL row → GrantedEffect →
 /// ActiveSkill → ActionTypes HASH16). Rows are GrantedEffectsPerLevel and GrantedEffectStatSetsPerLevel indices.
 /// CooldownMs is the skill's cooldown, which the client takes from the record, not from the data.</summary>
+public sealed record GrantedSupport(uint EffectsPerLevelRow, uint StatSetsPerLevelRow, uint Source = 0)
+{
+    public IReadOnlyList<uint> ExtraStatSets { get; init; } = [];
+}
+
 public sealed record GrantedSkill(ushort Id, uint EffectsPerLevelRow, uint StatSetsPerLevelRow,
     IReadOnlyList<(uint Key, int Value)>? Stats = null, uint CooldownMs = 0)
 {
+    /// <summary>Native support references (GEPL row and source metadata), read by 0x142196ce0.</summary>
+    public IReadOnlyList<GrantedSupport> Supports { get; init; } = [];
     /// <summary>The effect's additional stat sets (GrantedEffects StatSet2, e.g. Volcanic Fissure's), in order: each one's
     /// GrantedEffectStatSetsPerLevel row and stats. The record must carry one of each per set, or the client misreads it
     /// (and crashed, live 2026-10-23).</summary>
     public IReadOnlyList<(uint Row, IReadOnlyList<(uint Key, int Value)> Stats)> ExtraStatSets { get; init; } = [];
 }
+
+/// <summary>One ordinary stored-use budget; the native duration is base time, not wall time.</summary>
+public readonly record struct SingleUseCooldownUpdate(ushort SkillId, float RemainingBaseSeconds,
+    float TotalBaseSeconds, float RecoveryRate);
 
 /// <summary>ObjectMagicProperties rarity (flags bits 0-2 → +0x7c).</summary>
 public enum MonsterRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
@@ -878,7 +919,7 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
     /// (u16 skill id, u32 c × 4 u32). Each skill: u16 id (+0x40), the GrantedEffectsPerLevel reference (0x1424a0dc0:
     /// u8 → +0x10, u32 GEPL row, then a GrantedEffectStatSetsPerLevel reference 0x1424a0990: u8 a [u8 if a], u32 GESSPL
     /// row; then one more stat-set reference per entry of the effect's additional stat sets, GrantedSkill.ExtraStatSets), u8
-    /// flags (bit0 → u32 parent object id + u16), u8 support count × (GEPL reference, u32), u32, u32, u32, u8, then the
+    /// flags (bit0 → u32 parent object id + u16), u8 support count × (GEPL and stat-set references, u32), u32, u32, u32, u8, then the
     /// skill's stats (compact count × compact key, compact value) and one such stat list per additional stat set.</summary>
     /// <summary>The Actor's index in the player object's component order (04 §3).</summary>
     public const byte ActorComponentIndex = 9;
@@ -897,8 +938,14 @@ public sealed record PlayerObject(string Name, byte ClassIndex, int GridX, int G
          .U8(0).U32(s.EffectsPerLevelRow)      // GEPL reference
          .U8(0).U32(s.StatSetsPerLevelRow);    // its stat set
         foreach (var (row, _) in s.ExtraStatSets) w.U8(0).U32(row);   // one more stat-set reference per additional set
-        w.U8(0)                                // flags: no parent object
-         .U8(0)                                // supports
+        w.U8(0).U8(checked((byte)s.Supports.Count)); // flags: no parent object, then supports
+        foreach (var support in s.Supports)
+        {
+            w.U8(0).U32(support.EffectsPerLevelRow).U8(0).U32(support.StatSetsPerLevelRow);
+            foreach (uint row in support.ExtraStatSets) w.U8(0).U32(row);
+            w.U32(support.Source);
+        }
+        w
          // → skill +0xc0, +0xc4, +0xc8, +0xcc (0x141ee73d0). +0xc8 is the cooldown in ms: with it and the stat
          // virtual_total_cooldown_count the client keeps the skill's cooldown and shows it on the skill bar
          // (0x141eea6a0 creates the cooldown record only when it is not 0; live 2026-10-21).

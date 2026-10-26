@@ -21,6 +21,7 @@ sealed class PlayerInventories
     private string? _owner;   // the character whose save this is; null while the start kit is being built
     private ModCatalog? _mods;  // to save mods by their Mods.dat Id
     private Item? _startWeapon;
+    CharacterSaves.OpeningTutorial? newTutorial;
     private bool _stale;  // dropped after a failed save: the database has the items as they are
     private bool _unsaved;  // ChangeUnsaved changed something the database doesn't have yet
     // Items offered to an NPC while the sell window is open (id → its cell in the offer). As in 3.29 an offered item stays
@@ -32,7 +33,7 @@ sealed class PlayerInventories
 
     /// <summary>The class's start weapon while it waits on the ground for the character (as on the real game's Twilight
     /// Strand: the Gateway puts it near the spawn of each instance the character enters outside towns); null once picked
-    /// up. Only with <c>Game_START_WEAPON=ground</c>: by default the start kit wears it.</summary>
+    /// up. New characters receive it on the ground; existing saved equipment is preserved.</summary>
     public Item? StartWeapon
     {
         get { lock (_lock) return _startWeapon; }
@@ -343,6 +344,11 @@ sealed class PlayerInventories
 
     /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
     public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem() => [.. SocketedGemPlaces().Select(g => (g.ItemId, g.Gem))];
+
+    public Item? SocketHost(uint id)
+    {
+        lock (_lock) return _items.Values.SelectMany(v => v).FirstOrDefault(i => i.Id == id)?.Item;
+    }
 
     /// <summary><see cref="SocketedGems"/> with the row and id of the item each gem is in and its socket.</summary>
     public IReadOnlyList<(byte Row, uint ItemId, int Socket, Item Gem)> SocketedGemPlaces()
@@ -811,7 +817,11 @@ sealed class PlayerInventories
             var inv = saved ?? StartKit(catalog, folder, ClassRows.GetValueOrDefault(name, 1));
             inv._owner = name;
             inv._mods = catalog.Mods;
-            if (saved is null) inv.Persist();
+            if (saved is null) Saves.Atomically(() =>
+            {
+                inv.Persist();
+                if (inv.newTutorial is { } tutorial) CharacterSaves.SetTutorial(name, tutorial);
+            });
             return inv;
         });
 
@@ -851,7 +861,8 @@ sealed class PlayerInventories
         bool moved = false;
         lock (_lock)
         {
-            if (_offered.ContainsKey(itemId) || ItemsIn(row).FirstOrDefault(i => i.Id == itemId) is not { } it) return null;
+            if (_offered.ContainsKey(itemId) || ItemsIn(row).FirstOrDefault(i => i.Id == itemId) is not { } it
+                || it.Item.Sockets.Any(s => s.Gem is not null)) return null;
             if (row == Cursor)
             {
                 var shape = shapeOf(it.Item) ?? new(1, 1, "");
@@ -909,29 +920,37 @@ sealed class PlayerInventories
     /// The sale accepted: every offered item is gone and <paramref name="reward"/> (one stack of it) goes into the main
     /// inventory, in one save. Null (nothing changes) when the reward doesn't all fit: the sale stays open.
     /// </summary>
-    public Stacking? Sell(Item reward, Func<Item, Shape?> shapeOf)
+    public Stacking? Sell(Item reward, Func<Item, Shape?> shapeOf) => Sell([reward], shapeOf);
+
+    /// <summary>Stage the entire multi-item reward before consuming any offered item; persist once.</summary>
+    public Stacking? Sell(IReadOnlyList<Item> rewards, Func<Item, Shape?> shapeOf)
     {
         Stacking result;
         lock (_lock)
         {
+            if (_offered.Count == 0) return null;
             uint probe = _nextItemId;
-            var mainAfter = ItemsIn(MainInventory).Where(i => !_offered.ContainsKey(i.Id)).ToList();
-            if (reward.StackSize > 0 && StackInto(MainInventory, mainAfter, reward, shapeOf, ref probe).Left > 0) return null;
+            var before = ItemsIn(MainInventory).Where(i => !_offered.ContainsKey(i.Id)).ToList();
+            var after = before.ToList();
+            foreach (var reward in rewards)
+                if (reward.StackSize > 0 && StackInto(MainInventory, after, reward, shapeOf, ref probe).Left > 0) return null;
             foreach (var items in _items.Values) items.RemoveAll(i => _offered.ContainsKey(i.Id));
             _offered.Clear();
-            result = reward.StackSize > 0 ? StackInto(MainInventory, ItemsIn(MainInventory), reward, shapeOf, ref _nextItemId) : new([], [], 0);
+            _items[MainInventory] = after;
+            _nextItemId = probe;
+            var old = before.ToDictionary(i => i.Id);
+            result = new([.. after.Where(i => old.TryGetValue(i.Id, out var previous) && previous != i)],
+                [.. after.Where(i => !old.ContainsKey(i.Id))], 0);
         }
         Persist();
         return result;
     }
 
     /// <summary>
-    /// The class's start kit from its Characters.dat row (the Witch: row 1): StartWeapons[0] (Driftwood Wand) worn in
-    /// Weapon1 (Game_START_WEAPON=ground: the <see cref="StartWeapon"/> waiting on the ground), the
-    /// StartSkillGem and StartSupportGem (SkillGems rows → their BaseItemTypes: Fireball, Arcane Surge Support) in the main
-    /// inventory, and
-    /// two Small Life Flasks (flask keys 1 and 2) and a Small Mana Flask (key 5). Missing tables or unsupported types are skipped;
-    /// Game_START_ITEMS=0 starts empty.
+    /// The class's opening kit from Characters.dat: its start weapon waits on the Strand's ground, while the
+    /// skill and support gems are saved as pending tutorial rewards (the biting zombie and large chest).
+    /// Two Small Life Flasks (keys 1/2) and one Small Mana Flask (key 5) are available immediately.
+    /// Existing saves are loaded unchanged. Game_START_ITEMS=0 starts empty.
     /// </summary>
     static PlayerInventories StartKit(ItemCatalog catalog, string folder, int characterRow = 1)
     {
@@ -968,12 +987,11 @@ sealed class PlayerInventories
             catalog.Row(w.GetInt32()) is { Supported: true } weapon)
         {
             var item = ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]);
-            // Worn from the start (Game_START_WEAPON=ground: waiting on the ground next to the spawn instead).
-            if (Environment.GetEnvironmentVariable("Game_START_WEAPON") == "ground") inv._startWeapon = item;
-            else inv.Add(Weapon1, 0, 0, item);
+            // Pending until the character picks it up from the beach.
+            inv._startWeapon = item;
         }
-        Put(MainInventory, 0, 0, Gem("StartSkillGem"));
-        Put(MainInventory, 1, 0, Gem("StartSupportGem"));
+        if (Gem("StartSkillGem") is { Supported: true } skill && Gem("StartSupportGem") is { Supported: true } support)
+            inv.newTutorial = new(CharacterSaves.ToSaved(ItemCatalog.Create(skill)), CharacterSaves.ToSaved(ItemCatalog.Create(support)), Id: Guid.NewGuid().ToString("N"));
         // Keys 1 and 2: life; key 5: mana, as players set the bar up.
         Put(Flask, 0, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));
         Put(Flask, 1, 0, catalog.Find("Metadata/Items/Flasks/FlaskLife1"));

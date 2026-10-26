@@ -23,15 +23,15 @@ public static class InstanceNpcs
 
     public const ushort TalkTextId = 0x87;
 
-    /// <summary>
-    /// S→C 0x87 (instance group, class 0x1435dc220, read 0x1421a1c00, dispatcher case 0x1e): u32 BE (+0x10), u16 BE whose low
-    /// 15 bits are a value (+0x14) and bit 15 a flag (+0x16). The dispatcher sets the dialogue state (+0xd7b8 = 2) and calls
-    /// the listeners at instance +0x14f0; the in-game UI's (0x140dccbf0) closes the NPC dialogue windows, opens the inventory
-    /// (UI +0x628) and the quest reward window (UI +0x7a8, 0x140c2b690), which reads the value as a QuestRewardOffers row.
-    /// Live 2026-10-19 the value 9 (an NPCTextAudio row) crashed it (0x140c2bc20). Not used yet.
-    /// </summary>
-    public static byte[] TalkText(uint npcObjectId, ushort value, bool flag = false) =>
-        new LoginWriter().U16(TalkTextId).U32(npcObjectId).U16((ushort)((value & 0x7fff) | (flag ? 0x8000 : 0))).ToArray();
+    /// <summary>S?C 0x87: u32 reward inventory id (manager 1), u16 QuestRewardOffers row, with bit 15 an optional flag.
+    /// Send 0xc0 for that inventory before opening it. The first field is NOT the NPC object id: a missing inventory
+    /// crashes the reward window at 0x140c2bc20. Live verified 2026-10-25 with offers 0 and 8, inventory 0x600.
+    /// Selecting a reward uses C?S 0x88 (or Ctrl+click 0x8a), as with a shop.</summary>
+    public static byte[] OpenQuestReward(uint inventoryId, ushort offer, bool flag = false) =>
+        new LoginWriter().U16(TalkTextId).U32(inventoryId).U16((ushort)((offer & 0x7fff) | (flag ? 0x8000 : 0))).ToArray();
+
+    // Retain the old public entry point for callers; its historical name did not describe the message's purpose.
+    public static byte[] TalkText(uint inventoryId, ushort offer, bool flag = false) => OpenQuestReward(inventoryId, offer, flag);
 
     public const ushort BuyId = 0x88;
 
@@ -227,9 +227,12 @@ public static class InstanceNpcs
 /// <c>Metadata/NPC/NPC</c> deserializes Positioned, Animated, BaseEvents, InteractionAction, NPC and MinimapIcon (client
 /// Render + Targetable); 190 NPC types have exactly that list, others add Transitionable and StateMachine.
 /// <para>NPC (slot 17 0x141e75050) reads two u8 (→ +0x20 has dialogue, +0x21 a component index or 0xff). BaseEvents reads nothing.</para>
+/// <para><paramref name="Model"/>: an .ao for Animated when the type's own is missing or not the one the town room places
+/// (Irasha's type is <c>Metadata/NPC/NPC</c>); <paramref name="Height"/>: a fixed world z (Positioned flags0 bit2), as the
+/// room's record gives it.</para>
 /// </summary>
 public sealed record NpcObject(int GridX, int GridY, IReadOnlyList<string> Components, float Rotation = 0,
-    StateMachineData? StateMachine = null, byte TransitionState = 1)
+    StateMachineData? StateMachine = null, byte TransitionState = 1, string? Model = null, float? Height = null)
 {
     /// <summary>Deserialized components of <c>Metadata/NPC/NPC</c> in read order (scripts/re/ot_components.py).</summary>
     public static readonly string[] BaseComponents = ["Positioned", "Animated", "BaseEvents", "InteractionAction", "NPC", "MinimapIcon"];
@@ -251,8 +254,15 @@ public sealed record NpcObject(int GridX, int GridY, IReadOnlyList<string> Compo
             switch (c)
             {
                 // As a monster's: x, y, rotation (+0x29c), u16 team (0: friendly), flags0, flags1 0x02 + shown.
-                case "Positioned": w.I32(GridX).I32(GridY).F32(Rotation).U16(0).U8(0).U8(0x02).U8(0).U8(1); break;
-                case "Animated": w.U8(0); break;              // the type supplies the model
+                // flags0 bit2: a fixed height before flags1 0x02's two bytes: i32 −z / 7.8125 and f32 z (world z points
+                // down), the live server's convention (ProjectileObject; 11-skills.md "Sign").
+                case "Positioned":
+                    w.I32(GridX).I32(GridY).F32(Rotation).U16(0).U8((byte)(Height is null ? 0 : 0x04)).U8(0x02);
+                    if (Height is float z) w.I32((int)MathF.Round(-z / 7.8125f)).F32(z);
+                    w.U8(0).U8(1);
+                    break;
+                // 0: the type supplies the model; bit0: a u32-counted UTF-16 .ao path.
+                case "Animated": if (Model is null) w.U8(0); else w.U8(1).WStr32(Model); break;
                 case "InteractionAction": w.U8(0); break;
                 // +0x20: has dialogue (0x141e76d40 offers NPCTalk rows only when set); +0x21: index of a component that
                 // must be alive (its +0x1a8 > 0) for the NPC to talk, 0xff = none.

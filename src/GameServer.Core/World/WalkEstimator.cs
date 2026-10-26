@@ -15,14 +15,20 @@ public sealed class WalkEstimator
     private List<(int X, int Y)> _path;
     private double[] _cumulative = [0];
     private double _t0;
+    private readonly Func<IReadOnlyList<ClientPathfinder.Blocker>>? _blockers;
+    private readonly int _size;
+    private readonly ClientPathfinder.SearchLimit _limit;
 
     /// <param name="walkable">Whether a grid cell is walkable (all cells when null).</param>
     /// <param name="speed">Client walking speed in grid units per second (~37 measured live).</param>
-    public WalkEstimator(int x, int y, double speed, Func<int, int, bool>? walkable = null, int width = 4096, int height = 4096)
+    public WalkEstimator(int x, int y, double speed, Func<int, int, bool>? walkable = null, int width = 4096, int height = 4096,
+        Func<IReadOnlyList<ClientPathfinder.Blocker>>? blockers = null, int size = 1,
+        ClientPathfinder.SearchLimit limit = ClientPathfinder.SearchLimit.Expansions100)
     {
         _walkable = walkable ?? ((_, _) => true);
         _speed = speed;
         (_w, _h) = (width, height);
+        (_blockers, _size, _limit) = (blockers, size, limit);
         _path = [(x, y)];
     }
 
@@ -55,7 +61,9 @@ public sealed class WalkEstimator
     public (int X, int Y) Order(int targetX, int targetY, double now)
     {
         var here = Position(now);
-        _path = FindPath(here, (targetX, targetY));
+        _path = _blockers is null ? FindPath(here, (targetX, targetY))
+            : ClientPathfinder.FindPath(here, (targetX, targetY), _walkable, _w, _h, _blockers(), _size, limit: _limit);
+        if (_path.Count == 0) _path = [here];
         _cumulative = new double[_path.Count];
         for (int i = 1; i < _path.Count; i++)
             _cumulative[i] = _cumulative[i - 1] + Math.Sqrt(Math.Pow(_path[i].X - _path[i - 1].X, 2) + Math.Pow(_path[i].Y - _path[i - 1].Y, 2));

@@ -197,6 +197,29 @@ Positioned handler calls `0x141e34120` with duration = distance / speed. With sp
 and crawled (~1 cell per 1.5 s), so it is not sent for the local player (`Game_MOVE_MODE=move` to test).
 **S→C 0x1b7** teleport: header, `i32 x, i32 y, u32 → +0x290, u32 → +0x2b4`; works (`Game_MOVE_MODE=teleport`).
 
+
+### Living actor clearance
+
+`LivingCollision` uses `MonsterVarieties.ObjectSize - 1` as the positioned footprint, including unique bosses.
+Negative footprints do not block; zero is a valid small body.
+`AreaLayout.WalkableFor` retains the captured terrain clearance values instead of treating every actor as player-sized.
+Monster `WalkEstimator` orders use the bounded native pathfinder with a 1000-expansion budget.
+Their blockers include stationary objects, other living monsters, the local player and published instance players.
+The 50 ms correction loop checks each traversed cell, stops movement through newly occupied cells and sends
+ActionEnded followed by Teleport when a body must be corrected.
+Alive friendly monsters also block; corpses and removed objects do not.
+Phasing removes living bodies from the local player's path checks.
+Large bodies are checked even when their centres lie outside the small query's spatial buckets.
+
+`InstanceState` publishes immutable player snapshots without acquiring another connection's monster lock.
+Each connection has a distinct remote object id in the `0x20000000` range; its own player remains `0x1000`.
+Observers create a normal Player object without local-player selection, update movement/life and remove it on departure.
+Ordinary pose updates use 0x1ba; large coordinate jumps use 0x1b7.
+Arrival overlaps prefer moving the later peer, avoiding two actors choosing the same escape cell.
+This provides body collision for players already sharing an instance, not a party manager or shared monster simulation.
+Native checks: normal zombie clearance 4 cells, unique Hillock clearance 5 cells; removal frees the target cell.
+
+
 ## 6. Lockstep (not served yet)
 
 Everything above is the client's **Predictive** network mode (Options → Game → Network Mode;
@@ -241,7 +264,7 @@ frames (the tick rules above) and sending the start of each action in the frame 
 |---|---|---|
 | 0x015a | 2 | id only, after entering |
 | 0x01ef | 2 | id only |
-| 0x0099 | 20 | `0099 00000134 0334 0001 0001 3400 0101 0001 29` both times; meaning unknown |
+| 0x0099 | 4 | `0099 0000`: two u8 (class `0x1435c0258`); meaning unknown. The 20 bytes once taken for it were 0x99, the two chat channel joins 0x134 ([10](10-chat-and-commands.md) §2) and 0x129 (id only) |
 | 0x004e | 5 | `004E 00 2909`: u8 + Move skill id, after a click (skill released?) |
 
 ## Open

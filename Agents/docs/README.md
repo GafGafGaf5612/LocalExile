@@ -22,6 +22,8 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 | [protocol/14-monster-packs.md](protocol/14-monster-packs.md) | monsters in areas: MonsterPacks, rarity, room points (the camp's "mapboss"), the doodad hook and room fitting |
 | [protocol/15-progression.md](protocol/15-progression.md) | experience and levels from kills, the Passive Skill Tree (0x33, 0x34), loot |
 | [protocol/16-waypoints.md](protocol/16-waypoints.md) | waypoints: the object, activated waypoints (0x4c), the World panel (0x7b), travel (0x4d), quest flags in the Player component, what reveals pins |
+| [protocol/24-vendor-recipes.md](protocol/24-vendor-recipes.md) | vendor sale quotes, common recipes, priorities, atomic payment and remaining parity gaps |
+| [protocol/25-gem-supports.md](protocol/25-gem-supports.md) | linked supports, native badges, shared combat calculations and execution gaps |
 | [protocol/17-npcs.md](protocol/17-npcs.md) | NPCs: the object, town placements, talking (0x24 → 0x84), dialogue closed (0x85) |
 | [protocol/21-hideouts.md](protocol/21-hideouts.md) | hideouts: unlock flags and league quest flags, the Hideouts keys, `.hideout` decorations, /hideout (0x16 command 45) and the Hideout button (0x17a), HideoutDoodad data, the map device and its window (0x7b kind 5) |
 | [protocol/18-stash.md](protocol/18-stash.md) | the stash: the object, tab lists (0x21, 0x136), opening (0x7b kind 1), tab contents (0xc7 → 0xc0 + 0xc8), the account's stash |
@@ -57,3 +59,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 - `re/007`–`010`: the notes these documents were consolidated from (login TCP, handshake, message tables, live instance
   notes). `re/009` still has the most complete login message tables.
 - `re/003`–`004`: early notes with known errors (for example "login is HTTPS"). Verify before use.
+
+[Recovery timing](re/recovery-timing.md): read-only client pool tracing, native prediction inputs and ES verification limits.
+
+[Native client control](dev/client-control.md): CLI and persistent JSON RPC for local launch, login, character selection, commands and state reads through the 3.29.3b client.

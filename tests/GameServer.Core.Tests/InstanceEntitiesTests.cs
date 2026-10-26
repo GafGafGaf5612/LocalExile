@@ -4,6 +4,40 @@ namespace GameServer.Core.Tests;
 
 public class InstanceEntitiesTests
 {
+    [Fact]
+    public void Projectile_impact_teleport_carries_height_and_preserves_the_legacy_default()
+    {
+        const string header = "01B700003001000000000000000000280000001E";
+        Assert.Equal(header + "7FFFFFFF00000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, 0x7fffffff)));
+        Assert.Equal(header + "0000000000000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30)));
+    }
+
+    [Theory]
+    [InlineData(-8, -62.5f, "FFFFFFF8C27A0000")]
+    [InlineData(8, 62.5f, "00000008427A0000")]
+    public void Fixed_height_teleports_send_the_signed_marker_and_the_world_z_float(int fixedHeight, float worldZ, string pair)
+    {
+        // The client copies these two fields to +0x290/+0x2b4. Non-sentinel height reads the float, not the marker.
+        Assert.Equal("01B700003001000000000000000000280000001E" + pair,
+            Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, unchecked((uint)fixedHeight), worldZ)));
+    }
+
+    [Theory]
+    [InlineData(-8)]
+    [InlineData(8)]
+    [InlineData(-15)]
+    public void Projectile_creation_and_impact_preserve_the_same_fixed_world_height(int worldZSteps)
+    {
+        // The blob uses little endian while 0x1b7 uses big endian. Both native handlers retain the marker
+        // and world-Z float directly; 0x1ba instead takes worldZSteps, without the marker's sign reversal.
+        byte[] blob = new ProjectileObject("Metadata/Projectiles/Fireball", 40, 30, Height: worldZSteps).Blob();
+        byte[] stop = InstanceProtocol.Teleport(0x3001, 40, 30, unchecked((uint)-worldZSteps), worldZSteps * 7.8125f);
+        Assert.Equal(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(18, 4)),
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(stop.AsSpan(20, 4)));
+        Assert.Equal(System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(22, 4)),
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(stop.AsSpan(24, 4)));
+    }
+
     [Theory]
     // Reference values from an independent MurmurHash2 implementation (seed 0).
     [InlineData("Metadata/Characters/Int/Int", 0x9c41993eu)]
@@ -122,6 +156,23 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Action_hit_layout()
+    {
+        // header, u16 sequence, u8 action byte, u8 skill index, u32 target, u16 flags, u8 kind (3 = has an action and
+        // hit data), then the hit code and the angle byte; big-endian.
+        Assert.Equal("01AF" + "00003000" + "00000000" + "0000" + "0007" + "00" + "00" + "00003001" + "0000" + "03" + "00" + "80",
+            Convert.ToHexString(InstanceProtocol.ActionHit(0x3000, 7, 0x3001, angle: 0x80)));
+        // Without the hit-data bit only the first part is written.
+        Assert.Equal("01AF" + "00003000" + "00000000" + "0000" + "0007" + "00" + "00" + "00003001" + "0000" + "01",
+            Convert.ToHexString(InstanceProtocol.ActionHit(0x3000, 7, 0x3001, kind: 0x01)));
+        // flags 0x400 puts a u16 (+0x34) before the hit code (reader 0x1419bd6f0: flags >> 10 & 1), as the monster hit
+        // on the player sends it; kind bits 2/3 add a u16 each after the angle.
+        Assert.Equal("01AF" + "00003000" + "00000000" + "0000" + "FFFF" + "00" + "00" + "00003001" + "4601" + "0E" + "01C2" + "00" + "40" + "0001" + "0002",
+            Convert.ToHexString(InstanceProtocol.ActionHit(0x3000, 0xffff, 0x3001, flags: 0x4601, kind: 0x0e, u34: 450, angle: 0x40,
+                u3c: 1, u3e: 2)));
+    }
+
+    [Fact]
     public void Action_started_on_an_object_carries_its_id_after_the_flags()
     {
         string hex = Convert.ToHexString(InstanceProtocol.ActionStarted(0x1000, 1, 2, 3, 4, 0x4000, 7, 0x0408, targetObjectId: 0x3000));
@@ -170,6 +221,34 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Monster_mods_and_rare_name_go_in_the_magic_property_lists()
+    {
+        var monster = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents, Rarity: MonsterRarity.Rare)
+        {
+            Mods = [new ItemMod(ModSection.Hidden, 0x1234, [390, 1]), new ItemMod(ModSection.Explicit, 0xabcd, [40]),
+                new ItemMod(ModSection.Explicit, 0x0102, [-80, 200])],
+            NameWords = [0x11223344, 0x55667788],
+        };
+        string hex = Convert.ToHexString(monster.Blob());
+        string plain = Convert.ToHexString(new MonsterObject(1, 2, 100, MonsterObject.BaseComponents).Blob());
+        // flags 0x92a: rare 2 | identified 8 | explicit list 0x20 | Words name 0x100 | hidden list 0x800; u8 +0x7a.
+        string omp = "2A09" + "00" +
+            "01" + "3412" + "8186" + "01" +                     // hidden list: 390 is a 2-byte compact (0x80 | 0x01, 0x86)
+            "02" + "44332211" + "88776655" +                    // the name: prefix, suffix keys
+            "02" + "CDAB" + "28" + "0201" + "BFB0" + "80C8" +   // explicit: 40 (one byte); -80 and 200 (two bytes, 0x80 prefix)
+            "00";                                               // the component's own flags
+        Assert.Equal(omp, hex.Substring(60, omp.Length));
+        Assert.Equal(plain.Length - 8 + omp.Length, hex.Length);
+    }
+
+    [Fact]
+    public void A_custom_name_wins_over_name_words()
+    {
+        var named = new MonsterObject(1, 2, 100, MonsterObject.BaseComponents, Rarity: MonsterRarity.Rare, Name: "Ab") { NameWords = [1] };
+        Assert.Equal("8A00" + "00" + "02000000" + "41006200" + "00", Convert.ToHexString(named.Blob()).Substring(60, 24));
+    }
+
+    [Fact]
     public void Monster_state_machine_writes_shared_states_and_timers()
     {
         string[] list = [.. MonsterObject.BaseComponents, "StateMachine"];
@@ -206,6 +285,20 @@ public class InstanceEntitiesTests
     {
         Assert.Equal("02BA" + "00003000" + "00000000" + "0000" + "0002" + "0C" + "02",
             Convert.ToHexString(InstanceEntities.TransitionableUpdate(0x3000, 12, 2)));
+    }
+
+    [Fact]
+    public void An_emerge_monster_is_created_buried_and_rises_with_its_basic_action()
+    {
+        // Gravel Eater (SandSpitterEmerge): the base list + Transitionable without num_states, i.e. 2 states.
+        string[] list = [.. MonsterObject.BaseComponents, "Transitionable"];
+        Assert.Equal(1, new MonsterObject(1, 2, 100, list, TransitionState: 1).Blob()[^2]);   // buried: emerge paused
+        Assert.Equal(2, new MonsterObject(1, 2, 100, list, TransitionState: 2).Blob()[^2]);   // risen: targetable
+        // The Emerge basic action (ActionTypes HASH16 16641 = 0x4101 & 0x3fff) in place, not predicted (0xffff), then
+        // Transitionable (component 11) to 2.
+        Assert.StartsWith("01AB" + "00003000" + "00000000" + "0000" + "0408" + "0A0B0A0B" + "0101" + "FFFF",
+            Convert.ToHexString(InstanceProtocol.ActionStarted(0x3000, 10, 11, 10, 11, 0x0101, 0xffff, 0x0408)));
+        Assert.EndsWith("0B" + "02", Convert.ToHexString(InstanceEntities.TransitionableUpdate(0x3000, 11, 2)));
     }
 
     [Fact]
@@ -295,6 +388,22 @@ public class InstanceEntitiesTests
         // Flags bit1 (u32 +0x68) and bit7 (f32 +0x6c) come right after the flags, before the stat values.
         Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0002" + "0005" + "00001000" + "0000" + "82" + "00000BB8" + "40400000" + "00000578" + "00000000",
             Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 2, 5, 0x1000, values: [1400], u68: 3000, f6c: 3f)));
+    }
+
+    [Fact]
+    public void Stacks_are_flags_bit2_after_the_duration_and_before_the_skill_icon()
+    {
+        // frenzy_charge (row 27) with 3 charges and 10 s left: flags 0x06, f32 10.0 at +0x68, u16 stacks 3 (live
+        // 2026-10-25: the HUD icon showed 3 and 0:09).
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "001B" + "00001000" + "0000" + "06" + "41200000" + "0003" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 27, 0x1000, u68: BitConverter.SingleToUInt32Bits(10f), stacks: 3)));
+        // Stacks without a duration (minimum charges: the icon shows the count and no timer), and with every later field.
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0002" + "001D" + "00001000" + "0000" + "04" + "0001" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 2, 29, 0x1000, stacks: 1)));
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "0098" + "00001000" + "0103"
+            + "9E" + "00000BB8" + "3F800000" + "0002" + "C1BA" + "0103" + "0007" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 152, 0x1000, 0x103,
+                u68: 3000, f6c: 1f, visual: 7, activeSkill: (0x103, 0xc1ba), stacks: 2)));
     }
 
     [Fact]
@@ -456,6 +565,14 @@ public class InstanceEntitiesTests
         string body = "09" + "2000" + "01" + "01" + "0201" + "00" + "7A110000" + "00" + "4E110000" + "00" + "00" +
             "00000000" + "00000000" + "00000000" + "00" + "00" + "0401" + "00" + "00";
         Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, Convert.ToHexString(m));
+    }
+
+    [Fact]
+    public void Actor_take_hit_uses_animation_type_and_native_recovery_duration()
+    {
+        Assert.Equal("01D1000010000000000000003F0000000500",
+            Convert.ToHexString(InstanceProtocol.ActorAnimation(0x1000, .5f, 5)));
+        Assert.Equal(1, InstanceProtocol.ActorAnimation(0x1000, .5f, 5, checkInterruption: true)[^1]);
     }
 
     [Fact]

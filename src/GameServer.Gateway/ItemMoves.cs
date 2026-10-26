@@ -28,21 +28,23 @@ static class ItemMoves
 
     /// <summary>
     /// An item out of a stash tab into the main inventory (Ctrl + click, C→S 0xe3): a stack onto the inventory's stacks of
-    /// its type first, then into free cells, and what doesn't fit stays in the tab; any other item into the first free cell,
-    /// keeping its id. Null (nothing changes) when it is not there, its type is unknown or nothing fits.
+    /// its type first, then into free cells, at most one normal inventory stack per click (all: Ctrl + right click,
+    /// as much of the clicked stack as fits). What doesn't move stays in the tab; any other item into the first free
+    /// cell, keeping its id. Null (nothing changes) when it is not there, its type is unknown or nothing fits.
     /// </summary>
     public static Transfer? StashToInventory(AccountStash stash, PlayerInventories items, int tab, uint itemId,
-        Func<Item, PlayerInventories.Shape?> shapeOf) => Saves.Atomically(() =>
+        Func<Item, PlayerInventories.Shape?> shapeOf, bool all = false) => Saves.Atomically(() =>
     {
         if (tab < 0 || tab >= stash.Count || stash.Inventory(tab).Items.FirstOrDefault(i => i.Id == itemId) is not { } inTab
             || shapeOf(inTab.Item) is not { } shape) return null;
         if (shape.MaxStack > 1)
         {
-            var stacked = items.AddStacked(Main, inTab.Item, shapeOf);
-            int moved = inTab.Item.StackSize - stacked.Left;
+            ushort requested = all ? inTab.Item.StackSize : Math.Min(inTab.Item.StackSize, shape.MaxStack);
+            var stacked = items.AddStacked(Main, inTab.Item with { StackSize = requested }, shapeOf);
+            int moved = requested - stacked.Left;
             if (moved == 0) return null;
-            var leftInTab = stacked.Left == 0 ? null : stash.Shrink(tab, itemId, moved);
-            if (stacked.Left == 0) stash.Take(tab, itemId);
+            var leftInTab = moved == inTab.Item.StackSize ? null : stash.Shrink(tab, itemId, moved);
+            if (leftInTab is null) stash.Take(tab, itemId);
             stash.SetLastTab(tab);
             return new Transfer(Main, 0, null, tab, [], [], stacked.Changed, stacked.Added, itemId, leftInTab);
         }

@@ -123,6 +123,9 @@ sealed class SkillCatalog(string folder = "data")
             Put("base_skill_is_instant", 1);
             Put("skill_is_instant", 1);
         }
+        // CharacterPanelStats gates spell rows on this final flag and hides the weapon rows while it is set.
+        // A non-attack is not necessarily a spell (warcries, for example); use the actual ActiveSkillType.
+        Put("casting_spell", IsSpell(effectRow) && !IsAttack(effectRow) ? 1 : 0);
         if (gepl >= 0 && t.Cooldowns[gepl] is { Ms: > 0, Uses: > 0 } cooldown)
         {
             Put("base_cooldown_count", cooldown.Uses);
@@ -206,6 +209,23 @@ sealed class SkillCatalog(string folder = "data")
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 0;
         int row = PickLevel(t.StatSetsPerLevel, t.StatSets[effectRow], level);
         return row >= 0 && row < t.Effectiveness.Count ? Math.Max(0, t.Effectiveness[row]) : 0;
+    }
+
+    /// <summary>The inherent weapon attack-rate multiplier at the selected GEPL level, in percent.
+    /// It multiplies weapon rate separately from player increased speed; absent data keeps ordinary weapon timing.</summary>
+    public int AttackSpeedMultiplier(int effectRow, int level) =>
+        effectRow >= 0 && level > 0 && _tables.Value is { } t
+            && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.AttackSpeedMultipliers[row] : 0;
+
+    /// <summary>The effect's primary stat set's base spell critical chance at this gem level, in permyriad.
+    /// Null means missing/invalid data, distinct from a known zero (a spell with no inherent critical chance).</summary>
+    public int? SpellCritChance(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count || level < 1) return null;
+        int set = t.StatSets[effectRow];
+        if (set < 0) return null;
+        int row = PickLevel(t.StatSetsPerLevel, set, level);
+        return row >= 0 ? t.SpellCritChances[row] : null;
     }
 
     /// <summary>A gem's requirement for one attribute at a level (0x14246fc40): the level requirement of that level
@@ -299,6 +319,12 @@ sealed class SkillCatalog(string folder = "data")
     public int CooldownMs(int effectRow, int level) =>
         _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int gepl and >= 0 ? t.Cooldowns[gepl].Ms : 0;
 
+    public int CooldownUses(int effectRow, int level) =>
+        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.Cooldowns[row].Uses : 0;
+
+    public bool CooldownPausesWhileActive(int effectRow) =>
+        _tables.Value is { } t && effectRow >= 0 && effectRow < t.Effects.Count && t.Effects[effectRow].CooldownPauses;
+
     /// <summary>Whether a GrantedEffects row's skill is instant: its ActiveSkills row has the ActiveSkillType Instant (Haste,
     /// Righteous Fire). An instant skill is used while moving, without an action of its own.</summary>
     public bool IsInstant(int effectRow) => _instantEffects.Value.Contains(effectRow);
@@ -312,9 +338,12 @@ sealed class SkillCatalog(string folder = "data")
     /// attack's, unlike a spell, which the client paces by its cast time.</summary>
     public bool IsAttack(int effectRow) => _attackEffects.Value.Contains(effectRow);
 
+    public bool IsSpell(int effectRow) => _spellEffects.Value.Contains(effectRow);
+
     private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
     private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
     private readonly Lazy<HashSet<int>> _attackEffects = new(() => EffectsOfType(folder, "Attack"));
+    private readonly Lazy<HashSet<int>> _spellEffects = new(() => EffectsOfType(folder, "Spell"));
 
     /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>
     static HashSet<int> EffectsOfType(string folder, string typeId)
@@ -362,6 +391,10 @@ sealed class SkillCatalog(string folder = "data")
         string id = "Metadata/Projectiles/" + effect;
         return _projectiles.Value.TryGetValue(id, out int speed) ? (id, speed) : null;
     }
+
+    /// <summary>A Projectiles.dat row by its Id (<c>Metadata/Projectiles/DefaultArrow</c> for a bow's ordinary attack).</summary>
+    public (string Id, int Speed)? Projectile(string id) =>
+        _projectiles.Value.TryGetValue(id, out int speed) ? (id, speed) : null;
 
     private readonly Lazy<Dictionary<string, int>> _projectiles = new(() =>
     {
@@ -435,6 +468,35 @@ sealed class SkillCatalog(string folder = "data")
         /// attack speed to the skill's main_hand_attack_speed_+% (live 2026-10-17: the skill read 10 that the server never
         /// sent, and the swings came every ~757 ms = 833 / 1.1).</summary>
         public const int DualWieldAttackSpeedPct = 10;
+
+        /// <summary>
+        /// The same attack's off-hand stats (off_hand_… instead of main_hand_…), for the weapon in the other hand of a
+        /// dual-wielded attack. A dual-wielded attack swings the off hand too, and the client sets that strike's weapon
+        /// up from these stats; it derives none of them (11-skills.md §4), so without them the off-hand weapon has no
+        /// attack time, damage or reach at all. <paramref name="mainHandLocalAttackSpeedPct"/> is the main weapon's own
+        /// local_attack_speed_+%, which the final main-hand value carries (<see cref="OffHandAttackSpeedPct"/>).
+        /// </summary>
+        public IReadOnlyList<(uint, int)> OffStats(IReadOnlyDictionary<uint, int>? player, DamagePacket? totalHit = null,
+            int mainHandLocalAttackSpeedPct = 0)
+        {
+            var (min, max) = Damage(player);
+            return
+            [
+                (StatKeys.OffHandMinPhysical, min), (StatKeys.OffHandMaxPhysical, max),
+                (StatKeys.OffHandMinTotal, totalHit is null ? min : (int)Math.Floor(totalHit.MinTotal)),
+                (StatKeys.OffHandMaxTotal, totalHit is null ? max : (int)Math.Floor(totalHit.MaxTotal)),
+                (StatKeys.OffHandAttackDurationMs, AttackMs), (StatKeys.OffHandTotalAttackDurationMs, AttackMs),
+                (StatKeys.OffHandAttackSpeedPct, OffHandAttackSpeedPct(IncreasedAttackSpeed(player), mainHandLocalAttackSpeedPct)),
+                (StatKeys.OffHandBaseMaxAttackDistance, Range), (StatKeys.OffHandMaxAttackDistance, Range),
+            ];
+        }
+
+        /// <summary>The off hand's attack_speed_+%: the final main-hand value with the main weapon's local attack speed
+        /// taken back out. CharacterStats multiplies that local value in like a more, but it belongs to the main weapon
+        /// only; the off-hand weapon's own local attack speed is already in its <see cref="AttackMs"/>.</summary>
+        public static int OffHandAttackSpeedPct(int mainHandPct, int mainHandLocalPct) =>
+            Math.Max(-99, (int)Math.Round(((1 + mainHandPct / 100.0) / Math.Max(0.01, 1 + mainHandLocalPct / 100.0) - 1) * 100,
+                MidpointRounding.AwayFromZero));
 
         /// <summary>The final main_hand_attack_speed_+% (passives and dual wielding, from CharacterStats), or the raw
         /// stats' sum when no final value was sent.</summary>
@@ -578,10 +640,10 @@ sealed class SkillCatalog(string folder = "data")
     // Quality: per GrantedEffects row its (quality stat, permille).
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
         List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
-        List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
+        List<(int StatSet, int CastTime, bool CooldownPauses)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
         List<(int, int)[]> StatSetLevelStats, List<(int StatSet, int GemLevel, int PlayerLevelReq)> GemLevelReqs, List<int> ManaCost,
         List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
-        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness)
+        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness, List<int?> SpellCritChances, List<int> AttackSpeedMultipliers)
     {
         public static Tables? Load(string folder)
         {
@@ -598,7 +660,7 @@ sealed class SkillCatalog(string folder = "data")
             static (int, int)[] Pairs(int[] keys, int[] values) => [.. keys.Zip(values).Where(kv => kv.First >= 0)];
             var effects = new Dictionary<string, (int, int)>();
             var statSets = new List<int>();
-            var effectInfo = new List<(int, int)>();
+            var effectInfo = new List<(int, int, bool)>();
             int row = 0;
             foreach (var r in g.RootElement.EnumerateArray())
             {
@@ -606,7 +668,8 @@ sealed class SkillCatalog(string folder = "data")
                 int statSet = Int(r, "StatSet1");
                 if (id is not null) effects.TryAdd(id, (row, statSet));
                 statSets.Add(statSet);
-                effectInfo.Add((statSet, Math.Max(0, Int(r, "CastTime"))));
+                effectInfo.Add((statSet, Math.Max(0, Int(r, "CastTime")),
+                    r.TryGetProperty("CooldownNotRecoverDuringActive", out var pauses) && pauses.ValueKind == JsonValueKind.True));
                 row++;
             }
             var baseStats = new List<(int[], (int, int)[])>();
@@ -621,6 +684,7 @@ sealed class SkillCatalog(string folder = "data")
             var reservations = new List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)>();
             var cooldowns = new List<(int, int)>();
             var vaalSouls = new List<int>();
+            var attackSpeedMultipliers = new List<int>();
             foreach (var r in p.RootElement.EnumerateArray())
             {
                 perLevel.Add((Int(r, "GrantedEffect"), Int(r, "Level")));
@@ -631,6 +695,8 @@ sealed class SkillCatalog(string folder = "data")
                     Math.Max(0, Int(r, "LifeReservationFlat")), Math.Max(0, Int(r, "LifeReservationPercent"))));
                 cooldowns.Add((Math.Max(0, Int(r, "Cooldown")), Math.Max(0, Int(r, "StoredUses"))));
                 vaalSouls.Add(Math.Max(0, Int(r, "VaalSouls")));
+                attackSpeedMultipliers.Add(r.TryGetProperty("AttackSpeedMultiplier", out var speed)
+                    && speed.ValueKind == JsonValueKind.Number && speed.TryGetInt32(out int multiplier) ? multiplier : 0);
             }
             var quality = new Dictionary<int, (int, int)[]>();
             if (File.Exists(Table("GrantedEffectQualityStats")))
@@ -641,18 +707,21 @@ sealed class SkillCatalog(string folder = "data")
             }
             var setLevels = new List<(int, int)>();
             var effectiveness = new List<int>();
+            var spellCritChances = new List<int?>();
             var levelStats = new List<(int, int)[]>();
             var levelReqs = new List<(int, int, int)>();
             foreach (var r in s.RootElement.EnumerateArray())
             {
                 setLevels.Add((Int(r, "StatSet"), Int(r, "GemLevel")));
                 effectiveness.Add(Int(r, "DamageEffectiveness"));
+                int crit = Int(r, "SpellCritChance");
+                spellCritChances.Add(crit >= 0 ? crit : null);
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
                     .. Pairs(Ints(r, "AdditionalStats"), Ints(r, "AdditionalStatsValues"))]);
                 if (Int(r, "PlayerLevelReq") is >= 0 and var req) levelReqs.Add((Int(r, "StatSet"), Int(r, "GemLevel"), req));
             }
             return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, levelReqs, mana, reservations, cooldowns,
-                vaalSouls, quality, effectiveness);
+                vaalSouls, quality, effectiveness, spellCritChances, attackSpeedMultipliers);
         }
     }
 }

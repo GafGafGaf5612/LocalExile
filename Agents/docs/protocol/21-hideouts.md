@@ -368,10 +368,110 @@ Entry uses the selected template's waypoint and fixed seed 1.
 `HideoutScene` recreates personal/guild stashes, crafting bench, map device, Nessa, Niko,
 Helena and Kirac on the destination floor. It retains decoration appearance, translates NPC
 positions relative to the new waypoint, and searches for nonoverlapping walkable footprints.
-The default template supplies missing functional furniture. Arbitrary decorative objects and
-interactive decoration editing remain outside this implementation. Automated coverage checks
+The default template supplies missing functional furniture. Arbitrary decorative object placement/removal remains outside this implementation.
+Moving the installed furniture and NPCs is described below. Automated coverage checks
 selection bytes, persisted choice and placement; final client verification requires selecting
 a different template and reconnecting after restarting both Auth and Gateway.
+
+### Moving installed furniture and NPCs
+
+The native Edit UI sends C→S **0x5b**, 15 bytes, when a selected object is dropped or rotated.
+Sender `0x142160100` is called by editor callbacks `0x140204880` and `0x140204ae0`.
+Serializer `0x141f93820` and reader `0x141f93920` agree on this layout:
+
+| Field | Encoding |
+|---|---|
+| Message id | u16 BE, 0x5b |
+| Runtime object id | u32 BE |
+| Grid x, y | two u16 BE |
+| Appearance flags | u8: bit 0 mirror, bits 1-7 variation |
+| Rotation in radians | raw IEEE-754 f32 bits as u32 BE |
+
+Captured `005B0000300A010B00EA0000000000` moves object 0x300a to (267,234), rotation zero.
+Previously this packet was unframed and discarded, so the editor reverted the attempted move.
+It now has an explicit framing length, including when followed by another message in the same read.
+
+The Gateway accepts registered functional objects and NPCs only in the character's selected personal hideout.
+Town objects, pets, portals, unknown ids, out-of-grid/blocked terrain and nonfinite rotations are rejected.
+The Edit toggle is local client UI state; no separate server edit-mode toggle was observed.
+This implementation applies translation and rotation; variation and mirroring changes are not implemented.
+
+Save first, then update the runtime interaction coordinates, path blockers, NPC lookup and device placement.
+S→C 0x1b7 moves the existing object with terrain-height marker 0x7fffffff.
+S→C 0x2ba updates Positioned (component 0): LE u16 mask 8 followed by LE f32 radians.
+The update reader is `0x141e30910`; ordinary furniture/NPC edits preserve the existing object.
+Map devices declare `static = true`, `object_size = 4` and `blocking = false` in CraftingBenchBase.ot;
+client collision comes from their AO Hull, rather than that small Positioned footprint.
+After position and rotation updates, send S→C **0x161**, followed by its unused zero object header
+(u32 object id, u32, u16; all zero). World handler `0x142187480` calls `0x142185500`, which restores
+the two baseline hideout walk grids saved at world +0x998, then `0x141d88690` reapplies all current model hulls.
+A teleport, remove/recreate or HideoutDoodad component refresh alone leaves stale blocked cells in hideouts.
+The object id, device state and portal list are preserved; no object recreation is needed.
+The server replaces its blocker by id and restores it at the saved position on entry.
+NPCs, personal/guild stashes, the crafting bench, Harvest station and Heist Locker share
+`RegisterStationaryCollision` at spawn in towns and hideouts. `object-types.json` version 3 carries inherited
+Positioned object_size/blocking/static/block_league_flag plus Animated's model. NPC Id aliases resolve through NPCs.dat Metadata.
+When local guild storage is spawned, its block_league_flag HaveGuild (native id 2) is included in the player's
+league flags through the ordinary Player component update. GuildStash's native collision predicate checks this
+flag even though the local storage is per-account and no real guild membership is implemented. Disabling the
+Positioned blocking flag through 0x2b0 is incorrect: it also removes the stash from blocking spatial buckets.
+Blocking objects use object_size minus one (Heist Locker 2, Harvest station 7); static nonblocking objects use
+their model hull (ordinary crafting bench about 9.273 cells). Interaction approaches use the registered clearance.
+A nonblocking object has editor size -1, distinct from a blocking object whose size is 0.
+Waypoints and dropped loot remain traversable; built-in scenery remains governed by the area's terrain walk grid.
+The complete stationary scene is registered before arrival collision correction, in addition to regular tick checks.
+Live checks covered all nine functional hideout objects (Nessa, Niko, Helena, Kirac, both stashes, both benches
+and the Heist Locker): each was moved onto the player, ejected the player, restored, and its former centre reached.
+In Lioneye's Watch, native walking stopped outside Tarkleigh, Nessa, Bestel and both stashes, including the guild
+stash after its normal access flag was supplied. Test placements were restored and the character returned home.
+All supported NPC types also have automated metadata and collision-escape checks; other towns share this spawn path.
+`hideouts.json` version 3 extracts conservative rotation-independent collision radii from native AO `walk_tri`
+and `walk_circle`, including inherited AO files, for map devices, bench variants and static NPC models.
+Map-device radii are about 7.236 cells for CartographyDevice2 and 30.662 for the large MTX model. The server uses
+these radii plus mover clearance when routing and ejecting the player; it does not rasterize the exact triangles.
+Already-open portals remain in their current positions; subsequent portals use the device's new position.
+
+`CharacterSaves.HideoutPlacements` stores placements by WorldAreas Id and stable furniture/NPC keys.
+Runtime object ids are not saved; reconnecting or restarting restores the positions for that template.
+Different characters and different templates keep independent layouts.
+A failed save leaves the previous placement authoritative and closes the connection through normal error handling.
+Stash interaction now approaches its runtime position, including after a move in any selected hideout.
+
+Tests cover captured framing, rotation endianness, invalid requests, persistence, save failure and scene restoration.
+CollisionEscape finds the nearest clear cell against terrain, quest barriers and all stationary blockers.
+It uses the player's mover clearance and ignores mobile monsters for this correction.
+A successful correction invalidates the current action/channel, updates the server walk origin, sends ActionEnded
+and teleports the player with terrain-height marker 0x7fffffff.
+Checks run after edits and during player ticks, covering a blocked entry cell as furniture is restored.
+Search is bounded to 128 cells; no teleport is sent if no safe destination exists within that search.
+Regression tests cover overlapping blockers, map edges, blocked terrain, released old positions and save/reentry state.
+Real-client checks moved the small map device onto the player on clear floor: the player escaped 9.434 cells,
+could walk immediately, and could reach the former device centre after the device was restored.
+Large-model radii, bounded path progress and save/reentry persistence have automated coverage; large-model
+and wall-adjacent layouts still need separate live checks.
+Real-client movement/rotation and reconnect persistence were checked for the map device, Nessa and personal stash.
+The test placements were returned to their original positions afterwards.
+Other registered objects share the same update path; their individual Edit UI interactions still need manual checks.
+
+### Heist Locker
+
+Every hideout scene includes `Metadata/MiscellaneousObjects/Heist/HeistStash_Hideout` on clear floor.
+It is placed after the existing furniture/NPCs, so adding it does not change their default positions.
+Its serialized components are Positioned, BaseEvents, Animated, MinimapIcon and InteractionAction.
+The model is supplied by the native object type; no Stash or HideoutDoodad payload is present.
+It registers a size-4 path blocker and the stable editor key `heist-locker`.
+Movement/rotation updates interaction coordinates and persists with the template's other placements.
+
+C→S 0x24 interaction approaches the locker, validates arrival, then sends S→C 0x7b kind **0x37**.
+The four u32 arguments are zero; this is distinct from ordinary stash kind 1 and guild stash kind 2.
+Native dispatch: `0x142163420` case 0x37 -> instance +0x5278 -> `LAB_140dae778` -> HUD virtual +0xcf8.
+PC handler `0x140dcf150` opens HUD +0x8d8 and raises HeistStashOpen.
+HeistStorage1 (Inventories row 56, kind 0x24) is already included in the player's default inventories.
+This change adds placement and the native window entry point; Heist storage transfers are not newly implemented.
+
+Real-client verification sent the locker interaction and observed the native handler completing with the actual
+Heist window visible (flag 0x800 at +0x1e8) and its open marker set (+0x338), while the client remained in game.
+Tests cover placement across exported templates, editor restoration, native component order and the open message.
 
 ### Horticrafting Station (recipe browser only)
 
@@ -380,3 +480,9 @@ HideoutScene places `Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout`
 After walking within range, send `0x7b` kind **0x39**, four zero u32s. Native dispatcher 0x142163420 uses instance +0x4ef8; HUD callback LAB_140dae88c invokes virtual +0xcc0, PC 0x140dcee40 (window +0x8b0) / controller 0x140d8d750 (window +0x4a8). This differs from 0x33 ordinary crafting and 0x45 Sanctum.
 
 The native Harvest panel builds the complete recipe list from HarvestCraftOptions.dat (0x14048dd00), with its own search/filter, current game-mode filtering and localized descriptions/costs. No ordinary bench unlock flags or server-manufactured recipe list are needed. HarvestCraftingItem (Inventories row 43) is already registered with the player's defaults. This step only opens the browser: Harvest execution and lifeforce payment are not implemented. Station placement and native window opening were confirmed in the real client.
+
+### Arrival on the saved waypoint
+
+Before serializing the player, PrepareHideoutWaypoint restores the character's saved waypoint position.
+It sets the hideout spawn and movement origin to that exact cell, rather than a nearby cell or old template spawn.
+This applies to login, waypoint travel and returns from other areas; moving the waypoint changes later arrivals.
