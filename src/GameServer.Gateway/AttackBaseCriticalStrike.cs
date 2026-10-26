@@ -48,10 +48,10 @@ static class AttackBaseCriticalStrike
 
     public static int IncreasedPct(WeaponProfile weapons, Func<string, int> raw)
     {
-        int increased = 0;
+        long increased = 0;
         foreach (var (stat, applies) in Increases)
             if (applies is null || applies(weapons)) increased += raw(stat);
-        return increased;
+        return (int)Math.Clamp(increased, int.MinValue, int.MaxValue);
     }
 
     /// <summary>

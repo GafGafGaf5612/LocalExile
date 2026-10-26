@@ -131,7 +131,8 @@ partial class Program
             ArmourMorePct = aura.ArmourMorePct,
             EvasionMorePct = aura.EvasionMorePct,
             CriticalStrikeChancePct = AttackBaseCriticalStrike.IncreasedPct(activeWeapon, RawCritical),
-            SpellCriticalStrikeChancePct = RawCritical("critical_strike_chance_+%") + RawCritical("spell_critical_strike_chance_+%"),
+            SpellCriticalStrikeChancePct = (int)Math.Clamp((long)RawCritical("critical_strike_chance_+%")
+                + RawCritical("spell_critical_strike_chance_+%"), int.MinValue, int.MaxValue),
             AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
             MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
         };
@@ -242,7 +243,8 @@ partial class Program
         // Unconditional critical strike chance and multiplier passives: generic, attack/melee/weapon-shape and spell.
         // Timed or enemy-state conditions are not modelled.
         int criticalChance = AttackBaseCriticalStrike.IncreasedPct(weapons, Get);
-        int spellCriticalChance = Get("critical_strike_chance_+%") + Get("spell_critical_strike_chance_+%");
+        int spellCriticalChance = (int)Math.Clamp((long)Get("critical_strike_chance_+%")
+            + Get("spell_critical_strike_chance_+%"), int.MinValue, int.MaxValue);
         int criticalMultiplier = Get("base_critical_strike_multiplier_+")
             + (weapons.Melee ? Get("melee_critical_strike_multiplier_+") + Get("melee_weapon_critical_strike_multiplier_+") : 0)
             + (weapons.OneHandMelee ? Get("one_handed_melee_critical_strike_multiplier_+") : 0)

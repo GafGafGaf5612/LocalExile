@@ -251,6 +251,7 @@ Generic and spell increases use the same effective raw inputs as `CharacterPlaye
 including zero, replaces that stat's complete passive/equipment/aura sum.
 The attack and pooled spell reference report those effective increased percentages, so `/crit` agrees with the rolls.
 The attack base feeds `DamageModel.CriticalStrikeChance`, followed by the existing integer-permyriad `Math.Round`.
+Signed increases are summed in 64 bits before their final stored percentage is clamped to the integer range.
 Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
 Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.
 Twelve real-client checks used a fresh synthetic character and read the client's received stat values.
