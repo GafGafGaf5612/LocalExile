@@ -341,11 +341,12 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         LevelGenerator.HeightStage?.Invoke("outer<", grid);
         for (int i = records.Count - 1; i >= 0; i--) outers[i]();
         LevelGenerator.HeightStage?.Invoke("outer>", grid);
-        // 0x142044f30 then: the walkability pass (0x1420289a0) over the rectangle of each primary record (the first,
-        // generator +0x30 +9 taken to be 1) and of each later one whose master has CountAsPrimary (+0x164), then
+        // 0x142044f30 then: the walkability pass (0x1420289a0) over the rectangle of each primary record (generator
+        // +0x30 +9: the first and the queued sub-areas, MapWorldsGraveyard's hideout claim; not the subgraphs graph nodes
+        // add during the layout, 2026-10-27) and of each later one whose master has CountAsPrimary (+0x164), then
         // 0x142028870 flags the map's border vertices. Only grounds and vertex flags change.
         for (int i = 0; i < records.Count; i++)
-            if (i == 0 || records[i].Master.ContainsKey("CountAsPrimary"))
+            if (i <= Secondaries.Count || records[i].Master.ContainsKey("CountAsPrimary"))
                 new GroundStages(grid, records[i].X, records[i].Y, records[i].W, records[i].H, files).Walkability(TileGraphGenerator.ImpassableGround, files.HasTransition, Town);
         new GroundStages(grid, 0, 0, grid.Width, grid.Height, files).FlagBorder();
         // 0x14204cbd0: tile heights in levels become the client's units, each tile origin by the StoreyHeight of the

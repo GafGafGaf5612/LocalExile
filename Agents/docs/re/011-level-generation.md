@@ -640,7 +640,8 @@ entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of 
   plus its master's margins; the view is the record's corner inside the margins (left +0x173, top +0x170), "Subgraph
   … extends outside the TileMap!" past the map. Map +0x104 = the master's StoreyHeight, map +0x10 (ground checks) on,
   then the whole tile-graph pipeline (`0x142116600`, §3d–3g) on that view over the tiles already there; the
-  walkability pass (`0x1420289a0`) only for the first generator +0x30 +9 records (taken to be 1) or a master with
+  walkability pass (`0x1420289a0`) only for the first generator +0x30 +9 records (the first and the queued sub-areas:
+  MapWorldsGraveyard's hideout claim is flooded, the subgraphs graph nodes add later are not; 2026-10-27) or a master with
   +0x164 (taken to be CountAsPrimary); the post-unique tiles and the outer stages are the driver's, as for `.dgr`
   records (a `.tgr` record's outer ground and margins are not ported). All stages take separate x and y offsets now
   (`SpecialNodes`, `EdgeRouter`, `EdgeTiling`, `GroundStages`, `HeightLevels`, `Overlays`, `Fill`, `Storeys`).
