@@ -987,7 +987,9 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   pierce stats give a hit budget of 1 + pierce: the projectile passes through that many monsters, each hit landing as
   the glide reaches its cell; the support's more Projectile Damage is part of `SupportedHit`. `always_pierce` is
   unlimited. The return leg uses the same budget; Returning Projectiles Support's `returning_projectiles_always_pierce`
-  hits all targets. Targets are those seen along the launch line.
+  hits all targets. Contacts are observed during the flight, not selected along the launch line: a target that
+  leaves the line before contact is missed, one that walks into it is hit, and the budget is spent only at real
+  contacts. The return leg still snapshots its line when the return starts.
 - **Returning projectiles.** A projectile whose stats allow it (`projectiles_return`, `attack_projectiles_return`,
   `projectile_return_%_chance`; `skill_projectiles_cannot_return` forbids; `Game_PROJECTILE_RETURN` forces) returns
   from a target/terrain collision or from maximum distance (Freezing Pulse only from a collision), flies back to the

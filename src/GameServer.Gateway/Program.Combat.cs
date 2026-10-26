@@ -971,7 +971,9 @@ partial class Program
         uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
         // All observations below are taken with the monster lock held, including the initial observation when the
         // glide reaches the send gate. The game clock, not time spent waiting for the gate, starts the flight.
-        List<ProjectileFlight.Target> Targets(double at) => pierceHits > 1 ? [] : [.. conn.Monsters
+        // Filtration is per projectile, not per launch: a target that leaves the route before contact is not hit and
+        // one that walks into it later is (the sweep in ProjectileFlight.Advance).
+        List<ProjectileFlight.Target> Targets(double at) => [.. conn.Monsters
             .Where(m => !m.Value.Dead && m.Value.Life > 0 && (shotgunned is null || !shotgunned.ContainsKey(m.Key)))
             .Select(m => new ProjectileFlight.Target(m.Key, m.Value.Walk.Position(at), m.Value.Walk))];
         ProjectileFlight? flight = null;
@@ -1061,46 +1063,58 @@ partial class Program
                     await NotifyMonsterHit(remote, stream, ciphers, conn, mid, monster, applied, hitDamage,
                         $"{projectile.Id} (returning{(hitCritical ? ", critical" : "")})", log);
             }
+            ProjectileFlight.Step step = default;
             if (pierceHits > 1)
             {
-                List<(uint Id, SpawnedMonster Monster, (int X, int Y) At)> along = [];
-                double sampled = conn.Clock.Elapsed.TotalSeconds;
-                lock (conn.Monsters)
-                    foreach (var (mid, monster) in conn.Monsters)
-                    {
-                        if (monster.Dead || monster.Life == 0) continue;
-                        var at = monster.Walk.Position(sampled);
-                        if (ProjectileReturn.DistanceToSegment(at, from, to) <= hitRadius) along.Add((mid, monster, at));
-                    }
-                along.Sort((a, b) => Dist(from, a.At).CompareTo(Dist(from, b.At)));
-                if (along.Count > pierceHits) along.RemoveRange(pierceHits, along.Count - pierceHits);
-                double lineStart = conn.Clock.Elapsed.TotalSeconds;
-                foreach (var (mid, monster, at) in along)
+                // Pierce: the flight does not stop at monsters; every contact found by the live sweep (not a launch-time
+                // snapshot) spends one point of the budget. The client keeps gliding to the end, which is what a
+                // piercing projectile does.
+                HashSet<uint> pierced = [];
+                int budget = pierceHits;
+                while (true)
                 {
-                    if (!Active()) return;
-                    // The hit lands when the client's projectile reaches that cell, not at the click.
-                    double due = lineStart + Dist(from, at) / Math.Max(1, cellsPerSecond);
-                    double wait = due - conn.Clock.Elapsed.TotalSeconds;
-                    if (wait > 0) await Task.Delay(TimeSpan.FromSeconds(Math.Min(wait, 2)));
-                    if (!Active()) return;
-                    await ApplyDirect(mid, monster, " (pierced)");
-                    if (onImpact is not null)
+                    await Task.Delay(16);
+                    IReadOnlyList<ProjectileFlight.Pierced> contacts = [];
+                    lock (conn.Monsters)
                     {
-                        // Kinetic Blast: the collision's explosions never hit the target they were created from
-                        // (poewiki "Kinetic Blast": a typical-sized target is not hit by its own collision's explosions).
-                        await onImpact(at, mid);
-                        _ = ImpactEffect(at);
+                        if (!Active()) return;
+                        if (conn.Paused) continue;
+                        double now = conn.Clock.Elapsed.TotalSeconds;
+                        if (budget > 0)
+                            (step, contacts) = flight.AdvancePiercing(now, Targets(now), pierced);
+                        else
+                            step = flight.Advance(now, []);
                     }
-                    lineHits++;
+                    foreach (var entry in contacts)
+                    {
+                        if (budget <= 0) break;
+                        if (!Active()) return;
+                        if (!conn.Monsters.TryGetValue(entry.Id, out var monster) || monster.Dead || monster.Life == 0)
+                            continue;
+                        pierced.Add(entry.Id);
+                        budget--;
+                        await ApplyDirect(entry.Id, monster, " (pierced)");
+                        if (onImpact is not null)
+                        {
+                            var at = ((int)Math.Round(entry.Position.X), (int)Math.Round(entry.Position.Y));
+                            // Kinetic Blast: the collision's explosions never hit the target they were created from
+                            // (poewiki "Kinetic Blast": a typical-sized target is not hit by its own collision's explosions).
+                            await onImpact(at, entry.Id);
+                            _ = ImpactEffect(at);
+                        }
+                        lineHits++;
+                    }
+                    if (step.Finished) break;
                 }
             }
-            ProjectileFlight.Step step = default;
             bool committed = false;
             SpawnedMonster? target = null;
             MonsterHit? hit = null;
             int damage = 0;
             bool critical = false;
-            while (true)
+            // Piercing flights are resolved by the live sweep above; this terminal sweep only handles the ordinary
+            // first-contact flight.
+            while (pierceHits <= 1)
             {
                 await Task.Delay(16);
                 if (ordinaryShot is not null)

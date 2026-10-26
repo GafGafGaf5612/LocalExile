@@ -78,6 +78,60 @@ public class ProjectileFlightTests
         new((10, 10), (110, 10), speed, launched: 0, radius: 1, wall: false, targets);
 
     [Fact]
+    public void A_piercing_sweep_does_not_reserve_a_target_that_leaves_the_route_at_launch()
+    {
+        var monster = Walker(60, 10, 20);
+        var flight = Flight(Observe(0, (1, monster)));
+        Assert.Empty(flight.AdvancePiercing(3, Observe(3, (1, monster))).Contacts);
+        monster.Order(60, 110, 3);
+        var (step, contacts) = flight.AdvancePiercing(10, Observe(10, (1, monster)));
+        Assert.Empty(contacts);
+        Assert.True(step.Finished);
+        Assert.Equal((110.0, 10.0), step.Position);
+    }
+
+    [Fact]
+    public void A_piercing_sweep_hits_a_target_that_enters_the_route_after_launch()
+    {
+        var monster = Walker(60, 30, 20);
+        var flight = Flight(Observe(0, (1, monster)));
+        Assert.Empty(flight.AdvancePiercing(3, Observe(3, (1, monster))).Contacts);
+        monster.Order(60, 10, 3);
+        ProjectileFlight.Pierced? hit = null;
+        for (double at = 3.1; at < 10 && hit is null; at += 0.1)
+        {
+            var (_, contacts) = flight.AdvancePiercing(at, Observe(at, (1, monster)));
+            if (contacts.Count > 0) hit = contacts[0];
+        }
+        Assert.NotNull(hit);
+        Assert.Equal(1u, hit!.Value.Id);
+        Assert.InRange(hit.Value.At, 4.8, 5.2);
+    }
+
+    [Fact]
+    public void A_piercing_sweep_reports_every_contact_in_order_and_keeps_flying()
+    {
+        var near = Walker(40, 10); var far = Walker(80, 10);
+        var targets = Observe(0, (9, far), (2, near));
+        var (step, contacts) = Flight(targets).AdvancePiercing(10, targets);
+        Assert.Equal(new uint[] { 2, 9 }, contacts.Select(c => c.Id));
+        Assert.Equal(2.9, contacts[0].At, 6);
+        Assert.Equal(6.9, contacts[1].At, 6);
+        Assert.True(step.Finished);
+        Assert.Equal(0u, step.TargetId);
+        Assert.Equal((110.0, 10.0), step.Position);
+    }
+
+    [Fact]
+    public void Already_pierced_targets_are_ignored_without_hiding_later_contacts()
+    {
+        var first = Walker(40, 10); var second = Walker(70, 10);
+        var targets = Observe(0, (1, first), (2, second));
+        var (_, contacts) = Flight(targets).AdvancePiercing(10, targets, new HashSet<uint> { 1 });
+        Assert.Equal(new uint[] { 2 }, contacts.Select(c => c.Id));
+    }
+
+    [Fact]
     public void A_monster_that_changes_course_before_contact_is_not_reserved_at_launch()
     {
         var monster = Walker(60, 10, 20);

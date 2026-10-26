@@ -250,9 +250,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   level 1, 4 at level 20) and the other pierce stats give a projectile a hit budget (1 + pierce): it passes through
   that many monsters, each hit landing as the client's projectile reaches its cell, with the support's more Projectile
   Damage already in `SupportedHit`. `always_pierce` (Freezing Pulse) is unlimited. The return leg uses the same
-  budget, while Returning Projectiles Support's `returning_projectiles_always_pierce` hits every target. Candidates
-  are those seen along the launch line (the server's walk estimates); a target that moves into the line later is not
-  picked up. Kinetic Blast's explosions are created on every collision, including a pierced one (wiki), but the
+  budget, while Returning Projectiles Support's `returning_projectiles_always_pierce` hits every target. Contacts are
+  observed during the flight (the server's walk estimates), not selected at launch: a target that leaves the line
+  before contact is missed, one that walks into it is hit, and the budget is spent only at real contacts. (The return
+  leg still snapshots its line when the return starts.) Kinetic Blast's explosions are created on every collision,
+  including a pierced one (wiki), but the
   collision's target is excluded from its own explosions; the projectile's direct hit now lands on it instead.
   Not modelled: pierce chance, per-skill pierce overrides other than `always_pierce`, forked/chained
   pierce and piercing projectile visuals beyond the object flying on.
