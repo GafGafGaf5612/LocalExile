@@ -177,6 +177,9 @@ partial class Program
             MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
         };
         bonus = UtilityFlasks.Apply(bonus, conn.UtilityFlaskEffects.Stats());
+        // Mageblood's constantly applied magic utility flasks: their stats are permanent, not timed effects.
+        int MagebloodGet(string name) => Stats.Key(name) is uint k ? sources.GetValueOrDefault(k) : 0;
+        bonus = UtilityFlasks.Apply(bonus, MagebloodStats(conn, MagebloodGet));
         if (conn.God)
             bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
                 Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };

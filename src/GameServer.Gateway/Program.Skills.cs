@@ -112,8 +112,11 @@ partial class Program
             foreach (uint key in StatKeys.AttackSpeedInputs)
                 devAttackSpeed += conn.PlayerStats.GetValueOrDefault(key);
         stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
-        // The running utility flasks' plain stats (UtilityFlasks.RawStats: maximum resistances, crit, damage, cast speed).
-        UtilityFlasks.AddRawStats(stats, conn.UtilityFlaskEffects.Stats().Concat(conn.FlaskGrounds.PlayerStats()), Stats);
+        // The running utility flasks' plain stats (UtilityFlasks.RawStats: maximum resistances, crit, damage, cast speed)
+        // and Mageblood's permanently applied magic utility flasks.
+        int FlaskGet(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        UtilityFlasks.AddRawStats(stats,
+            conn.UtilityFlaskEffects.Stats().Concat(conn.FlaskGrounds.PlayerStats()).Concat(MagebloodStats(conn, FlaskGet)), Stats);
         WithRage(conn, stats);
         // The character panel's sums of base forms (PanelStats); a stat /set_stat set keeps its value.
         Dictionary<uint, int> dev;

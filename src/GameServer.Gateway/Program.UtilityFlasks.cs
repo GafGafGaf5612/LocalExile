@@ -11,6 +11,13 @@ partial class Program
     static async Task UseUtilityFlask(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint slot,
         InventoryItem flask, ItemCatalog.BaseType type, UtilityFlasks.Utility utility)
     {
+        // Mageblood: its magic utility flasks are always on and cannot be used (the client enforces the mod; this is the
+        // server backstop).
+        if (MagebloodBlocksFlaskUse(conn, flask.Item))
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): refused, Mageblood's magic utility flasks cannot be used");
+            return;
+        }
         // The character's flask stats (passives and gear: increased flask effect, duration and charges used) and the
         // flask's own mods.
         var character = CharacterPlayerStats(conn);
@@ -62,7 +69,9 @@ partial class Program
     {
         conn.Pools = PoolsFor(conn, conn.Pools.Level);
         conn.ApplyMovementSpeed();
-        conn.Phasing = UtilityFlasks.Phasing(conn.UtilityFlaskEffects.Stats());
+        var stats = CharacterPlayerStats(conn);
+        int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+        conn.Phasing = UtilityFlasks.Phasing(conn.UtilityFlaskEffects.Stats().Concat(MagebloodStats(conn, Get)));
     }
 
     // Ends the utility flask effects whose time is up (by the connection clock: a pause holds them), whose flask left its
