@@ -157,7 +157,7 @@ partial class Program
     {
         var items = ItemsOf(conn);
         var flask = items.Items(PlayerInventories.Flask).FirstOrDefault(i => i.X == slot);
-        if (flask is not null && Items.ByHash(flask.Item.TypeHash) is { } utilityType && Items.UtilityFlaskOf(utilityType) is { } utility)
+        if (flask is not null && Items.ByHash(flask.Item.TypeHash) is { } utilityType && Items.UtilityFlaskOf(utilityType) is { Usable: true } utility)
         {
             await UseUtilityFlask(remote, stream, ciphers, conn, slot, flask, utilityType, utility);
             return;
@@ -199,15 +199,8 @@ partial class Program
     // Gives each life, mana and utility flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them (or, for
     // the refills of kills and the like, lets them wait for the next save: PlayerInventories.ChangeUnsaved): the
     // flasks that changed.
-    static List<InventoryItem> FillFlasks(PlayerInventories items, int charges, bool saveNow = true)
-    {
-        List<InventoryItem> changed = [];
-        foreach (var flask in items.Items(PlayerInventories.Flask))
-            if (Items.ByHash(flask.Item.TypeHash) is { } type && (Items.FlaskOf(type) ?? Items.UtilityFlaskOf(type)?.Charges) is { } use && flask.Item.Charges < use.MaxCharges &&
-                (saveNow ? items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges)) : items.ChangeUnsaved(PlayerInventories.Flask, flask.Id, i => Flasks.Gain(i, use, charges))) is { } done)
-                changed.Add(done);
-        return changed;
-    }
+    static List<InventoryItem> FillFlasks(PlayerInventories items, int charges, bool saveNow = true) =>
+        Flasks.Fill(items, Items, charges, saveNow);
 
     // FillFlasks, and the changed flasks to the client (one S→C 0xbf).
     static async Task GainFlaskCharges(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int charges, string why)

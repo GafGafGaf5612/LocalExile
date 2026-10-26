@@ -14,6 +14,19 @@ static class Flasks
     /// <summary>The flask after a use, or null when it has fewer charges than a use needs.</summary>
     public static Item? Spend(Item flask, Flask f) => flask.Charges < f.ChargesPerUse ? null : flask with { Charges = flask.Charges - f.ChargesPerUse };
 
+    /// <summary>Gives each flask in the flask bar (life, mana and utility: <see cref="ItemCatalog.FlaskChargesOf"/>) up to
+    /// <paramref name="charges"/> charges, saved now or, with <paramref name="saveNow"/> false, with the next save
+    /// (PlayerInventories.ChangeUnsaved): the flasks that changed.</summary>
+    public static List<InventoryItem> Fill(PlayerInventories items, ItemCatalog catalog, int charges, bool saveNow = true)
+    {
+        List<InventoryItem> changed = [];
+        foreach (var flask in items.Items(PlayerInventories.Flask))
+            if (catalog.ByHash(flask.Item.TypeHash) is { } type && catalog.FlaskChargesOf(type) is { } use && flask.Item.Charges < use.MaxCharges &&
+                (saveNow ? items.Change(PlayerInventories.Flask, flask.Id, i => Gain(i, use, charges)) : items.ChangeUnsaved(PlayerInventories.Flask, flask.Id, i => Gain(i, use, charges))) is { } done)
+                changed.Add(done);
+        return changed;
+    }
+
     /// <summary>The flask with <paramref name="charges"/> more, up to its maximum.</summary>
     public static Item Gain(Item flask, Flask f, int charges) =>
         flask with { Charges = (int)Math.Min(f.MaxCharges, (long)flask.Charges + charges) };

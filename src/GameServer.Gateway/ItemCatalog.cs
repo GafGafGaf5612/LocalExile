@@ -284,6 +284,9 @@ sealed class ItemCatalog
     /// <summary>A utility flask's use (<see cref="UtilityFlasks"/>), or null for other types.</summary>
     public UtilityFlasks.Utility? UtilityFlaskOf(BaseType t) => _utilityFlasks.Value.GetValueOrDefault(t.Row);
 
+    /// <summary>Any flask's charges (life, mana or utility, usable or not), for refills; null for other types.</summary>
+    public Flasks.Flask? FlaskChargesOf(BaseType t) => FlaskOf(t) ?? UtilityFlaskOf(t)?.Charges;
+
     private static Dictionary<int, Flasks.Flask> LoadFlasks(string folder, IReadOnlyList<BaseType> rows)
     {
         string flasks = Path.Combine(folder, "tables", "Flasks.json"), charges = Path.Combine(folder, "tables", "ComponentCharges.json");

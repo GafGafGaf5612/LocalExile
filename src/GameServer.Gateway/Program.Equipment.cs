@@ -212,8 +212,8 @@ partial class Program
             $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");
         // The socketed gems may have changed: the Cosmetics tab's skill slots follow them.
         await SendWornCosmetics(remote, stream, ciphers, conn, "equipment changed");
-        conn.Pools = PoolsFor(conn, conn.Pools.Level);
-        lock (conn.Monsters) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+        // Under the Monsters lock, as every pools writer (a utility flask that ends recomputes under it too).
+        lock (conn.Monsters) { RecomputePoolsAndSpeed(conn); conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn)); }
         await SendSkills(remote, stream, ciphers, conn);
         await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
             "0x01b3 player stats (equipment)");

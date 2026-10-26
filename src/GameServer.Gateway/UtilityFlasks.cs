@@ -7,7 +7,8 @@ using GameServer.Core.Protocol.Instance;
 /// flask's BuffDefinitions row, its BuffStatValues (one per StatsKeys entry) and its duration (RecoveryTime, tenths of a
 /// second); ComponentCharges its charges. A use puts the buff on the player for the duration and its stats count on the
 /// character until it ends (<see cref="Apply"/>, <see cref="RawStats"/>). Only the stats the server models count
-/// (<see cref="Modelled"/>); a flask with none of them (Aquamarine, Gold, Iron, Corundum) is not usable.
+/// (<see cref="Modelled"/>); a flask with none of them (Aquamarine, Gold, Iron, Corundum) is not usable, but its charges
+/// still fill.
 /// </summary>
 static class UtilityFlasks
 {
@@ -22,6 +23,9 @@ static class UtilityFlasks
 
         /// <summary>The stats this flask applies (its buff's and the extra buff's), with unmodelled ones left out.</summary>
         public IEnumerable<(string Stat, int Value)> Applied => Stats.Concat(Extra?.Stats ?? []).Where(s => Modelled.Contains(s.Stat));
+
+        /// <summary>Whether a use does anything here: at least one of its stats is modelled.</summary>
+        public bool Usable => Applied.Any();
     }
 
     /// <summary>A buff a flask grants besides its own (BuffDefinitions row, with its stats).</summary>
@@ -46,7 +50,7 @@ static class UtilityFlasks
     const string OnslaughtFlag = "silver_flask_display_onslaught", OnslaughtBuff = "onslaught", OnslaughtTemplate = "MapModPlayerOnslaught";
 
     /// <summary>The utility flasks by BaseItemTypes row, from data/tables Flasks, BuffDefinitions, BuffTemplates,
-    /// ComponentCharges and Stats. Flasks with no modelled stat are left out.</summary>
+    /// ComponentCharges and Stats: every one, usable or not (<see cref="Utility.Usable"/>), so that all of them refill.</summary>
     public static Dictionary<int, Utility> Load(string folder, IReadOnlyList<ItemCatalog.BaseType> rows)
     {
         var result = new Dictionary<int, Utility>();
@@ -86,23 +90,29 @@ static class UtilityFlasks
             List<(string, int)> values = [.. buff.GetProperty("StatsKeys").EnumerateArray().Select(StatName)
                 .Zip(f.GetProperty("BuffStatValues").EnumerateArray().Select(v => v.GetInt32()))];
             bool grantsOnslaught = buff.GetProperty("GrantedFlags").EnumerateArray().Any(s => StatName(s) == OnslaughtFlag);
-            // RecoveryTime is in tenths of a second, as for life flasks (Quicksilver Flask: 60, 6 s).
-            var utility = new Utility(b.GetInt32(), (ushort)bk.GetInt32(), buff.GetProperty("Id").GetString() ?? "", values,
-                f.GetProperty("RecoveryTime").GetInt32() / 10.0, use.PerUse, use.Max, grantsOnslaught ? onslaughtBuff : null);
-            if (utility.Applied.Any()) result.TryAdd(b.GetInt32(), utility);
+            // RecoveryTime is in tenths of a second, as for life flasks (Quicksilver Flask: 60, 6 s; Path of Building and
+            // RePoE 3.29 agree). The second column, RecoveryTime2 (Quicksilver 20), is not the duration the game uses.
+            result.TryAdd(b.GetInt32(), new Utility(b.GetInt32(), (ushort)bk.GetInt32(), buff.GetProperty("Id").GetString() ?? "", values,
+                f.GetProperty("RecoveryTime").GetInt32() / 10.0, use.PerUse, use.Max, grantsOnslaught ? onslaughtBuff : null));
         }
         return result;
     }
 
-    /// <summary>One use of a flask: its stats scaled by the flask's increased effect, and its duration with its quality
-    /// and increased duration (the flask's own local mods, ItemModStats.Local by Stats.dat Id).</summary>
-    public static (IReadOnlyList<(string Stat, int Value)> Stats, double Seconds) For(Utility u, int quality, IReadOnlyDictionary<string, int> local)
+    /// <summary>One use of a flask: its stats scaled by increased effect, and its duration with increased duration and
+    /// quality. <paramref name="local"/>: the flask's own mods (ItemModStats.Local, by Stats.dat Id);
+    /// <paramref name="character"/>: the character's stats (passives and gear: flask_duration_+%, flask_effect_+%,
+    /// magic_utility_flask_effect_+% for a magic flask). As Path of Building's Item.lua and CalcPerform.lua: duration =
+    /// base × (1 + increased) × (1 + quality) × (1 + local more), quality multiplying the other increases; effect
+    /// = 1 + the local and the character's increased effect.</summary>
+    public static (IReadOnlyList<(string Stat, int Value)> Stats, double Seconds) For(Utility u, Item flask,
+        IReadOnlyDictionary<string, int> local, Func<string, int> character)
     {
         int Get(string name) => local.GetValueOrDefault(name);
-        // Quality on a utility flask is increased duration, added to the flask's other increased duration.
-        double seconds = u.Seconds * (100 + quality + Get("local_flask_duration_+%")) / 100.0
-            * (100 + Get("local_flask_duration_+%_final")) / 100.0;
-        double effect = Math.Max(0, 100 + Get("local_flask_effect_+%")) / 100.0;
+        double seconds = u.Seconds * (100 + Get("local_flask_duration_+%") + character("flask_duration_+%")) / 100.0
+            * (100 + flask.Quality) / 100.0 * (100 + Get("local_flask_duration_+%_final")) / 100.0;
+        int increasedEffect = Get("local_flask_effect_+%") + character("flask_effect_+%")
+            + (flask.Rarity == ItemRarity.Magic ? character("magic_utility_flask_effect_+%") : 0);
+        double effect = Math.Max(0, 100 + increasedEffect) / 100.0;
         List<(string, int)> stats = [.. u.Stats.Where(s => Modelled.Contains(s.Stat))
             .Select(s => (s.Stat, (int)Math.Round(s.Value * effect, MidpointRounding.AwayFromZero)))];
         // Onslaught has its own effect stat (onslaught_effect_+%), not the flask's.
@@ -115,12 +125,14 @@ static class UtilityFlasks
     public sealed record Active(uint ItemId, byte Slot, string Name, Utility Flask, ushort Buff, ushort? ExtraBuff,
         IReadOnlyList<(string Stat, int Value)> Stats, double Started, double Ends);
 
-    /// <summary>The utility flasks running on one connection, at most one per flask and one per buff.</summary>
+    /// <summary>The utility flasks running on one connection, at most one per flask and one per buff. One ticker ends them
+    /// (Program.RunUtilityFlasks): <see cref="Start"/> hands out its ticket when none runs, and it stops when nothing runs
+    /// any more (<see cref="End"/>) or when it exits for any other reason (<see cref="TickerExited"/>).</summary>
     public sealed class Effects
     {
         readonly List<Active> _active = [];
         readonly Lock _lock = new();
-        bool _ticking;
+        int _ticker, _lastTicket;
 
         /// <summary>The effect of this flask (item id) still running, or null.</summary>
         public Active? Of(uint itemId)
@@ -129,32 +141,46 @@ static class UtilityFlasks
         }
 
         /// <summary>Starts an effect. A flask of the same kind (same buff) that still runs ends: effects of one kind do not
-        /// stack. Returns that one, or null, and whether a ticker has to be started (none runs yet).</summary>
-        public (Active? Replaced, bool StartTicker) Start(Active effect)
+        /// stack. Returns that one, or null, and the ticket of a ticker to start now, or null when one runs.</summary>
+        public (Active? Replaced, int? Ticker) Start(Active effect)
         {
             lock (_lock)
             {
                 var replaced = _active.FirstOrDefault(a => a.Flask.BuffRow == effect.Flask.BuffRow);
                 if (replaced is not null) _active.Remove(replaced);
                 _active.Add(effect);
-                bool start = !_ticking;
-                _ticking = true;
-                return (replaced, start);
+                if (_ticker != 0) return (replaced, null);
+                _ticker = ++_lastTicket;
+                return (replaced, _ticker);
             }
         }
 
-        /// <summary>The effects that ended by <paramref name="now"/> (removed), or all of them with <paramref name="all"/>
-        /// (death). <paramref name="stop"/> tells the ticker to stop: nothing runs any more.</summary>
-        public List<Active> End(double now, bool all, out bool stop)
+        /// <summary>The effects that ended by <paramref name="now"/>, or whose flask <paramref name="gone"/> says left its
+        /// cell (removed), or all of them with <paramref name="all"/> (death). <paramref name="stop"/> tells the ticker to
+        /// stop: nothing runs any more.</summary>
+        public List<Active> End(double now, bool all, out bool stop, Func<Active, bool>? gone = null)
         {
             lock (_lock)
             {
-                List<Active> ended = [.. _active.Where(a => all || a.Ends <= now)];
+                List<Active> ended = [.. _active.Where(a => all || a.Ends <= now || gone?.Invoke(a) == true)];
                 foreach (var a in ended) _active.Remove(a);
                 stop = _active.Count == 0;
-                if (stop) _ticking = false;
+                if (stop) _ticker = 0;
                 return ended;
             }
+        }
+
+        /// <summary>The ticker with this ticket exited (normally or not): unless a newer one runs, the next start starts
+        /// one again, so no effect is left running without a ticker to end it.</summary>
+        public void TickerExited(int ticket)
+        {
+            lock (_lock) if (_ticker == ticket) _ticker = 0;
+        }
+
+        /// <summary>Whether a ticker is meant to run.</summary>
+        public bool Ticking
+        {
+            get { lock (_lock) return _ticker != 0; }
         }
 
         /// <summary>The stats of every running effect, summed by stat.</summary>
@@ -222,5 +248,59 @@ static class UtilityFlasks
             if (name is not null && catalog.Key(name) is uint key) result[key] = result.GetValueOrDefault(key) + value;
         }
         return result.Select(kv => (kv.Key, kv.Value));
+    }
+
+    /// <summary>Adds the running flasks' <see cref="RawStats"/> to the character's stats (Program.CharacterPlayerStats).</summary>
+    public static void AddRawStats(Dictionary<uint, int> stats, IEnumerable<(string Stat, int Value)> running, StatCatalog catalog)
+    {
+        foreach (var (k, v) in RawStats(running, catalog)) stats[k] = stats.GetValueOrDefault(k) + v;
+    }
+
+    /// <summary>Why a use is refused, or null: dead, this flask's own effect still runs (<paramref name="running"/>),
+    /// or fewer charges than a use needs.</summary>
+    public static string? Refusal(bool dead, Active? running, Item flask, Utility u, double now) =>
+        dead ? "dead"
+        : running is not null ? $"its effect still runs ({running.Ends - now:0.##} s left)"
+        : Flasks.Spend(flask, u.Charges) is null ? $"{flask.Charges}/{u.MaxCharges} charges, a use needs {u.ChargesPerUse}"
+        : null;
+
+    /// <summary>Starts an effect and recomputes the character (<paramref name="recompute"/>: the pools and the walk
+    /// speed) under the connection's Monsters lock, which every pools writer takes, so no writer keeps a stale total.</summary>
+    public static (Active? Replaced, int? Ticker) Start(ClientState conn, Active effect, Action recompute)
+    {
+        lock (conn.Monsters)
+        {
+            var started = conn.UtilityFlaskEffects.Start(effect);
+            recompute();
+            return started;
+        }
+    }
+
+    /// <summary>Ends the effects that are due (<see cref="Effects.End"/>) and recomputes the character in the same locked
+    /// block, when any ended.</summary>
+    public static List<Active> EndDue(ClientState conn, double now, bool dead, Func<Active, bool>? gone, Action recompute, out bool stop)
+    {
+        lock (conn.Monsters)
+        {
+            var ended = conn.UtilityFlaskEffects.End(now, dead, out stop, gone);
+            if (ended.Count > 0) recompute();
+            return ended;
+        }
+    }
+
+    /// <summary>S→C 0x1c1 for an effect: the flask's buff (<see cref="Flasks.Buff"/>: duration and flask-bar cell) and the
+    /// extra buff (Onslaught: same duration, no cell, so it shows in the buff row with its countdown).</summary>
+    public static IEnumerable<byte[]> StartPackets(Active e, uint player)
+    {
+        yield return Flasks.Buff(player, e.Buff, e.Flask.BuffRow, e.Slot, e.Ends - e.Started);
+        if (e.Flask.Extra is { } x && e.ExtraBuff is ushort extra)
+            yield return InstanceEntities.AddBuff(player, extra, x.BuffRow, player, u68: BitConverter.SingleToUInt32Bits((float)(e.Ends - e.Started)));
+    }
+
+    /// <summary>S→C 0x1c2 for an effect that ends: its buff and the extra buff.</summary>
+    public static IEnumerable<byte[]> EndPackets(Active e, uint player)
+    {
+        yield return InstanceEntities.RemoveBuff(player, e.Buff);
+        if (e.ExtraBuff is ushort extra) yield return InstanceEntities.RemoveBuff(player, extra);
     }
 }
