@@ -88,7 +88,8 @@ a new character of its name.
 The character's level comes from its saved experience (`CharacterSaves.LevelOf`). The account's level is a copy for the
 character list; when a level-up's update to Auth fails, the next login corrects it (`set_level`). Only Auth writes the
 last town.
-Automatic XP events carry a character-wide revision; a later gain or intentional `/set_level` invalidates older events.
+Automatic XP events use current character XP rather than the target captured when a gain began.
+An old-area gain cannot prevent another connection from reconciling its own level, including a pending level reset.
 Their runtime target and queued XP packet come from current experience, never a level captured before an await.
 Auth updates serialize per character and recheck current XP after replies, including gains, controls and login repair.
 An in-flight obsolete request is corrected before releasing that gate; its answer never applies a runtime level.

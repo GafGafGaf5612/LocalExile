@@ -69,11 +69,12 @@ partial class Program
         lock (updates.Gate)
         lock (conn.Monsters)
         {
-            // A later gain or intentional reset owns the current event. Never rebase its obsolete target level.
-            if (change.Revision != updates.Revision) return false;
+            // Old-area gains share XP, not runtime pools. Even an obsolete event must reconcile this connection
+            // from current XP; rejecting it outright could leave the live connection at an older level.
             conn.Experience = CurrentExperience(conn);
             level = Progression.LevelFor(conn.Experience, CharacterStats.LevelStarts);
-            if (!change.Reset && level == conn.Pools.Level) return false;
+            bool currentReset = change.Reset && change.Revision == updates.Revision;
+            if (!currentReset && level == conn.Pools.Level) return false;
             before = CommitLevelChange(conn, CaptureLevelChange(conn, level));
         }
         await PublishLevelChange(remote, stream, ciphers, conn, before, level);

@@ -5,6 +5,59 @@ namespace GameServer.Gateway.Tests;
 public sealed partial class AscendancyGatewayIntegrationTests
 {
     [Fact]
+    public async Task An_old_area_gain_cannot_suppress_the_live_connections_current_level_publication()
+    {
+        using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725], allocate: true)).Error);
+        var oldArea = game.Reload();
+        var liveGain = Program.RecordExperienceGain(game.State,
+            CharacterStats.ExperienceFor(3) - CharacterStats.ExperienceFor(2))!;
+        var oldGain = Program.RecordExperienceGain(oldArea, 1)!;
+        var auth = new LevelControl();
+        await game.CompleteGain(oldGain, auth.Call, oldArea);
+
+        var live = await game.CompleteGain(liveGain, auth.Call);
+
+        uint experience = CharacterStats.ExperienceFor(3) + 1;
+        AssertExperiencePrefix(live.Bytes, experience);
+        Assert.Equal(3, game.State.Pools.Level);
+        Assert.Equal(3, oldArea.Pools.Level);
+        Assert.Equal(experience, game.State.Experience);
+        Assert.Equal(experience, CharacterSaves.Load(game.Character)!.Experience);
+        Assert.Equal(3, auth.Level);
+        Assert.Null((await game.Change([24377], allocate: true)).Error);
+        Assert.Equal(new ushort[] { 39725, 24377 }, CharacterSaves.Load(game.Character)!.Passives);
+        Assert.True(game.State.SavedPassiveProgress!.Matches(CharacterSaves.Load(game.Character)!));
+    }
+
+    [Fact]
+    public async Task An_old_area_gain_cannot_suppress_an_intentional_downward_controls_runtime_publication()
+    {
+        using var game = new GatewayCharacter(level: 4, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725, 24377], allocate: true)).Error);
+        var oldArea = game.Reload();
+        var reset = ProgramValue<Program.ExperienceChange>("RecordExperienceReset", game.State, 3);
+        var oldGain = Program.RecordExperienceGain(oldArea, 1)!;
+        var auth = new LevelControl();
+        await game.CompleteGain(oldGain, auth.Call, oldArea);
+        string saved = game.SavedJson;
+
+        var live = await game.PublishGain(reset);
+        await Program.SynchronizeAccountLevel(game.State, auth.Call);
+
+        uint experience = CharacterStats.ExperienceFor(3) + 1;
+        AssertExperiencePrefix(live.Bytes, experience);
+        Assert.Equal(3, game.State.Pools.Level);
+        Assert.Equal(3, oldArea.Pools.Level);
+        Assert.Equal(experience, game.State.Experience);
+        Assert.Equal(experience, CharacterSaves.Load(game.Character)!.Experience);
+        Assert.Equal(3, auth.Level);
+        Assert.Equal(saved, game.SavedJson);
+        Assert.Equal(new ushort[] { 39725, 24377 }, game.State.Passives);
+        Assert.True(game.State.SavedPassiveProgress!.Matches(CharacterSaves.Load(game.Character)!));
+    }
+
+    [Fact]
     public async Task Reverse_completed_XP_events_keep_the_latest_level_and_every_allocated_passive()
     {
         using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
@@ -172,9 +225,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
     sealed partial class GatewayCharacter
     {
         public Task<(string? Error, byte[] Bytes)> CompleteGain(Program.ExperienceChange change,
-            Func<ControlRequest, Task<ControlResponse>> control) => Exchange(async (stream, cipher) =>
+            Func<ControlRequest, Task<ControlResponse>> control, ClientState? state = null) => Exchange(async (stream, cipher) =>
         {
-            await Program.CompleteExperienceGain("xp-event-test", stream, cipher, State, change, "test", control);
+            await Program.CompleteExperienceGain("xp-event-test", stream, cipher, state ?? State, change, "test", control);
             return null;
         });
 
