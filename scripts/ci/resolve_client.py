@@ -1,26 +1,32 @@
-"""Re-resolve the native control bridge's client symbols in a client executable, offline (standard library only).
+"""Resolve the native control bridge's client symbols in a client executable, offline (standard library only).
 
     python -I scripts/ci/resolve_client.py PathOfExile.exe                    # report only
     python -I scripts/ci/resolve_client.py PathOfExile.exe --write --version 3.29.4.1 --report report.md
-    python -I scripts/ci/resolve_client.py Client/Game.patched.exe --check    # every signature unique, at its pinned VA
+    python -I scripts/ci/resolve_client.py Client/Game.patched.exe Client/Game.exe --check
     python -I scripts/ci/resolve_client.py Client/Game.exe --check --mode xref
 
 scripts/dev/client-signatures.json holds everything the bridge (scripts/dev/client-control.js) knows about the
-client: per symbol a pinned image VA with its expected bytes, a wildcarded signature (`??` for bytes a patch moves)
-with captures of the operands the bridge reads (call targets, RIP-relative globals, struct offsets), and optional
-caller/string cross-references; per global and struct offset a pinned value and the capture it is derived from.
-This script reads the executable in place (mmap, no copy) and resolves every symbol the way the bridge does at attach:
+client. `symbols`, `globals` and `offsets` say how to find each thing in any build: per symbol a wildcarded
+signature (`??` for bytes a patch moves) with captures of the operands the bridge reads (call targets, RIP-relative
+globals, struct offsets) and optional caller/string cross-references; per global and offset the capture it is
+derived from. `builds` pins what was found in each known build, keyed by the SHA-256 of the official
+PathOfExile.exe: version, build label, image base, and the VA or value of every symbol, global and offset.
+This script reads the executable in place (mmap, no copy), picks its build (by SHA-256, else the build whose pinned
+symbols it matches best, as the bridge does) and resolves every symbol the way the bridge does at attach:
 
-1. pinned: the expected bytes are still at the pinned VA;
+1. pinned: the signature matches at the build's pinned VA;
 2. signature: the pattern occurs exactly once (anchors marked `inside:<symbol>` are searched inside that function);
 3. xref: the call target captured in a resolved caller, or the one function that references a unique string;
 4. otherwise unresolved.
 
-Then it recomputes the pinned VAs, expected bytes, globals and derived offsets. `--write` stores them (and the
-executable's SHA-256 and build label, plus `--version`) back into the JSON; `--report` writes a markdown table.
-Exit status: 0 nothing changed, 1 updated and everything resolved, 2 something is unresolved (what could be
-resolved is still written). `--check` instead verifies that every symbol resolves by signature (`--mode xref`:
-by cross-reference where one exists) to exactly its pinned VA, with unchanged globals and offsets (exit 0/1).
+Captures are always read again from the code, and must sit behind a matching opcode or ModRM byte (the bridge
+decodes the instruction instead). An offset whose sources are all unresolved keeps its pinned value, unverified.
+`--write` adds this executable's build (or replaces the entry with the same SHA-256; other builds are kept), with
+`--version`; `--report` writes a markdown table against the build it was compared with. Exit status: 0 the build
+was already listed unchanged, 10 added or updated with everything resolved, 20 added with something unresolved
+(1 and 2 remain Python's own error and usage codes). `--check` instead verifies, for each executable given, that
+every symbol resolves by signature (`--mode xref`: by cross-reference where one exists) to exactly its build's
+pinned VA, with the same globals and offsets (exit 0/1).
 """
 import argparse
 import hashlib
@@ -183,8 +189,9 @@ def scan(image, pattern, ranges):
     return found
 
 
-def string_refs(image, text):
-    """The function that references a unique NUL-terminated ASCII string with lea reg, [rip+disp32]."""
+def string_hits(image, text):
+    """RVAs of a NUL-terminated ASCII string in the non-executable sections, preceded by a NUL or a section start
+    (client-resolver.js searches the same sections)."""
     needle = text.encode("ascii") + b"\0"
     hits = []
     for _, start, length, raw, flags in image.sections:
@@ -195,6 +202,12 @@ def string_refs(image, text):
             if at == raw or image.data[at - 1] == 0:
                 hits.append(start + at - raw)
             position = at + 1
+    return hits
+
+
+def string_refs(image, text):
+    """The function that references a unique NUL-terminated ASCII string with lea reg, [rip+disp32]."""
+    hits = string_hits(image, text)
     if len(hits) != 1:
         return None, f"string found {len(hits)} times"
     functions = set()
@@ -210,6 +223,28 @@ def string_refs(image, text):
     return functions.pop()[0], "string reference"
 
 
+def capture_problem(image, start, capture):
+    """Why a capture does not sit where its kind says, or None. The bridge decodes the instruction with Frida's
+    Instruction.parse; offline, the ModRM/opcode byte in front of the field is checked instead."""
+    at, size, kind = start + capture["at"], capture["size"], capture["kind"]
+    before = image.read(at - 2, 2)
+    if before is None:
+        return "outside the image"
+    if kind == "rel32":
+        ok = size == 4 and capture.get("end") == capture["at"] + 4 and \
+            (before[1] in (0xE8, 0xE9) or (before[0] == 0x0F and 0x80 <= before[1] <= 0x8F))
+    elif kind == "rip":
+        ok = size == 4 and before[1] & 0xC7 == 0x05
+    elif kind == "disp":
+        mod = {1: 0x40, 4: 0x80}.get(size)
+        # ModRM right before the displacement, or ModRM (rm=100) + SIB.
+        ok = mod is not None and ((before[1] & 0xC0 == mod and before[1] & 7 != 4) or
+                                  (before[0] & 0xC0 == mod and before[0] & 7 == 4))
+    else:
+        ok = kind == "imm" and size in (1, 2, 4)
+    return None if ok else f"{kind} capture at +{capture['at']} does not follow a matching opcode/ModRM byte"
+
+
 def capture_value(image, start, capture):
     at, size, kind = capture["at"], capture["size"], capture["kind"]
     raw = image.read(start + at, size)
@@ -222,11 +257,35 @@ def parse_int(value):
     return int(value, 0) if isinstance(value, str) else int(value)
 
 
-def resolve(signatures, image, mode="pinned"):
-    """{symbols, globals, offsets} with, per entry, rva/value, method (pinned/signature/xref/string/constant/
-    unresolved) and detail. mode: pinned (normal), signature (skip pinned), xref (also prefer cross-references)."""
-    pinned_base = parse_int(signatures["client"]["imageBase"])
+def pick_build(signatures, image, sha256=None):
+    """(key of the pinned build to use, why): the one with this SHA-256, else the one whose pinned symbols the
+    image matches best (Game.patched.exe differs from the official file only in the login patch), else None."""
+    builds, specs = signatures["builds"], signatures["symbols"]
+    if sha256 in builds:
+        return sha256, "SHA-256"
+    best, hits = None, 0
+    for key, build in builds.items():
+        base = parse_int(build["imageBase"])
+        count = sum(1 for name, va in build["symbols"].items() if name in specs and
+                    matches_at(image, parse_int(va) - base - specs[name].get("offset", 0), specs[name]["pattern"]))
+        if count > hits:
+            best, hits = key, count
+    return (best, f"{hits} of {len(specs)} pinned symbols match") if best else (None, "no listed build matches")
+
+
+def latest_build(signatures):
+    """The last listed build: where constants come from when the image matches no build."""
+    return list(signatures["builds"])[-1] if signatures["builds"] else None
+
+
+def resolve(signatures, image, mode="pinned", sha256=None):
+    """{build, symbols, globals, offsets} with, per entry, rva/value, method (pinned/signature/xref/string/constant/
+    unresolved) and detail. mode: pinned (normal), signature (skip pinned), xref (also prefer cross-references).
+    Offsets derived from code whose sources are all unresolved fall back to the pinned value, marked unverified."""
     specs = signatures["symbols"]
+    build_key, build_reason = pick_build(signatures, image, sha256)
+    pins = signatures["builds"][build_key] if build_key else None
+    constants = signatures["builds"].get(build_key or latest_build(signatures), {})
     symbols = {}
 
     def location_ok(name, start):
@@ -249,28 +308,35 @@ def resolve(signatures, image, mode="pinned"):
         ok, why = location_ok(name, start)
         if not ok:
             return False, why
+        details = [detail] if detail else []
         captures = {}
         if matches_at(image, start, spec["pattern"]):
-            captures = {cap: capture_value(image, start, c) for cap, c in spec.get("captures", {}).items()}
+            for cap, capture in spec.get("captures", {}).items():
+                problem = capture_problem(image, start, capture)
+                if problem:
+                    details.append(f"{cap}: {problem}")
+                else:
+                    captures[cap] = capture_value(image, start, capture)
         elif method in ("signature", "pinned"):
             return False, "pattern mismatch"
         else:
-            detail = (detail + "; " if detail else "") + "pattern differs here, captures unavailable"
+            details.append("pattern differs here, captures unavailable")
         if why and why.endswith("not checked"):
-            detail = (detail + "; " if detail else "") + why
+            details.append(why)
         symbols[name] = {"rva": start + spec.get("offset", 0), "start": start, "method": method,
-                         "detail": detail, "captures": captures}
+                         "detail": "; ".join(details), "captures": captures}
         return True, ""
 
     def has_xref(name):
         return bool(specs[name].get("callers") or specs[name].get("string"))
 
     def try_pinned(name):
-        spec = specs[name]
-        start = parse_int(spec["va"]) - pinned_base - spec.get("offset", 0)
-        expected = bytes.fromhex(spec["bytes"])
-        if start < 0 or image.read(start, len(expected)) != expected:
-            return False, "pinned bytes differ"
+        va = (pins or {}).get("symbols", {}).get(name)
+        if va is None:
+            return False, "no pinned address"
+        start = parse_int(va) - parse_int(pins["imageBase"]) - specs[name].get("offset", 0)
+        if not matches_at(image, start, specs[name]["pattern"]):
+            return False, "pinned address does not match"
         return accept(name, start, "pinned")
 
     def try_signature(name):
@@ -376,17 +442,23 @@ def resolve(signatures, image, mode="pinned"):
         values, missing = source_values(sources)
         adjusted = {source: value + spec.get("add", 0) for source, value in values.items()}
         distinct = sorted(set(adjusted.values()))
+        pinned = constants.get("offsets", {}).get(name)
         if len(distinct) > 1:
-            offsets[name] = {"value": None, "method": "unresolved",
+            offsets[name] = {"value": None, "method": "unresolved", "unverified": False,
                              "detail": "sources disagree: " + ", ".join(f"{s}={v:#x}" for s, v in adjusted.items())}
         elif distinct:
             first = next(iter(adjusted))
             offsets[name] = {"value": distinct[0], "method": symbols[first.split(".")[0]]["method"],
-                             "detail": "from " + ", ".join(adjusted)}
+                             "unverified": False, "detail": "from " + ", ".join(adjusted)}
+        elif pinned is None:
+            offsets[name] = {"value": None, "method": "unresolved", "unverified": False,
+                             "detail": "no pinned value" + (", sources unresolved" if sources else "")}
         else:
-            offsets[name] = {"value": parse_int(spec["value"]), "method": "constant",
-                             "detail": ("sources unresolved: " + ", ".join(missing)) if sources else "pinned constant"}
-    return {"symbols": symbols, "globals": globals_, "offsets": offsets}
+            offsets[name] = {"value": parse_int(pinned), "method": "constant", "unverified": bool(sources),
+                             "detail": ("unverified: sources unresolved: " + ", ".join(missing)) if sources
+                             else "pinned constant"}
+    return {"build": build_key, "buildReason": build_reason, "symbols": symbols, "globals": globals_,
+            "offsets": offsets}
 
 
 def sha256_file(path):
@@ -404,134 +476,153 @@ def build_label(data):
     return match.group(1).decode("ascii") if match else None
 
 
+def build_entry(signatures, image, result, version=None):
+    """The pinned values of this image: what a new `builds` entry holds. Constants and unresolved offsets keep the
+    reference build's values; unresolved symbols and globals get no pin."""
+    reference = signatures["builds"].get(result["build"] or latest_build(signatures), {})
+    return {
+        "version": version or (reference.get("version") if result["buildReason"] == "SHA-256" else None) or "unknown",
+        "label": image.build_label() or "unknown",
+        "imageBase": f"{image.base:#x}",
+        "symbols": {name: f"{image.base + found['rva']:#x}" for name, found in result["symbols"].items()
+                    if found["rva"] is not None},
+        "globals": {name: f"{image.base + found['rva']:#x}" for name, found in result["globals"].items()
+                    if found["rva"] is not None},
+        "offsets": {name: f"{found['value']:#x}" if found["value"] is not None and not found["unverified"]
+                    else reference.get("offsets", {}).get(name, "0x0")
+                    for name, found in result["offsets"].items()},
+    }
+
+
 def updated(signatures, image, result, sha256, version=None):
-    """A copy of the signatures with every resolved value recomputed for this image."""
+    """A copy of the signatures with this image's build added (or replaced, for the same SHA-256)."""
     out = json.loads(json.dumps(signatures))
-    out["client"].update(imageBase=f"{image.base:#x}", sha256=sha256, build=image.build_label() or "unknown")
-    if version:
-        out["client"]["version"] = version
-    for name, spec in out["symbols"].items():
-        found = result["symbols"][name]
-        if found["rva"] is not None:
-            spec["va"] = f"{image.base + found['rva']:#x}"
-            length = len(spec["pattern"].split())
-            spec["bytes"] = image.read(found["start"], length).hex()
-    for name, spec in out.get("globals", {}).items():
-        if result["globals"][name]["rva"] is not None:
-            spec["va"] = f"{image.base + result['globals'][name]['rva']:#x}"
-    for name, spec in out.get("offsets", {}).items():
-        found = result["offsets"][name]
-        if found["value"] is not None and found["method"] != "constant":
-            spec["value"] = f"{found['value']:#x}"
+    out["builds"][sha256] = build_entry(signatures, image, result, version)
     return out
 
 
 def unresolved(result):
     names = [f"symbol {n}" for n, r in result["symbols"].items() if r["rva"] is None]
-    names += [f"symbol {n} (pattern differs)" for n, r in result["symbols"].items()
-              if r["rva"] is not None and "pattern differs" in r["detail"]]
+    names += [f"symbol {n} ({r['detail']})" for n, r in result["symbols"].items()
+              if r["rva"] is not None and ("pattern differs" in r["detail"] or "capture" in r["detail"])]
     names += [f"global {n}" for n, r in result["globals"].items() if r["rva"] is None]
-    names += [f"offset {n}" for n, r in result["offsets"].items()
-              if r["value"] is None or r["detail"].startswith("sources unresolved")]
+    names += [f"offset {n}" for n, r in result["offsets"].items() if r["value"] is None or r["unverified"]]
     return names
 
 
-def report(old, new, result, path):
-    base = parse_int(new["client"]["imageBase"])
-    lines = [f"Client `{path.name}`: version {old['client'].get('version')} -> {new['client'].get('version')}, "
-             f"build {new['client'].get('build')}, SHA-256 `{new['client']['sha256']}`.", ""]
+def report(signatures, result, sha256, entry, path):
+    reference_key = result["build"] or latest_build(signatures)
+    reference = signatures["builds"].get(reference_key, {})
+    lines = [f"Client `{path.name}`: version {entry['version']}, build {entry['label']}, SHA-256 `{sha256}`.",
+             f"Compared with the pinned build {reference.get('version', '-')} ({reference.get('label', '-')}, "
+             f"`{(reference_key or '-')[:16]}…`, chosen by {result['buildReason']}).", ""]
     missing = unresolved(result)
     lines.append(f"**{len(missing)} unresolved:** " + ", ".join(missing) if missing else "Everything resolved.")
-    lines += ["", "| symbol | old VA | new VA | method | status |", "|---|---|---|---|---|"]
-    for name, found in result["symbols"].items():
-        before = old["symbols"][name]["va"]
-        after = f"{base + found['rva']:#x}" if found["rva"] is not None else "-"
-        status = "unresolved" if found["rva"] is None else ("unchanged" if after == before else "moved")
-        detail = f" ({found['detail']})" if found["detail"] else ""
-        lines.append(f"| {name} | {before} | {after} | {found['method']}{detail} | {status} |")
-    lines += ["", "| global | old VA | new VA | method | status |", "|---|---|---|---|---|"]
-    for name, found in result["globals"].items():
-        before = old["globals"][name]["va"]
-        after = f"{base + found['rva']:#x}" if found["rva"] is not None else "-"
-        status = "unresolved" if found["rva"] is None else ("unchanged" if after == before else "moved")
-        lines.append(f"| {name} | {before} | {after} | {found['method']} ({found['detail']}) | {status} |")
-    lines += ["", "| offset | old | new | method | status |", "|---|---|---|---|---|"]
-    for name, found in result["offsets"].items():
-        before = old["offsets"][name]["value"]
-        after = f"{found['value']:#x}" if found["value"] is not None else "-"
-        status = "unresolved" if found["value"] is None else \
-            ("unverified" if found["detail"].startswith("sources unresolved") else
-             "unchanged" if parse_int(after) == parse_int(before) else "changed")
-        lines.append(f"| {name} | {before} | {after} | {found['method']} ({found['detail']}) | {status} |")
+
+    def table(kind, rows, old_values):
+        out = ["", f"| {kind} | old | new | method | status |", "|---|---|---|---|---|"]
+        for name, new, method, detail, bad in rows:
+            old = old_values.get(name, "-")
+            status = "unresolved" if new is None else "unverified" if bad else \
+                "unchanged" if old != "-" and parse_int(old) == parse_int(new) else "changed"
+            out.append(f"| {name} | {old} | {new or '-'} | {method}{f' ({detail})' if detail else ''} | {status} |")
+        return out
+
+    def va(rva):
+        return f"{parse_int(entry['imageBase']) + rva:#x}" if rva is not None else None
+
+    lines += table("symbol", [(n, va(r["rva"]), r["method"], r["detail"], False)
+                              for n, r in result["symbols"].items()], reference.get("symbols", {}))
+    lines += table("global", [(n, va(r["rva"]), r["method"], r["detail"], False)
+                              for n, r in result["globals"].items()], reference.get("globals", {}))
+    lines += table("offset", [(n, f"{r['value']:#x}" if r["value"] is not None else None, r["method"], r["detail"],
+                               r["unverified"]) for n, r in result["offsets"].items()], reference.get("offsets", {}))
     return "\n".join(lines) + "\n"
 
 
 def check(signatures, result):
-    """Problems found when the result must reproduce every pinned value exactly."""
-    base = parse_int(signatures["client"]["imageBase"])
+    """Problems found when the result must reproduce the chosen build's pinned values exactly."""
+    if result["build"] is None:
+        return ["no listed build matches this executable"]
+    build = signatures["builds"][result["build"]]
+    base = parse_int(build["imageBase"])
     problems = []
     for name, found in result["symbols"].items():
-        pinned = parse_int(signatures["symbols"][name]["va"])
+        pinned = build["symbols"].get(name)
         if found["rva"] is None:
             problems.append(f"{name}: unresolved ({found['detail']})")
-        elif base + found["rva"] != pinned:
-            problems.append(f"{name}: {found['method']} found {base + found['rva']:#x}, pinned {pinned:#x}")
-        elif not found["captures"] and signatures["symbols"][name].get("captures"):
+        elif pinned is None or base + found["rva"] != parse_int(pinned):
+            problems.append(f"{name}: {found['method']} found {base + found['rva']:#x}, pinned {pinned}")
+        elif found["detail"] and found["method"] in ("pinned", "signature"):
+            problems.append(f"{name}: {found['detail']}")
+        elif len(found["captures"]) != len(signatures["symbols"][name].get("captures", {})):
             problems.append(f"{name}: captures unavailable")
     for name, found in result["globals"].items():
-        pinned = parse_int(signatures["globals"][name]["va"])
-        if found["rva"] is None or base + found["rva"] != pinned:
+        pinned = build["globals"].get(name)
+        if found["rva"] is None or pinned is None or base + found["rva"] != parse_int(pinned):
             problems.append(f"global {name}: {found['detail']}")
     for name, found in result["offsets"].items():
-        pinned = parse_int(signatures["offsets"][name]["value"])
-        if found["value"] != pinned or found["detail"].startswith(("sources", "unresolved")):
-            problems.append(f"offset {name}: {found['value']} vs pinned {pinned:#x} ({found['detail']})")
+        pinned = build["offsets"].get(name)
+        if pinned is None or found["value"] != parse_int(pinned) or found["unverified"]:
+            problems.append(f"offset {name}: {found['value']} vs pinned {pinned} ({found['detail']})")
     return problems
+
+
+# Exit status of a run without --check: distinct from Python's own 1 (an uncaught exception) and 2 (usage).
+UNCHANGED, UPDATED, PARTIAL = 0, 10, 20
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("exe", type=Path)
+    parser.add_argument("exe", type=Path, nargs="+", help="client executable(s); several only with --check")
     parser.add_argument("--signatures", type=Path, default=SIGNATURES)
     parser.add_argument("--mode", choices=("pinned", "signature", "xref"), default=None,
                         help="resolution order (default: pinned; --check defaults to signature)")
-    parser.add_argument("--write", action="store_true", help="store the recomputed values in the signatures file")
+    parser.add_argument("--write", action="store_true", help="add this build to the signatures file")
     parser.add_argument("--version", help="client patch version to record (e.g. 3.29.4.1)")
     parser.add_argument("--report", type=Path, help="write the markdown report here")
-    parser.add_argument("--check", action="store_true", help="require every pinned value to be reproduced")
+    parser.add_argument("--check", action="store_true", help="require the matching build's pins to be reproduced")
     options = parser.parse_args()
     signatures = json.loads(options.signatures.read_text(encoding="utf-8"))
-    image = Image.open(options.exe)
     mode = options.mode or ("signature" if options.check else "pinned")
-    result = resolve(signatures, image, mode)
-    base = image.base
     if options.check:
-        width = max(map(len, result["symbols"]))
-        for name, found in result["symbols"].items():
-            where = f"{base + found['rva']:#x}" if found["rva"] is not None else "-"
-            print(f"{name:<{width}}  {where:>12}  {found['method']}{' (' + found['detail'] + ')' if found['detail'] else ''}")
-        for name, found in result["globals"].items():
-            where = f"{base + found['rva']:#x}" if found["rva"] is not None else "-"
-            print(f"global {name}: {where} {found['method']} ({found['detail']})")
-        for name, found in result["offsets"].items():
-            value = f"{found['value']:#x}" if found["value"] is not None else "-"
-            print(f"offset {name}: {value} {found['method']} ({found['detail']})")
-        problems = check(signatures, result)
-        print("\n".join(problems) if problems else
-              f"OK: {len(result['symbols'])} symbols ({mode}), {len(result['globals'])} globals and "
-              f"{len(result['offsets'])} offsets reproduce the pinned values in {options.exe.name}")
-        return 1 if problems else 0
-    sha256 = sha256_file(options.exe)  # streamed: hashing the mmap would keep all 79 MB resident
+        failed = 0
+        for exe in options.exe:
+            image = Image.open(exe)
+            result = resolve(signatures, image, mode, sha256_file(exe))
+            for name, found in result["symbols"].items():
+                where = f"{image.base + found['rva']:#x}" if found["rva"] is not None else "-"
+                print(f"{name:<20}  {where:>12}  {found['method']}" + (f" ({found['detail']})" if found["detail"] else ""))
+            for name, found in result["globals"].items():
+                where = f"{image.base + found['rva']:#x}" if found["rva"] is not None else "-"
+                print(f"global {name}: {where} {found['method']} ({found['detail']})")
+            for name, found in result["offsets"].items():
+                value = f"{found['value']:#x}" if found["value"] is not None else "-"
+                print(f"offset {name}: {value} {found['method']} ({found['detail']})")
+            problems = check(signatures, result)
+            build = signatures["builds"].get(result["build"] or "", {})
+            print("\n".join(problems) if problems else
+                  f"OK: {exe.name} is build {build.get('version')} ({build.get('label')}, by {result['buildReason']}): "
+                  f"{len(result['symbols'])} symbols ({mode}), {len(result['globals'])} globals and "
+                  f"{len(result['offsets'])} offsets reproduce its pinned values")
+            failed += bool(problems)
+        return 1 if failed else 0
+    if len(options.exe) != 1:
+        parser.error("give one executable unless --check")
+    exe = options.exe[0]
+    image = Image.open(exe)
+    sha256 = sha256_file(exe)  # streamed: hashing the mmap would keep all 79 MB resident
+    result = resolve(signatures, image, mode, sha256)
     new = updated(signatures, image, result, sha256, options.version)
-    text = report(signatures, new, result, options.exe)
+    text = report(signatures, result, sha256, new["builds"][sha256], exe)
     if options.report:
         options.report.write_text(text, encoding="utf-8")
     print(text)
     if options.write:
         options.signatures.write_text(json.dumps(new, indent=2) + "\n", encoding="utf-8")
     if unresolved(result):
-        return 2
-    return 0 if new == signatures else 1
+        return PARTIAL
+    return UNCHANGED if new == signatures else UPDATED
 
 
 if __name__ == "__main__":

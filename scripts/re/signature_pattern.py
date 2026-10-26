@@ -12,7 +12,8 @@ scripts/ci/resolve_client.py can read the value back from whatever build they fi
 instruction's displacement/immediate without capturing it, `--keep VA` keeps it literal.
 
 Prints the disassembly, the pattern, how many times it occurs in the executable sections (a signature must occur
-exactly once), and the JSON entry (`va`, `pattern`, `bytes`, `captures`) to paste into client-signatures.json.
+exactly once), and the JSON entry (`pattern`, `captures`) to paste into client-signatures.json `symbols`;
+the start VA goes into the current build's `symbols` pins (plus `offset` for a hook inside the range).
 """
 import argparse
 import json
@@ -86,7 +87,7 @@ def draft(pe, start, end, captures=None, wild=(), keep=()):
     if position != len(code):
         raise ValueError(f"{end:#x} is not an instruction boundary (decoded {position:#x} of {len(code):#x} bytes)")
     pattern = " ".join(f"{b:02x}" if literal else "??" for b, literal in zip(code, mask))
-    entry = {"va": f"{start:#x}", "pattern": pattern, "bytes": code.hex()}
+    entry = {"pattern": pattern}
     if found:
         entry["captures"] = found
     return entry, values, lines
@@ -131,6 +132,7 @@ def main():
                                                                  if len(found) != 1 else ""))
     for name, value in values.items():
         print(f"capture {name} = {value:#x}")
+    print(f"pinned VA (for builds.<sha256>.symbols): {start:#x}")
     print(json.dumps(entry, indent=2))
     return 0 if len(found) == 1 else 1
 

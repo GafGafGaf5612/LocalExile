@@ -253,9 +253,7 @@ class ClientControl:
             # Resolve symbols and attach hooks only once the executable is known to be this checkout's copy.
             if self.build is None:
                 self.build = self.offline.build_label(CLIENT.read_bytes()) or "unknown"
-            init = self.script.exports_sync.init({
-                "signatures": self.signatures, "mode": self.mode, "build": self.build,
-                "patchVersion": self.signatures["client"]["version"]})
+            init = self.script.exports_sync.init({"signatures": self.signatures, "mode": self.mode, "build": self.build})
             self.warnings = init["warnings"]
             for warning in self.warnings:
                 print(f"client_control: {warning}", file=sys.stderr, flush=True)
@@ -279,12 +277,13 @@ class ClientControl:
         self.attach()
         report = self.script.exports_sync.doctor()
         unpatched = self.offline.sha256_file(UNPATCHED) if UNPATCHED.exists() else None
-        expected = self.signatures["client"]
+        builds = self.signatures["builds"]
         report["client"] = {
             "path": str(CLIENT), "build": self.build, "sha256": self.offline.sha256_file(CLIENT),
             "unpatchedSha256": unpatched, "versionResource": None,
-            "signatures": {"version": expected["version"], "build": expected["build"], "sha256": expected["sha256"]},
-            "matchesSignatures": unpatched == expected["sha256"]}
+            "knownBuilds": {sha: f"{b['version']} ({b['label']})" for sha, b in builds.items()},
+            # Builds are keyed by the official executable; the copied Game.exe is that file unchanged.
+            "unpatchedIsKnownBuild": unpatched in builds}
         return report
 
     def wait(self, predicate, description, timeout=15):

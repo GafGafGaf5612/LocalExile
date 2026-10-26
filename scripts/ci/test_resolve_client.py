@@ -93,28 +93,27 @@ def scenario(caller_at=0x100, callee_at=0x400, global_va=DATA + 0x40, field=0x35
     return build_pe(text_with(parts), functions, rdata, chained), string
 
 
-def signatures(image_bytes):
-    """Signatures pinned to scenario() at its defaults."""
-    image = rc.Image(image_bytes)
+def signatures(image_bytes, sha="0" * 64):
+    """Signatures for scenario(), with one build pinned to it at its defaults."""
     caller, callee = TEXT + 0x100, TEXT + 0x400
     return {
-        "client": {"version": "1.0.0.0", "build": "test", "sha256": "0" * 64, "imageBase": f"{BASE:#x}"},
+        "format": 2,
         "symbols": {
-            "caller": {"va": f"{BASE + caller:#x}", "start": "function", "pattern": CALLER,
-                       "bytes": image.read(caller, 31).hex(),
+            "caller": {"start": "function", "pattern": CALLER,
                        "captures": {"callee": {"at": 5, "size": 4, "kind": "rel32", "insn": 4, "end": 9},
                                     "global": {"at": 12, "size": 4, "kind": "rip", "insn": 9, "end": 16},
                                     "field": {"at": 18, "size": 4, "kind": "disp", "insn": 16}}},
-            "callee": {"va": f"{BASE + callee:#x}", "start": "function", "callers": ["caller.callee"],
-                       "string": STRING.decode(), "pattern": CALLEE,
-                       "bytes": image.read(callee, 21).hex(),
+            "callee": {"start": "function", "callers": ["caller.callee"], "string": STRING.decode(), "pattern": CALLEE,
                        "captures": {"value": {"at": 5, "size": 4, "kind": "imm", "insn": 4}}},
-            "tail": {"va": f"{BASE + caller + 16:#x}", "start": "inside:caller", "pattern": "8b 81 ?? ?? ?? ?? 48 8d 15",
-                     "bytes": image.read(caller + 16, 9).hex()},
+            "tail": {"start": "inside:caller", "pattern": "8b 81 ?? ?? ?? ?? 48 8d 15"},
         },
-        "globals": {"g": {"va": f"{BASE + DATA + 0x40:#x}", "from": "caller.global"}},
-        "offsets": {"field": {"value": "0x358", "from": ["caller.field"]}, "value": {"value": "0x2a", "from": "callee.value"},
-                    "fixed": {"value": "0x10"}},
+        "globals": {"g": {"from": "caller.global"}},
+        "offsets": {"field": {"from": ["caller.field"]}, "value": {"from": "callee.value"}, "fixed": {}},
+        "builds": {sha: {
+            "version": "1.0.0.0", "label": "unknown", "imageBase": f"{BASE:#x}",
+            "symbols": {"caller": f"{BASE + caller:#x}", "callee": f"{BASE + callee:#x}", "tail": f"{BASE + caller + 16:#x}"},
+            "globals": {"g": f"{BASE + DATA + 0x40:#x}"},
+            "offsets": {"field": "0x358", "value": "0x2a", "fixed": "0x10"}}},
     }
 
 
@@ -132,11 +131,13 @@ class ResolveTests(unittest.TestCase):
             self.assertEqual(rc.check(self.signatures, result), [], mode)
         pinned = self.resolve(self.original)
         self.assertEqual({s["method"] for s in pinned["symbols"].values()}, {"pinned"})
+        self.assertEqual(pinned["build"], "0" * 64)
         self.assertEqual(pinned["offsets"]["field"]["value"], 0x358)
         self.assertEqual(pinned["offsets"]["fixed"]["method"], "constant")
+        self.assertFalse(pinned["offsets"]["fixed"]["unverified"])
         self.assertEqual(self.resolve(self.original, "xref")["symbols"]["callee"]["method"], "xref")
 
-    def test_shifted_code_is_found_by_signature_with_the_same_globals(self):
+    def test_shifted_code_is_found_by_signature_and_added_as_a_new_build(self):
         moved, _ = scenario(caller_at=0x340, callee_at=0x900)
         result = self.resolve(moved)
         self.assertEqual(result["symbols"]["caller"]["method"], "signature")
@@ -146,25 +147,38 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(result["globals"]["g"]["rva"], DATA + 0x40)
         self.assertEqual(rc.unresolved(result), [])
         new = rc.updated(self.signatures, rc.Image(moved), result, "1" * 64, "1.0.0.1")
-        self.assertEqual(new["symbols"]["caller"]["va"], f"{BASE + TEXT + 0x340:#x}")
-        self.assertEqual(new["symbols"]["caller"]["bytes"], rc.Image(moved).read(TEXT + 0x340, 31).hex())
-        self.assertEqual(new["client"]["version"], "1.0.0.1")
-        # The updated file pins the new build: everything is pinned again.
-        again = rc.resolve(new, rc.Image(moved))
-        self.assertEqual({s["method"] for s in again["symbols"].values()}, {"pinned"})
+        self.assertEqual(new["builds"]["0" * 64], self.signatures["builds"]["0" * 64])  # the old build stays
+        added = new["builds"]["1" * 64]
+        self.assertEqual(added["symbols"]["caller"], f"{BASE + TEXT + 0x340:#x}")
+        self.assertEqual(added["version"], "1.0.0.1")
+        self.assertEqual(added["offsets"]["fixed"], "0x10")  # constants carry over
+        # Each build is recognised by its own pins: both resolve pinned with the two-build file.
+        for data, key in ((moved, "1" * 64), (self.original, "0" * 64)):
+            again = rc.resolve(new, rc.Image(data))
+            self.assertEqual(again["build"], key)
+            self.assertEqual({s["method"] for s in again["symbols"].values()}, {"pinned"})
+            self.assertEqual(rc.check(new, rc.resolve(new, rc.Image(data), "signature")), [])
+
+    def test_a_sha256_match_wins_over_pins(self):
+        new = json.loads(json.dumps(self.signatures))
+        new["builds"]["f" * 64] = dict(new["builds"]["0" * 64], version="2.0")
+        image = rc.Image(self.original)
+        self.assertEqual(rc.pick_build(new, image, "f" * 64), ("f" * 64, "SHA-256"))
+        self.assertEqual(rc.pick_build(new, image)[0], "0" * 64)  # the first best match by pins
 
     def test_changed_displacements_move_globals_and_offsets(self):
         changed, _ = scenario(global_va=DATA + 0x80, field=0x360)
         result = self.resolve(changed)
-        self.assertEqual(result["symbols"]["caller"]["method"], "signature")
+        # The function did not move, so its pin still matches; the operands are read again regardless.
+        self.assertEqual(result["symbols"]["caller"]["method"], "pinned")
         self.assertEqual(result["globals"]["g"]["rva"], DATA + 0x80)
         self.assertEqual(result["offsets"]["field"]["value"], 0x360)
-        new = rc.updated(self.signatures, rc.Image(changed), result, "1" * 64)
-        self.assertEqual(new["globals"]["g"]["va"], f"{BASE + DATA + 0x80:#x}")
-        self.assertEqual(new["offsets"]["field"]["value"], "0x360")
-        self.assertEqual(new["offsets"]["fixed"]["value"], "0x10")
+        added = rc.updated(self.signatures, rc.Image(changed), result, "1" * 64)["builds"]["1" * 64]
+        self.assertEqual(added["globals"]["g"], f"{BASE + DATA + 0x80:#x}")
+        self.assertEqual(added["offsets"]["field"], "0x360")
+        self.assertEqual(added["offsets"]["fixed"], "0x10")
 
-    def test_ambiguous_signature_is_refused(self):
+    def test_ambiguous_signature_is_refused_and_its_offsets_are_unverified(self):
         string = RDATA + 0x20
         duplicate = (0x800, caller_code(0x800, TEXT + 0x400, DATA + 0x40, 0x358, string))
         twice, _ = scenario(extra=[duplicate])
@@ -172,9 +186,10 @@ class ResolveTests(unittest.TestCase):
         self.assertIsNone(result["symbols"]["caller"]["rva"])
         self.assertIn("matched 2 times", result["symbols"]["caller"]["detail"])
         self.assertIsNone(result["globals"]["g"]["rva"])
-        self.assertEqual(result["offsets"]["field"]["method"], "constant")
-        self.assertTrue(result["offsets"]["field"]["detail"].startswith("sources unresolved"))
+        field = result["offsets"]["field"]
+        self.assertEqual((field["method"], field["value"], field["unverified"]), ("constant", 0x358, True))
         self.assertIn("symbol caller", rc.unresolved(result))
+        self.assertIn("offset field", rc.unresolved(result))
         # The callee is still unique; it does not depend on the caller.
         self.assertEqual(result["symbols"]["callee"]["method"], "signature")
 
@@ -192,12 +207,21 @@ class ResolveTests(unittest.TestCase):
         rewritten = bytes.fromhex("4883ec28") + b"\x31\xc0\x90\x90\x90" + b"\x48\x8d\x0d" + \
             struct.pack("<i", string - (TEXT + 0x400 + 16)) + bytes.fromhex("4883c428c3")
         data = build_pe(text_with([(0x400, rewritten)]), [(0x400, 0x440)], bytes(0x20) + STRING + b"\0")
+        self.assertEqual(rc.string_hits(rc.Image(data), STRING.decode()), [RDATA + 0x20])
         result = self.resolve(data)
         callee = result["symbols"]["callee"]
         self.assertEqual((callee["method"], callee["rva"]), ("string", TEXT + 0x400))
         self.assertIn("pattern differs", callee["detail"])
-        self.assertIn("symbol callee (pattern differs)", rc.unresolved(result))
-        self.assertEqual(result["offsets"]["value"]["method"], "constant")
+        self.assertTrue(any(name.startswith("symbol callee (") for name in rc.unresolved(result)))
+        self.assertTrue(result["offsets"]["value"]["unverified"])
+
+    def test_a_capture_not_behind_its_opcode_is_dropped(self):
+        broken = json.loads(json.dumps(self.signatures))
+        broken["symbols"]["caller"]["captures"]["field"]["at"] = 19  # one byte late: not behind the ModRM
+        result = rc.resolve(broken, rc.Image(self.original), "signature")
+        self.assertNotIn("field", result["symbols"]["caller"]["captures"])
+        self.assertIn("field: disp capture", result["symbols"]["caller"]["detail"])
+        self.assertTrue(result["offsets"]["field"]["unverified"])
 
     def test_match_must_be_a_function_start(self):
         # Same bytes, but .pdata says the function begins 0x10 earlier: not the function we want.
@@ -241,27 +265,31 @@ class MainTests(unittest.TestCase):
 
     def test_exit_codes_and_write(self):
         original, _ = scenario()
-        pinned = signatures(original)
-        pinned["client"]["sha256"] = rc.hashlib.sha256(original).hexdigest()
-        pinned["client"]["build"] = "unknown"
+        sha = rc.hashlib.sha256(original).hexdigest()
+        pinned = signatures(original, sha)
         code, written, _ = self.run_main(original, pinned, "--write")
-        self.assertEqual(code, 0)
+        self.assertEqual(code, rc.UNCHANGED)
         self.assertEqual(written, pinned)
         moved, _ = scenario(caller_at=0x340)
+        moved_sha = rc.hashlib.sha256(moved).hexdigest()
         code, written, report = self.run_main(moved, pinned, "--write", "--version", "1.0.0.1")
-        self.assertEqual(code, 1)
-        self.assertEqual(written["symbols"]["caller"]["va"], f"{BASE + TEXT + 0x340:#x}")
-        self.assertEqual(written["client"]["version"], "1.0.0.1")
-        self.assertIn("| caller | 0x140001100 | 0x140001340 | signature | moved |", report)
+        self.assertEqual(code, rc.UPDATED)
+        self.assertEqual(written["builds"][sha], pinned["builds"][sha])
+        self.assertEqual(written["builds"][moved_sha]["symbols"]["caller"], f"{BASE + TEXT + 0x340:#x}")
+        self.assertEqual(written["builds"][moved_sha]["version"], "1.0.0.1")
+        self.assertIn("| caller | 0x140001100 | 0x140001340 | signature | changed |", report)
         string = RDATA + 0x20
         twice, _ = scenario(extra=[(0x800, caller_code(0x800, TEXT + 0x400, DATA + 0x40, 0x358, string))],
                             caller_at=0x340)
-        code, written, report = self.run_main(twice, pinned, "--write")
-        self.assertEqual(code, 2)
-        self.assertEqual(written["symbols"]["caller"]["va"], pinned["symbols"]["caller"]["va"])  # kept
+        code, written, report = self.run_main(twice, pinned, "--write", "--version", "1.0.0.2")
+        self.assertEqual(code, rc.PARTIAL)
+        partial = written["builds"][rc.hashlib.sha256(twice).hexdigest()]
+        self.assertNotIn("caller", partial["symbols"])  # no pin for what was not found
+        self.assertEqual(partial["offsets"]["field"], "0x358")  # carried over, reported unverified
         self.assertIn("unresolved", report)
+        self.assertNotIn(code, (1, 2))  # Python's own error and usage codes stay distinct
 
-    def test_check_mode(self):
+    def test_check_mode_covers_every_listed_build(self):
         original, _ = scenario()
         code, _, _ = self.run_main(original, signatures(original), "--check")
         self.assertEqual(code, 0)
@@ -281,6 +309,10 @@ class SimulatedPatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.signatures = json.loads(rc.SIGNATURES.read_text(encoding="utf-8"))
+        cls.build = cls.signatures["builds"].get(rc.sha256_file(CLIENT))
+        if cls.build is None:
+            raise unittest.SkipTest(f"{CLIENT.name} is not a build listed in client-signatures.json")
+        cls.base = int(cls.build["imageBase"], 16)
         cls.data = CLIENT.read_bytes()
 
     def shifted(self, delta, field_change=0):
@@ -307,8 +339,8 @@ class SimulatedPatchTests(unittest.TestCase):
                 b, e, unwind = struct.unpack_from("<III", data, chained)
                 if text <= b < text + size:
                     struct.pack_into("<II", data, chained, b + delta, e + delta)
-        for spec in self.signatures["symbols"].values():
-            start = int(spec["va"], 16) - BASE - spec.get("offset", 0) + delta
+        for name, spec in self.signatures["symbols"].items():
+            start = int(self.build["symbols"][name], 16) - self.base - spec.get("offset", 0) + delta
             for capture in spec.get("captures", {}).values():
                 field = original.offset(start + capture["at"], capture["size"])
                 if capture["kind"] == "rip":
@@ -323,21 +355,21 @@ class SimulatedPatchTests(unittest.TestCase):
         image = self.shifted(delta)
         for mode in ("pinned", "xref"):
             result = rc.resolve(self.signatures, image, mode)
-            for name, spec in self.signatures["symbols"].items():
+            for name, va in self.build["symbols"].items():
                 found = result["symbols"][name]
-                self.assertEqual(found["rva"], int(spec["va"], 16) - BASE + delta, f"{mode} {name}: {found}")
+                self.assertEqual(found["rva"], int(va, 16) - self.base + delta, f"{mode} {name}: {found}")
                 self.assertNotEqual(found["method"], "pinned")
-            for name, spec in self.signatures["globals"].items():
-                self.assertEqual(BASE + result["globals"][name]["rva"], int(spec["va"], 16), name)
-            for name, spec in self.signatures["offsets"].items():
-                self.assertEqual(result["offsets"][name]["value"], int(spec["value"], 16), name)
+            for name, va in self.build["globals"].items():
+                self.assertEqual(self.base + result["globals"][name]["rva"], int(va, 16), name)
+            for name, value in self.build["offsets"].items():
+                self.assertEqual(result["offsets"][name]["value"], int(value, 16), name)
             self.assertEqual(rc.unresolved(result), [])
 
     def test_changed_struct_offsets_are_read_from_the_code(self):
         image = self.shifted(0x40, field_change=8)
         result = rc.resolve(self.signatures, image)
         for name, spec in self.signatures["offsets"].items():
-            expected = int(spec["value"], 16) + (8 if spec.get("from") else 0)
+            expected = int(self.build["offsets"][name], 16) + (8 if spec.get("from") else 0)
             self.assertEqual(result["offsets"][name]["value"], expected, name)
 
 
@@ -350,11 +382,7 @@ class SignatureFileTests(unittest.TestCase):
         for name, spec in symbols.items():
             tokens = spec["pattern"].split()
             rc.compile_pattern(spec["pattern"])
-            self.assertEqual(len(spec["bytes"]), 2 * len(tokens), name)
-            literal = bytes.fromhex(spec["bytes"])
-            for i, token in enumerate(tokens):
-                if token != "??":
-                    self.assertEqual(int(token, 16), literal[i], f"{name} byte {i}")
+            self.assertNotIn("bytes", spec, "no verbatim copies of client code")
             for cap, capture in spec.get("captures", {}).items():
                 field = tokens[capture["at"]:capture["at"] + capture["size"]]
                 self.assertEqual(field, ["??"] * capture["size"], f"{name}.{cap} must be wildcarded")
@@ -370,6 +398,13 @@ class SignatureFileTests(unittest.TestCase):
                 for source in [sources] if isinstance(sources, str) else sources:
                     symbol, cap = source.split(".")
                     self.assertIn(cap, symbols[symbol]["captures"], f"{table} {name}")
+        self.assertTrue(data["builds"])
+        for key, build in data["builds"].items():
+            self.assertRegex(key, "^[0-9a-f]{64}$")
+            self.assertTrue({"version", "label", "imageBase"} <= set(build), key)
+            self.assertLessEqual(set(build["symbols"]), set(symbols), key)
+            self.assertLessEqual(set(build["globals"]), set(data["globals"]), key)
+            self.assertEqual(set(build["offsets"]), set(data["offsets"]), key)
 
 
 if __name__ == "__main__":

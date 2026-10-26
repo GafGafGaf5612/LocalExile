@@ -1,21 +1,20 @@
 // Resolves scripts/dev/client-signatures.json inside the attached client. client_control.py loads this file
 // before client-control.js in one Frida script; scripts/ci/resolve_client.py implements the same rules offline.
-// Per symbol: (1) pinned VA whose expected bytes still match, (2) the wildcarded signature, exactly once,
-// (3) the call target captured in a resolved caller, or the one function referencing a unique string,
-// (4) unresolved. Globals and struct offsets are read back from the captured operands of resolved symbols;
-// offsets fall back to their pinned constants, globals do not (a moved function means moved data).
+// The pinned values come from the known build (`builds`) whose pinned symbols the module matches best. Per symbol:
+// (1) its pinned VA, if the signature matches there, (2) the wildcarded signature, exactly once, (3) the call target
+// captured in a resolved caller, or the one function referencing a unique string, (4) unresolved. Globals and struct
+// offsets are read back from the captured operands of resolved symbols; an offset whose sources are all unresolved
+// falls back to its pinned value, marked unverified; globals do not (a moved function means moved data).
 'use strict';
 const INSIDE_WINDOW = 0x4000;  // bytes searched after a parent function's start for an `inside:` anchor
 
 function resolveClient(module, signatures, mode) {
   const started = Date.now();
-  const imageBase = parseInt(signatures.client.imageBase, 16);  // image VAs stay below 2^53
   const base = module.base;
+  let imageBase = 0x140000000;  // set from the pinned build below; image VAs stay below 2^53
   const rvaOf = p => p.sub(base).toUInt32();
   const vaOf = p => p === null ? null : '0x' + (imageBase + rvaOf(p)).toString(16);
-  const hex = bytes => Array.from(new Uint8Array(bytes), x => x.toString(16).padStart(2, '0')).join('');
   const code = module.enumerateRanges('r-x').map(r => ({base: r.base, size: r.size}));
-  const readOnly = module.enumerateRanges('r--').map(r => ({base: r.base, size: r.size}));
   const pdata = exceptionTable(base);
 
   function functionOf(p) {
@@ -41,13 +40,34 @@ function resolveClient(module, signatures, mode) {
   const specs = signatures.symbols, symbols = {}, reasons = {};
   for (const name of Object.keys(specs)) reasons[name] = [];
   const note = (name, why) => { if (why && !reasons[name].includes(why)) reasons[name].push(why); };
-  const patternLength = spec => spec.pattern.split(' ').length;
 
   function matchesAt(p, pattern) {
     const tokens = pattern.split(' ');
-    const actual = new Uint8Array(p.readByteArray(tokens.length));
+    if (p.compare(base) < 0 || rvaOf(p) + tokens.length > module.size) return false;
+    let actual;
+    try { actual = new Uint8Array(p.readByteArray(tokens.length)); } catch (_) { return false; }
     return tokens.every((t, i) => t === '??' || parseInt(t, 16) === actual[i]);
   }
+  const pinnedStart = (build, name) => {
+    const va = build.symbols[name];
+    return va === undefined ? null
+      : base.add(parseInt(va, 16) - parseInt(build.imageBase, 16) - (specs[name].offset || 0));
+  };
+
+  // The known build this module is: the one whose pinned symbols match best (Game.patched.exe differs from the
+  // official PathOfExile.exe the builds are keyed by only in the login patch). Its values are the pinned ones.
+  const builds = signatures.builds || {};
+  let buildKey = null, buildHits = 0;
+  for (const [key, build] of Object.entries(builds)) {
+    const hits = Object.keys(build.symbols).filter(name => specs[name] && pinnedStart(build, name) !== null &&
+      matchesAt(pinnedStart(build, name), specs[name].pattern)).length;
+    if (hits > buildHits) { buildKey = key; buildHits = hits; }
+  }
+  const pins = buildKey === null ? null : builds[buildKey];
+  // Constants come from the matching build, else from the newest one listed.
+  const constants = pins ?? builds[Object.keys(builds).at(-1)] ?? {symbols: {}, globals: {}, offsets: {}};
+  // The loader rewrites ImageBase in the mapped header, so image VAs use the pinned build's base.
+  if (constants.imageBase) imageBase = parseInt(constants.imageBase, 16);
 
   function readCapture(start, capture) {
     // Value from the bytes, cross-checked against the decoded instruction (Instruction.parse).
@@ -114,11 +134,9 @@ function resolveClient(module, signatures, mode) {
   const parentPending = name => (specs[name].start || '').startsWith('inside:') && !symbols[specs[name].start.slice(7)];
 
   function tryPinned(name) {
-    const spec = specs[name];
-    const start = base.add(parseInt(spec.va, 16) - imageBase - (spec.offset || 0));
-    const length = spec.bytes.length / 2;
-    if (rvaOf(start) + length > module.size || hex(start.readByteArray(length)) !== spec.bytes)
-      return [false, 'pinned bytes differ'];
+    const start = pins === null ? null : pinnedStart(pins, name);
+    if (start === null) return [false, 'no pinned address'];
+    if (!matchesAt(start, specs[name].pattern)) return [false, 'pinned address does not match'];
     return accept(name, start, 'pinned');
   }
 
@@ -134,11 +152,7 @@ function resolveClient(module, signatures, mode) {
   }
 
   function stringFunction(text) {
-    const bytes = Array.from(text, c => c.charCodeAt(0).toString(16).padStart(2, '0')).concat(['00']).join(' ');
-    const hits = [];
-    for (const r of readOnly) for (const m of Memory.scanSync(r.base, r.size, bytes)) {
-      if (m.address.equals(r.base) || m.address.sub(1).readU8() === 0) hits.push(m.address);
-    }
+    const hits = stringHits(module, text);
     if (hits.length !== 1) return [null, `string found ${hits.length} times`];
     const functions = new Map();
     for (const r of code) for (const m of Memory.scanSync(r.base, r.size, '48 8d 05 : fb ff c7')) {
@@ -199,14 +213,17 @@ function resolveClient(module, signatures, mode) {
   for (const name of deferred) if (!symbols[name]) attempt(trySignature, name);
   follow();
 
-  const out = {mode, imageBase: signatures.client.imageBase, moduleBase: base.toString(), symbols: {},
-    globals: {}, offsets: {}};
+  const out = {mode, imageBase: '0x' + imageBase.toString(16), moduleBase: base.toString(), symbols: {},
+    globals: {}, offsets: {},
+    build: pins === null ? null : {sha256: buildKey, version: pins.version, label: pins.label,
+      matched: `${buildHits} of ${Object.keys(specs).length} pinned symbols`}};
+  const pinnedValue = (table, name) => constants[table][name] ?? null;
   for (const name of Object.keys(specs)) {
     const s = symbols[name];
     out.symbols[name] = s ? {address: s.address, start: s.start, va: vaOf(s.address), method: s.method,
-      detail: s.detail, captures: s.captures, pinned: specs[name].va}
+      detail: s.detail, captures: s.captures, pinned: pinnedValue('symbols', name)}
       : {address: null, va: null, method: 'unresolved', detail: reasons[name].join('; '), captures: {},
-        pinned: specs[name].va};
+        pinned: pinnedValue('symbols', name)};
   }
   const sourceValues = sources => {
     const values = [], missingSources = [];
@@ -221,28 +238,47 @@ function resolveClient(module, signatures, mode) {
     const [values] = sourceValues([spec.from]);
     out.globals[name] = values.length
       ? {address: values[0][1], va: vaOf(values[0][1]), method: out.symbols[spec.from.split('.')[0]].method,
-        detail: `from ${spec.from}`, pinned: spec.va}
-      : {address: null, va: null, method: 'unresolved', detail: `${spec.from} unresolved`, pinned: spec.va};
+        detail: `from ${spec.from}`, pinned: pinnedValue('globals', name)}
+      : {address: null, va: null, method: 'unresolved', detail: `${spec.from} unresolved`,
+        pinned: pinnedValue('globals', name)};
   }
   for (const [name, spec] of Object.entries(signatures.offsets || {})) {
     const sources = typeof spec.from === 'string' ? [spec.from] : (spec.from || []);
     const [values, missingSources] = sourceValues(sources);
     const adjusted = values.map(([source, value]) => [source, value + (spec.add || 0)]);
     const distinct = [...new Set(adjusted.map(([, value]) => value))];
-    const pinned = parseInt(spec.value, 16);
+    const pinned = pinnedValue('offsets', name);
     if (distinct.length > 1) {
-      out.offsets[name] = {value: null, method: 'unresolved', pinned: spec.value,
+      out.offsets[name] = {value: null, method: 'unresolved', unverified: false, pinned,
         detail: 'sources disagree: ' + adjusted.map(([s, v]) => `${s}=0x${v.toString(16)}`).join(', ')};
     } else if (distinct.length === 1) {
       out.offsets[name] = {value: distinct[0], method: out.symbols[adjusted[0][0].split('.')[0]].method,
-        detail: 'from ' + adjusted.map(([s]) => s).join(', '), pinned: spec.value};
+        unverified: false, detail: 'from ' + adjusted.map(([s]) => s).join(', '), pinned};
+    } else if (pinned === null) {
+      out.offsets[name] = {value: null, method: 'unresolved', unverified: false, pinned,
+        detail: 'no pinned value' + (sources.length ? ', sources unresolved' : '')};
     } else {
-      out.offsets[name] = {value: pinned, method: 'constant', pinned: spec.value,
-        detail: sources.length ? 'sources unresolved: ' + missingSources.join(', ') : 'pinned constant'};
+      // A derived offset whose code was not found keeps its pinned value, unverified: operations that call or
+      // write treat it as missing (client-control.js).
+      out.offsets[name] = {value: parseInt(pinned, 16), method: 'constant', unverified: sources.length > 0, pinned,
+        detail: sources.length ? 'unverified: sources unresolved: ' + missingSources.join(', ') : 'pinned constant'};
     }
   }
   out.elapsedMs = Date.now() - started;
   return out;
+}
+
+function stringHits(module, text) {
+  // A NUL-terminated ASCII string in the module's non-executable ranges, preceded by a NUL or a range start
+  // (resolve_client.py searches the same sections).
+  const bytes = Array.from(text, c => c.charCodeAt(0).toString(16).padStart(2, '0')).concat(['00']).join(' ');
+  const hits = [];
+  for (const r of module.enumerateRanges('r--').filter(range => range.protection[2] !== 'x')) {
+    for (const m of Memory.scanSync(r.base, r.size, bytes)) {
+      if (m.address.equals(r.base) || m.address.sub(1).readU8() === 0) hits.push(m.address);
+    }
+  }
+  return hits;
 }
 
 function exceptionTable(base) {

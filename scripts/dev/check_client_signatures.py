@@ -35,12 +35,16 @@ rpc.exports.resolve = (base, signatures, mode) => {
   return JSON.parse(JSON.stringify(result, (key, value) => key === 'address' || key === 'start' || key === 'captures'
     ? undefined : value));
 };
+rpc.exports.strings = (base, texts) => texts.map(text => stringHits(Process.findModuleByAddress(ptr(base)), text).length);
 """
 
 
+sys.path.insert(0, str(ROOT / "scripts" / "ci"))
+import resolve_client  # noqa: E402  (standard library only)
+
+
 def offline(exe, signatures, mode):
-    sys.path.insert(0, str(ROOT / "scripts" / "ci"))
-    import resolve_client
+    """The offline resolver on the same file, choosing the build by its pins as the bridge does."""
     image = resolve_client.Image.open(exe)
     return image.base, resolve_client.resolve(signatures, image, mode)
 
@@ -63,10 +67,21 @@ def main():
         source = (HERE / "client-resolver.js").read_text(encoding="utf-8") + EXPORT
         script = session.create_script(source, name="localexile-signature-check")
         script.load()
+        texts = [spec["string"] for spec in signatures["symbols"].values() if spec.get("string")]
+        js_hits = script.exports_sync.strings(handle[0], texts)
+        image = resolve_client.Image.open(options.exe)
+        for text, hits in zip(texts, js_hits):
+            offline_hits = len(resolve_client.string_hits(image, text))
+            failures += hits != offline_hits or hits != 1
+            print(f"string \"{text}\": {hits} in-process, {offline_hits} offline"
+                  + ("" if hits == offline_hits == 1 else " MISMATCH"))
         for mode in ("pinned", "signature", "xref"):
             js = script.exports_sync.resolve(handle[0], signatures, mode)
             base, py = offline(options.exe, signatures, mode)
-            print(f"== {mode}: {js['elapsedMs']} ms in-process")
+            same_build = (js["build"] or {}).get("sha256") == py["build"]
+            failures += not same_build
+            print(f"== {mode}: {js['elapsedMs']} ms in-process; pinned build {js['build']}"
+                  + ("" if same_build else f" MISMATCH offline {py['build']}"))
             for name, found in js["symbols"].items():
                 theirs = py["symbols"][name]
                 offline_va = f"{base + theirs['rva']:#x}" if theirs["rva"] is not None else None
@@ -86,7 +101,8 @@ def main():
                       + ("" if ok else f" MISMATCH pinned {found['pinned']}"))
             for name, found in js["offsets"].items():
                 theirs = py["offsets"][name]
-                ok = found["value"] == int(found["pinned"], 16) == theirs["value"] and found["method"] == theirs["method"]
+                ok = found["value"] == int(found["pinned"], 16) == theirs["value"] \
+                    and found["method"] == theirs["method"] and found["unverified"] == theirs["unverified"]
                 failures += not ok
                 if not ok or found["method"] == "constant":
                     value = "-" if found["value"] is None else hex(found["value"])
