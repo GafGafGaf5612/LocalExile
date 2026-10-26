@@ -18,15 +18,15 @@ function layoutWarning(name, value, expected) {
 const STATUS = ['app', 'stack', 'app.login', 'app.instance', 'stack.statesBegin', 'stack.statesEnd', 'state.id',
   'login.state', 'instance.state', 'login.account', 'login.character', 'stack.stateCount'];
 const CHARACTERS = ['login.characters', 'character.stride', 'character.league', 'character.level', 'character.classId'];
-const SEND = ['write', 'flush', 'instance.socket'];
+const SEND = ['write', 'flush', 'app.instance', 'instance.socket'];
 const NEEDS = {
   status: STATUS,
   resources: ['lifeTick', 'poolUpdate', 'life.life', 'life.mana', 'life.es', 'pool.current', 'pool.fraction',
     'component.owner', 'owner.flags', 'update.current', 'update.pool'],
   characters: CHARACTERS,
-  connect: ['connect', 'loginWriter', 'assignText', 'loginForm.account', 'loginForm.digest'],
-  login: ['login'],
-  play: ['play', 'push', 'stack.stateTable', 'ingame.classId', ...CHARACTERS],
+  connect: ['connect', 'app.login', 'loginWriter', 'assignText', 'loginForm.account', 'loginForm.digest'],
+  login: ['login', 'app.login'],
+  play: ['play', 'app.login', 'push', 'stack.stateTable', 'ingame.classId', ...CHARACTERS],
   select: SEND,
   logout: ['logout', 'stack.stateTable'],
   chat: SEND,
@@ -40,14 +40,16 @@ function lookup(name) {
   if (resolved.offsets[name]) return resolved.offsets[name].value;
   throw new Error(`Unknown client symbol ${name}`);
 }
-// Operations that call client functions or write client memory never use an offset that is only a pinned fallback
-// (its code was not found in this build); read-only operations may, and doctor marks it unverified.
+// Operations that call client functions or write client memory never compute their arguments or targets from an
+// offset that is only a pinned fallback (its code was not found in this build); `NEEDS` lists those offsets for
+// each such operation. Read-only operations, and the status checks every operation starts with (which have their
+// own range checks), may use one; doctor marks it unverified.
 const READ_ONLY = new Set(['status', 'resources', 'characters']);
 function missing(op) {
   // What `op` lacks, as "name (not found)" / "name (unverified)".
   const names = [...new Set(['frame', ...(op === 'status' ? [] : STATUS), ...(NEEDS[op] || [])])];
   const absent = names.filter(name => lookup(name) === null).map(name => `${name} (not found)`);
-  const weak = READ_ONLY.has(op) ? [] : names.filter(name => resolved?.offsets[name]?.unverified === true)
+  const weak = READ_ONLY.has(op) ? [] : (NEEDS[op] || []).filter(name => resolved?.offsets[name]?.unverified === true)
     .map(name => `${name} (unverified)`);
   return [...absent, ...weak];
 }
@@ -230,12 +232,12 @@ function execute(request) {
       // The Play callback sets the class on state 4, but pushes state 11 (the loading state), not state 4.
       // Loading installs the instance-assignment listener before it enters the in-game state.
       // The one client field the bridge writes: check the object is the in-game state (its own id is 4) and the
-      // field holds nothing but a class id seen before (0 if never played, else a class from this list).
+      // field holds what it holds live: 7 in a fresh client (one past the seven classes), else the class played last.
       const inGame = readable(stateEntry(4).readPointer(), 'in-game state');
       inRange(inGame.add(off('state.id')).readU8(), 4, 4, 'in-game state id');
       const classId = inGame.add(off('ingame.classId')), previous = classId.readU32();
-      if (previous !== 0 && !characters().some(c => c.classId === previous))
-        throw new Error(`Client layout check failed: ingame.classId = ${previous}, not 0 or a class in the character list`);
+      if (previous !== 7 && !characters().some(c => c.classId === previous))
+        throw new Error(`Client layout check failed: ingame.classId = ${previous}, not 7 (none yet) or a class in the character list`);
       classId.writeU32(chosen.classId);
       play(loginObject(), view, chosen.index); state(11);
       return {submitted: true, character: chosen.name};
