@@ -19,6 +19,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   accuracy roll; close range is the constant 20-unit radius).
   Minions' Accuracy equals yours is not offered by that target group and remains unsupported with minion accuracy.
   Gem attacks still need their own accuracy rolls before these target conditions can affect them.
+- **Known:** pinned ordinary/Phrecia topology is available as
+  [read-only analysis artifacts](../docs/dev/passive-graph-data.md), with no installed gameplay support.
 - **Start:** quest refund points, ascendancy points, quest points (0x33 +0x8a);
-  the tree's connections (PassiveSkillGraph.psg) so the server checks them too.
+  use the extracted connections for server validation and define native graph/ascendancy choice integration separately.
+  Standard startup must preserve the client archive; any archive mutation requires separate maintainer agreement.
 - **Done when:** passives can be refunded with points from quests, and ascendancies chosen.

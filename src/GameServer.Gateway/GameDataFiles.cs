@@ -22,6 +22,8 @@ static class GameDataFiles
         ("data/hideouts.json", "hideouts"),
         ("data/animation-contacts.json", "class spell timing (the Witch's is used)"),
         ("data/monster-takehit.json", "monster hit reactions (the TakeHit flinch and its sound)"),
+        ("data/passive-skill-graphs.json", "passive graph analysis export (tooling only)"),
+        ("data/phrecia-passive-skillgraph.psg", "merged passive graph analysis artifact (not installed)"),
     ];
 
     public static IEnumerable<(string File, string Feature)> Missing(string root = ".") =>
