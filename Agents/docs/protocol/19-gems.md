@@ -211,7 +211,17 @@ Checked live 2026-10-26 on Nessa: the Witch's stock was the six a1q1 gems plus t
 gems and Faster Attacks Support after `/quest_flag a1q2-KilledBrutus`. Lilly is unit-tested only (the Act 6 town has
 no walk-map capture and spawns the player in water) and Siosa is not placed (The Library is not reachable).
 
-Still placeholder: gem drops (`ItemDrops` never drops a gem), and every gem costs 1 Scroll of Wisdom.
+**Drops.** A monster's item drops include a gem 4% of the time (`ItemDrops`, our rate until the game's drop pools are
+known): a gem from `GemSources.DropPool` whose `DropLevel` is at most the monster's level, at gem level 1 and with no
+rarity roll. The pool is the obtainable gems only: every class's quest reward gems
+(`QuestRewardOffers`), the starting gems (Characters `StartSkillGem`/`StartSupportGem`) and the drop-only exceptional
+supports (Empower, Enhance, Enlighten). The data's Graft skills (the Chayula gems), item-granted and legacy skills
+(Envy, Death Aura, Quickstep, the single-level rows) and placeholders such as "..." never drop. Because of the level
+gate a low-level monster only drops low-drop-level gems. Checked by `GemDropsTests` and live 2026-10-26 (rare monsters
+dropped normal skill and support gems). The first live attempt dropped the data's item-granted/legacy rows (Envy,
+Death Aura, "...") at monster level 1 and led to this pool.
+
+Still placeholder: every gem costs 1 Scroll of Wisdom at the vendors.
 
 ## Open
 

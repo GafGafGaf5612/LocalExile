@@ -17,7 +17,16 @@ Nothing yet.
   Claiming puts the item in the main inventory and sets the flag in one save; a second claim is refused
   (`QuestRewardCatalog`; [12](../docs/protocol/12-quests.md) §1, [19](../docs/protocol/19-gems.md) §5).
   Live: Tarkleigh's "Glyph Reward" after `/quest_flag a1q4-PlacedGlyphs` — six Witch gems, claim, repeat refused.
-  Still placeholder: gem drops ([19](../docs/protocol/19-gems.md) §5).
+
+- **Gem drops (verified live 2026-10-26).** 4% of a monster's item drops are an obtainable gem whose `DropLevel` the
+  monster meets, unlevelled and without a rarity roll (`ItemDrops`, `GemSources.DropPool`,
+  [15](../docs/protocol/15-progression.md) §3).
+  The pool is the quest reward gems, the starting gems and the drop-only exceptional supports; the data's Graft,
+  item-granted/legacy (Envy, Death Aura, Quickstep) and placeholder ("...") rows never drop.
+  `GemDropsTests` cover the pool, the level gate and the unlevelled gem. The rate is our own until the game's drop pools
+  are known.
+  Live: rare monsters dropped normal skill and support gems. The first attempt used the data's ShopTag gems, which
+  include the item-granted/legacy rows, so the pool was narrowed to the quest/starting/exceptional sets.
 
 - **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).** The currency/flask/jewellery vendors
   that also sell gems give seven tabs of level-1 gems at 1 Scroll of Wisdom each. The stock is the gems of every
@@ -27,7 +36,7 @@ Nothing yet.
   additions.
   Live: Nessa listed the Witch's a1q1 + a1q4 gems, then the a1q2 gems and Faster Attacks Support after the flag.
   Not live-checked: Lilly (the Act 6 town is not captured and spawns the player in water) and Siosa (The Library is
-  not reachable); every gem still costs 1 Scroll of Wisdom; no gem drops.
+  not reachable); every gem still costs 1 Scroll of Wisdom; gem drops are in (above).
   (`GemVendorStock`, `NpcShops.Tabs`; [17](../docs/protocol/17-npcs.md) §5, [19](../docs/protocol/19-gems.md) §5).
 
 - **Linked support gems.** Native compatibility, link groups, duplicate families and skill-bar support records
