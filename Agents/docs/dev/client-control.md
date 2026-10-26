@@ -90,12 +90,21 @@ bridge never calls, but whose instructions name a global or a struct offset, or 
 
 ### How the bridge finds the client's code
 
-Everything the bridge knows about the client is data in `scripts/dev/client-signatures.json`, no addresses are in
-the JavaScript. `client_control.py` passes the file to the agent (`scripts/dev/client-resolver.js`, loaded before
-`client-control.js`), which resolves each symbol at attach, in this order:
+Everything the bridge knows about the client is data in `scripts/dev/client-signatures.json`; no addresses are in
+the JavaScript. The file has two parts:
 
-1. **pinned**: the symbol's image VA (`va`), if the bytes there still equal `bytes` (the whole signature length, not
-   just a prologue). This is the normal case and costs about 2 ms.
+- `symbols`, `globals` and `offsets` say how to find each thing in **any** build: per symbol a wildcarded signature
+  and what it captures, cross-references and checks; per global and offset the capture it comes from.
+- `builds` pins what was found in each **known** build, keyed by the SHA-256 of the official `PathOfExile.exe`:
+  `version` (the patch version, e.g. `3.29.3.3`), `label` (`3.29.3b`), `imageBase`, and the VA or value of every
+  symbol, global and offset. A new client adds an entry; the others stay, so one file serves every listed build.
+  No verbatim copy of client code is stored: a pin is trusted only if the signature matches at it.
+
+`client_control.py` passes the file to the agent (`scripts/dev/client-resolver.js`, loaded before
+`client-control.js`). It takes the pins of the build whose pinned symbols the running client matches best
+(`Game.patched.exe` differs from the official file only in the login patch), and resolves each symbol in this order:
+
+1. **pinned**: the signature matches at the build's pinned VA. This is the normal case and costs about 2 ms.
 2. **signature**: the wildcarded `pattern` (hex bytes; `??` for call/jump displacements, RIP-relative operands and
    stack-frame sizes, and for every captured operand) occurs **exactly once** in the executable's code
    (`Memory.scanSync`). A symbol with `offset` is that many bytes into its match (the `frame` hook is 0x7f bytes into
@@ -103,28 +112,36 @@ the JavaScript. `client_control.py` passes the file to the agent (`scripts/dev/c
    function in the executable's `.pdata` table; `start: inside:<symbol>` searches only the 16 KiB after that symbol
    and requires the match to belong to the same function (following chained unwind entries).
 3. **xref** / **string**: the call target captured in a resolved caller (`callers`, e.g. `write` is the callee of
-   `loginWriter`), or the one function that references a unique NUL-terminated `string` with `lea reg, [rip+X]`.
-   The signature must still match there; if not, the symbol resolves but its captures are unavailable and doctor
-   says so.
+   `loginWriter`), or the one function that references a unique NUL-terminated `string` (searched in the
+   non-executable sections) with `lea reg, [rip+X]`. The signature must still match there; if not, the symbol
+   resolves but its captures are unavailable and doctor says so.
 4. otherwise **unresolved**.
 
 `captures` name operands inside a signature: `rel32` (a call target), `rip` (a RIP-relative address: the globals),
-`disp` (a struct displacement) and `imm` (an immediate), with their byte position. Each value is read from the bytes
-and cross-checked against the instruction decoded at `insn` by Frida's `Instruction.parse`. Globals come only from
-their capture (a moved function means moved data, so a pinned global is never trusted alone). Offsets come from
-every listed capture (`from`; they must agree, e.g. `login.socket` appears in three functions) plus `add`, or fall
-back to the pinned `value` when no source resolved (doctor says `constant`, `sources unresolved`). Eight offsets have
-no instruction in the anchored code that uses them and are always constants: the character entry stride, league and
-class id, `state.id`, `ingame.classId`, `pool.fraction`, `update.pool` and `message.loginResult`.
+`disp` (a struct displacement) and `imm` (an immediate), with their byte position. They are read again from the code
+in every mode, and checked against the instruction decoded at `insn` by Frida's `Instruction.parse` (offline, the
+opcode or ModRM byte in front of the field). Globals come only from their capture (a moved function means moved
+data, so a pinned global is never trusted alone). Offsets come from every listed capture (`from`; they must agree,
+e.g. `login.socket` appears in three functions) plus `add`. When no source resolved, the offset keeps the build's
+pinned value but is **unverified**: read-only operations (`status`, `resources`, `characters`) and the status
+checks every operation starts with may use it, but an operation that calls the client or writes its memory refuses
+to compute an argument or target from it (`Unsupported client: chat needs app.instance (unverified),
+instance.socket (unverified)`). Eight offsets have no instruction in the anchored code that uses them and are plain pinned constants:
+the character entry stride, league and class id, `state.id`, `ingame.classId`, `pool.fraction`, `update.pool` and
+`message.loginResult`.
 
 Each operation declares what it needs (`NEEDS` in `client-control.js`: every operation needs `frame` and what
 `status` reads). If something is missing, that operation fails with
 `Unsupported client: play needs play (not found)` and the others keep working; hooks attach only when found. A
-missing `frame` makes every command fail and is printed as a warning at attach. Before trusting pointers the bridge
-also checks the layout cheaply: object pointers non-null, aligned and readable, login and instance states 0-3, state
-ids below the stack's state count, string lengths and capacities, character levels 1-100 and class ids, the in-game
-class field before it writes it. A wrong offset then gives `Client layout check failed: login.state = 912
-(expected 0-3)` instead of a crash.
+missing `frame` makes every command fail and is printed as a warning at attach. Before trusting a value the bridge
+also checks the layout cheaply: object pointers non-null, aligned and readable; login and instance states 0-3; state
+ids below the stack's state count; string lengths and capacities; character levels 1-100 and class ids 0-15; pool
+fractions 0-1; pool ids in resource updates 0-7 and login results 0-255 (hooks skip anything else and report it in
+doctor's `warnings`). `ingame.classId` is the one field the bridge writes; before writing it, the object must be the
+in-game state (its own `state.id` is 4) and the field must hold what it holds live: 7 in a fresh client (one past
+the seven classes), else the class id of a character in the list (the class played last). These checks catch a wrong offset that lands on implausible data, not one that lands on another
+plausible value. A failed check gives `Client layout check failed: login.state = 912 (expected 0-3)` instead of a
+crash.
 
 Resolving everything without the pinned addresses takes about 0.6 s in the client (0.2 s offline), so there is no
 cache.
@@ -132,56 +149,67 @@ cache.
 ### bridge:doctor and the force-scan switch
 
 `.\scripts\dev\control.ps1 bridge:doctor` (JSON RPC `{"command":"bridge:doctor"}`) returns, per symbol, global and
-offset, the method (`pinned`, `signature`, `xref`, `string`, `constant` or `unresolved`), the image VA or value and
-the pinned one, and why something failed; the hooks; whether each operation is available; sanity checks of the live
-state; and the executables: the build label the client reports for itself (`3.29.3b`, from its `/tags/` string;
-the executable has no version resource), the SHA-256 of `Game.patched.exe` and of the unpatched `Game.exe`, and
-whether the latter is the build the signatures were made for (`client.sha256`, the official `PathOfExile.exe` of
-patch version `client.version`). `game:status` reports the same `build` and `patchVersion`.
+offset, the method (`pinned`, `signature`, `xref`, `string`, `constant` or `unresolved`; offsets also `unverified`),
+the image VA or value and the pinned one, and why something failed; the build whose pins were used
+(`pinnedBuild`: version, label, how many pins matched); the hooks; whether each operation is available; sanity
+checks of the live state; layout warnings from hooks; and the executables: the build label the client reports for
+itself (`3.29.3b`, from its `/tags/` string; the executable has no version resource), the SHA-256 of
+`Game.patched.exe` and of the unpatched `Game.exe`, the known builds, and whether `Game.exe` is one of them.
+`game:status` reports the `build` label and the pinned build's `patchVersion`.
 
-`--force-scan` (`control.ps1 -ForceScan`, or `LOCALEXILE_CONTROL_FORCE_SCAN=1`) skips the pinned addresses, so every symbol must be found by
-its signature; `--force-scan xref` (`LOCALEXILE_CONTROL_FORCE_SCAN=xref`) also prefers cross-references over
-signatures. On 3.29.3b both resolve every symbol, global and offset to exactly the pinned values.
+`--force-scan` (`control.ps1 -ForceScan`, or `LOCALEXILE_CONTROL_FORCE_SCAN=1`) skips the pinned addresses, so every
+symbol must be found by its signature; `--force-scan xref` (`LOCALEXILE_CONTROL_FORCE_SCAN=xref`) also prefers
+cross-references over signatures. On 3.29.3b both resolve every symbol, global and offset to exactly the pinned
+values.
 
 ### Adding or fixing a symbol
 
 1. Find the function (and, for an offset or global, an instruction that uses it) in `Client/Game.exe`.
 2. Draft the entry: `.venv\Scripts\python.exe -I scripts/re/signature_pattern.py <start VA> <end VA or +length>
    --capture <instruction VA>:<name>[:disp|imm|rel32]`. It prints the disassembly, the pattern with the moving bytes
-   wildcarded, how often it occurs, and the JSON (`va`, `pattern`, `bytes`, `captures`). Extend the range until it
-   occurs once; prefer distinctive instruction sequences to prologues (a 16-byte prologue matched up to 3964
-   places). Run it with `-I`: `scripts/re/dis.py` would otherwise shadow Python's `dis` module.
+   wildcarded, how often it occurs, the JSON (`pattern`, `captures`) and the VA to pin. Extend the range until it
+   occurs once, then keep a margin (the tracked patterns end 16 bytes after they become unique, or at their last
+   capture); prefer distinctive instruction sequences to prologues (a 16-byte prologue matched up to 3964 places).
+   Run it with `-I`: `scripts/re/dis.py` would otherwise shadow Python's `dis` module.
 3. Add `start`, `offset` (for a hook inside a function), `callers` and `string` where they apply, and the offsets'
-   or globals' `from`. Name the needs of the operation in `NEEDS`.
-4. Check: `python -I scripts/ci/resolve_client.py Client/Game.patched.exe --check` (and `--mode xref`), then
-   `.venv\Scripts\python.exe scripts/dev/check_client_signatures.py`, the unit tests, and live with `bridge:doctor`
-   and `--force-scan`.
+   or globals' `from`. Pin the VA (and any new offset's value) in every listed build you can check, at least the
+   current one. Name the needs of the operation in `NEEDS`.
+4. Check: `python -I scripts/ci/resolve_client.py Client/Game.patched.exe Client/Game.exe --check` (and
+   `--mode xref`), then `.venv\Scripts\python.exe scripts/dev/check_client_signatures.py`, the unit tests, and live
+   with `bridge:doctor` and `--force-scan`.
 
 ### When the client is patched
 
 `scripts/ci/resolve_client.py` (standard library, any OS) applies the same rules to an executable on disk: it reads
-it in place (mmap; a pattern is searched by its longest literal run, then verified), recomputes every VA, expected
-bytes, global and offset, and with `--write --version <v>` stores them and the new SHA-256 and build label in the
-JSON. `--report` writes a markdown table (symbol, old VA, new VA, method, status). Exit 0: nothing changed; 1:
-updated and everything resolved; 2: something is unresolved (the rest is still written). `--check` instead requires
-every pinned value to be reproduced (by signature, or `--mode xref`).
+it in place (mmap; a pattern is searched by its longest literal run, then verified), picks its build (by SHA-256,
+else by pins), resolves everything, and with `--write --version <v>` adds the executable's build to `builds` (an
+entry with the same SHA-256 is replaced; other builds are kept). Constants and unverified offsets carry the
+compared build's values. `--report` writes a markdown table against the build it was compared with. Exit status: 0
+the build was already listed unchanged; 10 added or updated with everything resolved; 20 added with something
+unresolved; anything else is an error (Python itself uses 1 and 2). `--check` instead requires, for each executable
+given, its build's pinned values to be reproduced (by signature, or `--mode xref`); it works for every listed build
+present locally.
 
 `.github/workflows/client-patch-watch.yml` runs it when Grinding Gear Games ships a new client. It is opt-in: the
 schedule (every 30 minutes) does nothing unless the repository variable `CLIENT_PATCH_WATCH` is `true`, and the
-repository must allow Actions to create pull requests; a manual run (with `force`) always works. Two jobs:
+repository must allow Actions to create pull requests; a manual run (with `force`) always works. Third-party
+actions are pinned to commit SHAs. Two jobs:
 
-- **poll** (2-4 s, no checkout or setup actions): fetches `scripts/ci/patch_version.py` and the JSON through the API,
-  asks the patch server (`patch.pathofexile.com:12995`, request `01 07`) for the current CDN web root
-  (`https://patch.poecdn.com/<version>/`) and compares the version with `client.version`. A new version without a
-  `client-patch/<version>` branch starts the next job.
-- **resolve** (15-18 s): downloads `<web root>PathOfExile.exe` (79 MB) to the runner's temporary directory,
-  requires a valid Grinding Gear Games Authenticode signature (osslsigncode, unpacked from its package instead of
-  installed; the signer itself must be Grinding Gear Games; fail closed), runs `resolve_client.py --write`, the
-  `scripts/ci` tests (with everything resolved, also the simulated-patch tests on the new client) and `node --check`,
-  deletes the client and opens or updates the pull request `client-patch/<version>` (a draft labelled
+- **poll** (2-4 s, no checkout or setup actions): fetches `scripts/ci/patch_version.py` and the JSON through the API
+  and asks the patch server (`patch.pathofexile.com:12995`, request `01 07`) for the CDN web root. Only exactly
+  `https://patch.poecdn.com/<digits.digits.digits[.digits]>/` is accepted (the answer comes over plain TCP); the
+  version is re-checked in the shell and the download URL is built from it, never taken from the server. A version
+  that is not a listed build starts the next job, unless a pull request for it already exists (open, merged or
+  closed: a closed one is not reopened, a failed one is retried) or a run of the workflow failed in the last 6
+  hours (so a broken download or signature costs one run every 6 hours, not every 30 minutes).
+- **resolve** (15-18 s): downloads `PathOfExile.exe` (79 MB) to the runner's temporary directory, requires a valid
+  Grinding Gear Games Authenticode signature (osslsigncode, unpacked from its package instead of installed; the
+  signer itself must be Grinding Gear Games; fail closed), runs `resolve_client.py --write`, the `scripts/ci` tests
+  (with everything resolved, also the simulated-patch tests on the new client) and `node --check`, deletes the
+  client and opens or updates the pull request `client-patch/<version>`, which adds the build (a draft labelled
   `needs-live-check` when something is unresolved). The client is never committed or uploaded. The pull request
-  says that CI cannot run the game: someone must run `bridge:doctor` (also with `--force-scan`) and the flow
-  above with the new client before merging.
+  says that CI cannot run the game: someone must run `bridge:doctor` (also with `--force-scan`) and the flow above
+  with the new client before merging.
 
 The CDN ignores HTTP `Range` (it answers 200 with the whole file), and the Authenticode hash covers the whole file
 anyway, so the job downloads it once. Measured on GitHub's runner: download 4-5 s, verification 1-2 s, resolving
@@ -193,21 +221,24 @@ section mapped from the page cache).
 - `node --check scripts/dev/client-resolver.js` and `node --check scripts/dev/client-control.js`;
   `.venv/Scripts/python.exe -m unittest discover -s scripts/dev -p test_client_control.py`;
   `python -I -m unittest discover -s scripts/ci -p "test_*.py"`: the resolver on small synthetic PE images (moved
-  code, changed RIP-relative targets and struct offsets, an ambiguous signature refused, a callee found through its
-  caller, a rewritten function found by its string, the function-start check, chained unwind entries), the
-  consistency of `client-signatures.json`, and, when `Client/Game.exe` exists, the real client with its whole code
+  code added as a second build, each build recognised by its pins, changed RIP-relative targets and struct offsets,
+  an ambiguous signature refused and its offsets unverified, a callee found through its caller, a rewritten
+  function found by its string, a misplaced capture refused, the function-start check, chained unwind entries, the
+  exit codes), the patch server's answer (including web roots that try to inject output), the consistency of
+  `client-signatures.json`, and, when `Client/Game.exe` is a listed build, the real client with its whole code
   section moved and the captured struct offsets changed.
-- `python -I scripts/ci/resolve_client.py Client/Game.patched.exe --check` (`--mode xref`; also `Client/Game.exe`):
-  every signature occurs once, at its pinned VA, without starting the game.
+- `python -I scripts/ci/resolve_client.py Client/Game.patched.exe Client/Game.exe --check` (`--mode xref`):
+  every signature occurs once, at its build's pinned VA, without starting the game.
 - `.venv/Scripts/python.exe scripts/dev/check_client_signatures.py`: maps `Game.patched.exe` into a helper process
   without running any of it (`LoadLibraryEx` with `DONT_RESOLVE_DLL_REFERENCES`), runs the bridge's own
-  `client-resolver.js` there in all three modes, and compares it with the offline resolver.
+  `client-resolver.js` there in all three modes, and compares it with the offline resolver (build, every value,
+  and how often each anchor string occurs).
 - `powershell -NoProfile -File scripts/dev/test_live_client_only.ps1` checks closed/existing client startup,
   local gateway selection, and failed preflights with mocked processes and no GGPK writes.
 
 Live verified 2026-10-25: fresh `game:open`, login, actual level-100 OfflineWitch list, Play, return to selection, logout,
 wrong-password rejection, successful retry, Play again, and `/hit physical 1` received by the Gateway. In one persistent
-run: login 0.7–0.9 s, list 94 ms, Play 1.4–2.2 s, command submission 94 ms; timings include game frames and loading,
+run: login 0.7â€“0.9 s, list 94 ms, Play 1.4â€“2.2 s, command submission 94 ms; timings include game frames and loading,
 and are observations rather than guarantees. Only the Witch class was exercised live.
 `tp` checked live 2026-10-25 in The Mud Flats (seed 1): after `/tp RhoaChest 2`, `/tp GlyphWall` and `/tp +10 +0` the
 client's own cell (Positioned +0x294/+0x298, as `scripts/re/frida/trace-player-drift.js` reads it) equalled the
@@ -217,7 +248,11 @@ Signature resolution checked live 2026-10-25 with the same flow (login, list, Pl
 `replies`, chat, `tp`, `flask:use 1`, selection, logout) three times: pinned, `--force-scan` and `--force-scan xref`,
 with identical results and timings (login 0.6-0.8 s, list 0.1 s, Play 1.5 s). With one symbol's signature broken on
 purpose, only its operation failed (`Unsupported client: play needs play (not found)`); with `frame` broken every
-command failed with that message and the attach warning, and `bridge:doctor` still answered.
+command failed with that message and the attach warning, and `bridge:doctor` still answered. Checked again with
+per-build pins (default and `--force-scan`, same flow and results; `ingame.classId` held 7 in the fresh client and 3
+after a Witch was played). With `activeSend` and `instanceSocketCheck` broken, `app.instance`, `instance.state` and
+`instance.socket` became unverified: login, Play and status still worked, while chat and character:select refused
+(`Unsupported client: chat needs app.instance (unverified), instance.socket (unverified)`).
 
 ### Limits
 
