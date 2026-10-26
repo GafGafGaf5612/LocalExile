@@ -6,8 +6,8 @@
 /// Semantics 2 means OVERRIDE_VALUE; it does not establish that addition rule. The combined power/endurance and
 /// power/frenzy bonuses add to both rows; the former is reachable through the ordinary Warstaff base implicit.
 /// Conditional stats (while affected by ...), conversions (maximum_..._is_equal_to_...) and the mechanics that replace
-/// the maximum with 0 are outside this contribution and are not counted. Current charges, charge generation and
-/// consumption, and per-charge effects are not here either. Conversion/zero flags currently require unsupported
+/// the maximum with 0 are outside this contribution and are not counted. The charges themselves (current counts, gains,
+/// expiry, per-charge effects) are <see cref="Charges"/>, which takes its maxima from here. Conversion/zero flags currently require unsupported
 /// unique or ascendancy sources; revisit them when those sources become reachable. No Mods.dat row uses the
 /// max_*_charges_override stats today; if supported later, those must replace the sum rather than add to it.
 /// </summary>
