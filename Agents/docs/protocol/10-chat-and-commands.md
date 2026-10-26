@@ -230,6 +230,8 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
     second and spits at the player.
     Dripping Dead (Mud Flats) and the Twilight Strand's Drowned rose the same way from their packs, and a risen monster
     kept by the instance came back standing (created in state 2).
+    Tidal Island's 35 Tide Striders wait lurking: only their red life bars show over the water; a Fireball from 27
+    cells (beyond the 24) hit one, it rose at once, chased and attacked.
 - **Animated path.** Not sent (flags 0): the type supplies the animated object. `Game_MONSTER_AO=1` sends the variety's
   first `AOFiles` path instead (bit 0), which also works for plain monsters but is not needed.
 - **StateMachine** (live vtable `ClientInternalStateMachine` `0x1435da8b8`, slot 17 `0x142191f10` → base

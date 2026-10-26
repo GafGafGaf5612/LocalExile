@@ -27,7 +27,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   hit; unique bosses keep their own entrance state.
   Their packs are placed again (The Coast's `Act1-SandspitterEmerge`, the Mud Flats' `Act1-ZombieMiredEmerge`);
   an instance keeps buried ones buried and risen ones risen.
-  Verified live 2026-10-25 (`/spawn_mob` Gravel Eater, packs on The Coast, the Mud Flats and the Twilight Strand).
+  Verified live 2026-10-25 (`/spawn_mob` Gravel Eater, packs on The Coast, the Mud Flats, the Twilight Strand, and
+  lurking Tide Striders on Tidal Island).
   Code: `MonsterEmerge.cs`, `Program.Emerge.cs`, Gateway.
   Docs: [10](../docs/protocol/10-chat-and-commands.md) §5.
 - Monster hit reaction: a hit that leaves a monster alive and takes at least a tenth of its max life plays one of its
