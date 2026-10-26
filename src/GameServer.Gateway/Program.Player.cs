@@ -146,8 +146,10 @@ partial class Program
         }
     }
 
-    // A cast's time in ms: the effect's CastTime scaled by the player's increased cast speed.
-    static int CastMs(ClientState conn, int effect) => (int)Math.Round(Skills.CastMs(effect) / (1 + CastSpeedPct(CharacterPlayerStats(conn)) / 100.0));
+    // A genuine spell's final server wait; native actions instead receive the unadjusted base milliseconds.
+    // Null refuses an invalid/unrepresentable cast rather than turning it into an immediate hit.
+    static int? CastMs(ClientState conn, int effect) =>
+        SpellCastTiming.ForSkill(Skills, effect, CastSpeedPct(CharacterPlayerStats(conn)))?.DurationMilliseconds;
 
     // cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
     static int CastSpeedPct(IReadOnlyDictionary<uint, int> stats) =>
@@ -545,6 +547,7 @@ partial class Program
             if (conn.PlayerLife > 0) return;
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
+            conn.HitRecovery.Clear();
             conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;
@@ -580,9 +583,11 @@ partial class Program
     // (AOFile), class byte (IntegerId), attributes and unarmed attack; the name is the character's.
     static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        PrepareHideoutWaypoint(conn);
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
         var stats = CharacterPlayerStats(conn);
+        var characterInputs = new Dictionary<uint, int>(stats);
         // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:
         // before, every area started with the class's unarmed attack, so a weapon's added damage and attack speed showed only
         // after taking it off and putting it back. After the stats, which mark the inactive items WeaponFor skips.
@@ -597,7 +602,7 @@ partial class Program
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
+            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList], characterInputs, weapon)], Stats: [.. weaponStats, .. statList],
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));

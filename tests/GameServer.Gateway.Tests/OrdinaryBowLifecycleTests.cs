@@ -162,7 +162,7 @@ public class OrdinaryBowLifecycleTests
                 conn.Clock.Stop();
                 var monster = new SpawnedMonster("target", new(30, 10, 10, width: 300, height: 300), 0, 2, 100);
                 await Program.Attack("bow-test", wire.Writer.GetStream(), wire.Ciphers, conn,
-                    new InstanceTransfer.UseSkillOnObject(42, SkillCatalog.FirstSkillId, 0, 0), monster)
+                    new InstanceTransfer.UseSkillOnObject(42, SkillCatalog.FirstSkillId, 0, 0), monster, 0)
                     .WaitAsync(TimeSpan.FromSeconds(2));
                 Assert.Equal(7, conn.ActionCount);
                 Assert.Equal(0, conn.NextAttackAt);

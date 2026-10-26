@@ -236,6 +236,25 @@ public static class InstanceEntities
         return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.U8(0).U8(0).ToArray());
     }
 
+    /// <summary>Actor 0x40's cooldown trailer (0x142197d24..0x142197fd8), without replacing any skill.
+    /// Existing entries are replaced, not consumed/appended: remaining and total BASE seconds, recovery rate, flags.
+    /// A zero remaining budget clears the entry vector. Native skill base duration and cooldown group stay intact.</summary>
+    public static byte[] PlayerSingleUseCooldowns(uint playerId, IReadOnlyList<SingleUseCooldownUpdate> cooldowns)
+    {
+        var w = new BlobWriter().U8(0x40).U8(0).U8(0).U8(0).U32((uint)cooldowns.Count);
+        foreach (var c in cooldowns)
+        {
+            if (!float.IsFinite(c.RemainingBaseSeconds) || c.RemainingBaseSeconds < 0
+                || !float.IsFinite(c.TotalBaseSeconds) || c.TotalBaseSeconds <= 0
+                || !float.IsFinite(c.RecoveryRate) || c.RecoveryRate < 0)
+                throw new ArgumentOutOfRangeException(nameof(cooldowns));
+            w.U16(c.SkillId).U32(c.RemainingBaseSeconds > 0 ? 1u : 0u);
+            if (c.RemainingBaseSeconds > 0)
+                w.F32(c.RemainingBaseSeconds).F32(c.TotalBaseSeconds).F32(c.RecoveryRate).U32(0xffffffff);
+        }
+        return ComponentUpdate(playerId, PlayerObject.ActorComponentIndex, w.ToArray());
+    }
+
     /// <summary>
     /// The player's experience (0x2ba to the Player component, reader <c>0x141e7ee30</c>): u16 flags, bit0 = u32 experience,
     /// which goes through the same setter as creation (<c>0x141e7f6b0</c>): the level is derived again from it and, when
@@ -608,9 +627,10 @@ public sealed record PetObject(int GridX, int GridY, uint Owner, IReadOnlyList<s
 /// Both height fields are the same world z in two forms: the f32 is z itself and the i32 is -z / 7.8125. World z
 /// points <b>down</b>, and z is an absolute world coordinate (the live arrow's i32 -5 / f32 +39.0625 was z = +39.0625;
 /// its player stood at z = +78.125, so the arrow was 5 steps above the feet). On raised ground z is negative: the
-/// hideout's player at z = -78.37 gets the torso at z = -117.1875, i.e. i32 +15 / f32 -117.1875, and 0x1ba carries
-/// the same signed value (0xfffffff1). Sending the positive "height up" instead put the arrow at z = +117, under the
-/// platform. <see cref="AnimatedComponentIndex"/> is the index the impact's animation update (0x2ba) must use.
+/// hideout's player at z = -78.37 gets the torso at z = -117.1875, i.e. i32 +15 / f32 -117.1875.
+/// Height takes z / 7.8125; the 0x1ba endpoint instead takes the encoded i32 marker (+15 in that example),
+/// and the native move negates it to recover world z. 0x1b7 copies the encoded marker and float pair directly.
+/// <see cref="AnimatedComponentIndex"/> is the index the impact's animation update (0x2ba) must use.
 /// </summary>
 public sealed record ProjectileObject(string TypePath, int GridX, int GridY, float Rotation = 0, ushort Team = 0,
     int? Height = null)
@@ -749,6 +769,10 @@ public sealed record GrantedSkill(ushort Id, uint EffectsPerLevelRow, uint StatS
     /// (and crashed, live 2026-10-23).</summary>
     public IReadOnlyList<(uint Row, IReadOnlyList<(uint Key, int Value)> Stats)> ExtraStatSets { get; init; } = [];
 }
+
+/// <summary>One ordinary stored-use budget; the native duration is base time, not wall time.</summary>
+public readonly record struct SingleUseCooldownUpdate(ushort SkillId, float RemainingBaseSeconds,
+    float TotalBaseSeconds, float RecoveryRate);
 
 /// <summary>ObjectMagicProperties rarity (flags bits 0-2 → +0x7c).</summary>
 public enum MonsterRarity : byte { Normal = 0, Magic = 1, Rare = 2, Unique = 3 }
