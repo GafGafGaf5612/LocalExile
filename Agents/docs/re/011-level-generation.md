@@ -450,8 +450,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    mission tile's; then the room's vertex grounds, and every vertex of it still without a ground takes the ground at
    the mission tile's corner. Ground checks (map +0x10) are off while the slots are tiled. A plain slot (no tag or
    edges, one ground) on an empty entry first takes a fill tile for its ground from the master's FillTiles, as a
-   fill room's (`Fill.FillSlot`; `vaal_side_area.arm`, 2026-10-26). Not ported there: nested mission tiles, the pool's own tiles (+0x90, "Could not find matching feature tile"), the description and rectangle
-   records (`0x141d83f10`, tiler +0x18 +0x30 / +0x60).
+   fill room's (`Fill.FillSlot`; `vaal_side_area.arm`, 2026-10-26). The injected room's objects are placed by the
+   doodad stage like a room's (`1_3_15` seed 1 and three more captures: `blight_encounter.arm`'s spore
+   `yellowOrange2.ao`; the port lists these rooms after the fill rooms, where the client lists them is not known, and
+   they make no draws). Not ported there: nested mission tiles, the pool's own tiles (+0x90, "Could not find matching
+   feature tile"), the description and rectangle records (`0x141d83f10`, tiler +0x18 +0x30 / +0x60).
 3. **Shared slots** (`0x1420f6b70`, by x then y): without tags and with a plain key (`0x1420ee9e0`) they go to the
    fill (with the slot's accessible bit, +0x5c bit 0); else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
    store (`0x1420f5fb0`: `Next(total weight)`). A 1 × 1 slot placed with tag "door", and an untagged shared tile with a 3 × 3 or passage-shaped
@@ -1194,11 +1197,13 @@ y, +0x18 height, +0x1b orientation code). Order:
    sub-tiles (+0x16d bit 1 clear) → `0x141d7f700`: with the record master's `Reskin` (master +0x80), the file
    `<dir>/alttiles/<reskin>/<reskin>_<name>.tmd` beside the tile (`0x141d88810`) when it exists, else +0x178. The
    copy is loaded under the key `<copy>;<middle of +0x178's key>;<reskin>` (`0x141d801b0` takes the part between the
-   first and last `;`); its records are named `<reskin>_<name>`. The client's virtual `.ao` is the original
-   `<.tdt folder>/<name>.ao` when the record starts with the Reskin exactly as the master writes it (case counts) and
-   that `.ao` exists, else `<.tdt folder>/<reskin>_<name>.ao` (no such file, so no Hull): `2_9_5`'s foothills ramps and
-   `2_9_10_2`'s boss platform take the original, `2_9_10_2`'s `rot_…_assHole02` / `rot_…_bellyfx` (no original
-   `.ao`) and `2_10_6`'s `blood_…_cartblocker` (master `Reskin "Blood"`) keep the prefix. Read off the captures; the
+   first and last `;`); its records are named `<reskin>_<name>`. The client's `.ao` is `<.tdt folder>/<reskin>_<name>.ao`
+   when that file exists (`1_3_14_1`'s `lunaris_temple_to_battlefront_v01_01_pillar(_flag).ao`, beside the original
+   ones); else the original `<.tdt folder>/<name>.ao` when the record starts with the Reskin exactly as the master
+   writes it (case counts) and that `.ao` exists; else the reskinned name, a virtual `.ao` (no Hull): `2_9_5`'s
+   foothills ramps and `2_9_10_2`'s boss platform take the original, `2_9_10_2`'s `rot_…_assHole02` /
+   `rot_…_bellyfx` (no original `.ao`) and `2_10_6`'s `blood_…_cartblocker` (master `Reskin "Blood"`) keep the
+   prefix. Read off the captures; the
    loader that does it was not found (`.tmd` is not a string in the decompile). The copy exists when
    `0x1429f8b30` opens it with 5 bytes or more. +0x178
    is the mesh's `.tmd` (`0x141d7fb60` at load: for each part of the tile's mesh string +0x20 — a `;` list for a tile
