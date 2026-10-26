@@ -281,15 +281,16 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         if (slash < 0) return null;
         var data = read(p[..(slash + 1)] + "alttiles/" + reskin + "/" + reskin + "_" + p[(slash + 1)..^4] + ".tmd");
         if (data is null) return null;
-        // The copy's records are named "<reskin>_<name>". The captures place "<.tdt folder>/<name>.ao" (its Hull) when
-        // the record starts with the Reskin as the master writes it (case counts) and that .ao exists, else the
-        // reskinned name, a virtual .ao: 2_9_5's foothills ramps and 2_9_10_2's boss platform strip, 2_9_10_2's
+        // The copy's records are named "<reskin>_<name>". The captures keep that name when its .ao exists (1_3_14_1's
+        // lunaris_temple_to_battlefront_… pillars, beside the original .ao); else they place "<.tdt folder>/<name>.ao"
+        // (its Hull) when the record starts with the Reskin as the master writes it (case counts) and that .ao exists,
+        // else the reskinned name, a virtual .ao: 2_9_5's foothills ramps and 2_9_10_2's boss platform strip, 2_9_10_2's
         // rot_…_assHole02 / rot_…_bellyfx (no such files) and 2_10_6's blood_…_cartblocker (master "Blood") keep it.
         // The client code that does it was not found.
         string prefix = reskin + "_";
         return TileObjectFile.Parse(data)
-            .Select(o => o.Name.StartsWith(prefix, StringComparison.Ordinal) && o with { Name = o.Name[prefix.Length..] } is var original &&
-                Text(original.VirtualModel(tdtPath)) is not null ? original : o)
+            .Select(o => o.Name.StartsWith(prefix, StringComparison.Ordinal) && Text(o.VirtualModel(tdtPath)) is null &&
+                o with { Name = o.Name[prefix.Length..] } is var original && Text(original.VirtualModel(tdtPath)) is not null ? original : o)
             .ToList();
     }
 
