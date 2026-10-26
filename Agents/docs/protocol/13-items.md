@@ -664,8 +664,10 @@ not known yet), and they fill up on entering a town or a hideout and on resurrec
 
 A flask key (0x70) on a utility flask goes to `UseUtilityFlask` (`Program.UtilityFlasks.cs`, `UtilityFlasks.cs`).
 Everything comes from the tables (`ItemCatalog.UtilityFlaskOf`): the Flasks.dat row names the flask's BuffDefinitions
-row, its BuffStatValues (one value per StatsKeys entry of that row) and its duration (RecoveryTime, tenths of a second;
-the second column, RecoveryTime2, is not used); ComponentCharges gives its charges.
+row, its BuffStatValues (one value per StatsKeys entry of that row) and its duration (RecoveryTime, tenths of a second);
+ComponentCharges gives its charges. The second duration column, RecoveryTime2, is shorter for every utility flask
+(Quicksilver 20 against 60; life flasks have both equal) and is not the one the game uses: Path of Building's bases and
+RePoE 3.29.3.3 `base_items.json` give Quicksilver 6 s (duration 60), Ruby 8 s, Iron 4 s, the RecoveryTime values.
 
 | Flask | Buff (row) | Stats applied | Duration, charges |
 |---|---|---|---|
@@ -685,8 +687,8 @@ the second column, RecoveryTime2, is not used); ComponentCharges gives its charg
 The Silver Flask's buff has no stats, only the flag `silver_flask_display_onslaught`; the Gateway also puts `onslaught`
 (row 215) on the player with the values of BuffTemplates `MapModPlayerOnslaught` (20, 20, 20). Only the stats the
 server models count (`UtilityFlasks.Modelled`); a flask with none of them is not usable (Aquamarine: frozen effect on
-self, Gold: item rarity, Iron: ward, Corundum: stun threshold), and Quartz's phasing and Stibnite's and Sulphur's ground
-effects are left out.
+self, Gold: item rarity, Iron: ward, Corundum: stun threshold), though its charges fill like the others'
+(`ItemCatalog.FlaskChargesOf`), and Quartz's phasing and Stibnite's and Sulphur's ground effects are left out.
 
 A use:
 
@@ -705,13 +707,23 @@ A use:
    `UtilityFlasks.RawStats` (the maximum resistances, which the client adds to its own 75; increased critical strike
    chance; increased damage; cast speed). `ApplyMovementSpeed` changes the walk estimate (Quicksilver: 37 × 1.4 = 51.8 cells/s) and the stats go
    to the client (S→C 0x1b3: `movement_velocity_+%` 40 reached the client's stat setter `0x1424cfaf0`, live
-   2026-10-25). So `/defences`, `/resistances`, `/hit` and the character panel see them;
+   2026-10-25). So `/defences`, `/resistances`, `/hit` and the character panel see them. The effect starts and ends
+   under the connection's Monsters lock with the pools recomputed in the same block (`UtilityFlasks.Start` / `EndDue`),
+   as every pools writer takes it (`SendEquipment` too, which now also applies the walk speed), so an equipment change
+   cannot write pools that still hold an ended flask;
 5. ends when its time is up, by the connection clock (`RunUtilityFlasks`, every 16 ms while any runs; a pause stops the
-   clock, so it holds), or at death: the buffs come off (S→C 0x1c2) and the stats and movement speed go back. An area
-   change starts a new connection without the effect.
+   clock, so it holds), when its flask leaves its cell of the flask bar (picked up, swapped or moved: our reading of
+   the game, where a flask works only from the bar, not confirmed from a source), or at death: the buffs come off
+   (S→C 0x1c2) and the stats and movement speed go back. An area change starts a new connection without the effect. The ticker
+   starts before anything is sent and a failed step is logged and retried; however it exits, the next use starts one
+   again (`Effects.TickerExited`), so no effect can be left without one to end it.
 
-Quality is increased duration, added to the flask's `local_flask_duration_+%` (20% quality: Quicksilver 7.2 s);
-`local_flask_duration_+%_final` multiplies it and `local_flask_effect_+%` scales the stats (not Onslaught's).
+Duration and effect follow Path of Building (`Item.lua`, `CalcPerform.lua`): duration = base × (1 + increased) × (1 +
+quality) × (1 + `local_flask_duration_+%_final`), where increased is the flask's `local_flask_duration_+%` plus the
+character's `flask_duration_+%` (passives and gear: "increased Flask Effect Duration") and quality multiplies it (20%
+quality: Quicksilver 7.2 s); the stats are scaled by 1 + the flask's `local_flask_effect_+%`, the character's
+`flask_effect_+%` and, on a magic flask, `magic_utility_flask_effect_+%` (not Onslaught's, which has its own effect
+stat).
 
 Live 2026-10-25 (OfflineWitch, The Twilight Strand; a key press, then the control bridge's `flask:use`): Quicksilver
 spent 30 of 60 charges, the client's `movement_velocity_+%` went 0 → 40 → 0 after 5.94 s, and a second use 2.5 s in was
@@ -728,7 +740,8 @@ tooltip's duration with quality.
   charge mods (`local_charges_used_+%`, `local_extra_max_charges`), hybrid flasks' effects (a hybrid flask recovers both
   pools but shows only the life buff), instant recovery, and the effects across an area change (they end).
   Utility flasks: phasing (Quartz), the smoke cloud (Stibnite), consecrated ground (Sulphur), Aquamarine, Gold, Iron
-  and Corundum flasks; whether the game lets a flask of the same kind replace a running one.
+  and Corundum flasks' effects; whether the game lets a flask of the same kind replace a running one, and whether
+  taking a flask off the bar ends its effect (it does here).
 - Gem levels and experience, support gems and links.
 - The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); local weapon damage and
   armour / evasion / energy shield mods (items have no base defences or damage on the server yet), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality

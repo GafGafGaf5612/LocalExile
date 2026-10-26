@@ -18,11 +18,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   Quartz, Sulphur and Silver (Onslaught) spend their charges and give their buff's stats for its duration, all from the
   tables (Flasks.dat, BuffDefinitions, ComponentCharges).
   The stats count in the pools (the walk estimate, `/defences`, `/resistances`, `/hit`) and go to the client.
-  They end with the duration, at death and with the area; a pause holds them (by the game clock, not tested live).
+  They end with the duration, at death, with the area and when the flask leaves its cell; a pause holds them (by the
+  game clock, not tested live).
   Checked live: Quicksilver, Ruby, Granite, Jade, Basalt, Amethyst, Bismuth and Silver; the others by tests.
   A flask is refused while its own effect runs; the client draws its draining timer bar under that flask.
-  Quality and the flask's duration and effect mods scale a use.
-  Not yet: Quartz phasing, Stibnite and Sulphur ground effects, Aquamarine, Gold, Iron and Corundum flasks.
+  Quality, the flask's duration and effect mods and the character's increased flask effect and duration scale a use.
+  Every utility flask refills; Aquamarine, Gold, Iron and Corundum do nothing yet when used.
+  Not yet: Quartz phasing, Stibnite and Sulphur ground effects.
   Code: `UtilityFlasks.cs`, Gateway (`UseUtilityFlask`, `RunUtilityFlasks`).
   Docs: [13](../docs/protocol/13-items.md) §8a.
 - Items: the start kit (Characters.dat skill and support gems, two life flasks on keys 1–2 and a mana flask on key 5)
