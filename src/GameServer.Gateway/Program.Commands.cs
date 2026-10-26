@@ -413,10 +413,15 @@ partial class Program
             ushort total;
             lock (conn.Monsters)
             {
-                conn.ExtraPassivePoints = (ushort)Math.Min(ushort.MaxValue, conn.ExtraPassivePoints + add);
-                total = conn.ExtraPassivePoints;
+                total = Saves.Atomically(() =>
+                {
+                    ushort current = CharacterSaves.Load(CharacterName(conn))?.ExtraPassivePoints ?? 0;
+                    ushort next = (ushort)Math.Min(ushort.MaxValue, (long)current + add);
+                    CharacterSaves.SetExtraPassivePoints(CharacterName(conn), next);
+                    return next;
+                });
+                conn.ExtraPassivePoints = total;
             }
-            CharacterSaves.SetExtraPassivePoints(CharacterName(conn), total);
             await SendPassives(remote, stream, ciphers, conn);
             await conn.Commands!.Reply($"{add} extra passive point(s) added; {total} extra total.");
         })

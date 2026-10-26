@@ -5,6 +5,82 @@ namespace GameServer.Gateway.Tests;
 public sealed partial class AscendancyGatewayIntegrationTests
 {
     [Fact]
+    public async Task A_failed_extra_point_grant_does_not_publish_points_before_the_save_commits()
+    {
+        using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
+        string saved = game.SavedJson;
+        Saves.FailWrite = name => name == game.Character;
+        try { await Assert.ThrowsAsync<IOException>(() => game.Command("/add_passive_points 1")); }
+        finally { Saves.FailWrite = null; }
+
+        Assert.Equal(saved, game.SavedJson);
+        Assert.Equal((ushort)0, game.State.ExtraPassivePoints);
+
+        await game.Command("/add_passive_points 1");
+        Assert.Equal((ushort)1, game.State.ExtraPassivePoints);
+        Assert.Equal((ushort)1, CharacterSaves.Load(game.Character)!.ExtraPassivePoints);
+    }
+
+    [Fact]
+    public async Task In_flight_extra_point_grant_and_level_publication_keep_both_successful_grants()
+    {
+        using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
+        var gain = Program.RecordExperienceGain(game.State,
+            CharacterStats.ExperienceFor(3) - CharacterStats.ExperienceFor(2))!;
+        var writing = new TaskCompletionSource<ushort>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        Saves.FailWrite = name =>
+        {
+            if (name != game.Character) return false;
+            writing.TrySetResult(game.State.ExtraPassivePoints);
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("grant save was not released");
+            return false;
+        };
+        var grant = Task.Run(() => game.Command("/add_passive_points 1"));
+        Task<(string? Error, byte[] Bytes)>? level = null;
+        ushort beforeCommit;
+        try
+        {
+            beforeCommit = await writing.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            level = game.CompleteGain(gain, new LevelControl().Call);
+        }
+        finally
+        {
+            release.Set();
+            try
+            {
+                await grant;
+                if (level is not null) await level;
+            }
+            finally { Saves.FailWrite = null; }
+        }
+
+        Assert.Equal((ushort)0, beforeCommit);
+        Assert.Equal(3, game.State.Pools.Level);
+        Assert.Equal((ushort)1, game.State.ExtraPassivePoints);
+        await game.Command("/add_passive_points 1");
+        Assert.Equal((ushort)2, game.State.ExtraPassivePoints);
+        Assert.Equal((ushort)2, CharacterSaves.Load(game.Character)!.ExtraPassivePoints);
+    }
+
+    [Fact]
+    public async Task Extra_point_grants_use_the_saved_total_across_connections_and_saturate_without_overflow()
+    {
+        using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
+        var oldArea = game.Reload();
+        await game.Command("/add_passive_points 1");
+        await game.CommandOn(oldArea, "/add_passive_points 1");
+        await game.Command("/add_passive_points 1");
+
+        Assert.Equal((ushort)3, game.State.ExtraPassivePoints);
+        Assert.Equal((ushort)3, CharacterSaves.Load(game.Character)!.ExtraPassivePoints);
+
+        await game.Command("/add_passive_points 2147483647");
+        Assert.Equal(ushort.MaxValue, game.State.ExtraPassivePoints);
+        Assert.Equal(ushort.MaxValue, CharacterSaves.Load(game.Character)!.ExtraPassivePoints);
+    }
+
+    [Fact]
     public async Task An_old_area_gain_cannot_suppress_the_live_connections_current_level_publication()
     {
         using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
@@ -271,6 +347,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
     sealed partial class GatewayCharacter
     {
+        public Task<(string? Error, byte[] Bytes)> CommandOn(ClientState state, string line) => Exchange(async (stream, cipher) =>
+        {
+            state.Commands = ProgramValue<ChatCommands>("Commands", "xp-grant-test", stream, cipher, state);
+            Assert.True(await state.Commands.RunAsync(line));
+            return null;
+        });
+
         public Task<(string? Error, byte[] Bytes)> CompleteGain(Program.ExperienceChange change,
             Func<ControlRequest, Task<ControlResponse>> control, ClientState? state = null) => Exchange(async (stream, cipher) =>
         {

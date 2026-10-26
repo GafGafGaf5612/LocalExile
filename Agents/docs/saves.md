@@ -93,6 +93,8 @@ An old-area gain cannot prevent another connection from reconciling its own leve
 XP-driven level changes read, validate and trim the current saved passive tree in one transaction.
 Runtime publication follows commit, retaining another area's paid refunds and completed level trims.
 Ordinary allocation and refund requests still compare their original snapshot and reject stale writes.
+Extra-point grants add to the current saved total and commit before updating runtime under the connection lock.
+Concurrent XP publication cannot discard an in-flight grant, and a failed grant publishes no points.
 Their runtime target and queued XP packet come from current experience, never a level captured before an await.
 Auth updates serialize per character and recheck current XP after replies, including gains, controls and login repair.
 An in-flight obsolete request is corrected before releasing that gate; its answer never applies a runtime level.
