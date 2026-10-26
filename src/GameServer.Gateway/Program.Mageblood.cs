@@ -40,9 +40,9 @@ partial class Program
     internal static IReadOnlyList<InventoryItem> MagebloodFlasks(IEnumerable<InventoryItem> bar, int count) =>
         [.. bar.Where(i => IsMagicUtilityFlask(i.Item)).OrderBy(i => i.X).Take(Math.Max(0, count))];
 
-    /// <summary>The stats of the magic utility flasks Mageblood keeps applied, or none when it is not worn. The flasks'
+    /// <summary>The sources of the magic utility flasks Mageblood keeps applied, or none when it is not worn. The flasks'
     /// own effect mods count; <paramref name="character"/> is the character's stats for increased flask effect/duration.</summary>
-    internal static IReadOnlyList<(string Stat, int Value)> MagebloodStats(ClientState conn, Func<string, int> character)
+    internal static IReadOnlyList<UtilityFlasks.Source> MagebloodSources(ClientState conn, Func<string, int> character)
     {
         if (MagebloodBelt(conn) is not { } belt) return [];
         int count = MagebloodFlaskCount(belt);
@@ -51,8 +51,20 @@ partial class Program
         foreach (var flask in MagebloodFlasks(ItemsOf(conn).Items(PlayerInventories.Flask), count))
             if (Items.ByHash(flask.Item.TypeHash) is { } type && Items.UtilityFlaskOf(type) is { } utility)
                 sources.AddRange(UtilityFlasks.For(utility, flask.Item, ItemModStats.Local(flask.Item, Items.Mods), character).Stats);
-        return UtilityFlasks.Strongest(sources);
+        return sources;
     }
+
+    /// <summary>A running flask and Mageblood's permanent one can be the same effect: combine both source sets before
+    /// one strongest-per-(effect, stat) pass, so the effect counts once (a Granite Flask gives 1500 armour, not 3000)
+    /// while different effects still stack.</summary>
+    internal static IReadOnlyList<(string Stat, int Value)> CombineUtilitySources(
+        IEnumerable<UtilityFlasks.Source> running, IEnumerable<UtilityFlasks.Source> permanent) =>
+        UtilityFlasks.Strongest(running.Concat(permanent));
+
+    /// <summary>The utility flask stats that count now: the running effects deduplicated against Mageblood's permanent
+    /// ones. Callers apply this once, not the two sets separately.</summary>
+    internal static IReadOnlyList<(string Stat, int Value)> UtilityStats(ClientState conn, Func<string, int> character) =>
+        CombineUtilitySources(conn.UtilityFlaskEffects.Sources(), MagebloodSources(conn, character));
 
     /// <summary>Whether Mageblood forbids using this flask: magic utility flasks cannot be used while it is worn (normal and
     /// unique ones still can).</summary>

@@ -71,7 +71,7 @@ partial class Program
         conn.ApplyMovementSpeed();
         var stats = CharacterPlayerStats(conn);
         int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
-        conn.Phasing = UtilityFlasks.Phasing(conn.UtilityFlaskEffects.Stats().Concat(MagebloodStats(conn, Get)));
+        conn.Phasing = UtilityFlasks.Phasing(UtilityStats(conn, Get));
     }
 
     // Ends the utility flask effects whose time is up (by the connection clock: a pause holds them), whose flask left its

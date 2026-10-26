@@ -276,6 +276,13 @@ static class UtilityFlasks
             lock (_lock) return Strongest(_active.SelectMany(a => a.Stats));
         }
 
+        /// <summary>The running effects' sources, unreduced: callers that also have other sources of the same effects
+        /// (Mageblood's permanent ones) combine them before one strongest-per-(effect, stat) pass.</summary>
+        public IReadOnlyList<Source> Sources()
+        {
+            lock (_lock) return [.. _active.SelectMany(a => a.Stats)];
+        }
+
         /// <summary>Whether any effect runs.</summary>
         public bool Any
         {

@@ -250,6 +250,9 @@ stats are added where a running utility flask's stats are added (pools, the clie
 flasks cannot be used while it is worn: the client enforces the item mod and the server refuses the use as a backstop.
 The character's stats are re-sent when the flask bar changes while it is worn (`PlaceItem`, `HeldOntoItem`, `PickUpItem`)
 and on equipment changes. Live 2026-10-26: placed flasks applied at once, and a flask key did nothing.
+The running effects and the permanent ones are combined before the strongest-per-(effect, stat) pass: a flask that was
+already used when the belt went on counts once, not twice, while different effects still stack; the running effects keep
+their own duration and stay after the belt is removed.
 
 Not modelled yet: the flask buff icons/permanent durations, the "Magic Utility Flask Effects cannot be removed" backstop
 (the client enforces it), the Foulborn rightmost variant, and Enkindling/instilling.
