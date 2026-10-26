@@ -75,6 +75,8 @@ public class DefaultObjectCriticalResistanceTests
             Assert.True(await conn.Commands.RunAsync($"/set_stat global_cannot_crit {(critical ? 0 : 1)}"));
             Assert.True(await conn.Commands.RunAsync("/set_stat override_weapon_base_critical_strike_chance 10000"));
             Assert.True(await conn.Commands.RunAsync($"/set_stat cannot_penetrate_or_ignore_elemental_resistances {(prohibit ? 1 : 0)}"));
+            Assert.Equal(ignore ? 1 : 0, conn.PlayerStats[3626]);
+            Assert.Equal(ignore ? 1 : 0, Program.CharacterPlayerStats(conn).GetValueOrDefault(3626u));
             Assert.Equal(critical ? 10000 : 0, conn.Pools.AttackCriticalStrikeChance);
             conn.Pools = conn.Pools with { Accuracy = int.MaxValue }; // Keep the unrelated accuracy roll deterministic.
             await Task.Delay(100); // Respect the actual fast attack's next-input deadline; do not reset action state.
