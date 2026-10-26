@@ -174,7 +174,7 @@ partial class Program
                     $"for the target ({(unique ? "unique target, " : "")}{(closeRange ? "in close range (20 units) " : "")}accuracy mastery more)");
             evasion = Monsters.BaseEvasion(m.Level) ?? 0;
         }
-        int hitChance = DamageModel.AccuracyHitChance(evasion, accuracy);
+        int hitChance = DamageModel.AccuracyHitChance(conn.FlaskGrounds.Evasion(use.TargetId, evasion), accuracy);   // blinded in smoke
         if (!DamageModel.Hits(hitChance, Random.Shared.Next(100)))
         {
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} missed: accuracy {accuracy} vs evasion {evasion}, " +
@@ -216,6 +216,7 @@ partial class Program
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
             if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
         }
+        if (critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);   // the hit landed
         // At 0 the client's Life tick (0x141e6a190) stops notifying its listeners, so the mini life bar would keep the last
         // value: hide it with the stat its listener watches (hide_mini_life_bar).
         if (life == 0)
@@ -762,6 +763,7 @@ partial class Program
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, SupportedCriticalMultiplier(conn, skillId));
+            if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
             await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}",
                 melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse);
         }
@@ -944,6 +946,7 @@ partial class Program
                     if (!committed) await Task.Delay(16);
                 }
                 if (!committed) return;
+                if (critical && hit is not null) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
                 if (hit is { } applied && target is not null)
                     await NotifyMonsterHit(remote, stream, ciphers, conn, step.TargetId, target, applied, damage,
                         $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
@@ -1178,8 +1181,7 @@ partial class Program
             lock (conn.Monsters) have = conn.Experience;
             if (have < needed) await GainExperience(remote, stream, ciphers, conn, needed - have, $"quest: {m.Label} killed, level {level}");
         }
-        await GainFlaskCharges(remote, stream, ciphers, conn, Flasks.KillCharges(m.Rarity, Environment.GetEnvironmentVariable("Game_FLASK_KILL_CHARGES")),
-            $"{m.Rarity} {m.Label} 0x{id:x} killed");
+        await GainKillCharges(remote, stream, ciphers, conn, m.Rarity, $"{m.Rarity} {m.Label} 0x{id:x} killed");
         await DropLoot(remote, stream, ciphers, conn, m, at);
     }
 
@@ -1188,7 +1190,7 @@ partial class Program
     static async Task DropLoot(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedMonster m, (int X, int Y) at)
     {
         if (Environment.GetEnvironmentVariable("Game_DROPS") == "0") return;
-        List<ItemDrops.Drop> drops = [.. Drops.Roll(m.Level, m.Rarity, Random.Shared)];
+        List<ItemDrops.Drop> drops = [.. Drops.Roll(m.Level, m.Rarity, Random.Shared, IncreasedItemRarity(conn))];
         // And a pile of gold (ItemDrops.Gold), picked up into the stash's gold.
         if (Drops.Gold(m.Level, m.Rarity, Random.Shared) is { } gold) drops.Add(gold);
         foreach (var drop in drops)

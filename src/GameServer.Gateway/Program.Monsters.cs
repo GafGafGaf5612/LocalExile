@@ -229,7 +229,7 @@ partial class Program
             // The monster's accuracy comes from DefaultMonsterStats at its level. Evasion uses PoE's shared entropy
             // counter: every attack adds its hit chance, and reaching 100 consumes 100 and hits (evasion cannot streak
             // indefinitely). A new counter starts after 3.33 s without an attack.
-            int monsterAccuracy = Monsters.BaseAccuracy(m.Level) ?? 0;
+            int monsterAccuracy = conn.FlaskGrounds.Accuracy(id, Monsters.BaseAccuracy(m.Level) ?? 0);   // blinded in smoke
             int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
             if (EvadesLocked(conn, hitChance, now))
             {
@@ -283,6 +283,7 @@ partial class Program
                 $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
         if (life == 0)
             await PlayerDied(remote, stream, ciphers, conn, $"0x0055 death screen ({conn.League ?? "?"} league)");
+        else if (!blocked) await GainFlaskChargesWhenHit(remote, stream, ciphers, conn);
     }
 
     // A spawned monster's id from the argument if it is 0x hex, else the last spawned one.

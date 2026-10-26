@@ -218,6 +218,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
         get
         {
             var fixedOnes = _blockerList;
+            if (Phasing) return fixedOnes;   // phasing (Quartz Flask): monsters do not block (UtilityFlasks.Phasing)
             double now = Clock.Elapsed.TotalSeconds;
             List<ClientPathfinder.Blocker>? all = null;
             lock (Monsters)
@@ -344,6 +345,17 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public RighteousFireState? RighteousFire;
     /// <summary>The flasks recovering life and mana (C→S 0x70), applied by the player tick.</summary>
     public Flasks.Effects FlaskEffects { get; } = new();
+    /// <summary>The utility flasks whose effect runs (UtilityFlasks); their stats count in the pools until they end.</summary>
+    public UtilityFlasks.Effects UtilityFlaskEffects { get; } = new();
+    /// <summary>The flasks' partial charges and the crit charge cooldown (FlaskCharges).</summary>
+    public FlaskCharges.Carry FlaskChargeCarry { get; } = new();
+    /// <summary>One change of the flask bar and its S→C 0xbf at a time (Program.ChangeFlaskBar), so the revisions go out in
+    /// order with the latest charges.</summary>
+    public SemaphoreSlim FlaskBarGate { get; } = new(1, 1);
+    /// <summary>The smoke clouds, consecrated ground and taunts of flasks (FlaskGrounds).</summary>
+    public FlaskGrounds.State FlaskGrounds { get; } = new();
+    /// <summary>Whether the player phases (a Quartz Flask runs): the walk estimate walks through monsters (Blockers).</summary>
+    public volatile bool Phasing;
     public ushort NextBuff = 1;
     public uint PlayerMaxLife => Pools.Life;
     // The player's life as the server keeps it (PlayerObject's Life, full on creation); 0 = dead.
