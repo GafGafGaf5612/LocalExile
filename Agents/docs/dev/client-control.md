@@ -101,7 +101,9 @@ local gateway selection, and failed preflights with mocked processes and no GGPK
 JSON RPC also accepts `game:resources` (read-only Life component pools and recent 0x1b1 corrections),
 `object:interact` with an object `id`, `move` with grid `x`/`y`, `npc:option` with row `index`, `npc:close`,
 `reward:claim` with choice `id` and main-inventory `x`/`y`, and `inventory:pickup`/`inventory:place` with `inventoryId`
-and item `id` or destination `x`/`y`. These use the existing C?S interaction messages. Their result acknowledges
+and item `id` or destination `x`/`y`, and `flask:use` with a flask-bar `slot` (0-4) or `key` (1-5; CLI
+`flask:use 1`). `flask:use` sends the flask key's own C→S 0x70 (u32 cell, [13](../protocol/13-items.md) §8), so a flask
+is used without keyboard input or window focus. These use the existing C?S interaction messages. Their result acknowledges
 submission; wait for the resulting state or logs. Movement uses the client's Move action (0x2909). Interaction from
 far away can fail to find a path; `tp` next to the object first (`{"command":"tp","target":"GlyphWall"}`), then interact. Resource updates are bounded to 128 entries and drained on
 read, so persistent RPC is needed to observe a recovery interval. This measures client state, not HUD pixels.

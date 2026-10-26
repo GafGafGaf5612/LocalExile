@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from client_control import chat_packet, collect_replies, log_mark, normalize, read_replies, run_request, tp_text
+from client_control import chat_packet, collect_replies, flask_packet, log_mark, normalize, read_replies, run_request, tp_text
 
 
 class ClientControlTests(unittest.TestCase):
@@ -52,6 +52,14 @@ class ClientControlTests(unittest.TestCase):
         for bad in [{}, {"x": 1}, {"x": "1", "y": 2}, {"x": True, "y": 2}, {"target": " "}]:
             with self.assertRaises((ValueError, KeyError)):
                 tp_text(bad)
+
+    def test_flask_use_sends_the_flask_key_message(self):
+        self.assertEqual(flask_packet({"key": 1}), ([0x00, 0x70, 0, 0, 0, 0], 0))
+        self.assertEqual(flask_packet({"slot": 4}), ([0x00, 0x70, 0, 0, 0, 4], 4))
+        self.assertEqual(flask_packet({"key": 5})[1], 4)
+        for bad in [{}, {"slot": 1, "key": 2}, {"slot": 5}, {"key": 0}, {"key": "1"}, {"slot": True}]:
+            with self.assertRaises(ValueError):
+                flask_packet(bad)
 
     def test_replies_are_the_gateway_chat_lines_after_the_mark(self):
         nl = chr(10)

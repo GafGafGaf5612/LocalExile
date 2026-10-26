@@ -8,6 +8,7 @@
     .venv/Scripts/python.exe scripts/dev/client_control.py command "/hit physical 100"
     .venv/Scripts/python.exe scripts/dev/client_control.py chat "#hello"
     .venv/Scripts/python.exe scripts/dev/client_control.py tp "RhoaChest 2"
+    .venv/Scripts/python.exe scripts/dev/client_control.py flask:use 1
 
 Use --stdio for persistent JSON-lines RPC (one request/result per line). Each request is
 {"command":"character:play","name":"OfflineWitch"}; login takes account/password fields.
@@ -83,6 +84,20 @@ def chat_packet(text):
             packet.extend(b"\xc0" + cp.to_bytes(4, "little"))
     packet.append(0)
     return list(packet)
+
+
+def flask_packet(request):
+    """C→S 0x70 for a flask-bar cell, as the client sends it for a flask key: u32 big-endian cell, 0 for key 1 … 4
+    for key 5 (Agents/docs/protocol/13-items.md §8). The request names the cell (`slot` 0-4) or the key (`key` 1-5)."""
+    if ("slot" in request) == ("key" in request):
+        raise ValueError("flask:use needs exactly one of slot (0-4) or key (1-5)")
+    value = request["slot"] if "slot" in request else request["key"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("flask slot/key must be an integer")
+    slot = value if "slot" in request else value - 1
+    if not 0 <= slot <= 4:
+        raise ValueError("flask slot must be 0-4 (key 1-5)")
+    return list(struct.pack(">HI", 0x70, slot)), slot
 
 
 GATEWAY_LOG = ROOT / "logs" / "live-gateway.log"
@@ -357,6 +372,9 @@ class ClientControl:
         if command == "inventory:place":
             inventory, x, y = int(request["inventoryId"]), int(request.get("x",0)), int(request.get("y",0))
             return self.rpc("interaction",bytes=list(struct.pack(">HIIIBBBB",0x2a,inventory,x,y,0,3,0,0)))
+        if command == "flask:use":
+            packet, slot = flask_packet(request)
+            return {**self.rpc("interaction", bytes=packet), "slot": slot}
         raise ValueError(f"Unknown command: {command}")
 
 
@@ -391,6 +409,8 @@ def main():
         request = normalize(options.command)
         if options.text is not None:
             request["text"] = options.text
+        if request["command"] == "flask:use" and options.text is not None:
+            request["key"] = int(request.pop("text"))
         if request["command"] == "tp" and options.text is not None:
             parts = options.text.split()
             if len(parts) == 2 and all(re.fullmatch(r"[+-]?\d+", v) for v in parts):
