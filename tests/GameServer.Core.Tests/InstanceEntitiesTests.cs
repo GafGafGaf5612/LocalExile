@@ -288,6 +288,20 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void An_emerge_monster_is_created_buried_and_rises_with_its_basic_action()
+    {
+        // Gravel Eater (SandSpitterEmerge): the base list + Transitionable without num_states, i.e. 2 states.
+        string[] list = [.. MonsterObject.BaseComponents, "Transitionable"];
+        Assert.Equal(1, new MonsterObject(1, 2, 100, list, TransitionState: 1).Blob()[^2]);   // buried: emerge paused
+        Assert.Equal(2, new MonsterObject(1, 2, 100, list, TransitionState: 2).Blob()[^2]);   // risen: targetable
+        // The Emerge basic action (ActionTypes HASH16 16641 = 0x4101 & 0x3fff) in place, not predicted (0xffff), then
+        // Transitionable (component 11) to 2.
+        Assert.StartsWith("01AB" + "00003000" + "00000000" + "0000" + "0408" + "0A0B0A0B" + "0101" + "FFFF",
+            Convert.ToHexString(InstanceProtocol.ActionStarted(0x3000, 10, 11, 10, 11, 0x0101, 0xffff, 0x0408)));
+        Assert.EndsWith("0B" + "02", Convert.ToHexString(InstanceEntities.TransitionableUpdate(0x3000, 11, 2)));
+    }
+
+    [Fact]
     public void A_scaled_blocker_sends_its_scale_and_starts_blocked()
     {
         // The Twilight Strand's force wall: room scale 2.7 → Positioned flags0 0x20 and three f32.
@@ -535,6 +549,14 @@ public class InstanceEntitiesTests
         string body = "09" + "2000" + "01" + "01" + "0201" + "00" + "7A110000" + "00" + "4E110000" + "00" + "00" +
             "00000000" + "00000000" + "00000000" + "00" + "00" + "0401" + "00" + "00";
         Assert.Equal("02BA" + "00001000" + "00000000" + "0000" + (body.Length / 2).ToString("X4") + body, Convert.ToHexString(m));
+    }
+
+    [Fact]
+    public void Actor_take_hit_uses_animation_type_and_native_recovery_duration()
+    {
+        Assert.Equal("01D1000010000000000000003F0000000500",
+            Convert.ToHexString(InstanceProtocol.ActorAnimation(0x1000, .5f, 5)));
+        Assert.Equal(1, InstanceProtocol.ActorAnimation(0x1000, .5f, 5, checkInterruption: true)[^1]);
     }
 
     [Fact]

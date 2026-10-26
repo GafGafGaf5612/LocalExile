@@ -19,7 +19,7 @@ The Coast (`1_1_2`, WorldAreas row 6, level 2):
 |---|---|---|---|
 | `Act1-CoastCrabs` (row 2) | 100 | 2–4 Savage / Kelp / Shore / Coconut / Spider Crabs; 80%: one large Savage Crab (row 4515) | scattered |
 | `Act1-ZombieDrowned` (row 3) | 100 | 3–4 Drowned; `Grounds`: the beach/ocean ground types | scattered (grounds not checked) |
-| `Act1-SandspitterEmerge` (row 4) | 100 | 3–4 Gravel Eaters | **skipped**: emerge monsters stay hidden ([10](10-chat-and-commands.md) §5) |
+| `Act1-SandspitterEmerge` (row 4) | 100 | 3–4 Gravel Eaters | scattered, buried: they rise when the player comes near ([10](10-chat-and-commands.md) §5) |
 | `1_1_2-cannibalfire` (row 620) | 0 | 2–4 Cannibals (male, female, fire throwers, Fire-eater) | room points `%area%-cannibalfire` |
 | `1_1_2-bosspack` (row 621) | 0 | 6–8 Cannibals | with the boss at `mapboss` |
 | boss: Fire Fury (row 2845, `CannibalFemaleBossWitch`) | | Unique | room point `mapboss` |
@@ -43,7 +43,8 @@ attack). Its mods (§5) set its life, hit, speed and defences. Monsters are crea
 (`InstanceStore`) saves each living monster's variety, level, rarity, mods, team, life and current position (its walk
 estimate, `SavedMonster.Save`); dead ones are not saved. The next connection into that instance re-creates exactly
 those monsters instead of planning the packs: where they were (a dragged group stays a group), idle until the player
-comes within aggro range, and a damaged one gets its life with 0x1b1 right after its 0x2b9. Only a new instance plans
+comes within aggro range, and a damaged one gets its life with 0x1b1 right after its 0x2b9. A buried emerge monster
+is kept buried; one that has risen comes back risen (Transitionable state 2). Only a new instance plans
 fresh packs. The saved state goes with the instance's ground items: kept in the Gateway's memory and wiped when the
 instance expires.
 `Game_MONSTERS=0` turns it off. Only unique and rare monsters are logged one by one; a summary line lists the rest.
@@ -79,16 +80,28 @@ So:
 3. `AreaPopulation.LoadPoints` fits each candidate room: anchored on the room doodad whose model is rarest in the
    capture, it tries each captured doodad of that model × the 8 turns/flips, and keeps a placement when ≥ 70% of the
    room's doodads land within 2 cells of a captured doodad of the same model. The points go through the same placement.
+   The Tidal Island's `medicine_boat` rooms have only two snowfall emitters around Hailrake's `mapboss`, too few for
+   that: when no placement fits, they (and only they, `MercyMission.BoatRooms`) take their actual placement from
+   `<area>_seed<seed>.rooms.json` (12-quests.md, opening encounter). Doing so for every sparse room would change other
+   areas: on the captures it adds The Mud Flats' `miniboss5` mapboss (Oozeback Bloom) and twelve nest packs around
+   a1q4's Rhoa Nests, and moves the start points of The Coast's `to_coast` and The Tidal Island's `toislandcliff`.
 
 The Coast seed 1 (live): `scavenger_camp_2a` at (1241, 598) turned [0 −1; 1 0], 32/33 doodads; `mapboss` (1135, 630),
 its `cannibalfire` (1173, 679); 8 bonfire rooms (12/12 or 21/21 doodads). The doodad angles agree (room angle + π/2).
 Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bosspack` around her.
+The Tidal Island seed 1 (live 2026-10-25): `medicine_boat_1` captured at (138, 345), code 3; Hailrake stands at its
+`mapboss` (265, 437) on the shipwreck, with `1_1_2a-bosspack` there and at `%area%-bosspack` (292, 420).
 
 ## 4. Open
 
 - Pack density and magic/rare chances are guesses (§1); so are the mod counts (§5).
 - `Grounds` (Drowned on wet beach) is not checked; we have no ground-type grid.
-- Emerge packs (Gravel Eaters) are skipped until the Emerge action is known.
+- Emerge packs (Gravel Eaters, Dripping Dead, the Strand's Drowned, Tide Striders …) are placed waiting and rise within
+  24 cells of the player ([10](10-chat-and-commands.md) §5); the distance is ours (the official one is in the server's
+  AI files). The pack rule for the 161 varieties whose Id contains "Emerge": the 85 without a Transitionable are
+  ordinary monsters and are placed now (before, every "Emerge" Id was skipped; e.g. PusElementalEmerge in 1_4_6_3
+  stands as usual); the 63 whose type waits to rise are placed waiting; the 13 whose Transitionable is something else
+  (it sets `num_states`, or pauses no clip) are still skipped.
 - Fire Fury uses only her first granted effect. Bosses whose MonsterVarieties row has `BossHealthBar` and whose type
   extends `Metadata/Monsters/BossLifeBar` show the big life bar once they aggro (12-quests.md §6).
 - **Rarity life:** a magic, rare or unique monster has `monster_life_+%_final_from_rarity` of its rarity's monster mod

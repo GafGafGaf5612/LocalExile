@@ -1,78 +1,143 @@
-// Local development RPC for the copied standalone 3.29.3b client. Loaded by client_control.py.
+// Local development RPC for the copied standalone client. Loaded by client_control.py after client-resolver.js.
 // Commands run inside the existing state-stack update, after its transition guard is entered.
 // No input simulation, screen coordinates, credential persistence, or executable patching.
+// Every client address and struct offset comes from client-signatures.json through resolveClient(); an operation
+// whose symbols or offsets are missing fails with "Unsupported client: <op> needs <name> (not found)".
 'use strict';
 const module = Process.getModuleByName('Game.patched.exe');
-const at = va => module.base.add(ptr(va).sub(ptr('0x140000000')));
-const specs = {
-  frame: ['0x141526cbf', '488b5d284883eb10483b5d200f848800'],
-  connect: ['0x14213d9f0', '48895c2408488974241055574156488d'],
-  login: ['0x14213ea10', '48895c24084889742410555741544156'],
-  play: ['0x1421406f0', '48895c240848896c2410488974241857'],
-  write: ['0x140dfb760', '48895c240848896c2410488974241857'],
-  flush: ['0x140dfb8c0', '48895c24104889742418555741544156'],
-  logout: ['0x140d0f740', '48895c24104889742418555741554156'],
-  push: ['0x1415261c0', '48895c240848896c2410488974241857'],
-  dispatch: ['0x14213f190', '48895c24084c89442418555657415441'],
-  loginWriter: ['0x14213c660', '48895c241048896c2418488974242057'],
-  assignText: ['0x1401346d0', '48895c241048896c2418565741574883'],
-  lifeTick: ['0x141e6a190', '40534883ec3083b9a801000000488bd9'],
-  poolUpdate: ['0x141e69fb0', '405341574883ec288b42204c8bfa448b'],
-};
-const addresses = {};
-for (const [name, [va, expected]] of Object.entries(specs)) {
-  const p = at(va);
-  const actual = Array.from(new Uint8Array(p.readByteArray(expected.length / 2)))
-    .map(x => x.toString(16).padStart(2, '0')).join('');
-  if (actual !== expected) throw new Error(`Unsupported client: ${name} code differs from 3.29.3b`);
-  addresses[name] = p;
+let config = null, resolved = null;
+const hooks = {};
+const warnings = [];
+function layoutWarning(name, value, expected) {
+  // Inside hooks, where throwing helps nobody: remember it for bridge:doctor (once per name).
+  const text = `Client layout check failed in a hook: ${name} = ${value} (expected ${expected})`;
+  if (!warnings.includes(text)) warnings.push(text);
 }
-const native = (name, args, returns = 'void') => new NativeFunction(addresses[name], returns, args,
-  { abi: 'win64', scheduling: 'cooperative' });
-const connect = native('connect', ['pointer', 'pointer', 'pointer']);
-const login = native('login', ['pointer', 'pointer', 'pointer', 'uint8', 'uint8']);
-const play = native('play', ['pointer', 'pointer', 'uint32']);
-const write = native('write', ['pointer', 'pointer', 'uint64'], 'pointer');
-const flush = native('flush', ['pointer', 'uint32', 'uint8']);
-const logout = native('logout', ['pointer']);
-const push = native('push', ['pointer', 'pointer']);
-const assignText = native('assignText', ['pointer', 'pointer', 'uint64'], 'pointer');
-const app = () => at('0x1445cbe68').readPointer();
-const stack = () => at('0x1445cbe40').readPointer();
-const loginObject = () => app().add(0x358).readPointer();
-const instance = () => app().add(0x348).readPointer();
-rpc.exports.identity = () => ({pid: Process.id, path: module.path, build: '3.29.3b'});
+
+// What each operation needs, besides `frame` (the hook every queued command runs in). Offsets are `.`-names.
+const STATUS = ['app', 'stack', 'app.login', 'app.instance', 'stack.statesBegin', 'stack.statesEnd', 'state.id',
+  'login.state', 'instance.state', 'login.account', 'login.character', 'stack.stateCount'];
+const CHARACTERS = ['login.characters', 'character.stride', 'character.league', 'character.level', 'character.classId'];
+const SEND = ['write', 'flush', 'app.instance', 'instance.socket'];
+const NEEDS = {
+  status: STATUS,
+  resources: ['lifeTick', 'poolUpdate', 'life.life', 'life.mana', 'life.es', 'pool.current', 'pool.fraction',
+    'component.owner', 'owner.flags', 'update.current', 'update.pool'],
+  characters: CHARACTERS,
+  connect: ['connect', 'app.login', 'loginWriter', 'assignText', 'loginForm.account', 'loginForm.digest'],
+  login: ['login', 'app.login'],
+  play: ['play', 'app.login', 'push', 'stack.stateTable', 'ingame.classId', ...CHARACTERS],
+  select: SEND,
+  logout: ['logout', 'stack.stateTable'],
+  chat: SEND,
+  interaction: SEND,
+};
+
+function lookup(name) {
+  if (resolved === null) return null;
+  if (resolved.symbols[name]) return resolved.symbols[name].address;
+  if (resolved.globals[name]) return resolved.globals[name].address;
+  if (resolved.offsets[name]) return resolved.offsets[name].value;
+  throw new Error(`Unknown client symbol ${name}`);
+}
+// Operations that call client functions or write client memory never compute their arguments or targets from an
+// offset that is only a pinned fallback (its code was not found in this build); `NEEDS` lists those offsets for
+// each such operation. Read-only operations, and the status checks every operation starts with (which have their
+// own range checks), may use one; doctor marks it unverified.
+const READ_ONLY = new Set(['status', 'resources', 'characters']);
+function missing(op) {
+  // What `op` lacks, as "name (not found)" / "name (unverified)".
+  const names = [...new Set(['frame', ...(op === 'status' ? [] : STATUS), ...(NEEDS[op] || [])])];
+  const absent = names.filter(name => lookup(name) === null).map(name => `${name} (not found)`);
+  const weak = READ_ONLY.has(op) ? [] : (NEEDS[op] || []).filter(name => resolved?.offsets[name]?.unverified === true)
+    .map(name => `${name} (unverified)`);
+  return [...absent, ...weak];
+}
+function need(op) {
+  const absent = missing(op);
+  if (absent.length) throw new Error(`Unsupported client: ${op} needs ${absent.join(', ')}`);
+}
+const sym = name => lookup(name);
+const off = name => lookup(name);
+
+const natives = {};
+function native(name, args, returns = 'void') {
+  natives[name] ??= new NativeFunction(sym(name), returns, args, {abi: 'win64', scheduling: 'cooperative'});
+  return natives[name];
+}
+const connect = (...a) => native('connect', ['pointer', 'pointer', 'pointer'])(...a);
+const login = (...a) => native('login', ['pointer', 'pointer', 'pointer', 'uint8', 'uint8'])(...a);
+const play = (...a) => native('play', ['pointer', 'pointer', 'uint32'])(...a);
+const write = (...a) => native('write', ['pointer', 'pointer', 'uint64'], 'pointer')(...a);
+const flush = (...a) => native('flush', ['pointer', 'uint32', 'uint8'])(...a);
+const logout = (...a) => native('logout', ['pointer'])(...a);
+const push = (...a) => native('push', ['pointer', 'pointer'])(...a);
+const assignText = (...a) => native('assignText', ['pointer', 'pointer', 'uint64'], 'pointer')(...a);
+
+// Cheap layout checks: a wrong address or offset becomes a clear error instead of a crash or garbage.
+function readable(p, what) {
+  // A probing read is cheap; Process.findRangeByAddress walks every mapping (seconds in the game process).
+  let ok = !p.isNull() && p.and(7).isNull();
+  if (ok) { try { p.readU8(); } catch (_) { ok = false; } }
+  if (!ok) throw new Error(`Client layout check failed: ${what} is not a readable object pointer (${p})`);
+  return p;
+}
+function inRange(value, low, high, what) {
+  if (!(value >= low && value <= high)) throw new Error(`Client layout check failed: ${what} = ${value} (expected ${low}-${high})`);
+  return value;
+}
+const app = () => sym('app').readPointer();
+const stack = () => sym('stack').readPointer();
+const child = (owner, name) => {
+  const p = owner.add(off(name)).readPointer();
+  return p.isNull() ? p : readable(p, name);
+};
+const loginObject = () => child(readable(app(), 'app'), 'app.login');
+const instance = () => child(readable(app(), 'app'), 'app.instance');
+const loginState = l => inRange(l.add(off('login.state')).readU32(), 0, 3, 'login.state');
+const instanceState = i => inRange(i.add(off('instance.state')).readU32(), 0, 3, 'instance.state');
+rpc.exports.identity = () => ({pid: Process.id, path: module.path});
 let lastLoginResult = null;
 let credentials = null, loginSubmitted = false;
 let life = null, resourceProbe = false;
 const resourceUpdates = [];
-const localLife = p => !p.isNull() && p.add(8).readPointer().add(0x88).readU32() === 0x1000;
+const localLife = p => {
+  if (p.isNull()) return false;
+  const owner = p.add(off('component.owner')).readPointer();  // a bad pointer throws; callers catch it
+  return !owner.isNull() && owner.add(off('owner.flags')).readU32() === 0x1000;
+};
 function resources() {
   if (life === null || !localLife(life) || status().instanceState !== 3) return null;
-  const pools = Object.fromEntries([['life',0x178],['mana',0x1c8],['es',0x210]].map(([name, offset]) => {
-    const p=life.add(offset); return [name,{current:p.add(0x30).readS32(),fraction:p.add(0x28).readFloat()}];
+  const pools = Object.fromEntries([['life', 'life.life'], ['mana', 'life.mana'], ['es', 'life.es']].map(([name, offset]) => {
+    const p = life.add(off(offset));
+    const fraction = p.add(off('pool.fraction')).readFloat();
+    if (!(fraction >= 0 && fraction <= 1)) throw new Error(`Client layout check failed: pool.fraction = ${fraction} (expected 0-1)`);
+    return [name, {current: p.add(off('pool.current')).readS32(), fraction}];
   }));
-  return {pools, updates:resourceUpdates.splice(0)};
+  return {pools, updates: resourceUpdates.splice(0)};
 }
 function enableResources() {
   if (resourceProbe) return;
-  resourceProbe=true;
-  Interceptor.attach(addresses.lifeTick,{onEnter(args) {
-    try {if(localLife(args[0])) life=args[0];} catch(_){life=null;}
+  resourceProbe = true;
+  hooks.lifeTick = Interceptor.attach(sym('lifeTick'), {onEnter(args) {
+    try { if (localLife(args[0])) life = args[0]; } catch (_) { life = null; }
   }});
-  Interceptor.attach(addresses.poolUpdate,{onEnter(args) {
+  hooks.poolUpdate = Interceptor.attach(sym('poolUpdate'), {onEnter(args) {
     try {
-      const owner=args[0].add(8).readPointer(); if(!localLife(owner)) return;
-      resourceUpdates.push({timeMs:Date.now(),pool:args[1].add(0x28).readU8(),current:args[1].add(0x20).readU32(),
-        previousCurrent:args[0].add(0x30).readS32(),previousFraction:args[0].add(0x28).readFloat()});
-      if(resourceUpdates.length>128) resourceUpdates.shift();
-    } catch(_) {}
+      const owner = args[0].add(off('component.owner')).readPointer(); if (!localLife(owner)) return;
+      const pool = args[1].add(off('update.pool')).readU8();
+      if (pool > 7) { layoutWarning('update.pool', pool, '0-7'); return; }  // a pool id, not a layout we know
+      resourceUpdates.push({timeMs: Date.now(), pool,
+        current: args[1].add(off('update.current')).readU32(), previousCurrent: args[0].add(off('pool.current')).readS32(),
+        previousFraction: args[0].add(off('pool.fraction')).readFloat()});
+      if (resourceUpdates.length > 128) resourceUpdates.shift();
+    } catch (_) {}
   }});
 }
 function text(s, wide = true) {
   const length = s.add(0x10).readU64().toNumber(), cap = s.add(0x18).readU64().toNumber();
-  if (length > 4096) throw new Error('Invalid client string length');
-  const data = cap > (wide ? 7 : 15) ? s.readPointer() : s;
+  if (length > 4096 || cap < length || cap > 0x100000) throw new Error('Invalid client string (length/capacity)');
+  const data = cap > (wide ? 7 : 15) ? readable(s.readPointer(), 'string data') : s;
   return length ? (wide ? data.readUtf16String(length) : data.readUtf8String(length)) : '';
 }
 function string(s, wide, keep) {
@@ -84,46 +149,61 @@ function string(s, wide, keep) {
 }
 function characters() {
   const l = loginObject();
-  if (l.isNull() || l.add(0xde8).readU32() !== 3) throw new Error('Not logged in');
-  const begin = l.add(0xe68).readPointer(), end = l.add(0xe70).readPointer();
-  const count = end.sub(begin).toInt32() / 0x50;
+  if (l.isNull() || loginState(l) !== 3) throw new Error('Not logged in');
+  const vector = l.add(off('login.characters')), stride = off('character.stride');
+  const begin = vector.readPointer(), end = vector.add(8).readPointer();
+  const count = end.sub(begin).toInt32() / stride;
   if (!Number.isInteger(count) || count < 0 || count > 255) throw new Error('Invalid character vector');
+  if (count) readable(begin, 'login.characters');
   return Array.from({length: count}, (_, index) => {
-    const p = begin.add(index * 0x50);
-    return {index, name: text(p), league: text(p.add(0x20)), level: p.add(0x48).readU8(), classId: p.add(0x4a).readU8()};
+    const p = begin.add(index * stride);
+    return {index, name: text(p), league: text(p.add(off('character.league'))),
+      level: inRange(p.add(off('character.level')).readU8(), 1, 100, 'character.level'),
+      classId: inRange(p.add(off('character.classId')).readU8(), 0, 15, 'character.classId')};
   });
 }
 function status() {
-  const a=app(),sm=stack();
-  if(a.isNull() || sm.isNull()) return {pid:Process.id,build:'3.29.3b',screen:'starting',states:[],loginState:0,instanceState:0};
-  const l=a.add(0x358).readPointer(),i=a.add(0x348).readPointer();
-  const begin = sm.add(0x20).readPointer(), end = sm.add(0x28).readPointer();
+  const identity = {pid: Process.id, build: config.build, patchVersion: resolved.build?.version ?? null};
+  const a = app(), sm = stack();
+  if (a.isNull() || sm.isNull()) return {...identity, screen: 'starting', states: [], loginState: 0, instanceState: 0};
+  readable(a, 'app'); readable(sm, 'stack');
+  const l = loginObject(), i = instance();
+  const begin = sm.add(off('stack.statesBegin')).readPointer(), end = sm.add(off('stack.statesEnd')).readPointer();
   const count = end.sub(begin).toInt32() / 16;
   if (!Number.isInteger(count) || count < 0 || count > 32) throw new Error('Invalid state stack');
-  const states = Array.from({length: count}, (_, n) => begin.add(n * 16).readPointer().add(0x209).readU8());
-  const loginState = l.isNull() ? 0 : l.add(0xde8).readU32();
-  return {pid: Process.id, build: '3.29.3b', states, screen: ({4:'game',6:'login',7:'login',9:'characters',11:'loading'})[states.at(-1)] || 'other',
-    loginState, instanceState: i.isNull() ? 0 : i.add(0xc3a0).readU32(),
-    account: loginState === 3 ? text(l.add(0xe10)) : null,
-    character: i.isNull() || i.add(0xc3a0).readU32() !== 3 ? null : text(l.add(0xdf0)), lastLoginResult, loginSubmitted};
+  const states = Array.from({length: count}, (_, n) =>
+    inRange(readable(begin.add(n * 16).readPointer(), 'state').add(off('state.id')).readU8(), 0, off('stack.stateCount') - 1, 'state.id'));
+  const login = l.isNull() ? 0 : loginState(l), area = i.isNull() ? 0 : instanceState(i);
+  return {...identity, states, screen: ({4: 'game', 6: 'login', 7: 'login', 9: 'characters', 11: 'loading'})[states.at(-1)] || 'other',
+    loginState: login, instanceState: area,
+    account: login === 3 ? text(l.add(off('login.account'))) : null,
+    character: area !== 3 ? null : text(l.add(off('login.character'))), lastLoginResult, loginSubmitted};
+}
+function stateEntry(id) {
+  inRange(id, 0, off('stack.stateCount') - 1, 'state id');
+  return stack().add(off('stack.stateTable') + id * 16);
 }
 function state(id) {
-  const sm = stack(), entry = sm.add(0x48 + id * 16);
+  const entry = stateEntry(id);
   if (entry.readPointer().isNull()) throw new Error('Client state is not constructed yet');
-  push(sm, entry);
+  push(stack(), entry);
 }
 function sendPacket(bytes, connection) {
   const p = Memory.alloc(bytes.length); p.writeByteArray(bytes);
-  const socket = connection === 'login' ? loginObject().add(0xdd0).readPointer() : instance().add(0xc288).readPointer();
+  const owner = connection === 'login' ? loginObject() : instance();
+  if (owner.isNull()) throw new Error('Connection is not open');
+  const socket = owner.add(off(connection === 'login' ? 'login.socket' : 'instance.socket')).readPointer();
   if (socket.isNull()) throw new Error('Connection has no socket');
+  readable(socket, 'socket');
   write(socket, p, bytes.length); flush(socket, 0, 0);
 }
 function execute(request) {
+  need(request.op);
   const current = status(), keep = [];
   switch (request.op) {
     case 'status': return current;
     case 'resources':
-      if(current.screen!=='game' || current.instanceState!==3) throw new Error('Resources require an active area');
+      if (current.screen !== 'game' || current.instanceState !== 3) throw new Error('Resources require an active area');
       enableResources(); return resources();
     case 'characters': return {characters: characters()};
     case 'connect':
@@ -151,54 +231,119 @@ function execute(request) {
       view.writePointer(data); view.add(8).writeU64(chosen.name.length);
       // The Play callback sets the class on state 4, but pushes state 11 (the loading state), not state 4.
       // Loading installs the instance-assignment listener before it enters the in-game state.
-      stack().add(0x88).readPointer().add(0xa48).writeU32(chosen.classId);
+      // The one client field the bridge writes: check the object is the in-game state (its own id is 4) and the
+      // field holds what it holds live: 7 in a fresh client (one past the seven classes), else the class played last.
+      const inGame = readable(stateEntry(4).readPointer(), 'in-game state');
+      inRange(inGame.add(off('state.id')).readU8(), 4, 4, 'in-game state id');
+      const classId = inGame.add(off('ingame.classId')), previous = classId.readU32();
+      if (previous !== 7 && !characters().some(c => c.classId === previous))
+        throw new Error(`Client layout check failed: ingame.classId = ${previous}, not 7 (none yet) or a class in the character list`);
+      classId.writeU32(chosen.classId);
       play(loginObject(), view, chosen.index); state(11);
       return {submitted: true, character: chosen.name};
     }
     case 'select':
       if (current.screen === 'characters') return {alreadySelected: true};
       if (current.screen !== 'game' || current.instanceState !== 3) throw new Error('Not playing a character');
-      sendPacket([0x01,0x53], 'instance'); return {submitted: true};
+      sendPacket([0x01, 0x53], 'instance'); return {submitted: true};
     case 'logout':
       if (current.screen === 'game') throw new Error('Return to character selection before logging out');
-      logout(stack().add(0xb8).readPointer()); return {submitted: true};
+      logout(readable(stateEntry(7).readPointer(), 'login state')); return {submitted: true};
     case 'chat':
       if (current.screen !== 'game' || current.instanceState !== 3) throw new Error('Chat requires an active area');
       if (!Array.isArray(request.bytes) || request.bytes.length > 8192) throw new Error('Invalid chat message');
       sendPacket(request.bytes, 'instance'); return {submitted: true};
     case 'interaction': {
       if (current.screen !== 'game' || current.instanceState !== 3) throw new Error('Interaction requires an active area');
-      const b=request.bytes, id=Array.isArray(b) && b.length>=2 ? b[0]*256+b[1] : -1;
-      const lengths={0x24:12,0x25:16,0x28:13,0x2a:18,0x82:3,0x85:2,0x88:15};
-      if (!lengths[id] || b.length!==lengths[id])
+      const b = request.bytes, id = Array.isArray(b) && b.length >= 2 ? b[0] * 256 + b[1] : -1;
+      const lengths = {0x24: 12, 0x25: 16, 0x28: 13, 0x2a: 18, 0x70: 6, 0x82: 3, 0x85: 2, 0x88: 15};
+      if (!lengths[id] || b.length !== lengths[id])
         throw new Error('Unsupported interaction message');
-      sendPacket(b,'instance'); return {submitted:true};
+      sendPacket(b, 'instance'); return {submitted: true};
     }
     default: throw new Error('Unsupported operation');
   }
 }
 let pending = null;
-Interceptor.attach(addresses.frame, function () {
-  if (!pending) return;
-  const work = pending; pending = null; clearTimeout(work.timer);
-  // Do not let a one-shot caller detach while this native hook is still unwinding.
-  try { const result=execute(work.request); setImmediate(()=>work.resolve(result)); }
-  catch (e) { setImmediate(()=>work.reject(e)); }
-});
-Interceptor.attach(addresses.dispatch, {onEnter(args) {
-  try { const message = args[2].readPointer(); if (!message.isNull() && message.add(8).readU16() === 4) lastLoginResult = message.add(0x10).readU16(); } catch (_) {}
-}});
-Interceptor.attach(addresses.loginWriter, {onEnter(args) {
-  if (!credentials) return;
-  // Substitute the requested credentials in the one outgoing native form submission. The ordinary handshake
-  // callback can race the RPC caller; replacing this message prevents an earlier saved/empty password winning.
-  const value = credentials; credentials = null;
-  const data = Memory.allocUtf8String(value.account);
-  assignText(args[0].add(0x10), data, unescape(encodeURIComponent(value.account)).length);
-  args[0].add(0x34).writeByteArray(value.digest);
-  value.digest.fill(0); loginSubmitted = true;
-}});
+function attachHooks() {
+  if (sym('frame') !== null) {
+    hooks.frame = Interceptor.attach(sym('frame'), function () {
+      if (!pending) return;
+      const work = pending; pending = null; clearTimeout(work.timer);
+      // Do not let a one-shot caller detach while this native hook is still unwinding.
+      try { const result = execute(work.request); setImmediate(() => work.resolve(result)); }
+      catch (e) { setImmediate(() => work.reject(e)); }
+    });
+  } else {
+    warnings.push('Unsupported client: frame (the state-stack update hook) was not found, so no command can run; see bridge:doctor');
+  }
+  if (sym('dispatch') !== null && off('message.id') !== null && off('message.loginResult') !== null) {
+    hooks.dispatch = Interceptor.attach(sym('dispatch'), {onEnter(args) {
+      try {
+        const message = args[2].readPointer();
+        if (message.isNull() || message.add(off('message.id')).readU16() !== 4) return;
+        const result = message.add(off('message.loginResult')).readU16();
+        if (result <= 0xff) lastLoginResult = result; else layoutWarning('message.loginResult', result, '0-255');
+      } catch (_) {}
+    }});
+  } else {
+    warnings.push('dispatch was not found: a rejected login is reported as a timeout instead of its result code');
+  }
+  if (missing('connect').length === 0) {
+    hooks.loginWriter = Interceptor.attach(sym('loginWriter'), {onEnter(args) {
+      if (!credentials) return;
+      // Substitute the requested credentials in the one outgoing native form submission. The ordinary handshake
+      // callback can race the RPC caller; replacing this message prevents an earlier saved/empty password winning.
+      const value = credentials; credentials = null;
+      const data = Memory.allocUtf8String(value.account);
+      assignText(args[0].add(off('loginForm.account')), data, unescape(encodeURIComponent(value.account)).length);
+      args[0].add(off('loginForm.digest')).writeByteArray(value.digest);
+      value.digest.fill(0); loginSubmitted = true;
+    }});
+  }
+}
+rpc.exports.init = options => {
+  if (resolved !== null) return {warnings, unresolved: unresolvedNames()};
+  config = options;
+  resolved = resolveClient(module, options.signatures, options.mode || 'pinned');
+  attachHooks();
+  return {warnings, unresolved: unresolvedNames(), elapsedMs: resolved.elapsedMs};
+};
+function unresolvedNames() {
+  return [...Object.entries(resolved.symbols), ...Object.entries(resolved.globals)]
+    .filter(([, v]) => v.address === null).map(([name]) => name)
+    .concat(Object.entries(resolved.offsets).filter(([, v]) => v.value === null || v.unverified).map(([name]) => name));
+}
+rpc.exports.doctor = () => {
+  const strip = value => value === null ? null : '0x' + value.toString(16);
+  const ops = Object.fromEntries(Object.keys(NEEDS).map(op => {
+    const absent = missing(op);
+    return [op, absent.length ? `needs ${absent.join(', ')}` : 'ok'];
+  }));
+  const sanity = {};
+  const probe = (name, fn) => { try { sanity[name] = fn(); } catch (e) { sanity[name] = `failed: ${e.message}`; } };
+  probe('app', () => lookup('app') === null ? 'not resolved' : (app().isNull() ? 'null (starting)' : `${readable(app(), 'app')} readable`));
+  probe('stack', () => lookup('stack') === null ? 'not resolved' : (stack().isNull() ? 'null (starting)' : `${readable(stack(), 'stack')} readable`));
+  probe('status', () => missing('status').length ? 'not checked' : (({screen, states, loginState, instanceState}) =>
+    `screen ${screen}, states [${states}], login.state ${loginState}, instance.state ${instanceState} (all in range)`)(status()));
+  return {
+    mode: resolved.mode, elapsedMs: resolved.elapsedMs, imageBase: resolved.imageBase, moduleBase: resolved.moduleBase,
+    pinnedBuild: resolved.build,
+    warnings, hooks: Object.fromEntries(['frame', 'dispatch', 'loginWriter', 'lifeTick', 'poolUpdate']
+      .map(name => [name, hooks[name] ? 'attached' : (sym(name) === null ? 'not found' : (name === 'lifeTick' || name === 'poolUpdate' ? 'on first game:resources' : 'not attached'))])),
+    ops, sanity,
+    symbols: Object.fromEntries(Object.entries(resolved.symbols).map(([name, s]) =>
+      [name, {method: s.method, va: s.va, pinned: s.pinned, ...(s.detail ? {detail: s.detail} : {})}])),
+    globals: Object.fromEntries(Object.entries(resolved.globals).map(([name, g]) =>
+      [name, {method: g.method, va: g.va, pinned: g.pinned, detail: g.detail}])),
+    offsets: Object.fromEntries(Object.entries(resolved.offsets).map(([name, o]) =>
+      [name, {method: o.method, value: strip(o.value), pinned: o.pinned, detail: o.detail,
+        ...(o.unverified ? {unverified: true} : {})}])),
+  };
+};
 rpc.exports.command = request => new Promise((resolve, reject) => {
+  if (resolved === null) { reject(new Error('Bridge not initialised')); return; }
+  try { need(request.op); } catch (e) { reject(e); return; }
   if (pending) { reject(new Error('Another command is pending')); return; }
   pending = {request, resolve, reject, timer: setTimeout(() => {
     pending = null; reject(new Error('No client frame within 5 seconds; command cancelled'));

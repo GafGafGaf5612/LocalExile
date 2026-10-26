@@ -11,9 +11,12 @@ partial class Program
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
         byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null,
-        MonsterModSet? mods = null, bool alone = true)
+        MonsterModSet? mods = null, bool alone = true, bool? unrisen = null)
     {
         uint id = conn.NextObjectId++;
+        // A monster that rises from the ground starts waiting to rise, unless it was kept after rising (MonsterEmerge.cs).
+        var emerge = Emerges.Kind(variety, rarity);
+        bool waits = emerge != EmergeKind.None && (unrisen ?? true);
         // Its mods (MonsterMods.cs): the kept ones, else rolled for its rarity. They set its life, hit, speed and defences.
         mods = MonsterModsFor(conn, variety, level, rarity, mods, alone);
         // Full life: the client derives the base from the level (MonsterCatalog.BaseLife); the mods' maximum goes on its Stats.
@@ -43,7 +46,7 @@ partial class Program
         // The final maximum too: the client applies no modifier of its own (as for the player's maximum_life), so without it
         // the life bars kept the base maximum and a unique showed full until its life fell below it (live 2026-10-21).
         foreach (var stat in MonsterModClientStats(mods.Effects, life, baseLife)) (stats ??= []).Add(stat);
-        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, variety.TransitionStates, team,
+        var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, MonsterEmerge.CreateState(variety, emerge, waits), team,
             skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats) { Mods = mods.Mods, NameWords = mods.NameWords };
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
@@ -52,18 +55,19 @@ partial class Program
         uint type = InstanceEntities.ObjectTypeHash(MonsterObject.TypePath(variety.Id, level));
         // The world is active by now, so 0x2b9 is created at once; 0x1a9 makes it drawn and updated.
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()), !log ? null :
-            $"0x02b9 create {rarity}{(friendly ? " friendly" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
+            $"0x02b9 create {rarity}{(friendly ? " friendly" : "")}{(waits ? $" {emerge.ToString().ToLowerInvariant()}" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 monster 0x{id:x} enters wake zone");
         if (log && mods.Affixes.Any()) Console.WriteLine($"[gateway] {remote} monster 0x{id:x} mods: {MonsterModRolls.Value.Describe(mods)}" +
             (mods.NameWords.Count > 0 ? $", named {MonsterModRolls.Value.NameOf(mods.NameWords)}" : ""));
         lock (conn.Monsters)
-            conn.Monsters[id] = new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, mods.Effects.MovementSpeed(variety.MovementSpeed)),
+            MonsterEmerge.AddLocked(conn, id, new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, mods.Effects.MovementSpeed(variety.MovementSpeed)),
                 variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
             {
                 Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
                 Life = Math.Min(damagedLife ?? life, life), Stage = stageSkill is null ? null : stage, States = variety.StateMachine,
                 HitAnimations = Monsters.TakeHit(variety.Id), Mods = mods,
-            };
+            }, emerge, waits);
+        if (waits) WatchBuried(remote, stream, ciphers, conn);
         // A kept monster that was hit: its life as a hit sets it (0x1b1).
         if (damagedLife < life)
             await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, damagedLife.Value), !log ? null : $"0x01b1 monster 0x{id:x} life {damagedLife}/{life}");
@@ -83,7 +87,7 @@ partial class Program
             conn.MonstersPlaced = true;
             foreach (var s in saved)
                 if (Monsters.Find(s.Variety.ToString()) is { } kept)
-                    await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life, mods: s.Mods);
+                    await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life, mods: s.Mods, unrisen: s.Unrisen);
             Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: {saved.Count} kept from the instance");
             return;
         }
@@ -92,8 +96,8 @@ partial class Program
         conn.MonstersPlaced = true;
         if (Packs.For(layout.Id) is not { } area || (area.Scattered.Count == 0 && area.Bosses.Count == 0)) return;
         if (Monsters.Error is { } error) { Console.WriteLine($"[gateway] {remote} area monsters: {error}"); return; }
-        // Emerge monsters (Gravel Eater …) stay hidden without the Emerge action the server does not send yet.
-        bool Spawnable(int row) => Monsters.Find(row.ToString()) is { Supported: true } v && !v.Id.Contains("Emerge", StringComparison.OrdinalIgnoreCase);
+        // Emerge monsters (Gravel Eater, Tide Strider …) are placed waiting and rise near the player (MonsterEmerge.cs).
+        bool Spawnable(int row) => Monsters.Find(row.ToString()) is { Supported: true } v && Emerges.CanPlace(v);
         var notes = new List<string>();
         var points = AreaPopulation.LoadPoints(layout.Id, conn.Seed, notes);
         var spawns = AreaPopulation.Plan(area, layout.GridW, layout.GridH, walkable, (layout.SpawnX, layout.SpawnY),
@@ -109,6 +113,7 @@ partial class Program
         }
         Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: created {spawns.Count} at level {level}: " +
             string.Join(", ", spawns.GroupBy(s => s.Pack).Select(g => $"{g.Key} × {g.Count()}")) +
+            $"; waiting to rise: {MonsterEmerge.Unrisen(conn).Count} ({MonsterEmerge.Buried(conn).Count} buried)" +
             $"; unique: {string.Join(", ", spawns.Where(s => s.Rarity == MonsterRarity.Unique).Select(s => $"{Monsters.Find(s.Variety.ToString())!.Name} at ({s.X}, {s.Y})").DefaultIfEmpty("none"))}");
     }
 
@@ -222,7 +227,7 @@ partial class Program
             // The monster's accuracy comes from DefaultMonsterStats at its level. Evasion uses PoE's shared entropy
             // counter: every attack adds its hit chance, and reaching 100 consumes 100 and hits (evasion cannot streak
             // indefinitely). A new counter starts after 3.33 s without an attack.
-            int monsterAccuracy = m.Mods.Effects.Accuracy(Monsters.BaseAccuracy(m.Level) ?? 0);
+            int monsterAccuracy = conn.FlaskGrounds.Accuracy(id, m.Mods.Effects.Accuracy(Monsters.BaseAccuracy(m.Level) ?? 0));   // blinded in smoke
             int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
             if (EvadesLocked(conn, hitChance, now))
             {
@@ -259,6 +264,8 @@ partial class Program
             mana = conn.PlayerMana;
         }
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
+        if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+            await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);
         // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -276,6 +283,7 @@ partial class Program
                 $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
         if (life == 0)
             await PlayerDied(remote, stream, ciphers, conn, $"0x0055 death screen ({conn.League ?? "?"} league)");
+        else if (!blocked) await GainFlaskChargesWhenHit(remote, stream, ciphers, conn);
     }
 
     // A spawned monster's id from the argument if it is 0x hex, else the last spawned one.

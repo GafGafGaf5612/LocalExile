@@ -1,14 +1,21 @@
-"""Fast, structured control of the local 3.29.3b client through its native functions.
+"""Fast, structured control of the local client through its native functions.
 
     .venv/Scripts/python.exe scripts/dev/client_control.py game:status
+    .venv/Scripts/python.exe scripts/dev/client_control.py bridge:doctor
     .venv/Scripts/python.exe scripts/dev/client_control.py game:open
     .venv/Scripts/python.exe scripts/dev/client_control.py login:offline --password-stdin
     .venv/Scripts/python.exe scripts/dev/client_control.py character:list
     .venv/Scripts/python.exe scripts/dev/client_control.py character:play:OfflineWitch
     .venv/Scripts/python.exe scripts/dev/client_control.py command "/hit physical 100"
+    .venv/Scripts/python.exe scripts/dev/client_control.py chat "#hello"
+    .venv/Scripts/python.exe scripts/dev/client_control.py tp "RhoaChest 2"
+    .venv/Scripts/python.exe scripts/dev/client_control.py flask:use 1
 
 Use --stdio for persistent JSON-lines RPC (one request/result per line). Each request is
 {"command":"character:play","name":"OfflineWitch"}; login takes account/password fields.
+Client addresses come from client-signatures.json, resolved at attach (pinned, else by signature or
+cross-reference); bridge:doctor shows how each was found. --force-scan (or LOCALEXILE_CONTROL_FORCE_SCAN=1)
+skips the pinned addresses; --force-scan xref also prefers cross-references over signatures.
 The transport writes no credentials or tokens to disk. It attaches only to this checkout's
 copied Game.patched.exe; it never starts an official/Steam client or changes save files.
 """
@@ -17,9 +24,11 @@ import ctypes
 from ctypes import wintypes
 import getpass
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import struct
 import sys
@@ -29,7 +38,31 @@ import frida
 
 ROOT = Path(__file__).resolve().parents[2]
 CLIENT = ROOT / "Client" / "Game.patched.exe"
+UNPATCHED = ROOT / "Client" / "Game.exe"
 AGENT = Path(__file__).with_name("client-control.js")
+RESOLVER = Path(__file__).with_name("client-resolver.js")
+SIGNATURES = Path(__file__).with_name("client-signatures.json")
+FORCE_SCAN = "LOCALEXILE_CONTROL_FORCE_SCAN"
+
+
+def _offline_resolver():
+    """scripts/ci/resolve_client.py (standard library only): the build label and SHA-256 helpers."""
+    spec = importlib.util.spec_from_file_location("resolve_client", ROOT / "scripts" / "ci" / "resolve_client.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def resolution_mode(value=None):
+    """pinned (default), signature (skip the pinned fast path) or xref (also prefer cross-references)."""
+    value = (os.environ.get(FORCE_SCAN, "") if value is None else value).strip().lower()
+    if value in ("", "0", "false", "no", "pinned"):
+        return "pinned"
+    if value in ("1", "true", "yes", "signature", "scan"):
+        return "signature"
+    if value == "xref":
+        return "xref"
+    raise ValueError(f"{FORCE_SCAN} must be 0, 1/signature or xref")
 
 
 def live_process(pid):
@@ -82,12 +115,98 @@ def chat_packet(text):
     return list(packet)
 
 
+def flask_packet(request):
+    """C→S 0x70 for a flask-bar cell, as the client sends it for a flask key: u32 big-endian cell, 0 for key 1 … 4
+    for key 5 (Agents/docs/protocol/13-items.md §8). The request names the cell (`slot` 0-4) or the key (`key` 1-5)."""
+    if ("slot" in request) == ("key" in request):
+        raise ValueError("flask:use needs exactly one of slot (0-4) or key (1-5)")
+    value = request["slot"] if "slot" in request else request["key"]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("flask slot/key must be an integer")
+    slot = value if "slot" in request else value - 1
+    if not 0 <= slot <= 4:
+        raise ValueError("flask slot must be 0-4 (key 1-5)")
+    return list(struct.pack(">HI", 0x70, slot)), slot
+
+
+GATEWAY_LOG = ROOT / "logs" / "live-gateway.log"
+# Program.Commands.cs logs every reply line it sends: `[gateway] <remote> => 0x0017 chat line "<text>": <hex>`.
+REPLY_LINE = re.compile(r'=> 0x0017 chat line "(.*)": [0-9A-F]+\s*$')
+
+
+def tp_text(request):
+    """The /tp command for a tp request: x/y (cell), dx/dy (relative), id, target [+ index], or list [+ filter]."""
+    def number(name):
+        value = request[name]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer")
+        return value
+    if "x" in request or "y" in request:
+        return f"/tp {number('x')} {number('y')}"
+    if "dx" in request or "dy" in request:
+        return f"/tp {number('dx'):+d} {number('dy'):+d}"
+    if "id" in request:
+        return f"/tp 0x{number('id'):x}"
+    if request.get("list"):
+        return "/tp list" + (f" {request['list']}" if isinstance(request["list"], str) else "")
+    target = request.get("target", request.get("text"))
+    if not isinstance(target, str) or not target.strip():
+        raise ValueError("tp needs x/y, dx/dy, id, list or a target name")
+    index = request.get("index")
+    return f"/tp {target.strip()}" + (f" {int(index)}" if index is not None else "")
+
+
+def log_mark(path=GATEWAY_LOG):
+    """The Gateway log's current size, or None without a log (servers not started by live.ps1 in this checkout)."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
+def read_replies(path, start):
+    """The chat lines the Gateway sent after byte offset `start` of its log."""
+    with path.open("rb") as log:
+        log.seek(start)
+        data = log.read()
+    end = data.rfind(b"\n") + 1  # a line still being written is read next time
+    lines = data[:end].decode("utf-8", errors="replace").splitlines()
+    return [m.group(1) for m in map(REPLY_LINE.search, lines) if m], start + end
+
+
+def collect_replies(start, wait=1.5, quiet=0.25, path=GATEWAY_LOG):
+    """The Gateway's reply lines to a command just sent: read until `quiet` seconds pass without a new line after
+    the first one, or `wait` seconds in total. None when there is no log to read."""
+    if start is None:
+        return None
+    replies, offset = [], start
+    deadline = time.monotonic() + max(0.0, float(wait))
+    last = None
+    while True:
+        try:
+            lines, offset = read_replies(path, offset)
+        except OSError:
+            return None
+        if lines:
+            replies += lines
+            last = time.monotonic()
+        now = time.monotonic()
+        if now >= deadline or (last is not None and now - last >= quiet):
+            return replies
+        time.sleep(0.05)
+
+
 class ClientControl:
-    def __init__(self):
+    def __init__(self, mode=None):
         self.device = frida.get_local_device()
         self.session = self.script = None
         self.pid = None
         self.detached = False
+        self.mode = resolution_mode(mode)
+        self.signatures = json.loads(SIGNATURES.read_text(encoding="utf-8"))
+        self.offline = _offline_resolver()
+        self.build = None
+        self.warnings = []
 
     def close(self):
         if self.session is not None:
@@ -121,7 +240,8 @@ class ClientControl:
         self.session = self.device.attach(self.pid)
         self.detached = False
         self.session.on("detached", lambda *unused: setattr(self, "detached", True))
-        self.script = self.session.create_script(AGENT.read_text(encoding="utf-8"), name="localexile-client-control")
+        source = RESOLVER.read_text(encoding="utf-8") + "\n" + AGENT.read_text(encoding="utf-8")
+        self.script = self.session.create_script(source, name="localexile-client-control")
         errors = []
         self.script.on("message", lambda message, data: errors.append(message.get("description", "Agent error"))
                        if message.get("type") == "error" else None)
@@ -130,6 +250,13 @@ class ClientControl:
             identity = self.script.exports_sync.identity()
             if Path(identity["path"]).resolve() != CLIENT.resolve():
                 raise RuntimeError("Refusing a client outside this checkout's Client directory")
+            # Resolve symbols and attach hooks only once the executable is known to be this checkout's copy.
+            if self.build is None:
+                self.build = self.offline.build_label(CLIENT.read_bytes()) or "unknown"
+            init = self.script.exports_sync.init({"signatures": self.signatures, "mode": self.mode, "build": self.build})
+            self.warnings = init["warnings"]
+            for warning in self.warnings:
+                print(f"client_control: {warning}", file=sys.stderr, flush=True)
         except Exception:
             self.close()
             if errors:
@@ -144,6 +271,20 @@ class ClientControl:
         if self.script is None and self._find_client() is None:
             return {"running": False}
         return {"running": True, **self.rpc("status")}
+
+    def doctor(self):
+        """How every symbol, global and offset was resolved in the running client, and the executables' identity."""
+        self.attach()
+        report = self.script.exports_sync.doctor()
+        unpatched = self.offline.sha256_file(UNPATCHED) if UNPATCHED.exists() else None
+        builds = self.signatures["builds"]
+        report["client"] = {
+            "path": str(CLIENT), "build": self.build, "sha256": self.offline.sha256_file(CLIENT),
+            "unpatchedSha256": unpatched, "versionResource": None,
+            "knownBuilds": {sha: f"{b['version']} ({b['label']})" for sha, b in builds.items()},
+            # Builds are keyed by the official executable; the copied Game.exe is that file unchanged.
+            "unpatchedIsKnownBuild": unpatched in builds}
+        return report
 
     def wait(self, predicate, description, timeout=15):
         deadline = time.monotonic() + timeout
@@ -190,6 +331,8 @@ class ClientControl:
             return self.open()
         if command == "game:status":
             return self.status()
+        if command == "bridge:doctor":
+            return self.doctor()
         if command == "game:resources":
             result = self.rpc("resources")
             deadline = time.monotonic()+5
@@ -248,11 +391,17 @@ class ClientControl:
                 self.execute({"command": "character:select"})
             self.rpc("logout")
             return self.wait(lambda s: s.get("screen") == "login" and s.get("loginState") == 0, "logout")
-        if command == "command":
-            text = request.get("text")
-            if not isinstance(text, str) or not text.startswith("/"):
+        if command in ("command", "chat", "tp"):
+            text = tp_text(request) if command == "tp" else request.get("text")
+            if command == "command" and (not isinstance(text, str) or not text.startswith("/")):
                 raise ValueError("text must be a LocalExile slash command")
-            return self.rpc("chat", bytes=chat_packet(text))
+            packet = chat_packet(text)
+            start = log_mark()
+            result = {**self.rpc("chat", bytes=packet), "text": text}
+            # Slash commands answer with chat lines (S→C 0x17); plain chat has no reply to wait for.
+            if text.startswith("/"):
+                result["replies"] = collect_replies(start, request.get("wait", 1.5))
+            return result
         if command == "object:interact":
             target = int(request["id"])
             if not 0 < target <= 0xffffffff:
@@ -281,6 +430,9 @@ class ClientControl:
         if command == "inventory:place":
             inventory, x, y = int(request["inventoryId"]), int(request.get("x",0)), int(request.get("y",0))
             return self.rpc("interaction",bytes=list(struct.pack(">HIIIBBBB",0x2a,inventory,x,y,0,3,0,0)))
+        if command == "flask:use":
+            packet, slot = flask_packet(request)
+            return {**self.rpc("interaction", bytes=packet), "slot": slot}
         raise ValueError(f"Unknown command: {command}")
 
 
@@ -288,6 +440,9 @@ def run_request(control, request):
     started = time.monotonic()
     try:
         result = {"ok": True, "result": control.execute(request)}
+    except frida.RPCException as error:
+        # The agent's message without its JavaScript stack, e.g. "Unsupported client: play needs play (not found)".
+        result = {"ok": False, "error": str(error).splitlines()[0].removeprefix("Error: ")}
     except Exception as error:
         result = {"ok": False, "error": str(error)}
     result["elapsedMs"] = round((time.monotonic() - started) * 1000)
@@ -297,12 +452,14 @@ def run_request(control, request):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", nargs="?", default="game:status")
-    parser.add_argument("text", nargs="?", help="slash command text")
+    parser.add_argument("text", nargs="?", help="slash command, chat text, or tp target")
     parser.add_argument("--password-stdin", action="store_true", help="read one password line from stdin")
     parser.add_argument("--stdio", action="store_true", help="persistent JSON-lines RPC on stdin/stdout")
+    parser.add_argument("--force-scan", nargs="?", const="signature", choices=("signature", "xref"),
+                        help=f"skip the pinned addresses (same as {FORCE_SCAN}=1); xref also prefers cross-references")
     options = parser.parse_args()
     os.chdir(ROOT)
-    with ClientControl() as control:
+    with ClientControl(options.force_scan) as control:
         if options.stdio:
             for line in sys.stdin:
                 try:
@@ -315,6 +472,16 @@ def main():
         request = normalize(options.command)
         if options.text is not None:
             request["text"] = options.text
+        if request["command"] == "flask:use" and options.text is not None:
+            request["key"] = int(request.pop("text"))
+        if request["command"] == "tp" and options.text is not None:
+            parts = options.text.split()
+            if len(parts) == 2 and all(re.fullmatch(r"[+-]?\d+", v) for v in parts):
+                request.pop("text")
+                if any(v[0] in "+-" for v in parts):
+                    request.update(dx=int(parts[0]), dy=int(parts[1]))
+                else:
+                    request.update(x=int(parts[0]), y=int(parts[1]))
         if request["command"] == "login":
             request["password"] = sys.stdin.readline().rstrip("\r\n") if options.password_stdin else getpass.getpass("Local password: ")
         result = run_request(control, request)

@@ -9,6 +9,11 @@ Nothing yet.
 
 ## Partly working
 
+- **Linked support gems.** Native compatibility, link groups, duplicate families and skill-bar support records
+  are implemented; Cyclone with Increased Area of Effect was read successfully by the real client.
+  Ordinary hit, area, speed, critical, cost and reservation calculations use linked support stats.
+  Special execution mechanics remain incomplete; see [25](../docs/protocol/25-gem-supports.md).
+
 - **Stable gem skill ids (tested, not yet checked with the real client).** Each gem keeps its skill id while it stays
   socketed (a gem moved through the cursor keeps its own; a gem swapped in never takes the old gem's id), so skill bar
   keys no longer move when other gems come or go; a skill that goes away ends its aura or Righteous Fire;
@@ -18,7 +23,7 @@ Nothing yet.
   transfigured and Trarthan gems grant their own skill, Vaal gems their Vaal skill and their base skill (refused
   without Vaal souls, which are not gathered yet); the variant is sent in the SkillGem data and saved;
   `/gem <name> [level] [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](../docs/protocol/19-gems.md) §1, §3).
-  Not yet: supports, corruption.
+  Not yet: corruption.
 - **Gem requirements (tested, checked with the real client).** A gem's level requirement is the character level of its
   level (GrantedEffectStatSetsPerLevel `PlayerLevelReq`; Haste 24 at gem level 1 . 70 at 20, the client's tooltips),
   and its attribute requirements follow the client's own formula (`0x14246fc40`: `trunc((3 * level_req + 11) *
@@ -38,7 +43,7 @@ Nothing yet.
   (`SkillCatalog.MaxLevelAt` in `GainGemExperience`, the game's rule;
   the client derives levels from experience alone and would not stall by itself), and the level change re-sends the
   skills.
-  Not yet: supports don't stop applying when a gem is disabled, and a disabled gem's aura keeps running
+  Not yet: verify every disabled-gem aura transition
   ([19](../docs/protocol/19-gems.md) 1, 3).
 - **Gem experience from kills (one gem in the first weapon set checked with the real client).** Every gem socketed in
   an equipped item, in either weapon set, gains 10% of a kill's monster experience (support gems included;

@@ -18,8 +18,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   packs, some magic, at least 2 with a rare; cannibal packs at the bonfires) and the unique boss at the camp's
   `mapboss` point with its boss pack (Fire Fury beside the campfire, verified live 2026-10-18);
   room points are found by fitting rooms to the doodads `-Walkmaps` captures.
+  The Tidal Island's boat rooms are too sparse to fit and use their captured placement: Hailrake stands on the wreck.
   Code: `MonsterPacks.cs`, Gateway (`PopulateArea`), `scripts/walkmaps`, `scripts/re/atlas room-points`.
   Docs: [14](../docs/protocol/14-monster-packs.md).
+- Emerge monsters (Gravel Eaters, Dripping Dead, the Twilight Strand's Drowned …) are created buried, cannot be hit
+  while buried, and rise when the player comes within 24 cells: the client plays their emerge clip (Emerge action
+  0x0101, then Transitionable 2), and they fight, die and give experience like other monsters.
+  The ones the client shows targetable while they wait (Tide Striders, Blood Elementals …) can be hit and rise when
+  hit; unique bosses keep their own entrance state.
+  Their packs are placed again (The Coast's `Act1-SandspitterEmerge`, the Mud Flats' `Act1-ZombieMiredEmerge`);
+  an instance keeps buried ones buried and risen ones risen.
+  Verified live 2026-10-25 (`/spawn_mob` Gravel Eater, packs on The Coast, the Mud Flats, the Twilight Strand, and
+  lurking Tide Striders on Tidal Island).
+  Code: `MonsterEmerge.cs`, `Program.Emerge.cs`, Gateway.
+  Docs: [10](../docs/protocol/10-chat-and-commands.md) §5.
 - Monster hit reaction: a hit that leaves a monster alive and takes at least a tenth of its max life plays one of its
   rig's TakeHit clips with the clip's own sound (S→C 0x1b2 kind 0;
   a pool picks one at random), and not again until that clip has played (at least 0.4 s);
@@ -63,7 +75,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Area monsters: pack counts, magic/rare chances and rare mod counts are our own numbers;
   74 monster mods need systems the server lacks (auras on allies, monster skills, ailments on the player …) and do
   not roll;
-  Drowned ignore their ground types; emerge packs (Gravel Eaters) are skipped;
+  Drowned ignore their ground types; how near the player must come before an emerge monster rises is our choice;
   the boss life bar and boss stages exist for Hillock only (`BossFights.cs`;
   other bosses with `BossHealthBar` get the bar too); monsters respawn on every entry;
   a new (area, seed) needs a `-Walkmaps` visit for its unique boss ([14](../docs/protocol/14-monster-packs.md) §4).
