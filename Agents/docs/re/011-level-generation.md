@@ -1337,7 +1337,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   terrain cache open: ~0.5 s a call. `LEVELGEN_LOCAL=1` runs a command in its own process.
 - **Gate:** `scripts/re/levelgen/gate.ps1` before every commit to the generator: every seed-1 trace (tile hash,
   every draw the port makes, both grids, the doodads; a trace with no `.doodads.json` is counted apart, not as a
-  doodad failure) and every logged (area, seed), run by worker
+  doodad failure, and an empty one (the recorder writes it for an area that places none, such as HideoutTemplarLab and
+  MapWorldsGorge seed 1) passes when the port places none either) and every logged (area, seed), run by worker
   processes (~5 min), compared with `scripts/re/levelgen/gate-baseline.json` (gained / lost per check), then the
   three test suites; it fails when anything was lost. A logged load whose hash is wrong (or that stops) is also run
   against its own trace (every logged load has one since the capture tours), for its draws and first difference. It

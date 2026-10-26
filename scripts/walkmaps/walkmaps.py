@@ -6,7 +6,8 @@ Usage (started for you by `scripts/dev/live.ps1 -Walkmaps`):
 Needs: pip install frida  (Python 3.9+). Attaches to the running client, waits for it if it is not running yet,
 and writes data/walkability/<area>_seed<seed>.bin plus <area>_seed<seed>.json ({"w":..,"h":..}), and <area>_seed<seed>.projectile.bin (what stops projectiles), and the layout's area
 transitions and waypoints (grid position, rotation, height, model) to <area>_seed<seed>.transitions.json, and every placed
-doodad (model, grid cell, angle) to <area>_seed<seed>.doodads.json (for the rooms' monster points). The area and
+doodad (model, grid cell, angle) to <area>_seed<seed>.doodads.json (for the rooms' monster points; an empty list when
+the area places none). The area and
 seed come from data/walkability/current.json, which GameServer.Gateway writes on every connection. Existing walk maps are
 kept.
 Nothing is sent anywhere; the files stay on your machine (data/ is git-ignored).
@@ -191,6 +192,15 @@ def save_generation(out, gen):
     os.replace(stem + ".gen.json.tmp", stem + ".gen.json")
     log(f"{os.path.basename(stem)}: generation trace, {len(gen.get('draws') or [])} draws, {len(gen.get('tiles') or [])} tiles, "
         f"{gen.get('w')}x{gen.get('h')}, tile hash {gen.get('tileHash')}")
+    # An area that places no doodads sends no batch: write its empty list, so a load with none is told apart from one
+    # not captured. Batches that come after the trace (flushed on a timer) rewrite it with the whole list.
+    area = current_area(out)
+    if (area is not None and area["id"] == gen["area"] and str(area["seed"]) == str(gen["seed"])
+            and area.get("nonce") not in DOODADS and time.time() - float(area.get("written", 0)) <= FRESH_SECONDS):
+        DOODADS[area.get("nonce")] = []
+        with open(stem + ".doodads.json.tmp", "w", encoding="utf-8") as f:
+            json.dump({"area": gen["area"], "seed": gen["seed"], "models": [], "doodads": []}, f)
+        os.replace(stem + ".doodads.json.tmp", stem + ".doodads.json")
 
 
 def current_area(out):

@@ -22,7 +22,9 @@ static class Gate
     {
         [System.Text.Json.Serialization.JsonIgnore] public bool HashOk => Hash == "match";
         [System.Text.Json.Serialization.JsonIgnore] public bool GridsOk => Walk == 0 && Projectile == 0;
-        [System.Text.Json.Serialization.JsonIgnore] public bool DoodadsOk => Captured > 0 && Placed == Captured && Matched == Captured;
+        /// <summary>The port placed the captured doodads, and only those; an empty capture (an area that places none)
+        /// counts when the tile hash matches.</summary>
+        [System.Text.Json.Serialization.JsonIgnore] public bool DoodadsOk => HashOk && Captured >= 0 && Placed == Captured && Matched == Captured;
         /// <summary>Every draw the port made equals the trace's (the client's later draws belong to stages not ported).</summary>
         [System.Text.Json.Serialization.JsonIgnore] public bool DrawsOk => HashOk && (FirstDiff is null || FirstDiff.EndsWith(" (port stopped)"));
     }
