@@ -103,7 +103,7 @@ static class UtilityFlasks
         "basalt_flask_armour_+%_final", "stibnite_flask_evasion_rating_+%_final",
         "base_movement_velocity_+%", "attack_speed_+%", "base_cast_speed_+%",
         "critical_strike_chance_+%", "base_spell_suppression_chance_%", "damage_+%",
-        "physical_damage_reduction_rating_+%", "evasion_rating_+%",
+        "physical_damage_reduction_rating_+%", "evasion_rating_+%", "base_item_found_rarity_+%",
     };
 
     /// <summary>The flask buff flag that stands for Onslaught (the Silver Flask's flask_utility_haste has no stats of its
@@ -325,7 +325,8 @@ static class UtilityFlasks
 
     /// <summary>The running flasks' stats that the client and the damage code read as plain stats rather than from the
     /// pools: the maximum resistances (the client adds them to its own 75), increased critical strike chance (gem
-    /// tooltips, spell crits), increased damage (Sulphur), cast speed (Onslaught) and the panel-only stats
+    /// tooltips, spell crits), increased damage (Sulphur), cast speed (Onslaught), increased item rarity (Gold: the drops
+    /// and the panel read it) and the panel-only stats
     /// (<see cref="Support.PanelOnly"/>), by client stat key.</summary>
     public static IEnumerable<(uint Key, int Value)> RawStats(IEnumerable<(string Stat, int Value)> stats, StatCatalog catalog)
     {
@@ -336,7 +337,7 @@ static class UtilityFlasks
             {
                 "base_maximum_fire_damage_resistance_%" or "base_maximum_cold_damage_resistance_%"
                     or "base_maximum_lightning_damage_resistance_%" or "base_maximum_chaos_damage_resistance_%"
-                    or "critical_strike_chance_+%" or "damage_+%" => stat,
+                    or "critical_strike_chance_+%" or "damage_+%" or "base_item_found_rarity_+%" => stat,
                 "base_cast_speed_+%" => "cast_speed_+%",
                 _ when PanelOnly.Contains(stat) => stat,
                 _ => null,

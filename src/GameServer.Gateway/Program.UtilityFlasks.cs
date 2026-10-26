@@ -48,6 +48,15 @@ partial class Program
         await SendCharacterStats(remote, stream, ciphers, conn, $"{type.Name} on");
     }
 
+    // The player's increased rarity of items found (Gold Flask, gear, passives) that the drops of a kill use
+    // (ItemDrops.WithIncreasedRarity).
+    static int IncreasedItemRarity(ClientState conn)
+    {
+        var stats = CharacterPlayerStats(conn);
+        int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+        return Get("base_item_found_rarity_+%") + Get("item_found_rarity_+%");
+    }
+
     // The pools and the walk speed again (under the Monsters lock): after a utility flask effect started or ended, or the
     // equipment changed.
     static void RecomputePoolsAndSpeed(ClientState conn)

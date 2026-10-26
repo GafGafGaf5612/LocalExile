@@ -76,7 +76,7 @@ public class UtilityFlasksTests
             ["Sulphur Flask"] = ("damage_+% 40 M", 8, 40, 60),
             ["Silver Flask"] = ("onslaught: attack_speed_+% 20 M, base_cast_speed_+% 20 M, base_movement_velocity_+% 20 M", 6, 40, 60),
             ["Bismuth Flask"] = ("base_resist_all_elements_% 35 M", 8.5, 15, 40),
-            ["Gold Flask"] = ("base_item_found_rarity_+% 30 U", 5, 60, 80),
+            ["Gold Flask"] = ("base_item_found_rarity_+% 30 M", 5, 60, 80),
             ["Corundum Flask"] = ("stun_threshold_+% 30 P", 7.5, 20, 50),
             ["Iron Flask"] = ("base_ward 200 W", 4, 40, 60),
         };
@@ -121,7 +121,7 @@ public class UtilityFlasksTests
             ["Sulphur Flask"] = (8, 12.48, "damage_+% 50"),
             ["Silver Flask"] = (6, 9.36, "attack_speed_+% 20, base_cast_speed_+% 20, base_movement_velocity_+% 20"),
             ["Bismuth Flask"] = (8.5, 13.26, "base_resist_all_elements_% 43"),
-            ["Gold Flask"] = (5, 7.8, ""),
+            ["Gold Flask"] = (5, 7.8, "base_item_found_rarity_+% 37"),
             ["Corundum Flask"] = (7.5, 11.7, "stun_threshold_+% 37"),
             ["Iron Flask"] = (4, 6.24, "base_ward 250"),
         };
@@ -466,12 +466,13 @@ public class UtilityFlasksTests
         [
             ("base_maximum_fire_damage_resistance_%", 5), ("critical_strike_chance_+%", 100), ("damage_+%", 40),
             ("base_cast_speed_+%", 20), ("base_movement_velocity_+%", 40), ("base_fire_damage_resistance_%", 40),
+            ("base_item_found_rarity_+%", 30),
         ], stats).ToDictionary(s => stats.Name(s.Key), s => s.Value);
 
         Assert.Equal(new Dictionary<string, int>
         {
             ["base_maximum_fire_damage_resistance_%"] = 5, ["critical_strike_chance_+%"] = 100, ["damage_+%"] = 40,
-            ["cast_speed_+%"] = 20,
+            ["cast_speed_+%"] = 20, ["base_item_found_rarity_+%"] = 30,   // the drops and the panel read the Gold Flask's
         }, raw);
     }
 
