@@ -114,6 +114,8 @@ public class ChargeGainsTests
     {
         Assert.Equal([(ChargeType.Frenzy, 1)], Roll(Hit(skill: "Frenzy"), Stats(), new ScriptedRandom()));
         Assert.Empty(Roll(Hit(skill: "FrenzyAltX"), Stats(), new ScriptedRandom()));
+        // Once per use: the other monsters an area Frenzy hits give nothing.
+        Assert.Empty(Roll(new ChargeEvent.Hit(false, false, null, MonsterRarity.Normal, "Frenzy", Primary: false), Stats(), new ScriptedRandom()));
         Assert.Equal([(ChargeType.Power, 1)], Roll(Hit(skill: "PowerSiphon", killed: true), Stats(), new ScriptedRandom()));
         Assert.Empty(Roll(Hit(skill: "PowerSiphon"), Stats(), new ScriptedRandom()));
     }

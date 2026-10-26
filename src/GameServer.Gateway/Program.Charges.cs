@@ -20,8 +20,9 @@ partial class Program
 
     // A player hit on a monster that landed (Attack, AreaSkillHit, a projectile's impact): its "on hit", "on critical
     // strike" and "on non-critical strike" gains. effect: the gem skill's GrantedEffects row (-1: the default attack).
+    // primary: the use's first target; once-per-use grants (the Frenzy gem) come only from it.
     static void ChargesOnHit(ClientState conn, SpawnedMonster m, bool critical, bool spell, int effect = -1, int level = 1,
-        int quality = 0, bool? melee = null)
+        int quality = 0, bool? melee = null, bool primary = true)
     {
         Func<string, int>? skill = null;
         if (effect >= 0)
@@ -30,7 +31,13 @@ partial class Program
             skill = name => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
         }
         ChargesOf(conn).Enqueue(new ChargeEvent.Hit(critical, spell, melee, m.Rarity, effect >= 0 ? Skills.EffectId(effect) : null,
-            skill, Killed: m.Dead || m.Life == 0));
+            skill, Killed: m.Dead || m.Life == 0, Primary: primary));
+    }
+
+    // The player died (PlayerDied): every gained charge goes now, not at the ticker's next step, which a pause holds back.
+    static void ChargesOnDeath(ClientState conn)
+    {
+        lock (conn.Monsters) ChargesOf(conn).Die();
     }
 
     // A hostile monster the player killed (MonsterKilled): its "on kill" gains.
@@ -44,10 +51,16 @@ partial class Program
         ChargesOf(conn).Enqueue(blocked ? new ChargeEvent.Block(spell) : new ChargeEvent.WhenHit());
 
     // Transfer: the charges go with the player to the area of the new ticket.
+    // Whether the official server keeps charges across areas is not documented (poewiki's Charge page says nothing about
+    // it); this one call is the rule. A dead player carries nothing (Resurrect in Town changes area while dead).
     static void CarryCharges(ClientState conn, uint ticket)
     {
         List<Charges.Carried> carried;
-        lock (conn.Monsters) carried = ChargesOf(conn).State.Carry(conn.Clock.Elapsed.TotalSeconds);
+        lock (conn.Monsters)
+        {
+            if (conn.PlayerLife == 0) ChargesOf(conn).Die();
+            carried = ChargesOf(conn).State.Carry(conn.Clock.Elapsed.TotalSeconds);
+        }
         foreach (var (old, entry) in CarriedCharges)
             if (DateTime.UtcNow - entry.At > TimeSpan.FromMinutes(5)) CarriedCharges.TryRemove(old, out _);
         if (carried.Count > 0) CarriedCharges[ticket] = (DateTime.UtcNow, carried);
@@ -68,11 +81,16 @@ partial class Program
         var limits = new Dictionary<ChargeType, Charges.Limits>();
         var held = new Dictionary<ChargeType, int>();
         lock (conn.Monsters)
+        {
+            // The session's limits and periodic stats follow every change of the character's stats from here, so the
+            // ticker never polls them.
+            session.Observe(Get);
             foreach (var type in Charges.Types)
             {
-                limits[type] = Charges.LimitsOf(type, Get, session.State.Held(type));
-                held[type] = session.State.Effective(type, limits[type]);
+                limits[type] = session.Limits(type);
+                held[type] = session.Effective(type);
             }
+        }
         var added = ChargeEffects.Expand(Get, t => held[t]);
         foreach (var (stat, value) in added.Select(kv => (Stat: kv.Key, kv.Value)).Concat(ChargeEffects.Display(t => held[t], t => limits[t])))
             if (Stats.Key(stat) is uint key) stats[key] = stats.GetValueOrDefault(key) + value;
@@ -121,14 +139,17 @@ partial class Program
         var own = Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int Own(string name) => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
         int per = Own("endurance_charge_granted_per_X_monster_power_during_endurance_warcry");
-        double castSeconds = Skills.CastTimeMs(effect) / 1000.0 / Math.Max(0.01, 1 + Own("warcry_speed_+%") / 100.0);
-        int action = conn.ActionCount;
+        // The warcry cannot be cancelled before its contact point (cannot_cancel_skill_before_contact_point), so a later
+        // action does not stop it. Warcry speed is the player's and the gem's.
+        var player = AreaPlayerStats(conn);
+        int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
+        double castSeconds = Skills.CastTimeMs(effect) / 1000.0 / Math.Max(0.01, 1 + (Player("warcry_speed_+%") + Own("warcry_speed_+%")) / 100.0);
+        double until = conn.Clock.Elapsed.TotalSeconds + castSeconds;
         _ = Task.Run(async () =>
         {
-            await Task.Delay(TimeSpan.FromSeconds(castSeconds));
-            await WhilePaused(conn);
-            if (conn.Closed || conn.ActionCount != action || conn.PlayerLife == 0) return;
-            var player = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+            // The game clock: a pause holds the cry.
+            while (!conn.Closed && conn.Clock.Elapsed.TotalSeconds < until) await Task.Delay(16);
+            if (conn.Closed || conn.PlayerLife == 0) return;
             foreach (var (k, v) in own) player[k] = v;
             int radius = SkillArea.Radius(EnduringCryRadius, name => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0, spell: false);
             double now = conn.Clock.Elapsed.TotalSeconds;
@@ -160,7 +181,9 @@ partial class Program
 
     // The charges ticker of one connection, started with the area's other loops: every ChargeSession.StepSeconds of game
     // time (a pause stops it) it steps the session and sends what changed, the charge buffs (ChargeBuffs) and, when the
-    // counts the stats use changed, the character's stats (pools, walk speed, 0x1b3, skills).
+    // counts the stats use changed, the pools, the walk speed and the stats (SendChargeStats). The character's stats are
+    // worked out outside the Monsters lock, and only while events wait (their gain chances); the limits come with every
+    // stats change (ChargeSession.Observe through WithCharges).
     static async Task RunCharges(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         var session = ChargesOf(conn);
@@ -178,22 +201,21 @@ partial class Program
             if (conn.Paused) continue;
             try
             {
+                Func<string, int>? stats = null;
+                WeaponProfile weapon = default;
+                if (session.Pending)
+                {
+                    var final = CharacterPlayerStats(conn);
+                    stats = name => Stats.Key(name) is uint key ? final.GetValueOrDefault(key) : 0;
+                    weapon = WeaponProfileFor(conn);
+                }
                 double now = conn.Clock.Elapsed.TotalSeconds;
                 ChargeSession.StepResult step;
                 List<ChargeSession.BuffChange> buffs;
                 lock (conn.Monsters)
                 {
-                    step = session.Step(now, () =>
-                        {
-                            var stats = CharacterPlayerStats(conn);
-                            return name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
-                        }, () => WeaponProfileFor(conn), alive: conn.PlayerLife > 0, moving: now < conn.Walk.ArrivesAt,
+                    step = session.Step(now, stats, () => weapon, alive: conn.PlayerLife > 0, moving: now < conn.Walk.ArrivesAt,
                         inTown: InTown(conn), Random.Shared);
-                    if (step.CountsChanged)
-                    {
-                        conn.Pools = PoolsFor(conn, conn.Pools.Level);
-                        conn.ApplyMovementSpeed();
-                    }
                     buffs = session.Presentation(now, () => conn.NextBuff++);
                 }
                 foreach (string line in step.Log) Console.WriteLine($"[gateway] {remote} {line} (t={now:0.000})");
@@ -201,8 +223,15 @@ partial class Program
                     foreach (var (packet, label) in ChargeBuffs.Packets(change, PlayerId))
                         await Send(remote, stream, ciphers, packet, label);
                 if (step.CountsChanged)
-                    await SendCharacterStats(remote, stream, ciphers, conn,
-                        "charges " + string.Join(", ", Charges.Types.Select(t => $"{session.Effective(t)} {Charges.Name(t)}")));
+                {
+                    lock (conn.Monsters)
+                    {
+                        conn.Pools = PoolsFor(conn, conn.Pools.Level);
+                        conn.ApplyMovementSpeed();
+                    }
+                    await SendChargeStats(remote, stream, ciphers, conn,
+                        string.Join(", ", Charges.Types.Select(t => $"{session.Effective(t)} {Charges.Name(t)}")));
+                }
             }
             catch (Exception ex) when (ex is not (IOException or ObjectDisposedException))
             {
@@ -210,6 +239,23 @@ partial class Program
             }
             catch (Exception) { break; }   // the connection has gone
         }
+    }
+
+    // The stats after a charge count changed: 0x1b3 and the skills' stats (the client swings and casts with the speed in
+    // its skill records), without SendSkills' skill-bar work (no skill came or went). A changed skill set (a gem moved at
+    // the same moment) takes the full SendCharacterStats.
+    static async Task SendChargeStats(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
+    {
+        var skills = PlayerSkills(conn);
+        if (!conn.ClientSkillIds.SetEquals(skills.Select(s => s.Id)))
+        {
+            await SendCharacterStats(remote, stream, ciphers, conn, $"charges {why}");
+            return;
+        }
+        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats (charges {why})");
+        await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, []),
+            $"0x02ba player Actor: {skills.Count} skill(s), charge stats");
+        await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
 
     const string ChargesUsage = "/charges [endurance|frenzy|power <count>] | /charges add <type> [count] | /charges clear " +

@@ -10,12 +10,19 @@ public class ChargeSessionTests
     {
         public Dictionary<string, int> Stats { get; } = stats.ToDictionary(s => s.Name, s => s.Value);
         public int Reads { get; private set; }
-        public Func<Func<string, int>> Getter => () => { Reads++; return name => Stats.GetValueOrDefault(name); };
+        public int Get(string name) => Stats.GetValueOrDefault(name);
+        // The ticker's stats for waiting events: worked out (counted) only then.
+        public Func<string, int> Read() { Reads++; return Get; }
     }
 
+    // A ticker step: the character's stats observed (as every stats change does through WithCharges, unless
+    // observe is false), and passed in only while events wait.
     static ChargeSession.StepResult Step(ChargeSession s, double now, Character c, Random? rng = null, bool alive = true,
-        bool moving = false, bool inTown = false) =>
-        s.Step(now, c.Getter, () => Unarmed, alive, moving, inTown, rng ?? new ScriptedRandom());
+        bool moving = false, bool inTown = false, bool observe = true)
+    {
+        if (observe) s.Observe(c.Get);
+        return s.Step(now, s.Pending ? c.Read() : null, () => Unarmed, alive, moving, inTown, rng ?? new ScriptedRandom());
+    }
 
     static ushort counter;
     static ushort Next() => ++counter;
@@ -136,33 +143,55 @@ public class ChargeSessionTests
     }
 
     [Fact]
-    public void A_lower_maximum_is_read_again_and_clamps_the_charges()
+    public void A_lower_maximum_takes_effect_when_the_stats_change_and_clamps_the_charges()
     {
         var s = new ChargeSession();
         var c = new Character(("max_power_charges", 2));
         s.Enqueue(new ChargeEvent.Grant(ChargeType.Power, 5, "test"));
         Step(s, 0, c);
         Assert.Equal(5, s.Effective(ChargeType.Power));
-        c.Stats.Remove("max_power_charges");   // the item comes off
-        Assert.False(Step(s, 0.1, c).CountsChanged);   // limits are read every quarter second
-        var r = Step(s, 0.3, c);
+        c.Stats.Remove("max_power_charges");   // the item comes off; nothing polls the stats
+        Assert.False(Step(s, 0.1, c, observe: false).CountsChanged);
+        var r = Step(s, 0.15, c);   // the unequip's stats change observes the new maximum
         Assert.True(r.CountsChanged);
         Assert.Equal(3, s.Effective(ChargeType.Power));
     }
 
     [Fact]
-    public void Stats_are_read_only_when_needed()
+    public void Stats_are_worked_out_only_for_waiting_events()
     {
         var s = new ChargeSession();
-        var c = new Character();
-        Step(s, 0, c);
-        for (int i = 1; i < 5; i++) Step(s, i * 0.05, c);
-        Assert.Equal(1, c.Reads);
-        Step(s, 0.25, c);
-        Assert.Equal(2, c.Reads);
+        var c = new Character(("gain_X_frenzy_charges_per_second", 1));
+        for (int i = 0; i <= 21; i++) Step(s, i * 0.05, c, observe: i == 0);
+        Assert.Equal(0, c.Reads);
+        Assert.Equal(1, s.Effective(ChargeType.Frenzy));   // the timed gain uses the observed stats
         s.Enqueue(new ChargeEvent.WhenHit());
-        Step(s, 0.30, c);
-        Assert.Equal(3, c.Reads);
+        Step(s, 1.1, c, observe: false);
+        Assert.Equal(1, c.Reads);
+        // An event without stats waits for the next step.
+        s.Enqueue(new ChargeEvent.Grant(ChargeType.Power, 1, "test"));
+        s.Step(1.15, null, () => Unarmed, true, false, false, new ScriptedRandom());
+        Assert.True(s.Pending);
+        Assert.Equal(0, s.Effective(ChargeType.Power));
+    }
+
+    [Fact]
+    public void Death_clears_at_once_even_while_the_clock_is_paused()
+    {
+        // Die, pause, resurrect while paused: the ticker never steps in between, so death itself takes the charges.
+        var s = new ChargeSession();
+        var c = new Character();
+        s.Enqueue(new ChargeEvent.Grant(ChargeType.Endurance, 3, "test"));
+        Step(s, 0, c);
+        s.Presentation(0, Next);
+        s.Enqueue(new ChargeEvent.Grant(ChargeType.Frenzy, 1, "waiting"));
+        Assert.True(s.Die());
+        Assert.False(s.Pending);
+        Assert.Empty(s.State.Carry(0.5));   // Resurrect in Town carries nothing
+        var r = Step(s, 0.5, c);            // alive again, the same paused time
+        Assert.True(r.CountsChanged);
+        Assert.Equal(0, s.Effective(ChargeType.Endurance));
+        Assert.Equal(0, Assert.Single(s.Presentation(0.5, Next)).Count);   // the icon comes off
     }
 
     [Fact]

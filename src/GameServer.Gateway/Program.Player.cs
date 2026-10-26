@@ -95,6 +95,7 @@ partial class Program
     static async Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label)
     {
         await EndAurasOnDeath(remote, stream, ciphers, conn);
+        ChargesOnDeath(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), label);
     }
 

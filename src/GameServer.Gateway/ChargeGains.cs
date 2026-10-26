@@ -6,9 +6,10 @@ abstract record ChargeEvent
 {
     /// <summary>The player hit a monster (one per monster hit). <paramref name="Skill"/>: the stats of the skill used
     /// (its "on hit" chances, e.g. Flicker Strike's 15%); <paramref name="SkillEffect"/>: its GrantedEffects Id;
-    /// <paramref name="Killed"/>: the hit killed it. <paramref name="Melee"/> null: the weapon decides.</summary>
+    /// <paramref name="Killed"/>: the hit killed it; <paramref name="Primary"/>: the use's first target (a skill's
+    /// once-per-use grant). <paramref name="Melee"/> null: the weapon decides.</summary>
     public sealed record Hit(bool Critical, bool Spell, bool? Melee, MonsterRarity Rarity, string? SkillEffect = null,
-        Func<string, int>? Skill = null, bool Killed = false) : ChargeEvent;
+        Func<string, int>? Skill = null, bool Killed = false, bool Primary = true) : ChargeEvent;
 
     /// <summary>The player killed a hostile monster.</summary>
     public sealed record Kill(MonsterRarity Rarity) : ChargeEvent;
@@ -32,7 +33,7 @@ abstract record ChargeEvent
 /// (Metadata/StatDescriptions), each its own roll; "Gain a … Charge …" flags count as 100%. A chance is rolled as
 /// <c>rng.Next(100) &lt; chance</c>; 100 and above always gain without a roll.
 /// Skill rules: the Frenzy gem gives a Frenzy Charge when it hits (ActiveSkills <c>frenzy</c>: "gives the character a
-/// frenzy charge if it hits"); Power Siphon a Power Charge when its hit kills (ActiveSkills <c>power_siphon</c>; the
+/// frenzy charge if it hits"), once per use; Power Siphon a Power Charge when its hit kills (ActiveSkills <c>power_siphon</c>; the
 /// "or soon after the hit" part is not modelled). Gains that need mechanics the server does not have (stun, freeze,
 /// bleed, poison, curses, traps, mines, Vaal souls, support gems) are not here; 11-skills.md §15 lists them.
 /// </summary>
@@ -123,7 +124,8 @@ static class ChargeGains
         }
         if (e is ChargeEvent.Hit hit)
         {
-            if (hit.SkillEffect == "Frenzy") gains.Add(new(ChargeType.Frenzy, 1, "Frenzy hit"));
+            // Once per use: an area hit on several monsters gives one charge (its first target).
+            if (hit.SkillEffect == "Frenzy" && hit.Primary) gains.Add(new(ChargeType.Frenzy, 1, "Frenzy hit"));
             if (hit.SkillEffect == "PowerSiphon" && hit.Killed) gains.Add(new(ChargeType.Power, 1, "Power Siphon kill"));
         }
         return gains;

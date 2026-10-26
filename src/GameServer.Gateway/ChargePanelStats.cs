@@ -2,7 +2,8 @@
 /// The Charges tab's three standard maximum rows (issue #75): Endurance, Frenzy and Power Charges. The client reads
 /// <c>virtual_maximum_*_charges</c> and derives none of it itself (11-skills.md A4), so the server works the maximum out
 /// from Metadata/Characters/Character.ot's base 3 plus unconditional maximum-charge bonuses from passives and items.
-/// The per-type bonuses add to the base, as BASE mods in Path of Building's charge calculation do. Their Stats.dat
+/// The per-type bonuses add to the base, as BASE mods in Path of Building's charge calculation do, and so does
+/// <c>maximum_frenzy_power_endurance_charges</c> ("+1 to Maximum Endurance, Frenzy and Power Charges") to all three. Their Stats.dat
 /// Semantics 2 means OVERRIDE_VALUE; it does not establish that addition rule. The combined power/endurance and
 /// power/frenzy bonuses add to both rows; the former is reachable through the ordinary Warstaff base implicit.
 /// Conditional stats (while affected by ...), conversions (maximum_..._is_equal_to_...) and the mechanics that replace
@@ -23,15 +24,16 @@ static class ChargePanelStats
     {
         int powerAndEndurance = get("maximum_power_and_endurance_charges_+");
         int powerAndFrenzy = get("maximum_power_and_frenzy_charges_+");
+        int all = get("maximum_frenzy_power_endurance_charges");
         static int Maximum(long value) => (int)Math.Clamp(value, 0, int.MaxValue);
         return
         [
             ("virtual_maximum_endurance_charges",
-                Maximum((long)BaseMaximumCharges + get("max_endurance_charges") + powerAndEndurance)),
+                Maximum((long)BaseMaximumCharges + get("max_endurance_charges") + powerAndEndurance + all)),
             ("virtual_maximum_frenzy_charges",
-                Maximum((long)BaseMaximumCharges + get("max_frenzy_charges") + powerAndFrenzy)),
+                Maximum((long)BaseMaximumCharges + get("max_frenzy_charges") + powerAndFrenzy + all)),
             ("virtual_maximum_power_charges",
-                Maximum((long)BaseMaximumCharges + get("max_power_charges") + powerAndEndurance + powerAndFrenzy)),
+                Maximum((long)BaseMaximumCharges + get("max_power_charges") + powerAndEndurance + powerAndFrenzy + all)),
         ];
     }
 }

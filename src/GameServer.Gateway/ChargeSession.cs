@@ -3,18 +3,16 @@ using System.Collections.Concurrent;
 /// <summary>
 /// One connection's charges at work (issue #237): the events that may grant charges wait in a queue (the combat code
 /// only enqueues, under any lock), and <see cref="Step"/>, run by the Gateway's charge ticker every
-/// <see cref="StepSeconds"/> of game time, rolls them, times the periodic gains, expires and clamps the charges, and
-/// takes them all on death. <see cref="Presentation"/> says which charge buffs the client must get or lose. Not
-/// thread-safe: the Gateway calls it under the connection's Monsters lock.
+/// <see cref="StepSeconds"/> of game time, rolls them, times the periodic gains, and expires and clamps the charges.
+/// The limits (maximum, minimum, duration) and the periodic stats are not polled: <see cref="Observe"/> takes them
+/// whenever the character's stats are worked out (an item, a passive, an aura, /set_stat, a level all do that).
+/// <see cref="Die"/> takes every gained charge at once. <see cref="Presentation"/> says which charge buffs the client
+/// must get or lose. Not thread-safe: the Gateway calls it under the connection's Monsters lock.
 /// </summary>
 sealed class ChargeSession
 {
     /// <summary>How often the ticker steps (seconds): expiry and periodic gains are this precise.</summary>
     public const double StepSeconds = 0.05;
-
-    /// <summary>How often the limits (maximum, minimum, duration) and the periodic stats are read again when nothing
-    /// happens (seconds): an item taken off clamps the charges within this.</summary>
-    public const double LimitsSeconds = 0.25;
 
     /// <summary>PoE's "recently": the last 4 seconds.</summary>
     public const double RecentlySeconds = 4;
@@ -25,15 +23,15 @@ sealed class ChargeSession
     readonly Charges.Limits[] limits = [Default, Default, Default];
     readonly int[] applied = new int[3];
     readonly Shown[] shown = new Shown[3];
-    Dictionary<string, int> periodic = [];
-    double lastStep = double.NaN, limitsAt = double.NegativeInfinity;
+    Dictionary<string, int> observed = [];
+    double lastStep = double.NaN;
 
     static readonly Charges.Limits Default = new(ChargePanelStats.BaseMaximumCharges, 0, Charges.BaseDurationMs);
 
     /// <summary>When a monster's hit last landed on the player (game clock seconds).</summary>
     public double LastHitAt { get; private set; } = double.NegativeInfinity;
 
-    /// <summary>The type's limits as last read.</summary>
+    /// <summary>The type's limits as last observed.</summary>
     public Charges.Limits Limits(ChargeType type) => limits[(int)type];
 
     /// <summary>The charges the character has now (the minimum counts).</summary>
@@ -41,35 +39,59 @@ sealed class ChargeSession
 
     public void Enqueue(ChargeEvent e) => events.Enqueue(e);
 
+    /// <summary>Events wait: the ticker works the character's stats out (outside the lock) before the next step.</summary>
     public bool Pending => !events.IsEmpty;
+
+    /// <summary>
+    /// The character's stats as they are now (<paramref name="get"/>: by Stats.dat Id): the limits of each type and
+    /// the stats the session reads between events (the periodic gains, the gain-to-maximum chances, the duration
+    /// stats), kept until the next observation.
+    /// </summary>
+    public void Observe(Func<string, int> get)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        int Record(string name) => seen[name] = get(name);
+        foreach (var type in Charges.Types)
+        {
+            limits[(int)type] = Charges.LimitsOf(type, Record, State.Held(type));
+            Record(ChargeGains.ToMaximumStat(type));
+        }
+        foreach (var p in ChargeGains.Periodics) Record(p.Stat);
+        observed = seen;
+    }
+
+    int Observed(string name) => observed.GetValueOrDefault(name);
+
+    /// <summary>The character died: every gained charge goes at once (the minimum stays), with the events still
+    /// waiting and the periodic timers. True when a charge was held.</summary>
+    public bool Die()
+    {
+        while (events.TryDequeue(out _)) { }
+        timers.Reset();
+        return State.Clear();
+    }
 
     /// <summary>What one step did: whether the charges the stats count changed, and lines for the log.</summary>
     public sealed record StepResult(bool CountsChanged, IReadOnlyList<string> Log);
 
     /// <summary>
-    /// One step at <paramref name="now"/> (game clock seconds). <paramref name="stats"/> reads the character's stats
-    /// (called at most once, and only when needed: pending events, or every <see cref="LimitsSeconds"/>);
-    /// <paramref name="weapon"/> its weapons. While dead every gained charge is lost and the events are dropped; in
-    /// towns no periodic charge is gained.
+    /// One step at <paramref name="now"/> (game clock seconds). <paramref name="stats"/>: the character's stats when
+    /// events are waiting (their gain chances); without them the events wait for the next step. While dead every gained
+    /// charge is lost and the events are dropped; in towns no periodic charge is gained.
     /// </summary>
-    public StepResult Step(double now, Func<Func<string, int>> stats, Func<WeaponProfile> weapon, bool alive, bool moving,
+    public StepResult Step(double now, Func<string, int>? stats, Func<WeaponProfile> weapon, bool alive, bool moving,
         bool inTown, Random rng)
     {
         var log = new List<string>();
         double elapsed = double.IsNaN(lastStep) ? 0 : Math.Max(0, now - lastStep);
         lastStep = now;
-        Func<string, int>? cached = null;
-        Func<string, int> Get() => cached ??= stats();
         if (!alive)
         {
-            while (events.TryDequeue(out _)) { }
-            timers.Reset();
-            if (State.Clear()) log.Add("charges lost on death");
+            if (Die()) log.Add("charges lost on death");
         }
         else
         {
-            if (!events.IsEmpty || now - limitsAt >= LimitsSeconds) ReadLimits(Get(), now);
-            while (events.TryDequeue(out var e))
+            while (stats is not null && events.TryDequeue(out var e))
             {
                 if (e is ChargeEvent.WhenHit) LastHitAt = now;
                 if (e is ChargeEvent.Set set)
@@ -79,13 +101,11 @@ sealed class ChargeSession
                     log.Add(set.Type is { } t ? $"{Charges.Name(t)} charges set to {set.Count}" : "charges cleared");
                     continue;
                 }
-                var gains = ChargeGains.Roll(e, Get(), weapon(), rng);
-                foreach (var gain in gains) Apply(gain, now, Get(), rng, log);
+                foreach (var gain in ChargeGains.Roll(e, stats, weapon(), rng)) Apply(gain, now, rng, log);
             }
             if (!inTown)
-                foreach (var gain in timers.Advance(elapsed, name => periodic.GetValueOrDefault(name),
-                    now - LastHitAt <= RecentlySeconds, moving, rng))
-                    Apply(gain, now, Get(), rng, log);
+                foreach (var gain in timers.Advance(elapsed, Observed, now - LastHitAt <= RecentlySeconds, moving, rng))
+                    Apply(gain, now, rng, log);
         }
         foreach (var type in State.Expire(now)) log.Add($"{Charges.Name(type)} charges expired");
         foreach (var type in Charges.Types)
@@ -99,24 +119,17 @@ sealed class ChargeSession
         return new(changed, log);
     }
 
-    void ReadLimits(Func<string, int> get, double now)
-    {
-        foreach (var type in Charges.Types) limits[(int)type] = Charges.LimitsOf(type, get, State.Held(type));
-        periodic = ChargeGains.Periodics.Select(p => p.Stat).Distinct().ToDictionary(s => s, get);
-        limitsAt = now;
-    }
-
-    void Apply(ChargeGains.Gain gain, double now, Func<string, int> get, Random rng, List<string> log)
+    void Apply(ChargeGains.Gain gain, double now, Random rng, List<string> log)
     {
         var current = limits[(int)gain.Type];
         int after = Math.Min(current.Maximum, State.Effective(gain.Type, current) + gain.Count);
         // The duration of charges counted per Frenzy Charge (frenzy_charge_duration_+%_per_frenzy_charge) uses the count
         // the gain leaves.
-        var l = Charges.LimitsOf(gain.Type, get, after);
+        var l = Charges.LimitsOf(gain.Type, Observed, after);
         limits[(int)gain.Type] = l;
-        bool toMaximum = ChargeGains.Rolls(get(ChargeGains.ToMaximumStat(gain.Type)), rng);
+        bool toMaximum = ChargeGains.Rolls(Observed(ChargeGains.ToMaximumStat(gain.Type)), rng);
         var (before, now2) = State.Gain(gain.Type, gain.Count, now, l, toMaximum);
-        log.Add($"{gain.Source}: {Charges.Name(gain.Type)} charges {before} → {now2}/{l.Maximum}" +
+        log.Add($"{gain.Source}: {Charges.Name(gain.Type)} charges {before} -> {now2}/{l.Maximum}" +
             (toMaximum ? " (to maximum)" : "") + $", {l.DurationMs / 1000.0:0.###} s");
     }
 
