@@ -179,6 +179,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   the character panel's APS stays cached after a passive allocation (reopening the panel or switching its tab does not
   refresh it; only a relog does).
   ([11](../docs/protocol/11-skills.md) §4)
+- **Selected spell hit damage panel (#188).** Spell total/per-type ranges and pre-crit average damage/DPS
+  now use the same converted packet as projectile and area combat.
+  All range fields are explicit, including zeros for absent types; hitless spells clear inherited weapon DPS/per-use.
+  Initial player creation and later skill refresh both pass separate character conversion inputs.
+  Attack displays, modifier precedence and the existing level-only conversion rule are preserved.
+  Automated mixed conversion/gain, added-damage effectiveness, hitless, attack and native row-format checks pass.
+  Native selection/getter checks show Fireball 10-15 fire and Freezing Pulse 10-15 cold with a +12% spell-damage wand.
+  A conversion/gain control split Fireball into fire and chaos rows and dealt a noncritical 14-damage server hit.
+  Scorching Ray cleared inherited hit ranges and weapon DPS, including after added spell damage refreshed its record.
+  Ranges use server floors; averages retain packet fractions and exclude crit weighting, target mitigation,
+  per-type integer-roll expectation and cooldown/downtime.
+  Beam/DoT displays, conditional damage rules and broader conversion semantics remain outside this slice.
+  Code: `SpellHit.cs`, `SpellPanelStats.cs`, Gateway (`GemSkills`, `LaunchProjectile`, `AreaSkillHit`).
+  Docs: [11](../docs/protocol/11-skills.md) sections 9 and 14.
 - **Critical strikes.** The server rolls unconditional crit passives: the equipped main hand's `WeaponTypes.dat`
   critical chance (permyriad) raised by generic/attack/melee/weapon-shape increased crit chance for attacks,
   each spell's extracted base chance, and 150% plus `base_critical_strike_multiplier_+`;

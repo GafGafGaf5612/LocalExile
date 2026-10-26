@@ -541,20 +541,25 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `holy_strike_maximum_number_of_animated_weapons` itself from `base_holy_strike_maximum_number_of_animated_weapons` and
   `double_holy_strike_animated_weapons_limit`: 0x1400c37d1 registers 0x14279ee30), and the Templar rig's missing
   mace/sceptre stances (`Art/Models/CHARACTERS/Templar/rig.amd`).
-- **Damage** (`SpellDamage.cs`). A spell's hit is, per damage type, its `spell_minimum/maximum_base_{type}_damage`
-  × (1 + `damage_+%` + `spell_damage_+%` + `elemental_damage_+%` for fire / cold / lightning + `{type}_damage_+%` +
-  `projectile_damage_+%` for `base_is_projectile` skills), from the player's stats (passives, item mods, auras) under
-  the skill's own. The server's hits roll between the unrounded minimum and maximum and drop the fraction; the skill's
-  tooltip gets `display_hundred_times_damage_per_skill_use` (the unrounded average × 100) and
-  `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
-  DPS with the player's stats. Conversion is applied per type through `DamagePacket`; more multipliers and added
-  damage are not modelled.
+- **Damage** (`SpellHit.cs`, `SpellDamage.cs`). Projectile hits, area hits and the selected spell's panel
+  share the same typed packet: the catalog base hit, flat added spell damage scaled by damage effectiveness,
+  applicable generic/spell/elemental/type/projectile increases, supported aura more multipliers, then conversion
+  and gain-as-extra. The skill's own level/quality modifiers replace a player's value on the same key, preserving
+  the existing combat rule. Conversion uses separate character inputs: player keys win, and level-only skill inputs
+  fill missing keys. Quality conversion is still excluded, as it was before this panel change.
+  Damage ranges are floored only for display/rolls; the packet keeps fractions through conversion.
+  The displayed per-use average and DPS retain the unrounded packet average, before critical strikes and target
+  mitigation. DPS uses the skill's emitted casts-per-second value, not the weapon's attacks per second.
+  This is the current server convention, not an official DPS calculation: crit weighting, target defences,
+  per-type integer-roll expectation, cooldown/downtime and special skill mechanics are excluded.
+  Hitless spells do not borrow weapon hits or turn flat added spell damage into a hit; their hit ranges and
+  inherited weapon DPS/per-use fields are explicitly zeroed. This does not implement a beam or DoT damage panel.
 - **Damage effectiveness** (2026-10-24). An attack gem's hit is the weapon's damage × its `DamageEffectiveness` (the
   GESSPL row, permyriad: Flicker Strike 7730 at level 1, 30890 at 20, 69600 at 40 — the gem's "Deals 77.3% of base
   Attack Damage"), through `SkillCatalog.DamageEffectiveness` and `SpellDamage.WithEffectiveness`. A row of 0 (the
   default attack's) or a negative one (a few skills have them) scales nothing. A **spell**'s own base damage is already
   final: its effectiveness is the added-damage one (Fireball 200%), and the GESSPL `BaseMultiplier` is 0 for every spell,
-  so spells are left alone until added damage is modelled.
+  so that multiplier does not scale a spell's own base hit; its added damage is scaled separately.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
@@ -1061,6 +1066,26 @@ game has a spell form).
 `Skills.UnarmedFor(ClassRow).HitDamage(stats)` after conversion, rounded down because the client shows whole numbers, and
 sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
 the main hand is filled, since the server attacks with it; an empty packet adds no rows.
+
+**Selected spell hit rows** (`SpellPanelStats`, issue #188): `spell_minimum/maximum_total_damage` and
+`spell_minimum/maximum_{physical,fire,cold,lightning,chaos}_damage` come from `SpellHit.Resolve`, the same converted
+packet used by projectile and area combat. Every spell range is written, including zeros for absent types and hitless
+spells. CharacterPanelStats reads total keys 674/675, physical 261/262, fire 255/256, cold 253/254, lightning 257/259
+and chaos 258/260 as whole integers, with `casting_spell` (438) required and
+`display_skill_deals_secondary_damage` (1675) excluded. DPS (679), damage per use (2044) and casts per second (682)
+are hundredths (the table's formatter 14), so range values must not be multiplied by 100.
+For example, level-one Fireball's 9–14 with +12% spell damage gives a 10.08–15.68 packet: the range is 10–15,
+per use is 12.88, and DPS at the emitted 1.33 casts/s is 17.13. These averages exclude crit and mitigation.
+The same skill construction runs on initial player creation and subsequent refresh; character conversion inputs
+are passed separately from the inherited final weapon/display stats. Attack and unsupported-action displays keep
+their existing path.
+Native panel/getter checks with a +12% spell-damage wand show Fireball 10-15 fire, 12.88 per use and 17.13 DPS,
+and Freezing Pulse 10-15 cold, 12.88 per use and 19.84 DPS.
+With 50% fire-to-chaos conversion and 20% fire gained as chaos, Fireball shows total 12-18, fire 5-7 and chaos 7-10,
+15.46 per use and 20.56 DPS; an actual noncritical server hit dealt 14 damage.
+Scorching Ray has twelve zero hit-range fields and zero DPS/per-use, also after adding 100 flat spell fire damage.
+The same added-damage control gives Fireball 234-239 fire, confirming that hit-capable spells still receive it.
+Automated packet, conversion, hitless, creation/refresh and table-format checks also pass.
 
 **Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
 `additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`

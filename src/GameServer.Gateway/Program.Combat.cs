@@ -512,15 +512,13 @@ partial class Program
             var own = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             int chance = projectileHitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
                 () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
-            foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
             var hit = projectileHitPlan.BuildHit(
                 () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
                         Skills.DamageEffectiveness(gem.Effect, gem.Level))
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
-                spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
-                        AddedEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
+                _ => SpellHit.Resolve(projectileHitPlan, Stats, stats, own,
+                    ConversionFor(conn, gem.Effect, gem.Level, attack: false), AddedEffectiveness(gem.Effect, gem.Level)));
             int damage = hit.RollTotal(Random.Shared);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
@@ -599,15 +597,13 @@ partial class Program
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int criticalChance = hitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
             () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats));
-        foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
             DamagePacket hit = hitPlan.BuildHit(
                 () => SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
-                spellBase => SpellDamage.Packet(spellBase, name => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0,
-                        AddedEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: false)));
+                _ => SpellHit.Resolve(hitPlan, Stats, stats, skillStats,
+                    ConversionFor(conn, gem.Effect, gem.Level, attack: false), AddedEffectiveness(gem.Effect, gem.Level)));
             int damage = hit.RollTotal(Random.Shared);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
