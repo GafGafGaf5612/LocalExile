@@ -233,6 +233,7 @@ partial class Program
             foreach (var (k, v) in playerStats) stats[k] = v;
             var own = Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             foreach (var (k, v) in own) stats[k] = v;
+            SkillAttackTiming.Apply(Skills, effect, level, stats);
             if (Skills.IsSpell(effect) && !Skills.IsAttack(effect) && Stats.Key("spell_critical_strike_chance") is uint critKey)
                 stats[critKey] = SpellCriticalStrike.Chance(Skills.SpellCritChance(effect, level), Stats, playerStats, own);
             // The skill effects worn in the gem's Cosmetics tab slots: their stats (skill_art_variation …) on this skill only.

@@ -291,6 +291,8 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x142fe0da0` | Data | HNC 64-byte mask |
 | `0x141ec0aa0` | Fn | ObjectInWakeZone (0x1a9) |
 | `0x1421940a0` | Fn | Actor message handler (0x1ab action started, …) |
+| `0x141c06c2a`..`0x141c06c8e` | Code | Attack timing reads total base ms 0x221a and final player speed 0x126 |
+| `0x142706568`..`0x14270658f` | Code | Explicit total base attack duration getter returns stored 0x221a |
 | `0x141e30c90` | Fn | Positioned message handler (0x1b7 teleport, 0x1ba move, …) |
 | `0x142166300` | Fn | C→S 0x25 / 0x24 sender (use skill at location / on object) |
 | `0x141fdda70` | Fn | 0x1ab read |

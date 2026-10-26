@@ -34,9 +34,12 @@ partial class Program
     // Whether an attack may start now: the shared attack timer (the default attack and the attack gem skills) is over, or
     // the use is no more than a quarter of an attack early (the client's jitter). Does not reserve the timer: an attack used
     // on a monster waits for the walk into reach, and CastGemSkill reserves it when the swing starts.
-    static bool AttackReady(ClientState conn, out double seconds)
+    static double SkillAttackSeconds(ClientState conn, int effect, int level) =>
+        SkillAttackTiming.ForSkill(Skills, effect, level, WeaponFor(conn), CharacterPlayerStats(conn));
+
+    static bool AttackReady(ClientState conn, int effect, int level, out double seconds)
     {
-        seconds = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+        seconds = SkillAttackSeconds(conn, effect, level);
         double now = conn.Clock.Elapsed.TotalSeconds;
         lock (conn.Monsters) return AttackTiming.Ready(now, conn.NextAttackAt, seconds);
     }
@@ -223,7 +226,7 @@ partial class Program
         // without moving" (Flags bit 0) swings from where the player stands: both keep the immediate cast.
         if (gem.Name is not null && Skills.IsAttack(gem.Effect) && !Skills.IsMovement(gem.Effect) && (use.Flags & 0x1) == 0)
         {
-            if (!AttackReady(conn, out double attackSeconds))
+            if (!AttackReady(conn, gem.Effect, gem.Level, out double attackSeconds))
             {
                 Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x}: ignored, the previous attack is still running (attack time {attackSeconds:0.00} s) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
                 return;
@@ -326,7 +329,7 @@ partial class Program
         // two attacks cannot start at once either.
         if (gem.Name is not null && Skills.IsAttack(gem.Effect))
         {
-            double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
+            double duration = SkillAttackSeconds(conn, gem.Effect, gem.Level);
             double now = conn.Clock.Elapsed.TotalSeconds, next;
             bool ready;
             lock (conn.Monsters)
@@ -482,7 +485,7 @@ partial class Program
         var cls = Skills.ClassFor(conn.ClassRow);
         bool attack = gem.Name is not null && Skills.IsAttack(gem.Effect);
         double releaseDelay = attack
-            ? AttackContactDelay(conn, WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn)), approach: false)
+            ? AttackContactDelay(conn, SkillAttackSeconds(conn, gem.Effect, gem.Level), approach: false)
             : CastMs(conn, gem.Effect) / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
         if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, releaseDelay), epoch)
             || !PlayerActionCurrent(conn, action)) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
@@ -576,7 +579,7 @@ partial class Program
         double delay;
         // An attack lands at its contact keyframe; the player swings where it stands, so without the walk-in offset.
         lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0
-            : AttackContactDelay(conn, weapon.AttackSeconds(CharacterPlayerStats(conn)), approach: false);
+            : AttackContactDelay(conn, SkillAttackSeconds(conn, gem.Effect, gem.Level), approach: false);
         int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
         // A melee skill aimed far away still lands in front of the player.
         var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
