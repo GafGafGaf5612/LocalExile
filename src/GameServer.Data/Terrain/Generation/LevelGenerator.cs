@@ -231,8 +231,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     readonly Dictionary<(int X, int Y), BorderSlot> _borders = [];
     EdgeCombiner? _combiner;
 
-    /// <summary>The TileSet has "door" tiles (tiler context +0x38, <c>0x1420f0b60</c>): rooms mark their doorways and
-    /// the shared doorways get door tiles (<c>0x1420f4010</c>, <c>0x1420f4ae0</c>).</summary>
+    /// <summary>The TileSet has "door" tiles (tiler context +0x38, <c>0x1420f0b60</c>) and the master no DisableDoors
+    /// (master +0x13f; its reader was not found, the trace of 2_8_2_2 698178759 shows no door pass): rooms mark their
+    /// doorways and the shared doorways get door tiles (<c>0x1420f4010</c>, <c>0x1420f4ae0</c>).</summary>
     bool _doorTiles;
     int _unit, _ox, _oy;
     (int X0, int Y0, int X1, int Y1) _view;
@@ -419,7 +420,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         _overlap = map.Overlap;
         _multi = true;
         _unit = unit;
-        _doorTiles = _store.HasTag("door");
+        _doorTiles = _store.HasTag("door") && master.GetValueOrDefault("DisableDoors", "0") == "0";
         _doorwayOf = new int[_grid.Width * _grid.Height];
         if (master.TryGetValue("EdgeCombination", out var ecf))
             _combiner = EdgeCombiner.Parse(files.Text(TerrainText.Resolve(masterPath, ecf)) ?? "", masterPath);
