@@ -10,13 +10,9 @@ partial class Program
     internal static void CheckAscendancyClientCompatibility(ClientState conn) =>
         AscendancyClientCompatibility.RequirePlayable(CharacterSaves.Load(CharacterName(conn))?.MainAscendancy?.Selection);
 
-    // The character's experience and passives from its save; returns its level. The saved experience decides the level: the
-    // account's (the ticket's) is only a copy for the character list, which a failed update at a level-up leaves behind. A save
-    // without experience (an older one) starts at the account's level. Passives beyond the level's points are dropped.
-    static int LoadProgress(ClientState conn, int level)
+    // Read-only admission checks, shared with LoadProgress: no inventory loading, normalization or gold migration.
+    static void ValidateSavedProgress(ClientState conn, CharacterSaves.Save? save)
     {
-        var save = CharacterSaves.Load(CharacterName(conn));
-        level = CharacterSaves.LevelOf(save, level);
         // Without the tree the saved passives can't be checked; dropping them would lose them at the next save.
         if (save?.Passives is { Count: > 0 } && !Passives.Loaded)
             throw new UnknownSavedItemException("allocated passives, but the passive tree (data/tables/PassiveSkills.json) is not loaded");
@@ -26,6 +22,18 @@ partial class Program
             throw new UnknownSavedItemException("unknown or ascendancy nodes in the ordinary passive allocation; the save was retained");
         AscendancyRules.Validate((byte)Skills.ClassFor(conn.ClassRow).IntegerId, ascendancy);
         ValidateOrdinaryPassives(conn, ordinary, ascendancy);
+    }
+
+    // The character's experience and passives from its save; returns its level. The saved experience decides the level: the
+    // account's (the ticket's) is only a copy for the character list, which a failed update at a level-up leaves behind. A save
+    // without experience (an older one) starts at the account's level. Passives beyond the level's points are dropped.
+    static int LoadProgress(ClientState conn, int level)
+    {
+        var save = CharacterSaves.Load(CharacterName(conn));
+        level = CharacterSaves.LevelOf(save, level);
+        ValidateSavedProgress(conn, save);
+        var ordinary = save?.Passives ?? [];
+        var ascendancy = save?.MainAscendancy ?? new();
         // Gold is the account's (AccountStash.Gold): gold an older save kept with the character moves into the account, in one
         // transaction with the save letting go of it.
         if (save?.Gold is > 0 and uint oldGold)

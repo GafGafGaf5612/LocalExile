@@ -32,6 +32,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Command-based ordinary ascendancy selection and the ordinary/Phrecia identity, point, refund and save lifecycle.
   Automated domain, packet and production-handler tests cover ownership, separate budgets, graph connectivity,
   multiple-choice effects, atomic refunds, stale connections and old/unknown saves.
+  Area admission validates saved progress before inventory changes, then validates items before gold migration.
   Native verification of this split remains with the parent before moving the entry to Works.
   Phrecia game connections/selection remain explicitly gated pending an agreed client-compatible graph.
   Normal startup does not install or recover a graph and ordinary/unascended play has no alternate-graph preflight.

@@ -103,6 +103,9 @@ nothing changes and the window stays open ("Not enough room in your inventory.")
   `UnknownSavedItemException`, and so do saved passives without the passive tree: the login stops and the save stays.
   Dropping them would lose them at the next save. Extract the game data (`scripts/dev/extract-data.ps1`) and log in
   again.
+- Area admission validates the saved ascendancy and ordinary graph read-only before loading inventories or a start kit.
+  Existing items must then load successfully before gold migration, passive normalization, town flask refill or offer cancel.
+  A refused admission also skips the disconnect save flush, preserving the original saved JSON and unknown item fields.
 - Loading a character normally writes nothing; a new character's start kit is saved at once.
   A valid ordinary tree exceeding a reduced development level's budget is normalized only after graph validation,
   with its retained ascendancy state protected by the same atomic passive snapshot comparison.
