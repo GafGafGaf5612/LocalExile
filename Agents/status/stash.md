@@ -20,13 +20,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   S→C 0x21; each tab's contents come on the client's request (C→S 0xc7 → 0xc0 row 26 + 0xc8);
   items go into and out of tabs by click (0x28 / 0x2a) and Ctrl + click (C→S 0xe0 in, 0xe3 out, stacks onto stacks);
   special tabs hold only their own items (the map tab nothing yet), the currency, essence and fragment tabs each item
-  in its own slot (currency up to 10 000), from the game data's stash tables (18 §7);
+  in its own slot, from the game data's stash tables (18 §7);
+  currency-tab limits come from `CurrencyItems.CurrencyTab_StackSize` (generally 10 000; lifeforce 50 000).
+  Earlier real-client verification and Gateway logs show yellow lifeforce merging into one 50 000 stack in slot 99.
+  Automated tests cover manual and quick merges, Harvest types, overflow and save reloads;
   Ctrl + click on currency goes to its affinity tab's slot (C→S 0xe1, live 2026-10-20) and a plain click on a currency
   slot picks up the stack; the tab settings' affinities (0xd3) are saved;
   the stash reopens on the account's last tab after a relog (0x7b affinity on the first open per connection) and keeps
   the panel's own tab while the connection lasts; tabs and items are account-wide (the account's row in
   `data/saves.db`).
-  Verified live with normal and premium tabs; the special tabs load but their slots are not checked.
+  Verified live with normal, premium and the currency lifeforce slot; other special-tab slots need further checks.
   Guild stash: a second object in every hideout opens the guild stash panel (0x7b kind 2) with its own tabs (manager
   2), one per account until there are guilds (verified live).
   Code: `AccountStash.cs`, `StashCatalog.cs`, `InstanceStash.cs`, Gateway (`OpenStash`, `SendStashTab`).
@@ -34,8 +37,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-- **Lifeforce and crafting cells.** Currency-tab lifeforce slots hold 65,535 each without wrapping.
-  Delve crafting cells accept equipment, support swaps and retain their contents after reload.
+- **Crafting cells.** Delve crafting cells accept equipment, support swaps and retain their contents after reload.
   Lioneye's Watch now creates a guild stash beside its personal stash.
   Persistence checks pass; the real client opened the city guild stash and loaded its guild tab.
 
