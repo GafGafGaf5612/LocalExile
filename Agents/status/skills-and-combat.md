@@ -5,6 +5,12 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Works (verified with the real client)
 
+- Fortification: qualifying melee hits build temporary protection through an explicit LocalExile generation model.
+  Native checks confirmed the buff component, expiry, 20/30-stack limits, attack speed and actual hit protection.
+  Elapsed Life regeneration, stopping at expiry, area carry, death and relog were also verified.
+  The evidence uses a new unascended character with raw inputs; it does not establish Behemoth selection.
+  See [Fortification](../docs/game/fortification.md) for the formula, source coverage and remaining extensions.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks
@@ -32,6 +38,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   Recheck that composition natively.
   Code: `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
+- Whisperer "your mind is destroyed": resolved spell increases/reductions also scale attacks at 150% of their value.
+  Weapon, added-damage and supported attack constructors share the fractional additive contribution.
+  Native panel and target-life checks verify 100 to 250, additive 230, a half-percent endpoint of 203 and reductions.
+  Removal and relog clear the effect; ordinary bows retain release snapshots and supported spells remain isolated.
+  The native check uses development stat inputs; Phrecia node selection and the rest of Whisperer remain separate.
+  Code: `DamageStats`, `SkillCatalog.Unarmed.HitDamage`, `SupportedAttackDamage`.
+  Docs: [20](../docs/protocol/20-damage.md) §2c.
+- Behemoth Steel Willed: each complete group of 450 final armour adds 2% increased attack damage.
+  The contribution joins raw attack increases once and feeds weapon physical, added damage and supported attacks.
+  Native fixed-hit checks verify thresholds, additive 204/214, modifier removal and maximum-mana lightning.
+  Weapon physical panel checks show 2â€“5 becoming 6â€“15; relog clears the development inputs.
+  Native checks use raw stats on an unascended character; selection and recent-hit armour doubling remain separate.
+  Code: `ArmourAttackDamage`, Gateway (`CharacterPlayerStats`), `SkillCatalog.Unarmed.IncreasedDamage`.
+  Docs: [20](../docs/protocol/20-damage.md) Â§2d.
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
   Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses
   send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` /
@@ -147,6 +167,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [11](../docs/protocol/11-skills.md) §9.
 
 ## Partly working
+
 
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.

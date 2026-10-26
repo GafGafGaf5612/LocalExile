@@ -28,6 +28,27 @@ partial class Program
         return null;
     }
 
+    // The real connection's admission path, shared with regression tests before any area packets are published.
+    internal static int PrepareCharacterForArea(string remote, ClientState conn, int level)
+    {
+        CheckAscendancyClientCompatibility(conn);
+        ValidateSavedProgress(conn, CharacterSaves.Load(CharacterName(conn)));
+        PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
+        // Existing items must load successfully before LoadProgress can migrate gold or normalize passives.
+        // A new character's start kit is built and saved only after the read-only progress preflight above succeeds.
+        var startItems = ItemsOf(conn);
+        level = LoadProgress(conn, level);
+        // Towns and hideouts refill the flasks, before the inventories go to the client.
+        if ((WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == conn.Layout.Hash))
+            && FillFlasks(startItems, int.MaxValue).Count > 0)
+            Console.WriteLine($"[gateway] {remote} flasks refilled in town");
+        // A sale still open when the last connection ended (a disconnect, a crash) ended as a cancel: every offered
+        // item is in its cell (it never left it).
+        if (startItems.CancelOffers().Count is > 0 and var cancelled)
+            Console.WriteLine($"[gateway] {remote} {cancelled} item(s) offered in an unfinished sale are back in their cells");
+        return level;
+    }
+
     static async Task HandleAsync(TcpClient client, InstanceKeyring keyring)
     {
         string remote = client.Client.RemoteEndPoint?.ToString() ?? "?";
@@ -37,6 +58,7 @@ partial class Program
         long total = 0;
         uint ticket = 0;
         ClientState? left = null;
+        bool prepared = false;
         try
         {
             using (client)
@@ -76,33 +98,21 @@ partial class Program
                 await stream.WriteAsync(InstanceProtocol.StartEncryption());
                 Console.WriteLine($"[gateway] {remote} => 0x0011 (start encryption)");
 
-                // Text is the character's league: the map overlay shows it under the area name ("{0} League", 0x1406b2030).
-                var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0, Text: resolved.League ?? "");
-                await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
-
                 // Anything after the opening was already encrypted by the client.
                 var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), InstanceNumber = instanceId, LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
                 left = conn;
                 conn.Commands = Commands(remote, stream, ciphers, conn);
                 conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _) || HideoutCatalog.ByArea(layout.Hash) is not null;
                 conn.ArriveAt = SpotArrivals.TryRemove(ticket, out var spot) ? spot : null;
-                PlayerInventories.SetClass(CharacterName(conn), conn.ClassRow);   // before its items are first used (start kit)
-                // Load the items now: a new character's start kit is built only while it has no save, and the save is written
-                // at 0x7d by the area visit (RecordVisit), before the player object first needs the items.
-                var startItems = ItemsOf(conn);
-                // Towns and hideouts refill the flasks, before the inventories go to the client.
-                if ((WaypointCatalog.Areas.Find(layout.Hash) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == layout.Hash))
-                    && FillFlasks(startItems, int.MaxValue).Count > 0)
-                    Console.WriteLine($"[gateway] {remote} flasks refilled in town");
-                // A sale still open when the last connection ended (a disconnect, a crash) ended as a cancel: every offered
-                // item is in its cell (it never left it).
-                if (startItems.CancelOffers().Count is > 0 and var cancelled)
-                    Console.WriteLine($"[gateway] {remote} {cancelled} item(s) offered in an unfinished sale are back in their cells");
-                int level = LoadProgress(conn, resolved.Level);
+                int level = PrepareCharacterForArea(remote, conn, resolved.Level);
+                prepared = true;
+                var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0,
+                    Text: resolved.League ?? "", LeagueStats: LeagueStatsFor(conn.MainAscendancy));
+                await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}; ascendancy family {conn.MainAscendancy.Selection?.Family}");
                 if (level != resolved.Level)
                 {
                     // The saved experience is the character's level: Auth's (the ticket's) was not updated at the last level-up.
-                    var fixedLevel = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = ticket, Level = level });
+                    var fixedLevel = await SynchronizeAccountLevel(conn);
                     Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {level} from the saved experience (the account had {resolved.Level})" +
                         (fixedLevel.Ok ? "" : $"; not saved to the account: {fixedLevel.Error}"));
                 }
@@ -133,6 +143,7 @@ partial class Program
                 finally
                 {
                     conn.Closed = true;
+                    lock (conn.Monsters) FortificationOf(conn).Clear();
                     inbox.Complete();
                     await handlers;
                 }
@@ -147,8 +158,12 @@ partial class Program
             // The connection ends (a logout, an area change, a crash of the client): what waits in memory is saved now.
             try
             {
-                CharacterSaves.SaveExperience(CharacterName(left));
-                ItemsOf(left).SaveUnsaved();
+                // A refused admission must not load/start inventories or flush a previous connection's cached copy.
+                if (prepared)
+                {
+                    CharacterSaves.SaveExperience(CharacterName(left));
+                    ItemsOf(left).SaveUnsaved();
+                }
             }
             catch (Exception e)
             {
@@ -214,6 +229,7 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
         }
         conn.Closed = true;
+        lock (conn.Monsters) FortificationOf(conn).Clear();
         reading.Cancel();
     }
 

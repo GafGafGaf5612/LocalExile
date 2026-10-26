@@ -22,16 +22,19 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife), $"0x01b1 player life {conn.PlayerLife}");
         await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
         // UI built on entering caches the attributes (see SendPlayer): send them once more.
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. BaseStats(conn)]), "0x01b3 player attributes");
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.StatsUpdate(PlayerId, [.. BaseStats(conn)]), "0x01b3 player attributes");
     }
 
     // The player's life per second from regeneration: the flat life regeneration per minute (/god, /set_stat) plus a
     // percentage of maximum life, from the row PanelStats.Recovery sends to the character panel.
     static double LifeRegenPerSecond(ClientState conn)
     {
-        var stats = CharacterPlayerStats(conn);
-        int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
-        return PanelStats.LifePerMinute(Get, conn.Pools.Life) / 60;
+        lock (conn.Monsters)
+        {
+            CharacterPlayerStatsCore(conn, out double baseline);
+            return baseline;
+        }
     }
 
     // The player's mana per second from regeneration: Character.ot's mana_regeneration_rate_per_minute_% (105: 1.75% of
@@ -94,6 +97,7 @@ partial class Program
 
     static async Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label)
     {
+        lock (conn.Monsters) FortificationOf(conn).Clear();
         await EndAurasOnDeath(remote, stream, ciphers, conn);
         ChargesOnDeath(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), label);
@@ -385,6 +389,7 @@ partial class Program
                 if (dead)
                 {
                     lifeCarry = manaCarry = burnCarry = 0;
+                    FortificationOf(conn).Clear();
                     conn.EnergyShield.Empty();
                     lifeAfter = lifeBefore;
                     manaAfter = manaBefore;
@@ -395,8 +400,9 @@ partial class Program
                     int burnWhole = (int)Math.Truncate(burnCarry); burnCarry -= burnWhole;
                     int lifeBurn = conn.EnergyShield.Damage(burnWhole, false, now);
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
+                    double fortificationLife = FortificationOf(conn).TakeRecovery(conn.Clock.Elapsed.TotalSeconds);
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
-                        life + lifeRate * seconds - lifeBurn, ref lifeCarry, minimum: 1);
+                        life + lifeRate * seconds + fortificationLife - lifeBurn, ref lifeCarry, minimum: 1);
                     conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
                         mana + manaRate * seconds, ref manaCarry);
                 }
@@ -612,6 +618,7 @@ partial class Program
     // (AOFile), class byte (IntegerId), attributes and unarmed attack; the name is the character's.
     static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        RestoreFortification(conn);
         PrepareHideoutWaypoint(conn);
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
@@ -627,7 +634,7 @@ partial class Program
         // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
         lock (conn.Monsters) conn.SentStatKeys = [.. statList.Select(s => s.Item1), .. weaponStats.Select(s => s.Item1)];
         int reservedMana = ReservedMana(conn);
-        var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: (byte)cls.IntegerId, GridX: layout.SpawnX, GridY: layout.SpawnY, Life: conn.PlayerLife, EnergyShield: conn.EnergyShield.Current,
+        var player = new PlayerObject(string.IsNullOrEmpty(name) ? "Exile" : name, ClassIndex: PackedClass(conn), GridX: layout.SpawnX, GridY: layout.SpawnY, Life: conn.PlayerLife, EnergyShield: conn.EnergyShield.Current,
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
@@ -692,7 +699,12 @@ partial class Program
             // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
             messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. statList])));
         }
-        foreach (var (label, bytes) in messages) await Send(remote, stream, ciphers, bytes, label);
+        foreach (var (label, bytes) in messages)
+            if (label == "0x01b3 class attributes")
+                await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+                    () => InstanceEntities.StatsUpdate(PlayerId,
+                        CharacterPlayerStats(conn).Select(kv => (kv.Key, kv.Value)).ToList()), label);
+            else await Send(remote, stream, ciphers, bytes, label);
         // An area change creates a new player object, so the running auras' buffs must be put on it again.
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];

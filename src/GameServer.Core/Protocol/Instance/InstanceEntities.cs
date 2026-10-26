@@ -96,10 +96,11 @@ public static class InstanceEntities
         new LoginWriter().U16(RemoveBuffId).U32(objectId).U32(0).U16(0).U16(buffInstance).ToArray();
 
     public const ushort CharacterPassivesId = 0x33, AllocatePassiveId = 0x34, MasteryEffectId = 0x35, PanelToggleId = 0x123;
+    public const int MasteryEffectLength = 6;
 
     /// <summary>
-    /// C→S 0x34 (7 bytes, live 2026-10-18): the Passive Skill Tree asks for a node. u16 (0 so far), u16 the node's
-    /// PassiveSkillGraphId (big-endian: 0xdfb0 = 57264 Spell Damage and Mana, next to the Witch's start), u8 (0 so far).
+    /// C→S 0x34 (7 bytes, live 2026-10-18): the Passive Skill Tree asks for a node. u16 high node bits, u16 the node's
+    /// PassiveSkillGraphId (big-endian: 0xdfb0 = 57264 Spell Damage and Mana, next to the Witch's start), u8 expansion flag.
     /// The client waits for the tree back (S→C 0x33); without it the node is not allocated. C→S 0x123 (u8 1 / 0) is sent
     /// when the panel opens and closes.
     /// </summary>
@@ -132,7 +133,7 @@ public static class InstanceEntities
     /// instance+0xc2d8 (handler 0x141ef2710). u16 +0x88 → tree +0x270 (probably refund points), u16 +0x8a → +0x274
     /// (extra_skill_points: quests), u16 +0x8c → +0x27c (ascendancy points), u8 +0x90 → +0x26c the **level** (the client's
     /// points_from_level = (level − 1) × points per level, 0x141ef3e60), u8 +0x8f → +0x268 the class byte (Characters.dat
-    /// IntegerId, ascendancy in bits 5–7: the tree's start), u8 +0x8e → +0x269, u8 flags (bit0 +0x91, bit1 +0x92 = no
+    /// IntegerId plus ClassNo packed by CharacterClassByte: the tree's start), u8 +0x8e → +0x269, u8 flags (bit0 +0x91, bit1 +0x92 = no
     /// lists), then unless bit1: vec16 u16 allocated nodes (PassiveSkills.dat PassiveSkillGraphId, raw little-endian),
     /// vec16 u16, vec16 u16, vec16 u32 mastery effects (node | effect &lt;&lt; 16), vec16 u32. The client drops nodes not
     /// connected to its class's start and refuses more nodes than its points allow. A mastery effect is the
@@ -490,6 +491,9 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
     MonsterRarity Rarity = MonsterRarity.Normal, string? Name = null, StateMachineData? StateMachine = null, byte TransitionState = 1,
     ushort Team = 1, IReadOnlyList<GrantedSkill>? Skills = null, IReadOnlyList<(uint Key, int Value)>? Stats = null)
 {
+    /// <summary>Resolved source flags; absent metadata conservatively writes zero.</summary>
+    public MonsterLifeData? LifeData { get; init; }
+
     /// <summary>Deserialized components of `Metadata/Monsters/Monster` in read order (scripts/re/ot_components.py).</summary>
     public static readonly string[] BaseComponents =
         ["Positioned", "Stats", "ObjectMagicProperties", "BaseEvents", "Pathfinding", "Buffs", "Life", "Animated",
@@ -534,7 +538,7 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                     break;
                 case "Buffs": w.U16(0); break;
                 // life, mana, energy shield pools (current, reserved, i16, u32, u32), then the flags byte.
-                case "Life": Pool(w, Life); Pool(w, 0); Pool(w, 0); w.U8(0); break;
+                case "Life": Pool(w, Life); Pool(w, 0); Pool(w, 0); w.U8(LifeData?.Flags ?? 0); break;
                 case "Animated":
                     if (AnimatedObject is null) w.U8(0);
                     else w.U8(1).WStr32(AnimatedObject);

@@ -54,7 +54,10 @@ partial class Program
         // the life bars kept the base maximum and a unique showed full until its life fell below it (live 2026-10-21).
         foreach (var stat in MonsterModClientStats(mods.Effects, life, baseLife)) (stats ??= []).Add(stat);
         var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, MonsterEmerge.CreateState(variety, emerge, waits), team,
-            skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats) { Mods = mods.Mods, NameWords = mods.NameWords };
+            skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats)
+        {
+            Mods = mods.Mods, NameWords = mods.NameWords, LifeData = variety.LifeData,
+        };
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
@@ -261,6 +264,8 @@ partial class Program
                     ? DamageModel.MitigatePhysical(value, conn.Pools.Armour, reduction.Physical)
                     : GameServer.Core.World.DamageTypes.IsElemental(type) ? DamageModel.Reduce(value, reduction.Elemental) : value;
             }
+            damage = FortificationDamageTaken(conn, damage);
+            chaosDamage = FortificationDamageTaken(conn, chaosDamage);
             blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
             if (blocked) { damage = 0; chaosDamage = 0; }
             manaBefore = conn.PlayerMana;

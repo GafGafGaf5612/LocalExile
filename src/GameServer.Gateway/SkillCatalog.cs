@@ -516,12 +516,13 @@ sealed class SkillCatalog(string folder = "data")
             return increased;
         }
 
-        /// <summary>The attack's total increased physical damage: the player's damage, physical, melee and melee physical
-        /// damage stats.</summary>
-        public int IncreasedDamage(IReadOnlyDictionary<uint, int>? player)
+        /// <summary>The attack's total increased physical damage: the player's damage, attack, physical, melee
+        /// and melee physical damage stats.</summary>
+        public long IncreasedDamage(IReadOnlyDictionary<uint, int>? player)
         {
-            int increased = 0;
-            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.PhysicalDamagePct, StatKeys.MeleeDamagePct, StatKeys.MeleePhysicalDamagePct])
+            long increased = 0;
+            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.AttackDamagePct, StatKeys.PhysicalDamagePct,
+                StatKeys.MeleeDamagePct, StatKeys.MeleePhysicalDamagePct])
                 increased += player?.GetValueOrDefault(k) ?? 0;
             return increased;
         }
@@ -529,8 +530,9 @@ sealed class SkillCatalog(string folder = "data")
         /// <summary>The physical hit packet: Characters.dat MinDamage..MaxDamage × (1 + increased / 100).</summary>
         public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player)
         {
-            double scale = Math.Max(0, 100 + IncreasedDamage(player)) / 100.0;
-            return DamagePacket.Of(DamageType.Physical, new DamageRange(MinDamage * scale, MaxDamage * scale));
+            double increased = IncreasedDamage(player) + DamageStats.SpellAttackIncrease(player);
+            return DamagePacket.Of(DamageType.Physical,
+                DamageStats.IncreaseAttackRange(new(MinDamage, MaxDamage), increased));
         }
 
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,

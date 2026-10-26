@@ -75,7 +75,8 @@ def read_text(path):
     f = cache_name(path)
     if not os.path.exists(f):
         return None
-    b = open(f, "rb").read()
+    with open(f, "rb") as cached:
+        b = cached.read()
     if b[:2] in (b"\xff\xfe", b"\xfe\xff"):
         return b.decode("utf-16")
     # .amd files, and some .ao/.act files, are UTF-16LE without a byte order mark: ASCII text leaves every other byte 0.
@@ -170,7 +171,7 @@ def parse(text):
     toks = TOKEN.findall(re.sub(r"//[^\n]*", "", text))
     r = {"extends": [], "abstract": False, "sections": [], "client": [], "server": [], "version": None,
          "shared_states": [], "shared_timers": [], "transitionable": {}, "tags": [], "basic_actions": [],
-         "client_transitionable": {}, "client_targetable": None, "positioned": {}, "animated": {}}
+         "client_transitionable": {}, "client_targetable": None, "life": {}, "positioned": {}, "animated": {}}
     i = 0
 
     def block(i):  # i at '{' -> index after matching '}', plus the names of sections directly inside
@@ -207,6 +208,11 @@ def parse(text):
                     state_machine(toks[i + 2:j - 1], r)
                 elif t == "Transitionable":
                     top_level_keys(toks[i + 2:j - 1], r["transitionable"], ("num_states", "no_serialise"))
+                elif t == "Life":
+                    keys = {}
+                    top_level_keys(toks[i + 2:j - 1], keys, ("corpse_usable", "prevent_corpse_sinking"))
+                    # Unknown literals must not become true through Python's truthiness.
+                    r["life"].update({k: {"true": True, "false": False}.get(v.lower()) for k, v in keys.items()})
                 elif t == "Positioned":
                     top_level_keys(toks[i + 2:j - 1], r["positioned"], ("object_size", "blocking", "static", "block_league_flag"))
                 elif t == "Animated":
@@ -334,7 +340,7 @@ def merge(type_path, files, otc, first=("Positioned",)):
         num_states = int(trans.get("num_states", 1))
     except ValueError:
         num_states = 1
-    return {"type": type_path, "chain": [p for p, _ in ch], "missing": [p for p, f in ch if f is None],
+    result = {"type": type_path, "chain": [p for p, _ in ch], "missing": [p for p, f in ch if f is None],
             "abstract": bool(files.get(type_path, {}).get("abstract")), "components": comps, "read": read,
             "positioned": {k: v for _, f in ch for k, v in (f or {}).get("positioned", {}).items()},
             "animated_object": next((f["animated"]["animated_object"] for _, f in reversed(ch)
@@ -350,6 +356,19 @@ def merge(type_path, files, otc, first=("Positioned",)):
                                        if f and f.get("client_targetable") is not None), None),
             "transitionable": {"num_states": num_states,
                                "no_serialise": str(trans.get("no_serialise", "false")).lower() == "true"}}
+    if "Life" in comps[:read]:
+        # Life type constructor 0x141e254f0, store 0x141e25645: e4..e7 = 00 00 00 01.
+        # A missing parent can override these defaults; only subsequent explicit keys resolve that uncertainty.
+        life = {"corpse_usable": True, "prevent_corpse_sinking": False}
+        for _, f in ch:
+            if f is None:
+                life = dict.fromkeys(life)
+            else:
+                life.update(f.get("life", {}))
+        # Life finalizer 0x141e66ec0 sets config+e6 when the type's component map contains Player.
+        life["corpse_use_veto"] = True if "Player" in comps else (None if result["missing"] else False)
+        result["life"] = life
+    return result
 
 
 def load(types, ext=".ot", companion=".otc"):

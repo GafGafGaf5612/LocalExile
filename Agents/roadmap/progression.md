@@ -19,6 +19,13 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   accuracy roll; close range is the constant 20-unit radius).
   Minions' Accuracy equals yours is not offered by that target group and remains unsupported with minion accuracy.
   Gem attacks still need their own accuracy rolls before these target conditions can affect them.
-- **Start:** quest refund points, ascendancy points, quest points (0x33 +0x8a);
-  the tree's connections (PassiveSkillGraph.psg) so the server checks them too.
-- **Done when:** passives can be refunded with points from quests, and ascendancies chosen.
+- **Known:** pinned ordinary/Phrecia topology is available as
+  [read-only analysis artifacts](../docs/dev/passive-graph-data.md), without installing a client graph.
+- **Known:** command selection, saved identities, separate point awards, paid refunds and ordinary/ascendancy
+  graph connectivity now have automated coverage; see [scope and limitations](../docs/game/ascendancies.md).
+  Ordinary command selection, refunds, relog and a Gateway restart are verified with a native Duelist/Slayer smoke.
+- **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
+  Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
+  Do not add automatic archive writes or require the alternate graph for ordinary characters.
+- **Done when:** quest rewards persist and the native Altar can choose an ordinary ascendancy, with real-client checks.
+  Implementing all 19 Phrecia classes' special gameplay is separate from this selection lifecycle.

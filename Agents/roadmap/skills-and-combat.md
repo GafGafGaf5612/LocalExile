@@ -11,6 +11,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 
 ## 3. Gameplay
 
+- **Fortification extensions:** the hit-generated system is implemented and native-verified separately from Behemoth.
+  Other conditional sources, permanent grants and specialised monster ailment thresholds remain separate work.
+  See [Fortification](../docs/game/fortification.md).
+
 - **Ordinary aura activation:** nine previously rejected self auras now share reservation, presentation and the
   supported stat/damage paths.
   Remaining work: Discipline's ES pool, Pride's enemy debuff, conditional consecrated ground, herald/minion/banner
@@ -91,6 +95,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Added damage has its first stat: the attack's added lightning gets
   `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
   (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
+  Whisperer's 150% spell-increase transfer has shared attack regression coverage and native hit/panel checks.
+  Remaining conditional modifier sources are separate; see [20](../docs/protocol/20-damage.md) §2c.
+  Steel Willed's attack increase from complete groups of final armour has shared regression and native coverage.
+  Its recent-hit armour doubling and the other Behemoth nodes remain separate work.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.

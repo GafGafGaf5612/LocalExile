@@ -378,6 +378,7 @@ partial class Program
             return;
         }
         CarryCharges(conn, r.Ticket);
+        CarryFortification(conn, r.Ticket);
         if (t.AtWaypoint) WaypointArrivals[r.Ticket] = 0;
         else if (t.ArriveAt is { } spot) SpotArrivals[r.Ticket] = spot;
         else if (!t.AtSpawn) AreaLayouts.CameFrom[r.Ticket] = conn.Layout.Hash;

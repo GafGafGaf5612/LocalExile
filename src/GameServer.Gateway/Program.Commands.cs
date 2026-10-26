@@ -62,7 +62,8 @@ partial class Program
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
                 lock (conn.Monsters) conn.PlayerStats[requirement] = value;
-            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
                 $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
             // Skills compute with their own stats (the attack and the character panel read those), so send them again.
             await SendSkills(remote, stream, ciphers, conn);
@@ -335,9 +336,9 @@ partial class Program
         .Add("set_level", "/set_level <1 to 100> (saved to the account; the level's experience and stats are sent at once)", async args =>
         {
             if (args.Length == 0 || !int.TryParse(args[0], out int level) || level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
-            var r = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level });
-            if (!r.Ok) { await conn.Commands!.Reply($"Level not set: {r.Error}"); return; }
             await SetLevel(remote, stream, ciphers, conn, level);
+            var r = await SynchronizeAccountLevel(conn);
+            if (!r.Ok) await conn.Commands!.Reply($"Level saved locally; account update failed: {r.Error}");
         })
         .Add("add_xp", "/add_xp <amount> (experience as from a kill: levels up, saved)", async args =>
         {
@@ -347,9 +348,77 @@ partial class Program
         .Add("passives", "/passives (passive skill points and the allocated passives)", async _ =>
         {
             var (points, refundPoints, nodes, _) = PassiveState(conn);
-            int unspent = points + Passives.PointsGranted(nodes) - nodes.Count;
+            int unspent = points + Passives.PointsGranted(nodes) + AscendancyOrdinaryPoints(conn) - nodes.Count;
             await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent, {refundPoints} refund point(s).\n" +
                 string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
+        })
+        .Add("ascendancy", "/ascendancy [normal|phrecia] [name] (list or choose; Phrecia play is gated pending client compatibility)", async args =>
+        {
+            byte baseClass = (byte)Skills.ClassFor(conn.ClassRow).IntegerId;
+            var choices = Ascendancies.Choices(baseClass).ToArray();
+            if (choices.Length == 0) throw new ArgumentException("ascendancy data is missing; run scripts/dev/extract-data.ps1");
+            if (args.Length == 0)
+            {
+                var current = AscendancyRules.Validate(baseClass, conn.MainAscendancy);
+                int spent = AscendancyRules.SpentPoints(baseClass, conn.MainAscendancy);
+                await conn.Commands!.Reply($"Main ascendancy - {current?.Name ?? "none"}. Ascendancy points {spent}/{conn.MainAscendancy.EarnedPoints}.\n" +
+                    string.Join("\n", choices.Select(c => $"/ascendancy {c.Identity.Family.ToString().ToLowerInvariant()} {c.Name}{(c.Identity.Family == AscendancyFamily.Phrecia ? " (play gated)" : "")}")));
+                return;
+            }
+            bool hasFamily = Enum.TryParse<AscendancyFamily>(args[0], true, out var family) && Enum.IsDefined(family);
+            string name = string.Join(' ', hasFamily ? args[1..] : args);
+            var matching = choices.Where(c => (!hasFamily || c.Identity.Family == family) &&
+                (c.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || c.Identity.Id.Equals(name, StringComparison.OrdinalIgnoreCase))).ToArray();
+            if (matching.Length != 1) throw new ArgumentException("choose one name from /ascendancy, including its normal/phrecia family when needed");
+            var chosen = matching[0];
+            AscendancyClientCompatibility.RequirePlayable(chosen.Identity);
+            if (conn.MainAscendancy.Selection == chosen.Identity)
+            {
+                await conn.Commands!.Reply($"{chosen.Name} is already your main ascendancy.");
+                return;
+            }
+            var next = Saves.Atomically(() =>
+            {
+                var saved = CharacterSaves.Load(CharacterName(conn));
+                return CharacterSaves.ChangeMainAscendancy(CharacterName(conn), latest =>
+                {
+                    var candidate = AscendancyRules.Select(baseClass, latest, chosen.Identity);
+                    ValidateOrdinaryPassives(conn, saved?.Passives ?? [], candidate);
+                    return candidate;
+                });
+            });
+            lock (conn.Monsters)
+            {
+                conn.MainAscendancy = next;
+                conn.SavedPassiveProgress = new(next, conn.Passives, conn.MasteryEffects, conn.RefundPoints);
+            }
+            await conn.Commands!.Reply($"Main ascendancy selected - {chosen.Name}. Reloading the area to show its tree.");
+            await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(conn.Layout.Hash, 0, false), $"ascendancy {chosen.Name}");
+        })
+        .Add("ascendancy_points", "/ascendancy_points <normal|cruel|merciless|eternal|all> (dev: grant each Labyrinth's two ascendancy points once)", async args =>
+        {
+            if (args.Length != 1) throw new ArgumentException("a Labyrinth tier or all");
+            string tier = args[0].ToLowerInvariant();
+            byte baseClass = (byte)Skills.ClassFor(conn.ClassRow).IntegerId;
+            var next = CharacterSaves.ChangeMainAscendancy(CharacterName(conn), latest =>
+            {
+                foreach (string award in tier == "all" ? global::AscendancyRules.AwardKeys : [tier])
+                    latest = AscendancyRules.Award(baseClass, latest, award);
+                return latest;
+            });
+            lock (conn.Monsters)
+            {
+                conn.MainAscendancy = next;
+                conn.SavedPassiveProgress = new(next, conn.Passives, conn.MasteryEffects, conn.RefundPoints);
+            }
+            await SendPassives(remote, stream, ciphers, conn);
+            await conn.Commands!.Reply($"Ascendancy points earned - {next.EarnedPoints}; each tier can be earned once.");
+        })
+        .Add("reset_ascendancy", "/reset_ascendancy (refund all ascendancy nodes; five refund points per node/effect, choice shells are free)", async _ =>
+        {
+            if (conn.MainAscendancy.Allocated.Count == 0) { await conn.Commands!.Reply("No ascendancy passives allocated."); return; }
+            var error = await ChangePassives(remote, stream, ciphers, conn, conn.MainAscendancy.Allocated.ToArray(), false, "/reset_ascendancy", refundPoints: true);
+            await conn.Commands!.Reply(error ?? "Ascendancy passives refunded; you can choose another main ascendancy.");
         })
         .Add("gold", "/gold <amount> (dev: add gold, or take it with a negative amount; the account's, saved)", async args =>
         {
@@ -364,31 +433,41 @@ partial class Program
             ushort total;
             lock (conn.Monsters)
             {
-                conn.ExtraPassivePoints = (ushort)Math.Min(ushort.MaxValue, conn.ExtraPassivePoints + add);
-                total = conn.ExtraPassivePoints;
+                total = Saves.Atomically(() =>
+                {
+                    ushort current = CharacterSaves.Load(CharacterName(conn))?.ExtraPassivePoints ?? 0;
+                    ushort next = (ushort)Math.Min(ushort.MaxValue, (long)current + add);
+                    CharacterSaves.SetExtraPassivePoints(CharacterName(conn), next);
+                    return next;
+                });
+                conn.ExtraPassivePoints = total;
             }
-            CharacterSaves.SetExtraPassivePoints(CharacterName(conn), total);
             await SendPassives(remote, stream, ciphers, conn);
             await conn.Commands!.Reply($"{add} extra passive point(s) added; {total} extra total.");
         })
         .Add("add_refund_points", "/add_refund_points <n> (dev: add n refund points, saved)", async args =>
         {
             if (args.Length == 0 || !int.TryParse(args[0], out int add) || add <= 0) throw new ArgumentException("a positive number");
-            ushort total;
+            ushort total = Saves.Atomically(() =>
+            {
+                ushort next = (ushort)Math.Min(ushort.MaxValue, (CharacterSaves.Load(CharacterName(conn))?.RefundPoints ?? 0) + add);
+                CharacterSaves.SetRefundPoints(CharacterName(conn), next);
+                return next;
+            });
             lock (conn.Monsters)
             {
-                conn.RefundPoints = (ushort)Math.Min(ushort.MaxValue, conn.RefundPoints + add);
-                total = conn.RefundPoints;
+                conn.RefundPoints = total;
+                conn.SavedPassiveProgress = new(conn.MainAscendancy, conn.Passives, conn.MasteryEffects, total);
             }
-            CharacterSaves.SetRefundPoints(CharacterName(conn), total);
             await SendPassives(remote, stream, ciphers, conn);
             await conn.Commands!.Reply($"{add} refund point(s) added; {total} total.");
         })
-        .Add("add_passive", "/add_passive <PassiveSkillGraphId> (dev: allocate one passive node)", async args =>
+        .Add("add_passive", "/add_passive <PassiveSkillGraphId> [...] (dev: allocate a connected set of passive nodes)", async args =>
         {
-            if (args.Length == 0 || !ushort.TryParse(args[0], out ushort node)) throw new ArgumentException("a PassiveSkillGraphId");
-            string? error = await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "/add_passive");
-            await conn.Commands!.Reply(error ?? $"Passive {node} allocated.");
+            if (args.Length == 0 || args.Any(a => !ushort.TryParse(a, out _))) throw new ArgumentException("PassiveSkillGraphId numbers");
+            ushort[] nodes = [.. args.Select(ushort.Parse)];
+            string? error = await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: true, "/add_passive");
+            await conn.Commands!.Reply(error ?? $"Passives {string.Join(", ", nodes)} allocated.");
         })
         .Add("reset_passives", "/reset_passives (refunds every passive, saved)", async _ =>
         {
@@ -670,7 +749,8 @@ partial class Program
             bool off = args[0].Equals("off", StringComparison.OrdinalIgnoreCase);
             int value = off ? 0 : int.Parse(args[0]);
             lock (conn.Monsters) { if (off) conn.PlayerStats.Remove(stat); else conn.PlayerStats[stat] = value; }
-            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
                 $"0x01b3 stats: base_skill_area_of_effect_+% = {(off ? "the character's own" : value)}");
             await SendSkills(remote, stream, ciphers, conn);
             bool relit = await RelightRighteousFire(remote, stream, ciphers, conn, "/set_aoe");
