@@ -15,13 +15,16 @@ namespace LevelGenTool;
 /// Options: --jobs N, --only &lt;area regex&gt;, --no-oracle, --save.</summary>
 static class Gate
 {
-    /// <summary>One check's outcome. Capture checks fill all fields, oracle checks only <see cref="Hash"/>.</summary>
+    /// <summary>One check's outcome. Capture checks fill all fields, oracle checks only <see cref="Hash"/>.
+    /// <see cref="Captured"/> is -1 for a trace with no doodad capture (no .doodads.json).</summary>
     public sealed record Result(string Hash, int Draws = 0, int TraceDraws = 0, string? FirstDiff = null, int Walk = -1, int Projectile = -1,
         int Placed = 0, int Matched = 0, int Captured = 0)
     {
         [System.Text.Json.Serialization.JsonIgnore] public bool HashOk => Hash == "match";
         [System.Text.Json.Serialization.JsonIgnore] public bool GridsOk => Walk == 0 && Projectile == 0;
         [System.Text.Json.Serialization.JsonIgnore] public bool DoodadsOk => Captured > 0 && Placed == Captured && Matched == Captured;
+        /// <summary>Every draw the port made equals the trace's (the client's later draws belong to stages not ported).</summary>
+        [System.Text.Json.Serialization.JsonIgnore] public bool DrawsOk => HashOk && (FirstDiff is null || FirstDiff.EndsWith(" (port stopped)"));
     }
 
     static readonly JsonSerializerOptions Json = new()
@@ -193,7 +196,7 @@ static class Gate
             hash = result.Grid.Hash() == clientHash ? "match" : "mismatch";
         }
         catch (Exception e) { hash = "stop: " + Reason(e); }
-        int walkDiff = -1, projDiff = -1, placed = 0, matched = 0, captured = 0;
+        int walkDiff = -1, projDiff = -1, placed = 0, matched = 0, captured = File.Exists(stem + ".doodads.json") ? 0 : -1;
         if (result is not null)
         {
             var walk = Walkability.Build(result.Grid, tile => files.Walk(tile.Path));
@@ -232,21 +235,24 @@ static class Gate
 
     static void Summary(SortedDictionary<string, Result> now, SortedDictionary<string, Result> before)
     {
-        static (int, int, int, int, int) Counts(IEnumerable<KeyValuePair<string, Result>> r)
+        static (int, int, int, int, int, int) Counts(IEnumerable<KeyValuePair<string, Result>> r)
         {
             var list = r.ToList();
             var caps = list.Where(p => p.Key.StartsWith("capture ")).Select(p => p.Value).ToList();
             var orc = list.Where(p => p.Key.StartsWith("oracle ")).Select(p => p.Value).ToList();
-            return (orc.Count(x => x.HashOk), caps.Count(x => x.HashOk), caps.Count(x => x.HashOk && x.GridsOk), caps.Count(x => x.DoodadsOk), caps.Count);
+            return (orc.Count(x => x.HashOk), caps.Count(x => x.HashOk), caps.Count(x => x.HashOk && x.GridsOk), caps.Count(x => x.DrawsOk),
+                caps.Count(x => x.DoodadsOk), caps.Count);
         }
-        var (o1, h1, g1, d1, c1) = Counts(now);
-        var (o0, h0, g0, d0, _) = Counts(before);
+        var (o1, h1, g1, r1, d1, c1) = Counts(now);
+        var (o0, h0, g0, r0, d0, _) = Counts(before);
+        int uncaptured = now.Count(p => p.Key.StartsWith("capture ") && p.Value.Captured < 0);
         int orcTotal = now.Keys.Count(k => k.StartsWith("oracle "));
         string D(int a, int b) => before.Count == 0 ? "" : a == b ? "" : $" ({(a > b ? "+" : "")}{a - b})";
         Console.WriteLine($"  oracle loads matching:          {o1} of {orcTotal}{D(o1, o0)}");
         Console.WriteLine($"  seed-1 traces, tile hash:       {h1} of {c1}{D(h1, h0)}");
         Console.WriteLine($"  seed-1 traces, both grids exact: {g1} of {c1}{D(g1, g0)}");
-        Console.WriteLine($"  seed-1 traces, every doodad:    {d1} of {c1}{D(d1, d0)}");
+        Console.WriteLine($"  seed-1 traces, every port draw: {r1} of {c1}{D(r1, r0)}");
+        Console.WriteLine($"  seed-1 traces, every doodad:    {d1} of {c1 - uncaptured}{D(d1, d0)} ({uncaptured} with no doodad capture)");
         var stops = now.Where(p => p.Key.StartsWith("capture ")).Select(p => p.Value.Hash).GroupBy(h => h.StartsWith("stop") ? "stop" : h)
             .ToDictionary(g => g.Key, g => g.Count());
         Console.WriteLine($"  seed-1 traces: {stops.GetValueOrDefault("match")} match, {stops.GetValueOrDefault("mismatch")} another hash, {stops.GetValueOrDefault("stop")} stop");
@@ -270,6 +276,7 @@ static class Gate
             if (key.StartsWith("capture "))
             {
                 Check(b.HashOk && b.GridsOk, r.HashOk && r.GridsOk, "grids");
+                Check(b.DrawsOk, r.DrawsOk, "every port draw");
                 Check(b.DoodadsOk, r.DoodadsOk, "doodads");
                 if (r.Draws < b.Draws) lost.Add($"{key}: draws {b.Draws} → {r.Draws} (first difference {r.FirstDiff})");
                 else if (r.Draws > b.Draws) gained.Add($"{key}: draws {b.Draws} → {r.Draws}");
@@ -289,7 +296,8 @@ static class Gate
     /// the stops of every check grouped by reason.</summary>
     static void Clusters(SortedDictionary<string, Result> now)
     {
-        var diffs = now.Where(p => p.Key.StartsWith("capture ") && p.Value.FirstDiff is not null && !(p.Value.HashOk && p.Value.GridsOk && p.Value.DoodadsOk))
+        var diffs = now.Where(p => p.Key.StartsWith("capture ") && p.Value.FirstDiff is not null &&
+                !(p.Value.HashOk && p.Value.GridsOk && p.Value.DrawsOk && (p.Value.DoodadsOk || p.Value.Captured < 0)))
             .GroupBy(p => p.Value.FirstDiff!).OrderByDescending(g => g.Count()).Take(12);
         Console.WriteLine("first differences (traces not fully matching), by the client's caller:");
         foreach (var g in diffs)

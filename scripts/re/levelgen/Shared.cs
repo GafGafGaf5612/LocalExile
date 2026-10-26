@@ -49,12 +49,16 @@ static class Shared
         return root;
     }
 
-    /// <summary>The trace's 'n' / 'u' / 'l' draws, without the LCG draws of 0x142063a60 (call site 0x142063b9c): an
-    /// animated entity's random start time (rand() bits × length / 256), made when the doodad is created. It reads only
-    /// the LCG, which 0x142046a70 reseeds from the MT before each pick, so it moves nothing in the generation.</summary>
+    /// <summary>The LCG draws that object scripts make when a doodad is created: 0x142063a60 (call site 0x142063b9c), an
+    /// animated entity's random start time (rand() bits × length / 256); RandomElement in the Animated object actions
+    /// 0x1420aa460 (0x1420aa41b) and 0x1420d6780 (0x1420d67eb); 0x142bc8ee0's bits (0x142be7a0b). They read only the
+    /// LCG, which 0x142046a70 reseeds from the MT before each pick, so they move nothing in the generation.</summary>
+    static readonly HashSet<string> ObjectScriptDraws = ["0x142063b9c", "0x1420aa41b", "0x1420d67eb", "0x142be7a0b"];
+
+    /// <summary>The trace's 'n' / 'u' / 'l' draws, without <see cref="ObjectScriptDraws"/>.</summary>
     public static List<(char Kind, string Caller, uint Arg, uint Result)> TraceDraws(JsonElement t) =>
         t.GetProperty("draws").EnumerateArray()
-            .Where(d => d[0].GetString() is "n" or "u" or "l" && d[1].GetString() != "0x142063b9c")
+            .Where(d => d[0].GetString() is "n" or "u" or "l" && !ObjectScriptDraws.Contains(d[1].GetString()!))
             .Select(d => (Kind: d[0].GetString()![0], Caller: d[1].GetString()!, Arg: d[2].GetUInt32(), Result: d[3].GetUInt32())).ToList();
 
     /// <summary>The local client's version. Its sessions log the patch root as https://patch.poecdn.com/3.29.3.3/
