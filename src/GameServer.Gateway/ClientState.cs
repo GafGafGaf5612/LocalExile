@@ -319,6 +319,11 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
+    // Transient Rage belongs to this connection until its destination ticket takes ownership; guarded by Monsters.
+    public readonly RageState Rage = new();
+    public bool RageRetired;
+    public ushort RageBuff;
+    public RageState.Value? SentRage;
     // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
     // When each skill with a cooldown (GrantedEffects row) may be used again, in Clock seconds. Guarded by the Monsters lock.

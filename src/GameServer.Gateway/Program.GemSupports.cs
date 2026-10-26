@@ -114,7 +114,8 @@ partial class Program
         var modifiers = gem.Supports.SelectMany(s => s.Stats).Select(s => (Stats.Name(s.Key) ?? "", s.Value)).ToList();
         hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: false);
         hit = hit.Convert(DamageStats.Conversion(stats, Stats, attack));
-        return GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
+        hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
+        return attack ? RageStats.ApplyAttack(hit, Get) : hit;
     }
 
     static int SupportedCriticalChance(ClientState conn, ushort skillId)
