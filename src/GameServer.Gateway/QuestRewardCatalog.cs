@@ -13,6 +13,7 @@ sealed class QuestRewardCatalog
     public sealed record Offer(int Row, string TakenFlag, IReadOnlyList<Choice> Choices);
     readonly Dictionary<int, Offer> offers = [];
     public Offer? Find(int row) => offers.GetValueOrDefault(row);
+    public IReadOnlyCollection<Offer> Offers => offers.Values;
     public IReadOnlyList<Choice> Choices(int row, int classRow) =>
         Find(row) is { } offer ? [.. offer.Choices.Where(c => c.Classes.Count == 0 || c.Classes.Contains(classRow))] : [];
 

@@ -189,7 +189,7 @@ test the threshold: with `remaining = next − experience` it wants `remaining <
 exercised live (experience one below the threshold); whether the client also draws the "+" for the last quarter of a
 level's bar is not checked, and the server only ever leaves a gem one point below the threshold.
 
-## 5. Getting gems (quest rewards, 2026-10-26)
+## 5. Getting gems (quest rewards and vendors, 2026-10-26)
 
 Quest rewards are the first acquisition path (`QuestRewardCatalog`, [12](12-quests.md) §1). `QuestRewardOffers` has
 140 offers; the gem ones give level-1 gems filtered by the `Characters` class rows (Witch's a1q4 offer 3 is Frost
@@ -200,13 +200,18 @@ sets the offer's `QuestFlag` (the "taken" flag) in one save. The Gateway now off
 (level-8 magic armours, magic belts) are skipped, as are offers with no buildable choice. Checked live 2026-10-26 on
 offer 3 after `/quest_flag a1q4-PlacedGlyphs`: the six Witch gems, claim, flag and repeat refusal.
 
-Still placeholder: vendors and drops.
+**Vendors.** The currency/flask/jewellery vendors that also sell gems (`GemVendorStock.Sells`: Nessa, Yeena,
+Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) give seven tabs - Red/Green/Blue Skills and Support, White
+Skills - of level-1 gems, 1 Scroll of Wisdom each ([17](17-npcs.md) §5). A quest unlocks its gems once its reward is
+shown or was taken; act vendors filter that set to the character's class and to `ItemCatalog.ShopGems` (creatable,
+dropping, not Vaal or awakened). Siosa (after `a3q12-DeliveredPages`) and Lilly Roth (after
+`UnlockedLillyGemShop`) ignore the class restriction, and Lilly also the quest completion; the 3.29 cross-class
+additions put Faster Attacks on Nessa after a1q2 and Faster Casting on Yeena after a2q4 (`GemVendorStock`).
+Checked live 2026-10-26 on Nessa: the Witch's stock was the six a1q1 gems plus the six a1q4 gems, then the six a1q2
+gems and Faster Attacks Support after `/quest_flag a1q2-KilledBrutus`. Lilly is unit-tested only (the Act 6 town has
+no walk-map capture and spawns the player in water) and Siosa is not placed (The Library is not reachable).
 
-- `NpcShops` gives Nessa `ItemCatalog.ShopGems` — every creatable gem of each colour at level 1 — instead of the act
-  vendors' class/quest progression, and only Nessa sells them.
-- Siosa (Act 3, after "A Fixture of Fate") and Lilly Roth (Act 6 and later) sell all gems in the game; neither is
-  modelled.
-- `ItemDrops` never drops a gem.
+Still placeholder: gem drops (`ItemDrops` never drops a gem), and every gem costs 1 Scroll of Wisdom.
 
 ## Open
 

@@ -62,14 +62,15 @@ static class NpcShops
         ("Blue Skills", 3, false), ("Blue Support", 3, true), ("White Skills", 4, false),
     ];
 
-    static readonly HashSet<string> SellsGems = new(StringComparer.OrdinalIgnoreCase) { "Metadata/NPC/Act1/Nessa" };
-
     static readonly HashSet<string> SellsMaps = new(StringComparer.OrdinalIgnoreCase) { "Metadata/NPC/Act1/Nessa" };
 
-    /// <summary>The NPC's tabs: its stock (<see cref="Stock"/>) in the first, then Nessa's gem tabs, each laid out from the
-    /// first free cell row by row, with item ids from <paramref name="nextId"/>. Unknown or unwritable item types
-    /// and items without room are skipped and named in <paramref name="notes"/>.</summary>
-    public static List<ShopTab> Tabs(string npcId, ItemCatalog items, Func<uint> nextId, List<string> notes, string dataFolder = "data")
+    /// <summary>The NPC's tabs: its stock (<see cref="Stock"/>) in the first, then the gem tabs of a gem vendor
+    /// (<see cref="GemVendorStock.Sells"/>), each laid out from the first free cell row by row, with item ids from
+    /// <paramref name="nextId"/>. <paramref name="gemStock"/> restricts the gem tabs to those BaseItemTypes rows (a gem
+    /// vendor's unlocked gems); null means every shop gem, which is only for the tests and tooling. Unknown or unwritable
+    /// item types and items without room are skipped and named in <paramref name="notes"/>.</summary>
+    public static List<ShopTab> Tabs(string npcId, ItemCatalog items, Func<uint> nextId, List<string> notes,
+        string dataFolder = "data", IReadOnlyCollection<int>? gemStock = null)
     {
         var currency = items.Find(Currency);
         if (currency is null) notes.Add($"no item type {Currency}: the stock has no prices");
@@ -87,10 +88,12 @@ static class NpcShops
         // Goods, then Goods2, Goods3 … for what does not fit.
         for (int page = 1; stock.Count > 0 || page == 1; page++)
             tabs.Add(new(page == 1 ? "Goods" : $"Goods{page}", Lay(stock, items, Priced, nextId, notes)));
-        if (SellsGems.Contains(npcId))
+        if (GemVendorStock.Sells(npcId))
             foreach (var (name, colour, support) in GemTabs)
             {
-                var gems = items.ShopGems(colour, support).Select(t => (t, 1, (Item?)null)).ToList();
+                var gems = items.ShopGems(colour, support)
+                    .Where(t => gemStock is null || gemStock.Contains(t.Row))
+                    .Select(t => (t, 1, (Item?)null)).ToList();
                 tabs.Add(new(name, Lay(gems, items, Priced, nextId, notes)));
                 notes.AddRange(gems.Select(g => $"no room in {name} for {g.t.Name}"));
             }
