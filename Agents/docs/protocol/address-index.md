@@ -345,6 +345,14 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x14190faf0` | Fn | config `networking_type` → network mode (0 predictive, 2 lockstep, 3 auto) |
 
 
+## Fixed instance-message writers ([02](02-instance-connection.md))
+
+| Address | Kind | What |
+|---|---|---|
+| `0x140e29080` / `0x14345ef10` | Fn/VT | C→S 0x020a writer / vtable: u16 opcode and one byte |
+| `0x141f935a0` / `0x1435bfe78` | Fn/VT | C→S 0x0059 writer / vtable: 16 bytes including opcode |
+| `0x142160020` | Fn | C→S 0x0059 sender; fixed 4/2/2/4/1/1-byte fields |
+
 ## Skills ([11](11-skills.md))
 
 | Address | Kind | What |

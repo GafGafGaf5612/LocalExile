@@ -151,4 +151,27 @@ every 0x1b with 0x1c, whose u32 must carry idle HNC bytes: see [07](07-latency-v
 4. decrypt and hex-log client bytes. On the first chunk starting `00 7D`: send 0x22, 0x2b9, 117 × 0xc0, 0x3d and,
    if `Game_GATEWAY_ENTER=1`, 0x21 (see [03](03-area-and-world.md), [04](04-player-entity.md), [05](05-inventories-and-ui.md))
 
+### Fixed-message boundaries across TCP reads
+
+The instance protocol has no message-length prefix; one TCP read can split a message at any byte.
+The primary 3.29.3b writers establish two additional complete client-message lengths:
+
+| Message | Bytes including opcode | Primary writer | Fields after the u16 opcode |
+|---|---|---|---|
+| C?S 0x020a | 3 | `0x140e29080` | one byte |
+| C?S 0x0059 | 16 | `0x141f935a0` | 4, 2, 2, 4, 1 and 1 bytes, unconditionally |
+
+The 0x020a send site is `0x140d3c409..0x140d3c43b`, with vtable `0x14345ef10`.
+The 0x0059 sender is `0x142160020`, with vtable `0x1435bfe78`.
+A five-byte observation of 0x0059 is a partial read, not its complete length.
+`KnownClientLength` now retains each incomplete prefix and consumes exactly one complete message.
+It leaves the existing four-byte 0x0099 and chat-channel handling intact.
+
+Tests split these messages at every byte, coalesce them with ticks and wide-string chat, and feed one byte per read.
+They also preserve the captured 0x0099 + two ticks + 0x01ef sequence as four separate messages.
+The same fixed-length implementation passed ten integrated native area transfers with subsequent chat intact.
+That evidence belongs to the larger Phrecia integration; this extracted branch is independently covered by tests.
+It does not prove which message caused the earlier intermittent wide-string error.
+Unknown message layouts still require primary evidence; their lengths are not guessed.
+
 Env: `Game_GATEWAY_PORT` (6112), `Game_INSTANCE_SECRET` (data/instance-secret.bin), `Game_GATEWAY_ENTER`.
