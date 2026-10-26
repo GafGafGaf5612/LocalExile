@@ -203,9 +203,8 @@ partial class Program
         lock (conn.Monsters) buff = conn.NextBuff++;
         ushort row = use.LifePerUse > 0 ? FlaskEffectLifeBuffRow : FlaskEffectManaBuffRow;
         var effect = new Flasks.Effect((byte)slot, buff, row, r.Life / r.Seconds, r.Mana / r.Seconds, now, now + r.Seconds,
-            r.ManaAtEnd, r.LifeStaysAtFull, r.ManaStaysAtFull);
-        if (conn.FlaskEffects.Start(effect) is { } replaced && FlaskBuffs)
-            await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, replaced.Buff), null);
+            r.ManaAtEnd, r.LifeStaysAtFull, r.ManaStaysAtFull, r.NoQueue);
+        conn.FlaskEffects.Start(effect);   // recovers at once or waits in its queue (Flasks.Effects)
         // Both rows are IsRecovery: 0x1c1 carries one u32 per GrantedStats entry, here base_life (or mana)
         // _recovery_per_minute_from_flask. Without it the client misread the message and showed no life change after it
         // (live 2026-10-20).

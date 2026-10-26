@@ -76,18 +76,43 @@ public class FlasksTests
     }
 
     [Fact]
-    public void Two_flasks_recover_together_and_a_second_use_of_one_replaces_it()
+    public void Recovery_flasks_queue_the_highest_rate_first()
+    {
+        // poewiki "Recovery from flasks": "Recovery flasks queue up if multiple flasks are active. The effect with the
+        // highest regeneration rate is always applied first."
+        var effects = new Flasks.Effects();
+        var small = Life(0, started: 0, buff: 1);                              // 70 over 3 s: 23.3 per second
+        var medium = new Flasks.Effect(1, 2, 5, 150 / 3.5, 0, 0.5, 4);         // 150 over 3.5 s: 42.9 per second
+        Assert.Null(effects.Start(small));
+        Assert.Equal(70.0 / 3 * 0.5, effects.Advance(0, 0.5).Life, 6);
+        effects.Start(medium);
+        // The faster one recovers now; the small one waits with its 2.5 s.
+        Assert.Equal(150 / 3.5, effects.Advance(0.5, 1.5).Life, 6);
+        Assert.Equal(2.5, effects.Remaining(small), 6);
+        // The medium one ends at 4 s; then the small one goes on for its 2.5 s, to 6.5 s.
+        var (life, _, ended) = effects.Advance(1.5, 5);
+        Assert.Equal(150 / 3.5 * 2.5 + 70.0 / 3, life, 6);
+        Assert.Equal([medium], ended);
+        (life, _, ended) = effects.Advance(5, 10);
+        Assert.Equal(70.0 / 3 * 1.5, life, 6);
+        Assert.Equal([small], ended);
+    }
+
+    [Fact]
+    public void Life_and_mana_queues_are_apart_and_some_effects_do_not_queue()
     {
         var effects = new Flasks.Effects();
-        Assert.Null(effects.Start(Life(0, started: 0, buff: 1)));
-        Assert.Null(effects.Start(Life(1, started: 0, buff: 2)));
-        Assert.Equal(140.0 / 3, effects.Advance(0, 1).Life, 6);
-
-        var replaced = effects.Start(Life(0, started: 1, buff: 3));
-
-        Assert.Equal(1, replaced!.Buff);
-        // Slot 1 has 2 s left, the new slot 0 effect 3 s.
-        Assert.Equal(70.0 / 3 * 2 + 70.0 / 3 * 3, effects.Advance(1, 10).Life, 6);
+        effects.Start(Life(0, started: 0, buff: 1));
+        effects.Start(Life(1, started: 0, buff: 2));
+        effects.Start(new Flasks.Effect(4, 3, 9, 0, 50 / 3.0, 0, 3));                       // mana: its own queue
+        effects.Start(new Flasks.Effect(2, 0, 0, 8, 0, 0, 10));                             // a suffix's extra life: no queue
+        effects.Start(new Flasks.Effect(3, 4, 9, 0, 10, 0, 3, ManaStays: true, NoQueue: true));   // Enduring
+        var (life, mana, _) = effects.Advance(0, 1);
+        Assert.Equal(70.0 / 3 + 8, life, 6);        // one small life flask at a time, and the extra life
+        Assert.Equal(50 / 3.0 + 10, mana, 6);       // the mana flask and the Enduring one together
+        // A second use of the same flask queues another effect.
+        effects.Start(Life(0, started: 1, buff: 5));
+        Assert.Equal(70.0 / 3 + 8, effects.Advance(1, 2).Life, 6);
     }
 
     [Fact]

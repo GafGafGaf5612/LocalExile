@@ -132,7 +132,9 @@ public class FlaskModsTests
         var gone = effects.KeepRunning(full, lifeFull: true, manaFull: true, now: 1);
         Assert.Equal([plain, foreboding], gone);
         Assert.True(effects.Any);
-        // One whose time is up ends even if it stays at full.
-        Assert.Equal([enduring], effects.KeepRunning([enduring], true, true, now: 5));
+        // One that stays at full still ends when its time is up.
+        var (_, _, done) = effects.Advance(1, 10);
+        Assert.Contains(enduring, done);
+        Assert.False(effects.Any);
     }
 }

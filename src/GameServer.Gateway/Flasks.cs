@@ -41,74 +41,115 @@ static class Flasks
             u68: seconds is double s ? BitConverter.SingleToUInt32Bits((float)s) : null);
 
     /// <summary>A flask's recovery under way: the flask-bar cell it came from, its buff (S→C 0x1c1; 0: none, the extra life
-    /// of a life flask's suffix) and how much life and mana it gives per second from <paramref name="Started"/> to
-    /// <paramref name="Ends"/> (connection clock seconds); mana that comes all at once when it runs out
-    /// (<paramref name="ManaAtEnd"/>), and whether it stays on a full pool (FlaskRecovery.Use).</summary>
+    /// of a life flask's suffix) and how much life and mana it gives per second for <paramref name="Ends"/> −
+    /// <paramref name="Started"/> seconds of recovery from <paramref name="Started"/> (connection clock seconds; a queued
+    /// effect waits, so it may end later); mana that comes all at once when it runs out (<paramref name="ManaAtEnd"/>),
+    /// whether it stays on a full pool, and whether it does not queue (FlaskRecovery.Use).</summary>
     public sealed record Effect(byte Slot, ushort Buff, ushort BuffRow, double LifePerSecond, double ManaPerSecond, double Started, double Ends,
-        double ManaAtEnd = 0, bool LifeStays = false, bool ManaStays = false)
+        double ManaAtEnd = 0, bool LifeStays = false, bool ManaStays = false, bool NoQueue = false)
     {
         /// <summary>Whether a full pool ends it: a life effect when life is full, a mana one when mana is (a hybrid one when
         /// both are), unless it stays at full.</summary>
         public bool EndsWhenFull(bool lifeFull, bool manaFull) =>
             (LifePerSecond == 0 || lifeFull && !LifeStays) && (ManaPerSecond == 0 && ManaAtEnd == 0 || manaFull && !ManaStays);
+
+        /// <summary>The queue it waits in (poewiki: "Recovery flasks queue up if multiple flasks are active. The effect with
+        /// the highest regeneration rate is always applied first"): life (a life or hybrid flask), mana, or none (the extra
+        /// life of a suffix, "Effect does not Queue").</summary>
+        public int Queue => NoQueue || Buff == 0 ? 0 : LifePerSecond > 0 ? 1 : 2;
+
+        /// <summary>Its regeneration rate in its queue.</summary>
+        public double Rate => Queue == 1 ? LifePerSecond : ManaPerSecond + (Ends > Started ? ManaAtEnd / (Ends - Started) : 0);
     }
 
-    /// <summary>The flasks recovering on one connection, at most one per flask-bar cell.</summary>
+    /// <summary>The flasks recovering on one connection. Life flask effects queue, the one with the highest rate recovering
+    /// while the others wait with the rest of their time; mana flask effects likewise; a use of a flask whose effect still
+    /// runs queues another.</summary>
     public sealed class Effects
     {
-        readonly List<Effect> _effects = [];
+        sealed class Running(Effect effect)
+        {
+            public Effect Effect { get; } = effect;
+            public double Remaining = Math.Max(0, effect.Ends - effect.Started);
+        }
+
+        readonly List<Running> _running = [];
+        readonly List<Running> _lastEnded = [];
         readonly Lock _lock = new();
+        const double Done = 1e-9;
 
         /// <summary>Whether any flask is recovering.</summary>
         public bool Any
         {
-            get { lock (_lock) return _effects.Count > 0; }
+            get { lock (_lock) return _running.Count > 0; }
         }
 
-        /// <summary>Starts an effect; a use of a flask whose effect is still running replaces it (the rest of the old one is
-        /// lost): the replaced effect, whose buff ends, or null. A flask's extra life (no buff) only replaces its own.</summary>
+        /// <summary>Starts an effect: it recovers at once, or waits in its queue. Nothing is replaced (null).</summary>
         public Effect? Start(Effect effect)
         {
-            lock (_lock)
-            {
-                var old = _effects.FirstOrDefault(e => e.Slot == effect.Slot && (e.Buff == 0) == (effect.Buff == 0));
-                if (old is not null) _effects.Remove(old);
-                _effects.Add(effect);
-                return old;
-            }
+            lock (_lock) _running.Add(new Running(effect));
+            return null;
+        }
+
+        /// <summary>The seconds of recovery an effect has left (0 when it is not running).</summary>
+        public double Remaining(Effect effect)
+        {
+            lock (_lock) return _running.FirstOrDefault(r => ReferenceEquals(r.Effect, effect))?.Remaining ?? 0;
         }
 
         /// <summary>The life and mana recovered between <paramref name="from"/> and <paramref name="to"/>, and the effects
-        /// that ended by <paramref name="to"/> (removed); an effect that runs out then gives its mana at the end too.</summary>
+        /// that ran out by <paramref name="to"/> (removed; one with mana at the end gives it then).</summary>
         public (double Life, double Mana, List<Effect> Ended) Advance(double from, double to)
         {
             double life = 0, mana = 0;
             List<Effect> ended = [];
+            void Run(Running r, double seconds)
+            {
+                life += r.Effect.LifePerSecond * seconds;
+                mana += r.Effect.ManaPerSecond * seconds;
+                r.Remaining -= seconds;
+                if (r.Remaining > Done) return;
+                mana += r.Effect.ManaAtEnd;
+                _running.Remove(r);
+                ended.Add(r.Effect);
+            }
             lock (_lock)
-                foreach (var e in _effects.ToList())
-                {
-                    double seconds = Math.Max(0, Math.Min(to, e.Ends) - Math.Max(from, e.Started));
-                    life += e.LifePerSecond * seconds;
-                    mana += e.ManaPerSecond * seconds;
-                    if (e.Ends <= to)
+            {
+                foreach (var r in _running.Where(r => r.Effect.Queue == 0).ToList())
+                    Run(r, Math.Min(r.Remaining, Math.Max(0, to - Math.Max(from, r.Effect.Started))));
+                foreach (int queue in new[] { 1, 2 })
+                    for (double t = from; t < to - Done;)
                     {
-                        mana += e.ManaAtEnd;
-                        _effects.Remove(e);
-                        ended.Add(e);
+                        var waiting = _running.Where(r => r.Effect.Queue == queue).ToList();
+                        var now = waiting.Where(r => r.Effect.Started <= t + Done).ToList();
+                        double nextStart = waiting.Where(r => r.Effect.Started > t + Done).Select(r => r.Effect.Started).DefaultIfEmpty(to).Min();
+                        if (now.Count == 0)
+                        {
+                            if (nextStart >= to) break;
+                            t = nextStart;
+                            continue;
+                        }
+                        // The highest rate first; of equal ones the earlier.
+                        var first = now.OrderByDescending(r => r.Effect.Rate).ThenBy(r => r.Effect.Started).First();
+                        double seconds = Math.Min(first.Remaining, Math.Min(nextStart, to) - t);
+                        Run(first, seconds);
+                        t += seconds;
                     }
-                }
+            }
             return (life, mana, ended);
         }
 
-        /// <summary>Of the effects a full pool ended (<paramref name="ended"/>), the ones that stay at a full pool or still
-        /// owe their mana at the end (<see cref="Effect.EndsWhenFull"/>) and have time left go back: the rest, which end.</summary>
+        /// <summary>Of the effects a full pool ended (<paramref name="ended"/>, from <see cref="End"/>), the ones that stay at
+        /// a full pool or still owe their mana at the end (<see cref="Effect.EndsWhenFull"/>) and have time left go back:
+        /// the rest, which end. (<paramref name="now"/>: unused, the time left decides.)</summary>
         public List<Effect> KeepRunning(List<Effect> ended, bool lifeFull, bool manaFull, double now)
         {
             lock (_lock)
             {
-                var back = ended.Where(e => e.Ends > now && !e.EndsWhenFull(lifeFull, manaFull)).ToList();
-                _effects.AddRange(back);
-                return [.. ended.Except(back)];
+                var back = _lastEnded.Where(r => r.Remaining > Done && !r.Effect.EndsWhenFull(lifeFull, manaFull)
+                    && ended.Any(e => ReferenceEquals(e, r.Effect)) && !_running.Contains(r)).ToList();
+                _running.AddRange(back);
+                return [.. ended.Where(e => !back.Any(r => ReferenceEquals(r.Effect, e)))];
             }
         }
 
@@ -117,9 +158,11 @@ static class Flasks
         {
             lock (_lock)
             {
-                List<Effect> ended = [.. _effects.Where(which)];
-                foreach (var e in ended) _effects.Remove(e);
-                return ended;
+                var ended = _running.Where(r => which(r.Effect)).ToList();
+                foreach (var r in ended) _running.Remove(r);
+                _lastEnded.Clear();
+                _lastEnded.AddRange(ended);
+                return [.. ended.Select(r => r.Effect)];
             }
         }
     }

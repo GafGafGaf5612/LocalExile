@@ -8,10 +8,12 @@ using GameServer.Core.Protocol.Instance;
 static class FlaskRecovery
 {
     /// <summary>A use: life and mana recovered over <paramref name="Seconds"/> and instantly, what it takes from the other
-    /// pool on use, the mana that comes all at once at the end instead (0: none), whether the effect stays on a full pool, and the extra
-    /// life a life flask's suffix recovers over 10 s when used below full life.</summary>
+    /// pool on use, the mana that comes all at once at the end instead (0: none), whether the effect stays on a full pool, the extra
+    /// life a life flask's suffix recovers over 10 s when used below full life, and whether it does not queue (Enduring:
+    /// "Effect is not removed when Unreserved Mana is Filled / Effect does not Queue").</summary>
     public sealed record Use(double Life, double Mana, double Seconds, double InstantLife, double InstantMana,
-        double RemovesLife, double RemovesMana, double ManaAtEnd, bool LifeStaysAtFull, bool ManaStaysAtFull, double ExtraLife);
+        double RemovesLife, double RemovesMana, double ManaAtEnd, bool LifeStaysAtFull, bool ManaStaysAtFull, double ExtraLife,
+        bool NoQueue = false);
 
     /// <summary>The extra life's duration: "Recover an additional #% of Life over 10 seconds if used while not on Full
     /// Life" (local_flask_additional_x%_life_recovery_per_second_over_10_seconds_if_not_on_full_life).</summary>
@@ -63,6 +65,7 @@ static class FlaskRecovery
             ManaAtEnd: manaAtEnd ? manaOverTime : 0,
             LifeStaysAtFull: character("life_flask_effects_are_not_removed_at_full_life") > 0,
             ManaStaysAtFull: L("local_flask_effect_not_removed_at_full_mana") > 0 || character("mana_flask_effects_are_not_removed_at_full_mana") > 0,
-            ExtraLife: life < maxLife ? maxLife * L("local_flask_additional_x%_life_recovery_per_second_over_10_seconds_if_not_on_full_life") / 100.0 : 0);
+            ExtraLife: life < maxLife ? maxLife * L("local_flask_additional_x%_life_recovery_per_second_over_10_seconds_if_not_on_full_life") / 100.0 : 0,
+            NoQueue: L("local_flask_effect_not_removed_at_full_mana") > 0);
     }
 }
