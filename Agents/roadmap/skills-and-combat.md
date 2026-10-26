@@ -103,6 +103,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   unarmed base in `AttackBaseCriticalStrike`): Slayer Overwhelm, Blind Prophet's Sightless and Behemoth Final Blow
   have native-verified base calculations, active-set isolation and cannot-crit gates (Status and
   protocol/11-skills.md §critical strikes).
+  Recheck the resolved stack's shared half-up midpoint natively; the original head's native checks remain historical.
   Recheck development generic/spell increases and rounding live after the input-consistency review fixes.
   Deliver their nodes through the separate ascendancy lifecycle; Slayer's per-nearby-enemy crit multiplier and
   Final Blow's remaining unarmed bonuses are separate work.

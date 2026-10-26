@@ -301,7 +301,12 @@ The panel's final `main_hand_critical_strike_chance` and the rolls share that re
 Generic and spell increases use the same effective raw inputs as `CharacterPlayerStats`: a development value,
 including zero, replaces that stat's complete passive/equipment/aura sum.
 The attack and pooled spell reference report those effective increased percentages, so `/crit` agrees with the rolls.
-The attack base feeds `DamageModel.CriticalStrikeChance`, followed by the existing integer-permyriad `Math.Round`.
+The attack base feeds the shared `DamageModel.CriticalStrikeChancePerMyriad` used by spells, rolls and panels.
+Nonnegative half permyriad values round up: a 650 base with +1% increased gives 657.
+Generic and applicable typed inputs are summed as signed `long` values before the final cap;
+large positive and negative inputs may cancel before clamping.
+Native checks recorded below belong to the original PR head `8c4c62d`.
+The shared half-up midpoint and resolved stack need a new native check; automated coverage establishes the contract.
 Signed increases are summed in 64 bits before their final stored percentage is clamped to the integer range.
 Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
 Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.

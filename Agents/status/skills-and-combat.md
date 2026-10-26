@@ -302,6 +302,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Generic/spell development increases replace the same complete raw input used by spell rolls, including aura sources.
   Attack/spell increased percentages and the pooled spell reference now follow those effective inputs.
   Automated regressions cover these replacements, signed sum bounds and shared integer rounding.
+  Attack and spell chances now share half-up permyriad rounding: 650 with +1% gives 657.
+  Native evidence below targets original head `8c4c62d`; the changed midpoint and resolved stack need native rechecking.
   Five follow-up native checks verify generic/spell input agreement and maximum/minimum integer saturation.
   Twelve native checks verified 830 → 800 → 900, increased chance → 1800, cannot-crit → zero,
   empty-set/unarmed behavior, weapon restoration and relog.

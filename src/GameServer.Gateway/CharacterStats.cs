@@ -173,8 +173,8 @@ static class CharacterStats
             SpellCriticalStrikeChancePct: b.SpellCriticalStrikeChancePct,
             CriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.CriticalStrikeMultiplier,
             SpellCriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.SpellCriticalStrikeMultiplier,
-            SpellCriticalStrikeChance: (int)Math.Round(DamageModel.CriticalStrikeChance(
-                DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct) * 100),
+            SpellCriticalStrikeChance: DamageModel.CriticalStrikeChancePerMyriad(
+                DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct),
             AccuracyPct: b.AccuracyPct,
             AccuracyMoreVsUniquePct: b.AccuracyMoreVsUniquePct,
             AccuracyMoreInCloseRangePct: b.AccuracyMoreInCloseRangePct,

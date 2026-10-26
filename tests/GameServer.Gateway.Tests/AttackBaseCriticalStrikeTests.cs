@@ -48,7 +48,7 @@ public class AttackBaseCriticalStrikeTests
     [Theory]
     [InlineData(500, 1, 505)]
     [InlineData(850, 1, 859)]
-    [InlineData(650, 1, 656)] // Exact midpoint follows DamageModel's existing round-to-even route.
+    [InlineData(650, 1, 657)] // Shared half-up contract for attacks and spells.
     [InlineData(550, 1, 556)]
     [InlineData(900, -100, 0)]
     [InlineData(900, -101, 0)]

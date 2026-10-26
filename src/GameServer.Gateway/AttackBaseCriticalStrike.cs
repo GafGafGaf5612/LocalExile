@@ -46,13 +46,16 @@ static class AttackBaseCriticalStrike
         ("global_critical_strike_chance_+%_while_holding_staff", w => w.Staff),
     ];
 
-    public static int IncreasedPct(WeaponProfile weapons, Func<string, int> raw)
+    public static long IncreasedSum(WeaponProfile weapons, Func<string, long> raw)
     {
         long increased = 0;
         foreach (var (stat, applies) in Increases)
             if (applies is null || applies(weapons)) increased += raw(stat);
-        return (int)Math.Clamp(increased, int.MinValue, int.MaxValue);
+        return increased;
     }
+
+    public static int IncreasedPct(WeaponProfile weapons, Func<string, int> raw) =>
+        (int)Math.Clamp(IncreasedSum(weapons, name => raw(name)), int.MinValue, int.MaxValue);
 
     /// <summary>
     /// The main hand's attack base critical strike chance (permyriad) before the global increased chance.
@@ -71,12 +74,12 @@ static class AttackBaseCriticalStrike
         return Math.Max(0, raw(UnarmedBaseStat));
     }
 
-    public static int Chance(bool weaponInMainHand, int weaponBase, int increasedPct, Func<string, int> raw)
+    public static int Chance(bool weaponInMainHand, int weaponBase, long increasedPct, Func<string, int> raw)
     {
         if (raw("global_cannot_crit") != 0 || raw("virtual_global_cannot_crit") != 0
             || raw("cannot_critical_strike_with_attacks") != 0) return 0;
-        return (int)Math.Round(DamageModel.CriticalStrikeChance(
-            OfMainHand(weaponInMainHand, weaponBase, raw), increasedPct) * 100);
+        return DamageModel.CriticalStrikeChancePerMyriad(
+            OfMainHand(weaponInMainHand, weaponBase, raw), increasedPct);
     }
 
     public static bool IsInput(string name) => name is WeaponOverrideStat or UnarmedBaseStat

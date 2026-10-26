@@ -104,17 +104,20 @@ partial class Program
         // Read just the critical inputs, without copying all sources or rebuilding the whole passive bonus.
         Dictionary<uint, int> devStats;
         lock (conn.Monsters) devStats = new(conn.PlayerStats);
-        int RawCritical(string name)
+        long RawCriticalSum(string name)
         {
             if (Stats.Key(name) is not uint key) return 0;
             if (devStats.TryGetValue(key, out int value)) return value;
-            return sources.GetValueOrDefault(key) + (name switch
+            return (long)sources.GetValueOrDefault(key) + (name switch
             {
                 "critical_strike_chance_+%" => aura.CriticalStrikeChancePct,
                 "spell_critical_strike_chance_+%" => aura.SpellCriticalStrikeChancePct - aura.CriticalStrikeChancePct,
                 _ => 0,
             });
         }
+        int RawCritical(string name) => (int)Math.Clamp(RawCriticalSum(name), int.MinValue, int.MaxValue);
+        long attackIncrease = AttackBaseCriticalStrike.IncreasedSum(activeWeapon, RawCriticalSum);
+        long spellIncrease = RawCriticalSum("critical_strike_chance_+%") + RawCriticalSum("spell_critical_strike_chance_+%");
         bonus = bonus with
         {
             FireResistance = bonus.FireResistance + aura.FireResistance,
@@ -130,9 +133,8 @@ partial class Program
             Evasion = bonus.Evasion + aura.Evasion,
             ArmourMorePct = aura.ArmourMorePct,
             EvasionMorePct = aura.EvasionMorePct,
-            CriticalStrikeChancePct = AttackBaseCriticalStrike.IncreasedPct(activeWeapon, RawCritical),
-            SpellCriticalStrikeChancePct = (int)Math.Clamp((long)RawCritical("critical_strike_chance_+%")
-                + RawCritical("spell_critical_strike_chance_+%"), int.MinValue, int.MaxValue),
+            CriticalStrikeChancePct = (int)Math.Clamp(attackIncrease, int.MinValue, int.MaxValue),
+            SpellCriticalStrikeChancePct = (int)Math.Clamp(spellIncrease, int.MinValue, int.MaxValue),
             AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
             MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
         };
@@ -154,10 +156,9 @@ partial class Program
             // Blind Prophet's Sightless) replaces the armed weapon's base, already with its local mods, and unarmed
             // melee uses its own Behemoth base. Neither base is a spell value; the spell route stays on SpellCriticalStrike.
             AttackCriticalStrikeChance = AttackBaseCriticalStrike.Chance(!activeWeapon.Unarmed,
-                activeWeapon.Critical, pools.CriticalStrikeChancePct, RawCritical),
-            SpellCriticalStrikeChance = (int)Math.Round(
-                DamageModel.CriticalStrikeChance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
-                    pools.SpellCriticalStrikeChancePct) * 100)
+                activeWeapon.Critical, attackIncrease, RawCritical),
+            SpellCriticalStrikeChance = SpellCriticalStrike.Chance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
+                RawCritical, playerIncrease: spellIncrease)
         };
         int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
         int rawAttack = pools.BlockChanceUncapped + shieldBlock;

@@ -127,6 +127,26 @@ public sealed class AttackBaseCriticalGatewayTests : IDisposable
     }
 
     [Fact]
+    public void Midpoint_pool_panel_and_supported_attack_use_the_same_half_up_chance()
+    {
+        var conn = Character(true);
+        Set(conn, AttackBaseCriticalStrike.WeaponOverrideStat, 650);
+        Set(conn, "critical_strike_chance_+%", 1);
+        conn.Pools = Pools(conn);
+        var gem = ItemCatalog.Create(Program.Items.Find("Metadata/Items/Gems/SkillGemCyclone")!);
+        var body = ItemCatalog.Create(Program.Items.Find("Metadata/Items/Armours/BodyArmours/BodyStr1")!) with
+        { Sockets = [new(SocketColour.White, gem)] };
+        PlayerInventories.For(_name, Program.Items).Add(PlayerInventories.BodyArmour, 0, 0, body);
+        Assert.Equal(657, conn.Pools.AttackCriticalStrikeChance);
+        var shown = (Dictionary<uint, int>)Method("CharacterPlayerStats").Invoke(null, [conn])!;
+        Assert.Equal(657, shown[Program.Stats.Key("main_hand_critical_strike_chance")!.Value]);
+        Assert.Equal(657, (int)Method("SupportedCriticalChance").Invoke(null, [conn, Program.GemSkillIdPool.Value[0]])!);
+        Assert.Equal(657, SpellCriticalStrike.Chance(650, name => name == "critical_strike_chance_+%" ? 1 : 0));
+        Assert.True(SpellCriticalStrike.Hits(657, 656));
+        Assert.False(SpellCriticalStrike.Hits(657, 657));
+    }
+
+    [Fact]
     public void A_weapon_in_the_inactive_set_does_not_make_the_active_empty_hand_armed()
     {
         var conn = Character(false);

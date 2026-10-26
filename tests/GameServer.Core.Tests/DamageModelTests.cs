@@ -85,6 +85,7 @@ public class DamageModelTests
     [InlineData(830, 50, 12.45)]
     [InlineData(0, 200, 0)]
     [InlineData(500, 10000, 100)]
+    [InlineData(650, 1, 6.57)]
     [InlineData(500, int.MaxValue, 100)]
     [InlineData(500, int.MinValue, 0)]
     [InlineData(0, int.MaxValue, 0)]
