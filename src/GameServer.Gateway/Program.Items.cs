@@ -722,6 +722,7 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x002a place {place}: refused ({why})");
             return;
         }
+        if (done.Row == PlayerInventories.Flask) done = done with { Placed = EmptyIfEquippedInHostileArea(conn, items, done.Placed) };
         var d = done.Displaced;
         uint target = PlayerInventories.InventoryId(done.Row);   // may differ from the clicked one (off hand → main hand)
         if (done.Merged || done.Rest is not null) { await SendMerged(remote, stream, ciphers, items, done); return; }

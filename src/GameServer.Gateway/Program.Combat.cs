@@ -141,6 +141,7 @@ partial class Program
         bool critical = conn.Pools.AttackCriticalStrikeChance > 0
             && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
         if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
+        if (critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
         lock (conn.Monsters)
         {
             if (m.Life == 0) return;
@@ -564,6 +565,7 @@ partial class Program
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
+            if (critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
             await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
@@ -722,6 +724,7 @@ partial class Program
                     if (!committed) await Task.Delay(16);
                 }
                 if (!committed) return;
+                if (critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
                 if (hit is { } applied && target is not null)
                     await NotifyMonsterHit(remote, stream, ciphers, conn, step.TargetId, target, applied, damage,
                         $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
@@ -909,8 +912,7 @@ partial class Program
             lock (conn.Monsters) have = conn.Experience;
             if (have < needed) await GainExperience(remote, stream, ciphers, conn, needed - have, $"quest: {m.Label} killed, level {level}");
         }
-        await GainFlaskCharges(remote, stream, ciphers, conn, Flasks.KillCharges(m.Rarity, Environment.GetEnvironmentVariable("Game_FLASK_KILL_CHARGES")),
-            $"{m.Rarity} {m.Label} 0x{id:x} killed");
+        await GainKillCharges(remote, stream, ciphers, conn, m.Rarity, $"{m.Rarity} {m.Label} 0x{id:x} killed");
         await DropLoot(remote, stream, ciphers, conn, m, at);
     }
 

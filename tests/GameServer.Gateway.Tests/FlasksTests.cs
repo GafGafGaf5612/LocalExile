@@ -48,14 +48,10 @@ public class FlasksTests
     [Fact]
     public void Charges_come_back_up_to_the_maximum()
     {
-        // Any kill fills every flask.
-        Assert.Equal(21, Flasks.Gain(LifeFlask(0), SmallLife, Flasks.KillCharges(MonsterRarity.Normal)).Charges);
+        // A town fills every flask (int.MaxValue); a gain never goes past the maximum.
         Assert.Equal(21, Flasks.Gain(LifeFlask(3), SmallLife, int.MaxValue).Charges);
-        // Game_FLASK_KILL_CHARGES=rarity: a few, more for rarer monsters.
-        Assert.Equal(1, Flasks.Gain(LifeFlask(0), SmallLife, Flasks.KillCharges(MonsterRarity.Normal, "rarity")).Charges);
-        Assert.Equal(21, Flasks.Gain(LifeFlask(20), SmallLife, Flasks.KillCharges(MonsterRarity.Rare, "rarity")).Charges);
-        Assert.True(Flasks.KillCharges(MonsterRarity.Unique, "rarity") > Flasks.KillCharges(MonsterRarity.Rare, "rarity"));
-        Assert.True(Flasks.KillCharges(MonsterRarity.Magic, "rarity") > Flasks.KillCharges(MonsterRarity.Normal, "rarity"));
+        Assert.Equal(21, Flasks.Gain(LifeFlask(20), SmallLife, 6).Charges);
+        Assert.Equal(7, Flasks.Gain(LifeFlask(1), SmallLife, 6).Charges);
     }
 
     static Flasks.Effect Life(byte slot, double started, ushort buff = 1) =>

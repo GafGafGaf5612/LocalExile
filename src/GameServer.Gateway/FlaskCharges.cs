@@ -1,10 +1,86 @@
+using GameServer.Core.Protocol.Instance;
+
 /// <summary>
 /// A flask's charges with its mods and the character's (Agents/docs/protocol/13-items.md §8b): how many a use takes and
-/// how many it holds. Path of Building Item.lua: charges used = floor(base × (1 + the flask's local_charges_used_+%)),
-/// then the character's flask_charges_used_+% multiplies it; maximum = base + local_extra_max_charges.
+/// how many it holds, and how flasks gain them. Path of Building Item.lua: charges used = floor(base × (1 + the flask's
+/// local_charges_used_+%)), then the character's flask_charges_used_+% multiplies it; maximum = base +
+/// local_extra_max_charges. Gains follow poewiki (Flask, "Flask charges"): kills by rarity, increased flask charges
+/// gained and the flask's increased charge recovery multiplying, partial charges kept, crits with one shared cooldown.
 /// </summary>
 static class FlaskCharges
 {
+    /// <summary>Game_FLASK_CHARGES=full: the old shortcut for local play, every kill fills every flask and a flask put on
+    /// the bar keeps its charges. Otherwise (default) the game's rules.</summary>
+    public static bool FullShortcut => Environment.GetEnvironmentVariable("Game_FLASK_CHARGES") == "full";
+
+    /// <summary>A flask put on the flask bar: in a hostile area (not a town or a hideout) it has no charges (poewiki: "If a
+    /// player equips a flask within a hostile area, the flask has zero active charges by default"); Game_FLASK_CHARGES=full
+    /// keeps them.</summary>
+    public static Item WhenEquipped(Item flask, bool safeArea) =>
+        FullShortcut || safeArea || flask.Charges == 0 ? flask : flask with { Charges = 0 };
+
+    /// <summary>What a normal monster's kill gives (poewiki: "a normal monster grants 1 charge").</summary>
+    public const double KillBase = 1;
+
+    /// <summary>The charges a kill gives every flask: <see cref="KillBase"/> × (1 + the monster rarity mod's
+    /// monster_slain_flask_charges_granted_+%: Mods.dat MonsterMagic6 +250, MonsterRare6 +500, MonsterUnique6 +1000),
+    /// 1 / 3.5 / 6 / 11 as poewiki gives them. Acts 6 to 10 and maps give fewer (poewiki), by an amount the tables do not
+    /// have: not applied.</summary>
+    public static double KillCharges(MonsterRarity rarity, ModCatalog mods) =>
+        KillBase * (100 + (rarity == MonsterRarity.Normal ? 0 : RarityIncrease(rarity, mods))) / 100.0;
+
+    static int RarityIncrease(MonsterRarity rarity, ModCatalog mods) =>
+        mods.ById($"Monster{rarity}6")?.Stats.FirstOrDefault(s => s.Id == "monster_slain_flask_charges_granted_+%")?.Min ?? 0;
+
+    /// <summary>How much more a flask gains from any source: (1 + the character's flask_charges_gained_+%) × (1 + the
+    /// flask's local_charges_added_+%, "increased Charge Recovery"); poewiki: these "stack multiplicatively".</summary>
+    public static double GainMultiplier(IReadOnlyDictionary<string, int> local, Func<string, int> character) =>
+        Math.Max(0, 100 + character("flask_charges_gained_+%")) / 100.0 * Math.Max(0, 100 + local.GetValueOrDefault("local_charges_added_+%")) / 100.0;
+
+    /// <summary>The cooldown shared by every "gain a flask charge on critical strike" effect: 0.1 s, which the game's
+    /// 0.033 s server frames make 0.132 s (poewiki); not affected by cooldown recovery.</summary>
+    public const double CritCooldown = 0.132;
+
+    /// <summary>The partial charges of one connection's flasks (poewiki: "tracked with at least two decimals") and when a
+    /// crit last gave a charge.</summary>
+    public sealed class Carry
+    {
+        readonly Dictionary<uint, double> _partial = [];
+        readonly Lock _lock = new();
+        double _lastCrit = double.NegativeInfinity;
+
+        /// <summary>Adds <paramref name="charges"/> to the flask's partial charges: the whole charges to give it now (the
+        /// rest, to two decimals, is kept for the next gain).</summary>
+        public int Take(uint flask, double charges)
+        {
+            lock (_lock)
+            {
+                double total = Math.Round(_partial.GetValueOrDefault(flask) + charges, 2);
+                int whole = (int)Math.Floor(total);
+                _partial[flask] = Math.Round(total - whole, 2);
+                return whole;
+            }
+        }
+
+        /// <summary>The partial charges a flask holds.</summary>
+        public double Partial(uint flask)
+        {
+            lock (_lock) return _partial.GetValueOrDefault(flask);
+        }
+
+        /// <summary>Whether a crit at <paramref name="now"/> may give a charge (the shared cooldown is over); if so, the
+        /// cooldown starts.</summary>
+        public bool TryCrit(double now)
+        {
+            lock (_lock)
+            {
+                if (now - _lastCrit < CritCooldown - 1e-9) return false;   // clock seconds are doubles
+                _lastCrit = now;
+                return true;
+            }
+        }
+    }
+
     /// <summary>The flask's charges per use and maximum with its local mods (<paramref name="local"/>, by Stats.dat Id)
     /// and the character's stats (<paramref name="character"/>; null: none, e.g. for refills, which only need the
     /// maximum).</summary>

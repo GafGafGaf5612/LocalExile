@@ -2,8 +2,8 @@ using GameServer.Core.Protocol.Instance;
 
 /// <summary>
 /// Life and mana flasks (Agents/docs/protocol/13-items.md §8): a use (C→S 0x70) spends ComponentCharges PerCharge and
-/// recovers Flasks.dat LifePerUse / ManaPerUse evenly over RecoveryTime. Charges come back in full on every kill
-/// (<see cref="KillCharges"/>), in towns and hideouts and on resurrection.
+/// recovers Flasks.dat LifePerUse / ManaPerUse evenly over RecoveryTime (with its mods: FlaskRecovery). Charges come back
+/// from kills and other sources (FlaskCharges), and in full in towns and hideouts and on resurrection.
 /// </summary>
 static class Flasks
 {
@@ -39,14 +39,6 @@ static class Flasks
     public static byte[] Buff(uint player, ushort buff, ushort row, byte slot, double? seconds, IReadOnlyList<uint>? values = null) =>
         InstanceEntities.AddBuff(player, buff, row, player, slot, values,
             u68: seconds is double s ? BitConverter.SingleToUInt32Bits((float)s) : null);
-
-    // shortcut: the real game's charges per kill are not known yet; "rarity" grows with rarity.
-    /// <summary>Charges every flask gains when the player kills a monster: all it holds (int.MaxValue, the default), or
-    /// with <paramref name="mode"/> "rarity" (Game_FLASK_KILL_CHARGES) 1 normal, 2 magic, 5 rare, 10 unique.</summary>
-    public static int KillCharges(MonsterRarity rarity, string? mode = null) => mode != "rarity" ? int.MaxValue : rarity switch
-    {
-        MonsterRarity.Magic => 2, MonsterRarity.Rare => 5, MonsterRarity.Unique => 10, _ => 1,
-    };
 
     /// <summary>A flask's recovery under way: the flask-bar cell it came from, its buff (S→C 0x1c1; 0: none, the extra life
     /// of a life flask's suffix) and how much life and mana it gives per second from <paramref name="Started"/> to

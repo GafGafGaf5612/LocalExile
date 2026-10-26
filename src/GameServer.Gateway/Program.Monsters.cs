@@ -275,6 +275,7 @@ partial class Program
                 $"0x01b1 player mana {mana} ({(blocked ? $"+{conn.Pools.ManaGainedOnBlock} on block" : "no block gain")})");
         if (life == 0)
             await PlayerDied(remote, stream, ciphers, conn, $"0x0055 death screen ({conn.League ?? "?"} league)");
+        else if (!blocked) await GainFlaskChargesWhenHit(remote, stream, ciphers, conn);
     }
 
     // A spawned monster's id from the argument if it is 0x hex, else the last spawned one.
