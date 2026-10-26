@@ -8,8 +8,14 @@ using GameServer.Core.Protocol.Instance;
 /// Faster Casting from Yeena after Sharp and Cruel. Only gems the client's shop list has (<see cref="ItemCatalog.ShopGems"/>)
 /// are sold, so Vaal, awakened and placeholder gems stay out.
 /// </summary>
-sealed class GemVendorStock(ItemCatalog items, QuestRewardCatalog rewards, NpcCatalog npcs)
+sealed class GemVendorStock(ItemCatalog items, QuestRewardCatalog rewards, NpcCatalog npcs, SkillCatalog skills)
 {
+    static readonly string[] CurrencyIds =
+    [
+        "Metadata/Items/Currency/CurrencyIdentification", "Metadata/Items/Currency/CurrencyUpgradeToMagic",
+        "Metadata/Items/Currency/CurrencyRerollMagic", "Metadata/Items/Currency/CurrencyUpgradeRandomly",
+        "Metadata/Items/Currency/CurrencyUpgradeToRare",
+    ];
     /// <summary>Lilly's gem shop opens with this flag (a6q4 "Fallen from Grace").</summary>
     public const string LillyUnlock = "UnlockedLillyGemShop";
 
@@ -70,4 +76,16 @@ sealed class GemVendorStock(ItemCatalog items, QuestRewardCatalog rewards, NpcCa
     {
         if (items.Find(id) is { } type && sellable.Contains(type.Row)) rows.Add(type.Row);
     }
+
+    /// <summary>A vendor's price for one unlevelled gem: the currency by the gem's level-1 character level requirement
+    /// (the official vendor tiers: 1–7 Scroll of Wisdom, 8–15 Orb of Transmutation, 16–27 Orb of Alteration, 28–37 Orb of
+    /// Chance, 38+ Orb of Alchemy), one of it.</summary>
+    public (string Currency, int Amount) Price(ItemCatalog.BaseType type)
+    {
+        int required = items.Gem(type) is { Variants.Count: > 0 } gem ? skills.PlayerLevelReq(gem.Variant(0).Effect, 1) : 0;
+        return (CurrencyIds[Tier(required)], 1);
+    }
+
+    public static int Tier(int requiredLevel) =>
+        requiredLevel <= 7 ? 0 : requiredLevel <= 15 ? 1 : requiredLevel <= 27 ? 2 : requiredLevel <= 37 ? 3 : 4;
 }

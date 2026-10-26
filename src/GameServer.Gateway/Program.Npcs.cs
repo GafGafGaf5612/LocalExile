@@ -504,12 +504,14 @@ partial class Program
         if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
         var notes = new List<string>();
         var items = ItemsOf(conn);
-        // A gem vendor's stock follows the character's completed quests, class and Siosa/Lilly (GemVendorStock).
-        var gemStock = GemVendorStock.Sells(npc.Npc.Id)
-            ? new GemVendorStock(Items, QuestRewardCatalog.Load(), Npcs.Value)
-                .Stock(npc.Npc.Id, conn.ClassRow, conn.QuestFlagsSnapshot())
+        // A gem vendor's stock follows the character's completed quests, class and Siosa/Lilly (GemVendorStock), and its
+        // gems cost the currency of their level-1 requirement tier.
+        var gemVendor = GemVendorStock.Sells(npc.Npc.Id)
+            ? new GemVendorStock(Items, QuestRewardCatalog.Load(), Npcs.Value, Skills)
             : null;
-        var tabs = NpcShops.Tabs(npc.Npc.Id, Items, items.NewItemId, notes, gemStock: gemStock);
+        var gemStock = gemVendor?.Stock(npc.Npc.Id, conn.ClassRow, conn.QuestFlagsSnapshot());
+        var tabs = NpcShops.Tabs(npc.Npc.Id, Items, items.NewItemId, notes, gemStock: gemStock,
+            gemPrice: gemVendor is null ? null : gemVendor.Price);
         int shopRow = Npcs.Value.TalkSource(npc.Npc).ShopRow;
         foreach (var n in notes) Console.WriteLine($"[gateway] {remote} shop {npc.Npc.Name}: {n}");
         // One manager-1 inventory per tab (S→C 0xc0), then 0x8c lists them with their names.

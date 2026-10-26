@@ -177,8 +177,10 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   price from the inventory and then the stash, in one transaction (`ItemMoves.BuyToInventory`); with no room or not
   enough to pay, nothing happens.
 - **Prices**: item Base flag bit 7: u8 n + n × (u32 item type hash, compact uint amount), stored in the Base's +0xb8 list.
-  Ours: 1 Scroll of Wisdom for everything (`NpcShops`). The tooltip shows it under Cost, in red when the player can't pay
-  it: the client decides that itself, no server message needed (live 2026-10-20).
+  Ours: 1 Scroll of Wisdom for the ordinary stock; a gem vendor's unlevelled gems cost the currency of their level-1
+  character level requirement (`GemVendorStock.Price`): 1–7 Scroll of Wisdom, 8–15 Orb of Transmutation, 16–27 Orb of
+  Alteration, 28–37 Orb of Chance, 38+ Orb of Alchemy, one of it. The tooltip shows it under Cost, in red when the player
+  can't pay it: the client decides that itself, no server message needed (live 2026-10-20).
 - **Stock** is the server's (NPCShop only names shops): `NpcShops.Stock`.
 - **Several tabs**: one manager-1 inventory per tab (S→C 0xc0, ids from 0x400), all listed in 0x8c with their names
   (the m × (compact uint index, wstr name, u8) list). `NpcShops.Tabs`: the NPC's stock in "Goods", and a gem vendor
