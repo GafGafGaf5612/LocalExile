@@ -32,6 +32,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
+  Mana per complete group of final Strength now has native raw-source/gear controls and automated pool coverage.
+  Raw-source reservation refresh and clamping have decrypted wire coverage; recheck active auras natively.
+  See [Status](../status/skills-and-combat.md) and [11](../docs/protocol/11-skills.md) section 4.
+  Mental Conditioning's other flags, mana-to-armour conversion and Phrecia selection remain separate work.
   Ordinary one-use cooldown recovery now shares the native base/rate and a server base-time budget, with atomic
   preflight before action side effects.
   Initial Dash recovery, early raw rejection, pause and native mid-cooldown rate changes pass live alongside

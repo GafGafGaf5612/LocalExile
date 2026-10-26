@@ -114,7 +114,12 @@ partial class Program
     static async Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         string? log = null)
     {
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool), log);
+        await Send(remote, stream, ciphers, [], log, atGate: () =>
+        {
+            // Sample both values together after earlier sends, including a queued pool/reservation rebuild.
+            lock (conn.Monsters)
+                return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool);
+        });
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
 

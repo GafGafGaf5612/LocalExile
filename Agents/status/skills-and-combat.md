@@ -11,6 +11,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   The evidence uses a new unascended character with raw inputs; it does not establish Behemoth selection.
   See [Fortification](../docs/game/fortification.md) for the formula, source coverage and remaining extensions.
 
+- Mana per final Strength (#287): `X_mana_per_4_strength` joins the ordinary flat mana bucket before increases.
+  Thirteen native controls verify complete four-Strength groups, signed inputs, source removal and relog.
+  A fresh Witch's 56 mana becomes 80 at 14/15 Strength, 88 at 16 Strength and 110 with 25% increased mana.
+  Maximum-mana attack lightning follows the final pool; display-only Strength overrides cannot feed it back.
+  Idle aura reservation and current-mana clamps have decrypted command-wire coverage, including the send gate.
+  Native controls use raw inputs and synthetic gear; the other Mental Conditioning flags and class remain separate.
+  See [11](../docs/protocol/11-skills.md) section 4.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks
@@ -260,8 +268,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   the two target-conditional effects at the roll), and the final rating value is
   sent as `main_hand_accuracy_rating` / `off_hand_accuracy_rating` for the Offence panel;
   armour and evasion also take their flat/increased passives and the base equipped armour pieces (body, helmet,
-  gloves, boots), while life and mana still ignore passives and items (attack speed is handled below)
-  ([11](../docs/protocol/11-skills.md) §4).
+  gloves, boots); life and mana take their existing flat/increased passive and active item sources.
+  See [11](../docs/protocol/11-skills.md) §4.
 - **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack
   speed is summed into the client's `main_hand_attack_speed_+%`;
   dual wielding adds PoB's 10% more and the server's unarmed attack uses the same final value.
