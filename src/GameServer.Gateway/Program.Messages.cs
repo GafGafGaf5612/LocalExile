@@ -528,6 +528,7 @@ partial class Program
                     await PushOutOfCollision(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);
+                    await conn.Commands!.Reply($"Area generated at Seed: {conn.Seed}");
                     // An area the Gateway does not generate itself (ServerLevels) runs on the client's layout alone.
                     if (!ServerLevels.IsSupported(conn.Layout.Id) && !CaptureTour.Active(CharacterName(conn)))
                         await conn.Commands!.Reply(ServerLevels.UnsupportedMessage);
