@@ -1,6 +1,6 @@
 """The current Path of Exile client version, from GGG's patch server (standard library only; used by CI).
 
-    python -I scripts/ci/patch_version.py                         # version=3.29.3.3, web_root=..., exe_url=...
+    python -I scripts/ci/patch_version.py                         # version=3.29.3.3, exe_url=...
     python -I scripts/ci/patch_version.py --github-output "$GITHUB_OUTPUT"
 
 The patch server (patch.pathofexile.com:12995) answers the request `01 07` with: id 0x02, a 32-byte hash, then the
@@ -13,10 +13,10 @@ import re
 import socket
 import struct
 import sys
-from urllib.parse import urlparse
 
 HOST, PORT = "patch.pathofexile.com", 12995
-VERSION = re.compile(r"[0-9]+(\.[0-9]+){2,3}")
+# ASCII digits only (\d would also take other scripts' digits); fullmatch, so no trailing newline either.
+WEB_ROOT = re.compile(r"https://patch\.poecdn\.com/([0-9]{1,4}(?:\.[0-9]{1,4}){2,3})/", re.ASCII)
 
 
 def read_reply(sock):
@@ -43,20 +43,22 @@ def parse_reply(data):
 
 
 def version_of(web_root):
-    """The version in a versioned CDN web root; refuses anything but an https poecdn.com root."""
-    url = urlparse(web_root)
-    parts = [p for p in url.path.split("/") if p]
-    if url.scheme != "https" or not (url.hostname or "").endswith(".poecdn.com") or len(parts) != 1 \
-            or not VERSION.fullmatch(parts[0]) or not web_root.endswith("/"):
-        raise ValueError(f"unexpected web root: {web_root!r}")
-    return parts[0]
+    """The version in the CDN web root. Only exactly https://patch.poecdn.com/<digits.digits.digits[.digits]>/ is
+    accepted: the root arrives over plain TCP, and anything else (another host, a query, a fragment, a newline that
+    would inject a second key=value into $GITHUB_OUTPUT) is refused rather than echoed or followed."""
+    match = WEB_ROOT.fullmatch(web_root) if isinstance(web_root, str) else None
+    if match is None:
+        raise ValueError("unexpected web root from the patch server (not https://patch.poecdn.com/<version>/)")
+    return match.group(1)
 
 
 def current(host=HOST, port=PORT, timeout=15):
     with socket.create_connection((host, port), timeout=timeout) as sock:
         sock.sendall(bytes([0x01, 0x07]))
         web_root, _ = parse_reply(read_reply(sock))
-    return {"version": version_of(web_root), "web_root": web_root, "exe_url": web_root + "PathOfExile.exe"}
+    version = version_of(web_root)
+    # Rebuilt from the validated version: the raw root is never written out.
+    return {"version": version, "exe_url": f"https://patch.poecdn.com/{version}/PathOfExile.exe"}
 
 
 def main():
