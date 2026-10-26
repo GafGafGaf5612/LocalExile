@@ -126,7 +126,9 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
   This is a separate boolean from the `0xe1` deposit flags; do not use deposit flag 0x02 for withdrawals.
   The Gateway limits ordinary withdrawals to one normal inventory stack; bulk 1 withdraws as much of the clicked
   stack as fits, topping up existing stacks before using free cells.
-  Native right-click verification of the bulk path is pending; wire-layout and transfer/reload tests cover both modes.
+  Real-client/Gateway logs confirm both modes: bulk 0 takes 40 from a slot holding 218, leaving 178;
+  bulk 1 takes 178 as four stacks of 40 and one of 18.
+  Wire-layout, capacity, transaction rollback and transfer/reload tests cover the remaining edge cases.
 - **0xe1** (vtable `0x1435c00f8`, write `0x141f97810`): Ctrl + click on an inventory item that has an affinity tab
   (currency, maps, gems …) while the stash is open, whatever tab is shown: the client names the tab. Read from live bytes
   (2026-10-20, Scroll of Wisdom, Armourer's Scrap, Orbs of Alteration and Transmutation, the Currency tab at index 5):

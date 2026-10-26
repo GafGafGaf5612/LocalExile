@@ -10,6 +10,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   Empty legacy resonators migrate to stackable types with 1–4 independent yellow/orange Delve sockets.
   Automated layout/merge/reload coverage; confirmed working by the user in the real client.
   See protocol/18-stash.md.
+- **Currency withdrawal (#249).** Ctrl + left click takes at most one normal inventory stack from the clicked slot;
+  Ctrl + right click uses the separate `0xe3` bulk boolean to take as much of that stack as fits.
+  Real-client/Gateway logs confirm bulk 0 takes 40 from 218, leaving 178;
+  bulk 1 takes 178 as four stacks of 40 and one of 18.
+  Automated tests cover quantity limits, existing-stack top-ups, partial/full inventory, rollback and save reloads.
 - Stash: the Stash in Lioneye's Watch at (319, 272) opens the stash panel (S→C 0x7b kind 1) with the account's 11 tabs
   of the character's league (normal, premium, quad, currency, essence, fragment, map, flask, gem) from the tab list in
   S→C 0x21; each tab's contents come on the client's request (C→S 0xc7 → 0xc0 row 26 + 0xc8);
@@ -29,10 +34,6 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-- **Currency withdrawal (#249).** Ctrl + left click takes at most one normal inventory stack from the clicked slot;
-  Ctrl + right click uses the separate `0xe3` bulk boolean to take as much of that stack as fits.
-  Automated quantity, partial/full inventory, rollback and reload tests cover both modes;
-  the native builder/writer establish the field layout, and user verification in the real client is pending.
 - **Lifeforce and crafting cells.** Currency-tab lifeforce slots hold 65,535 each without wrapping.
   Delve crafting cells accept equipment, support swaps and retain their contents after reload.
   Lioneye's Watch now creates a guild stash beside its personal stash.
