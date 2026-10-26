@@ -79,10 +79,15 @@ So:
 3. `AreaPopulation.LoadPoints` fits each candidate room: anchored on the room doodad whose model is rarest in the
    capture, it tries each captured doodad of that model × the 8 turns/flips, and keeps a placement when ≥ 70% of the
    room's doodads land within 2 cells of a captured doodad of the same model. The points go through the same placement.
+   A room with too few doodads for that (fewer than 4 match) uses its actual placement instead, when the recorder
+   captured it in `<area>_seed<seed>.rooms.json` (12-quests.md, opening encounter): The Tidal Island's `medicine_boat`
+   rooms have only two snowfall emitters around Hailrake's `mapboss`.
 
 The Coast seed 1 (live): `scavenger_camp_2a` at (1241, 598) turned [0 −1; 1 0], 32/33 doodads; `mapboss` (1135, 630),
 its `cannibalfire` (1173, 679); 8 bonfire rooms (12/12 or 21/21 doodads). The doodad angles agree (room angle + π/2).
 Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bosspack` around her.
+The Tidal Island seed 1 (live 2026-10-25): `medicine_boat_1` captured at (138, 345), code 3; Hailrake stands at its
+`mapboss` (265, 437) on the shipwreck, with `1_1_2a-bosspack` there and at `%area%-bosspack` (292, 420).
 
 ## 4. Open
 
