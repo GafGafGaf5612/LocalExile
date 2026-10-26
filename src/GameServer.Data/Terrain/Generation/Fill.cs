@@ -277,7 +277,7 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
         return ((1 - w) * SlotShift[so] + (1 - h) * SlotShift[so + 2], (1 - w) * SlotShift[so + 1] + (1 - h) * SlotShift[so + 3]);
     }
 
-    static bool IsFillSlot(RoomSlot s) => s.Tag.Length == 0 && s.Key!.Edges.All(e => e is null) && s.Key.Grounds.Distinct().Count() == 1;
+    internal static bool IsFillSlot(RoomSlot s) => s.Tag.Length == 0 && s.Key!.Edges.All(e => e is null) && s.Key.Grounds.Distinct().Count() == 1;
 
     bool Wild(string? g) => g is null || (Flags(g) & 8) != 0;
 
@@ -305,28 +305,10 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
                 if (IsFillSlot(slot))
                 {
                     if (Entry(bx, by) is not null) continue;
-                    string? g = key.Grounds[0];
-                    if (Group(g) is { } group && group.Tiles.Count != 0)
+                    if (FillSlot(room, col, row, o, x + gx, y + gy, h) is int th)
                     {
-                        var (tile, to) = FillSlotTile(group.Tiles, room, col, row, o, x + gx, y + gy);
-                        if (tile is not null)
-                        {
-                            int placed = DungeonTiler.Compose(to, o);
-                            var (tw, th) = Orientation.Size(to, tile.Width, tile.Height);
-                            var (tx, ty) = Shift(o, tw, th);
-                            int px = x + gx + tx, py = y + gy + ty;
-                            grid.Place(tile, placed, px + offsetX, py + offsetY, h);
-                            TilePlaced?.Invoke(tile, placed, px, py);
-                            for (int v = 0; v <= th; v++)
-                                for (int u = 0; u <= tw; u++)
-                                {
-                                    ref var c = ref grid.Corner(px + u + offsetX, py + v + offsetY);
-                                    if ((c.Flags & 1) == 0 || c.Ground == g || (Wild(c.Ground) && Wild(g)))
-                                        grid.SetGround(px + u + offsetX, py + v + offsetY, g);
-                                }
-                            row += th - 1;
-                            continue;
-                        }
+                        row += th - 1;
+                        continue;
                     }
                 }
                 var list = store.Candidates(slot.Tag, key.Rotate(o));
@@ -364,6 +346,32 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
             for (int u = 0; u <= rw; u++)
                 if (grid.Corner(x + u + offsetX, y + v + offsetY).Ground is null) grid.SetGround(x + u + offsetX, y + v + offsetY, fillGround);
         grid.CheckGrounds = check;
+    }
+
+    /// <summary>A fill slot (no tag or edges, one ground) of <paramref name="room"/> at (<paramref name="col"/>,
+    /// <paramref name="row"/>), the slot's cell turned by the room at view (<paramref name="sx"/>, <paramref name="sy"/>):
+    /// a fill tile for its ground that fits (<see cref="FillSlotTile"/>), turned by the room, its vertices taking the
+    /// slot's ground. Returns the tile's turned height, or null when the ground has no fill tile that fits.</summary>
+    internal int? FillSlot(RoomDef room, int col, int row, int o, int sx, int sy, short h)
+    {
+        string? g = room.Slots[col, row]!.Key!.Grounds[0];
+        if (Group(g) is not { } group || group.Tiles.Count == 0) return null;
+        var (tile, to) = FillSlotTile(group.Tiles, room, col, row, o, sx, sy);
+        if (tile is null) return null;
+        int placed = DungeonTiler.Compose(to, o);
+        var (tw, th) = Orientation.Size(to, tile.Width, tile.Height);
+        var (tx, ty) = Shift(o, tw, th);
+        int px = sx + tx, py = sy + ty;
+        grid.Place(tile, placed, px + offsetX, py + offsetY, h);
+        TilePlaced?.Invoke(tile, placed, px, py);
+        for (int v = 0; v <= th; v++)
+            for (int u = 0; u <= tw; u++)
+            {
+                ref var c = ref grid.Corner(px + u + offsetX, py + v + offsetY);
+                if ((c.Flags & 1) == 0 || c.Ground == g || (Wild(c.Ground) && Wild(g)))
+                    grid.SetGround(px + u + offsetX, py + v + offsetY, g);
+            }
+        return th;
     }
 
     /// <summary>The fill tile of a fill slot (<c>0x141fe89e0</c> with <c>0x141fea670</c>): <c>Next(total)</c>, its

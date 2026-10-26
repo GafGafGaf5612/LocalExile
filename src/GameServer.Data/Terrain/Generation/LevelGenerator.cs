@@ -296,14 +296,14 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         for (int i = 0; i < records.Count; i++)
         {
             var r = records[i];
-            // 0x14203c900 / 0x14203f890: a subgraph whose parent is the first (+0x92 = 0) takes its share of the rows.
-            if (r.Parent <= 0) pool.Spread(0, rng);
             notes.Add($"subgraph {i}: {r.Path} at ({r.X}, {r.Y}) {r.W}x{r.H}");
             int vx = r.X + r.Margins.Left, vy = r.Y + r.Margins.Top, vw = r.W - r.Margins.Left - r.Margins.Right, vh = r.H - r.Margins.Top - r.Margins.Bottom;
             TileStore store;
             if (r.Path.EndsWith(".tgr", StringComparison.OrdinalIgnoreCase))
             {
-                // The tile graph's special nodes do not take the pool's rows (not ported).
+                // 0x14203f890: a subgraph whose parent is the first (+0x92 = 0) takes its share of the rows. The tile
+                // graph's special nodes do not take them (not ported).
+                if (r.Parent <= 0) pool.Spread(0, rng);
                 if (pool.Share != 0) throw new NotSupportedException($"{r.Path}: extra feature rooms in a tile graph subgraph are not ported");
                 var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout, Labyrinth = Labyrinth, Master = r.Parent < 0 ? Master : null, Town = Town };
                 var (_, _, tgFills) = gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
@@ -395,7 +395,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         _store = new TileStore(files, files.TileList(TerrainText.Resolve(masterPath, master["TileSet"])));
         _fills = master.TryGetValue("FillTiles", out var gft) ? files.FillTiles(TerrainText.Resolve(masterPath, gft)) : [];
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
-        var map = Layout(r.Path, r.Orientation, masterPath, master, unit, index == 0);
+        var map = Layout(r.Path, r.Orientation, masterPath, master, unit, index == 0, r.Parent <= 0);
         // Room k starts at the view's corner plus (unit − overlap) × its cell.
         int step = unit - map.Overlap;
         _ox = r.X + r.Margins.Left;
@@ -498,11 +498,14 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary><c>0x14203c900</c> for a graph of several nodes: the exist rolls (as for tile graphs), then the rooms
     /// on a grid of the graph's size in room units (<c>0x1421038d0</c>).</summary>
-    DungeonMap Layout(string graphPath, int graphOrientation, string masterPath, Dictionary<string, string> master, int unit, bool primary)
+    DungeonMap Layout(string graphPath, int graphOrientation, string masterPath, Dictionary<string, string> master, int unit, bool primary,
+        bool share = true)
     {
         var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         // 0x142031d10: the Vaal side area pick, as on tile graphs; the first graph that keeps an entrance clears it.
-        if (TileGraphGenerator.Prepare(graph, rng, VaalSideArea, Hideout, primary, Labyrinth)) VaalSideArea = false;
+        if (TileGraphGenerator.Prepare(graph, rng, VaalSideArea, Hideout, primary, pool, Labyrinth)) VaalSideArea = false;
+        // Then a subgraph whose parent is the first (+0x92 = 0) takes its share of the rows, the side area's included.
+        if (share) pool.Spread(0, rng);
         string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
         _graphGrounds = (Ground(graph.TopGround), Ground(graph.BottomGround), Ground(graph.DefaultGround));
         notes.Add($"dungeon graph {graphPath}: {graph.Nodes.Count} nodes, {graph.Edges.Count} edges after exist rolls");
@@ -628,8 +631,10 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// <c>0x141fe89e0</c> tilises the injected room there: every 'k' / 'f' slot column by column, whose entry is still
     /// empty, takes a tile of its tag and key (<c>Next(total)</c>, up to five tries until it fits, <c>0x141ffbbe0</c>) at
     /// the slot height plus the room's; then the room's vertex grounds, and every vertex of the room still without a
-    /// ground takes the ground at the mission tile's corner. Plain slots (the fill rooms' path), nested mission tiles
-    /// and the pool's own tiles (+0x90) are not ported.</summary>
+    /// ground takes the ground at the mission tile's corner. A plain slot (no tag or edges, one ground) on an empty entry
+    /// first tries a fill tile of the master's FillTiles for its ground, as a fill room's (<see cref="Fill.FillSlot"/>).
+    /// Ground checks (map +0x10) are off while the slots are tiled. Nested mission tiles and the pool's own tiles
+    /// (+0x90) are not ported.</summary>
     void TiliseInjected(RoomDef room, int o, int x, int y, int height)
     {
         var (w, h) = Orientation.Size(o, room.Width, room.Height);
@@ -642,6 +647,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             }
         _grid.MarkHeights(height != 0);
         string? ground = _grid.Corner(x, y).Ground;
+        bool check = _grid.CheckGrounds;
+        _grid.CheckGrounds = false;
+        var fill = new Fill(files, rng, _grid, 0, 0, _grid.Width, _grid.Height, _store, _fills, [], notes);
         for (int col = 0; col < room.Width; col++)
             for (int row = 0; row < room.Height; row++)
             {
@@ -652,8 +660,15 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 int tx = x + gx + sw * SlotShift[so] + sh * SlotShift[so + 2];
                 int ty = y + gy + sw * SlotShift[so + 1] + sh * SlotShift[so + 3];
                 var key = slot.Key.Rotate(o);
-                if (slot.Tag.Length == 0 && key.Edges.All(e => e is null) && key.Grounds.Distinct().Count() == 1)
-                    throw new NotSupportedException($"{room.Path}: plain slots of an injected room (0x141fe89e0's fill rooms) are not ported");
+                if (Fill.IsFillSlot(slot) && _fills.Count != 0)
+                {
+                    if (_grid[tx, ty] is not null) continue;
+                    if (fill.FillSlot(room, col, row, o, x + gx, y + gy, (short)(slot.Height + height)) is int th)
+                    {
+                        row += th - 1;
+                        continue;
+                    }
+                }
                 var list = _store.Candidates(slot.Tag, key);
                 if (list.Count == 0) throw new NotSupportedException($"{room.Path}: slot ({col}, {row}) {key} tag '{slot.Tag}' has no tile (mission tiles and the pool's tiles are not ported here)");
                 if (_grid[tx, ty] is not null) continue;
@@ -679,7 +694,6 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                         var (dx, dy) = Orientation.MapVertex(o, u, v, room.Width, room.Height);
                         _grid.ForceGround(x + dx, y + dy, g);
                     }
-        bool check = _grid.CheckGrounds;
         _grid.CheckGrounds = true;
         for (int v = 0; v <= h; v++)
             for (int u = 0; u <= w; u++)

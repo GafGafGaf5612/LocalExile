@@ -116,7 +116,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     {
         Graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         if (orientation != 0) throw new NotSupportedException($"turning a tile graph (orientation {orientation}) is not ported");
-        Prepare(Graph, rng, vaalSideArea, Hideout, primary, Labyrinth);
+        Prepare(Graph, rng, vaalSideArea, Hideout, primary, Pool, Labyrinth);
         notes.Add($"graph {graphPath}: {Graph.Nodes.Count} nodes, {Graph.Edges.Count} edges after exist rolls");
         var cells = new VoronoiCells(Graph);
         cells.Jitter(rng);
@@ -399,7 +399,8 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// <summary><c>0x14203f890</c> up to the layout (the dungeon graphs' <c>0x14203c900</c> makes the same draws), for
     /// the subgraph record <paramref name="primary"/> says is the first (the passes that take the record index). True
     /// when a Vaal side area entrance was kept (the generator's +0xa is then cleared).</summary>
-    internal static bool Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea, bool hideout, bool primary, LabyrinthPass? labyrinth = null)
+    internal static bool Prepare(TileGraph graph, LevelRandom rng, bool vaalSideArea, bool hideout, bool primary, ExtraRoomPool? pool,
+        LabyrinthPass? labyrinth = null)
     {
         foreach (var n in graph.Nodes)
         {
@@ -420,7 +421,10 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             var parts = n.Tag.Split(',');
             if (parts.Length > 1) n.Tag = parts[(int)rng.Next((uint)parts.Length)];
         }
-        bool sideArea = SideAreas(graph, rng, vaalSideArea);
+        bool? sideArea = SideAreas(graph, rng, vaalSideArea);
+        // Without side area nodes the rolled Vaal side area becomes the VaalSideArea extra terrain feature (its room
+        // `vaal_side_area.arm`) and +0xa stays set, so every later graph without nodes adds it again.
+        if (sideArea is null && vaalSideArea) (pool ?? throw new InvalidOperationException("no extra room pool")).Add("VaalSideArea", 1);
         // 0x142032760 / 0x142033e30: the Labyrinth's pass (secret nodes, the gold door, boss overrides).
         labyrinth?.Run(graph, rng);
         // 0x142035350 / 0x142034e60, for the first record only: a node with "subarea=hideout…" or
@@ -454,7 +458,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         UniqueGroups(graph, rng);
         // 0x142003bc0: stable sort by priority, highest first.
         graph.Nodes = [.. graph.Nodes.OrderByDescending(n => n.Priority)];
-        return sideArea;
+        return sideArea == true;
     }
 
     /// <summary><c>0x142030790</c> after the exist rolls, with <c>0x14203a720</c>: a node's first description starting
@@ -543,8 +547,8 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// first node loses its "unique…" descriptions, gets exist 100 and "accessible". Every other grouped node gets exist
     /// 0 with its descriptions cleared, so the exist rolls remove it (a tagged one stays as a plain node). The
     /// dungeon graphs' copy (<c>0x142031d10</c>, from <c>0x14203c900</c>) groups through the same <c>0x14203a410</c>.
-    /// True when an entrance was kept.</summary>
-    static bool SideAreas(TileGraph graph, LevelRandom rng, bool vaalSideArea)
+    /// True when an entrance was kept, null when the graph has no side area nodes.</summary>
+    static bool? SideAreas(TileGraph graph, LevelRandom rng, bool vaalSideArea)
     {
         var groups = new List<List<GraphNode>>();
         foreach (var n in graph.Nodes)
@@ -557,12 +561,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             groups[g].Add(n);
         }
         groups.RemoveAll(g => g.Count == 0);
-        if (groups.Count == 0)
-        {
-            // The generator then adds the VaalSideArea extra terrain feature row itself (not ported).
-            if (vaalSideArea) throw new NotSupportedException("a Vaal side area without sidearea nodes is not ported");
-            return false;
-        }
+        if (groups.Count == 0) return null;
         if (vaalSideArea)
         {
             var group = groups[(int)rng.Next((uint)groups.Count)];

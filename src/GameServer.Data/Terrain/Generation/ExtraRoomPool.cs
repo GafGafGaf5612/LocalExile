@@ -26,32 +26,37 @@ sealed class ExtraRoomPool
     /// <summary>The shrines placed (+0x14a).</summary>
     public int ShrinesPlaced;
 
-    readonly RawDat? _table;
+    readonly Func<string, byte[]?> _read;
+    RawDat? _table;
 
-    ExtraRoomPool(RawDat? table) => _table = table;
+    ExtraRoomPool(Func<string, byte[]?> read) => _read = read;
+
+    RawDat Table => _table ??= new RawDat(_read("Data/ExtraTerrainFeatures.datc64") ?? throw new FileNotFoundException("Data/ExtraTerrainFeatures.datc64"));
 
     /// <summary><c>0x14204a570</c>'s adds (<c>0x141f28aa0</c>: by id): every rolled feature that is a row, in roll order.
     /// The features without a row (the Vaal side area flag, the discoverable hideout, the shrine count) stay out.</summary>
     public static ExtraRoomPool Create(Func<string, byte[]?> read, IEnumerable<ExtraTerrainFeatures.Feature> features)
     {
         var list = features.ToList();
-        if (list.All(f => f.Name.StartsWith('(') || f.Name == ExtraTerrainFeatures.VaalSideArea)) return new(null) { Shrines = Count(list, "(shrines)") };
-        var table = new RawDat(read("Data/ExtraTerrainFeatures.datc64") ?? throw new FileNotFoundException("Data/ExtraTerrainFeatures.datc64"));
-        var pool = new ExtraRoomPool(table) { Shrines = Count(list, "(shrines)") };
+        var pool = new ExtraRoomPool(read) { Shrines = Count(list, "(shrines)") };
         foreach (var f in list)
-        {
-            if (f.Name.StartsWith('(') || f.Name == ExtraTerrainFeatures.VaalSideArea) continue;
-            int row = table.Find(r => table.String(r, 0) == f.Name);
-            if (row < 0) throw new InvalidDataException($"no ExtraTerrainFeatures row {f.Name}");
-            pool.Add(pool.Row(row), f.Count);
-        }
+            if (!f.Name.StartsWith('(') && f.Name != ExtraTerrainFeatures.VaalSideArea) pool.Add(f.Name, f.Count);
         return pool;
 
         static int Count(List<ExtraTerrainFeatures.Feature> l, string name) => l.Where(f => f.Name == name).Sum(f => f.Count);
     }
 
-    ExtraFeatureRow Row(int row) => new(_table!.String(row, 0), _table.StringList(row, 8), _table.StringList(row, 0x18),
-        _table.I32List(row, 0x39), _table.Ref8(row, 0x49), _table.Bool(row, 0x61));
+    ExtraFeatureRow Row(int row) => new(Table.String(row, 0), Table.StringList(row, 8), Table.StringList(row, 0x18),
+        Table.I32List(row, 0x39), Table.Ref8(row, 0x49), Table.Bool(row, 0x61));
+
+    /// <summary>AddExtraTerrainFeature by id: <see cref="Add(ExtraFeatureRow, int)"/> for the row named
+    /// <paramref name="name"/>.</summary>
+    public void Add(string name, int count)
+    {
+        int row = Table.Find(r => Table.String(r, 0) == name);
+        if (row < 0) throw new InvalidDataException($"no ExtraTerrainFeatures row {name}");
+        Add(Row(row), count);
+    }
 
     /// <summary><c>0x141d8ae40</c>: <paramref name="count"/> copies of the row at the end of the list (its tiles go to the
     /// pool's own tile store, +0x90), then the row it links to, as many times. The Shrine row is capped by the shrine
