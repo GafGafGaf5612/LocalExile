@@ -195,14 +195,14 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
         return !(a is not null && b is not null && (Flags(a) & 5) == 0 && (Flags(b) & 5) == 0);
     }
 
+    // 0x141feb970's retries take out only the list's first entry of the same tile (or room) and line orientation: a
+    // second line of the same tile stays (2_8_3's fill, 2026-10-27).
     static void Without(List<Choice> list, Choice c, ref int total)
     {
-        for (int i = list.Count - 1; i >= 0; i--)
-            if (list[i].Tile == c.Tile && list[i].Room == c.Room && list[i].Orientation == c.Orientation)
-            {
-                total -= list[i].Weight;
-                list.RemoveAt(i);
-            }
+        int i = list.FindIndex(e => e.Tile == c.Tile && e.Room == c.Room && e.Orientation == c.Orientation);
+        if (i < 0) return;
+        total -= list[i].Weight;
+        list.RemoveAt(i);
     }
 
     /// <summary><c>0x141fec8f0</c> with no height given: the middle (rounded up) of the heights at the area's four corner

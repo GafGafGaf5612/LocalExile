@@ -39,7 +39,8 @@ static class CaptureTour
         var unknown = new List<string>();
         foreach (var raw in lines)
         {
-            var line = raw.Split('#')[0].Trim();
+            // A comment starts the line or follows whitespace: some ids end in '#' (1_Labyrinth_DG_end_bottleneck_#).
+            var line = System.Text.RegularExpressions.Regex.Replace(raw, @"(^|\s)#.*$", "").Trim();
             if (line.Length == 0) continue;
             var f = line.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
             if (f.Length < 2 || !uint.TryParse(f[1], out uint seed) || seed == 0) { unknown.Add(line); continue; }

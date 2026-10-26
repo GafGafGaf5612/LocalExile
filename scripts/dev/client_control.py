@@ -3,6 +3,7 @@
     .venv/Scripts/python.exe scripts/dev/client_control.py game:status
     .venv/Scripts/python.exe scripts/dev/client_control.py game:open
     .venv/Scripts/python.exe scripts/dev/client_control.py login:offline --password-stdin
+    .venv/Scripts/python.exe scripts/dev/client_control.py login:saved
     .venv/Scripts/python.exe scripts/dev/client_control.py character:list
     .venv/Scripts/python.exe scripts/dev/client_control.py character:play:OfflineWitch
     .venv/Scripts/python.exe scripts/dev/client_control.py command "/hit physical 100"
@@ -65,7 +66,7 @@ def normalize(request):
         raise ValueError("command must be a string")
     if command.startswith("character:play:"):
         result.update(command="character:play", name=command[len("character:play:"):])
-    elif command.startswith("login:"):
+    elif command.startswith("login:") and command != "login:saved":
         result.update(command="login", account=command[len("login:"):])
     return result
 
@@ -310,6 +311,20 @@ class ClientControl:
                                "login result")
             if result.get("loginState") != 3:
                 raise RuntimeError(f"Local login rejected (result {result.get('lastLoginResult')})")
+            return self.wait(lambda s: s.get("screen") == "characters", "character selection")
+        if command == "login:saved":
+            # The client's own remembered login (Remember Password): no password goes through this bridge.
+            current = self.ready()
+            if current.get("screen") == "game":
+                self.execute({"command": "character:select"})
+                current = self.status()
+            if current.get("loginState") != 0 or current.get("screen") != "login":
+                self.rpc("logout")
+                self.wait(lambda s: s.get("screen") == "login" and s.get("loginState") == 0, "login screen")
+            self.rpc("connectSaved", port=int(os.environ.get("Game_LOGIN_PORT", "20493")))
+            result = self.wait(lambda s: s.get("loginState") == 3 or s.get("lastLoginResult") is not None, "login result")
+            if result.get("loginState") != 3:
+                raise RuntimeError(f"Saved login rejected (result {result.get('lastLoginResult')})")
             return self.wait(lambda s: s.get("screen") == "characters", "character selection")
         if command == "character:list":
             return self.rpc("characters")

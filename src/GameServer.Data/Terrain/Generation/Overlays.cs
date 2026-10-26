@@ -46,7 +46,9 @@ sealed class Overlays
         _excluded = new byte[width * height];
         foreach (var r in rooms)
             if (r.Descriptions.Count != 0) Mark(r.X, r.Y, r.X + r.Width, r.Y + r.Height, 0x10);
-        foreach (var r in rooms)
+        // Bits 4 and 8 only for a room with a tag (room data +0x20: the length of the tag string at +0x10); the Azmeri
+        // arena's untagged maze rooms take overlays inside them.
+        foreach (var r in rooms.Where(r => r.Room.Tag.Length != 0))
         {
             if (r.Room.Overlap == roomOverlap)
             {

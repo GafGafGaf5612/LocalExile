@@ -469,7 +469,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         foreach (var line in TerrainText.Lines(TerrainText.Decode(d)))
         {
             var t = TerrainText.Tokenize(line);
-            if (t.Count == 1 && t[0].Quoted) groups[t[0].Text] = current = [];
+            if (t.Count == 1 && t[0].Quoted) current = groups.TryGetValue(t[0].Text, out var had) ? had : groups[t[0].Text] = [];
             // An edge type header ("path.et" mode, 0x141fef920) files its lines under its own key (+0x40 / +0xc0),
             // which no ported stage reads.
             else if (t.Count == 2 && t[0].Quoted && t[1].IsNumber) current = null;

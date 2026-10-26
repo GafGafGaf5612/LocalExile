@@ -983,7 +983,8 @@ are the doodads, `0x142042fae`).
    `0x142000c50` counting tile origins in the spot, checked after the limit; Act 3 / 8 temple door overlays use
    `!door`, `!carpet`). Each room in each allowed orientation adds its key to the group with that key and
    flags; the same room again only ORs in the orientation bit. An exclusion grid marks rooms of nodes with
-   descriptions (0x10), rooms (4 shrunk by RoomOverlap, 8), tagged tiles (2), the extra room pool's placed rooms
+   descriptions (0x10), rooms with a tag (4 shrunk by RoomOverlap, 8: room data +0x20, the length of the tag at +0x10;
+   the Azmeri arena's untagged maze rooms take overlays, `AzmeriLeagueBoss`, 2026-10-27), tagged tiles (2), the extra room pool's placed rooms
    (0x20: the unique rooms and shrines placed so far, pool +0x60, `0x141d8abb0`) and placed overlays (1); a cell takes an overlay only if the group's flags have every bit set there. Per group (FileOrder),
    every view position (every third when a key edge has size 3) where it fits (`0x141ffef60`: no excluded bits, the
    area holds tiles lying inside it (`0x141d850b0`); `0x141ffa7b0`: the four corner grounds match (`0x141ffa470`), the
@@ -1003,7 +1004,9 @@ are the doodads, `0x142042fae`).
    (`0x141ffb870`) when that was 1 × 1 without (non-wildcard) edges, else is emptied and filled. That keeps the
    columns and statues at the temple door overlays' `f` corners (`1_3_8_1`, `2_8_12_1`, `2_8_7_1_`; 2026-10-25).
 5. **Fill** (`Fill.cs`, `0x141fef070`): map +0x10 off; every empty entry, row by row, gets a fill for the ground of its
-   top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"; a line may end with an orientation,
+   top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"; a name given twice adds its lines to
+   the first group, Vinktar Square's "BlackInsideWall"; a failed choice takes out only the list's first entry of the
+   same tile and orientation, `2_8_3`; a line may end with an orientation,
    I, R90 … FR270, which the choice keeps (`0x141fecd00` then draws nothing; 8 without one): Act 4's
    `lava_thick_magma_v01_01.tdt" I`): tiles only → `Next(total)` and the
    orientation (`0x141fecd00`: fixed; square `Next(8)` where it fits; else `Next(840)` over the fitting codes), a failed
