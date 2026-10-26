@@ -93,7 +93,12 @@ orientation mask; `0x1420457f0` adds its record. `2_8_5` (The Bath House) seed 1
 `hideout_baths_claim.dgr` is record 1 (draws #7, #8). A `.tgr` primary with sub-areas (the Act 9
 `oasis_foothills_*.tgr` and the hideout claim) goes through the subgraph records like a `.dgr`'s (2026-10-25,
 `2_9_4`): the tile graph is laid out on the shared map at its view, and `0x142044f30` gives it its outer ground
-(`0x14201db80` without height fixing) and outer buffer with its own TileSet and FillTiles.
+(`0x14201db80` without height fixing) and outer buffer with its own TileSet and FillTiles. After the queue, slot 1
+goes over the extra room pool's rows (generator +0x88, §3b): a row naming a world area (+0x51) adds it the same way
+(`0x1420471f0`; a row with rooms passes its first room as the topology, which names no Topologies row, so the world
+area's topologies are drawn from: `Next(count)`, `Next(840)`; its further rooms add records of their own, not
+ported). MapWorldsGorge 758818886 (HarvestEncounter → HarvestLeague, `night_garden.dgr` as record 1; 2026-10-26).
+Then a sub-area named by stat 0x13ae (not ported).
 
 **Secondary records** (`0x142047e50`, `DungeonTiler.PlaceSecondaries`): each record after the first gets parent
 +0x92 = its index ("Secondary graph: {}") and goes to a corner among those right of (x + w + 1, y) and below (x,
@@ -130,8 +135,8 @@ linked row is not added either. Row layout (0x66 bytes): id +0, rooms +8 (.arm),
 +0x29, room orientations +0x39 (8 = any), linked row +0x49 (8 bytes), WorldAreas +0x51, oversize flag +0x61 (rooms
 for telepad injectors, `0x142101e50`), an i32 +0x62. Before the records (`0x142049d10`), with rows in the pool,
 +0x140 = `0x14204bfa0` of the top graph: the sum of its subgraphs' masters' +0x152 (taken to be ExtraFeatureWeight,
-default 0: no trace drew the roll below). Each subgraph whose parent is record 0 (`0x14203c900` / `0x14203f890`)
-takes its share (`0x141d8bba0`, +0x144): all rows when +0x140 is 0, else rows × weight / +0x140 plus one when
+default 0: no trace drew the roll below). Each subgraph whose parent is record 0 (`0x14203c900` / `0x14203f890`,
+after its Vaal side area pick, so a VaalSideArea row added there is shared too) takes its share (`0x141d8bba0`, +0x144): all rows when +0x140 is 0, else rows × weight / +0x140 plus one when
 `Next(+0x140)` falls below the remainder, and +0x140 drops by the weight. The layout's mission rooms take the rows
 (§3c2 "Mission rooms"); `0x141d8b2c0` removes a row (and counts the share down).
 
@@ -177,7 +182,10 @@ For a one-node graph (towns, hideouts):
    follows, each bit a group of fields the file gives itself: bit 0 its mesh (u32) and vertex data, bit 3 its tag and
    key (u32 tag then the 0x2e key bytes, as a plain tile's from offset 8), bit 4 its size and hull, bit 5 its
    orientation restriction, bit 1 fields the generator does not read (its own `.tmd` is in the string table). The
-   port reads bits 1, 3 and 4 (4 only with the base's size) (2026-10-25: `2_8_2_1`'s `sewerwall_thin_entrance_v02_01_nofeature.tdt`, flags 0x0a; MapWorldsCourtyardOfWasting's `stonewall_to_venice_convex_combinationfence_01.tdt`, 0x1a;
+   port reads bits 1, 3 and 4 (4 only with the base's size). The u16 flags word follows those groups (bit 3: after
+   the key; bit 4 alone: after a 2-byte size), then the walk data as a plain tile's (the restriction byte only with
+   bit 5) when bit 4 is set; without bit 4 the tile has the base tile's walk data (MapWorldsCourtyardOfWasting's
+   walkability now matches its capture; 2026-10-26) (2026-10-25: `2_8_2_1`'s `sewerwall_thin_entrance_v02_01_nofeature.tdt`, flags 0x0a; MapWorldsCourtyardOfWasting's `stonewall_to_venice_convex_combinationfence_01.tdt`, 0x1a;
    `2_7_12_1`'s `WallChest_*.tdt` over the Vaal chest tiles) and stops on the others.
 5. **Fill**: the recorded cells plus every still-empty entry (ground "default"), sorted by (x, y), so column by
    column (`0x14212d520`); each empty one gets a tile from the master's FillTiles (.gft: quoted ground name, then
@@ -437,8 +445,9 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    `0x141fe89e0` tilises the room there, column by column: each 'k' / 'f' / 's' slot whose entry is still empty takes
    a tile of its tag and key (`Next(total)`, up to five tries until `0x141ffbbe0` lets it fit) at slot height + the
    mission tile's; then the room's vertex grounds, and every vertex of it still without a ground takes the ground at
-   the mission tile's corner. Not ported there: plain slots (fill rooms through master FillTiles), nested mission
-   tiles, the pool's own tiles (+0x90, "Could not find matching feature tile"), the description and rectangle
+   the mission tile's corner. Ground checks (map +0x10) are off while the slots are tiled. A plain slot (no tag or
+   edges, one ground) on an empty entry first takes a fill tile for its ground from the master's FillTiles, as a
+   fill room's (`Fill.FillSlot`; `vaal_side_area.arm`, 2026-10-26). Not ported there: nested mission tiles, the pool's own tiles (+0x90, "Could not find matching feature tile"), the description and rectangle
    records (`0x141d83f10`, tiler +0x18 +0x30 / +0x60).
 3. **Shared slots** (`0x1420f6b70`, by x then y): without tags and with a plain key (`0x1420ee9e0`) they go to the
    fill (with the slot's accessible bit, +0x5c bit 0); else their tags are tried in `Next(total)` order (each weighted by its store total) and then the untagged
@@ -472,7 +481,11 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    records the tile's cell once per entry of the FillTiles object's +0x140 list (below) whose edge type is on 1 to
    3 of the key's sides (tiler +0x40), for the edge fill. Not ported: the description objects (`0x141d83f10`).
 3b. **Door tiles** (TileSet has "door" tiles, tiler +0x38; with RoomOverlap): `0x1420ed9f0` marks each room's exits
-   (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots; `0x1420f4010`: per doorway the orientation, the
+   (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots, at the view's corner plus (unit − overlap) × the
+   room's cell (marking at the record's corner without the margins lost 204 logged loads, 2026-10-26). Open:
+   `2_8_2_2` 698178759 stops at a doorway the client does not have ("No door found that fits 1x1 at (63, 49)": a
+   1 × 1 thin-wall slot beside a 2 × 1 shared slot, both marked 6; the client tile there is the same wall and no
+   door draws follow); `0x1420f4010`: per doorway the orientation, the
    sizes from the store's "door" sizes for its edges (a set sorted by (w, h), `0x141d8c620`; the port kept them in
    filing order until 2026-10-25, which picked other door sizes in 17 logged loads), `Next(n)` + shuffle, the key resized with points at none, the
    middle of the unit for odd units else `Next(len − size + 1)`, `Next(total)`; `0x1420f4ae0` for the big ones.
@@ -576,7 +589,8 @@ entries, tile hash 1294234863, all 4 134 draws up to the doodads, every room of 
   y, +0x48 w, +0x4c h), master (+0x50, the graph's MasterFile), flags (+0x90, bit 0 .dgr), parent (+0x92),
   orientation (+0x97). For a .dgr: w × h = (RoomUnitSize − RoomOverlap) × the graph's Size + RoomOverlap, swapped for
   an odd orientation, plus the margins. The margins are OuterBufferSize's up to four numbers (`0x142a06390`): top
-  (+0x170), right (+0x171, else top), bottom (+0x172, else top), left (+0x173, else right). The top graph is record
+  (+0x170), right (+0x171, else top), bottom (+0x172, else top), left (+0x173, else right); the port's master reader
+  kept only the first number until 2026-10-26 (ClassicTreasury_Cosmic's `3 6 6 3`: 19 × 19, not 16 × 16). The top graph is record
   0 at (0, 0); the tile map is its size.
 - **Graph nodes** (`0x142105a70` → `0x1421052e0`): descriptions = graph (.dgr / .tgr) or FileGroups group, width,
   height ("Could not parse special graph node", "Bad special graph node size" over 1000; swapped for an odd graph
@@ -651,8 +665,11 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    first such; N from '1', none = 1) are side area entrances, grouped by N (The Coast: `sidevalley` "sidearea3",
    `cave1` "sidearea2" / "sidearea1", each also "unique1"). When the area rolled its Vaal side area (generator +0xa,
    §3b) one survives: `Next(groups)`, `Next(group size)` (unused), the group shuffled (`0x141f4fb80`), its first node
-   loses its "unique…" descriptions, gets exist 100 and "accessible", and +0xa is cleared (with no groups the
-   generator adds the VaalSideArea feature row instead, not ported). Every other grouped node gets exist 0 and its
+   loses its "unique…" descriptions, gets exist 100 and "accessible", and +0xa is cleared. With no groups the
+   generator adds the VaalSideArea feature row (`0x14203f890` / `0x14203c900`: its rooms' `.tdt` / `.tst` to the
+   TileSet, the row to the pool, `0x141d8d1a0`, and its linked row) and +0xa stays set, so each later graph without
+   groups adds it again; its room `vaal_side_area.arm` (3 × 3) waits for a mission room (§3c2) like any pool row
+   (2026-10-26: `2_8_13`, `2_9_10_1` × 2, MapAtlasTropicalIsland). Every other grouped node gets exist 0 and its
    descriptions cleared (`0x142037f50`). **Exist rolls** (`0x142031390`): every node, then every edge: a node with exist 1..99 rolls
    `Next(100) < exist` to stay (0 = always removed, 100 = no draw); an edge with exist ≠ 0 always draws `Next(100)`
    and stays below exist. Failed edges are removed (`0x141f4f130`), then failed nodes (`0x142036640`): a node between
@@ -1143,7 +1160,12 @@ y, +0x18 height, +0x1b orientation code). Order:
    `0.5` lines of `act8/area9/doodads.ddt` weigh 0 (taken to never be picked; no matching trace uses that table yet).
    Not ported (not hit by any matching trace): the entity exclusion circles and the `Next(10000)` falloff (lines
    274–550: entities with components 0x407c7f95 / 0x9e3b9e73, stats 0x25a4f824 / 0xc9c0b154 / 0xb36d48d9), the
-   `0x14154c2d0` check after walk ≥ 5, the tile no-doodad bitmask (tile +0x150).
+   `0x14154c2d0` check after walk ≥ 5, the tile no-doodad bitmask (tile +0x150). `0x14154c2d0` (map + 0x108 locked)
+   goes over the map's per-tile entity lists in a square of 5 + `DAT_143a5fe58` − 2 world units about the point
+   (`0x141379fc0`): an entity whose Chebyshev distance from the point less its size (+0x1e3) is under 5 vetoes it
+   (`1_3_10_1` seed 1: `animated_forestcave_waterdrips.ao` at (621, 1009), walk exactly 5, is placed by the port
+   only). The bitmask applies when the record (+0x138 bit 0) or the tile (+0x16d bit 0x10) asks for it: the point
+   turned into the tile's frame, a set bit vetoes (`0x141d901f0`).
 3. The deferred list `0x142041d40` (groups shuffled by `Next(count)`, no two within 3 × 3): not ported.
 4. After the stage, generator vtable +0x50 (`0x142041950`, world vtable +0x28) and +0x20 = **`0x142041200`, the
    tiles' own objects**: row by row, every tile origin (+0x34 / +0x35 zero) whose tile data has +0x178 or +0x180;
