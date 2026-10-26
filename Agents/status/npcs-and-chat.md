@@ -10,8 +10,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   (replies as chat lines).
   Code: `Program.Commands.cs` (`Commands`), `ChatCommands.cs`.
   Docs: [10](../docs/protocol/10-chat-and-commands.md).
-- NPCs in Lioneye's Watch: Tarkleigh, Nessa and Bestel at their real-game cells, with name, minimap icon and idle
-  model; clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
+- NPCs in every campaign town (acts 1-10, Oriath, the Karui Shores; 53 NPCs): each town room's own NPC lines,
+  placed as the client places the room (verified against its walk-map capture of every town), with name, minimap icon,
+  idle model and facing; League NPCs and later quest stages are not placed
+  ([17](../docs/protocol/17-npcs.md) §2). Clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
   Continue and Goodbye (C→S 0x85) are answered; Purchase Items opens the shop (S→C 0xc0 manager 1 + 0x8c) and buying
   (C→S 0x88) costs 1 Scroll of Wisdom; Sell Items: the sell window (S→C 0xb8) takes drops, Ctrl + click (first free
   cell) and Shift + click, Accept gives 1 Scroll Fragment per item and Cancel returns them, and the player can walk
@@ -21,7 +23,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Identify Items identifies the inventory for free, prints "N Items identified" in chat (S→C 0x17) and grays the
   option; `/npc`, `/npcs`, `/pos`.
   Dialogue options now enforce their required/excluded quest flags and save their start/finish flags.
-  Code: `InstanceNpcs.cs`, `NpcCatalog.cs`, Gateway (`SpawnTownNpcs`, `TalkToNpc`).
+  Code: `InstanceNpcs.cs`, `NpcCatalog.cs`, `TownNpcs.cs`, Gateway (`SpawnTownNpcs`, `TalkToNpc`).
   Docs: [17](../docs/protocol/17-npcs.md).
 
 ## Partly working
@@ -45,7 +47,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- NPC dialogue options, shops, NPCs in other towns and outside towns ([17](../docs/protocol/17-npcs.md) "Open");
+- NPC dialogue options, shops, league NPCs in towns, quest-stage variants of town NPCs, NPCs outside towns
+  ([17](../docs/protocol/17-npcs.md) "Open");
   the 346 monster varieties with NPC, ControlZone, BlightTower … components.
   "Emerge" monsters (Gravel Eater …) are created but stay hidden until an Emerge action, which the server does not
   send.
