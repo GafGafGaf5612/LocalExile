@@ -33,6 +33,25 @@ partial class Program
         if (!conn.PlayerSent) return;
         var all = PlayerQuestFlags(conn);
         await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, all), $"0x02ba player quest flags: {all.Count}");
+        // A Kitava penalty change moves the overcapped-resistance modifiers (ResistanceOvercap reads the penalty):
+        // rebuild the pools and send the stats again, as an aura toggle does.
+        if (ChangesResistancePenalty(changed))
+        {
+            while (true)
+            {
+                CharacterStats.Pools before;
+                lock (conn.Monsters) before = conn.Pools;
+                var pools = PoolsFor(conn, before.Level);
+                lock (conn.Monsters)
+                {
+                    if (!ReferenceEquals(conn.Pools, before)) continue;
+                    conn.Pools = pools;
+                    conn.ApplyMovementSpeed();
+                    break;
+                }
+            }
+            await SendCharacterStats(remote, stream, ciphers, conn, "Kitava resistance penalty changed");
+        }
         var own = conn.QuestFlagsSnapshot();
         bool Has(string flag) => Quests.ClientHas(flag, own, all);
         var effective = Quests.EffectiveChanges(changed, f => had[f], Has);

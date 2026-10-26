@@ -147,6 +147,47 @@ public sealed class AttackBaseCriticalGatewayTests : IDisposable
     }
 
     [Fact]
+    public void Armed_overcap_is_added_once_and_explicit_zero_clears_it()
+    {
+        var conn = Character(true);
+        Set(conn, "base_lightning_damage_resistance_%", 120);
+        Set(conn, ResistanceOvercap.LightningCritFlag, 1);
+        conn.Pools = Pools(conn);
+        Assert.Equal(45, conn.Pools.LightningOvercapCritPct);
+        Assert.Equal(1204, conn.Pools.AttackCriticalStrikeChance); // 830 * 1.45 = 1203.5, half up.
+        Assert.Equal(725, conn.Pools.SpellCriticalStrikeChance);
+        var raw = Program.CharacterPlayerStats(conn);
+        Assert.Equal(45, raw[Program.Stats.Key("critical_strike_chance_+%")!.Value]);
+        Assert.Equal(725, SpellCriticalStrike.Chance(500, Program.Stats, raw, new Dictionary<uint, int>()));
+        Set(conn, ResistanceOvercap.LightningCritFlag, 0);
+        conn.Pools = Pools(conn);
+        Assert.Equal(830, conn.Pools.AttackCriticalStrikeChance);
+        Assert.Equal(500, conn.Pools.SpellCriticalStrikeChance);
+    }
+
+    [Fact]
+    public void Overcap_and_signed_extremes_cancel_before_final_chance_and_keep_raw_spell_source_once()
+    {
+        var conn = Character(true);
+        Set(conn, "base_lightning_damage_resistance_%", 120);
+        Set(conn, ResistanceOvercap.LightningCritFlag, 1);
+        Set(conn, "critical_strike_chance_+%", int.MaxValue);
+        Set(conn, "wand_critical_strike_chance_+%", int.MinValue);
+        Set(conn, "spell_critical_strike_chance_+%", int.MinValue);
+        conn.Pools = Pools(conn);
+        Assert.Equal(44, conn.Pools.CriticalStrikeChancePct);
+        Assert.Equal(44, conn.Pools.SpellCriticalStrikeChancePct);
+        Assert.Equal(1195, conn.Pools.AttackCriticalStrikeChance);
+        var raw = Program.CharacterPlayerStats(conn);
+        Assert.Equal(int.MaxValue, raw[Program.Stats.Key("critical_strike_chance_+%")!.Value]);
+        Assert.Equal(720, SpellCriticalStrike.Chance(500, Program.Stats, raw, new Dictionary<uint, int>(),
+            conn.Pools.SpellCriticalStrikeChancePct));
+        Set(conn, "global_cannot_crit", 1);
+        Assert.Equal(0, Pools(conn).AttackCriticalStrikeChance);
+        Assert.Equal(0, Pools(conn).SpellCriticalStrikeChance);
+    }
+
+    [Fact]
     public void A_weapon_in_the_inactive_set_does_not_make_the_active_empty_hand_armed()
     {
         var conn = Character(false);

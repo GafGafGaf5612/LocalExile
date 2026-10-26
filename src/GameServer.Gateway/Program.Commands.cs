@@ -40,8 +40,9 @@ partial class Program
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
             int value = int.Parse(args[1]);
             lock (conn.Monsters) conn.PlayerStats[stat] = value;
-            // Refresh attack chance and the spell reference when a supported critical input changes.
-            if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0]))
+            // Raw critical and overcap inputs rebuild the same pools and respect explicit zero replacements.
+            if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
+                || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0]))
             {
                 while (true)
                 {

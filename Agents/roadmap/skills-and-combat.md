@@ -52,6 +52,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Off-hand alternation, conditional damage, supports and modifier-scope corrections remain separate work.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
+  The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.
 
 ### Auras: reservation and effects
 
@@ -99,6 +100,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.
   Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.
   Native skill switching, combined bonuses, no-crit, relog and hitless-spell controls are verified.
+  The overcapped-resistance modifiers (Sea Legs' flags: cold overcap as increased evasion, lightning overcap as
+  increased critical chance) are implemented through the pools with automated and original-head native checks.
+  Recheck the combined armed 830 +45% =1204 result and extreme signed cancellation on the resolved stack natively.
+  Recheck Purity plus typed/all-element dev replacements and zero maximum overrides after the aura-source correction.
   The pure base overrides are in as a generic stat consumer (`override_weapon_base_critical_strike_chance` and the
   unarmed base in `AttackBaseCriticalStrike`): Slayer Overwhelm, Blind Prophet's Sightless and Behemoth Final Blow
   have native-verified base calculations, active-set isolation and cannot-crit gates (Status and
