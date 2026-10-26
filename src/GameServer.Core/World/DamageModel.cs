@@ -153,11 +153,27 @@ public static class DamageModel
     }
 
     /// <summary>The physical hit left after armour, rounded to the nearest point.</summary>
-    public static int MitigatePhysical(int damage, int armour)
+    public static int MitigatePhysical(int damage, int armour) => MitigatePhysical(damage, armour, 0);
+
+    /// <summary>
+    /// The physical hit left after armour and additional physical damage reduction (Endurance Charges,
+    /// <c>base_additional_physical_damage_reduction_%</c>), rounded to the nearest point. Path of Building's CalcDefence
+    /// adds the two reductions and caps the sum at <see cref="DamageReductionCap"/>.
+    /// </summary>
+    public static int MitigatePhysical(int damage, int armour, int additionalReduction)
     {
         if (damage <= 0) return 0;
-        int reduction = ArmourReduction(armour, damage);
+        int reduction = Math.Clamp(ArmourReduction(armour, damage) + Math.Max(0, additionalReduction), 0, DamageReductionCap);
         return (int)Math.Max(0, Math.Round(damage * (100.0 - reduction) / 100.0));
+    }
+
+    /// <summary>Damage after an additional damage reduction (elemental damage reduction from Endurance Charges, applied
+    /// after resistance as Path of Building's CalcDefence does), capped at <see cref="DamageReductionCap"/>, rounded to
+    /// the nearest point.</summary>
+    public static int Reduce(int damage, int reduction)
+    {
+        if (damage <= 0) return 0;
+        return (int)Math.Max(0, Math.Round(damage * (100.0 - Math.Clamp(reduction, 0, DamageReductionCap)) / 100.0));
     }
 
     /// <summary>The chance for an attack to evade a defender with this evasion rating, given the attacker's accuracy.

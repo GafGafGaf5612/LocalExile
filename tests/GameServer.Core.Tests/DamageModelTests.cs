@@ -136,6 +136,26 @@ public class DamageModelTests
     }
 
     [Fact]
+    public void Additional_physical_damage_reduction_adds_to_armour_and_shares_its_cap()
+    {
+        // PoB CalcDefence: min(DamageReductionMax, armourReduct + reduction). Three Endurance Charges: 12%.
+        Assert.Equal(880, DamageModel.MitigatePhysical(1000, 0, 12));
+        Assert.Equal(710, DamageModel.MitigatePhysical(1000, 1000, 12));   // 17% armour + 12%
+        Assert.Equal(100, DamageModel.MitigatePhysical(1000, 1_000_000, 12));   // 90% cap, not 102%
+        Assert.Equal(100, DamageModel.MitigatePhysical(1000, 0, 95));
+        Assert.Equal(830, DamageModel.MitigatePhysical(1000, 1000, -5));   // a negative reduction does not add damage
+    }
+
+    [Fact]
+    public void Additional_elemental_damage_reduction_applies_after_resistance_up_to_90_percent()
+    {
+        // 1000 fire at 75% resistance is 250; 12% elemental damage reduction takes it to 220.
+        Assert.Equal(220, DamageModel.Reduce(DamageModel.Mitigate(1000, 75), 12));
+        Assert.Equal(100, DamageModel.Reduce(1000, 120));
+        Assert.Equal(0, DamageModel.Reduce(0, 12));
+    }
+
+    [Fact]
     public void Evasion_is_the_missing_part_of_the_attack_hit_chance()
     {
         Assert.Equal(7, DamageModel.EvadeChance(67, 30));
