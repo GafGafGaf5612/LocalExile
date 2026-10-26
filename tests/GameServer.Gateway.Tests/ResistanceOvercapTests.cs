@@ -1,3 +1,5 @@
+using GameServer.Core.Protocol.Instance;
+
 namespace GameServer.Gateway.Tests;
 
 /// <summary>
@@ -266,6 +268,76 @@ public class ResistanceOvercapTests
 /// </summary>
 public class OvercapPoolIntegrationTests
 {
+    [Fact]
+    public void All_element_Purity_replacement_preserves_the_separate_Sea_Legs_pair_and_typed_resistance()
+    {
+        var stats = new StatCatalog(Data());
+        var conn = Conn(stats, ("base_lightning_damage_resistance_%", 80));
+        conn.Passives.Add(61696); // Sea Legs: separate cold/lightning 40, plus both derived flags.
+        var aura = new AuraCatalog.Aura(0x103, Program.Skills.EffectRow("PurityOfElements"),
+            "PurityOfElements", "Purity", 1, AuraCatalog.BuffRow("PurityOfElements"), 0, 0);
+        conn.Auras[aura.SkillId] = aura;
+        Assert.Equal(20, AuraCatalog.Bonus([aura], 0, Program.Skills, stats).LightningResistance);
+        Assert.Equal(140, Program.PoolsFor(conn, 20).LightningResistance);
+        conn.PlayerStats[stats.Key("base_resist_all_elements_%")!.Value] = 0;
+        conn.Pools = Program.PoolsFor(conn, 20);
+        Assert.Equal(120, conn.Pools.LightningResistance);
+        Assert.Equal(45, conn.Pools.LightningOvercapCritPct);
+        conn.PlayerStats[stats.Key("base_lightning_damage_resistance_%")!.Value] = 0;
+        Assert.Equal(40, Program.PoolsFor(conn, 20).LightningResistance);
+    }
+
+    [Theory]
+    [InlineData("PurityOfIce", "cold")]
+    [InlineData("PurityOfLightning", "lightning")]
+    public void Typed_dev_replacements_remove_equipment_and_the_same_Purity_resistance_and_maximum(
+        string effect, string element)
+    {
+        TestSaves.Ensure();
+        string character = "PurityOverride" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var conn = new ClientState(new(ushort.MaxValue, "PurityTest", 128, 128, 32, 32, null, []), 0, 1)
+            { Character = character, ClassRow = 1 };
+            string resistance = $"base_{element}_damage_resistance_%";
+            string maximum = $"base_maximum_{element}_damage_resistance_%";
+            var mod = Program.Items.Mods.All.First(m => m.Stats.Count == 1 && m.Stats[0].Id == resistance);
+            var body = ItemCatalog.Create(Program.Items.Find("Simple Robe")!) with
+            { Mods = [new(ModSection.Explicit, mod.Hash, [80])] };
+            var inventory = PlayerInventories.For(character, Program.Items);
+            inventory.Add(PlayerInventories.BodyArmour, 0, 0, body);
+            inventory.Add(PlayerInventories.Weapon1, 0, 0, ItemCatalog.Create(Program.Items.Find("Driftwood Wand")!));
+            var aura = new AuraCatalog.Aura(0x103, Program.Skills.EffectRow(effect), effect, effect,
+                1, AuraCatalog.BuffRow(effect), 0, 0, Level: 19);
+            conn.Auras[aura.SkillId] = aura;
+            var auraBonus = AuraCatalog.Bonus([aura], 0, Program.Skills, Program.Stats);
+            Assert.Equal(40, element == "cold" ? auraBonus.ColdResistance : auraBonus.LightningResistance);
+            Assert.Equal(3, element == "cold" ? auraBonus.ColdMaxResistance : auraBonus.LightningMaxResistance);
+            void Set(string name, int value) => conn.PlayerStats[Program.Stats.Key(name)!.Value] = value;
+            Set(ResistanceOvercap.ColdEvasionFlag, 1);
+            Set(ResistanceOvercap.LightningCritFlag, 1);
+            int Raw(CharacterStats.Pools p) => element == "cold" ? p.ColdResistance : p.LightningResistance;
+            int Max(CharacterStats.Pools p) => element == "cold" ? p.ColdMaxResistance : p.LightningMaxResistance;
+            Assert.Equal(120, Raw(Program.PoolsFor(conn, 20)));
+            Set(resistance, 120);
+            Assert.Equal(120, Raw(Program.PoolsFor(conn, 20)));
+            Set(resistance, 0);
+            Assert.Equal(0, Raw(Program.PoolsFor(conn, 20)));
+            Set(resistance, 120);
+            Set(maximum, 0);
+            conn.Pools = Program.PoolsFor(conn, 20);
+            Assert.Equal(120, Raw(conn.Pools));
+            Assert.Equal(75, Max(conn.Pools));
+            Assert.Equal(45, element == "cold" ? conn.Pools.ColdOvercapEvasionPct : conn.Pools.LightningOvercapCritPct);
+            if (element == "lightning")
+            {
+                Assert.Equal(1204, conn.Pools.AttackCriticalStrikeChance);
+                Assert.Equal(725, conn.Pools.SpellCriticalStrikeChance);
+            }
+        }
+        finally { PlayerInventories.Forget(character); }
+    }
+
     static string Data()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
