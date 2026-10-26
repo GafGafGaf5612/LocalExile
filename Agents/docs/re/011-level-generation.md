@@ -192,8 +192,11 @@ For a one-node graph (towns, hideouts):
    "weight path") for its ground's name (.gt first line): `Next(total weight)`, then for a square tile `Next(8)` as
    its orientation (`0x141fecd00`; non-square tiles use `Next(840)` and a mask, not ported).
 6. **Mirror seams** (`0x142025440`, after the dungeon's `0x1420f8f20`, below): row by row, a
-   placed tile larger than one entry, without a tag and not a plain fill tile (`0x14201d800`: no edges but wildcard
-   ones, .et +0x48 bit 7, and one ground on all four corners), none of whose vertices took a room's own vertex ground
+   placed tile larger than one entry, without a tag and not a plain fill tile (`0x14201d800` on the tile's own key,
+   tile data +0x40: no edges but wildcard ones, .et +0x48 bit 7, and one ground on all four corners, grounds left out
+   of keys counted as the file names them; the port compared the lookup key, which drops them, until 2026-10-26:
+   `tree_beachswamp_v01_05.tdt`, corners trims1 / none, was skipped as plain, `1_1_3` 628425663; the accessibility
+   check `0x142028510` takes the same test), none of whose vertices took a room's own vertex ground
    (`0x142025fb0`), whose neighbour one tile size away
    (up, right, down, left) is the same tile in the mirrored orientation (left/right: 0↔4, 1↔7, 2↔6, 3↔5; up/down:
    0↔6, 1↔5, 2↔4, 3↔7) is re-picked (`0x142027670`) among its key's candidates that make no such seam with their up
@@ -480,12 +483,12 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    After each slot tile (`0x1420ef310`) and each `0x1420f5fb0` placement that is not for a neighbour, `0x1420f8df0`
    records the tile's cell once per entry of the FillTiles object's +0x140 list (below) whose edge type is on 1 to
    3 of the key's sides (tiler +0x40), for the edge fill. Not ported: the description objects (`0x141d83f10`).
-3b. **Door tiles** (TileSet has "door" tiles, tiler +0x38; with RoomOverlap): `0x1420ed9f0` marks each room's exits
+3b. **Door tiles** (TileSet has "door" tiles, tiler +0x38 set by `0x1420f0b60`; with RoomOverlap; not when the
+   master has `DisableDoors 1`, master +0x13f, whose reader was not found: `2_8_2_2`'s Act 8 sewers master sets it and
+   its trace has no door pass, while the port's door pass stopped at "No door found that fits 1x1 at (63, 49)";
+   2026-10-26): `0x1420ed9f0` marks each room's exits
    (4 / 0x10 / 2 / 8 at 1 or 3 entries per exit) before its slots, at the view's corner plus (unit − overlap) × the
-   room's cell (marking at the record's corner without the margins lost 204 logged loads, 2026-10-26). Open:
-   `2_8_2_2` 698178759 stops at a doorway the client does not have ("No door found that fits 1x1 at (63, 49)": a
-   1 × 1 thin-wall slot beside a 2 × 1 shared slot, both marked 6; the client tile there is the same wall and no
-   door draws follow); `0x1420f4010`: per doorway the orientation, the
+   room's cell (the decompile adds no offset: marks, shared slots and doorway lists are all view positions); `0x1420f4010`: per doorway the orientation, the
    sizes from the store's "door" sizes for its edges (a set sorted by (w, h), `0x141d8c620`; the port kept them in
    filing order until 2026-10-25, which picked other door sizes in 17 logged loads), `Next(n)` + shuffle, the key resized with points at none, the
    middle of the unit for odd units else `Next(len − size + 1)`, `Next(total)`; `0x1420f4ae0` for the big ones.
@@ -1164,8 +1167,18 @@ y, +0x18 height, +0x1b orientation code). Order:
    goes over the map's per-tile entity lists in a square of 5 + `DAT_143a5fe58` − 2 world units about the point
    (`0x141379fc0`): an entity whose Chebyshev distance from the point less its size (+0x1e3) is under 5 vetoes it
    (`1_3_10_1` seed 1: `animated_forestcave_waterdrips.ao` at (621, 1009), walk exactly 5, is placed by the port
-   only). The bitmask applies when the record (+0x138 bit 0) or the tile (+0x16d bit 0x10) asks for it: the point
-   turned into the tile's frame, a set bit vetoes (`0x141d901f0`).
+   only). Per entity (`0x141379fc0`): position +0x294 / +0x298, the per-tile list sorted by a layer byte (bit 7 skips
+   unless asked), an entity of size −1 never vetoes, and one whose +0x2c0 / +0x2c1 flag (by +0x1e6 bit 7) is 1 is
+   skipped. Every doodad is an entity (`0x142042360` creates one per doodad), but taking every placed doodad as size 0
+   is wrong: in `1_3_10_1` seed 1 a room doodad (`sewerplant_thin1.ao`) and a random `animated_forestcave_waterdrips.ao`
+   3 units away do not veto, while the random `animated_forestcave_waterdripswide.ao` 4 units from (621, 1009) would
+   explain its veto (2026-10-26; the entity size or the list insertion is not known). The bitmask applies when the
+   doodad table (+0x138 bit 0, the flag after the default clear radius) or the tile (+0x16d bit 0x10) asks for it: the
+   point turned into the tile's frame indexes a palette-packed byte array (`0x141d901f0`: one value, or 1, 2 or 4 bits
+   per cell with a palette of 2, 4 or 16, or a byte each) over w·23 × h·23 cells, non-zero vetoes; the tile under
+   (621, 1009), `sewerwall_straight_v01_01.tdt`, has flags 0x416 (no 0x1000). Open (MapWorldsCourtyardOfWasting seed
+   1): the client draws the "DeepSnow" group at (424, 355), whose nearest vertex (18, 15) lies in the fill room
+   `FillPark_13.arm` at (12, 12) on a Blank tile; the port has no ground there.
 3. The deferred list `0x142041d40` (groups shuffled by `Next(count)`, no two within 3 × 3): not ported.
 4. After the stage, generator vtable +0x50 (`0x142041950`, world vtable +0x28) and +0x20 = **`0x142041200`, the
    tiles' own objects**: row by row, every tile origin (+0x34 / +0x35 zero) whose tile data has +0x178 or +0x180;
