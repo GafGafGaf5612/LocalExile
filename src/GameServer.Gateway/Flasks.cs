@@ -28,6 +28,10 @@ static class Flasks
         return changed;
     }
 
+    /// <summary>Recovery flasks need room in at least one pool they restore. Mana's cap excludes reservations.</summary>
+    public static bool CanRecover(Flask f, uint life, uint maxLife, uint mana, uint unreservedMana) =>
+        (f.LifePerUse > 0 && life < maxLife) || (f.ManaPerUse > 0 && mana < unreservedMana);
+
     /// <summary>The flask with <paramref name="charges"/> more, up to its maximum.</summary>
     public static Item Gain(Item flask, Flask f, int charges) =>
         flask with { Charges = (int)Math.Min(f.MaxCharges, (long)flask.Charges + charges) };

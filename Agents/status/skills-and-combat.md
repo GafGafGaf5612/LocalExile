@@ -208,6 +208,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Object uses no longer also deal a melee contact hit.
   Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
   without a capture they use the bare offset.
+  An attack gem at the ground swings (and pays its mana) when the point is within the weapon's reach, and only walks
+  (attack-move, no mana) beyond it; the client spends the mana itself on either use, so the Gateway answers an
+  attack-move with the authoritative mana.
   Code: `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`, `AreaSkillHit`), `ProjectileObject`.
   Docs: [11](../docs/protocol/11-skills.md) §9–10.
 - Resistances: the passive `base_resist_all_elements_%` / per-element `base_*_damage_resistance_%` are summed from the

@@ -151,7 +151,9 @@ partial class Program
 
     static int UnreservedMana(ClientState conn) => Math.Max(0, (int)conn.Pools.Mana - ReservedMana(conn));
 
-    // 0x1b1 for the mana pool: every update carries the reserved amount, or the client would clear it.
+    // 0x1b1 for the mana pool: every update carries the reserved amount, or the client would clear it. The pool and the
+    // reservation are read under one lock, so a packet never pairs a pool from before an aura toggle with the
+    // reservation from after it.
     static async Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         string? log = null)
     {
@@ -191,6 +193,12 @@ partial class Program
         if (rateChanged && Stats.Key("energy_shield_recovery_per_minute") is uint key)
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(key, rate)]), null);
     }
+
+    // The base mana a gem skill costs at its level (its mana_cost stat), before supports: the client spends it at the
+    // start of every use, including a use that becomes a walk (attack-move), so the cost the server gives back must be
+    // known outside the supported gem (ManaCostTests pins Holy Strike's 6).
+    internal static uint ManaCost(StatCatalog stats, SkillCatalog skills, int effect, int level, int quality) =>
+        stats.Key("mana_cost") is uint k ? (uint)skills.EffectStats(effect, level, quality).Where(kv => kv.Item1 == k).Select(kv => kv.Item2).FirstOrDefault() : 0;
 
     // A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
     // the mana.

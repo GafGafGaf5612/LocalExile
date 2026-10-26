@@ -742,18 +742,6 @@ partial class Program
         return SkillArea.Radius(SkillArea.BaseRadius(Skills.EffectId(effect), Get), Get, spell);
     }
 
-    // Whether a living monster stands within a gem attack's hit radius of a ground point. The client sends a point with a
-    // monster on it as C→S 0x25 (not C→S 0x24 on the object), so an attack-move at such a point has to become a swing.
-    static bool MonsterAtAim(ClientState conn, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem,
-        int x, int y, double at)
-    {
-        var stats = SupportedSkill(conn, gem.Id).Stats;
-        int radius = SkillRadius(conn, stats, spell: false, gem.Effect);
-        lock (conn.Monsters)
-            return conn.Monsters.Any(m => !m.Value.Dead && m.Value.Life > 0
-                && Dist(m.Value.Walk.Position(at), (x, y)) <= radius);
-    }
-
     // A gem skill without a projectile (strikes, slams, area spells): a first, simple hit (2026-10-23). It lands once, after
     // half the attack time (attacks) or the cast (spells), on every living monster within the skill's area radius
     // (active_skill_base_area_of_effect_radius, else AreaSkillRadius cells, grown by area of effect: SkillArea) of the aimed point, or of the player for a
