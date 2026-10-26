@@ -476,11 +476,11 @@ partial class Program
                     await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);
+                    _ = RunMercyMission(remote, stream, ciphers, conn);   // a1q5: the Medicine Chest's flag
                     _ = RunServerFrames(remote, stream, ciphers, conn);
                     _ = RunMonsterAi(remote, stream, ciphers, conn);
                     _ = RunPlayerTick(remote, stream, ciphers, conn);
                     _ = RunResourceRecovery(remote, stream, ciphers, conn);
-                    _ = RunMercyMission(remote, stream, ciphers, conn);
                 }
             }
         }
