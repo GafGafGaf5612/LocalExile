@@ -440,6 +440,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Guaranteed critical hits dealt 150 with generic or attack-only ignore, and 90 after removal or prohibition.
   Those captures belong to original head `13c41e5`; combined penetration/modifier/bow paths need native rechecking.
   Automated checks preserve same-key source sums, fractional totals, target damage taken and the original RNG order.
+  Sequential C24 handler tests read real `/set_stat` changes after a prior hit on the same connection and target.
+  Skill `0x102`, sequence 0 and flags `0x408` give ignore 300, ordinary critical 330 and prohibition 240.
+  Friendly and hostile controls pass without a production hostility change.
+  The combined run labelled `462c883` used a DLL proven by hash to be #225 `4a71968`; its ninth case is not #226 proof.
   Ascendancy allocation remains in its separate lifecycle change.
   Code: `HitResistances.cs`, `HitMitigation.cs`, Gateway (`MonsterDamage`).
   Docs: [20](../docs/protocol/20-damage.md) §4.

@@ -196,6 +196,14 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   Ordinary bows retain offensive resistance rules in their release snapshot and resolve the target at contact.
   Native checks on original head `13c41e5` verified the basic ignore and non-critical rules.
   The resolved penetration/modifier/bow combinations have automated coverage and need new native verification.
+  The combined run labelled `462c883` accepted eight groups, but its DLL was the preceding #225 build `4a71968`.
+  Rebuilding that commit reproduces SHA-256 `ffc99913dea4ada11cb0ed1fdaaf9caa1f9c360064dc2401e86c4eeea315bf35`.
+  Its ninth 330-damage critical therefore does not test this critical-ignore handler.
+  The parsed C24 handler now has loopback regressions using repeated skill `0x102`, sequence 0 and flags `0x408`.
+  On the same connection and target, a prior 220 hit precedes actual `/set_stat` commands and a 300 ignore critical.
+  Clearing ignore gives 330; prohibition gives 240, for both friendly and hostile targets.
+  No hostility guard was changed; those are automated handler checks, not a new native run.
+  Rebuild after the final checkout and check the DLL's informational Git version and hash before a `-NoBuild` run.
 - `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
   `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
   `MitigatePhysical`.

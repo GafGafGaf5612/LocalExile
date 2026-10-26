@@ -94,6 +94,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Recheck mana damage through the resolved supported-skill path natively; original-head captures remain historical.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
   Critical elemental ignore and non-critical penetration now compose with it on the same rolled packet.
+  Rerun critical ignore against a rebuilt final DLL: the previous combined run used the preceding #225 artifact.
   Recheck the resolved bow-contact and target-modifier composition natively before claiming new combined proof.
   Special ES mechanics, conditional penetration, exposure, ailments and further added-damage/support effects remain open.
   Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
