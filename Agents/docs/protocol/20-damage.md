@@ -180,7 +180,7 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   Ordinary bows snapshot player/skill penetration at release and resolve target resistance at contact.
   Main has no connection-aware resistance or presence engine; those archival #206 systems are outside this stack.
   Automated mixed fractional-hit, target-modifier, bow RNG and same-key player/skill cases cover the resolved paths.
-  Native penetration checks belong to original head `0d800d1`; the integrated target-modifier and bow paths need rechecking.
+  Native penetration checks belong to original head `0d800d1`; recheck the target-modifier and bow composition natively.
 - The hit's penetration (`Penetration.cs`) subtracts from the capped resistance with no second clamp: the general
   per-element and elemental stats on every hit, the attack-only variants on attacks (§2), the
   `cannot_penetrate_or_ignore_elemental_resistances` flag suppressing the elemental ones. Damage over time and the

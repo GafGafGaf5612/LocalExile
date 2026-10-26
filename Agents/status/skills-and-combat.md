@@ -435,7 +435,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
-  Added damage includes the maximum-mana granted lightning stat, with original-head native and resolved automated checks.
+  Maximum-mana added lightning has original-head native checks and resolved automated checks.
   Not yet: exposure, conditional penetration (non-critical strikes, aura conditions), other added damage,
   increased/more support modifiers, ailment application/duration ([20](../docs/protocol/20-damage.md)).
   Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
