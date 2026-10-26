@@ -55,6 +55,8 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [saves.md](saves.md) | how player progress is saved: the SQLite save database, transactions, what a failed save does |
 | [game/fortification.md](game/fortification.md) | melee-hit protection and the explicit server model |
 | [game/maps.md](game/maps.md) | 3.29 maps and the Atlas: the 20 generic map bases, tiers, drops, Voidstones (rules to build to) |
+| [game/ascendancies.md](game/ascendancies.md) | selection, points, saves and the Phrecia play gate |
+| [re/ascendancy-client-3.29.3b.md](re/ascendancy-client-3.29.3b.md) | native identity and point evidence |
 
 ## Working notes (history)
 - `re/007`–`010`: the notes these documents were consolidated from (login TCP, handshake, message tables, live instance

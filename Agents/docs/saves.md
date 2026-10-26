@@ -9,7 +9,7 @@ Everything is in one SQLite file, `data/saves.db` (`Game_SAVES_DB` to put it els
 
 | What | Table | Code |
 |---|---|---|
-| A character's items (every inventory row and the cursor), skill bar, experience, passives and mastery effects, refund and extra passive points, waypoints, visited areas, quest flags, the start weapon still on the ground | `characters`, one row per character | `CharacterSaves`, `PlayerInventories` (Gateway) |
+| A character's items (every inventory row and the cursor), skill bar, experience, passives and mastery effects, refund and extra passive points, main ascendancy identity/nodes/tier awards, waypoints, visited areas, quest flags, the start weapon still on the ground | `characters`, one row per character | `CharacterSaves`, `PlayerInventories` (Gateway) |
 | An account stash's header: its tabs (name, type, colour), last tab, next stash item id, gold | `stashes`, one row per account | `AccountStash` (Gateway) |
 | The items of one stash tab | `stash_tabs`, one row per account and tab | `AccountStash` (Gateway) |
 | Accounts | `accounts` | `SqliteAccountStore` (Auth, Host) |
@@ -50,6 +50,17 @@ none of it is. An item is never lost between its two places, nor counted in both
 | Map device Activate | every slot's item |
 | Delete a character (Auth) | the character out, its save set aside |
 
+Main ascendancy changes save the identity, allocated nodes and idempotent tier awards with any ordinary/mastery
+changes and refund payment in one transaction (`CharacterSaves.SetMainAscendancy`).
+A snapshot comparison rejects an old area's attempt to replace a newer passive state.
+`ChangeMainAscendancy` applies awards/selection to the latest saved state.
+Unknown nested ascendancy fields are kept, and incompatible identities/graphs are refused without dropping progress.
+The production Phrecia compatibility gate runs before inventory loading or save normalization.
+Level candidates are rechecked against the current passive snapshot before applying, even when no trim was planned.
+Allocations/refunds and level trims hold the connection lock through validation, saving and runtime publication.
+The durable snapshot comparison still rejects changes from stale connections, and failed saves publish nothing.
+Network sends occur after releasing that lock; `0x33` samples one current tree only after entering the cipher send gate.
+
 A stash change writes the stash's header and only the tab it changed: a click in one tab doesn't rewrite every tab.
 
 When a save fails (a full disk, a database another program holds too long), the database rolls the whole transaction
@@ -77,6 +88,18 @@ a new character of its name.
 The character's level comes from its saved experience (`CharacterSaves.LevelOf`). The account's level is a copy for the
 character list; when a level-up's update to Auth fails, the next login corrects it (`set_level`). Only Auth writes the
 last town.
+Automatic XP events use current character XP rather than the target captured when a gain began.
+An old-area gain cannot prevent another connection from reconciling its own level, including a pending level reset.
+XP-driven level changes read, validate and trim the current saved passive tree in one transaction.
+Runtime publication follows commit, retaining another area's paid refunds and completed level trims.
+Ordinary allocation and refund requests still compare their original snapshot and reject stale writes.
+Extra-point grants add to the current saved total and commit before updating runtime under the connection lock.
+Concurrent XP publication cannot discard an in-flight grant, and a failed grant publishes no points.
+Their runtime target and queued XP packet come from current experience, never a level captured before an await.
+Auth updates serialize per character and recheck current XP after replies, including gains, controls and login repair.
+An in-flight obsolete request is corrected before releasing that gate; its answer never applies a runtime level.
+Explicit level controls save local XP first and report account-sync failure separately, retaining login repair.
+XP flushes also sample the waiting XP inside their write transaction so a queued flush cannot restore a pre-reset value.
 
 ## The sell window
 
@@ -96,7 +119,12 @@ nothing changes and the window stays open ("Not enough room in your inventory.")
   `UnknownSavedItemException`, and so do saved passives without the passive tree: the login stops and the save stays.
   Dropping them would lose them at the next save. Extract the game data (`scripts/dev/extract-data.ps1`) and log in
   again.
-- Loading a character writes nothing; only a new character's start kit is saved at once.
+- Area admission validates the saved ascendancy and ordinary graph read-only before loading inventories or a start kit.
+  Existing items must then load successfully before gold migration, passive normalization, town flask refill or offer cancel.
+  A refused admission also skips the disconnect save flush, preserving the original saved JSON and unknown item fields.
+- Loading a character normally writes nothing; a new character's start kit is saved at once.
+  A valid ordinary tree exceeding a reduced development level's budget is normalized only after graph validation,
+  with its retained ascendancy state protected by the same atomic passive snapshot comparison.
 - A ticket Auth can't resolve is refused, instead of playing the session under another save.
 
 ## Saves from before the database
