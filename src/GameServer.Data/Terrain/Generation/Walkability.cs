@@ -27,8 +27,30 @@ public sealed record SubTileWalk(byte F, byte G, byte[]? Hull)
 /// tile's own frame, row by row.</summary>
 public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
 {
-    /// <summary>The walkability part of a .tdt without a base tile (null for one with a base tile, or past the end).
-    /// After the 58-byte key: u16 flags (bit 0x100 from version 14, 0x200 from 13), from version 10 the orientation
+    /// <summary>The offset of a .tdt's u16 flags word (<c>0x1429f31a0</c>), with the base tile's path when it names one
+    /// (u32 0) and the flags byte of its own field groups: without a base tile after the 58-byte key; with one after the
+    /// flags byte (offset 4) and its own groups, bit 3 a tag and key (50 bytes), else bit 4 a size (2 bytes).</summary>
+    public static int FlagsAt(byte[] data, out string? baseTile, out byte own)
+    {
+        int length = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
+        int p = 8 + 2 * length;
+        uint at = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(p));
+        baseTile = null;
+        own = 0;
+        if (at != uint.MaxValue && at < length && (data[8 + 2 * at] | data[9 + 2 * at]) != 0)
+        {
+            var table = System.Text.Encoding.Unicode.GetString(data, 8, 2 * length);
+            int end = table.IndexOf('\0', (int)at);
+            baseTile = table[(int)at..(end < 0 ? table.Length : end)];
+            own = data[p + 4];
+            return p + 5 + ((own & 8) != 0 ? 50 : (own & 0x10) != 0 ? 2 : 0);
+        }
+        return p + 58;
+    }
+
+    /// <summary>The walkability part of a .tdt (null past the end, or for a tile over a base tile without a hull of its
+    /// own, flags bit 4: it has the base tile's). After the 58-byte key (a tile over a base tile: <see cref="FlagsAt"/>,
+    /// and the restriction byte only with its bit 5): u16 flags (bit 0x100 from version 14, 0x200 from 13), from version 10 the orientation
     /// restriction byte and a hull plane count (0 … 4, then one mask per plane when 2 or more), with flag 0x200 a byte,
     /// then u16 sub-tile count and per sub-tile: u16 F | G &lt;&lt; 8 (u8 F before version 10), u8, with flag 0x200 three
     /// bytes, a byte map unless F has bit 4 (<c>0x1429f59a0</c>), and unless F has bits 1 and 2 a u16 length and the
@@ -38,16 +60,13 @@ public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
         try
         {
             int version = (int)BinaryPrimitives.ReadUInt32LittleEndian(data);
-            int length = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
-            int p = 8 + 2 * length;
-            uint baseTile = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(p));
-            if (baseTile != uint.MaxValue && baseTile < length && (data[8 + 2 * baseTile] | data[9 + 2 * baseTile]) != 0) return null;
-            p += 58;
+            int p = FlagsAt(data, out var baseTile, out byte own);
+            if (baseTile is not null && (own & 0x10) == 0) return null;
             int flags = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(p));
             p += 2;
             if (version < 14) flags &= ~0x100;
             if (version < 13) flags &= ~0x200;
-            if (version > 9) p++;
+            if (version > 9 && (baseTile is null || (own & 0x20) != 0)) p++;
             byte[] masks = [0];
             if (version >= 10)
             {

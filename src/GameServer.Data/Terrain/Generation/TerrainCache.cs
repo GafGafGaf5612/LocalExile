@@ -175,8 +175,10 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
 
     public TileDef? Tile(string path) => Get("tdt", path, d => ParseTile(path, d));
 
-    /// <summary>A tile's walkability data (<see cref="TileWalk.Parse"/>), null for a tile with a base tile.</summary>
-    public TileWalk? Walk(string path) => Get("walk", path, TileWalk.Parse);
+    /// <summary>A tile's walkability data (<see cref="TileWalk.Parse"/>); a tile over a base tile without a hull of its
+    /// own has the base tile's.</summary>
+    public TileWalk? Walk(string path) => Get("walk", path, d =>
+        TileWalk.Parse(d) ?? (TileWalk.FlagsAt(d, out var b, out _) > 0 && b is not null ? Walk(b) : null));
 
     readonly Dictionary<string, int> _tileFlags = new(StringComparer.OrdinalIgnoreCase);
 
@@ -190,8 +192,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         if (data is not null)
         {
             int version = (int)BinaryPrimitives.ReadUInt32LittleEndian(data);
-            int length = (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
-            int at = 8 + 2 * length + 58;
+            int at = TileWalk.FlagsAt(data, out _, out _);
             if (at + 2 <= data.Length) flags = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(at));
             if (version < 14) flags &= ~0x100;
             if (version < 13) flags &= ~0x200;
