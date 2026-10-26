@@ -99,6 +99,7 @@ partial class Program
             (talk is null ? "no NPCTalk row" : $"NPCTalk row {talk.Row} \"{talk.Option}\" ({talk.Category}), text audio [{string.Join(", ", talk.TextAudio)}]"));
         if (talk is null) return;
         if (!talk.Available(Quests.Names(PlayerQuestFlags(conn)))) return;
+        if (!await HandInQuestItems(remote, stream, ciphers, conn, talk)) return;   // a1q5: Nessa takes the Medicine Chest
         if (talk.StartFlag is { } start) await SetQuestFlags(remote, stream, ciphers, conn, [start]);
         conn.NpcFinishFlag = talk.FinishFlag;
         switch (talk.Category)
@@ -111,7 +112,8 @@ partial class Program
                     talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
                 break;
             case "QuestReward" when talk.RewardOffer is { } offer:
-                if (offer is not (0 or 8)) break; // Hillock and Nessa's prison preparation; other reward scripts need auditing.
+                // Hillock, Nessa's Medicine Chest flasks (a1q5) and her prison preparation; other reward scripts need auditing.
+                if (offer is not (0 or MercyMission.RewardOffer or 8)) break;
                 var rewardCatalog = QuestRewardCatalog.Load();
                 var rewardItems = rewardCatalog.Choices(offer, conn.ClassRow)
                     .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, Items))).Where(c => c.Item is not null).ToArray();
