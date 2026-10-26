@@ -17,6 +17,8 @@ verify the corrected fossil/resonator presentation in the real client (18-stash.
   Switching to a loaded tab sends nothing to the server.
 - **Start:** check live that the affinity window closes on S→C 0x136 and that currency Ctrl + click (0xe1) lands in
   its slot; tab rename / colour (0xd2), order (0xcc) and folders (0xd1); the unique and divination tabs.
+  Verify the #249 withdrawal correction in the client: Ctrl + left click takes one inventory stack;
+  Ctrl + right click sends `0xe3` bulk 1 and withdraws as much of the clicked stack as fits.
 - **Done when:** tab settings are kept and every special tab takes its items as the real one does.
 
 ### Special-tab crafting follow-up

@@ -228,11 +228,11 @@ partial class Program
 
     // An item out of a stash tab into the main inventory (C→S 0xe3), a stack onto the inventory's stacks first
     // (ItemMoves.StashToInventory), one transaction.
-    static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId)
+    static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId, bool all)
     {
         var stash = StashOf(conn);
         var items = ItemsOf(conn);
-        if (ItemMoves.StashToInventory(stash, items, tab, itemId, ShapeOf) is not { } moved)
+        if (ItemMoves.StashToInventory(stash, items, tab, itemId, ShapeOf, all) is not { } moved)
         {
             Console.WriteLine($"[gateway] {remote} stash tab {tab} item {itemId}: refused (not there, unknown type or no room in the inventory)");
             return;

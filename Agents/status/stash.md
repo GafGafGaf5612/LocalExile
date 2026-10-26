@@ -29,12 +29,14 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- **Currency withdrawal (#249).** Ctrl + left click takes at most one normal inventory stack from the clicked slot;
+  Ctrl + right click uses the separate `0xe3` bulk boolean to take as much of that stack as fits.
+  Automated quantity, partial/full inventory, rollback and reload tests cover both modes;
+  the native builder/writer establish the field layout, and user verification in the real client is pending.
 - **Lifeforce and crafting cells.** Currency-tab lifeforce slots hold 65,535 each without wrapping.
   Delve crafting cells accept equipment, support swaps and retain their contents after reload.
   Lioneye's Watch now creates a guild stash beside its personal stash.
   Persistence checks pass; the real client opened the city guild stash and loaded its guild tab.
-
-Nothing yet.
 
 ## Not working yet
 
