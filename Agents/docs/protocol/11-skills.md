@@ -259,7 +259,11 @@ A Driftwood Wand's 830 became 800 and 900; 100% increased chance raised 900 to 1
 Switching to an empty second set gave zero despite the inactive wand; the unarmed base gave 1000.
 Switching back restored 900, clearing the weapon override restored 830, and relog cleared the development overrides.
 Automated regressions also cover generic/spell development increases, aura replacement and active-hand increases.
-The updated development-input and rounding paths still need a real-client recheck.
+Five follow-up native getter checks verify the corrected development inputs on a new synthetic character.
+With weapon base 900, generic increase 0 gives attack 900 and the pooled spell reference 500;
+generic 100 gives 1800 and 1000, then spell-specific 50 changes only the spell reference to 1250.
+Generic `int.MaxValue` with that spell modifier caps both chances at 10000; `int.MinValue` clears both.
+The Gateway runs from its checkout root with repository-relative catalogs during these checks.
 These checks validate the generic stat consumers; ascendancy allocation remains in its separate lifecycle change.
 Spells use their own level's `GrantedEffectStatSetsPerLevel.SpellCritChance`:
 Fireball 500 (5.00%), Freezing Pulse and Ice Nova 750, Arc 600, Scorching Ray 0.
