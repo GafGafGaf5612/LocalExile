@@ -322,15 +322,13 @@ static class AreaPopulation
             }
             // Only the client's own doodads are in the capture: a room's server objects (an NPC, a quest blocker) are not.
             var plain = room.Doodads.Where(d => d.Type is null).ToList();
-            if (plain.Count == 0) continue;
             var seen = plain.Where(d => byModel.ContainsKey(d.Model)).ToList();
-            if (seen.Count == 0) continue;
-            var anchor = seen.MinBy(d => byModel[d.Model].Count);
             var origins = new List<(int X, int Y)>();
-            foreach (var c in byModel[anchor.Model])
+            foreach (var c in seen.Count == 0 ? [] : byModel[seen.MinBy(d => byModel[d.Model].Count).Model])
                 foreach (var (a, b, cc, dd) in Turns)
                 {
                     // grid = origin + M · local, M = [[a, b], [cc, dd]]
+                    var anchor = seen.MinBy(d => byModel[d.Model].Count);
                     int ox = c.X - (int)Math.Round(a * anchor.X + b * anchor.Y), oy = c.Y - (int)Math.Round(cc * anchor.X + dd * anchor.Y);
                     (int X, int Y) At(float lx, float ly) => (ox + (int)Math.Round(a * lx + b * ly), oy + (int)Math.Round(cc * lx + dd * ly));
                     int hits = plain.Count(d => At(d.X, d.Y) is var g && Near(d.Model, g.X, g.Y));
@@ -345,6 +343,18 @@ static class AreaPopulation
                     }
                     notes.Add($"room {path.Split('/')[^1]} at ({ox}, {oy}) turn [{a} {b}; {cc} {dd}]: {hits}/{plain.Count} doodads match; " +
                         string.Join(", ", room.Points.Select(p => $"{p.Name} at {At(p.X, p.Y)}")));
+                }
+            // Too few doodads to fit (The Tidal Island's medicine_boat rooms have two snowfall emitters around Hailrake's
+            // "mapboss"): the room's actual placement, when the recorder captured it (<area>_seed<seed>.rooms.json).
+            if (origins.Count == 0 && TutorialObjects.RoomPlacements(areaId, seed, path) is { Count: > 0 } placements)
+                foreach (var placement in placements)
+                {
+                    points.AddRange(room.Points.Select(placement.Place));
+                    foreach (var d in room.Doodads.Where(d => d.Type is not null))
+                        if (placement.Place(new RoomPoint(d.Type!, (int)Math.Round(d.X), (int)Math.Round(d.Y), d.Angle)) is var g)
+                            objects.Add(new RoomObject(d.Type!, d.Model, g.X, g.Y, g.Angle, d.Scale));
+                    notes.Add($"room {path.Split('/')[^1]} at its captured placement ({placement.X}, {placement.Y}) code {placement.Code}: " +
+                        string.Join(", ", room.Points.Select(p => $"{p.Name} at ({placement.Place(p).X}, {placement.Place(p).Y})")));
                 }
         }
         return (points, objects);
