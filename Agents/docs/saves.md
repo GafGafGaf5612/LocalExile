@@ -90,7 +90,7 @@ character list; when a level-up's update to Auth fails, the next login corrects 
 last town.
 Automatic XP events carry a character-wide revision; a later gain or intentional `/set_level` invalidates older events.
 Their runtime target and queued XP packet come from current experience, never a level captured before an await.
-Auth updates from gains, explicit controls and login repair serialize per character and recheck current XP after replies.
+Auth updates serialize per character and recheck current XP after replies, including gains, controls and login repair.
 An in-flight obsolete request is corrected before releasing that gate; its answer never applies a runtime level.
 Explicit level controls save local XP first and report account-sync failure separately, retaining login repair.
 XP flushes also sample the waiting XP inside their write transaction so a queued flush cannot restore a pre-reset value.
