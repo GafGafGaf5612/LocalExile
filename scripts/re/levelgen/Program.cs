@@ -19,6 +19,7 @@ return args.FirstOrDefault() switch
     "worker" => Gate.Worker(),
     "gate" => Gate.Run(args.Skip(1).ToArray()),
     "survey" => Gate.Survey(args.Skip(1).ToArray()),
+    "tourcheck" => Gate.TourCheck(args.Skip(1).ToArray()),
     _ => Serve.Forward(args) ?? Dispatch(args),
 };
 

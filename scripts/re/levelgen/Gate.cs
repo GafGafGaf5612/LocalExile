@@ -119,6 +119,46 @@ static class Gate
         return 0;
     }
 
+    /// <summary>`levelgen tourcheck &lt;tour file&gt; [--jobs N]`: runs every "&lt;area&gt; &lt;seed&gt;" stop of a /tour list through
+    /// the port (at the area's WorldAreas level) and comments out the stops it fails on, with the reason. Such a seed
+    /// the client most likely cannot generate either: it shows "Terrain Generation Failure" and hangs, which stops the
+    /// tour until the client is restarted (1_1_3 seed 2042820024 fails in both at the same edge).</summary>
+    public static int TourCheck(string[] args)
+    {
+        string root = Shared.Root();
+        int jobs = Math.Clamp(Environment.ProcessorCount / 2, 1, 8);
+        string file = args[0];
+        for (int i = 1; i < args.Length; i++)
+            if (args[i] == "--jobs") jobs = int.Parse(args[++i]);
+        using var areas = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "data", "tables", "WorldAreas.json")));
+        var levels = areas.RootElement.EnumerateArray().ToDictionary(r => r.GetProperty("Id").GetString()!, r => Math.Max(1, r.GetProperty("AreaLevel").GetInt32()));
+        var lines = File.ReadAllLines(file);
+        var tasks = new List<string>();
+        foreach (var line in lines)
+        {
+            var f = line.Split('#')[0].Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (f.Length >= 2 && uint.TryParse(f[1], out _)) tasks.Add($"try\t{f[0]}\t{f[1]}\t{levels.GetValueOrDefault(f[0], 1)}");
+        }
+        var results = RunWorkers(tasks, jobs);
+        int dropped = 0;
+        var output = lines.Select(line =>
+        {
+            var f = line.Split('#')[0].Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (f.Length < 2 || !results.TryGetValue($"try {f[0]} {f[1]}", out var r) || !r.Hash.StartsWith("stop")) return line;
+            dropped++;
+            return $"# port fails: {f[0]} {f[1]}: {r.Hash[6..]}";
+        }).ToList();
+        File.WriteAllLines(file, output);
+        Console.WriteLine($"{file}: {tasks.Count} stops, {dropped} commented out (the port fails on them)");
+        return 0;
+    }
+
+    static Result TryArea(string areaId, uint seed, int level)
+    {
+        LevelGenerator.Generate(Shared.Files(), AreaInfo.Load(Shared.Read, areaId, level), seed);
+        return new Result("ok");
+    }
+
     /// <summary>A survey task: the port at seed 1, as far as it goes (<see cref="Survey"/>). The size goes in
     /// <see cref="Result.FirstDiff"/> ("w x h tiles, n doodads, heights lo … hi").</summary>
     static Result SurveyArea(string areaId, int level)
@@ -189,7 +229,7 @@ static class Gate
     static string Key(string task)
     {
         var f = task.Split('\t');
-        return f[0] switch { "capture" => $"capture {f[1]}", "survey" => $"survey {f[1]}", _ => $"oracle {f[1]} {f[2]}" };
+        return f[0] switch { "capture" => $"capture {f[1]}", "survey" => $"survey {f[1]}", "try" => $"try {f[1]} {f[2]}", _ => $"oracle {f[1]} {f[2]}" };
     }
 
     /// <summary>`levelgen worker`: one task per stdin line, one JSON result per stdout line.</summary>
@@ -208,6 +248,7 @@ static class Gate
                 {
                     "capture" => Capture(f[1]),
                     "survey" => SurveyArea(f[1], int.Parse(f[2])),
+                    "try" => TryArea(f[1], uint.Parse(f[2]), int.Parse(f[3])),
                     _ => Oracle(f[1], uint.Parse(f[2]), int.Parse(f[3]), uint.Parse(f[4])),
                 };
             }
