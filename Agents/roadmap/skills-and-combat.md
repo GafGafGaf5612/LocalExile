@@ -52,6 +52,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Off-hand alternation, conditional damage, supports and modifier-scope corrections remain separate work.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
+  The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.
 
 ### Auras: reservation and effects
 
@@ -76,13 +77,27 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   packets.
   The default attack, Fireball and monster melee use packets and read the player's/skill's conversion stats
   ([20](../docs/protocol/20-damage.md)).
+  Player hits on monsters take the target's base resistance per type (`MonsterTypes.Resistances` →
+  `MonsterResistances` by the level's difficulty, `MonsterResistanceCatalog`/`HitMitigation`), with the hit's
+  unconditional penetration subtracted from the capped value and no second clamp (`Penetration`): general
+  per-element and elemental stats on every hit, attack-only variants on attacks, the cannot-penetrate flag
+  suppressing the elemental ones; DoT and physical take none. Monster armour is still not modelled.
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
   Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
   Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
-  Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
+  Added damage has its first stat: the attack's added lightning gets
+  `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
+  (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
+  Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
+  Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
+  Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
+  Critical elemental ignore and non-critical penetration now compose with it on the same rolled packet.
+  Rerun critical ignore against a rebuilt final DLL: the previous combined run used the preceding #225 artifact.
+  Recheck the resolved bow-contact and target-modifier composition natively before claiming new combined proof.
+  Special ES mechanics, conditional penetration, exposure, ailments and further added-damage/support effects remain open.
   Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
   Its hovered stationary-monster 0x191 path now uses the native size-aware object aim and object-bound confirmation.
   Automated acceptance/queued rejection checks and manual native endpoint experiments pass.
@@ -94,11 +109,23 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Production use during an active walk still needs measurement; native manual walk-stop experiments passed.
   Its departure/arrival damage, chilled ground, enemy-dependent recovery and shared Blink groups remain open.
   Extend terrain and movement restrictions from native evidence before accepting other instant movement skills.
-- **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
+- **Start:** special ES mechanics, exposure, conditional penetration and the remaining critical strike stats
   from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
   Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.
   Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.
   Native skill switching, combined bonuses, no-crit, relog and hitless-spell controls are verified.
+  The overcapped-resistance modifiers (Sea Legs' flags: cold overcap as increased evasion, lightning overcap as
+  increased critical chance) are implemented through the pools with automated and original-head native checks.
+  Recheck the combined armed 830 +45% =1204 result and extreme signed cancellation on the resolved stack natively.
+  Recheck Purity plus typed/all-element dev replacements and zero maximum overrides after the aura-source correction.
+  The pure base overrides are in as a generic stat consumer (`override_weapon_base_critical_strike_chance` and the
+  unarmed base in `AttackBaseCriticalStrike`): Slayer Overwhelm, Blind Prophet's Sightless and Behemoth Final Blow
+  have native-verified base calculations, active-set isolation and cannot-crit gates (Status and
+  protocol/11-skills.md §critical strikes).
+  Recheck the resolved stack's shared half-up midpoint natively; the original head's native checks remain historical.
+  Recheck development generic/spell increases and rounding live after the input-consistency review fixes.
+  Deliver their nodes through the separate ascendancy lifecycle; Slayer's per-nearby-enemy crit multiplier and
+  Final Blow's remaining unarmed bonuses are separate work.
   Added-base, lucky/more and conditional crit remain separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.

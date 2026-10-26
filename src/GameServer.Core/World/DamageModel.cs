@@ -12,7 +12,8 @@ public enum DamageType { Physical, Lightning, Cold, Fire, Chaos }
 /// <c>clamp(base × increased, ResistFloor, max)</c> in <c>src/Modules/CalcDefence.lua</c> (§ resistances).
 /// Spell Suppression's 100% chance cap and 40% effect are from the same PoB data (<c>SuppressionChanceCap</c>,
 /// <c>SuppressionEffect</c>); a suppressed spell hit takes 40% less damage.
-/// The per-type maximum-resistance stats, penetration and increased resistance are not modelled yet.
+/// The per-type maximum-resistance stats and increased resistance are not modelled yet; penetration subtracts from
+/// the capped resistance (see <see cref="MitigateBy"/> and the per-type <see cref="Mitigate(DamagePacket, Func{DamageType, ResistanceValue})"/>).
 /// </summary>
 public static class DamageModel
 {
@@ -37,10 +38,15 @@ public static class DamageModel
     /// <summary>Fireball's GrantEffectStatSetsPerLevel SpellCritChance (500 = 5.00%).</summary>
     public const int BaseSpellCriticalStrikeChancePerMyriad = 500;
 
-    /// <summary>A hit's critical strike chance: the base chance (permyriad: 500 = 5%) raised by the increased
-    /// critical strike chance stat, capped at 100%.</summary>
-    public static double CriticalStrikeChance(int basePerMyriad, int increasedPct) =>
-        Math.Clamp(basePerMyriad / 100.0 * (100 + increasedPct) / 100.0, 0, 100);
+    /// <summary>A hit's integer permyriad critical chance. Nonnegative midpoints round half up, shared by
+    /// attack and spell rolls and panels. Keep the complete signed source sum until this final calculation.</summary>
+    public static int CriticalStrikeChancePerMyriad(int basePerMyriad, long increasedPct) =>
+        (int)decimal.Round(Math.Clamp(basePerMyriad * (100m + increasedPct) / 100m, 0m, 10_000m),
+            0, MidpointRounding.AwayFromZero);
+
+    /// <summary>The same critical chance expressed as a percentage for diagnostics and chance-based consumers.</summary>
+    public static double CriticalStrikeChance(int basePerMyriad, long increasedPct) =>
+        CriticalStrikeChancePerMyriad(basePerMyriad, increasedPct) / 100.0;
 
     /// <summary>A critical hit's damage, rounded to the nearest point; <paramref name="multiplier"/> is the final
     /// percentage (150 by default).</summary>
@@ -77,6 +83,13 @@ public static class DamageModel
     public static int Capped(int resistance, int maxResistance = DefaultMaxResistance) =>
         Math.Clamp(resistance, ResistFloor, Math.Min(maxResistance, MaxResistCap));
 
+    /// <summary>Path of Building's <c>ResistOverCap</c> (CalcDefence.lua):
+    /// <c>output[type.."ResistOverCap"] = m_max(0, total - max)</c>, where <c>total</c> is the uncapped resistance
+    /// and <c>max</c> the per-type maximum capped at <see cref="MaxResistCap"/>. The overcapped part is what the
+    /// "increased by overcapped resistance" modifiers read (CalcDefence's Evasion / CalcOffence's CritChance).</summary>
+    public static int Overcap(int resistance, int maxResistance) =>
+        Math.Max(0, resistance - Math.Min(maxResistance, MaxResistCap));
+
     /// <summary>The damage left after a resistance, rounded to the nearest point.</summary>
     public static int Mitigate(int damage, int resistance, int maxResistance = DefaultMaxResistance)
     {
@@ -91,18 +104,31 @@ public static class DamageModel
         return damage * (100.0 - Capped(resistance, maxResistance)) / 100.0;
     }
 
-    /// <summary>The resistance and maximum resistance for one damage type.</summary>
-    public readonly record struct ResistanceValue(int Value, int Maximum = DefaultMaxResistance);
+    /// <summary>The resistance, maximum resistance and penetration for one damage type: penetration subtracts from
+    /// the capped resistance with no second clamp, so it can take the effective value below the floor.</summary>
+    public readonly record struct ResistanceValue(int Value, int Maximum = DefaultMaxResistance, int Penetration = 0);
 
-    /// <summary>Mitigate every damage type in a hit separately. The game applies each type's own resistance and maximum
-    /// resistance; fractions stay fractional until the final roll.</summary>
+    /// <summary>Mitigate every damage type in a hit separately. The game applies each type's own resistance and
+    /// maximum resistance; the hit's penetration subtracts from the capped value with no second clamp (Path of
+    /// Building's CalcOffence 16de4b8: calcResistForType caps the resistance first, the hit branch then uses
+    /// resist − pen), so penetration can take the effective resistance below the floor. The per-type components stay
+    /// fractional; the caller rounds the final total.</summary>
     public static DamagePacket Mitigate(DamagePacket damage, Func<DamageType, ResistanceValue> resistance) =>
         damage.Select((type, range) =>
         {
             var r = resistance(type);
-            return new DamageRange(Mitigate(range.Min, r.Value, r.Maximum),
-                Mitigate(range.Max, r.Value, r.Maximum));
+            int effective = Capped(r.Value, r.Maximum) - r.Penetration;
+            return new DamageRange(MitigateBy(range.Min, effective), MitigateBy(range.Max, effective));
         });
+
+    /// <summary>The share of the damage an already-effective resistance leaves (capped, with the penetration
+    /// applied), kept fractional and never below zero; a below-floor effective resistance deals more than the raw
+    /// damage. The caller rounds the final total once, not the components.</summary>
+    public static double MitigateBy(double damage, int effectiveResistance)
+    {
+        if (damage <= 0) return 0;
+        return Math.Max(0, damage * (100.0 - effectiveResistance) / 100.0);
+    }
 
     /// <summary>Path of Building's <c>BlockChanceCap</c>: block chance cannot exceed 90%.</summary>
     public const int BlockChanceCap = 90;

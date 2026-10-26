@@ -545,7 +545,7 @@ partial class Program
             CurrencyEffects.ChromaticOrb => Items.ByHash(target.Item.TypeHash) is { } targetType
                 ? CurrencyEffects.Chromatic(target.Item, Items.Requirements(targetType), Random.Shared) : null,
             CurrencyEffects.JewellersOrb => Items.ByHash(target.Item.TypeHash) is { } socketType
-                ? CurrencyEffects.Jewellers(target.Item, socketType, Items.Requirements(socketType), Random.Shared) : null,
+                ? CurrencyEffects.Jewellers(target.Item, socketType, Random.Shared) : null,
             CurrencyEffects.OrbOfFusing => Items.ByHash(target.Item.TypeHash) is { } linkType
                 ? CurrencyEffects.Fusing(target.Item, linkType, Random.Shared) : null,
             CurrencyEffects.OrbOfAlchemy => CurrencyEffects.Alchemy(target.Item, Rolls, Random.Shared),
@@ -565,7 +565,8 @@ partial class Program
             CurrencyEffects.GlassblowersBauble => CurrencyEffects.Glassblower(target.Item),
             CurrencyEffects.GemcuttersPrism => CurrencyEffects.Gemcutter(target.Item),
             CurrencyEffects.FracturingOrb => CurrencyEffects.Fracture(target.Item, Random.Shared),
-            CurrencyEffects.VaalOrb => Items.ByHash(target.Item.TypeHash) is { } vaalType ? CurrencyEffects.Vaal(target.Item, vaalType, Rolls, Random.Shared) : null,
+            CurrencyEffects.VaalOrb => Items.ByHash(target.Item.TypeHash) is { } vaalType
+                ? CurrencyEffects.Vaal(target.Item, vaalType, Items.Requirements(vaalType), Rolls, Random.Shared) : null,
             _ when isEssence => Essences.Apply(type!.Hash, target.Item, Random.Shared),
             _ => null,
         };

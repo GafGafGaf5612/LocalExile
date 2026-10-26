@@ -110,16 +110,16 @@ public class CurrencyEffectsTests
     public void Jewellers_refuses_gems_maximum_sockets_and_unsupported_items()
     {
         var random = new Random(4);
-        Assert.Null(CurrencyEffects.Jewellers(Boots(SocketColour.Red) with { ItemLevel = 100 }, SocketBase("Boots"), (0, 0, 0), random));
+        Assert.Null(CurrencyEffects.Jewellers(Boots(SocketColour.Red) with { ItemLevel = 100 }, SocketBase("Boots"), random));
         var full = Boots() with { ItemLevel = 100, Sockets = Enumerable.Repeat(new ItemSocket(SocketColour.Red), 4).ToArray() };
-        Assert.Null(CurrencyEffects.Jewellers(full, SocketBase("Boots"), (0, 0, 0), random));
-        Assert.Null(CurrencyEffects.Jewellers(Boots(), SocketBase("Ring"), (0, 0, 0), random));
-        Assert.Null(CurrencyEffects.Jewellers(new Item(1, ["Base"], 0), SocketBase("Boots"), (0, 0, 0), random));
+        Assert.Null(CurrencyEffects.Jewellers(full, SocketBase("Boots"), random));
+        Assert.Null(CurrencyEffects.Jewellers(Boots(), SocketBase("Ring"), random));
+        Assert.Null(CurrencyEffects.Jewellers(new Item(1, ["Base"], 0), SocketBase("Boots"), random));
         Assert.Equal(2, CurrencyEffects.MaximumSockets(full, SocketBase("Wand", 1, 2)));
     }
 
     [Fact]
-    public void Jewellers_rolls_valid_colours_and_link_groups_without_changing_other_properties()
+    public void Jewellers_adds_white_sockets_and_keeps_retained_colours_and_link_groups()
     {
         var random = new Random(5);
         var counts = new HashSet<int>();
@@ -128,7 +128,7 @@ public class CurrencyEffectsTests
         var before = Boots() with { ItemLevel = 100, Quality = 20, Rarity = ItemRarity.Rare };
         for (int i = 0; i < 10000; i++)
         {
-            var after = CurrencyEffects.Jewellers(before, SocketBase("Body Armour"), (20, 20, 20), random)!;
+            var after = CurrencyEffects.Jewellers(before, SocketBase("Body Armour"), random)!;
             counts.Add(after.Sockets.Count);
             linkPatterns.Add(string.Join(",", after.Links!));
             Assert.Equal(after.Sockets.Count, after.Links!.Sum(n => n));
@@ -137,10 +137,22 @@ public class CurrencyEffectsTests
             Assert.Equal(before, after with { Sockets = before.Sockets, Links = before.Links });
         }
         Assert.Equal(new[] { 1, 2, 3, 4, 6 }, counts.OrderBy(n => n));
-        Assert.Equal(3, colours.Count);
-        Assert.DoesNotContain(SocketColour.White, colours);
+        Assert.Equal([SocketColour.White], colours);
         Assert.Contains("4", linkPatterns);
         Assert.Contains("1,1,1,1", linkPatterns);
+
+        // Sockets that stay keep their colours; only the added ones are white.
+        var kept = Boots(SocketColour.Red, SocketColour.Blue, SocketColour.Green) with
+        {
+            ItemLevel = 100, Sockets = [new(SocketColour.Red), new(SocketColour.Blue), new(SocketColour.Green)],
+        };
+        for (int i = 0; i < 200; i++)
+        {
+            var after = CurrencyEffects.Jewellers(kept, SocketBase("Body Armour"), new Random(i))!;
+            for (int at = 0; at < Math.Min(after.Sockets.Count, kept.Sockets.Count); at++)
+                Assert.Equal(kept.Sockets[at].Colour, after.Sockets[at].Colour);
+            Assert.All(after.Sockets.Skip(kept.Sockets.Count), s => Assert.Equal(SocketColour.White, s.Colour));
+        }
     }
 
     [Fact]
@@ -154,7 +166,7 @@ public class CurrencyEffectsTests
             var random = new Random(7);
             for (int i = 0; i < 20; i++)
             {
-                var result = CurrencyEffects.Jewellers(item, type, (6, 0, 0), random);
+                var result = CurrencyEffects.Jewellers(item, type, random);
                 Assert.NotNull(result);
                 Assert.Equal(item.Sockets.Count == 2 ? 1 : 2, result.Sockets.Count);
                 item = result;
@@ -167,7 +179,7 @@ public class CurrencyEffectsTests
     {
         var before = Boots() with { ItemLevel = 100, Sockets = [new(SocketColour.Red), new(SocketColour.Blue)] };
         for (int i = 0; i < 100; i++)
-            Assert.NotEqual(2, CurrencyEffects.Jewellers(before, SocketBase("Boots"), (0, 0, 0), new Random(i))!.Sockets.Count);
+            Assert.NotEqual(2, CurrencyEffects.Jewellers(before, SocketBase("Boots"), new Random(i))!.Sockets.Count);
     }
 
     static Item Boots(params SocketColour[] colours) => new(0x1234, ["Base", "Sockets"], 0x10)
@@ -177,19 +189,35 @@ public class CurrencyEffectsTests
     };
 
     [Fact]
-    public void A_chromatic_orb_changes_the_colours_and_keeps_gems_and_links()
+    public void A_chromatic_orb_forces_one_colour_and_keeps_gems_and_links()
     {
         var random = new Random(1);
+        int whites = 0;
         for (int i = 0; i < 200; i++)
         {
             var before = Boots(SocketColour.Red, SocketColour.Red, SocketColour.Green);
             var after = CurrencyEffects.Chromatic(before, (20, 20, 0), random)!;
 
-            Assert.NotEqual(before.Sockets.Select(s => s.Colour), after.Sockets.Select(s => s.Colour));
-            Assert.All(after.Sockets, s => Assert.NotEqual(SocketColour.White, s.Colour));
+            // 3.29: one socket is forced non-white; the rest roll normally (white unless the item's chance colours them).
+            Assert.Equal(3, after.Sockets.Count);
+            Assert.Contains(after.Sockets, s => SocketColours.IsColoured(s.Colour));
+            whites += after.Sockets.Count(s => s.Colour == SocketColour.White);
             Assert.Equal(before.Sockets[0].Gem, after.Sockets[0].Gem);
             Assert.Equal(before.Links, after.Links);
         }
+        // Level 0: the two sockets that are not forced are white about 95% of the time each.
+        Assert.True(whites > 250, $"{whites} white sockets");
+    }
+
+    [Fact]
+    public void Higher_quality_raises_the_chromatic_non_white_chance()
+    {
+        var random = new Random(21);
+        int Count(byte quality) => Enumerable.Range(0, 4000)
+            .Sum(_ => CurrencyEffects.Chromatic(Boots(SocketColour.White, SocketColour.White, SocketColour.White, SocketColour.White, SocketColour.White, SocketColour.White)
+                with { ItemLevel = 100, Quality = quality }, (20, 20, 20), random)!
+                .Sockets.Count(s => SocketColours.IsColoured(s.Colour)));
+        Assert.True(Count(20) > Count(0));
     }
 
     [Fact]
@@ -203,8 +231,28 @@ public class CurrencyEffectsTests
             total++;
             if (after.Sockets[0].Colour == SocketColour.Red) red++;
         }
-        // Strength 100: red weighs 112 against green's 12 (blue, the old colour, cannot come back on one socket).
-        Assert.InRange(red / (double)total, 0.85, 0.95);
+        // Strength 100: red weighs 112 against green's and blue's 12 (12 / (112 + 12 + 12) ≈ 10.6%).
+        Assert.InRange(red / (double)total, 0.78, 0.87);
+    }
+
+    [Fact]
+    public void Corruption_turns_one_white_socket_coloured()
+    {
+        var catalog = new ItemCatalog("data");
+        var type = catalog.Find("Metadata/Items/Armours/BodyArmours/BodyStr1")!;
+        var rolls = new ItemRolls(catalog);
+        var random = new Random(22);
+        var item = ItemCatalog.Create(type, [new(SocketColour.White), new(SocketColour.White), new(SocketColour.Blue)], [3])
+            with { ItemLevel = 100, Rarity = ItemRarity.Rare };
+        var after = CurrencyEffects.Vaal(item, type, catalog.Requirements(type), rolls, random)!;
+        Assert.True(after.Corrupted);
+        Assert.Equal(SocketColour.Blue, after.Sockets[2].Colour);
+        // Exactly one of the two white sockets became a colour; the other stayed white.
+        Assert.Equal(1, after.Sockets.Count(s => s.Colour == SocketColour.White));
+        // No white socket left to colour: the sockets stay as they are.
+        var allColoured = item with { Sockets = [new(SocketColour.Red), new(SocketColour.Green), new(SocketColour.Blue)] };
+        var again = CurrencyEffects.Vaal(allColoured, type, catalog.Requirements(type), rolls, random)!;
+        Assert.Equal(allColoured.Sockets.Select(s => s.Colour), again.Sockets.Select(s => s.Colour));
     }
 
     [Fact]

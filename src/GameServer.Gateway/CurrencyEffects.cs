@@ -69,14 +69,22 @@ static class CurrencyEffects
     /// <summary>Vaal Orb (this server's rule): a weapon, armour piece or jewellery (ring, amulet, belt) that is not
     /// corrupted or unique becomes corrupted, always. A normal or magic item becomes rare with 4-6 new affixes; a rare one
     /// keeps its name and has 1 (20%), 2 (20%), 3 (20%), 4 (20%) or 5 (10%) affixes replaced, or all of them rerolled
-    /// (10%, 4-6 affixes, new name).</summary>
-    public static Item? Vaal(Item item, ItemCatalog.BaseType type, ItemRolls rolls, Random random)
+    /// (10%, 4-6 affixes, new name). 3.29: corruption also turns one white socket coloured (13-items.md).</summary>
+    public static Item? Vaal(Item item, ItemCatalog.BaseType type, (int Str, int Dex, int Int) requirements, ItemRolls rolls, Random random)
     {
         bool target = item.Components.Contains("Weapon") || item.Components.Contains("Armour") || type.Class is "Ring" or "Amulet" or "Belt";
         if (!target || item.Corrupted || item.Rarity == ItemRarity.Unique || !item.Components.Contains("Mods")) return null;
         int roll = random.Next(100);
         Item result = item.Rarity != ItemRarity.Rare || roll >= 90 ? rolls.Roll(item, ItemRarity.Rare, random)
             : rolls.ReplaceAffixes(item, roll switch { < 20 => 1, < 40 => 2, < 60 => 3, < 80 => 4, _ => 5 }, random);
+        var sockets = result.Sockets.ToArray();
+        var whites = Enumerable.Range(0, sockets.Length).Where(i => sockets[i].Colour == SocketColour.White).ToArray();
+        if (whites.Length > 0)
+        {
+            int at = whites[random.Next(whites.Length)];
+            sockets[at] = sockets[at] with { Colour = SocketColours.Colour(requirements, random) };
+            result = result with { Sockets = sockets };
+        }
         return result with { Corrupted = true, Identified = true };
     }
 
@@ -205,8 +213,9 @@ static class CurrencyEffects
         return Math.Min(limit, type.Width * type.Height);
     }
 
-    /// <summary>Reforge empty sockets, colours and link groups. Refused targets spend no currency.</summary>
-    public static Item? Jewellers(Item item, ItemCatalog.BaseType type, (int Str, int Dex, int Int) requirements, Random random)
+    /// <summary>Reroll the socket count and link groups. Refused targets spend no currency. 3.29: only the sockets the
+    /// reroll adds are white; sockets that stay keep their colours (13-items.md, "Socket colours (3.29)").</summary>
+    public static Item? Jewellers(Item item, ItemCatalog.BaseType type, Random random)
     {
         int max = MaximumSockets(item, type);
         if (max == 0 || item.Sockets.Count >= SocketCapacity(item, type) || item.Sockets.Any(s => s.Gem is not null)) return null;
@@ -220,13 +229,11 @@ static class CurrencyEffects
             if (roll < choice.Weight) { count = choice.Count; break; }
             roll -= choice.Weight;
         }
-        int r = requirements.Str + ColourBase, g = requirements.Dex + ColourBase, b = requirements.Int + ColourBase;
         var sockets = new List<ItemSocket>();
         var links = new List<byte> { 1 };
         for (int i = 0; i < count; i++)
         {
-            int colour = random.Next(r + g + b);
-            sockets.Add(new(colour < r ? SocketColour.Red : colour < r + g ? SocketColour.Green : SocketColour.Blue));
+            sockets.Add(i < item.Sockets.Count ? item.Sockets[i] : new(SocketColour.White));
             if (i == 0) continue;
             if (random.Next(2) == 0) links[^1]++;
             else links.Add(1);
@@ -234,29 +241,19 @@ static class CurrencyEffects
         return item with { Sockets = sockets, Links = links };
     }
 
-    // shortcut: the real game's colour weights are not known; each colour weighs its attribute requirement + 12.
-    const int ColourBase = 12;
-
     /// <summary>
-    /// Chromatic Orb: every socket gets a new colour, red / green / blue weighted by the base's strength / dexterity /
-    /// intelligence requirement + 12 (never white). Gems and links stay. The result differs from the old colours (rerolled
-    /// up to 50 times; a single socket always can). Null for an item without sockets.
+    /// Chromatic Orb (3.29): one socket is forced non-white, the rest roll normally (white, or a colour at the item's
+    /// chance, which the item's quality raises). Gems and links stay.
     /// </summary>
     public static Item? Chromatic(Item item, (int Str, int Dex, int Int) requirements, Random random)
     {
         if (item.Sockets.Count == 0) return null;
-        int r = requirements.Str + ColourBase, g = requirements.Dex + ColourBase, b = requirements.Int + ColourBase;
-        SocketColour Roll()
+        int forced = random.Next(item.Sockets.Count);
+        var sockets = item.Sockets.Select((socket, i) => socket with
         {
-            int x = random.Next(r + g + b);
-            return x < r ? SocketColour.Red : x < r + g ? SocketColour.Green : SocketColour.Blue;
-        }
-        IReadOnlyList<ItemSocket> sockets = item.Sockets;
-        for (int tries = 0; tries < 50; tries++)
-        {
-            sockets = [.. item.Sockets.Select(s => s with { Colour = Roll() })];
-            if (!sockets.Select(s => s.Colour).SequenceEqual(item.Sockets.Select(s => s.Colour))) break;
-        }
+            Colour = i == forced ? SocketColours.Colour(requirements, random)
+                : SocketColours.Roll(requirements, item.ItemLevel, item.Quality, random, chromatic: true),
+        }).ToArray();
         return item with { Sockets = sockets };
     }
 }

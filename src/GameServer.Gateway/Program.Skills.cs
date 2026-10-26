@@ -61,18 +61,24 @@ partial class Program
     static List<(uint, int)> WeaponStats(ClientState conn, SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats)
     {
         var conversion = DamageStats.Conversion(stats, Stats, attack: true);
-        var list = weapon.Stats(stats, AttackHit(weapon, stats).Convert(conversion)).ToList();
+        var list = weapon.Stats(stats, AttackHit(weapon, stats, MeleeAttack(conn)).Convert(conversion)).ToList();
         if (OffhandWeaponFor(conn) is { } off)
-            list.AddRange(off.OffStats(stats, AttackHit(off, stats).Convert(conversion), WeaponProfileFor(conn).LocalAttackSpeedPct));
+            list.AddRange(off.OffStats(stats, AttackHit(off, stats, MeleeAttack(conn)).Convert(conversion), WeaponProfileFor(conn).LocalAttackSpeedPct));
         return list;
     }
 
     // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
-    static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
+    internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     {
         Dictionary<uint, int> stats;
         lock (conn.Monsters) stats = new(conn.PlayerStats);
         foreach (var (k, v) in BaseStats(conn)) stats.TryAdd(k, v);
+        // The overcapped lightning resistance's increased crit (PoolsFor derived it once into Pools): the spell
+        // consumers read the raw increased stats here (SpellCriticalStrike), while the attack and panel chances
+        // already fold the same value into the pools. Additive with whatever won above, as a derived stat source.
+        if (conn.Pools.LightningOvercapCritPct is int overCrit and not 0
+            && Stats.Key("critical_strike_chance_+%") is uint critInc)
+            stats[critInc] = (int)Math.Clamp((long)stats.GetValueOrDefault(critInc) + overCrit, int.MinValue, int.MaxValue);
         // The passives' conditional attack speed is already one final value in Pools; /set_stat's raw attack-speed stats
         // stay additive. main_hand_attack_speed_+% is the total the client swings with, so Unarmed reads only it.
         int devAttackSpeed = 0;
@@ -99,7 +105,7 @@ partial class Program
         // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
         // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
         if (Stats.Key("skill_uses_main_hand") is uint usesMainHand && !devSet.Contains(usesMainHand)) stats[usesMainHand] = 1;
-        var attack = AttackHit(WeaponFor(conn), stats);
+        var attack = AttackHit(WeaponFor(conn), stats, MeleeAttack(conn));
         foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         // The conditions as they are now; the player tick sends the chance again when they change.
@@ -108,10 +114,18 @@ partial class Program
         return stats;
     }
 
+    // The melee context of an attack's added-damage stats — see DamageStats.Added. An attack gem classifies
+    // its own ActiveSkillType Melee; the default attack and the panel swing the active weapon set's weapon where an
+    // inactive weapon is not there at all (WeaponProfileFor) and unarmed swings are melee.
+    internal static bool MeleeAttack(ClientState conn, int gemEffect = -1) =>
+        gemEffect >= 0 && Skills.IsAttack(gemEffect) ? Skills.IsMelee(gemEffect)
+            : WeaponProfileFor(conn, activeSet: true).Melee;
+
     // Conversion for one hit: the player's stats plus the skill's own stats (base/skill conversion). Player stats win on
     // a key collision; the normal case is that the skill adds stats the player does not have.
-    static DamagePacket AttackHit(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats) =>
-        DamageStats.Added(weapon.HitDamage(stats), name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0, spell: false)
+    internal static DamagePacket AttackHit(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats, bool melee) =>
+        DamageStats.Added(weapon.HitDamage(stats), name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0,
+            spell: false, melee)
             .Scale(ChargeDamageMore(stats));
 
     static double AddedEffectiveness(int effect, int level) => Skills.DamageEffectiveness(effect, level) is int value and > 0 ? value / 10000.0 : 1;

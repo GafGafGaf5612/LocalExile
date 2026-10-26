@@ -52,7 +52,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
 | SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: one level over the cap), u32 +0x3c the variant, u8 +0x10 flags (bit 2: level locked), u16 +0x40 |
-| Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue (seen), 4 white (assumed) |
+| Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue, 4 white (all seen live 2026-10-26) |
 | Armour | `0x14363ad40` | `0x1424affc0` | u8 0..0x20 (stored at +0x28; 0x20 also sets +0x2a) |
 | LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
 
@@ -270,7 +270,7 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` / `0x141f90340`, senders `0x14215f520` / `0x14215f570` | inventory request, not mapped: u8, u32, u8 flag (0 / 1 by sender) | not handled |
 | 0x58 | 10 | `0x1435bf8a8` / `0x141f926a0` | use an item that needs no target (right-click): u32 inventory id, u32 item id, both big-endian | an Orb of Regret loses one item and adds one refund point (0xbf the stack, 0x33 the tree) |
-| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20); the first inventory id is a stash tab (e.g. 2053) when the currency is right-clicked in the open stash (live 2026-10-23): one is taken off that tab's stack; the target inventory id can be a stash tab too, e.g. the currency tab's crafting slot (live 2026-10-23: currency in its slot used on the item in the crafting slot, both inventory ids 2053). `ItemMoves.UseAcross`: the currency and the target saved together, one 0xbf per place changed (one for both when they share it) | a Scroll of Wisdom identifies the target (§2b); a Chromatic Orb gives every socket a new colour (`CurrencyEffects.Chromatic`: red / green / blue weighted by the base's strength / dexterity / intelligence requirement + 12, our own weights; never white, gems and links stay, always different from before; live 2026-10-21 the client sent it for boots and a helmet): 0xbf with the stack and the target |
+| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20); the first inventory id is a stash tab (e.g. 2053) when the currency is right-clicked in the open stash (live 2026-10-23): one is taken off that tab's stack; the target inventory id can be a stash tab too, e.g. the currency tab's crafting slot (live 2026-10-23: currency in its slot used on the item in the crafting slot, both inventory ids 2053). `ItemMoves.UseAcross`: the currency and the target saved together, one 0xbf per place changed (one for both when they share it) | a Scroll of Wisdom identifies the target (§2b); a Chromatic Orb uses the 3.29 rule (`CurrencyEffects.Chromatic`, below): one socket is forced non-white, the rest roll normally, gems and links stay: 0xbf with the stack and the target |
 | 0x72 | 23 | not traced | the held currency used again with **Shift** (the client keeps it on the cursor while the inventory has more, live 2026-10-21): u32 its BaseItemTypes HASH32 (the type, not an item), u32 inventory id and u32 item id of the target, all big-endian, then u32 0, u8 1, u8 0, u8 7, u16 2 (unknown) | as 0x71, with a stack of that type from the inventories (the main inventory first), then from the stash tabs |
 | 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | the held item clicked **on an item** (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 the clicked item's id, u8 flags (bit 2 = Shift; HNC bits 3-7), u8 (3), u16 (low byte first, differs every click, unknown) | a merge (0xbf the stack, 0xbf cursor), else a swap as 0x2a |
 | 0x7c | 17 | `0x1435bfdd8` / `0x141f90870`, sender `0x142165640` | split a stack (§4a): u32 inventory id, u32 item id, u32 amount, u8 (3), u16 (unknown); no HNC bits | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
@@ -365,7 +365,8 @@ lost when the Gateway restarts.
 ### Jeweller's Orb (initial local implementation, 2026-10-21)
 
 `CurrencyRerollSocketNumbers` uses the existing 0x71 handler and the shared Shift 0x72 path. One successful use
-spends one orb and replaces the target through 0xbf, rerolling socket count, RGB colours and link groups. Equipped
+spends one orb and replaces the target through 0xbf, rerolling socket count and link groups. 3.29: sockets the reroll
+keeps retain their colours and only the added sockets are white (`SocketColours`, below). Equipped
 targets also refresh equipment. The existing character save stores the result. Verified live with the 3.29.3b client: repeated rolls on gloves, boots, a helmet, weapons and body armour; inventory updates and currency consumption are visible in the Gateway log.
 
 Requested local counts are **1, 2, 3, 4, 6** (five excluded). Class caps: body armour, bows and two-handed melee
@@ -375,16 +376,50 @@ refused. Items already at the base's capacity (class and dimensions, not the ite
 are refused without consuming currency; remove gems first. Live failure 2026-10-21: level-1 BootsStr1/GlovesStr1
 with two empty sockets were incorrectly refused at the level cap. They can now reroll between one and two sockets;
 the level cap limits the result, not eligibility. A regression test covers repeated use on both bases.
-The new count differs from the old count. Colours and links are independently rerolled and may repeat.
+The new count differs from the old count. Link groups are independently rerolled and may repeat.
 
 This is deliberately an initial local rule set, not exact 3.29 socket crafting: weights for counts 1/2/3/4/6 are
-50/120/100/30/1 (filtered by eligibility and old count), RGB uses attribute requirement + 12, each adjacent link has
-a 50% chance. Quality bonuses, white-socket 3.29 rules, special unique/mod socket overrides and corruption are not
-modelled. No new extracted data is needed.
+50/120/100/30/1 (filtered by eligibility and old count), each adjacent link has a 50% chance, and new sockets are
+white. Special unique/mod socket overrides and corruption are not modelled. No new extracted data is needed.
 
 C→S 0x72 is 23 bytes: u16 id, u32 currency BaseItemTypes HASH32, u32 target inventory, u32 target item,
 then nine currently uninterpreted bytes. All integer fields above are big-endian. The Gateway resolves a stack
 of that currency (main inventory first) and reuses the 0x71 handler.
+
+### Socket colours (3.29 rules, 2026-10-26)
+
+The 3.29.0 patch notes ("Gem Socket Changes"):
+
+- Item sockets are white by default, and a gem goes into any equipment socket whatever its colour (the client's own
+  check, §2d, only compares requirements and changed in 3.29 to allow this).
+- Each socket generated on an item has a small chance to be red, green or blue instead, in proportion to the item's
+  attribute requirements; the chance rises with item level.
+- A gem in a red, green or blue socket of its own colour gets +10% quality ([25](25-gem-supports.md), the support and
+  skill stats read it).
+- Chromatic Orbs and Tainted Chromatic Orbs force one of the item's sockets non-white and roll the rest normally;
+  higher item quality raises the chance of non-white sockets.
+- Currency that adds sockets (Jeweller's, Tainted Jeweller's, Orb of Binding) adds them white.
+- Vaal Orb corruption turns a white socket coloured; the Locus of Corruption turns all white sockets coloured.
+- The old single-colour bench crafts are gone. `CraftingBenchOptions` now has **At Least Two / Three / Four Non-White
+  Sockets** (`SocketColours` `NN`/`NNN`/`NNNN`), 5 / 20 / 75 Chromatic Orbs.
+
+The notes give no numeric probabilities. This server approximates them in `SocketColours`: 5% non-white at item level 1
+plus 0.25 points per item level (30% at 100), and +0.25 points per 1% item quality for Chromatic Orbs and the non-white
+bench crafts. A rolled colour weighs its attribute requirement + 12, so a strength base rolls mostly red. The curve is
+a placeholder to be fitted from live captures; the caps (2 sockets per generated item, socket counts, link rules) and
+the class capacities are unchanged (`CurrencyEffects.MaximumSockets`, `SocketCapacity`).
+
+Where it applies: `ItemCatalog.DefaultSockets` (used by `/item`, drops and NPC shops) rolls each of an item's two linked
+sockets; the start weapon gets two white linked sockets; `CurrencyEffects.Chromatic` forces one socket and rolls the
+rest; `Jewellers` and the bench's socket-count crafts add white sockets and keep the retained ones; `BenchCrafting`
+handles the `NN` crafts (rerolls the colours until the item has at least N non-white sockets, with the item's chance,
+then forces any missing ones); `CurrencyEffects.Vaal` colours one white socket.
+
+Not modelled: Tainted Chromatic and Tainted Jeweller's Orbs, the Orb of Binding, the Locus of Corruption and the
+bench's milestone reward (25 reforges keeping the most non-white sockets). Verified live 2026-10-26: white sockets are
+drawn and accepted, Chromatic leaves one socket non-white and the rest white, Jeweller's keeps retained colours and
+adds white ones, and the matching-colour +10% quality changes the gem's stats; the stat path is in
+`Program.GemSupports.cs` (`Quality`). The probabilities remain an approximation.
 
 ### Orb of Alchemy (2026-10-21, verified live)
 
@@ -596,7 +631,8 @@ gems must not be granted:** a support's effect in the list crashed the client in
 ## 7. Start kit, saves and dev command
 
 A new character gets Characters.dat StartSkillGem and StartSupportGem in the main inventory, and in the flask bar two
-Small Life Flasks (cells 0 and 1: flask keys 1 and 2) and a Small Mana Flask (cell 4: key 5). Its StartWeapons[0], with two linked sockets in the start gems' colours, is worn
+Small Life Flasks (cells 0 and 1: flask keys 1 and 2) and a Small Mana Flask (cell 4: key 5). Its StartWeapons[0], with
+two linked white sockets (3.29: a gem fits any colour), is worn
 in Weapon1. With `Game_START_WEAPON=ground` it lies on the ground instead, as on the real game's Twilight Strand: `PlayerInventories.StartWeapon` keeps it (in the save as
 `StartWeapon`) until it is picked up, and on entering an instance outside towns the Gateway puts it once per character, weapon
 and instance (`InstanceState.PlaceStartWeapon`) on the first walkable cell 6 to 20 cells from the spawn
@@ -625,7 +661,8 @@ not in the save ("Open"), so dropping one takes it out of the save, and a discon
 `tests/GameServer.Gateway.Tests`.
 
 `/item <BaseItemTypes row, Id or name> [count]` adds items to the main inventory; types with a Sockets component get two
-linked sockets in the colour of their highest attribute requirement (ComponentAttributeRequirements).
+linked sockets, mostly white with the item-level colour chance of "Socket colours (3.29)" above, in the colour
+proportional to their attribute requirements (ComponentAttributeRequirements).
 `/sockets [colours]` (`SocketLayout.cs`, verified live 2026-10-25) sets the held item's sockets and links.
 Letters R, G, B, W are linked within a word and unlinked between words: `/sockets RRGBBB` is a 6-link, `/sockets RRG B`
 a 3-link and a single (dashes are ignored, so `R-R-G-B` works too); without colours it shows the layout.

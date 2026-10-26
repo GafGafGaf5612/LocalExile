@@ -35,4 +35,15 @@ public class GameDataFilesTests
         foreach (var (file, _) in GameDataFiles.All)
             Assert.Contains($"'{file.Replace('/', '\\')}'", script);
     }
+
+    [Fact]
+    public void The_program_catalogs_find_the_tables_from_the_shared_repository_root()
+    {
+        // TestEnvironment sets the repository root before Program initializes its relative production catalogs.
+        // All three suppression keys resolve when Stats is present, and stay empty without the extracted table.
+        bool stats = File.Exists(Path.Combine("data", "tables", "Stats.json"));
+        Assert.Equal(stats ? 3 : 0, Program.SuppressionChanceKeys.Length);
+        if (stats)
+            Assert.True(File.Exists(Path.Combine("data", "tables", "MonsterTypes.json")));
+    }
 }

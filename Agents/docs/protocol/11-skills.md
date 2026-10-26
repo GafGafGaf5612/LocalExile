@@ -204,7 +204,10 @@ Armour and evasion are summed from the passive tree and the **base types** of th
 and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `base_evasion_rating` are flat, while
 `physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%`
 (Cloth and Chain and similar nodes), `global_defences_+%` and the combined armour/evasion increase are additive
-increased modifiers. **Iron Reflexes** (`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
+increased modifiers. The overcapped cold resistance's increase is one of them (§12); it applies before the conversion,
+so Iron Reflexes' converted evasion keeps it, and monster attacks roll against the boosted rating.
+**Iron Reflexes**
+(`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
 passive/item flat evasion, to armour and removes dexterity's 1% per 5 evasion; the converted part keeps the armour,
 evasion and shared defence increases once each. Item mods, quality, local defence rolls, shields and auras are not counted
 yet; the base value is the armour row's minimum, which is the client's default when the item's Armour component is zero.
@@ -279,8 +282,49 @@ No generator output changes are needed: the multiplier is already extracted.
 **Critical strikes.** The server rolls a hit's critical chance after the damage roll: `base chance × (1 + increased
 critical strike chance / 100)`, capped at 100%, then multiplies the damage by the final multiplier (150% plus
 `base_critical_strike_multiplier_+`), as PoB's `CalcOffence` does. PoB's `unarmedWeaponData[class].CritChance = 0`
-and `base_critical_strike_multiplier = 150` are the defaults used here. The base is the equipped main hand's `WeaponTypes.dat` `Critical` permyriad
-(830 = 8.30%); unarmed is 0. Spells use their own level's `GrantedEffectStatSetsPerLevel.SpellCritChance`:
+and `base_critical_strike_multiplier = 150` are the defaults used here. The base is the equipped main hand's
+`WeaponTypes.dat` `Critical` permyriad (830 = 8.30%); unarmed is 0. Two pure base stats replace that base before the
+global increases, the way PoB's `WeaponBaseCritChance` override replaces an attack pass's
+[source.CritChance](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcOffence.lua#L2003-L2012)
+only when that hand's weapon type is not "None" (ModParser gets it from "Base Critical Strike Chance for Attacks
+with Weapons is X%").
+`override_weapon_base_critical_strike_chance` (Stats.dat row 9892, client key 9893, permyriad) is the armed main
+hand's base: Slayer Overwhelm (graph id 17315) grants 800 = 8.00%, and the Blind Prophet position's
+Sightless (graph id 24698) grants 900 = 9.00%.
+`base_melee_critical_strike_chance_while_unarmed_%` (Stats.dat row 3906,
+client key 3907, permyriad; the Behemoth position's Final Blow, graph id 10135, grants 1000 = 10.00%) fills the unarmed
+melee attack that has no weapon base. Each is a base, not a fixed final chance: the generic
+`critical_strike_chance_+%` increases still apply on top. A weapon hand keeps the unarmed base out, an unarmed
+context keeps the weapon override out, and `SpellCriticalStrike`'s spell route reads neither.
+The active weapon set determines the attack base and weapon-specific increases; an inactive weapon grants neither.
+`global_cannot_crit`, `virtual_global_cannot_crit` and `cannot_critical_strike_with_attacks` suppress attack crits.
+The pool builds the base once in `AttackBaseCriticalStrike`.
+`/set_stat` replaces its source value and rebuilds the pools for critical-chance inputs and prohibitions.
+The panel's final `main_hand_critical_strike_chance` and the rolls share that result.
+Generic and spell increases use the same effective raw inputs as `CharacterPlayerStats`: a development value,
+including zero, replaces that stat's complete passive/equipment/aura sum.
+The attack and pooled spell reference report those effective increased percentages, so `/crit` agrees with the rolls.
+The attack base feeds the shared `DamageModel.CriticalStrikeChancePerMyriad` used by spells, rolls and panels.
+Nonnegative half permyriad values round up: a 650 base with +1% increased gives 657.
+Generic and applicable typed inputs are summed as signed `long` values before the final cap;
+large positive and negative inputs may cancel before clamping.
+Native checks recorded below belong to the original PR head `8c4c62d`.
+The shared half-up midpoint and resolved stack need a new native check; automated coverage establishes the contract.
+Signed increases stay in 64 bits through the pool and player-plus-skill sum; only final native values are bounded.
+Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
+Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.
+Twelve real-client checks used a fresh synthetic character and read the client's received stat values.
+A Driftwood Wand's 830 became 800 and 900; 100% increased chance raised 900 to 1800, then cannot-crit set it to zero.
+Switching to an empty second set gave zero despite the inactive wand; the unarmed base gave 1000.
+Switching back restored 900, clearing the weapon override restored 830, and relog cleared the development overrides.
+Automated regressions also cover generic/spell development increases, aura replacement and active-hand increases.
+Five follow-up native getter checks verify the corrected development inputs on a new synthetic character.
+With weapon base 900, generic increase 0 gives attack 900 and the pooled spell reference 500;
+generic 100 gives 1800 and 1000, then spell-specific 50 changes only the spell reference to 1250.
+Generic `int.MaxValue` with that spell modifier caps both chances at 10000; `int.MinValue` clears both.
+The Gateway runs from its checkout root with repository-relative catalogs during these checks.
+These checks validate the generic stat consumers; ascendancy allocation remains in its separate lifecycle change.
+Spells use their own level's `GrantedEffectStatSetsPerLevel.SpellCritChance`:
 Fireball 500 (5.00%), Freezing Pulse and Ice Nova 750, Arc 600, Scorching Ray 0.
 `SkillCatalog.SpellCritChance` returns null for missing/invalid data, distinct from a known zero; both fail closed.
 The unconditional passive stats are summed into `CharacterStats.Pools`: generic `critical_strike_chance_+%` and
@@ -290,6 +334,9 @@ stats for attacks, and `spell_critical_strike_chance_+%` / `base_spell_critical_
 client, so the Offence panel shows them.
 `SpellCriticalStrike` shares the raw player-plus-skill increased-chance calculation between `GemSkills` and projectile/
 area spell hits; the old final Fireball-based player display chance is not added as another input.
+The overcapped lightning resistance's increase reaches that calculation through `CharacterPlayerStats`, which adds the
+pools' stored derived value to the raw `critical_strike_chance_+%` once (§12); the attack and panel chances fold the
+same value in `PoolsFor` instead.
 Precision and Zealotry expose their existing crit bonuses through `AuraCatalog.RawStats` for that calculation.
 Pool construction still reads passives/items and adds `AuraCatalog.Bonus` once; it does not read `RawStats` back.
 The result rounds to integer permyriad, halves away from zero, then caps at 0–10000, matching
@@ -1151,6 +1198,39 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   the same rule. Armour reduction and player evasion as avoidance against monster attacks now exist (see §4);
   penetration and max-resistance modifiers are still not modelled, and monster evasion is used for the player's
   accuracy check (§5).
+- **Overcapped-resistance modifiers** (`ResistanceOvercap`, `DamageModel.Overcap`): while one of the flag stats is
+  set, the uncapped resistance above its maximum is a generic increased modifier — PoB `16de4b8`,
+  CalcDefence.lua's `ResistOverCap = max(0, total - max)` with the maximum capped at 90, applied as
+  `Evasion` (INC) for `EvasionRatingIncreasedByOvercappedColdRes` and, in CalcOffence.lua lines 745-748, as `CritChance`
+  (INC) for `CritChanceIncreasedByOvercappedLightningRes`: +1% increased evasion per 1% of cold overcap and +1%
+  increased critical chance per 1% of lightning overcap, additive with the other increases, for attacks and spells
+  alike. The flags are ordinary stats (keys 5320/5321), so any source sets them: the Surfcaster's Sea Legs notable
+  (PassiveSkills graph 61696, with its +40% `cold_and_lightning_damage_resistance_%`, which the passive/item aggregator
+  adds to both elements' raw resistance), an item mod, or `/set_stat`. An explicit dev value replaces its own input —
+  the per-type, pair and all-element resistance stats, and per-type or global maximum resistance — rather than
+  adding to the aggregate, and `/set_stat` rebuilds the pools at once.
+  The shared inputs are `base_resist_all_elements_%`, `additional_maximum_all_resistances_%` and
+  `additional_maximum_all_elemental_resistances_%`.
+  `PoolsFor` derives the increases once per pool build (with the
+  Kitava penalty inside the raw resistance; a penalty change rebuilds the pools again) and stores them in `Pools`, so
+  the evade rolls, the panel and the spell consumers read the same numbers; the uncapped values stay in `Pools`
+  untouched.
+  The resolved stack adds the derived critical increase once to the signed pool sum, before final half-up rounding.
+  An armed 830 base with 45% overcap gives 1204; raw spell stats expose the same derived source once.
+  Selected skills use the complete pool sum so a clipped native raw stat cannot erase negative cancellation.
+  Per-key resistance replacements include the active Purity contribution already in the pool bonus.
+  Equipment 80 plus Purity 40 stays 120 when the typed raw key is replaced with 120, rather than becoming 160.
+  An explicit zero replaces the typed resistance or maximum completely, while other raw keys remain independent.
+  Real aura/catalog/pool tests cover cold, lightning and all-element replacements; this fix needs native rechecking.
+  New automated regressions cover those combinations with explicit zero flags and cannot-crit.
+  These thirteen native checks belong to original head `39cbda2`; recheck the resolved combinations natively.
+  A fresh Witch verified 120% cold/lightning resistance with each flag:
+  evasion 15 → 22 (45% additional increased evasion), spell crit 500 → 725 (45% increased chance).
+  Raising maxima to 90 reduced these to 19 and 650; a global +5 maximum gave 21 and 700.
+  Adding then clearing 40% all-element resistance gave 28/925 then 22/725.
+  Act 5 and Act 10 penalties reduced these to 17/575 then 15/500; clearing the penalties restored 22/725.
+  Zero flags and relog removed the development bonuses.
+  These validate the generic consumers; allocating Sea Legs belongs to the separate ascendancy lifecycle change.
 - **Spell Suppression** (`CharacterStats`, `DamageModel`): the passives' `base_spell_suppression_chance_%` is summed into
   `Pools` (capped at 100%, PoB `SuppressionChanceCap`); a successful roll makes a spell hit take 40% less damage
   (`SuppressionEffect` in PoB `src/Modules/Data.lua`). The passives' unconditional

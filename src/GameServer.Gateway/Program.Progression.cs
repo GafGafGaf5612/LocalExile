@@ -48,14 +48,21 @@ partial class Program
         return level;
     }
 
-    // The pools of the character's class at this level with its passives (call under the Monsters lock).
     // The character's stats from its allocated passives and the global mods of its active equipped items (ItemModStats),
     // by client stat key. Worn items whose requirements the class, the passives and the other active items do not meet are
     // inactive (ItemModStats.Inactive): remembered per character for the weapon profile and the gem skills.
     static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<ushort>? nodes = null, int? level = null)
     {
         var items = ItemsOf(conn);
-        var passives = Passives.Stats(nodes ?? conn.Passives, conn.MasteryEffects);
+        // A level change can trim the list while /set_stat builds pools outside the combat lock.
+        // Mastery dictionaries are replaced as a whole, so retaining their current reference is safe.
+        IReadOnlyDictionary<ushort, ushort> masteries;
+        lock (conn.Monsters)
+        {
+            nodes ??= conn.Passives.ToArray();
+            masteries = conn.MasteryEffects;
+        }
+        var passives = Passives.Stats(nodes, masteries);
         int Get(string name) => Stats.Key(name) is uint k ? passives.GetValueOrDefault(k) : 0;
         var c = Skills.ClassFor(conn.ClassRow);
         var (ps, pd, pi) = CharacterStats.Attributes(Get);
@@ -80,11 +87,12 @@ partial class Program
         return WithCharges(conn, ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats)));
     }
 
-    static CharacterStats.Pools PoolsFor(ClientState conn, int level)
+    internal static CharacterStats.Pools PoolsFor(ClientState conn, int level)
     {
         // The stat sources first: they decide which worn items are inactive, which the weapon profile reads.
         var sources = CharacterStatSources(conn, level: level);
         var weapons = WeaponProfileFor(conn);
+        var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons);
         var gear = EquippedBaseDefences(conn);
         bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion,
@@ -92,6 +100,24 @@ partial class Program
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
+        // Match CharacterPlayerStats: a dev value replaces the complete raw passive/equipment/aura input.
+        // Read just the critical inputs, without copying all sources or rebuilding the whole passive bonus.
+        Dictionary<uint, int> devStats;
+        lock (conn.Monsters) devStats = new(conn.PlayerStats);
+        long RawCriticalSum(string name)
+        {
+            if (Stats.Key(name) is not uint key) return 0;
+            if (devStats.TryGetValue(key, out int value)) return value;
+            return (long)sources.GetValueOrDefault(key) + (name switch
+            {
+                "critical_strike_chance_+%" => aura.CriticalStrikeChancePct,
+                "spell_critical_strike_chance_+%" => aura.SpellCriticalStrikeChancePct - aura.CriticalStrikeChancePct,
+                _ => 0,
+            });
+        }
+        int RawCritical(string name) => (int)Math.Clamp(RawCriticalSum(name), int.MinValue, int.MaxValue);
+        long attackIncrease = AttackBaseCriticalStrike.IncreasedSum(activeWeapon, RawCriticalSum);
+        long spellIncrease = RawCriticalSum("critical_strike_chance_+%") + RawCriticalSum("spell_critical_strike_chance_+%");
         bonus = bonus with
         {
             FireResistance = bonus.FireResistance + aura.FireResistance,
@@ -107,8 +133,8 @@ partial class Program
             Evasion = bonus.Evasion + aura.Evasion,
             ArmourMorePct = aura.ArmourMorePct,
             EvasionMorePct = aura.EvasionMorePct,
-            CriticalStrikeChancePct = bonus.CriticalStrikeChancePct + aura.CriticalStrikeChancePct,
-            SpellCriticalStrikeChancePct = bonus.SpellCriticalStrikeChancePct + aura.SpellCriticalStrikeChancePct,
+            CriticalStrikeChancePct = attackIncrease,
+            SpellCriticalStrikeChancePct = spellIncrease,
             AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
             MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
         };
@@ -116,7 +142,19 @@ partial class Program
         if (conn.God)
             bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
                 Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };
+        // The overcapped-resistance flags' consumers (ResistanceOvercap), derived once per pool build from the final
+        // raw inputs: the resistances after the Kitava penalty and the per-type maxima, with an explicit dev stat
+        // (/set_stat) replacing its own contribution. Pools stores the derived increases, so the pools, the panel and
+        // the spell consumers read them from one place and nothing counts them twice.
+        // The bonus already includes Purity. Replacing one raw key must subtract its aura contribution too,
+        // including an explicit zero maximum, without removing other resistance keys or altering presentation.
+        var resistanceSources = new Dictionary<uint, int>(sources);
+        foreach (var (key, value) in AuraCatalog.ResistanceStats(auras, bonus.AuraEffectPct, Skills, Stats))
+            resistanceSources[key] = resistanceSources.GetValueOrDefault(key) + value;
+        bonus = ResistanceOvercap.Applied(bonus, resistanceSources, devStats, ResistancePenalty(conn), Stats);
         var pools = CharacterStats.For(Skills.ClassFor(conn.ClassRow), level, bonus);
+        // The pure base critical stats (/set_stat too) sit outside the passive increases: the weapon override replaces
+        // the armed main hand's base and the unarmed base replaces the empty one, before the global increases.
         pools = pools with
         {
             AttackBlockLucky = pools.AttackBlockLucky || conn.ForceAttackBlockLucky,
@@ -124,11 +162,13 @@ partial class Program
             SpellSuppressionLucky = pools.SpellSuppressionLucky || conn.ForceSpellSuppressionLucky,
             SpellSuppressionUnlucky = pools.SpellSuppressionUnlucky || conn.ForceSpellSuppressionUnlucky,
             // WeaponTypes.dat gives the main hand's base critical chance (permyriad, e.g. 830 = 8.30%); unarmed is 0.
-            AttackCriticalStrikeChance = (int)Math.Round(
-                DamageModel.CriticalStrikeChance(weapons.Critical, pools.CriticalStrikeChancePct) * 100),
-            SpellCriticalStrikeChance = (int)Math.Round(
-                DamageModel.CriticalStrikeChance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
-                    pools.SpellCriticalStrikeChancePct) * 100)
+            // A pure base stat takes its place before the global increases: the weapon override (Slayer Overwhelm,
+            // Blind Prophet's Sightless) replaces the armed weapon's base, already with its local mods, and unarmed
+            // melee uses its own Behemoth base. Neither base is a spell value; the spell route stays on SpellCriticalStrike.
+            AttackCriticalStrikeChance = AttackBaseCriticalStrike.Chance(!activeWeapon.Unarmed,
+                activeWeapon.Critical, pools.CriticalStrikeChancePct, RawCritical),
+            SpellCriticalStrikeChance = SpellCriticalStrike.Chance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
+                RawCritical, playerIncrease: pools.SpellCriticalStrikeChancePct)
         };
         int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
         int rawAttack = pools.BlockChanceUncapped + shieldBlock;
@@ -214,21 +254,8 @@ partial class Program
         int attackSpeedMore = (int)Math.Round(((weapons.DualWield || weapons.Unarmed ? 1.10 : 1.0) * (1 + weapons.LocalAttackSpeedPct / 100.0) - 1) * 100);
         // Unconditional critical strike chance and multiplier passives: generic, attack/melee/weapon-shape and spell.
         // Timed or enemy-state conditions are not modelled.
-        int criticalChance = Get("critical_strike_chance_+%") + Get("attack_critical_strike_chance_+%")
-            + (weapons.Melee ? Get("melee_critical_strike_chance_+%") : 0)
-            + (weapons.OneHandMelee ? Get("one_handed_melee_critical_strike_chance_+%") : 0)
-            + (weapons.TwoHandMelee ? Get("two_handed_melee_critical_strike_chance_+%") : 0)
-            + (weapons.DualWield ? Get("critical_strike_chance_while_dual_wielding_+%") : 0)
-            + (weapons.Shield ? Get("critical_strike_chance_while_wielding_shield_+%") : 0)
-            + (weapons.Axe ? Get("axe_critical_strike_chance_+%") : 0)
-            + (weapons.Sword ? Get("sword_critical_strike_chance_+%") : 0)
-            + (weapons.Mace ? Get("mace_critical_strike_chance_+%") : 0)
-            + (weapons.Claw ? Get("claw_critical_strike_chance_+%") : 0)
-            + (weapons.Dagger ? Get("dagger_critical_strike_chance_+%") : 0)
-            + (weapons.Wand ? Get("wand_critical_strike_chance_+%") : 0)
-            + (weapons.Bow ? Get("bow_critical_strike_chance_+%") + Get("global_critical_strike_chance_+%_while_holding_bow") : 0)
-            + (weapons.Staff ? Get("staff_critical_strike_chance_+%") + Get("global_critical_strike_chance_+%_while_holding_staff") : 0);
-        int spellCriticalChance = Get("critical_strike_chance_+%") + Get("spell_critical_strike_chance_+%");
+        long criticalChance = AttackBaseCriticalStrike.IncreasedSum(weapons, name => Get(name));
+        long spellCriticalChance = (long)Get("critical_strike_chance_+%") + Get("spell_critical_strike_chance_+%");
         int criticalMultiplier = Get("base_critical_strike_multiplier_+")
             + (weapons.Melee ? Get("melee_critical_strike_multiplier_+") + Get("melee_weapon_critical_strike_multiplier_+") : 0)
             + (weapons.OneHandMelee ? Get("one_handed_melee_critical_strike_multiplier_+") : 0)
@@ -275,6 +302,8 @@ partial class Program
         int accuracyMoreVsUnique = Get("accuracy_rating_+%_final_vs_unique_enemies_from_mastery");
         int accuracyMoreCloseRange = Get("accuracy_rating_+%_final_vs_enemies_in_close_range_from_mastery");
         int allMax = Get("additional_maximum_all_resistances_%"), allElemMax = Get("additional_maximum_all_elemental_resistances_%");
+        // The cold-and-lightning pair-resistance stat (Sea Legs' +40%): one input stat that both elements' pools take.
+        int pairRes = Get(ResistanceOvercap.ColdAndLightningResistance);
         // Reservation efficiency: generic efficiency applies to both pools; the mana/life-specific stats only to theirs.
         // Aura effect is the generic non-curse/aura effect; the Reservation mastery's self-aura effect is included.
         int manaReservation = Get("base_mana_reservation_efficiency_+%") + Get("base_reservation_efficiency_+%")
@@ -302,8 +331,8 @@ partial class Program
             EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
             FireResistance: allRes + Get("base_fire_damage_resistance_%"),
-            ColdResistance: allRes + Get("base_cold_damage_resistance_%"),
-            LightningResistance: allRes + Get("base_lightning_damage_resistance_%"),
+            ColdResistance: allRes + Get("base_cold_damage_resistance_%") + pairRes,
+            LightningResistance: allRes + Get("base_lightning_damage_resistance_%") + pairRes,
             ChaosResistance: Get("base_chaos_damage_resistance_%"),
             FireMaxResistance: allMax + allElemMax + Get("base_maximum_fire_damage_resistance_%"),
             ColdMaxResistance: allMax + allElemMax + Get("base_maximum_cold_damage_resistance_%"),

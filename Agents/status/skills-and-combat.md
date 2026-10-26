@@ -21,6 +21,15 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Offence panel damage rows: the hit the server swings with becomes `main_hand_minimum/maximum_total_damage` and the
   per-type minimum/maximum rows, with `skill_uses_main_hand` so the client shows them;
   whole numbers, main hand only, and an empty packet sends none.
+  The rows and the server's hit share `AttackHit`, so the maximum-mana added lightning (Whisperer "we know all")
+  appears in the panel the same way.
+  Fourteen real-client stat checks verified 56 mana → 3–3 lightning, 1000 → 60–60, 50% increased lightning → 90–90,
+  997 → 59–59 at the panel's floor, removal and relog.
+  Generic attack increases apply; melee increases follow the actual attack type and active weapon set.
+  Native switching between wand and club verified ranged exclusion and melee inclusion of that increase.
+  These native checks belong to original head `378ffde`.
+  The resolved supported-skill path has automated context, effectiveness and spell-isolation checks.
+  Recheck that composition natively.
   Code: `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
@@ -289,6 +298,27 @@ Part of [Status](../Status.md); what to build next in this area is in
   each spell's extracted base chance, and 150% plus `base_critical_strike_multiplier_+`;
   critical damage is multiplied and logged.
   Unarmed has 0% base crit.
+  Two pure base stats replace that base before the increased chance, the way PoB's `WeaponBaseCritChance` replaces
+  an attack pass's `source.CritChance` when that hand has a weapon:
+  `override_weapon_base_critical_strike_chance` (Stats row 9892, permyriad) on the armed main hand — Slayer
+  Overwhelm (graph id 17315) grants 800 = 8.00% and Blind Prophet's Sightless (graph id 24698) grants 900 =
+  9.00% — and `base_melee_critical_strike_chance_while_unarmed_%` (Stats row 3906, permyriad; Behemoth Final Blow,
+  graph id 10135, grants 1000 = 10.00%) on the unarmed melee attack.
+  Each is a base, not a fixed final chance: generic increased crit still applies on top;
+  the weapon override stays out of unarmed and spell rolls, and the unarmed base stays out of a weapon hand.
+  Only the active weapon set supplies the attack base and its weapon-specific increases.
+  `/set_stat` replaces the input and rebuilds the pools, so the panel and the rolls agree.
+  Generic/spell development increases replace the same complete raw input used by spell rolls, including aura sources.
+  Attack/spell increased percentages and the pooled spell reference now follow those effective inputs.
+  Automated regressions cover these replacements, signed sum bounds and shared integer rounding.
+  Attack and spell chances now share half-up permyriad rounding: 650 with +1% gives 657.
+  Native evidence below targets original head `8c4c62d`; recheck the changed midpoint and resolved stack natively.
+  Five follow-up native checks verify generic/spell input agreement and maximum/minimum integer saturation.
+  Twelve native checks verified 830 → 800 → 900, increased chance → 1800, cannot-crit → zero,
+  empty-set/unarmed behavior, weapon restoration and relog.
+  Ascendancy allocation remains in the separate lifecycle change.
+  Global, virtual-global and attack-specific cannot-crit flags suppress the attack chance.
+  `SpellCriticalStrike` reads neither base override.
   The final main-hand and spell crit chance/multiplier stats go to the client for the Offence panel;
   selected spell chance and server projectile/area rolls now share raw player and skill inputs once.
   Precision and Zealotry retain their existing bonuses without counting them twice.
@@ -300,6 +330,28 @@ Part of [Status](../Status.md); what to build next in this area is in
   Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
   Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
+- **Overcapped-resistance modifiers.** While the flag stat is set, the uncapped resistance above its maximum is a
+  generic increased modifier, exactly PoB's `ResistOverCap` (the maximum capped at 90): +1% increased evasion per 1%
+  of cold overcap, +1% increased critical chance per 1% of lightning overcap, additive with the other increases for
+  attacks and spells alike.
+  The flags are ordinary stats, so any source sets them: the Surfcaster's Sea Legs notable (graph 61696, with its
+  +40% cold-and-lightning pair resistance the aggregator now sums into both elements), an item mod, or `/set_stat`.
+  An explicit `/set_stat` value replaces its own input (per-type, pair and all-element resistance, and per-type or
+  global maximum resistance) instead of adding to the aggregate, and rebuilds the pools; a Kitava change rebuilds them
+  again.
+  `PoolsFor` derives the increases once per pool build and stores them in the pools, so the monster-attack evade
+  rolls, the panel rows and the spell crit consumers read the same numbers; the uncapped resistance values stay
+  untouched, and Iron Reflexes' converted evasion keeps the overcapped increase once.
+  Automated checks cover below/equal/above cap, the 90 maximum, both penalties, flag removal and override, additive
+  behaviour, spell/attack isolation and the Iron Reflexes conversion.
+  Combined automated checks retain the 830 +45% =1204 armed chance and complete signed critical cancellation.
+  Purity-aware raw replacements now remove the aura contribution for that exact key, including explicit zero maxima.
+  Real aura/catalog/pool regressions pass; the corrected aura-override composition needs a native recheck.
+  The resolved stack needs native rechecking; the following thirteen checks belong to original head `39cbda2`.
+  Real-client stat checks verified evasion 15 → 22 and spell crit 500 → 725 at 120% resistances,
+  raised maxima, replacement of global inputs, both Kitava penalties, flag removal and relog.
+  Ascendancy allocation remains part of the separate lifecycle change.
+  See [11](../docs/protocol/11-skills.md) §4, §5 and §12.
 - **Projectiles.** Moving targets are checked throughout flight by sweeping observed relative movement.
   A monster can change course away from a hit, enter the path later, or intercept before a farther target.
   The client glide is stopped at the contact cell before impact with the creation marker/world-z pair in 0x1b7.
@@ -349,8 +401,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
-- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
-  yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
+- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour yet; each damage
+  type of a hit takes the monster's own base resistance with the hit's penetration subtracted from the capped value,
+  `HitMitigation`/`Penetration`; the player's hit lands at the attack animation's contact keyframe, a monster's still
+  at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour
   and block.
   Ordinary physical melee hits can trigger native player TakeHit recovery through 0x1d1.
@@ -368,6 +422,31 @@ Part of [Status](../Status.md); what to build next in this area is in
   every 500 ms.
   Item mods count through the global item stats;
   346 varieties with NPC / ControlZone / ... components are refused.
+- **Critical-strike elemental resistance rules (Inevitable Judgement).** The hit's
+  already-rolled critical boolean decides the resistance: the packet rolls once (the original per-type draws), the
+  existing single critical draw keeps its original place after them, and the mitigation resolves on the
+  already-rolled packet without a second roll — a critical elemental hit with
+  `critical_strikes_ignore_elemental_resistances` mitigates with an effective resistance
+  of zero, negative included, overriding any penetration; the attack-only variant covers attacks only; a
+  non-critical elemental hit keeps its capped resistance and `non_critical_strikes_penetrate_elemental_resistances_%`
+  (10) subtracts after the cap, stacked with the hit's general penetration;
+  `cannot_penetrate_or_ignore_elemental_resistances` restores the plain capped resistance.
+  Physical, chaos and damage over time are outside the rules; Inevitable Judgement (graph node 48214) grants the
+  generic ignore and the 10 penetration through the ordinary passive stat sum.
+  The shared helper (`HitResistances`, the Gateway's `MonsterDamage`) covers default attacks, bows and gem hits.
+  Default and area damage logs name the decision; gem projectiles emit a separate resistance trace.
+  Core and Gateway checks cover positive/negative resistance, maximum independence and the node's exact stat keys.
+  Eight native checks read monster life: fixed 100 fire dealt 60 normally and 70 with non-critical penetration.
+  Guaranteed critical hits dealt 150 with generic or attack-only ignore, and 90 after removal or prohibition.
+  Those captures belong to original head `13c41e5`; combined penetration/modifier/bow paths need native rechecking.
+  Automated checks preserve same-key source sums, fractional totals, target damage taken and the original RNG order.
+  Sequential C24 handler tests read real `/set_stat` changes after a prior hit on the same connection and target.
+  Skill `0x102`, sequence 0 and flags `0x408` give ignore 300, ordinary critical 330 and prohibition 240.
+  Friendly and hostile controls pass without a production hostility change.
+  The combined run labelled `462c883` used a DLL proven by hash to be #225 `4a71968`; its ninth case is not #226 proof.
+  Ascendancy allocation remains in its separate lifecycle change.
+  Code: `HitResistances.cs`, `HitMitigation.cs`, Gateway (`MonsterDamage`).
+  Docs: [20](../docs/protocol/20-damage.md) §4.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`;
   `DamageConversion` handles the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global
   precedence, the 100% cap and gain-as-extra.
@@ -383,8 +462,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
-  Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
-  application/duration and monster resistances ([20](../docs/protocol/20-damage.md)).
+  Maximum-mana added lightning has original-head native checks and resolved automated checks.
+  Not yet: exposure, aura-dependent penetration, other added damage,
+  increased/more support modifiers, ailment application/duration ([20](../docs/protocol/20-damage.md)).
+  Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
+  attack-only variants, the cannot-penetrate flag; DoT and physical take none).
+  Player and skill contributions to the same raw penetration stat add without overwriting either source.
+  Nine native checks verified fixed 100-fire hits for 60 → 80 → 90 → 100 damage as penetration stacked,
+  the prohibition returning 60, cold penetration giving 120 against zero resistance, and chaos 75 → 105.
+  Each check read the actual native monster life after the authoritative update.
+  Those captures belong to original head `0d800d1`; resolved bow and target-modifier paths need native rechecking.
+  Target mods compose with base resistance before penetration; damage taken follows mitigation and rounds once.
+  Ten fresh composed native groups verify critical rounding, active overcap and default-attack mana lightning.
+  Actual mixed-hit Life losses are 160/220 before criticals, then 300 with ignore, 330 without and 240 prohibited.
+  Build versions and source hashes match `1366f48`; supported-gem, modifier and bow combinations remain automated.
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.

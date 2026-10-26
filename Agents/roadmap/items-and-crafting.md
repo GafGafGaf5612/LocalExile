@@ -31,14 +31,12 @@ features.
 - **Start:** other currency through C→S 0x71 (13 §4: Orb of Transmutation, Alteration, Augmentation, Regal, Alchemy,
   Chaos, Scouring can reuse `ItemRolls`); items' base weapon damage and armour / evasion / energy shield (then their
   local mods, 13 §2c).
-- **Socket colours (3.29 rules):** any gem goes into any socket, whatever the colours, and a gem in a red, green or
-  blue socket of its own colour gets +10% quality.
-  Sockets are white by default; each has a small chance to be red, green or blue instead, in proportion to the item's
-  attribute requirements, and that chance rises with item level.
-  Chromatic Orbs force one socket to be coloured and roll the rest normally (more quality, more coloured sockets).
-  Jeweller's Orbs, Orbs of Binding and the Crafting Bench add white sockets.
-  Vaal Orb corruption turns a white socket coloured, and the Locus of Corruption turns all white sockets coloured.
-  Today `ItemCatalog.DefaultSockets` makes every socket the item's main attribute colour, which is the pre-3.29 look.
+- **Socket colours (3.29):** the 3.29 rules are in (white by default with an item-level colour chance, the
+  Chromatic and non-white bench crafts, white sockets from Jeweller's/bench socket adds, Vaal colouring one white
+  socket; [13](../docs/protocol/13-items.md), "Socket colours (3.29)", Status).
+  Remaining: Tainted Chromatic/Jeweller's Orbs, the Orb of Binding, the Locus of Corruption, the milestone bench
+  reward (25 reforges keeping the most non-white sockets), special item overrides, and fitting the exact colour
+  probabilities from live captures (the current curve is an approximation).
 - **Done when:** items' damage and defences count, and flasks and currency can be used.
 
 ## 5. Project

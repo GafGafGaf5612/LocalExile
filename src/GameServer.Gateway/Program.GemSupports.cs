@@ -124,15 +124,18 @@ partial class Program
         int Own(string name) => Stats.Key(name) is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
         if (Skills.IsAttack(gem.Effect))
         {
-            if (Own("global_cannot_crit") != 0) return 0;
-            double basis = Math.Max(1, WeaponProfileFor(conn).Critical);
-            double increased = Math.Max(.01, 1 + conn.Pools.CriticalStrikeChancePct / 100.0);
-            double chance = conn.Pools.AttackCriticalStrikeChance * (basis + Own("additional_base_critical_strike_chance")) / basis
-                * Math.Max(0, increased + Own("critical_strike_chance_+%") / 100.0) / increased;
-            return (int)Math.Clamp(Math.Round(chance), 0, 10000);
+            int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
+            if (new[] { "global_cannot_crit", "virtual_global_cannot_crit", "cannot_critical_strike_with_attacks" }
+                .Any(name => Player(name) != 0 || Own(name) != 0)) return 0;
+            var weapon = WeaponProfileFor(conn, activeSet: true);
+            int basis = AttackBaseCriticalStrike.OfMainHand(!weapon.Unarmed, weapon.Critical, Player);
+            int totalBase = (int)Math.Clamp((long)basis + Own("additional_base_critical_strike_chance"), int.MinValue, int.MaxValue);
+            long increased = conn.Pools.CriticalStrikeChancePct
+                + AttackBaseCriticalStrike.IncreasedSum(weapon, name => Own(name));
+            return GameServer.Core.World.DamageModel.CriticalStrikeChancePerMyriad(totalBase, increased);
         }
         return SpellCriticalStrike.Chance((Skills.SpellCritChance(gem.Effect, gem.Level) ?? 0)
-            + Own("additional_base_critical_strike_chance"), Stats, player, gem.Stats);
+            + Own("additional_base_critical_strike_chance"), Stats, player, gem.Stats, conn.Pools.SpellCriticalStrikeChancePct);
     }
 
     static (int Flat, int Percent)? SupportedReservation(ClientState conn, ushort skillId)
