@@ -315,7 +315,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
 
     readonly Dictionary<string, DoodadHull?> _hulls = new(StringComparer.OrdinalIgnoreCase);
 
-    readonly Dictionary<string, (bool Created, bool Static)> _clientTypes = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, (bool Created, bool Static, int? Size)> _clientTypes = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Whether a room or tile line's object type is created as a client object (<c>0x142041960</c>,
     /// <c>0x1420415e0</c>, vtable +0x98 = <c>0x14152d680</c>): the type (<c>0x141ec1360</c>) takes its BaseEvents
@@ -328,12 +328,15 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
     /// (<c>0x14202f530</c> → world vtable +0x60) go elsewhere: not ported, left out. Static: the type's Positioned has
     /// <c>static = true</c> (<c>Doodad</c>, <c>DoodadInvisible</c>); only those stamp their Hull. The others
     /// (<c>HangingSlave</c>, <c>BellyGrassClusterTrigger</c>, the <c>FlowBlocking</c> objects) are created without
-    /// collision, as the captured grids show.</summary>
-    (bool Created, bool Static) ClientType(string type)
+    /// collision, as the captured grids show. Size: the Positioned <c>object_size</c> (0 without one) of a type whose
+    /// Positioned has <c>blocking = true</c>, null otherwise (see <see cref="Blocked"/>).</summary>
+    (bool Created, bool Static, int? Size) ClientType(string type)
     {
         if (_clientTypes.TryGetValue(type, out var known)) return known;
         bool? noSerialise = null, clientOnly = null, serverOnly = null;
         bool league = false, found = false, isStatic = false;
+        bool? blocking = null;
+        int? size = null;
         string? t = type;
         // The .ot and the ones it extends, nearest first: the first value of a key wins.
         for (int depth = 0; t is { Length: > 0 } && t != "nothing" && depth < 16; depth++)
@@ -349,6 +352,10 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             {
                 if (braces == 0 && l.Length > 0 && l != "{" && l != "}") block = l;
                 if (braces == 1 && block == "Positioned" && l.Replace(" ", "").Replace("\t", "") == "static=true") isStatic = true;
+                if (braces == 1 && block == "Positioned" && size is null && l.Replace(" ", "").Replace("\t", "") is var kv
+                    && kv.StartsWith("object_size=", StringComparison.Ordinal) && int.TryParse(kv["object_size=".Length..], out int sz)) size = sz;
+                if (braces == 1 && block == "Positioned" && blocking is null && l.Replace(" ", "").Replace("\t", "") is var bv
+                    && bv.StartsWith("blocking=", StringComparison.Ordinal)) blocking = bv == "blocking=true";
                 braces += l.Count(c => c == '{') - l.Count(c => c == '}');
             }
             foreach (var l in lines.Select(l => l.Replace(" ", "").Replace("\t", "")))
@@ -364,7 +371,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
         string name = type[(type.LastIndexOf('/') + 1)..];
         bool routed = name is "DoodadNoOverlap" or "TileUpperDoodadNoOverlap" or "DoodadLayerDoodad";
         bool created = found && !routed && !league && (noSerialise == true || clientOnly == true) && serverOnly != true;
-        return _clientTypes[type] = (created, isStatic);
+        return _clientTypes[type] = (created, isStatic, blocking == true ? size ?? 0 : null);
     }
 
     public void Run(IReadOnlyList<DoodadRecord> records)
@@ -415,7 +422,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
                 void Line(TileObject o, int cellX, int cellY, float lineAngle, bool lineMirror)
                 {
                     if (Resolve(o.Animation ?? o.VirtualModel(tile.Path), false) is not { } def) return;
-                    var (created, isStatic) = ClientType(o.Type);
+                    var (created, isStatic, _) = ClientType(o.Type);
                     if (!created) return;
                     var (cx, cy) = Orientation.Map(e.Orientation, cellX, cellY, tile.Width * 23, tile.Height * 23);
                     bool mirrors = e.Orientation is >= 4 and < 8;
@@ -496,8 +503,9 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             string? ground = GroundName(groundPath);
             DdtEntry? pick;
             bool loose = ground is null || (GroundFlags(groundPath) & 4) != 0;
-            // No ground, or a flag-4 one: a cell already short of open ground keeps no doodad (0x141d85260 < 5).
-            if (loose && walk.Walk[y * walk.Width + x] < 5) continue;
+            // No ground, or a flag-4 one: a cell already short of open ground keeps no doodad (0x141d85260 < 5), nor one
+            // near a positioned room object (Blocked).
+            if (loose && (walk.Walk[y * walk.Width + x] < 5 || Blocked(x, y))) continue;
             if (ground is null)
             {
                 if (ddt.Default.Weighted.Count == 0) continue;
@@ -655,7 +663,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
         {
             // The .ao is resolved (AOSet draws) before the type filters.
             if (files.Text(d.Model) is null || Resolve(d.Model, false) is not { } def) continue;
-            var (created, isStatic) = ClientType(d.Type);
+            var (created, isStatic, size) = ClientType(d.Type);
             if (!created) continue;
             var (cx, cy) = Orientation.Map(code, (int)d.X, (int)d.Y, room.Room.Width * 23, room.Room.Height * 23);
             float angle = d.Angle;
@@ -664,10 +672,25 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             angle += (code & 3) * (MathF.PI / 2);
             while (angle < 0) angle += MathF.PI * 2;
             while (angle > MathF.PI * 2) angle -= MathF.PI * 2;
-            Create(new PlacedDoodad(def.Model, room.X * 23 + cx + def.Dx, room.Y * 23 + cy + def.Dy, angle + def.Angle,
-                d.Scale * def.Scale, mirrors ^ d.Flip ^ def.Mirrored), isStatic);
+            var placed = new PlacedDoodad(def.Model, room.X * 23 + cx + def.Dx, room.Y * 23 + cy + def.Dy, angle + def.Angle,
+                d.Scale * def.Scale, mirrors ^ d.Flip ^ def.Mirrored);
+            int before = Placed.Count;
+            Create(placed, isStatic);
+            if (size is int sz && Placed.Count > before) _blockers.Add((placed.X, placed.Y, sz));
         }
     }
+
+    // Room objects that veto random doodads: blocking ones, with their object_size (entity +0x1e3, copied from the
+    // Positioned data's +0x10 by 0x141e2e960).
+    readonly List<(int X, int Y, int Size)> _blockers = [];
+
+    /// <summary><c>0x14154c2d0</c> → <c>0x141379fc0</c>: an entity in the map's per-tile lists whose Chebyshev distance
+    /// from (x, y), less its size, is under 5, unless its flag +0x2c0 / +0x2c1 skips it: taken to be the Positioned
+    /// <c>blocking</c>. The <c>BioWallBlocker</c> objects of <c>biowall_waypoint_1.arm</c> (object_size 5, blocking)
+    /// 7 units away veto (<c>1_3_10_1</c> seed 1 at (621, 1009)); static <c>Doodad</c>s (object_size 2) and Act 8's
+    /// <c>ToxicDoodad</c> / <c>NonToxicDoodad</c> (object_size 0), all not blocking, never do.</summary>
+    bool Blocked(int x, int y) =>
+        _blockers.Any(b => Math.Max(Math.Abs(b.X - x), Math.Abs(b.Y - y)) - b.Size < 5);
 
     /// <summary><c>0x142042360</c> (nothing outside the map) and the world add: the doodad and, for a static type
     /// (random and vertex doodads are <c>Doodad</c>s), its collision (<c>0x141d876e0</c>).</summary>
