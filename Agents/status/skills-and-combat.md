@@ -194,8 +194,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   the weapon override stays out of unarmed and spell rolls, and the unarmed base stays out of a weapon hand.
   Only the active weapon set supplies the attack base and its weapon-specific increases.
   `/set_stat` replaces the input and rebuilds the pools, so the panel and the rolls agree.
+  Generic/spell development increases replace the same complete raw input used by spell rolls, including aura sources.
+  Attack/spell increased percentages and the pooled spell reference now follow those effective inputs.
+  Automated regressions cover these replacements and integer rounding; the updated paths need a live recheck.
   Twelve native checks verified 830 → 800 → 900, increased chance → 1800, cannot-crit → zero,
-  empty-set/unarmed behavior, weapon restoration and relog; spell chance stayed 500.
+  empty-set/unarmed behavior, weapon restoration and relog.
   Ascendancy allocation remains in the separate lifecycle change.
   Global, virtual-global and attack-specific cannot-crit flags suppress the attack chance.
   `SpellCriticalStrike` reads neither base override.

@@ -3,26 +3,12 @@ using GameServer.Core.Protocol.Instance;
 
 namespace GameServer.Gateway.Tests;
 
-[CollectionDefinition("Attack base critical Gateway", DisableParallelization = true)]
-public sealed class AttackBaseCriticalGatewayCollection;
-
-[Collection("Attack base critical Gateway")]
 public sealed class AttackBaseCriticalGatewayTests : IDisposable
 {
-    readonly string _cwd = Directory.GetCurrentDirectory();
     readonly string _name = "CritBase" + Guid.NewGuid().ToString("N");
     static MethodInfo Method(string name) => typeof(Program).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!;
 
-    public AttackBaseCriticalGatewayTests()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (Directory.Exists(Path.Combine(dir.FullName, "data", "tables")))
-            {
-                Directory.SetCurrentDirectory(dir.FullName);
-                break;
-            }
-        TestSaves.Ensure();
-    }
+    public AttackBaseCriticalGatewayTests() => TestSaves.Ensure();
 
     ClientState Character(bool armed)
     {
@@ -48,8 +34,14 @@ public sealed class AttackBaseCriticalGatewayTests : IDisposable
         Set(conn, "critical_strike_chance_+%", 100);
         conn.Pools = Pools(conn);
         Assert.Equal(chance * 2, conn.Pools.AttackCriticalStrikeChance);
+        Assert.Equal(100, conn.Pools.CriticalStrikeChancePct);
+        Assert.Equal(100, conn.Pools.SpellCriticalStrikeChancePct);
+        Assert.Equal(1000, conn.Pools.SpellCriticalStrikeChance);
         var shown = (Dictionary<uint, int>)Method("CharacterPlayerStats").Invoke(null, [conn])!;
         Assert.Equal(chance * 2, shown[Program.Stats.Key("main_hand_critical_strike_chance")!.Value]);
+        Assert.Equal(100, shown[Program.Stats.Key("critical_strike_chance_+%")!.Value]);
+        Assert.Equal(conn.Pools.SpellCriticalStrikeChance,
+            SpellCriticalStrike.Chance(500, Program.Stats, shown, new Dictionary<uint, int>()));
         Set(conn, armed ? AttackBaseCriticalStrike.WeaponOverrideStat : AttackBaseCriticalStrike.UnarmedBaseStat, 0);
         Assert.Equal(armed ? 1660 : 0, Pools(conn).AttackCriticalStrikeChance);
     }
@@ -82,6 +74,31 @@ public sealed class AttackBaseCriticalGatewayTests : IDisposable
         Assert.Equal(800, Pools(conn).AttackCriticalStrikeChance);
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(100, 40)]
+    public void Debug_increases_replace_aura_inputs_for_the_pool_display_and_spell_roll(int generic, int spell)
+    {
+        var conn = Character(true);
+        var skills = Program.Skills;
+        conn.Auras[0x103] = new(0x103, skills.EffectRow("Precision"), "Precision", "Precision", 1, 1293, 22, 0);
+        conn.Auras[0x104] = new(0x104, skills.EffectRow("Zealotry"), "Zealotry", "Zealotry", 2, 0, 0, 5000);
+        var baseline = Pools(conn);
+        Assert.True(baseline.CriticalStrikeChancePct > 0);
+        Assert.True(baseline.SpellCriticalStrikeChancePct > baseline.CriticalStrikeChancePct);
+
+        Set(conn, "critical_strike_chance_+%", generic);
+        Set(conn, "spell_critical_strike_chance_+%", spell);
+        conn.Pools = Pools(conn);
+        Assert.Equal(generic, conn.Pools.CriticalStrikeChancePct);
+        Assert.Equal(generic + spell, conn.Pools.SpellCriticalStrikeChancePct);
+        Assert.Equal(830 * (100 + generic) / 100, conn.Pools.AttackCriticalStrikeChance);
+        Assert.Equal(5 * (100 + generic + spell), conn.Pools.SpellCriticalStrikeChance);
+        var shown = (Dictionary<uint, int>)Method("CharacterPlayerStats").Invoke(null, [conn])!;
+        Assert.Equal(conn.Pools.SpellCriticalStrikeChance,
+            SpellCriticalStrike.Chance(500, Program.Stats, shown, new Dictionary<uint, int>()));
+    }
+
     [Fact]
     public void A_weapon_in_the_inactive_set_does_not_make_the_active_empty_hand_armed()
     {
@@ -89,16 +106,17 @@ public sealed class AttackBaseCriticalGatewayTests : IDisposable
         var items = PlayerInventories.For(_name, Program.Items);
         items.Add(PlayerInventories.Weapon2, 0, 0, ItemCatalog.Create(Program.Items.Row(384)!));
         Set(conn, AttackBaseCriticalStrike.WeaponOverrideStat, 900);
+        Set(conn, "wand_critical_strike_chance_+%", 100);
         Assert.Equal(0, Pools(conn).AttackCriticalStrikeChance);
         Set(conn, AttackBaseCriticalStrike.UnarmedBaseStat, 1000);
-        Assert.Equal(1000, Pools(conn).AttackCriticalStrikeChance);
+        var unarmed = Pools(conn);
+        Assert.Equal(1000, unarmed.AttackCriticalStrikeChance);
+        Assert.Equal(0, unarmed.CriticalStrikeChancePct);
         items.SwapWeaponSets();
-        Assert.Equal(900, Pools(conn).AttackCriticalStrikeChance);
+        var armed = Pools(conn);
+        Assert.Equal(1800, armed.AttackCriticalStrikeChance);
+        Assert.Equal(100, armed.CriticalStrikeChancePct);
     }
 
-    public void Dispose()
-    {
-        PlayerInventories.Forget(_name);
-        Directory.SetCurrentDirectory(_cwd);
-    }
+    public void Dispose() => PlayerInventories.Forget(_name);
 }

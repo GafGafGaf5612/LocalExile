@@ -247,11 +247,18 @@ The active weapon set determines the attack base and weapon-specific increases; 
 The pool builds the base once in `AttackBaseCriticalStrike`.
 `/set_stat` replaces its source value and rebuilds the pools for critical-chance inputs and prohibitions.
 The panel's final `main_hand_critical_strike_chance` and the rolls share that result.
+Generic and spell increases use the same effective raw inputs as `CharacterPlayerStats`: a development value,
+including zero, replaces that stat's complete passive/equipment/aura sum.
+The attack and pooled spell reference report those effective increased percentages, so `/crit` agrees with the rolls.
+The attack base feeds `DamageModel.CriticalStrikeChance`, followed by the existing integer-permyriad `Math.Round`.
+Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
+Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.
 Twelve real-client checks used a fresh synthetic character and read the client's received stat values.
 A Driftwood Wand's 830 became 800 and 900; 100% increased chance raised 900 to 1800, then cannot-crit set it to zero.
 Switching to an empty second set gave zero despite the inactive wand; the unarmed base gave 1000.
 Switching back restored 900, clearing the weapon override restored 830, and relog cleared the development overrides.
-The spell stat remained 500 throughout.
+Automated regressions also cover generic/spell development increases, aura replacement and active-hand increases.
+The updated development-input and rounding paths still need a real-client recheck.
 These checks validate the generic stat consumers; ascendancy allocation remains in its separate lifecycle change.
 Spells use their own level's `GrantedEffectStatSetsPerLevel.SpellCritChance`:
 Fireball 500 (5.00%), Freezing Pulse and Ice Nova 750, Arc 600, Scorching Ray 0.

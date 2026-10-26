@@ -1,3 +1,5 @@
+using GameServer.Core.World;
+
 /// <summary>
 /// The attack hit's base critical strike chance before the global increased critical chance: the equipped main hand's
 /// weapon base with its local mods, or a pure base stat that replaces it. Path of Building's CalcOffence.lua
@@ -22,6 +24,36 @@ static class AttackBaseCriticalStrike
     /// <summary>Stats.dat row 3906: the unarmed melee attack's base critical strike chance, permyriad (1000 = 10.00%).</summary>
     public const string UnarmedBaseStat = "base_melee_critical_strike_chance_while_unarmed_%";
 
+    // The same dependencies drive the increase calculation and /set_stat's pool refresh.
+    static readonly (string Stat, Func<WeaponProfile, bool>? Applies)[] Increases =
+    [
+        ("critical_strike_chance_+%", null),
+        ("attack_critical_strike_chance_+%", null),
+        ("melee_critical_strike_chance_+%", w => w.Melee),
+        ("one_handed_melee_critical_strike_chance_+%", w => w.OneHandMelee),
+        ("two_handed_melee_critical_strike_chance_+%", w => w.TwoHandMelee),
+        ("critical_strike_chance_while_dual_wielding_+%", w => w.DualWield),
+        ("critical_strike_chance_while_wielding_shield_+%", w => w.Shield),
+        ("axe_critical_strike_chance_+%", w => w.Axe),
+        ("sword_critical_strike_chance_+%", w => w.Sword),
+        ("mace_critical_strike_chance_+%", w => w.Mace),
+        ("claw_critical_strike_chance_+%", w => w.Claw),
+        ("dagger_critical_strike_chance_+%", w => w.Dagger),
+        ("wand_critical_strike_chance_+%", w => w.Wand),
+        ("bow_critical_strike_chance_+%", w => w.Bow),
+        ("global_critical_strike_chance_+%_while_holding_bow", w => w.Bow),
+        ("staff_critical_strike_chance_+%", w => w.Staff),
+        ("global_critical_strike_chance_+%_while_holding_staff", w => w.Staff),
+    ];
+
+    public static int IncreasedPct(WeaponProfile weapons, Func<string, int> raw)
+    {
+        int increased = 0;
+        foreach (var (stat, applies) in Increases)
+            if (applies is null || applies(weapons)) increased += raw(stat);
+        return increased;
+    }
+
     /// <summary>
     /// The main hand's attack base critical strike chance (permyriad) before the global increased chance.
     /// <paramref name="weaponBase"/> is the armed weapon's base with its own local mods (WeaponProfileFor.Critical);
@@ -43,11 +75,12 @@ static class AttackBaseCriticalStrike
     {
         if (raw("global_cannot_crit") != 0 || raw("virtual_global_cannot_crit") != 0
             || raw("cannot_critical_strike_with_attacks") != 0) return 0;
-        decimal chance = decimal.Round(OfMainHand(weaponInMainHand, weaponBase, raw) * (100m + increasedPct) / 100m,
-            0, MidpointRounding.AwayFromZero);
-        return (int)Math.Clamp(chance, 0m, 10_000m);
+        return (int)Math.Round(DamageModel.CriticalStrikeChance(
+            OfMainHand(weaponInMainHand, weaponBase, raw), increasedPct) * 100);
     }
 
-    public static bool IsInput(string name) => name.Contains("critical_strike_chance", StringComparison.Ordinal)
-        || name is "global_cannot_crit" or "virtual_global_cannot_crit" or "cannot_critical_strike_with_attacks";
+    public static bool IsInput(string name) => name is WeaponOverrideStat or UnarmedBaseStat
+        or "global_cannot_crit" or "virtual_global_cannot_crit" or "cannot_critical_strike_with_attacks"
+        or "spell_critical_strike_chance_+%" // Also refresh the pooled spell reference used by /crit.
+        || Increases.Any(input => input.Stat == name);
 }

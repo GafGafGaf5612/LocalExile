@@ -5,15 +5,6 @@
 /// </summary>
 static class GameDataFiles
 {
-    public static string ResolveFolder()
-    {
-        foreach (string start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
-            for (var directory = new DirectoryInfo(start); directory is not null; directory = directory.Parent)
-                if (File.Exists(Path.Combine(directory.FullName, "data", "tables", "Stats.json")))
-                    return Path.Combine(directory.FullName, "data");
-        return Path.GetFullPath("data");
-    }
-
     public static readonly (string File, string Feature)[] All =
     [
         ("data/tables/WorldAreas.json", "the game tables (stats, areas, waypoints, items, monsters, NPCs)"),

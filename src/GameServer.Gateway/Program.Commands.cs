@@ -40,9 +40,23 @@ partial class Program
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
             int value = int.Parse(args[1]);
             lock (conn.Monsters) conn.PlayerStats[stat] = value;
-            // Refresh the final attack chance when a base, increase or cannot-crit input changes.
+            // Refresh attack chance and the spell reference when a supported critical input changes.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0]))
-                lock (conn.Monsters) conn.Pools = PoolsFor(conn, conn.Pools.Level);
+            {
+                while (true)
+                {
+                    CharacterStats.Pools before;
+                    lock (conn.Monsters) before = conn.Pools;
+                    var pools = PoolsFor(conn, before.Level);
+                    lock (conn.Monsters)
+                    {
+                        // A concurrent level/aura rebuild wins; retry against its current inputs and level.
+                        if (!ReferenceEquals(conn.Pools, before)) continue;
+                        conn.Pools = pools;
+                        break;
+                    }
+                }
+            }
             // The client's requirement checks (gear and gems) read virtual_strength/dexterity/intelligence_for_requirements,
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
