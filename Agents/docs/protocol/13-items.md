@@ -642,16 +642,19 @@ Otherwise:
    its new Charges, same id).
 2. Its recovery (`FlaskRecovery.For`, as Path of Building's Item.lua and CalcPerform calcFlaskRecovery and poewiki's
    "Recovery from flasks"): base × (1 + quality) × (1 + increased amount recovered: `local_flask_amount_to_recover_+%`
-   and the life / mana ones) × the low-life more multiplier (`…_when_on_low_life`, at half life or less), × (1 + the
-   character's `flask_life_to_recover_+%` / `flask_mana_to_recover_+%` and `flask_life_and_mana_to_recover_+%`) × (1 +
-   increased flask effect duration, which recovers for longer at the same rate) × (1 + increased flask effect). Its
+   and the life / mana ones) × (1 + the character's `flask_life_to_recover_+%` / `flask_mana_to_recover_+%` and
+   `flask_life_and_mana_to_recover_+%`) × (1 + increased flask effect duration, which recovers for longer at the same
+   rate) × (increased flask effect + the low-life more multiplier − 1: `…_when_on_low_life`, at half life or less, is
+   not scaled by flask effect, PoB CalcPerform "verified ingame"). Its
    time: base × (1 + increased duration) / (1 + increased recovery rate), the character's flask recovery rates dividing
    it again. The partial-instant mods (50%), "Instant Recovery" and "Instant Recovery when on Low Life" give that part
    at once; the mods that "remove #% of … recovered from …" take it from the other pool on use (never below 1 life);
    "Mana Recovery occurs instantly at the end of Effect" gives the mana when the effect runs out; "Effect is not removed
-   when Unreserved Mana is Filled" (and the character's "… effects are not removed at full …") keeps it at a full pool;
-   the life suffix "Recover an additional #% of Life over 10 seconds if used while not on Full Life" adds that as its
-   own effect.
+   when Unreserved Mana is Filled" (and the character's "Life / Mana Flask Effects are not removed when … is Filled")
+   keeps it at a full pool and out of the queue; the life suffix "Recover an additional #% of Flask's Life Recovery
+   Amount over 10 seconds if used while not on Full Life" adds that share of the flask's own life (instant and over
+   time) as its own effect. A flask used while a monster's hit kills the player (during the charges' send) recovers
+   nothing (`FlaskRecovery.Instant`): it must not bring the player back to 1 life.
 3. The flask's buff goes on the player (S→C 0x1c1): BuffDefinitions row 5 `flask_effect_life` ("Healing") or row 9
    `flask_effect_mana` ("Regenerating Mana"). Both are invisible, cancelled on death and removed once the pool is full.
    Both rows are `IsRecovery` (+0x7c), so 0x1c1 carries one u32 per GrantedStats entry: the recovery per minute
@@ -667,9 +670,9 @@ Otherwise:
    ms steps of 6 (live 2026-10-20: those looked jerky). Recovery flasks queue (poewiki: "Recovery flasks queue up if
    multiple flasks are active. The effect with the highest regeneration rate is always applied first"): of the life (and
    hybrid) effects only the fastest recovers while the others wait with the rest of their time, the mana ones likewise
-   (`Flasks.Effects`); a second use of the same flask queues another effect. Enduring ("Effect does not Queue") and the
-   suffix's extra life run on their own. The buff comes off (S→C 0x1c2) when the time is up, the pool is full (unless it
-   stays), or the player dies.
+   (`Flasks.Effects`); a second use of the same flask queues another effect. Enduring ("Effect does not Queue"), the
+   character's "… Flask Effects do not Queue" for its kind of flask, and the suffix's extra life run on their own. The
+   buff comes off (S→C 0x1c2) when the time is up, the pool is full (unless it stays), or the player dies.
 
 ## 8a. Utility flasks
 
@@ -808,14 +811,23 @@ bridge cannot make it walk), the tooltip's duration with quality.
 - **Every gain** is × (1 + the character's `flask_charges_gained_+%`) × (1 + the flask's `local_charges_added_+%`,
   "increased Charge Recovery"), which "stack multiplicatively"; partial charges are kept to two decimals per flask
   (`FlaskCharges.Carry`, for the connection: they are not saved).
-- **Critical strikes**: a flask's own "#% chance to gain a Flask Charge when you deal a Critical Strike" gives it one,
-  the character's `gain_flask_charge_when_crit_%` gives the first flask that is not full
-  `gain_flask_charge_when_crit_amount` (1 without it); one cooldown for all of them, 0.1 s, which the game's 0.033 s
-  server frames make 0.132 s (poewiki), not affected by cooldown recovery (`FlaskCharges.OnCrit`). The hooks are one
-  line after each of the player's crit rolls in `Program.Combat.cs`.
+- **Critical strikes the player deals** (a hit that landed on a living monster): a flask's own "#% chance to gain a
+  Flask Charge when you deal a Critical Strike" (`local_recharge_on_crit_%`) gives it one; the character's
+  `gain_flask_chance_on_crit_%` (a chance of one) and `recharge_flasks_on_crit` ("Gain # Flask Charges when you deal a
+  Critical Strike", and `recharge_flasks_on_crit_while_affected_by_precision` while Precision runs) give the first
+  flask that is not full (`FlaskCharges.CritSources`); one cooldown for all of them, 0.1 s, which the game's 0.033 s
+  server frames make 0.132 s (poewiki), not affected by cooldown recovery, looked at before anything else
+  (`FlaskCharges.OnCrit`). The hooks are one line after each of the player's crit rolls in `Program.Combat.cs`. Not
+  applied: `gain_flask_charge_when_crit_%` / `_amount` (charges when the player *takes* a critical strike: monsters
+  deal none here) and `gain_flask_charge_on_crit_chance_%_while_at_maximum_frenzy_charges` (no frenzy charges here).
 - **Hits**: "Gain # Charges when you are Hit by an Enemy" when a monster's hit lands (not evaded or blocked).
 - **Every 3 seconds**: the character's `flask_charges_recovered_per_3_seconds` (every flask),
-  `life_flask_charges_recovered_per_3_seconds` and `mana_flasks_gain_X_charges_every_3_seconds`, by game time.
+  `utility_flask_charges_recovered_per_3_seconds`, `life_flask_charges_recovered_per_3_seconds` (and
+  `life_flask_charges_recovered_per_3_seconds_on_low_life` on low life) and
+  `mana_flasks_gain_X_charges_every_3_seconds`, by game time (`FlaskCharges.PerThreeSeconds`).
+- **One change at a time**: every change of the flask bar (a use's charges, any gain) and its S→C 0xbf go out under the
+  connection's flask-bar gate (`ChangeFlaskBar`), so the client gets the revisions in order with the latest charges; a
+  use checks its charges again under it.
 - **Towns and hideouts** fill every flask on entering, and so does resurrection; a flask put on the flask bar in a
   hostile area has no charges (poewiki: "If a player equips a flask within a hostile area, the flask has zero active
   charges by default").
