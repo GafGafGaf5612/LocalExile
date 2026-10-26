@@ -95,6 +95,7 @@ partial class Program
     static async Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label)
     {
         await EndAurasOnDeath(remote, stream, ciphers, conn);
+        ChargesOnDeath(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), label);
     }
 
@@ -219,7 +220,7 @@ partial class Program
         ushort? buffVisual = Art.BuffVisual("righteous_fire_buff_visual", variation), auraVisual = Art.BuffVisual("righteous_fire_aura_visual", variation);
         string? ringAo = Art.Animated("righteous_fire_ring", variation) ?? (variation == 0 ? RighteousFireRingAo : null);
         // The radius takes the player's area of effect stats (passives, items, gem quality) under the skill's own (SkillArea).
-        var stats = SupportedStats(conn, skillId);
+        var stats = MergeSkillStats(AreaPlayerStats(conn), SupportedSkill(conn, skillId).Stats);
         int Get(string name, int fallback) => Stats.Key(name) is uint k && stats.TryGetValue(k, out int v) ? v : fallback;
         int radius = SkillArea.Radius(Get("active_skill_base_area_of_effect_radius", 18), name => Get(name, 0), spell: true);
         (int X, int Y) at;
@@ -434,6 +435,7 @@ partial class Program
         var playerStats = CharacterPlayerStats(conn);
         if (Stats.Key("delirium_aura_damage_over_time_+%_final") is uint moreDot)
             perSecond *= Math.Max(0, 1 + playerStats.GetValueOrDefault(moreDot) / 100.0);
+        perSecond *= ChargeDamageMore(playerStats);
         var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
         var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
         var stages = new List<(uint Id, SpawnedMonster M)>();

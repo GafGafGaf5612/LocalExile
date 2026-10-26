@@ -211,6 +211,7 @@ partial class Program
             $"0x01ab monster 0x{id:x} ({m.Label}) attacks the player, attack time {a.Seconds:0.00} s");
         await Task.Delay(TimeSpan.FromSeconds(a.Seconds / 2));
         await WhilePaused(conn);   // a swing started just before the pause lands after it
+        var reduction = PlayerDamageReduction(conn);   // Endurance Charges (Program.Charges)
         double now = conn.Clock.Elapsed.TotalSeconds;
         uint life, mana, manaBefore;
         int rawDamage = 0, damage = 0, chaosDamage = 0;
@@ -250,8 +251,8 @@ partial class Program
                 int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
                 if (type == DamageType.Chaos) chaosDamage += value;
                 damage += type == DamageType.Physical
-                    ? DamageModel.MitigatePhysical(value, conn.Pools.Armour)
-                    : value;
+                    ? DamageModel.MitigatePhysical(value, conn.Pools.Armour, reduction.Physical)
+                    : GameServer.Core.World.DamageTypes.IsElemental(type) ? DamageModel.Reduce(value, reduction.Elemental) : value;
             }
             blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
             if (blocked) { damage = 0; chaosDamage = 0; }
@@ -263,6 +264,7 @@ partial class Program
             life = conn.PlayerLife;
             mana = conn.PlayerMana;
         }
+        ChargesWhenHit(conn, blocked);
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
         if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
             await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);

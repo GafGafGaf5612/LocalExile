@@ -1422,6 +1422,91 @@ documented behaviour, not a capture; the signs of the crit-taken and action spee
 2026-10-20: `/set_stat base_stun_recovery_+% 30`, `avoid_all_elemental_status_% 20` and `base_cannot_be_frozen 1` show
 on the Defence tab as Stun Recovery 30%, the four Avoidance rows at 20% and "Cannot be Frozen".
 
+## 15. Endurance, Frenzy and Power charges
+
+Issue #237, part of #75's Charges tab. Code: `Charges.cs` (state and limits), `ChargeGains.cs` (what grants them),
+`ChargeEffects.cs` (what they do), `ChargeSession.cs` (one connection's charges at work), `ChargeBuffs.cs` (the HUD
+buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the maxima).
+
+- **Rules.** A charge lasts 10 seconds (poewiki's Charge page; Path of Building's CalcSetup `ChargeDuration` BASE 10;
+  no game table holds it), × (1 + `charge_duration_+%` + `base_charge_duration_+%` + the type's own increase
+  (`endurance_charge_duration_+%`, `base_frenzy_charge_duration_+%`, `power_charge_duration_+%`) +
+  `frenzy_charge_duration_+%_per_frenzy_charge` × the Frenzy Charges after the gain) × (1 +
+  `power_charge_duration_+%_final`), floored to milliseconds. Gaining a charge restarts the duration of every charge of
+  its type, also at the maximum, where none is added, and all charges of a type expire together (poewiki). The maximum
+  is `ChargePanelStats`' (3 from Character.ot plus `max_*_charges`, the combined power-and-endurance and
+  power-and-frenzy mods and `maximum_frenzy_power_endurance_charges`; verified on the native Charges tab with all three
+  baseline rows at `0 / 3`); the minimum is `base_minimum_*_charges` +
+  `minimum_frenzy_power_endurance_charges`, at most the maximum, and is always held; a gain adds on top of what the
+  character has (Path of Building: max(charges, min(maximum, minimum)); poewiki: the maximum takes priority). A lower
+  maximum (an item taken off) removes the charges above it at the next step: the session observes the limits and the
+  periodic stats whenever the character's stats are worked out (`ChargeSession.Observe` in `WithCharges`), and nothing
+  polls them. "% chance that if you would gain … Charges, you instead gain up to maximum" is
+  rolled on every gain. Time is the connection's game clock, which stops while the game is paused.
+- **Death and area changes.** Death takes every gained charge at once (`PlayerDied`; BuffDefinitions `CancelOnDeath`
+  on the three rows), so a pause or Resurrect in Town cannot keep them; the minimum stays. An area change (`Transfer`)
+  hands the charges to the destination ticket with the time they had left;
+  the new connection's ticker restores them and puts their buffs on the new player object, so loading does not count.
+  A new login starts with none. Whether the official server keeps charges across areas is unverified: poewiki's Charge
+  page says nothing about it. The rule is the one `CarryCharges` call in `Transfer`.
+- **Gains** (`ChargeGains.Rules`): each source stat is its own roll of `rng.Next(100) < chance`; 100 and the "Gain a …
+  Charge" flags gain without a roll, and a random type is drawn with `rng.Next(3)`. On kill:
+  `endurance_charge_on_kill_%`, `add_frenzy_charge_on_kill_%_chance`, `add_power_charge_on_kill_%_chance`, the two kill
+  flags, `power_frenzy_or_endurance_charge_on_kill_%`, the shield and dual-wield ones. On hit:
+  `add_frenzy_charge_on_skill_hit_%` (the character's plus the used skill's), the rare-or-unique ones. On critical
+  strike: power, endurance, melee endurance, frenzy, wand power, per enemy you crit. On non-critical strike: power,
+  with claws or daggers. When hit: endurance, frenzy. On block: endurance, frenzy, attack-only frenzy, power,
+  spell-only power, a random one. Over time (`ChargeGains.Periodics`): per second, every x ms (the body armour
+  implicits), random every 6 seconds, each second if hit in the last 4 seconds, while stationary or moving (the walk
+  estimate); not in towns. Skills: the Frenzy gem's hit gives a Frenzy Charge once per use (ActiveSkills `frenzy`;
+  without a Frenzy projectile row it hits as an area, and only its first target counts), Power Siphon's
+  killing hit a Power Charge, Flicker Strike's and Power Siphon's own on-hit chances count, and Enduring Cry grants an
+  Endurance Charge per 5 power (`endurance_charge_granted_per_X_monster_power_during_endurance_warcry`) of the hostile
+  monsters within 60 cells grown by area (Path of Building's radius; power 1 normal, 2 magic, 10 rare, 20 unique) when
+  its cast ends on the game clock, sped up by the player's and the gem's `warcry_speed_+%`; a later action does not
+  cancel it (`cannot_cancel_skill_before_contact_point`).
+  The combat code only enqueues events (`ChargesOnHit` at the default attack, area and projectile hits, `ChargesOnKill`
+  in `MonsterKilled`, `ChargesWhenHit` in `MonsterSwing` and `/blockhit`); `RunCharges` rolls them every 50 ms, with
+  the character's stats worked out outside the Monsters lock and only while events wait.
+- **Effects** (`ChargeEffects`). Every character has Character.ot's per-charge stats (`Inherent`): 4% increased attack
+  and cast speed and 4% more damage per Frenzy Charge, 4% physical and 4% elemental damage reduction per Endurance
+  Charge, 50% increased critical strike chance per Power Charge (Path of Building's CalcSetup uses the same constants).
+  They and the "per … charge" stats of passives, items and gems become, × the charges held, the stats the server
+  already calculates with (`ChargeEffects.PerCharge`, added to the character's stat sources by `WithCharges`): attack
+  and cast speed, critical strike chance and multiplier, increased and added damage, gain as extra chaos, resistances,
+  armour, evasion, block, spell suppression, movement speed, accuracy, area, projectile speed, energy shield, life and
+  mana regeneration, and panel sums (stun, cooldown, life on kill). The "with no Frenzy Charges" and "while you have
+  any" stats follow the count (`Conditional`). The more damage per Frenzy Charge scales every hit (`AttackHit`,
+  `SpellDamage.More`) and Righteous Fire's burning (`ChargeDamageMore`). The physical damage reduction (with the
+  passives' `base_additional_physical_damage_reduction_%`) adds to armour's and the elemental one applies after
+  resistance, both capped at 90% (Path of Building's CalcDefence; `DamageModel.MitigatePhysical`, `DamageModel.Reduce`),
+  for monster hits and the dev `/hit`, `/spellhit` and `/blockhit`.
+- **Stats sent.** `current_*_charges` (the Charges tab's "x / y" rows, with `virtual_maximum_*_charges`),
+  `actual_current_*_charges` (the buff rows' `Current_StatsKey`), `minimum_*_charges`, `current_removable_*_charges`,
+  `additional_physical_damage_reduction_%`, `additional_elemental_damage_reduction_%` and the per-charge stats, which
+  the per-charge rows read. A count change recomputes the pools and the walk speed and sends 0x1b3 and the skills'
+  stats (the client swings and casts with the speed in its skill records), without the skill-bar work of
+  `SendCharacterStats` (`SendChargeStats`).
+- **The HUD** (live 2026-10-25). One buff per type: BuffDefinitions rows 28 `endurance_charge`, 27 `frenzy_charge` and
+  29 `power_charge` (`ShowCount`; BuffVisuals 41, 40 and 42 with the BuffVisualOrbs `ChargeEndurance`, `ChargeFrenzy`,
+  `ChargePower`), the player as its source. S→C 0x1c1 flags bit1 carries the time left (f32 seconds) and bit2 the
+  count (u16, read after bit7's field and before bit3's). The icon at the top left shows the count from bit2 (a raw buff
+  with 2 stacks and no charge stats showed "2") and a timer from bit1; without bit1 (minimum charges) it has no timer.
+  The orbs circle the character. A change sends 0x1c2 for the old instance and a new 0x1c1. In towns the client draws
+  no charge buff (Lioneye's Watch, the server's and a raw one alike); the server keeps counting the charges there.
+- **`/charges`** shows each type's count, maximum, minimum, duration and time left; `/charges <type> <n>` sets a count,
+  `/charges add <type> [n]` gains as a skill would (refresh, maximum chance) and `/charges clear` empties them. A stat
+  set with `/set_stat` counts in the charge effects and limits too.
+- **Not modelled.** The other charge types (Spirit, Siphoning, Blitz, Challenger, Brutal, Affliction, Absorption, Blood,
+  Brine and the rest) and the stats that turn standard charges into them; skills and effects that consume or remove
+  charges (Discharge, Flicker Strike's cooldown bypass, Immortal Call, "lose all … when", expiry triggers); gains that
+  need stun, freeze, bleed, poison, curses, traps, mines, totems, Vaal souls, other warcries, allies, flask use (the
+  utility flask PR #233) or support gems (Power Charge On Critical, Endurance Charge on Melee Stun); Power Siphon's "or
+  soon after the hit"; Blood Rage (no self-buff skills); conditional maxima and minima (while affected by an aura, on
+  low life, devotion, "count as having maximum", a maximum equal to another type's); per-charge stats whose target the
+  server does not calculate (ailments, leech, damage taken, damage over time increases, wand-only or attack-only damage,
+  mana cost, buff duration, Frenzy's and Flicker Strike's own per-charge attack speed and damage).
+
 ## Open
 
 - Monster attacks still land at half the attack time (the player's use the contact keyframe); "more" multipliers; energy shield (Righteous Fire's ES parts are ignored).
@@ -1434,9 +1519,6 @@ on the Defence tab as Stun Recovery 30%, the four Avoidance rows at 20% and "Can
   skill → projectile link; damage for ground casts.
 - The meaning of 0x53's two trailing u16.
 
-## Standard maximum-charge rows
-
-`ChargePanelStats.Compute` derives the three standard maximum-charge display values from base three plus unconditional modifiers. The current values remain zero; conditional modifiers, replacement charges and gain/expiry mechanics are outside this change. Verified on the native Charges tab with all three baseline rows at `0 / 3`; eight focused modifier tests cover the formulas.
 ### Aura lifecycle: town suppression and death
 
 ActiveAuras records per-character enabled intent by GrantedEffects Id. LoadProgress restores every remembered aura whose gem is available, using fresh connection skill/buff ids. Restoration is not a new cast and does not drop saved auras when their combined reservation exceeds a transient mana pool; displayed reservation is clamped to maximum mana. New manual activations still validate the full reservation.

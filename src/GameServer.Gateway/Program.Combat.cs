@@ -221,6 +221,7 @@ partial class Program
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
             if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
         }
+        ChargesOnHit(conn, m, critical, spell: false);
         if (critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);   // the hit landed
         // At 0 the client's Life tick (0x141e6a190) stops notifying its listeners, so the mini life bar would keep the last
         // value: hide it with the stat its listener watches (hide_mini_life_bar).
@@ -449,6 +450,7 @@ partial class Program
             });
             return true;
         }
+        if (gem.Name is not null && UseChargeSkill(conn, gem.Effect, gem.Level, gem.Quality, from)) return true;
         if (gem.Name is not null && IsRighteousFire(gem.Effect))
             await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
         else
@@ -691,6 +693,7 @@ partial class Program
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
                     CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
+            ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, melee: false);
             return (damage, critical);
         }, epoch: epoch);
     }
@@ -700,7 +703,7 @@ partial class Program
     // (SkillArea). The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23).
     static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell, int effect)
     {
-        var areaStats = MergeSkillStats(FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2), skillStats);
+        var areaStats = MergeSkillStats(AreaPlayerStats(conn), skillStats);
         int Get(string name) => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0;
         return SkillArea.Radius(SkillArea.BaseRadius(Skills.EffectId(effect), Get), Get, spell);
     }
@@ -779,8 +782,9 @@ partial class Program
                 : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
             if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
-            await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}",
-                melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse);
+            if (await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}",
+                    melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse))
+                ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
@@ -993,18 +997,20 @@ partial class Program
         }
     }
 
-    // A hit on a living monster: life is mutated once under Monsters, then notifications await outside the lock.
-    static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
+    // A hit on a living monster: life is mutated once under Monsters, then notifications await outside the lock. False when
+    // the monster was dead already or the action was replaced (the hit did not land).
+    static async Task<bool> HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
         int damage, string by, bool log = true, bool melee = false, ushort sequence = 0, int? actionToken = null,
         CooldownUseTicket? cooldownUse = null)
     {
         MonsterHit? hit;
         lock (conn.Monsters)
         {
-            if (cooldownUse is not null ? !cooldownUse.Current(conn) : actionToken is int token && !PlayerActionCurrent(conn, token)) return;
+            if (cooldownUse is not null ? !cooldownUse.Current(conn) : actionToken is int token && !PlayerActionCurrent(conn, token)) return false;
             hit = ApplyMonsterHitLocked(conn, m, damage);
         }
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
+        return hit is not null;
     }
 
     // The short state mutation is shared with projectile impact; no awaits under Monsters.
@@ -1175,6 +1181,7 @@ partial class Program
                 await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove dead monster 0x{id:x}");
         });
         if (m.Variety is not { } variety || !m.Hostile) return;
+        ChargesOnKill(conn, m);
         if (conn.Layout.Id == TutorialObjects.Strand && variety.Id == TutorialObjects.Zombie
             && CharacterSaves.Load(CharacterName(conn))?.Tutorial is { ZombieKilled: false })
         {

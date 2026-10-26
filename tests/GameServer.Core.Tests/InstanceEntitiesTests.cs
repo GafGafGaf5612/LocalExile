@@ -391,6 +391,22 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Stacks_are_flags_bit2_after_the_duration_and_before_the_skill_icon()
+    {
+        // frenzy_charge (row 27) with 3 charges and 10 s left: flags 0x06, f32 10.0 at +0x68, u16 stacks 3 (live
+        // 2026-10-25: the HUD icon showed 3 and 0:09).
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "001B" + "00001000" + "0000" + "06" + "41200000" + "0003" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 27, 0x1000, u68: BitConverter.SingleToUInt32Bits(10f), stacks: 3)));
+        // Stacks without a duration (minimum charges: the icon shows the count and no timer), and with every later field.
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0002" + "001D" + "00001000" + "0000" + "04" + "0001" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 2, 29, 0x1000, stacks: 1)));
+        Assert.Equal("01C1" + "00001000" + "00000000" + "0000" + "0001" + "0098" + "00001000" + "0103"
+            + "9E" + "00000BB8" + "3F800000" + "0002" + "C1BA" + "0103" + "0007" + "00000000",
+            Convert.ToHexString(InstanceEntities.AddBuff(0x1000, 1, 152, 0x1000, 0x103,
+                u68: 3000, f6c: 1f, visual: 7, activeSkill: (0x103, 0xc1ba), stacks: 2)));
+    }
+
+    [Fact]
     public void A_buff_visual_override_is_flags_bit4_after_the_f32()
     {
         // righteous_fire with Divine's art: flags 0x90, f32 +0x6c, then u16 BE BuffVisuals row 401 (righteous_fire_white).

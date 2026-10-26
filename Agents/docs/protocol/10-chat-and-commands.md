@@ -151,7 +151,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/add_passive <PassiveSkillGraphId>` | allocates one passive node through the same checks as C→S 0x34, saved and sent back (0x33) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
 | `/resistances` | the character's uncapped and capped fire/cold/lightning/chaos resistance |
-| `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model (physical through armour), showing the mitigation used and the life left |
+| `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model (physical through armour, both with the additional damage reduction of Endurance Charges), showing the mitigation used and the life left |
 | `/accuracy [monster level]` | final accuracy rating and attack hit chance against a normal and an evasive monster of that level (default: your level; spells always hit) |
 | `/defences [monster level]` | armour, physical reduction and evasion with the chance to evade a monster of that level |
 | `/auras` | active auras, their flat/percent reservation, reserved and unreserved mana, reservation efficiency and aura effect ([11](11-skills.md) 13) |
@@ -159,6 +159,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/spellhit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: a spell hit through resistance and Spell Suppression, rolling the suppression chance |
 | `/crit` | attack and spell critical strike chance and multiplier from the unconditional passives and weapon base |
 | `/block` | attack block and spell block chance, caps and effective lucky chances |
+| `/charges [<endurance\|frenzy\|power> <n>]`, `/charges add <type> [n]`, `/charges clear` | dev: each charge type's count, maximum, minimum, duration and time left; sets a count, gains like a skill (refreshing the duration) or clears them ([11](11-skills.md) §15) |
 | `/block_luck <attack\|spell\|both\|off>` | dev: force lucky block for testing |
 | `/blockhit <attack\|spell> <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: a hit through block and resistance |
 | `/god` | toggles 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12) |
