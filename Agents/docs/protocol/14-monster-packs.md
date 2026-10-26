@@ -97,8 +97,10 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
   only the rarity stat Hillock's bar stayed full above his base 39).
   Magic and rare monsters also get `monster_life_+%_final_from_rarity_table` (Stats.dat row 9877, on no Mods.dat
   row): MagicMonsterLifeScalingPerLevel / RareMonsterLifeScalingPerLevel `Life` at their level (magic +50% at level 1
-  to +75% from 71, rare +33% to +100% from 71); the wiki's "Rarity" page lists the same tables as a life multiplier
-  every magic / rare monster gets. A rare Hungry Corpse at level 70 has 4.9 × 2 × its base life.
+  to +75% from 71, rare +33% to +100% from 71). poewiki's "Rarity" page confirms both parts: the hidden MonsterMagic2
+  / MonsterRare2 "148% / 390% more maximum Life", and "Additionally magic / rare monsters receive a life multiplier
+  based on their level", whose tables match these two for all 100 levels. A rare Hungry Corpse at level 70 has
+  4.9 × 2 × its base life.
 - **Hits:** DefaultMonsterStats `Damage` × DamageMultiplier × the attack time in seconds (unless MonsterTypes
   `BaseDamageIgnoresAttackSpeed`), spread ± MonsterTypes `DamageSpread`; then the rarity's monster mods:
   `monster_rarity_damage_+%_final` (magic 30, rare 50, unique 70) and
@@ -120,14 +122,17 @@ tags that the monster has gives a weight above 0. The monster's tags are its Mon
 `magic` or `rare` (the client adds the same tag when it reads the mods, `0x1421ff3c0`; many mods have `magic` 0, so
 only rares get them) and `not_part_of_pack` for a monster on its own (`/spawn_mob`). Each affix is drawn by weight
 from the allowed ones, a ModFamily once, at most Rarity.dat's MaxPrefix / MaxSuffix of each kind; every monster mod
-has a fixed value. The counts are not in the client's data, so they follow the patch notes: a magic monster has one
-affix (wiki "Monster modifiers"); a rare one in the campaign one or two ("During the campaign, Rare Monsters you
-encounter will only have one or two modifiers", 3.19.0; 3.19.0c made two rarer): 1 at 75%, 2 at 25%; from area level
-68 two to four ("you'll stop encountering Rare Monsters with one modifier … It is also possible to encounter Rare
-Monsters with four modifiers"): 2 at 50%, 3 at 40%, 4 at 10%. The percentages are ours. The magic monsters of one
-name share one roll per instance ("All monsters in an instance that are the same or very similar will have the same
-magic monster modifier", 3.19.0; The Coast's Drowned are several MonsterVarieties rows). Normal and unique monsters
-roll none.
+has a fixed value. The counts are not in the client's data: Rarity.dat's `MinMods` / `MaxMods` (1–2, 4–6) are the
+items', and Monster.ot, MonsterMapDifficulty and WorldAreas have no count. So they follow poewiki's "Rarity" page: a
+magic monster is "given one monster modifier", a rare one "two to four monster modifiers" (the 3.20 FAQ also balances
+around 2 to 4). The 3.19.0 patch notes gave campaign rares "only … one or two modifiers", but 3.20 replaced that mod
+system, so the current page wins; the campaign keeps fewer: below area level 68 2 at 75%, 3 at 25%, from 68 2 at 40%,
+3 at 40%, 4 at 20%. **These percentages are invented.** The magic monsters of one name share one roll per instance
+("All monsters in an instance that are the same or very similar will have the same magic monster modifier", 3.19.0;
+The Coast's Drowned are several MonsterVarieties rows), as long as the affix could roll on the variety: a shared roll
+with a weight of 0 for its tags (Blurred on the large Savage Crab, which is `not_dex`; of Rime on a fire-throwing
+Cannibal) is not given to it; the monsters of its name and tags share their own roll instead. Normal and unique
+monsters roll none.
 
 **The rarity's own mods** (Mods.dat MonsterMagic1–11, MonsterRare1–12, MonsterUnique1–10: life, damage, speed,
 size, rewards) go with every magic, rare and unique monster in the hidden list (flags bit 11), which the client does
@@ -156,22 +161,23 @@ cells/s, a normal one every 0.125–0.133 s; the server walks it at the same spe
 | `base_movement_velocity_+%` | its walk, on the client and in the server's estimate |
 | `base_*_damage_resistance_%`, `base_resist_all_elements_%` | the player's hits and Righteous Fire's burn, per type, capped at 75% |
 | `base_additional_physical_damage_reduction_%` | the physical part of the player's hits (capped at 75%) |
-| `base_damage_taken_+%`, `rare_monster_mod_spell_damage_taken_+%_final` | the player's hits (the second only spells) |
-| `monster_base_block_%` | blocks the player's attacks (no damage) |
+| `base_damage_taken_+%`, `rare_monster_mod_spell_damage_taken_+%_final` | the player's hits (the second only spell hits: the stat has no description, so it is not taken to cover Righteous Fire's burn) |
+| `monster_base_block_%` | blocks the player's attacks: rolled before the hit, a blocked one has no damage, impale, flinch or 0x1af (the client has no block result we know); the log says "blocked" |
 | `evasion_rating_+%`, `accuracy_rating_+%` | the player's chance to hit it, its chance to hit the player |
-| `critical_strike_chance_+%`, `always_crit` | its critical strikes (5% base, × 130%) |
+| `always_crit` | its critical strikes (monster attacks have no base chance; × 130% less the player's `base_self_critical_strike_multiplier_-%`, at least 100%) |
 | `hit_damage_+%_per_10%_missing_enemy_life` | its hit on a wounded player |
 | `self_take_no_extra_damage_from_critical_strikes` | the player's critical hits deal their normal damage |
 | `life_regeneration_rate_per_minute_%` | it regains life (a 0.5 s server tick, 0x1b1) |
 | `base_cannot_be_stunned` | no hit reaction (the flinch is the hit's stun) |
 
-**Unsupported mods do not roll.** 38 of the 111 can be honoured: 32 fully (every stat acts, or only stops what the
+**Unsupported mods do not roll.** 37 of the 111 can be honoured: 31 fully (every stat acts, or only stops what the
 server never does to monsters: Hexproof, of Congealment, Unstoppable, Mirrored, Reflector's, the ailment parts of the
 resistance mods) and 6 in part (of Flames / of Rime / of Electricity: the extra damage without the exposure on hit; of
-Haste / of Damaging / of Precision: the aura reaches only the monster itself). The other 73 need a system the server
-does not have: an aura or buff without stats of its own, a granted or retaliation skill, a monster or ground on death,
-ailments, curses, blind or stun on the player, charges, energy shield, leech, projectiles, area of effect, minions;
-Berserking's buff has a trigger of its own. Such a mod's name would promise something that does not happen, so the
+Haste / of Damaging: the aura reaches only the monster itself; of Precision: its accuracy, not its increased critical
+strike chance, which raises a base of 0). The other 74 need a system the server does not have: an aura or buff without
+stats of its own, a granted or retaliation skill, a monster or ground on death, ailments, curses, blind or stun on the
+player, charges, energy shield, leech, projectiles, area of effect, minions; Berserking's buff has a trigger of its
+own; of Incision only increases a critical strike chance monster attacks do not have. Such a mod's name would promise something that does not happen, so the
 pool leaves them out and the others keep their weights against each other. `Game_MONSTER_MODS=all` rolls the whole
 pool (to see how the client shows them). `MonsterModCatalog.SupportOf` decides.
 
@@ -179,9 +185,19 @@ pool (to see how the client shows them). `MonsterModCatalog.SupportOf` decides.
 affixes (a Mods.dat Id, the Id without `MonsterMod`, or the name with `_` for spaces: `/mob_mods Quick of_Flames`);
 `/mob_mods [id] pool` lists what it could roll.
 
+**Live** (2026-10-25/26, besides the display above): Fireball dealt 11–14 to a normal level-70 Hungry Corpse and 3–4
+to one with of the Magma; the default attack dealt 8–11 to a normal one and 5 to a Carapaced one, which blocked 3 of
+its 12 attacks with Stalwart (no hit message, "blocked" in the log); Blurred doubled the evasion the attack rolled
+against (5 081 → 10 162: 45% → 29% to hit); of Deadliness crit on every hit and a normal monster never; of the Hydra
+regenerated 3% per second; a kept rare came back with its name, mods and life. The monsters' accuracy is checked
+only by the tests (the player was never evaded).
+
 **Open:** the variety's own mods (MonsterVarieties `ModsKeys`) are not sent or applied; monsters have no base
-resistance or armour yet (open PRs #225 / #226 add base resistance), no energy shield and no auras on their allies;
-the unsupported mods' systems; whether the real server sends the rarity's own mods, and in which list.
+resistance or armour yet (open PRs #225 / #226 add base resistance), the player no penetration, so the mods'
+resistances cannot be penetrated; no monster energy shield and no auras on their allies; the unsupported mods' systems;
+whether the real server sends the rarity's own mods, and in which list. The monster's attack stats on the client
+(`MonsterAttack.Stats`) keep only its physical damage: the client shows no monster damage, and the server rolls the
+hit.
 
 ## Maps
 

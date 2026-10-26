@@ -319,8 +319,11 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   rolls the player's
   evasion with the same `AccuracyHitChance` formula and sends no life update on a miss. The roll uses PoE's shared
   entropy counter (0–99): each attack adds its hit chance, 100 or more means a hit and subtracts 100, and the counter is
-  randomized after 3.33 s without an attack. A hit can be a critical strike (5% base, Path of Building's default enemy
-  chance, raised by the monster's mods; × Monster.ot's 130% multiplier), then goes through the player's armour
+  randomized after 3.33 s without an attack. A hit is a critical strike only when the monster's data gives it a
+  chance: monster attacks have none (the monster Melee stat sets' `AttackCritChance` is 0, Monster.ot only sets the
+  130% `base_critical_strike_multiplier`), so only the of Deadliness mod makes one crit, at 130% less the player's
+  `base_self_critical_strike_multiplier_-%` (at least 100%; [14](14-monster-packs.md) §5). Live 2026-10-26: a normal
+  Hungry Corpse never crit, one with of Deadliness every time. The hit then goes through the player's armour
   (`MitigatePhysical`) and block. `/defences` prints the reference values.
 - **Player life** (`ClientState.PlayerLife`, from the level/class/passive pools). At 0 the client plays the death
   animation and blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is

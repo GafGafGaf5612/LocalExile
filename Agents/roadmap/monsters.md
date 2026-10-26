@@ -11,7 +11,7 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Known:** spawning, levels, rarity, names, team, life, StateMachine / Transitionable types, walking, chasing and
   melee attacks all work ([10](../docs/protocol/10-chat-and-commands.md) §5, [11](../docs/protocol/11-skills.md) §6);
   areas are populated with their MonsterPacks and unique boss ([14](../docs/protocol/14-monster-packs.md)).
-- **Start:** the "emerge" action for emerge monsters (then add the skipped emerge packs), the systems the 73
+- **Start:** the "emerge" action for emerge monsters (then add the skipped emerge packs), the systems the 74
   unsupported monster mods need (auras on allies, retaliation and on-death skills, ailments and curses on the player;
   [14](../docs/protocol/14-monster-packs.md) §5), stages of other bosses (`BossFights.cs` has Hillock's), pack
   `Grounds`, the 346
