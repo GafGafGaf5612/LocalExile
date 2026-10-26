@@ -96,7 +96,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live 2026-10-25: gains when hit, on non-critical hit and on kill, refresh, expiry, death, area change, minimum
   charges, 3 Power Charges taking attack crit 8.3% → 20.75%, a Frenzy Charge shortening the attack, 3 Endurance
   Charges taking 12% off physical and fire hits; towns draw no charge icons.
-  Not live-checked: the Charges tab itself, Enduring Cry and the timed gains.
+  The maximum rows (with the maximum-charge mods) were verified on the native Charges tab at `0 / 3` before this;
+  the current counts there and Enduring Cry and the timed gains are not live-checked.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
   `Program.Charges.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §15.
@@ -269,6 +270,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Cyclone area of effect (2026-10-25).** `/set_aoe` now resends Cyclone's calculated final radius in the skill
   record, using the same radius calculation for server hits.
   Cyclone/CycloneAltX use a 16-cell base when their exported stat set has none.
+  The player's increased area counts once for every area skill (`AreaPlayerStats`); it counted twice before.
   Spell-only area does not affect the attack.
   Tested calculations; live visual check pending.
   The first live check found that direct radius alone did not scale the channelled visual;

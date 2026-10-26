@@ -1024,22 +1024,27 @@ Issue #237, part of #75's Charges tab. Code: `Charges.cs` (state and limits), `C
 `ChargeEffects.cs` (what they do), `ChargeSession.cs` (one connection's charges at work), `ChargeBuffs.cs` (the HUD
 buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the maxima).
 
-- **Rules.** A charge lasts 10 seconds (the wiki's Charge page, Mark_GGG; Path of Building's CalcSetup `ChargeDuration`
-  BASE 10; no game table holds it), × (1 + `charge_duration_+%` + `base_charge_duration_+%` + the type's own increase
+- **Rules.** A charge lasts 10 seconds (poewiki's Charge page; Path of Building's CalcSetup `ChargeDuration` BASE 10;
+  no game table holds it), × (1 + `charge_duration_+%` + `base_charge_duration_+%` + the type's own increase
   (`endurance_charge_duration_+%`, `base_frenzy_charge_duration_+%`, `power_charge_duration_+%`) +
   `frenzy_charge_duration_+%_per_frenzy_charge` × the Frenzy Charges after the gain) × (1 +
   `power_charge_duration_+%_final`), floored to milliseconds. Gaining a charge restarts the duration of every charge of
-  its type, also at the maximum, where none is added, and all charges of a type expire together (wiki). The maximum is
-  `ChargePanelStats`' (3 from Character.ot plus the maximum mods); the minimum is `base_minimum_*_charges` +
+  its type, also at the maximum, where none is added, and all charges of a type expire together (poewiki). The maximum
+  is `ChargePanelStats`' (3 from Character.ot plus `max_*_charges`, the combined power-and-endurance and
+  power-and-frenzy mods and `maximum_frenzy_power_endurance_charges`; verified on the native Charges tab with all three
+  baseline rows at `0 / 3`); the minimum is `base_minimum_*_charges` +
   `minimum_frenzy_power_endurance_charges`, at most the maximum, and is always held; a gain adds on top of what the
-  character has (Path of Building: max(charges, min(maximum, minimum))). A lower maximum (an item taken off) removes the
-  charges above it within 0.25 s. "% chance that if you would gain … Charges, you instead gain up to maximum" is
+  character has (Path of Building: max(charges, min(maximum, minimum)); poewiki: the maximum takes priority). A lower
+  maximum (an item taken off) removes the charges above it at the next step: the session observes the limits and the
+  periodic stats whenever the character's stats are worked out (`ChargeSession.Observe` in `WithCharges`), and nothing
+  polls them. "% chance that if you would gain … Charges, you instead gain up to maximum" is
   rolled on every gain. Time is the connection's game clock, which stops while the game is paused.
-- **Death and area changes.** Death takes every gained charge (BuffDefinitions `CancelOnDeath` on the three rows); the
-  minimum stays. An area change (`Transfer`) hands the charges to the destination ticket with the time they had left;
+- **Death and area changes.** Death takes every gained charge at once (`PlayerDied`; BuffDefinitions `CancelOnDeath`
+  on the three rows), so a pause or Resurrect in Town cannot keep them; the minimum stays. An area change (`Transfer`)
+  hands the charges to the destination ticket with the time they had left;
   the new connection's ticker restores them and puts their buffs on the new player object, so loading does not count.
-  A new login starts with none. That the official server keeps charges across areas is not confirmed from a primary
-  source here (poewiki's Charge page could not be fetched).
+  A new login starts with none. Whether the official server keeps charges across areas is unverified: poewiki's Charge
+  page says nothing about it. The rule is the one `CarryCharges` call in `Transfer`.
 - **Gains** (`ChargeGains.Rules`): each source stat is its own roll of `rng.Next(100) < chance`; 100 and the "Gain a …
   Charge" flags gain without a roll, and a random type is drawn with `rng.Next(3)`. On kill:
   `endurance_charge_on_kill_%`, `add_frenzy_charge_on_kill_%_chance`, `add_power_charge_on_kill_%_chance`, the two kill
@@ -1049,13 +1054,16 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   with claws or daggers. When hit: endurance, frenzy. On block: endurance, frenzy, attack-only frenzy, power,
   spell-only power, a random one. Over time (`ChargeGains.Periodics`): per second, every x ms (the body armour
   implicits), random every 6 seconds, each second if hit in the last 4 seconds, while stationary or moving (the walk
-  estimate); not in towns. Skills: the Frenzy gem's hit gives a Frenzy Charge (ActiveSkills `frenzy`), Power Siphon's
+  estimate); not in towns. Skills: the Frenzy gem's hit gives a Frenzy Charge once per use (ActiveSkills `frenzy`;
+  without a Frenzy projectile row it hits as an area, and only its first target counts), Power Siphon's
   killing hit a Power Charge, Flicker Strike's and Power Siphon's own on-hit chances count, and Enduring Cry grants an
   Endurance Charge per 5 power (`endurance_charge_granted_per_X_monster_power_during_endurance_warcry`) of the hostile
   monsters within 60 cells grown by area (Path of Building's radius; power 1 normal, 2 magic, 10 rare, 20 unique) when
-  its cast ends.
+  its cast ends on the game clock, sped up by the player's and the gem's `warcry_speed_+%`; a later action does not
+  cancel it (`cannot_cancel_skill_before_contact_point`).
   The combat code only enqueues events (`ChargesOnHit` at the default attack, area and projectile hits, `ChargesOnKill`
-  in `MonsterKilled`, `ChargesWhenHit` in `MonsterSwing` and `/blockhit`); `RunCharges` rolls them every 50 ms.
+  in `MonsterKilled`, `ChargesWhenHit` in `MonsterSwing` and `/blockhit`); `RunCharges` rolls them every 50 ms, with
+  the character's stats worked out outside the Monsters lock and only while events wait.
 - **Effects** (`ChargeEffects`). Every character has Character.ot's per-charge stats (`Inherent`): 4% increased attack
   and cast speed and 4% more damage per Frenzy Charge, 4% physical and 4% elemental damage reduction per Endurance
   Charge, 50% increased critical strike chance per Power Charge (Path of Building's CalcSetup uses the same constants).
@@ -1072,8 +1080,9 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
 - **Stats sent.** `current_*_charges` (the Charges tab's "x / y" rows, with `virtual_maximum_*_charges`),
   `actual_current_*_charges` (the buff rows' `Current_StatsKey`), `minimum_*_charges`, `current_removable_*_charges`,
   `additional_physical_damage_reduction_%`, `additional_elemental_damage_reduction_%` and the per-charge stats, which
-  the per-charge rows read. A count change recomputes the pools and the walk speed and sends the stats and skills
-  again (`SendCharacterStats`).
+  the per-charge rows read. A count change recomputes the pools and the walk speed and sends 0x1b3 and the skills'
+  stats (the client swings and casts with the speed in its skill records), without the skill-bar work of
+  `SendCharacterStats` (`SendChargeStats`).
 - **The HUD** (live 2026-10-25). One buff per type: BuffDefinitions rows 28 `endurance_charge`, 27 `frenzy_charge` and
   29 `power_charge` (`ShowCount`; BuffVisuals 41, 40 and 42 with the BuffVisualOrbs `ChargeEndurance`, `ChargeFrenzy`,
   `ChargePower`), the player as its source. S→C 0x1c1 flags bit1 carries the time left (f32 seconds) and bit2 the
