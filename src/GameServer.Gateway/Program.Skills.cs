@@ -79,6 +79,8 @@ partial class Program
             foreach (uint key in StatKeys.AttackSpeedInputs)
                 devAttackSpeed += conn.PlayerStats.GetValueOrDefault(key);
         stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
+        // The running utility flasks' plain stats (UtilityFlasks.RawStats: maximum resistances, crit, damage, cast speed).
+        foreach (var (k, v) in UtilityFlasks.RawStats(conn.UtilityFlaskEffects.Stats(), Stats)) stats[k] = stats.GetValueOrDefault(k) + v;
         // The character panel's sums of base forms (PanelStats); a stat /set_stat set keeps its value.
         HashSet<uint> devSet;
         lock (conn.Monsters) devSet = [.. conn.PlayerStats.Keys];
@@ -139,8 +141,7 @@ partial class Program
         }
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
-        foreach (var (k, v) in AuraCatalog.RawStats(auras, conn.Pools.AuraEffectPct, Skills, Stats)
-            .Concat(UtilityFlasks.RawStats(conn.UtilityFlaskEffects.Stats(), Stats)))
+        foreach (var (k, v) in AuraCatalog.RawStats(auras, conn.Pools.AuraEffectPct, Skills, Stats))
             extra[k] = extra.GetValueOrDefault(k) + v;
         foreach (var (k, v) in extra) if (seen.Add(k)) yield return (k, v);
     }

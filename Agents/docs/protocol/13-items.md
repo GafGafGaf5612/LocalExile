@@ -701,9 +701,9 @@ A use:
    its countdown;
 4. adds the stats to the pools: `PoolsFor` calls `UtilityFlasks.Apply` (resistances and their maxima, flat armour and
    evasion raised by their increases, the Basalt / Stibnite more multipliers on top of Determination's and Grace's,
-   movement and attack speed, critical strike chance, spell suppression) and `BaseStats` adds `UtilityFlasks.RawStats`
-   (the maximum resistances, which the client adds to its own 75; increased critical strike chance; increased damage;
-   cast speed). `ApplyMovementSpeed` changes the walk estimate (Quicksilver: 37 × 1.4 = 51.8 cells/s) and the stats go
+   movement and attack speed, critical strike chance, spell suppression) and `CharacterPlayerStats` adds
+   `UtilityFlasks.RawStats` (the maximum resistances, which the client adds to its own 75; increased critical strike
+   chance; increased damage; cast speed). `ApplyMovementSpeed` changes the walk estimate (Quicksilver: 37 × 1.4 = 51.8 cells/s) and the stats go
    to the client (S→C 0x1b3: `movement_velocity_+%` 40 reached the client's stat setter `0x1424cfaf0`, live
    2026-10-25). So `/defences`, `/resistances`, `/hit` and the character panel see them;
 5. ends when its time is up, by the connection clock (`RunUtilityFlasks`, every 16 ms while any runs; a pause stops the
