@@ -47,25 +47,114 @@ public class UtilityFlasksTests
         Assert.Equal([("base_chaos_damage_resistance_%", 35)], Of("Amethyst Flask")!.Stats);
         Assert.Equal([("base_resist_all_elements_%", 35)], Of("Bismuth Flask")!.Stats);
         Assert.Equal([("basalt_flask_armour_+%_final", 20)], Of("Basalt Flask")!.Stats);
-        foreach (string name in new[] { "Sapphire Flask", "Topaz Flask", "Diamond Flask", "Quartz Flask", "Stibnite Flask", "Sulphur Flask" })
-            Assert.True(Of(name)!.Usable);
         // Life and mana flasks and other items are not utility flasks.
         Assert.Null(Of("Small Life Flask"));
         Assert.Null(Catalog.Value.UtilityFlaskOf(Catalog.Value.Row(384)!));   // Driftwood Wand
     }
 
     [Fact]
-    public void Flasks_whose_stats_the_server_does_not_model_are_not_usable_but_have_charges()
+    public void Every_flask_has_charges_and_each_buff_stat_is_supported_or_listed()
     {
-        // Frozen effect on self, item rarity, ward and stun threshold.
-        foreach (string name in new[] { "Aquamarine Flask", "Gold Flask", "Iron Flask", "Corundum Flask" })
+        // Every utility row of Flasks.dat (by BaseItemTypes name): its buff's stats as the tables give them, how each
+        // counts here, its duration and its charges (per use, maximum). A new row or a changed value fails this test.
+        // M modelled, P only on the character panel (no ailments, stun or curses on the player here), W Ward (#206),
+        // U not applied.
+        var expected = new Dictionary<string, (string Stats, double Seconds, int PerUse, int Max)>
         {
-            Assert.False(Of(name)!.Usable);
-            Assert.NotNull(Catalog.Value.FlaskChargesOf(Catalog.Value.Find(name)!));
+            ["Diamond Flask"] = ("critical_strike_chance_+% 100 M", 6, 20, 40),
+            ["Ruby Flask"] = ("base_fire_damage_resistance_% 40 M, base_maximum_fire_damage_resistance_% 5 M", 8, 20, 50),
+            ["Sapphire Flask"] = ("base_cold_damage_resistance_% 40 M, base_maximum_cold_damage_resistance_% 5 M", 8, 20, 50),
+            ["Topaz Flask"] = ("base_lightning_damage_resistance_% 40 M, base_maximum_lightning_damage_resistance_% 5 M", 8, 20, 50),
+            ["Granite Flask"] = ("base_physical_damage_reduction_rating 1500 M", 6, 30, 60),
+            ["Quicksilver Flask"] = ("base_movement_velocity_+% 40 M", 6, 30, 60),
+            ["Amethyst Flask"] = ("base_chaos_damage_resistance_% 35 M", 6.5, 35, 65),
+            ["Quartz Flask"] = ("phase_through_objects 1 U, base_spell_suppression_chance_% 10 M", 6, 30, 60),
+            ["Jade Flask"] = ("base_evasion_rating 1500 M", 6, 30, 60),
+            ["Basalt Flask"] = ("basalt_flask_armour_+%_final 20 M", 8, 40, 60),
+            ["Aquamarine Flask"] = ("base_frozen_effect_on_self_+% -60 P", 8, 20, 50),
+            ["Stibnite Flask"] = ("stibnite_flask_evasion_rating_+%_final 20 M", 8, 40, 60),
+            ["Sulphur Flask"] = ("damage_+% 40 M", 8, 40, 60),
+            ["Silver Flask"] = ("onslaught: attack_speed_+% 20 M, base_cast_speed_+% 20 M, base_movement_velocity_+% 20 M", 6, 40, 60),
+            ["Bismuth Flask"] = ("base_resist_all_elements_% 35 M", 8.5, 15, 40),
+            ["Gold Flask"] = ("base_item_found_rarity_+% 30 U", 5, 60, 80),
+            ["Corundum Flask"] = ("stun_threshold_+% 30 P", 7.5, 20, 50),
+            ["Iron Flask"] = ("base_ward 200 W", 4, 40, 60),
+        };
+        static string Code(UtilityFlasks.Support s) => s switch
+        {
+            UtilityFlasks.Support.Modelled => "M", UtilityFlasks.Support.PanelOnly => "P", UtilityFlasks.Support.Ward => "W", _ => "U",
+        };
+        static string Describe(IEnumerable<(string Stat, int Value)> stats) =>
+            string.Join(", ", stats.Select(s => $"{s.Stat} {s.Value} {Code(UtilityFlasks.SupportOf(s.Stat))}"));
+
+        var found = Enumerable.Range(0, 5000).Select(Catalog.Value.Row).OfType<ItemCatalog.BaseType>()
+            .Select(t => (t.Name, U: Catalog.Value.UtilityFlaskOf(t))).Where(x => x.U is not null).ToList();
+        Assert.Equal(expected.Keys.Order(), found.Select(f => f.Name).Order());
+        foreach (var (name, u) in found)
+        {
+            var (stats, seconds, perUse, max) = expected[name];
+            Assert.Equal(stats, u!.Extra is { } x ? $"{x.BuffId}: {Describe(x.Stats)}" : Describe(u.Stats));
+            Assert.Equal((seconds, perUse, max), (u.Seconds, u.ChargesPerUse, u.MaxCharges));
+            Assert.Equal((perUse, max), (Catalog.Value.FlaskChargesOf(Catalog.Value.Find(name)!)!.ChargesPerUse, Catalog.Value.FlaskChargesOf(Catalog.Value.Find(name)!)!.MaxCharges));
         }
-        Assert.Equal((40, 60), (Of("Iron Flask")!.ChargesPerUse, Of("Iron Flask")!.MaxCharges));
-        // Quartz phasing is left out; its spell suppression counts.
-        Assert.Equal([("base_spell_suppression_chance_%", 10)], Of("Quartz Flask")!.Applied);
+    }
+
+    [Fact]
+    public void Every_flask_at_quality_0_and_20_with_increased_duration_and_effect()
+    {
+        // Golden values: quality 20 and 30% increased duration multiply (× 1.3 × 1.2 = 1.56); 25% increased effect scales
+        // each stat with the fraction dropped (PoB ScaleAddMod); Onslaught keeps its 20s.
+        var golden = new Dictionary<string, (double Plain, double Long, string Stronger)>
+        {
+            ["Diamond Flask"] = (6, 9.36, "critical_strike_chance_+% 125"),
+            ["Ruby Flask"] = (8, 12.48, "base_fire_damage_resistance_% 50, base_maximum_fire_damage_resistance_% 6"),
+            ["Sapphire Flask"] = (8, 12.48, "base_cold_damage_resistance_% 50, base_maximum_cold_damage_resistance_% 6"),
+            ["Topaz Flask"] = (8, 12.48, "base_lightning_damage_resistance_% 50, base_maximum_lightning_damage_resistance_% 6"),
+            ["Granite Flask"] = (6, 9.36, "base_physical_damage_reduction_rating 1875"),
+            ["Quicksilver Flask"] = (6, 9.36, "base_movement_velocity_+% 50"),
+            ["Amethyst Flask"] = (6.5, 10.14, "base_chaos_damage_resistance_% 43"),
+            ["Quartz Flask"] = (6, 9.36, "base_spell_suppression_chance_% 12"),
+            ["Jade Flask"] = (6, 9.36, "base_evasion_rating 1875"),
+            ["Basalt Flask"] = (8, 12.48, "basalt_flask_armour_+%_final 25"),
+            ["Aquamarine Flask"] = (8, 12.48, "base_frozen_effect_on_self_+% -75"),
+            ["Stibnite Flask"] = (8, 12.48, "stibnite_flask_evasion_rating_+%_final 25"),
+            ["Sulphur Flask"] = (8, 12.48, "damage_+% 50"),
+            ["Silver Flask"] = (6, 9.36, "attack_speed_+% 20, base_cast_speed_+% 20, base_movement_velocity_+% 20"),
+            ["Bismuth Flask"] = (8.5, 13.26, "base_resist_all_elements_% 43"),
+            ["Gold Flask"] = (5, 7.8, ""),
+            ["Corundum Flask"] = (7.5, 11.7, "stun_threshold_+% 37"),
+            ["Iron Flask"] = (4, 6.24, "base_ward 250"),
+        };
+        var longer = new Dictionary<string, int> { ["local_flask_duration_+%"] = 30, ["local_flask_effect_+%"] = 25 };
+        foreach (var (name, (plain, longSeconds, stronger)) in golden)
+        {
+            var u = Of(name)!;
+            Assert.Equal(plain, UtilityFlasks.For(u, Flask(), new Dictionary<string, int>(), None).Seconds, 6);
+            var (stats, seconds) = UtilityFlasks.For(u, Flask(quality: 20), longer, None);
+            Assert.Equal(longSeconds, seconds, 6);
+            Assert.Equal(stronger, string.Join(", ", stats.Select(s => $"{s.Stat} {s.Value}")));
+        }
+    }
+
+    [Fact]
+    public void Iron_Flask_Ward_waits_for_ward_and_changes_nothing_yet()
+    {
+        // Ward comes with PR #206; UtilityFlasks.Ward is where its Bonus.Ward / WardPct will take these. Until then the
+        // pools are unchanged.
+        var iron = UtilityFlasks.For(Of("Iron Flask")!, Flask(), new Dictionary<string, int> { ["local_flask_ward_+%_during_effect"] = 30 }, None).Stats;
+        var stats = iron.Select(s => (s.Stat, s.Value)).ToList();
+        Assert.Equal((200, 30), UtilityFlasks.Ward(stats));
+        Assert.Equal(CharacterStats.Bonus.None, UtilityFlasks.Apply(CharacterStats.Bonus.None, stats));
+        Assert.Empty(UtilityFlasks.RawStats(stats, StatNames.Value));
+    }
+
+    [Fact]
+    public void Panel_only_stats_go_to_the_client_and_change_no_pool()
+    {
+        var aquamarine = UtilityFlasks.For(Of("Aquamarine Flask")!, Flask(), new Dictionary<string, int>(), None).Stats.Select(s => (s.Stat, s.Value)).ToList();
+        Assert.Equal(CharacterStats.Bonus.None, UtilityFlasks.Apply(CharacterStats.Bonus.None, aquamarine));
+        var names = StatNames.Value;
+        Assert.Equal([("base_frozen_effect_on_self_+%", -60)], UtilityFlasks.RawStats(aquamarine, names).Select(r => (names.Name(r.Key), r.Value)));
     }
 
     [Fact]
@@ -162,10 +251,12 @@ public class UtilityFlasksTests
         var u = Utility(("base_movement_velocity_+%", 40));
         var running = Active(7, u, started: 10);
 
-        Assert.Null(UtilityFlasks.Refusal(false, null, Flask(charges: 30), u, 11));
-        Assert.Equal("dead", UtilityFlasks.Refusal(true, null, Flask(), u, 11));
-        Assert.Equal("its effect still runs (2.5 s left)", UtilityFlasks.Refusal(false, running, Flask(), u, 13.5));
-        Assert.Equal("29/60 charges, a use needs 30", UtilityFlasks.Refusal(false, null, Flask(charges: 29), u, 11));
+        Assert.Null(UtilityFlasks.Refusal(false, null, Flask(charges: 30), u.Charges, 11));
+        Assert.Equal("dead", UtilityFlasks.Refusal(true, null, Flask(), u.Charges, 11));
+        Assert.Equal("its effect still runs (2.5 s left)", UtilityFlasks.Refusal(false, running, Flask(), u.Charges, 13.5));
+        Assert.Equal("29/60 charges, a use needs 30", UtilityFlasks.Refusal(false, null, Flask(charges: 29), u.Charges, 11));
+        // With a flask's reduced charges used (Chemist's 28%: floor(30 × 0.72) = 21).
+        Assert.Null(UtilityFlasks.Refusal(false, null, Flask(charges: 21), FlaskCharges.Of(u.Charges, new Dictionary<string, int> { ["local_charges_used_+%"] = -28 }), 11));
     }
 
     [Fact]
@@ -232,6 +323,62 @@ public class UtilityFlasksTests
         Assert.Equal([("base_movement_velocity_+%", 50)], effects.Stats());
         effects.End(11, all: false, out _);
         Assert.Equal([("base_movement_velocity_+%", 40)], effects.Stats());
+    }
+
+    [Fact]
+    public void During_effect_mods_count_while_the_flask_runs_and_scale_with_its_effect()
+    {
+        var jade = Of("Jade Flask")!;
+        // of the Armadillo (60% increased armour during effect), of the Cheetah (14% movement speed), of the Rainbow (20%
+        // additional elemental resistances), of Incision (55% critical strike chance), an immunity with less duration.
+        var local = new Dictionary<string, int>
+        {
+            ["local_flask_armour_+%_while_healing"] = 60, ["local_flask_movement_speed_+%_while_healing"] = 14,
+            ["local_flask_resistances_+%_while_healing"] = 20, ["local_flask_critical_strike_chance_+%_during_flask_effect"] = 55,
+            ["local_flask_immune_to_shock_during_flask_effect"] = 1, ["local_flask_duration_+%_final"] = -40,
+        };
+        var (stats, seconds) = UtilityFlasks.For(jade, Flask(), local, None);
+        Assert.Equal(6 * 0.6, seconds, 6);
+        Assert.Equal(["buff 124: base_evasion_rating 1500", "mod: physical_damage_reduction_rating_+% 60",
+            "mod: base_movement_velocity_+% 14", "mod: base_resist_all_elements_% 20", "mod: critical_strike_chance_+% 55",
+            "mod: base_immune_to_shock 1"], stats.Select(s => $"{(s.Effect.StartsWith("mod") ? "mod" : s.Effect)}: {s.Stat} {s.Value}"));
+        // 25% increased effect scales the mods too (rounded down); a flag stays 1.
+        local["local_flask_effect_+%"] = 25;
+        Assert.Equal([1875, 75, 17, 25, 68, 1], UtilityFlasks.For(jade, Flask(), local, None).Stats.Select(s => s.Value));
+
+        var b = UtilityFlasks.Apply(CharacterStats.Bonus.None, UtilityFlasks.Strongest(stats));
+        Assert.Equal((1500, 60, 14, 20, 20, 20, 55), (b.Evasion, b.ArmourPct, b.MovementVelocityPct, b.FireResistance, b.ColdResistance, b.LightningResistance, b.CriticalStrikeChancePct));
+        // The immunity only reaches the panel: no ailments are inflicted here.
+        Assert.Equal(UtilityFlasks.Support.PanelOnly, UtilityFlasks.SupportOf("base_immune_to_shock"));
+    }
+
+    [Fact]
+    public void The_wiki_example_one_suffix_takes_the_strongest_different_ones_stack()
+    {
+        // poewiki "Effects of flasks": a Jade Flask (5 s) with +20% movement speed, 0.5 s later a Ruby Flask (3.5 s) with
+        // +30% movement speed, 0.5 s later a Granite Flask. Movement speed 30% while both run, armour on top; when the Ruby
+        // ends, the Jade's 20% for its last second. (The 3.29 movement suffix rolls up to 14%; the example's numbers.)
+        var effects = new UtilityFlasks.Effects();
+        UtilityFlasks.Active Use(uint item, string name, int movement, double at, double seconds)
+        {
+            var u = Of(name)!;
+            var stats = UtilityFlasks.For(u, Flask(), new Dictionary<string, int> { ["local_flask_movement_speed_+%_while_healing"] = movement }, None).Stats;
+            return new(item, (byte)item, name, u, (ushort)item, null, stats, at, at + seconds);
+        }
+        int Movement() => effects.Stats().Where(s => s.Stat == "base_movement_velocity_+%").Sum(s => s.Value);
+
+        effects.Start(Use(1, "Jade Flask", 20, 0, 5));
+        Assert.Equal(20, Movement());
+        effects.Start(Use(2, "Ruby Flask", 30, 0.5, 3.5));
+        Assert.Equal(30, Movement());
+        effects.Start(Use(3, "Granite Flask", 0, 1, 4));
+        Assert.Equal(30, Movement());
+        Assert.Contains(("base_physical_damage_reduction_rating", 1500), effects.Stats());
+        Assert.Contains(("base_evasion_rating", 1500), effects.Stats());
+        Assert.Equal(2u, Assert.Single(effects.End(4, all: false, out _)).ItemId);   // the Ruby ends at 4 s
+        Assert.Equal(20, Movement());
+        Assert.Equal([1u, 3u], effects.End(5, all: false, out _).Select(e => e.ItemId).Order());   // the Jade and the Granite at 5 s
+        Assert.Equal(0, Movement());
     }
 
     [Fact]

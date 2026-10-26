@@ -151,49 +151,72 @@ partial class Program
     }
 
     // C→S 0x70: a flask key. The flask in that cell of the flask bar spends its charges (S→C 0xbf with the changed item) and
-    // its life or mana comes back over its recovery time in the player tick, under the flask_effect_life / _mana buff
-    // (13-items.md §8). Without enough charges, or while dead, nothing happens.
+    // its life or mana comes back, instantly or over its recovery time, under the flask_effect_life / _mana buff
+    // (13-items.md §8): its quality, its mods and the character's flask stats count (FlaskCharges, FlaskRecovery). Without
+    // enough charges, or while dead, nothing happens. A utility flask goes to UseUtilityFlask.
     static async Task UseFlask(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint slot)
     {
         var items = ItemsOf(conn);
         var flask = items.Items(PlayerInventories.Flask).FirstOrDefault(i => i.X == slot);
-        if (flask is not null && Items.ByHash(flask.Item.TypeHash) is { } utilityType && Items.UtilityFlaskOf(utilityType) is { Usable: true } utility)
+        if (flask is not null && Items.ByHash(flask.Item.TypeHash) is { } utilityType && Items.UtilityFlaskOf(utilityType) is { } utility)
         {
             await UseUtilityFlask(remote, stream, ciphers, conn, slot, flask, utilityType, utility);
             return;
         }
         if (flask is null || Items.ByHash(flask.Item.TypeHash) is not { } type || Items.FlaskOf(type) is not { } use)
         {
-            Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot}: {(flask is null ? "no flask there" : "not a life or mana flask (not handled)")}");
+            Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot}: {(flask is null ? "no flask there" : "not a flask (not handled)")}");
             return;
         }
-        if (conn.PlayerLife == 0 || Flasks.Spend(flask.Item, use) is null)
+        var character = CharacterPlayerStats(conn);
+        int Get(string name) => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
+        var local = ItemModStats.Local(flask.Item, Items.Mods);
+        var charges = FlaskCharges.Of(use, local, Get);
+        if (conn.PlayerLife == 0 || Flasks.Spend(flask.Item, charges) is null)
         {
-            Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {(conn.PlayerLife == 0 ? "dead" : $"{flask.Item.Charges}/{use.MaxCharges} charges, a use needs {use.ChargesPerUse}")}");
+            Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {(conn.PlayerLife == 0 ? "dead" : $"{flask.Item.Charges}/{charges.MaxCharges} charges, a use needs {charges.ChargesPerUse}")}");
             return;
         }
-        if (items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Spend(i, use) ?? i) is not { } spent) return;
+        if (items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Spend(i, charges) ?? i) is not { } spent) return;
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
-            items.NextRevision(PlayerInventories.Flask), [spent.Id], [spent]), $"0x00bf flask {slot}: {spent.Item.Charges}/{use.MaxCharges} charges");
+            items.NextRevision(PlayerInventories.Flask), [spent.Id], [spent]), $"0x00bf flask {slot}: {spent.Item.Charges}/{charges.MaxCharges} charges");
+        var r = FlaskRecovery.For(use, flask.Item, local, Get, conn.PlayerLife, conn.PlayerMaxLife);
+        Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {r.Life:0.#} life, {r.Mana:0.#} mana over {r.Seconds:0.##} s, " +
+            $"instantly {r.InstantLife:0.#} life, {r.InstantMana:0.#} mana{(r.ManaAtEnd > 0 ? $", {r.ManaAtEnd:0.#} mana at the end" : "")}" +
+            $"{(r.RemovesLife + r.RemovesMana > 0 ? $", removes {r.RemovesLife:0.#} life, {r.RemovesMana:0.#} mana" : "")}" +
+            $"{(r.ExtraLife > 0 ? $", {r.ExtraLife:0.#} more life over {FlaskRecovery.ExtraLifeSeconds} s" : "")}");
+        // The instant part and what the flask takes from the other pool (never below 1 life), at once.
+        uint lifeBefore, manaBefore, lifeAfter, manaAfter;
+        lock (conn.Monsters)
+        {
+            (lifeBefore, manaBefore) = (conn.PlayerLife, conn.PlayerMana);
+            conn.PlayerLife = lifeAfter = (uint)Math.Clamp(Math.Floor(lifeBefore + r.InstantLife - r.RemovesLife), 1, conn.PlayerMaxLife);
+            conn.PlayerMana = manaAfter = (uint)Math.Clamp(Math.Floor(manaBefore + r.InstantMana - r.RemovesMana), 0, UnreservedMana(conn));
+        }
+        if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), $"0x01b1 player life {lifeAfter} (flask)");
+        if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {manaAfter} (flask)");
         double now = conn.Clock.Elapsed.TotalSeconds;
+        if (r.ExtraLife > 0)
+            conn.FlaskEffects.Start(new Flasks.Effect((byte)slot, 0, 0, r.ExtraLife / FlaskRecovery.ExtraLifeSeconds, 0, now, now + FlaskRecovery.ExtraLifeSeconds));
+        if (r.Seconds <= 0 || r.Life + r.Mana + r.ManaAtEnd <= 0) return;
         ushort buff;
         lock (conn.Monsters) buff = conn.NextBuff++;
         ushort row = use.LifePerUse > 0 ? FlaskEffectLifeBuffRow : FlaskEffectManaBuffRow;
-        var effect = new Flasks.Effect((byte)slot, buff, row, use.LifePerUse / use.Seconds, use.ManaPerUse / use.Seconds, now, now + use.Seconds);
+        var effect = new Flasks.Effect((byte)slot, buff, row, r.Life / r.Seconds, r.Mana / r.Seconds, now, now + r.Seconds,
+            r.ManaAtEnd, r.LifeStaysAtFull, r.ManaStaysAtFull);
         if (conn.FlaskEffects.Start(effect) is { } replaced && FlaskBuffs)
             await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, replaced.Buff), null);
-        Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {use.LifePerUse} life, {use.ManaPerUse} mana over {use.Seconds:0.##} s");
         // Both rows are IsRecovery: 0x1c1 carries one u32 per GrantedStats entry, here base_life (or mana)
         // _recovery_per_minute_from_flask. Without it the client misread the message and showed no life change after it
         // (live 2026-10-20).
-        uint perMinute = (uint)Math.Round((use.LifePerUse > 0 ? use.LifePerUse : use.ManaPerUse) * 60 / use.Seconds);
+        uint perMinute = (uint)Math.Round((use.LifePerUse > 0 ? r.Life : r.Mana) * 60 / r.Seconds);
         // The duration (+0x68, f32 seconds) and the flask-bar cell (source skill): the timer bar under the flask (Flasks.Buff).
         // Game_FLASK_BUFF_DURATION=0 sends no duration (before 2026-10-25 a u32 in milliseconds went there, which the client
         // read as a float of almost 0 s).
         bool withDuration = Environment.GetEnvironmentVariable("Game_FLASK_BUFF_DURATION") != "0";
         if (FlaskBuffs)
-            await Send(remote, stream, ciphers, Flasks.Buff(PlayerId, buff, row, (byte)slot, withDuration ? use.Seconds : null, [perMinute]),
-                $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, {(withDuration ? $"{use.Seconds:0.##} s" : "no duration")}");
+            await Send(remote, stream, ciphers, Flasks.Buff(PlayerId, buff, row, (byte)slot, withDuration ? r.Seconds : null, [perMinute]),
+                $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, {(withDuration ? $"{r.Seconds:0.##} s" : "no duration")}");
     }
 
     // Gives each life, mana and utility flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them (or, for

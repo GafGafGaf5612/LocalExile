@@ -11,8 +11,13 @@ partial class Program
     static async Task UseUtilityFlask(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint slot,
         InventoryItem flask, ItemCatalog.BaseType type, UtilityFlasks.Utility utility)
     {
-        var charges = utility.Charges;
-        if (UtilityFlasks.Refusal(conn.PlayerLife == 0, conn.UtilityFlaskEffects.Of(flask.Id), flask.Item, utility,
+        // The character's flask stats (passives and gear: increased flask effect, duration and charges used) and the
+        // flask's own mods.
+        var character = CharacterPlayerStats(conn);
+        int Get(string name) => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
+        var local = ItemModStats.Local(flask.Item, Items.Mods);
+        var charges = FlaskCharges.Of(utility.Charges, local, Get);
+        if (UtilityFlasks.Refusal(conn.PlayerLife == 0, conn.UtilityFlaskEffects.Of(flask.Id), flask.Item, charges,
                 conn.Clock.Elapsed.TotalSeconds) is { } refused)
         {
             Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): refused, {refused}");
@@ -23,10 +28,7 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
             items.NextRevision(PlayerInventories.Flask), [spent.Id], [spent]), $"0x00bf flask {slot}: {spent.Item.Charges}/{charges.MaxCharges} charges");
 
-        // The character's flask stats (passives and gear: increased flask effect and duration) with the flask's own mods.
-        var character = CharacterPlayerStats(conn);
-        var (stats, seconds) = UtilityFlasks.For(utility, flask.Item, ItemModStats.Local(flask.Item, Items.Mods),
-            name => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0);
+        var (stats, seconds) = UtilityFlasks.For(utility, flask.Item, local, Get);
         double now = conn.Clock.Elapsed.TotalSeconds;
         ushort buff;
         ushort? extra;

@@ -6,9 +6,9 @@ using GameServer.Core.Protocol.Instance;
 /// Bismuth, Basalt, Stibnite, Diamond, Quartz, Sulphur and Silver. Everything comes from the tables: Flasks.dat names the
 /// flask's BuffDefinitions row, its BuffStatValues (one per StatsKeys entry) and its duration (RecoveryTime, tenths of a
 /// second); ComponentCharges its charges. A use puts the buff on the player for the duration and its stats count on the
-/// character until it ends (<see cref="Apply"/>, <see cref="RawStats"/>). Only the stats the server models count
-/// (<see cref="Modelled"/>); a flask with none of them (Aquamarine, Gold, Iron, Corundum) is not usable, but its charges
-/// still fill.
+/// character until it ends (<see cref="Apply"/>, <see cref="RawStats"/>), as do the flask's "during effect" mods
+/// (<see cref="DuringEffect"/>). How each stat counts is <see cref="SupportOf"/>: modelled, shown on the character panel
+/// only (ailments, stun and curses on the player, which nothing here inflicts), or waiting for Ward (PR #206).
 /// </summary>
 static class UtilityFlasks
 {
@@ -21,12 +21,72 @@ static class UtilityFlasks
         /// <summary>The charges as <see cref="Flasks"/> spends and refills them.</summary>
         public Flasks.Flask Charges => new(0, 0, Seconds, ChargesPerUse, MaxCharges);
 
-        /// <summary>The stats this flask applies (its buff's and the extra buff's), with unmodelled ones left out.</summary>
-        public IEnumerable<(string Stat, int Value)> Applied => Stats.Concat(Extra?.Stats ?? []).Where(s => Modelled.Contains(s.Stat));
-
-        /// <summary>Whether a use does anything here: at least one of its stats is modelled.</summary>
-        public bool Usable => Applied.Any();
+        /// <summary>The stats this flask's buffs grant (its own and the extra buff's) that a use carries: all but the
+        /// unsupported ones (<see cref="SupportOf"/>).</summary>
+        public IEnumerable<(string Stat, int Value)> Applied =>
+            Stats.Concat(Extra?.Stats ?? []).Where(s => SupportOf(s.Stat) != Support.Unsupported);
     }
+
+    /// <summary>How the server takes a stat a flask's effect grants.</summary>
+    public enum Support
+    {
+        /// <summary>It counts: the pools, the walk speed, the damage code or another mechanic use it.</summary>
+        Modelled,
+        /// <summary>It goes to the client for the character panel only: ailments, stun and curses on the player do not
+        /// exist here (monsters only hit), so it changes nothing yet.</summary>
+        PanelOnly,
+        /// <summary>Ward, which PR #206 brings (<see cref="Ward"/> is the one place to connect it).</summary>
+        Ward,
+        /// <summary>Not applied.</summary>
+        Unsupported,
+    }
+
+    /// <summary>The stats only the character panel reads (<see cref="Support.PanelOnly"/>).</summary>
+    static readonly IReadOnlySet<string> PanelOnly = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "base_frozen_effect_on_self_+%", "stun_threshold_+%",
+        "base_avoid_chill_%", "base_avoid_freeze_%", "base_avoid_ignite_%", "base_avoid_shock_%", "base_avoid_stun_%",
+        "base_stun_recovery_+%", "chill_effectiveness_on_self_+%", "base_self_freeze_duration_-%", "shocked_effect_on_self_+%",
+        "curse_effect_on_self_+%", "chance_to_freeze_shock_ignite_%", "base_immune_to_freeze", "base_immune_to_chill",
+        "base_immune_to_shock", "base_immune_to_ignite", "immune_to_poison", "immune_to_bleeding",
+    };
+
+    /// <summary>How a flask effect's stat counts here.</summary>
+    public static Support SupportOf(string stat) =>
+        Modelled.Contains(stat) ? Support.Modelled
+        : PanelOnly.Contains(stat) ? Support.PanelOnly
+        : stat is "base_ward" or "ward_+%" ? Support.Ward
+        : Support.Unsupported;
+
+    /// <summary>A flask's "during effect" mods (suffixes, utility flasks only in 3.29): the flask's local stat, the
+    /// character stat it grants while the effect runs, its sign, and whether it is a flag (not scaled by increased effect).
+    /// Each is its own effect (poewiki: "different suffixes … stack"; two flasks with the same suffix: the strongest).</summary>
+    public static readonly IReadOnlyList<(string Local, string Stat, int Sign, bool Flag)> DuringEffect =
+    [
+        ("local_flask_armour_+%_while_healing", "physical_damage_reduction_rating_+%", 1, false),
+        ("local_flask_evasion_+%_while_healing", "evasion_rating_+%", 1, false),
+        ("local_flask_movement_speed_+%_while_healing", "base_movement_velocity_+%", 1, false),
+        ("local_flask_resistances_+%_while_healing", "base_resist_all_elements_%", 1, false),
+        ("local_flask_critical_strike_chance_+%_during_flask_effect", "critical_strike_chance_+%", 1, false),
+        ("local_flask_ward_+%_during_effect", "ward_+%", 1, false),
+        ("local_flask_stun_recovery_+%_while_healing", "base_stun_recovery_+%", 1, false),
+        ("local_flask_avoid_stun_chance_%_during_flask_effect", "base_avoid_stun_%", 1, false),
+        ("local_avoid_chill_%_during_flask_effect", "base_avoid_chill_%", 1, false),
+        ("local_avoid_freeze_%_during_flask_effect", "base_avoid_freeze_%", 1, false),
+        ("local_avoid_ignite_%_during_flask_effect", "base_avoid_ignite_%", 1, false),
+        ("local_avoid_shock_%_during_flask_effect", "base_avoid_shock_%", 1, false),
+        ("local_self_chill_effect_+%_during_flask_effect", "chill_effectiveness_on_self_+%", 1, false),
+        ("local_self_freeze_duration_+%_during_flask_effect", "base_self_freeze_duration_-%", -1, false),
+        ("local_self_shock_effect_+%_during_flask_effect", "shocked_effect_on_self_+%", 1, false),
+        ("local_self_curse_effect_+%_during_flask_effect", "curse_effect_on_self_+%", 1, false),
+        ("local_flask_chance_to_freeze_shock_ignite_%_while_healing", "chance_to_freeze_shock_ignite_%", 1, false),
+        ("local_flask_immune_to_freeze_and_chill_during_flask_effect", "base_immune_to_freeze", 1, true),
+        ("local_flask_immune_to_freeze_and_chill_during_flask_effect", "base_immune_to_chill", 1, true),
+        ("local_flask_immune_to_shock_during_flask_effect", "base_immune_to_shock", 1, true),
+        ("local_flask_dispels_burning_and_ignite_immunity_during_effect", "base_immune_to_ignite", 1, true),
+        ("local_flask_immune_to_poison_during_flask_effect", "immune_to_poison", 1, true),
+        ("local_flask_immune_to_bleeding_and_corrupted_blood_during_flask_effect", "immune_to_bleeding", 1, true),
+    ];
 
     /// <summary>A buff a flask grants besides its own (BuffDefinitions row, with its stats).</summary>
     public sealed record ExtraBuff(ushort BuffRow, string BuffId, IReadOnlyList<(string Stat, int Value)> Stats);
@@ -43,6 +103,7 @@ static class UtilityFlasks
         "basalt_flask_armour_+%_final", "stibnite_flask_evasion_rating_+%_final",
         "base_movement_velocity_+%", "attack_speed_+%", "base_cast_speed_+%",
         "critical_strike_chance_+%", "base_spell_suppression_chance_%", "damage_+%",
+        "physical_damage_reduction_rating_+%", "evasion_rating_+%",
     };
 
     /// <summary>The flask buff flag that stands for Onslaught (the Silver Flask's flask_utility_haste has no stats of its
@@ -50,7 +111,7 @@ static class UtilityFlasks
     const string OnslaughtFlag = "silver_flask_display_onslaught", OnslaughtBuff = "onslaught", OnslaughtTemplate = "MapModPlayerOnslaught";
 
     /// <summary>The utility flasks by BaseItemTypes row, from data/tables Flasks, BuffDefinitions, BuffTemplates,
-    /// ComponentCharges and Stats: every one, usable or not (<see cref="Utility.Usable"/>), so that all of them refill.</summary>
+    /// ComponentCharges and Stats: every one, whatever its stats do here (<see cref="SupportOf"/>).</summary>
     public static Dictionary<int, Utility> Load(string folder, IReadOnlyList<ItemCatalog.BaseType> rows)
     {
         var result = new Dictionary<int, Utility>();
@@ -113,10 +174,16 @@ static class UtilityFlasks
         int increasedEffect = Get("local_flask_effect_+%") + character("flask_effect_+%")
             + (flask.Rarity == ItemRarity.Magic ? character("magic_utility_flask_effect_+%") : 0);
         double effect = Math.Max(0, 100 + increasedEffect) / 100.0;
-        List<Source> stats = [.. u.Stats.Where(s => Modelled.Contains(s.Stat))
+        bool Applies(string stat) => SupportOf(stat) != Support.Unsupported;
+        List<Source> stats = [.. u.Stats.Where(s => Applies(s.Stat))
             .Select(s => new Source($"buff {u.BuffRow}", s.Stat, Scale(s.Value, effect)))];
         // Onslaught has its own effect stat (onslaught_effect_+%), not the flask's.
-        if (u.Extra is { } x) stats.AddRange(x.Stats.Where(s => Modelled.Contains(s.Stat)).Select(s => new Source($"buff {x.BuffRow}", s.Stat, s.Value)));
+        if (u.Extra is { } x) stats.AddRange(x.Stats.Where(s => Applies(s.Stat)).Select(s => new Source($"buff {x.BuffRow}", s.Stat, s.Value)));
+        // The flask's "during effect" mods, scaled by increased effect too (poewiki, Quality: increased flask effect
+        // improves "any of the mods that the flask has rolled"); flags stay as they are.
+        foreach (var (localStat, stat, sign, flag) in DuringEffect)
+            if (Get(localStat) is int value and not 0 && Applies(stat))
+                stats.Add(new Source($"mod {stat}", stat, sign * (flag ? 1 : Scale(value, effect))));
         return (stats, Math.Max(0.1, seconds));
     }
 
@@ -244,6 +311,8 @@ static class UtilityFlasks
             ChaosMaxResistance = b.ChaosMaxResistance + Get("base_maximum_chaos_damage_resistance_%"),
             Armour = b.Armour + Get("base_physical_damage_reduction_rating"),
             Evasion = b.Evasion + Get("base_evasion_rating"),
+            ArmourPct = b.ArmourPct + Get("physical_damage_reduction_rating_+%"),
+            EvasionPct = b.EvasionPct + Get("evasion_rating_+%"),
             ArmourMorePct = More(b.ArmourMorePct, Get("basalt_flask_armour_+%_final")),
             EvasionMorePct = More(b.EvasionMorePct, Get("stibnite_flask_evasion_rating_+%_final")),
             MovementVelocityPct = b.MovementVelocityPct + Get("base_movement_velocity_+%"),
@@ -256,7 +325,8 @@ static class UtilityFlasks
 
     /// <summary>The running flasks' stats that the client and the damage code read as plain stats rather than from the
     /// pools: the maximum resistances (the client adds them to its own 75), increased critical strike chance (gem
-    /// tooltips, spell crits), increased damage (Sulphur) and cast speed (Onslaught), by client stat key.</summary>
+    /// tooltips, spell crits), increased damage (Sulphur), cast speed (Onslaught) and the panel-only stats
+    /// (<see cref="Support.PanelOnly"/>), by client stat key.</summary>
     public static IEnumerable<(uint Key, int Value)> RawStats(IEnumerable<(string Stat, int Value)> stats, StatCatalog catalog)
     {
         var result = new Dictionary<uint, int>();
@@ -268,12 +338,18 @@ static class UtilityFlasks
                     or "base_maximum_lightning_damage_resistance_%" or "base_maximum_chaos_damage_resistance_%"
                     or "critical_strike_chance_+%" or "damage_+%" => stat,
                 "base_cast_speed_+%" => "cast_speed_+%",
+                _ when PanelOnly.Contains(stat) => stat,
                 _ => null,
             };
             if (name is not null && catalog.Key(name) is uint key) result[key] = result.GetValueOrDefault(key) + value;
         }
         return result.Select(kv => (kv.Key, kv.Value));
     }
+
+    /// <summary>The Ward the running flasks grant (Iron Flask: base_ward; the Ward suffix: ward_+%): the one place to
+    /// connect them to Ward once PR #206 brings it (its Bonus.Ward / WardPct). Until then nothing applies them.</summary>
+    public static (int Flat, int Increased) Ward(IEnumerable<(string Stat, int Value)> stats) =>
+        (stats.Where(s => s.Stat == "base_ward").Sum(s => s.Value), stats.Where(s => s.Stat == "ward_+%").Sum(s => s.Value));
 
     /// <summary>Adds the running flasks' <see cref="RawStats"/> to the character's stats (Program.CharacterPlayerStats).</summary>
     public static void AddRawStats(Dictionary<uint, int> stats, IEnumerable<(string Stat, int Value)> running, StatCatalog catalog)
@@ -283,10 +359,10 @@ static class UtilityFlasks
 
     /// <summary>Why a use is refused, or null: dead, this flask's own effect still runs (<paramref name="running"/>),
     /// or fewer charges than a use needs.</summary>
-    public static string? Refusal(bool dead, Active? running, Item flask, Utility u, double now) =>
+    public static string? Refusal(bool dead, Active? running, Item flask, Flasks.Flask charges, double now) =>
         dead ? "dead"
         : running is not null ? $"its effect still runs ({running.Ends - now:0.##} s left)"
-        : Flasks.Spend(flask, u.Charges) is null ? $"{flask.Charges}/{u.MaxCharges} charges, a use needs {u.ChargesPerUse}"
+        : Flasks.Spend(flask, charges) is null ? $"{flask.Charges}/{charges.MaxCharges} charges, a use needs {charges.ChargesPerUse}"
         : null;
 
     /// <summary>Starts an effect and recomputes the character (<paramref name="recompute"/>: the pools and the walk

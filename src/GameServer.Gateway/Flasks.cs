@@ -15,13 +15,14 @@ static class Flasks
     public static Item? Spend(Item flask, Flask f) => flask.Charges < f.ChargesPerUse ? null : flask with { Charges = flask.Charges - f.ChargesPerUse };
 
     /// <summary>Gives each flask in the flask bar (life, mana and utility: <see cref="ItemCatalog.FlaskChargesOf"/>) up to
-    /// <paramref name="charges"/> charges, saved now or, with <paramref name="saveNow"/> false, with the next save
+    /// <paramref name="charges"/> charges, up to its maximum with its mods (<see cref="FlaskCharges.Of"/>), saved now or, with <paramref name="saveNow"/> false, with the next save
     /// (PlayerInventories.ChangeUnsaved): the flasks that changed.</summary>
     public static List<InventoryItem> Fill(PlayerInventories items, ItemCatalog catalog, int charges, bool saveNow = true)
     {
         List<InventoryItem> changed = [];
         foreach (var flask in items.Items(PlayerInventories.Flask))
-            if (catalog.ByHash(flask.Item.TypeHash) is { } type && catalog.FlaskChargesOf(type) is { } use && flask.Item.Charges < use.MaxCharges &&
+            if (catalog.ByHash(flask.Item.TypeHash) is { } type && catalog.FlaskChargesOf(type) is { } baseUse
+                && FlaskCharges.Of(baseUse, ItemModStats.Local(flask.Item, catalog.Mods)) is var use && flask.Item.Charges < use.MaxCharges &&
                 (saveNow ? items.Change(PlayerInventories.Flask, flask.Id, i => Gain(i, use, charges)) : items.ChangeUnsaved(PlayerInventories.Flask, flask.Id, i => Gain(i, use, charges))) is { } done)
                 changed.Add(done);
         return changed;
@@ -47,53 +48,76 @@ static class Flasks
         MonsterRarity.Magic => 2, MonsterRarity.Rare => 5, MonsterRarity.Unique => 10, _ => 1,
     };
 
-    /// <summary>A flask's recovery under way: the flask-bar cell it came from, its buff (S→C 0x1c1) and how much life
-    /// and mana it gives per second from <paramref name="Started"/> to <paramref name="Ends"/> (connection clock seconds).</summary>
-    public sealed record Effect(byte Slot, ushort Buff, ushort BuffRow, double LifePerSecond, double ManaPerSecond, double Started, double Ends);
+    /// <summary>A flask's recovery under way: the flask-bar cell it came from, its buff (S→C 0x1c1; 0: none, the extra life
+    /// of a life flask's suffix) and how much life and mana it gives per second from <paramref name="Started"/> to
+    /// <paramref name="Ends"/> (connection clock seconds); mana that comes all at once when it runs out
+    /// (<paramref name="ManaAtEnd"/>), and whether it stays on a full pool (FlaskRecovery.Use).</summary>
+    public sealed record Effect(byte Slot, ushort Buff, ushort BuffRow, double LifePerSecond, double ManaPerSecond, double Started, double Ends,
+        double ManaAtEnd = 0, bool LifeStays = false, bool ManaStays = false)
+    {
+        /// <summary>Whether a full pool ends it: a life effect when life is full, a mana one when mana is (a hybrid one when
+        /// both are), unless it stays at full.</summary>
+        public bool EndsWhenFull(bool lifeFull, bool manaFull) =>
+            (LifePerSecond == 0 || lifeFull && !LifeStays) && (ManaPerSecond == 0 && ManaAtEnd == 0 || manaFull && !ManaStays);
+    }
 
     /// <summary>The flasks recovering on one connection, at most one per flask-bar cell.</summary>
     public sealed class Effects
     {
-        readonly Dictionary<byte, Effect> _bySlot = [];
+        readonly List<Effect> _effects = [];
         readonly Lock _lock = new();
 
         /// <summary>Whether any flask is recovering.</summary>
         public bool Any
         {
-            get { lock (_lock) return _bySlot.Count > 0; }
+            get { lock (_lock) return _effects.Count > 0; }
         }
 
         /// <summary>Starts an effect; a use of a flask whose effect is still running replaces it (the rest of the old one is
-        /// lost): the replaced effect, whose buff ends, or null.</summary>
+        /// lost): the replaced effect, whose buff ends, or null. A flask's extra life (no buff) only replaces its own.</summary>
         public Effect? Start(Effect effect)
         {
             lock (_lock)
             {
-                _bySlot.Remove(effect.Slot, out var old);
-                _bySlot[effect.Slot] = effect;
+                var old = _effects.FirstOrDefault(e => e.Slot == effect.Slot && (e.Buff == 0) == (effect.Buff == 0));
+                if (old is not null) _effects.Remove(old);
+                _effects.Add(effect);
                 return old;
             }
         }
 
         /// <summary>The life and mana recovered between <paramref name="from"/> and <paramref name="to"/>, and the effects
-        /// that ended by <paramref name="to"/> (removed).</summary>
+        /// that ended by <paramref name="to"/> (removed); an effect that runs out then gives its mana at the end too.</summary>
         public (double Life, double Mana, List<Effect> Ended) Advance(double from, double to)
         {
             double life = 0, mana = 0;
             List<Effect> ended = [];
             lock (_lock)
-                foreach (var e in _bySlot.Values.ToList())
+                foreach (var e in _effects.ToList())
                 {
                     double seconds = Math.Max(0, Math.Min(to, e.Ends) - Math.Max(from, e.Started));
                     life += e.LifePerSecond * seconds;
                     mana += e.ManaPerSecond * seconds;
                     if (e.Ends <= to)
                     {
-                        _bySlot.Remove(e.Slot);
+                        mana += e.ManaAtEnd;
+                        _effects.Remove(e);
                         ended.Add(e);
                     }
                 }
             return (life, mana, ended);
+        }
+
+        /// <summary>Of the effects a full pool ended (<paramref name="ended"/>), the ones that stay at a full pool or still
+        /// owe their mana at the end (<see cref="Effect.EndsWhenFull"/>) and have time left go back: the rest, which end.</summary>
+        public List<Effect> KeepRunning(List<Effect> ended, bool lifeFull, bool manaFull, double now)
+        {
+            lock (_lock)
+            {
+                var back = ended.Where(e => e.Ends > now && !e.EndsWhenFull(lifeFull, manaFull)).ToList();
+                _effects.AddRange(back);
+                return [.. ended.Except(back)];
+            }
         }
 
         /// <summary>Ends the effects <paramref name="which"/> picks (a full pool, death): them, removed.</summary>
@@ -101,8 +125,8 @@ static class Flasks
         {
             lock (_lock)
             {
-                List<Effect> ended = [.. _bySlot.Values.Where(which)];
-                foreach (var e in ended) _bySlot.Remove(e.Slot);
+                List<Effect> ended = [.. _effects.Where(which)];
+                foreach (var e in ended) _effects.Remove(e);
                 return ended;
             }
         }
