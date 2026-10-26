@@ -10,13 +10,14 @@ public sealed record TopologyInfo(string Graph, IReadOnlyList<int> Orientations,
 /// offset), and the Hideouts row discoverable in it (+0x42 enabled, +0x43 chance in 10 000). <see cref="League"/> is a
 /// CoreLeagues row by index: +0x8a most per area, +0x8e needs a chance, +0xa0 not rolled here. <see cref="HideoutClaim"/>
 /// is that Hideouts row's claim subarea (+0x2a, a WorldAreas id), <see cref="SubArea"/> the topologies of a WorldAreas
-/// row by id (a graph node's "subarea=…"). +0x171 marks a Labyrinth area, +0x1bb a Labyrinth boss area. +0x192 is the
+/// row by id (a graph node's "subarea=…"), <see cref="SubAreaRow"/> by row index (an extra terrain feature's world
+/// area). +0x171 marks a Labyrinth area, +0x1bb a Labyrinth boss area. +0x192 is the
 /// area's TSI override (<see cref="Master"/>: the EndGame Labyrinth's master_endgame.tsi, the Delve biomes').</summary>
 public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo> Topologies, bool RandomnessDisabled = false,
     ushort Hash16 = 0, bool IsMapArea = false, int AreaType = 0, int Level = 1, Func<int, int>? LeagueChance = null,
     (bool Enabled, int Chance)? DiscoverableHideout = null, Func<int, (int Max, bool NeedsChance, bool Skip)>? League = null,
     string? HideoutClaim = null, Func<string, IReadOnlyList<TopologyInfo>?>? SubArea = null, bool IsLabyrinth = false,
-    bool IsLabyrinthBoss = false, string? Master = null)
+    bool IsLabyrinthBoss = false, string? Master = null, Func<int, IReadOnlyList<TopologyInfo>?>? SubAreaRow = null)
 {
     /// <summary>The area's row and the rows it points to, from the game's tables.</summary>
     public static AreaInfo Load(Func<string, byte[]?> read, string areaId, int level)
@@ -45,7 +46,7 @@ public sealed record AreaInfo(string Id, bool IsTown, IReadOnlyList<TopologyInfo
             i => (leagues.I32(i, 0x8a), leagues.Bool(i, 0x8e), leagues.Bool(i, 0xa0)),
             claim < 0 ? null : areas.String(claim, 0),
             id => areas.Find(r => areas.String(r, 0) == id) is var r and >= 0 ? Tops(r) : null, areas.Bool(row, 0x171), areas.Bool(row, 0x1bb),
-            areas.String(row, 0x192) is { Length: > 0 } tsi ? tsi : null);
+            areas.String(row, 0x192) is { Length: > 0 } tsi ? tsi : null, r => r < areas.Count ? Tops(r) : null);
     }
 }
 
@@ -101,7 +102,7 @@ public static class LevelGenerator
         // 0x14204a570's adds: the rolled features' rows wait in the extra room pool (generator +0x40).
         var pool = ExtraRoomPool.Create(files.Raw, features);
         bool hideout = features.Any(f => f.Name == ExtraTerrainFeatures.DiscoverableHideout);
-        var secondaries = SubAreas(files, area, topology.Graph, hideout, topologyVariant, rng, notes);
+        var secondaries = SubAreas(files, area, topology.Graph, hideout, topologyVariant, pool, rng, notes);
         var labyrinth = area.IsLabyrinth ? new LabyrinthPass(files.Raw, area.Id, area.IsLabyrinthBoss) : null;
         // A tile graph with sub-areas goes through the subgraph records too (0x142049d10), as their primary.
         bool dgr = topology.Graph.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase) || secondaries.Count != 0;
@@ -145,7 +146,7 @@ public static class LevelGenerator
     /// mask. The node filter <c>0x142036490</c> (league= nodes) is left to <see cref="TileGraphGenerator.Prepare"/>,
     /// which stops on them.</summary>
     static List<(string Graph, int Orientation)> SubAreas(TerrainCache files, AreaInfo area, string graphPath, bool hideout, int variant,
-        LevelRandom rng, List<string> notes)
+        ExtraRoomPool pool, LevelRandom rng, List<string> notes)
     {
         var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         var ids = new List<string>();
@@ -162,13 +163,24 @@ public static class LevelGenerator
                 else ids.Add(id);
             }
         var result = new List<(string, int)>();
-        foreach (var id in ids)
+        void Add(string id, IReadOnlyList<TopologyInfo>? topologies)
         {
-            var choices = Choices(area.SubArea?.Invoke(id) ?? throw new InvalidOperationException($"Unknown sub world area: {id}"), variant, id);
+            var choices = Choices(topologies ?? throw new InvalidOperationException($"Unknown sub world area: {id}"), variant, id);
             var topology = choices[(int)rng.Next((uint)choices.Count)];
             int orientation = LevelRandom.OrientationFromMask(LevelRandom.OrientationMask(topology.Orientations), rng.Next(840u));
             notes.Add($"sub-area {id}: {topology.Graph}, orientation {orientation}");
             result.Add((topology.Graph, orientation));
+        }
+        foreach (var id in ids) Add(id, area.SubArea?.Invoke(id));
+        // 0x142047540, then: each row in the extra room pool that names a world area (+0x51) adds it the same way
+        // (0x1420471f0; a row with rooms passes its first room as the topology, which names no Topologies row, so the
+        // world area's topologies are drawn from: HarvestEncounter's HarvestLeague, MapWorldsGorge 758818886). Rows
+        // after a row's first room add records of their own (not ported), as does stat 0x13ae's sub-area (not ported).
+        foreach (var row in pool.Rows)
+        {
+            if (row.WorldArea < 0) continue;
+            if (row.Rooms.Count > 1) throw new NotSupportedException($"{row.Name}: a sub-area feature row with several rooms (0x1420471f0) is not ported");
+            Add($"{row.Name}'s world area #{row.WorldArea}", area.SubAreaRow?.Invoke(row.WorldArea));
         }
         return result;
     }
