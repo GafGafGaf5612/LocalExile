@@ -351,8 +351,15 @@ partial class Program
                 if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
                 {
                     double every;
-                    lock (conn.Monsters) every = SkillAttackSeconds(conn, channelled.Effect, channelled.Level);
+                    lock (conn.Monsters) every = SupportedAttackSeconds(conn, conn.ChannelSkill);
                     conn.NextChannelHitAt = t + every;
+                    if (!PayMana(conn, conn.ChannelSkill, out uint channelCost))
+                    {
+                        conn.ChannelSkill = 0;
+                        await SendPlayerMana(remote, stream, ciphers, conn, "channel stopped: insufficient mana");
+                        continue;
+                    }
+                    if (channelCost > 0) await SendPlayerMana(remote, stream, ciphers, conn, $"channel cost {channelCost}");
                     _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy),
                         immediate: true, sequence: conn.ChannelSkillSequence, actionToken: channelAction);
                 }

@@ -367,7 +367,7 @@ partial class Program
         // two attacks cannot start at once either.
         if (gem.Name is not null && Skills.IsAttack(gem.Effect))
         {
-            double duration = SkillAttackSeconds(conn, gem.Effect, gem.Level);
+            double duration = SupportedAttackSeconds(conn, skillId);
             double now = conn.Clock.Elapsed.TotalSeconds, next;
             bool ready;
             lock (conn.Monsters)
@@ -382,10 +382,12 @@ partial class Program
                 return false;
             }
         }
-        if (gem.Name is not null && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
+        if (gem.Name is not null && Supports.Of(gem.Effect)?.Types.Contains(47) == true)
+            conn.NextChannelHitAt = conn.Clock.Elapsed.TotalSeconds + SupportedAttackSeconds(conn, skillId);
+        if (gem.Name is not null && SupportedReservation(conn, skillId) is { } reservation)
         {
             if (!Current()) return false;
-            await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, gem.Level, gem.Quality);
+            await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, SupportedSkill(conn, skillId).Level, SupportedSkill(conn, skillId).Quality);
             return true;
         }
         if (gem.Name is not null)
@@ -395,7 +397,7 @@ partial class Program
             lock (conn.Monsters)
             {
                 if (!Current()) return false;
-                paid = PayMana(conn, gem.Effect, gem.Level, gem.Quality, out cost);
+                paid = PayMana(conn, skillId, out cost);
             }
             if (!paid)
             {
@@ -617,10 +619,10 @@ partial class Program
         // ~0.37 of it).
         var cls = Skills.ClassFor(conn.ClassRow);
         bool attack = gem.Name is not null && Skills.IsAttack(gem.Effect);
-        int? castDuration = attack ? 0 : CastMs(conn, gem.Effect);
+        int? castDuration = attack ? 0 : CastMs(conn, gem.Effect, skillId);
         if (castDuration is null) return;
         double releaseDelay = attack
-            ? AttackContactDelay(conn, SkillAttackSeconds(conn, gem.Effect, gem.Level), approach: false)
+            ? AttackContactDelay(conn, SupportedAttackSeconds(conn, skillId), approach: false)
             : castDuration.Value / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
         if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, releaseDelay), epoch)
             || (cooldownUse?.Instant != true && !PlayerActionCurrent(conn, action)) || cooldownUse?.Current(conn) == false)
@@ -636,7 +638,7 @@ partial class Program
         // Keep the player's final speed separate from the skill's raw stats: the panel already includes the player's
         // base speed, while a gem's own base speed (including quality) adds to that total instead of replacing it.
         var playerSpeedStats = CharacterPlayerStats(conn);
-        var skillSpeedStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var skillSpeedStats = SupportedSkill(conn, skillId).Stats;
         int PlayerSpeedStat(string name) => Stats.Key(name) is uint key ? playerSpeedStats.GetValueOrDefault(key) : 0;
         int SkillSpeedStat(string name) => Stats.Key(name) is uint key ? skillSpeedStats.GetValueOrDefault(key) : 0;
         float speed = ProjectileSpeed.CellsPerSecond(projectile.Speed, PlayerSpeedStat, SkillSpeedStat,
@@ -648,22 +650,18 @@ partial class Program
             // no spell damage of its own: its hit is the weapon's, scaled by the skill's damage effectiveness, with the
             // attack's crit — the same split AreaSkillHit makes for the non-projectile gems.
             var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-            var own = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-            int chance = projectileHitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
-                () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
+            var own = SupportedSkill(conn, skillId).Stats;
+            int chance = SupportedCriticalChance(conn, skillId);
+            foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
-            var hit = projectileHitPlan.BuildHit(
-                () => AttackSkillHit.Resolve(WeaponFor(conn), CharacterPlayerStats(conn),
-                    Skills.EffectStats(gem.Effect, gem.Level), Stats, Skills.DamageEffectiveness(gem.Effect, gem.Level)),
-                _ => SpellHit.Resolve(projectileHitPlan, Stats, stats, own,
-                    ConversionFor(conn, gem.Effect, gem.Level, attack: false), AddedEffectiveness(gem.Effect, gem.Level)));
+            var hit = SupportedHit(conn, skillId);
             int damage = hit.RollTotal(Random.Shared);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
-                    spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
+                    SupportedCriticalMultiplier(conn, skillId));
             return (damage, critical);
         }, epoch: epoch);
     }
@@ -673,8 +671,7 @@ partial class Program
     // (SkillArea). The radius stat is in cells (Righteous Fire's 18 is its 1.8 m, verified against the real game 2026-10-23).
     static int SkillRadius(ClientState conn, IReadOnlyDictionary<uint, int> skillStats, bool spell, int effect)
     {
-        var areaStats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        foreach (var (k, v) in skillStats) areaStats[k] = v;
+        var areaStats = MergeSkillStats(FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2), skillStats);
         int Get(string name) => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0;
         return SkillArea.Radius(SkillArea.BaseRadius(Skills.EffectId(effect), Get), Get, spell);
     }
@@ -684,7 +681,7 @@ partial class Program
     static bool MonsterAtAim(ClientState conn, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem,
         int x, int y, double at)
     {
-        var stats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var stats = SupportedSkill(conn, gem.Id).Stats;
         int radius = SkillRadius(conn, stats, spell: false, gem.Effect);
         lock (conn.Monsters)
             return conn.Monsters.Any(m => !m.Value.Dead && m.Value.Life > 0
@@ -704,7 +701,7 @@ partial class Program
     {
         bool Current() => cooldownUse?.Current(conn) ?? (actionToken is null || conn.ActionCount == actionToken);
         if (!Current()) return;
-        var skillStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var skillStats = SupportedSkill(conn, skillId).Stats;
         // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
         int effectiveness = Skills.DamageEffectiveness(gem.Effect, gem.Level);
         int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
@@ -713,12 +710,12 @@ partial class Program
         if (!hitPlan.CanHit) return;
         bool spell = hitPlan.Kind == SkillHitKind.Spell;
         var weapon = WeaponFor(conn);
-        int? castDuration = spell ? CastMs(conn, gem.Effect) : 0;
+        int? castDuration = spell ? CastMs(conn, gem.Effect, skillId) : 0;
         if (castDuration is null) return;
         double delay;
         // An attack lands at its contact keyframe; the player swings where it stands, so without the walk-in offset.
         lock (conn.Monsters) delay = spell ? castDuration.Value / 1000.0
-            : AttackContactDelay(conn, SkillAttackSeconds(conn, gem.Effect, gem.Level), approach: false);
+            : AttackContactDelay(conn, SupportedAttackSeconds(conn, skillId), approach: false);
         int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
         // A melee skill aimed far away still lands in front of the player.
         var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
@@ -737,19 +734,16 @@ partial class Program
                 .Select(e => (e.Key, e.Value))];
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int criticalChance = hitPlan.CriticalChance(conn.Pools.AttackCriticalStrikeChance,
-            () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, skillStats));
+        int criticalChance = SupportedCriticalChance(conn, skillId);
+        foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
-            DamagePacket hit = hitPlan.BuildHit(
-                () => AttackSkillHit.Resolve(weapon, player, Skills.EffectStats(gem.Effect, gem.Level), Stats, effectiveness),
-                _ => SpellHit.Resolve(hitPlan, Stats, stats, skillStats,
-                    ConversionFor(conn, gem.Effect, gem.Level, attack: false), AddedEffectiveness(gem.Effect, gem.Level)));
+            DamagePacket hit = SupportedHit(conn, skillId);
             int damage = hit.RollTotal(Random.Shared);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
-                : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
-            if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
+                : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
+            if (critical) damage = DamageModel.CriticalDamage(damage, SupportedCriticalMultiplier(conn, skillId));
             await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}",
                 melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse);
         }

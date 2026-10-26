@@ -345,6 +345,11 @@ sealed class PlayerInventories
     /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
     public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem() => [.. SocketedGemPlaces().Select(g => (g.ItemId, g.Gem))];
 
+    public Item? SocketHost(uint id)
+    {
+        lock (_lock) return _items.Values.SelectMany(v => v).FirstOrDefault(i => i.Id == id)?.Item;
+    }
+
     /// <summary><see cref="SocketedGems"/> with the row and id of the item each gem is in and its socket.</summary>
     public IReadOnlyList<(byte Row, uint ItemId, int Socket, Item Gem)> SocketedGemPlaces()
     {

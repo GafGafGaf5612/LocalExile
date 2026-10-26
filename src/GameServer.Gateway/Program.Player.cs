@@ -53,9 +53,9 @@ partial class Program
         foreach (var gem in GemSkillEffects(conn.Character))
             if (Skills.EffectId(gem.Effect) is { } effect && wanted.Contains(effect) && AuraCatalog.Supported(effect)
                 && !conn.Auras.Values.Any(a => a.EffectId == effect)
-                && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
+                && SupportedReservation(conn, gem.Id) is { } reservation)
                 candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
-                    reservation.Flat, reservation.Percent, gem.Level, gem.Quality, SourceBuff: conn.NextBuff++));
+                    reservation.Flat, reservation.Percent, SupportedSkill(conn, gem.Id).Level, SupportedSkill(conn, gem.Id).Quality, SourceBuff: conn.NextBuff++));
         var restored = AuraCatalog.Restore(saved, candidates, conn.Pools, InTown(conn));
         foreach (var aura in restored) conn.Auras[aura.SkillId] = aura;
         if (restored.Count > 0)
@@ -135,9 +135,9 @@ partial class Program
 
     // A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
     // the mana.
-    static bool PayMana(ClientState conn, int effect, int level, int quality, out uint cost)
+    static bool PayMana(ClientState conn, ushort skillId, out uint cost)
     {
-        cost = Stats.Key("mana_cost") is uint k ? (uint)Skills.EffectStats(effect, level, quality).Where(kv => kv.Item1 == k).Select(kv => kv.Item2).FirstOrDefault() : 0;
+        cost = Stats.Key("mana_cost") is uint k ? (uint)Math.Max(0, SupportedSkill(conn, skillId).Stats.GetValueOrDefault(k)) : 0;
         lock (conn.Monsters)
         {
             if (conn.PlayerMana < cost) return false;
@@ -147,9 +147,15 @@ partial class Program
     }
 
     // A genuine spell's final server wait; native actions instead receive the unadjusted base milliseconds.
-    // Null refuses an invalid/unrepresentable cast rather than turning it into an immediate hit.
-    static int? CastMs(ClientState conn, int effect) =>
-        SpellCastTiming.ForSkill(Skills, effect, CastSpeedPct(CharacterPlayerStats(conn)))?.DurationMilliseconds;
+    // Null refuses an invalid/unrepresentable cast rather than turning it into an immediate hit. A supported skill's
+    // own base_cast_speed_+% (skillId) adds to the player's.
+    static int? CastMs(ClientState conn, int effect, ushort skillId = 0)
+    {
+        var own = skillId == 0 ? new Dictionary<uint, int>() : SupportedSkill(conn, skillId).Stats;
+        int speed = CastSpeedPct(CharacterPlayerStats(conn));
+        if (Stats.Key("base_cast_speed_+%") is uint k) speed += own.GetValueOrDefault(k);
+        return SpellCastTiming.ForSkill(Skills, effect, speed)?.DurationMilliseconds;
+    }
 
     // cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
     static int CastSpeedPct(IReadOnlyDictionary<uint, int> stats) =>
@@ -213,8 +219,7 @@ partial class Program
         ushort? buffVisual = Art.BuffVisual("righteous_fire_buff_visual", variation), auraVisual = Art.BuffVisual("righteous_fire_aura_visual", variation);
         string? ringAo = Art.Animated("righteous_fire_ring", variation) ?? (variation == 0 ? RighteousFireRingAo : null);
         // The radius takes the player's area of effect stats (passives, items, gem quality) under the skill's own (SkillArea).
-        var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        foreach (var (k, v) in Skills.EffectStats(effect, level, quality)) stats[k] = v;
+        var stats = SupportedStats(conn, skillId);
         int Get(string name, int fallback) => Stats.Key(name) is uint k && stats.TryGetValue(k, out int v) ? v : fallback;
         int radius = SkillArea.Radius(Get("active_skill_base_area_of_effect_radius", 18), name => Get(name, 0), spell: true);
         (int X, int Y) at;
@@ -602,7 +607,7 @@ partial class Program
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(name, [.. weaponStats, .. statList], characterInputs, weapon)], Stats: [.. weaponStats, .. statList],
+            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList], characterInputs, weapon)], Stats: [.. weaponStats, .. statList],
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));

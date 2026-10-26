@@ -34,8 +34,9 @@ partial class Program
         conn.StashAt = (at.X, at.Y);
         if (scene is not null) conn.HideoutEditor.Register(id, "stash", at.X, at.Y, at.Rotation, ClientState.StashBlockerSize);
         conn.SetBlocker(id, at.X, at.Y, ClientState.StashBlockerSize);
-        // A hideout and the Mine Encampment also get the guild stash, a few cells from the stash.
-        if (HideoutCatalog.ByArea(conn.Layout.Hash) is null && conn.Layout.Hash != StashCatalog.DelveHub) return;
+        // Hideouts, Lioneye's Watch and the Mine Encampment also get a guild stash.
+        if (HideoutCatalog.ByArea(conn.Layout.Hash) is null
+            && conn.Layout.Hash is not (StashCatalog.DelveHub or AreaLayouts.LioneyesWatch)) return;
         var (gx, gy) = scene?.Guild ?? conn.Layout.Near((at.X, at.Y));
         float guildRotation = SavedHideoutPlacements(conn)?.GetValueOrDefault("guild-stash")?.Rotation ?? at.Rotation;
         uint guild = conn.NextObjectId++;
@@ -78,6 +79,7 @@ partial class Program
             conn.SetBlocker(harvestId, harvest.X, harvest.Y, 8);
         }
 
+        await SpawnHeistLocker(remote, stream, ciphers, conn, scene);
     }
 
     // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects

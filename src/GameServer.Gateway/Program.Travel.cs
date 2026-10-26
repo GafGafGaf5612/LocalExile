@@ -123,6 +123,11 @@ partial class Program
             await OpenGuildStash(remote, stream, ciphers, conn, use, requestedAt);
             return;
         }
+        if (conn.HeistLockerObject != 0 && use.TargetId == conn.HeistLockerObject)
+        {
+            await OpenHeistLocker(remote, stream, ciphers, conn);
+            return;
+        }
         if (conn.CraftingBenchObject != 0 && use.TargetId == conn.CraftingBenchObject)
         {
             await OpenCraftingBench(remote, stream, ciphers, conn, use, requestedAt);
