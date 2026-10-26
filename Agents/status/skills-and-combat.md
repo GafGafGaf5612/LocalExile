@@ -226,6 +226,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour
   and block.
+  Ordinary physical melee hits can trigger native player TakeHit recovery through 0x1d1.
+  Native proof stopped predictive walking and casting, blocked new actions, and cleared the recovery flag afterward.
+  Server recovery cancels pending actions and channel hits and stops the walk estimate for the same interval.
+  Actual physical monster hits stopped walking and cancelled a slow cast before release in copied-save live checks.
+  Released Fireball flight continued, and a stun-immune control took damage without recovery.
+  With a bow equipped, a hit cancelled pending Burning Arrow, blocked an ordinary arrow during recovery,
+  and allowed a fresh arrow afterward; an already released Burning Arrow kept flying.
+  Chance, avoidance, immunity, recovery and delayed object walk-ups have automated checks.
+  ES builds, substituted thresholds and unsupported conditional stun defences are skipped conservatively.
+  See [11](../docs/protocol/11-skills.md), player hit recovery, for scope and protocol evidence.
   The player's life comes from the class/level/passive pools.
   The server has no simulation loop: hits use timers, attacks are bounded by a 30/s tick (`TickRate`), the AI runs
   every 500 ms.

@@ -424,6 +424,57 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   types TakeHitForward/Backward/Left/Right, but the `.act` files that set them alias them all to `@TakeHit`, so they add
   no variants. 0x262 (a Life "changed by" event with a signed delta) reaches the Life listeners but plays no flinch,
   sound or blood.
+- **Player hit recovery.** S→C **0x1d1** selects an `Animation.dat` type through the actor's current class/stance ACT.
+  `InstanceProtocol.ActorAnimation` writes object header, BE float seconds, u8 animation type, u8 boolean.
+  Type **5** is `TakeHit`; this is not a rig clip index.
+  Reader `0x141fde9d0` widens the type to message `+0x24` and stores the boolean at `+0x28`.
+  Actor handler `0x1421949c3` calls virtual `+0xe0`, `0x141e95e60`.
+  It ends predictive action `+0x1b8` through `0x141e90740`, cancels queued work, and sets Actor `+0x219` bit 2.
+  Action gate `0x141e8d900` rejects starts while that bit is set.
+  Completion `0x141e934b0` clears the bit and resumes queued/idle processing.
+  Ground bow attacks reserve their pacing and token under the same recovery gate; queued arrow creation checks it.
+  Live on a captured Strand, a 0.5 s packet stopped predictive walking and a subsequent cast.
+  The predicted/current action became null, movement stopped, and recovery cleared after about 0.508 s.
+  A new cast worked afterward.
+  Integrated copied-save tests used a level 1 Witch (57 life, no ES) and Ash Harvester row 717 at level 7.
+  Actual 24/27 physical damage hits stopped client prediction and the server walk estimate at cell (283, 216).
+  TakeHit selected Witch clip 177 and cleared Actor `+0x219` bit 2 after the requested 429 ms recovery.
+  A slow Fireball cast was cancelled before release, with no projectile created.
+  An already released Fireball continued through recovery to impact and removal.
+  A bow-equipped copied character also lost a pending Burning Arrow before release after an actual monster hit.
+  An ordinary ground arrow request during recovery produced no action echo or projectile; a fresh request worked afterward.
+  Burning Arrow released before the hit continued to removal, while native recovery blocked the new arrow request.
+  With `cannot_be_stunned = 1`, another actual 24 damage hit sent no 0x1d1 and did not set the recovery flag.
+  Evidence: `logs/monster-hit-recovery-{walk,cast,flight,immune}.json` in the validation checkout.
+  In contrast, 0x1b2 merely replaced the clip while movement or server cast release continued.
+  Its Play ABI is `0x141dba530(controller, &resourcePair, index, speed, ...)`, with the index in **r8d**.
+  Actor `+0x1a0` is the body controller; its main state is `+0x180`, clip index `+0x190`, elapsed `+0x1a4`.
+  `trace-player-hit-animation.js` records these fields and Positioned movement without sending packets.
+  The trailing 0x1d1 boolean enables a client avoid-interruption roll; the server sends false and decides eligibility.
+
+  The supported slice is surviving, unblocked **physical monster melee**.
+  [PoB's defence calculation](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcDefence.lua#L2154-L2250)
+  gives effective physical damage a 25% bonus, then rolls `min(100, 200 × effectiveDamage / stunThreshold)`.
+  Base chances at or below 20% are discarded before applying unconditional stun avoidance.
+  The life threshold includes unconditional `stun_threshold_+%`; known stun immunity is respected.
+  Duration uses PoB's 350 ms base, the extracted Monster.ot's 20% more melee stun duration, self duration modifiers,
+  and the player's final stun recovery, rounded upward to a 33 ms frame (normally 429 ms).
+  Invalid stats yielding a nonpositive duration or more than 60 s disable recovery rather than locking input.
+  `SendPlayerHitRecovery` commits cancellation inside the send gate after rechecking survival and active recovery.
+  It increments `ActionCount`, clears channel hits, and stops `PlayerWalk` at its current cell.
+  Pending melee, casts and area hits retain their original token across awaits; released projectiles keep flying.
+  Projectile creation rechecks the token inside the send gate; cancellation resets ordinary attack pacing too.
+  Buffered 0x24/0x25/0x197 inputs are rejected using socket-read game time through the recovery end.
+  Object walk-ups reserve movement and the original token under the same recovery check.
+  Their delayed continuations and queued action/teleport echoes recheck that token.
+  Recovery does not restart while active; flasks and instant skills keep their existing paths.
+  This does not implement block recovery, ES stun avoidance, CI/mana/ES threshold substitutions, conditional defences,
+  attacker-specific stun modifiers or monster spell/ranged stuns.
+  Known final or raw base ES, active equipped ES bases and local flat ES disable this slice until ES avoidance exists.
+  This includes Discipline before a separate ES pool implementation computes `maximum_energy_shield`.
+  Conditional stun-defence builds, flat/substituted thresholds and CI are also skipped conservatively.
+  An equipped skill with `skill_cannot_be_stunned` or contact-phase immunity disables this slice for the build.
+  Its precise active action phase is not tracked, so even an inactive equipped skill is conservatively excluded.
 - **Hit effects (2026-10-25).** The target's blood and the weapon impact sound come from S→C **0x1af** "action hit"
   (`InstanceProtocol.ActionHit`; class `0x1435ddb38`, read `0x141fddba0` → `0x1419bd6f0`, Actor handler `0x1421940a0`
   → `0x141e90f50`): object header (the attacker), u16 action sequence (must match the action's), u8, u8 skill index

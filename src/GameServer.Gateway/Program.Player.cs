@@ -545,6 +545,7 @@ partial class Program
             if (conn.PlayerLife > 0) return;
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
+            conn.HitRecovery.Clear();
             conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;

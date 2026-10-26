@@ -349,6 +349,11 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x140221fd0` | Fn | mini life bar: visible? |
 | `0x141e8cf10` | Fn | Actor: start (queue) an action |
 | `0x141e8e060` | Fn | Actor: per-frame runner of the queued action |
+| `0x141fde9d0` | Fn | 0x1d1/0x1d2 reader: duration float, Animation.dat type byte, boolean |
+| `0x141e95e60` | Fn | 0x1d1 Actor animation: cancel prediction, select stance ACT, lock input during recovery |
+| `0x141e90740` | Fn | End local predicted action (Actor +0x1b8) |
+| `0x141e934b0` | Fn | End Actor animation recovery; clear +0x219 bit 2 and resume queued/idle actions |
+| `0x141dba530` | Fn | Play(controller, resource pair, index in r8d, speed); main state at controller +0x180 |
 | `0x141938830` | Fn | Melee action begin = skill_is_non_pathing |
 | `0x14219f820` | Fn | S→C 0x55 death screen read |
 | `0x14028fc80` | Fn | `death_screen` panel ctor (setup `0x140290820`, buttons `0x140290bf0` → C→S 0x54 / 0x153) |

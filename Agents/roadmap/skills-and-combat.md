@@ -56,11 +56,14 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   ([20](../docs/protocol/20-damage.md)).
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
+  Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
+  Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
   Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
 - **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
   from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
+  Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.
   Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.
   Native skill switching, combined bonuses, no-crit, relog and hitless-spell controls are verified.
   Added-base, lucky/more and conditional crit remain separate work.
