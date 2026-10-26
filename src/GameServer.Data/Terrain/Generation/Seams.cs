@@ -29,7 +29,7 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
                 if (Entry(x, y) is not { IsOrigin: true } e) continue;
                 var (w, h) = Size(e);
                 if (w == 1 && h == 1) continue;
-                if (e.Tile.Tag.Length != 0 || PlainFill(e.Tile.Key)) continue;
+                if (e.Tile.Tag.Length != 0 || PlainFill(files, e.Tile)) continue;
                 if (TouchesRoomVertex(roomVertices, x + offsetX, y + offsetY, w, h)) continue;
                 for (int d = 0; d < 4; d++)
                 {
@@ -52,11 +52,10 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
         return false;
     }
 
-    // 0x14201d800: no edge types but wildcard ones (.et +0x48 bit 7) and one ground on every corner.
-    bool PlainFill(TileKey key) => PlainFill(files, key);
-
-    internal static bool PlainFill(TerrainCache files, TileKey key) =>
-        key.Edges.All(e => e is null || files.Edge(e)?.Wildcard == true) && key.Grounds.Distinct().Count() == 1;
+    // 0x14201d800 on the tile's own key (tile data +0x40, grounds left out of keys included): no edge types but
+    // wildcard ones (.et +0x48 bit 7) and one ground on every corner.
+    internal static bool PlainFill(TerrainCache files, TileDef tile) =>
+        tile.Key.Edges.All(e => e is null || files.Edge(e)?.Wildcard == true) && tile.KeyGrounds.Distinct().Count() == 1;
 
     /// <summary><c>0x142025e60</c>: some entry of the area belongs to a tilised room.</summary>
     bool InRoom(int x, int y, int w, int h)

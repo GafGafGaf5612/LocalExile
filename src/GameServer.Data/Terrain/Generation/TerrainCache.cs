@@ -22,6 +22,10 @@ public sealed record TileDef(string Path, string Tag, TileKey Key)
     public int Height => Key.Height;
     public string?[] VertexGrounds { get; init; } = [];
     public sbyte[] VertexHeights { get; init; } = [];
+    /// <summary>The key's corner grounds as the file gives them, grounds left out of keys included (tile data +0x40's
+    /// key; <see cref="Key"/> leaves them out, as <c>0x141d813c0</c> does for lookups). Null for the key's.</summary>
+    public string?[]? RawGrounds { get; init; }
+    public string?[] KeyGrounds => RawGrounds ?? Key.Grounds;
     /// <summary>The tile's mesh (.tgt, u32 4 of the header; tile data +0x20, <c>0x141d7d700</c>), null for none.</summary>
     public string? Mesh { get; init; }
     /// <summary>The second objects file (tile data +0x180): the .tmd the file names, the first of the two strings after the
@@ -320,19 +324,20 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         }
         // The tag and key from byte t on: tag u32, edges 4 × u32, size 2 bytes, corner grounds 4 × u32, heights and
         // both point sets 4 bytes each.
-        (string Tag, TileKey Key) TagAndKey(int t)
+        (string Tag, TileKey Key, string?[] Raw) TagAndKey(int t)
         {
             var key = new TileKey { Width = h[t + 20], Height = h[t + 21] };
+            var raw = new string?[4];
             for (int i = 0; i < 4; i++)
             {
                 key.Edges[i] = Str(t + 4 + 4 * i);
-                string? ground = Str(t + 22 + 4 * i);
+                string? ground = raw[i] = Str(t + 22 + 4 * i);
                 key.Grounds[i] = Ground(ground) is { IgnoredInKeys: true } ? null : ground;
                 key.Heights[i] = (sbyte)h[t + 38 + i];
                 key.PointA[i] = h[t + 42 + i];
                 key.PointB[i] = h[t + 46 + i];
             }
-            return (Str(t) ?? "", key);
+            return (Str(t) ?? "", key, raw);
         }
         // 0x1429f31a0: a tile naming a base tile (u32 0) takes the base's data; a flags byte follows, each bit a group of
         // fields the file gives itself. Bit 3: its own tag and key (as above, from byte 5); bits 1 and 4 mark fields the
@@ -342,7 +347,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             byte own = h[4];
             if ((own & ~0x1a) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
             var baseTile = Tile(basePath) ?? throw new FileNotFoundException(basePath);
-            var (ownTag, ownKey) = (own & 8) != 0 ? TagAndKey(5) : (baseTile.Tag, baseTile.Key);
+            var (ownTag, ownKey, ownRaw) = (own & 8) != 0 ? TagAndKey(5) : (baseTile.Tag, baseTile.Key, baseTile.KeyGrounds);
             if (ownKey.Width != baseTile.Width || ownKey.Height != baseTile.Height)
                 throw new NotSupportedException($"{path}: a tile over a base tile of another size is not ported");
             return baseTile with
@@ -350,10 +355,11 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
                 Path = path,
                 Tag = ownTag,
                 Key = ownKey,
+                RawGrounds = ownRaw,
                 ObjectsFile = table.Split('\0').FirstOrDefault(x => x.EndsWith(".tmd", StringComparison.OrdinalIgnoreCase)) ?? baseTile.ObjectsFile,
             };
         }
-        var (tag, key) = TagAndKey(8);
+        var (tag, key, rawGrounds) = TagAndKey(8);
         // The u16 after the key says which vertex blocks the tile has (bit 2 grounds, bit 1 heights).
         ushort flags = h.Length >= 60 ? BinaryPrimitives.ReadUInt16LittleEndian(h.AsSpan(58)) : (ushort)0;
         var (grounds, heights) = (flags & 2) != 0 ? VertexBlock(h, table.Length, key.Width, key.Height, (flags & 1) != 0)
@@ -364,6 +370,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         byte restriction = version > 9 && h.Length >= 61 ? h[60] : (byte)0;
         return new TileDef(path, tag, key)
         {
+            RawGrounds = rawGrounds,
             Restriction = restriction,
             VertexGrounds = grounds is null ? [] : [.. grounds.Select(o => o == uint.MaxValue ? null : TableString(table, o))],
             VertexHeights = heights ?? [],

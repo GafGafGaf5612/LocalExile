@@ -282,9 +282,7 @@ sealed class GroundStages(TileGrid grid, int offsetX, int offsetY, int width, in
                 for (int j = 1; j < h && all; j++) all = Flagged(x, y + j) && Flagged(x + w, y + j);
                 if (!all) continue;
                 if (transition(e.Tile) && !town) throw new InvalidOperationException($"Area transition tile is inaccessible at ({x}, {y})");
-                var key = e.Tile.Key;
-                if (e.Tile.Tag.Length != 0 || key.Edges.Any(t => t is not null && files.Edge(t)?.Wildcard != true) ||
-                    key.Grounds.Any(g => g != key.Grounds[0])) continue;
+                if (e.Tile.Tag.Length != 0 || !Seams.PlainFill(files, e.Tile)) continue;
                 for (int v = 0; v <= h; v++)
                     for (int u = 0; u <= w; u++) Flag(x + u, y + v);
             }
