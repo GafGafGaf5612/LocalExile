@@ -473,10 +473,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         // The mirror seams (0x142025440) over the layout's view, with the placed rooms as its room list.
         new Seams(files, rng, _grid, _ox, _oy, step * map.Width + map.Overlap, step * map.Height + map.Overlap, _store, placed, roomVertices,
             _graphGrounds, notes).Run();
-        // The overlays' rooms and the fill's rooms (.gft lines naming an .arm) join the record's rooms after the
-        // layout's, for the doodad stage.
+        // The overlays' rooms, the fill's rooms (.gft lines naming an .arm) and the rooms injected into mission tiles join
+        // the record's rooms after the layout's, for the doodad stage.
         placed.AddRange(overlayRooms);
         placed.AddRange(_fillRooms);
+        placed.AddRange(_injectedRooms);
         foreach (var p in map.Rooms)
             if (p.Room is null && p.Descriptions.Count != 0)
                 records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index));
@@ -651,6 +652,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     void TiliseInjected(RoomDef room, int o, int x, int y, int height)
     {
         var (w, h) = Orientation.Size(o, room.Width, room.Height);
+        _injectedRooms.Add(new PlacedRoom(room, x, y, w, h, [], o));
         for (int v = 0; v < h; v++)
             for (int u = 0; u < w; u++)
             {
@@ -976,6 +978,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     readonly List<(int X, int Y, int Index)> _edgeRecords = [];
     List<EdgePoint> _edgePoints = [];
     readonly List<PlacedRoom> _fillRooms = [];
+    // Extra feature rooms tilised into mission tiles (0x1420ef310): their objects are placed (1_3_15's Blight
+    // encounter spore yellowOrange2.ao); where the client puts them in the room list is not known (they make no draws).
+    readonly List<PlacedRoom> _injectedRooms = [];
     // Tiler +0xb0: view cells of wiggling room slots (0x1420ef310) and tiles the listener saw (0x1420f1230), a set
     // sorted by x · 0x10000 + y (0x14204e650).
     readonly SortedDictionary<int, (int X, int Y)> _wiggleCells = [];
