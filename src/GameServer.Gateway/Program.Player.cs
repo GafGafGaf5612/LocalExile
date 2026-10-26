@@ -416,6 +416,7 @@ partial class Program
         var playerStats = CharacterPlayerStats(conn);
         if (Stats.Key("delirium_aura_damage_over_time_+%_final") is uint moreDot)
             perSecond *= Math.Max(0, 1 + playerStats.GetValueOrDefault(moreDot) / 100.0);
+        perSecond *= ChargeDamageMore(playerStats);
         var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
         var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
         var stages = new List<(uint Id, SpawnedMonster M)>();

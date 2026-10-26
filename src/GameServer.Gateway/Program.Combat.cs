@@ -154,6 +154,7 @@ partial class Program
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
             if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
         }
+        ChargesOnHit(conn, m, critical, spell: false);
         // At 0 the client's Life tick (0x141e6a190) stops notifying its listeners, so the mini life bar would keep the last
         // value: hide it with the stat its listener watches (hide_mini_life_bar).
         if (life == 0)
@@ -323,6 +324,7 @@ partial class Program
             });
             return true;
         }
+        if (gem.Name is not null && UseChargeSkill(conn, gem.Effect, gem.Level, gem.Quality, from)) return true;
         if (gem.Name is not null && IsRighteousFire(gem.Effect))
             await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
         else
@@ -480,6 +482,7 @@ partial class Program
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
                     spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
+            ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, melee: false);
             return (damage, critical);
         }, epoch: epoch);
     }
@@ -564,7 +567,8 @@ partial class Program
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
-            await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence);
+            if (await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence))
+                ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
@@ -753,13 +757,15 @@ partial class Program
         }
     }
 
-    // A hit on a living monster: life is mutated once under Monsters, then notifications await outside the lock.
-    static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
+    // A hit on a living monster: life is mutated once under Monsters, then notifications await outside the lock. False when
+    // the monster was dead already (the hit did not land).
+    static async Task<bool> HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
         int damage, string by, bool log = true, bool melee = false, ushort sequence = 0)
     {
         MonsterHit? hit;
         lock (conn.Monsters) hit = ApplyMonsterHitLocked(conn, m, damage);
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
+        return hit is not null;
     }
 
     // The short state mutation is shared with projectile impact; no awaits under Monsters.
@@ -888,6 +894,7 @@ partial class Program
                 await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove dead monster 0x{id:x}");
         });
         if (m.Variety is not { } variety || !m.Hostile) return;
+        ChargesOnKill(conn, m);
         if (conn.Layout.Id == TutorialObjects.Strand && variety.Id == TutorialObjects.Zombie
             && CharacterSaves.Load(CharacterName(conn))?.Tutorial is { ZombieKilled: false })
         {

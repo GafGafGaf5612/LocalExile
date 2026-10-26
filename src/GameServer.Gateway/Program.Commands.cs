@@ -388,14 +388,10 @@ partial class Program
             int resistance = Resistance(conn, type);
             int maxResistance = MaxResistance(conn, type);
             bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune ? 0 : type == DamageType.Physical
-                ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
-                : DamageModel.Mitigate(amount, resistance, maxResistance);
+            int dealt = immune ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
             string mitigation = immune
                 ? "immunity"
-                : type == DamageType.Physical
-                    ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
-                    : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
+                : MitigationLabel(conn, type, amount, resistance, maxResistance);
             uint life;
             bool wasDead;
             lock (conn.Monsters)
@@ -506,14 +502,10 @@ partial class Program
             if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
             int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
             bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune ? 0 : type == DamageType.Physical
-                ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
-                : DamageModel.Mitigate(amount, resistance, maxResistance);
+            int dealt = immune ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
             string mitigation = immune
                 ? "immunity"
-                : type == DamageType.Physical
-                    ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
-                    : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
+                : MitigationLabel(conn, type, amount, resistance, maxResistance);
             var (chance, effect, lucky, unlucky) = Suppression(conn);
             bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100), lucky, unlucky);
             if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
@@ -547,6 +539,7 @@ partial class Program
                 $"suppression {(suppressed ? "rolled" : "not rolled")} ({chance}% chance, effective {effective:0.#}%" +
                 $"{(lucky ? ", lucky" : "")}{(unlucky ? ", unlucky" : "")}); life {life}/{conn.PlayerMaxLife}.");
         })
+        .Add("charges", ChargesUsage, args => ChargesCommand(conn, args))
         .Add("crit", "/crit (attack and spell critical strike chance and multiplier)", async _ =>
         {
             var p = conn.Pools;
@@ -588,14 +581,11 @@ partial class Program
             bool lucky = spell ? conn.Pools.SpellBlockLucky : conn.Pools.AttackBlockLucky;
             bool blocked = DamageModel.Blocks(chance, Random.Shared.NextDouble() * 100, lucky);
             bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune || blocked ? 0 : type == DamageType.Physical
-                ? DamageModel.MitigatePhysical(amount, conn.Pools.Armour)
-                : DamageModel.Mitigate(amount, resistance, maxResistance);
+            int dealt = immune || blocked ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
+            ChargesWhenHit(conn, blocked, spell);
             string mitigation = immune
                 ? "immunity"
-                : type == DamageType.Physical
-                    ? $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour"
-                    : $"{DamageModel.Capped(resistance, maxResistance)}% resistance";
+                : MitigationLabel(conn, type, amount, resistance, maxResistance);
             uint life, mana, manaBefore;
             bool wasDead;
             lock (conn.Monsters)

@@ -108,7 +108,8 @@ partial class Program
     // Conversion for one hit: the player's stats plus the skill's own stats (base/skill conversion). Player stats win on
     // a key collision; the normal case is that the skill adds stats the player does not have.
     static DamagePacket AttackHit(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats) =>
-        DamageStats.Added(weapon.HitDamage(stats), name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0, spell: false);
+        DamageStats.Added(weapon.HitDamage(stats), name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0, spell: false)
+            .Scale(ChargeDamageMore(stats));
 
     static double AddedEffectiveness(int effect, int level) => Skills.DamageEffectiveness(effect, level) is int value and > 0 ? value / 10000.0 : 1;
 
