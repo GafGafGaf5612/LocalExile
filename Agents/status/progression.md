@@ -27,9 +27,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `PassiveTree.cs`, `CharacterSaves.cs`, Gateway (`ChangePassives`, `PassivesMessage`).
   Docs: [15](../docs/protocol/15-progression.md) §2.
 
-## Partly working
-
-- Command-based ordinary ascendancy selection and the ordinary/Phrecia identity, point, refund and save lifecycle.
+- Command-based ordinary ascendancy selection, separate point awards, connected allocations, paid refunds and saves.
+  A native Duelist/Slayer smoke checked ordinary nodes, ascendancy allocation/refund and both point budgets.
+  Choice and progress survived relog and a Gateway process restart; a Phrecia request left the saved JSON unchanged.
+  The read-only client trace observed class bytes, the Default graph, allocated nodes and separate point counters.
   Automated domain, packet and production-handler tests cover ownership, separate budgets, graph connectivity,
   multiple-choice effects, atomic refunds, stale connections and old/unknown saves.
   Area admission validates saved progress before inventory changes, then validates items before gold migration.
@@ -38,12 +39,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   Old-area gains cannot suppress the live connection's pending level publication.
   XP level reconciliation adopts completed saved trims/refunds atomically before updating runtime state.
   Extra-point grants commit before runtime publication, including concurrent XP updates and failed-write checks.
-  Native verification of this split remains with the parent before moving the entry to Works.
+  Code: `AscendancyCatalog`, `AscendancyProgress`, `OrdinaryPassiveRules`, `CharacterSaves`, Gateway progression.
+  Docs: [scope, evidence and beginner steps](../docs/game/ascendancies.md).
+
+## Partly working
+
+- Phrecia identities, graph ownership and the point/save lifecycle have automated coverage.
   Phrecia game connections/selection remain explicitly gated pending an agreed client-compatible graph.
   Normal startup does not install or recover a graph and ordinary/unascended play has no alternate-graph preflight.
   The native Labyrinth/Altar flow is separate (#151); special class gameplay is outside this slice.
-  Code: `AscendancyCatalog`, `AscendancyProgress`, `OrdinaryPassiveRules`, `CharacterSaves`, Gateway progression.
-  Docs: [scope and beginner steps](../docs/game/ascendancies.md).
+  Native ordinary command checks do not establish an expanded chooser or special class gameplay.
+  Docs: [scope and compatibility gate](../docs/game/ascendancies.md).
 
 ## Not working yet
 

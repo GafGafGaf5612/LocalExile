@@ -12,14 +12,14 @@ Each choice is identified by family, stable table Id and revision; two families 
 Only one main ascendancy is selected at a time, and it must belong to the character's base class.
 
 **Phrecia play is explicitly gated.**
-The installed alternate graph contains older ordinary-tree topology.
+The shipped alternate graph contains older ordinary-tree topology.
 A separately agreed client-compatible graph is required before Phrecia can be enabled in an actual game connection.
 The command rejects a Phrecia choice before saving it, and login refuses an existing Phrecia save before inventory
 loading or passive normalization, retaining its data.
 There is no automatic graph installation, recovery, archive rewrite, or memory-hook workaround in this slice.
 Ordinary startup and unascended/ordinary characters do not require an alternate-graph match.
 The integration tests use isolated Phrecia lifecycle fixtures; that is not a claim of play on a pristine client.
-Keep the selection PR in draft until the parent has completed the required ordinary-client checks.
+The ordinary-client checks below cover the command selection lifecycle; the Phrecia play gate remains in place.
 
 ## Try ordinary selection
 
@@ -74,7 +74,7 @@ The existing ordinary passive stat aggregation also sees allocated ascendancy st
 No Ward, Rage, charge, minion, granted-skill, passive-buff, presence or other new gameplay engine is imported here.
 Choosing a class is not evidence that its signature gameplay works.
 
-## Validation and remaining checks
+## Validation and limits
 
 Automated tests cover catalog ownership, family separation, native class packing and graph stat, implicit starts,
 separate budgets, exclusive choices, ordinary/ascendancy connectivity, paid refunds, old/unknown saves, rollback,
@@ -82,11 +82,31 @@ stale connections, regret items and the production passive-message handlers.
 Run the Core, Data and Gateway suites from the repository root with the extracted public data available.
 The shared Gateway `TestEnvironment` sets the repository working directory once.
 
-The parent owns native verification; this isolated implementation work does not launch or mutate the client.
-On an ordinary character, verify command selection, native allocation and five-point refund, points after relog and
-full restart, preserved ordinary allocations, and an unascended character's unchanged startup.
-Check the Gateway logs and the actual native tree counters together.
-Confirm that a Phrecia request reports the compatibility gate and leaves the save unchanged.
+The isolated source `aeab8dd` passed Core 454, Data 18 and Gateway 2168 tests and a warning-free solution build.
+Independent review found no remaining substantial issues in the corrected XP and extra-point grant paths.
+Fourteen deterministic regressions cover delayed XP, overlapping area connections, paid refunds and failed saves.
+
+The real 3.29.3b client passed eleven smoke checks on a new synthetic Duelist, choosing ordinary Slayer.
+The read-only `scripts/re/frida/trace-ascendancies.js` observed the client's applied tree and counters.
+The ordinary graph stayed `Default`, with class byte 4 before selection and 68 afterward.
+Ordinary node 39725 survived selection; ascendancy node 61393 used one of two separately earned points.
+Repeating the normal-tier award retained two earned points.
+An ascendancy refund spent five refund points; an ordinary refund spent one and retained the ascendancy node.
+Two extra-point grants produced two ordinary extra points.
+Choice, nodes and budgets survived relog and a Gateway process restart, with Auth and Patch left running.
+A Phrecia selection request was refused and the synthetic character's saved JSON remained byte-for-byte unchanged.
+Admission of an existing saved Phrecia choice is covered by automated tests, not this native smoke.
+
+Local evidence is in `logs/phrecia-completion/choice274-20261026-202811/` in the verification checkout.
+The tested Gateway SHA-256 was
+`932d26ab0df1f90c64b49613a341f98f46fd7f7533bc59d9660972dd4e6fe967`.
+Gateway, Core and Host embedded versions matched the source; the live Gateway path and working directory were checked.
+The optional merged-graph analysis PSG was absent locally; the JSON graph catalog supplied the ordinary lifecycle.
+The client archive was unchanged, and the accepted normal Gateway was restored after the smoke.
+
+To repeat, start the single client through `scripts/dev/live.ps1` and use the ordinary commands above.
+Compare the trace's `ascendancyPassives` and `ascendancyGraph` observations with the Gateway log and saved progress.
+The smoke does not test the native Altar chooser, every ordinary class, or special ascendancy combat mechanics.
 A simultaneous ordinary/Phrecia native-play claim requires separate client agreement and cannot be made by this slice.
 
 Protocol fields and native evidence: [progression](../protocol/15-progression.md) and

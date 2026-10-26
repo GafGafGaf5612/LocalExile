@@ -23,7 +23,7 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   [read-only analysis artifacts](../docs/dev/passive-graph-data.md), without installing a client graph.
 - **Known:** command selection, saved identities, separate point awards, paid refunds and ordinary/ascendancy
   graph connectivity now have automated coverage; see [scope and limitations](../docs/game/ascendancies.md).
-  Native verification of this extracted slice remains with the parent.
+  Ordinary command selection, refunds, relog and a Gateway restart are verified with a native Duelist/Slayer smoke.
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
   Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
