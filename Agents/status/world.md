@@ -80,11 +80,17 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch use
   the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
-- **Level generator port (not used by the Gateway yet).** `GameServer.Data/Terrain/Generation` reproduces the client's
-  level generator: the tile grid, the walkability and projectile grids, the doodads and every cell's ground height
-  (`CellHeights.cs`; all 30 loads with a height capture match cell for cell).
+- **Level generator port.** `GameServer.Data/Terrain/Generation` reproduces the client's level generator: the tile
+  grid, the walkability and projectile grids, the doodads, every cell's ground height (`CellHeights.cs`) and the area
+  transitions and waypoints (`AreaObjects.cs`).
   All 197 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
   and every 3.29.3 load the client logged matches by tile hash (`scripts/re/levelgen/gate.ps1`).
+  All 30 loads with a height capture match cell for cell; 182 of the 186 with a transitions capture match exactly.
+  The Gateway generates the supported areas itself (`ServerLevels.cs`): those whose seed-1 trace passes every gate
+  check (`gate-baseline.json`); their walk grid, cell heights, transitions and waypoint need no capture.
+  Entering any other area tells the player it is generated on the client and not supported by the server yet.
+  1717 of the 1915 WorldAreas areas with a topology have never been recorded; at seed 1 the port gets through 1404
+  of them (`levelgen survey`, unchecked against the client) and stops on 313.
   The client's stages after the doodads (mesh variation, ground clutter, critters) are client-only and not ported.
   The Labyrinth's boss ends use the layout the client builds with seed 0; the server sends no daily layout.
   Code: `GameServer.Data/Terrain/Generation`, `scripts/re/levelgen`.

@@ -19,8 +19,11 @@ static class Gate
     /// <see cref="Captured"/> is -1 for a trace with no doodad capture (no .doodads.json); <see cref="Heights"/> (cells
     /// whose ground height differs) is -1 with no height capture (no .heights.bin).</summary>
     public sealed record Result(string Hash, int Draws = 0, int TraceDraws = 0, string? FirstDiff = null, int Walk = -1, int Projectile = -1,
-        int Placed = 0, int Matched = 0, int Captured = 0, int Heights = -1)
+        int Placed = 0, int Matched = 0, int Captured = 0, int Heights = -1, int Objects = -1)
     {
+        /// <summary>The port's area transitions and waypoints (<see cref="AreaObjects"/>) are the captured ones
+        /// (.transitions.json: type and cell), no more and no fewer.</summary>
+        [System.Text.Json.Serialization.JsonIgnore] public bool ObjectsOk => HashOk && Objects == 0;
         [System.Text.Json.Serialization.JsonIgnore] public bool HeightsOk => HashOk && Heights == 0;
         [System.Text.Json.Serialization.JsonIgnore] public bool HashOk => Hash == "match";
         [System.Text.Json.Serialization.JsonIgnore] public bool GridsOk => Walk == 0 && Projectile == 0;
@@ -30,6 +33,8 @@ static class Gate
         /// <summary>Every draw the port made equals the trace's (the client's later draws belong to stages not ported).</summary>
         [System.Text.Json.Serialization.JsonIgnore] public bool DrawsOk => HashOk && (FirstDiff is null || FirstDiff.EndsWith(" (port stopped)"));
     }
+
+    static readonly System.Text.RegularExpressions.Regex Recorded = new("AreaTransition|Waypoint$|TownEntrance$");
 
     static readonly JsonSerializerOptions Json = new()
     {
@@ -231,7 +236,7 @@ static class Gate
         }
         catch (Exception) when (traced) { }
         finally { Shared.ResetHooks(); }
-        return Capture(areaId, seed, hash) with { Walk = -1, Projectile = -1, Placed = 0, Matched = 0, Captured = 0, Heights = -1 };
+        return Capture(areaId, seed, hash) with { Walk = -1, Projectile = -1, Placed = 0, Matched = 0, Captured = 0, Heights = -1, Objects = -1 };
     }
 
     static Result Capture(string areaId, uint seed = 1, uint? loggedHash = null)
@@ -252,7 +257,7 @@ static class Gate
             hash = result.Grid.Hash() == clientHash ? "match" : "mismatch";
         }
         catch (Exception e) { hash = "stop: " + Reason(e); }
-        int walkDiff = -1, projDiff = -1, placed = 0, matched = 0, captured = File.Exists(stem + ".doodads.json") ? 0 : -1, heightDiff = -1;
+        int walkDiff = -1, projDiff = -1, placed = 0, matched = 0, captured = File.Exists(stem + ".doodads.json") ? 0 : -1, heightDiff = -1, objectDiff = -1;
         if (result is not null)
         {
             var walk = Walkability.Build(result.Grid, tile => files.Walk(tile.Path));
@@ -261,6 +266,16 @@ static class Gate
             catch (Exception e) when (e is NotSupportedException or InvalidDataException or InvalidOperationException) { }
             walkDiff = Differ(walk.Walk, stem + ".bin");
             projDiff = Differ(walk.Projectile, stem + ".projectile.bin");
+            if (File.Exists(stem + ".transitions.json"))
+            {
+                using var tj = JsonDocument.Parse(File.ReadAllText(stem + ".transitions.json"));
+                var recorded = tj.RootElement.GetProperty("objects").EnumerateArray()
+                    .Select(o => (o.GetProperty("objectType").GetString()!, o.GetProperty("x").GetInt32(), o.GetProperty("y").GetInt32())).ToHashSet();
+                // The recorder keeps only type names it knows (walkmaps.js: AreaTransition, …Waypoint, …TownEntrance);
+                // the port finds every type with the AreaTransition component (BossArenaEntranceTransition, …).
+                var generated = AreaObjects.Transitions(files, result).Where(o => Recorded.IsMatch(o.Type)).Select(o => (o.Type, o.X, o.Y)).ToHashSet();
+                objectDiff = recorded.Except(generated).Count() + generated.Except(recorded).Count();
+            }
             if (File.Exists(stem + ".heights.bin"))
             {
                 var heights = CellHeights.Build(result.Grid, tile => files.Walk(tile.Path));
@@ -286,7 +301,7 @@ static class Gate
         int same = 0;
         while (same < theirs.Count && same < mine.Count && theirs[same].Kind == mine[same].Kind && theirs[same].Arg == mine[same].Arg && theirs[same].Result == mine[same].Result) same++;
         string? first = same < theirs.Count ? theirs[same].Caller + (same < mine.Count ? "" : " (port stopped)") : null;
-        return new Result(hash, same, theirs.Count, first, walkDiff, projDiff, placed, matched, captured, heightDiff);
+        return new Result(hash, same, theirs.Count, first, walkDiff, projDiff, placed, matched, captured, heightDiff, objectDiff);
     }
 
     static int Differ(byte[] mine, string file)
@@ -318,6 +333,9 @@ static class Gate
         Console.WriteLine($"  seed-1 traces, every doodad:    {d1} of {c1 - uncaptured}{D(d1, d0)} ({uncaptured} with no doodad capture)");
         static int Heights(SortedDictionary<string, Result> r) => r.Count(p => p.Key.StartsWith("capture ") && p.Value.HeightsOk);
         int withHeights = now.Count(p => p.Key.StartsWith("capture ") && p.Value.Heights >= 0);
+        static int Objects(SortedDictionary<string, Result> r) => r.Count(p => p.Key.StartsWith("capture ") && p.Value.ObjectsOk);
+        int withObjects = now.Count(p => p.Key.StartsWith("capture ") && p.Value.Objects >= 0);
+        Console.WriteLine($"  seed-1 traces, transitions:     {Objects(now)} of {withObjects}{D(Objects(now), Objects(before))} ({c1 - withObjects} with no transitions capture)");
         Console.WriteLine($"  seed-1 traces, cell heights:    {Heights(now)} of {withHeights}{D(Heights(now), Heights(before))} ({c1 - withHeights} with no height capture)");
         var stops = now.Where(p => p.Key.StartsWith("capture ")).Select(p => p.Value.Hash).GroupBy(h => h.StartsWith("stop") ? "stop" : h)
             .ToDictionary(g => g.Key, g => g.Count());
@@ -345,6 +363,7 @@ static class Gate
                 Check(b.DrawsOk, r.DrawsOk, "every port draw");
                 Check(b.DoodadsOk, r.DoodadsOk, "doodads");
                 Check(b.HeightsOk, r.HeightsOk, "cell heights");
+                Check(b.ObjectsOk, r.ObjectsOk, "transitions");
                 if (r.Draws < b.Draws) lost.Add($"{key}: draws {b.Draws} → {r.Draws} (first difference {r.FirstDiff})");
                 else if (r.Draws > b.Draws) gained.Add($"{key}: draws {b.Draws} → {r.Draws}");
                 if (b.HashOk && r.HashOk && r.Matched < b.Matched) lost.Add($"{key}: doodads matched {b.Matched} → {r.Matched}");
@@ -364,7 +383,7 @@ static class Gate
     static void Clusters(SortedDictionary<string, Result> now)
     {
         var diffs = now.Where(p => p.Key.StartsWith("capture ") && p.Value.FirstDiff is not null &&
-                !(p.Value.HashOk && p.Value.GridsOk && p.Value.DrawsOk && (p.Value.DoodadsOk || p.Value.Captured < 0) && (p.Value.HeightsOk || p.Value.Heights < 0)))
+                !(p.Value.HashOk && p.Value.GridsOk && p.Value.DrawsOk && (p.Value.DoodadsOk || p.Value.Captured < 0) && (p.Value.HeightsOk || p.Value.Heights < 0) && (p.Value.ObjectsOk || p.Value.Objects < 0)))
             .GroupBy(p => p.Value.FirstDiff!).OrderByDescending(g => g.Count()).Take(12);
         Console.WriteLine("first differences (traces not fully matching), by the client's caller:");
         foreach (var g in diffs)

@@ -1328,11 +1328,30 @@ the captures, which the client records after this stage. They draw only after th
 generation depends on them. The server sends none of this and reads none of it, so the port ends with the doodad
 stage (§6c). Port these only if the server ever needs clutter or critter positions.
 
-## 7. What the server will use
+## 7. What the server uses
 
-From the generated grid: the walkability and projectile grids, heights, area transitions and waypoints (tile .tmd
-records, as the walk-map recorder computes them today), and room points (rooms placed). Until the port reaches an
-area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
+`ServerLevels.cs` (Gateway) generates a supported area from its seed. It builds the walkability grid with the
+doodads' collision, the cell heights (§6b), and the area transitions and waypoint (`AreaObjects`, from the tiles'
+`.tmd` records). `AreaLayouts`, `AreaTransitionCatalog` and `WaypointCatalog` take these in place of the
+`data/walkability/<area>_seed<seed>.*` captures. A capture's transitions still win when there is one.
+
+The supported areas come from the committed gate baseline. An area counts when its `capture` entry matches in tile
+hash, both grids, every port draw, the doodads, the cell heights and the transitions; a check without a capture does
+not count against it. Every logged load of the area must match too. The game files are opened on the first
+generation (Node runs the Oodle decoder). The result is kept per (area, seed), and `Game_SERVER_LEVELS=0` turns it
+off.
+
+On entering any other area, the player is told "This map is generated on client-side and is not supported yet by
+the Server." (not during a capture tour). The room points (monster packs) still come from the doodad capture
+(`MonsterPacks.FitRooms`); the generator's placed rooms could replace that fit.
+
+The gate's transitions check compares the type and cell of every captured object. It filters the port's list with
+the recorder's own type names (walkmaps.js: AreaTransition, …Waypoint, …TownEntrance). The port finds every type
+with the AreaTransition component, so it also places BossArenaEntranceTransition, MerveilExitTransition,
+LabyrinthTownTransition, BellyArenaTransition and CoreTransition, which the recorder never keeps. With that filter,
+182 of the 186 captures match. The differences: 1_5_1, 1_5_2 and 2_10_7 capture a `GlowyFX` /
+`SlavePensIntroGround` object at a crater, which the port does not place. 2_Labyrinth_boss_2_end's capture lacks
+three arena gates the port places.
 
 ## 8. Tooling
 
@@ -1365,7 +1384,9 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
 - **Gate:** `scripts/re/levelgen/gate.ps1` before every commit to the generator: every seed-1 trace (tile hash,
   every draw the port makes, both grids, the doodads; a trace with no `.doodads.json` is counted apart, not as a
   doodad failure, and an empty one (the recorder writes it for an area that places none, such as HideoutTemplarLab and
-  MapWorldsGorge seed 1) passes when the port places none either) and every logged (area, seed), run by worker
+  MapWorldsGorge seed 1) passes when the port places none either; the cell heights against `.heights.bin` and the
+  transitions against `.transitions.json`, §6b / §7, each counted apart without a capture) and every logged (area,
+  seed), run by worker
   processes (~5 min), compared with `scripts/re/levelgen/gate-baseline.json` (gained / lost per check), then the
   three test suites; it fails when anything was lost. A logged load whose hash is wrong (or that stops) is also run
   against its own trace (every logged load has one since the capture tours), for its draws and first difference. It
@@ -1380,6 +1401,15 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   that match (e.g. every `.arm` of a folder, to find rooms no room set lists). `… doodads <area> <seed>` compares the
   placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level
   (world +0xd4).
+- **Survey:** `lg.ps1 survey [--jobs N]` runs every WorldAreas area with a topology and no trace through the port at
+  seed 1 and its area level: generation, walkability, doodads, cell heights. It writes
+  `scripts/re/levelgen/survey-latest.json` (local) and a count per stop reason. "ok" only means the port got
+  through; nothing compares it with the client. 2026-10-26: 1717 areas, 1404 ok, 313 stops. The commonest stops are
+  "Could not fix heights in dungeon" (84), the extra room pool `0x141d8b750` (80+), tiles over a base tile with
+  fields of their own (40+), and "No walkable area in the level" (24). By kind: maps 764 of 807, league areas 114 of
+  308, Labyrinth 249 of 257, hideouts 100 of 109, act areas 17 of 22.
+- **Heights:** `lg.ps1 heights <area> <seed>` compares the port's cell heights with `<area>_seed<seed>.heights.bin`,
+  by tile.
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client-*-archive.txt`, older log parts kept aside, then `Client/logs/Client.txt`) and reports match /
   mismatch / where the port stops, with a summary. **Only loads of the local client's version count** (since

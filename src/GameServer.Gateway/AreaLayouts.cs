@@ -11,6 +11,18 @@ sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int Spawn
     /// <summary>The area's waypoint (WaypointCatalog), if it has one and its place is known.</summary>
     public WaypointObject? Waypoint { get; init; }
     public Func<int, int, int, bool>? Clearance { get; init; }
+
+    /// <summary>Every cell's ground height, row by row (GridW × GridH), when the Gateway generated the layout itself
+    /// (<see cref="ServerLevels"/>); null for a capture.</summary>
+    public short[]? CellHeights { get; init; }
+
+    /// <summary>Whether the Gateway generated this layout from the seed (<see cref="ServerLevels"/>).</summary>
+    public bool ServerGenerated => CellHeights is not null;
+
+    /// <summary>The ground height at a cell in world units (the client's 0x141d84be0 at the cell's centre: the cell's
+    /// height × 7.8125), or null without heights or outside the grid.</summary>
+    public float? GroundHeight(int x, int y) =>
+        CellHeights is { } h && x >= 0 && y >= 0 && x < GridW && y < GridH ? h[y * GridW + x] * 7.8125f : null;
     public bool WalkableFor(int x, int y, int size) => Clearance?.Invoke(x, y, size)
         ?? (Walkable?.Invoke(x, y) != false);
 
@@ -90,7 +102,15 @@ static class AreaLayouts
 
     static AreaLayout WithoutWaypoint(ushort hash, string id, uint seed)
     {
+        // An area the port reproduces is generated here from the seed; any other needs the client's capture.
+        if (ServerLevels.For(id, seed) is { } generated)
+            return WithCells(hash, id, seed, generated.Walk, generated.Width, generated.Height) with { CellHeights = generated.Heights };
         byte[]? cells = LoadCells(id, seed, out int w, out int h);
+        return WithCells(hash, id, seed, cells, w, h);
+    }
+
+    static AreaLayout WithCells(ushort hash, string id, uint seed, byte[]? cells, int w, int h)
+    {
         var notes = new List<string>();
         var transitions = AreaTransitionCatalog.For(hash, id, seed, notes);
         foreach (var n in notes) Console.WriteLine($"[gateway] area {id} seed {seed}: {n}");

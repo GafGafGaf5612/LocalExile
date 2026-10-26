@@ -54,7 +54,10 @@ static class WaypointCatalog
         string file = $"{Folder}/{id}_seed{seed}.transitions.json";
         try
         {
-            if (!File.Exists(file)) return null;
+            // No capture: the layout the Gateway generated itself.
+            if (!File.Exists(file))
+                return ServerLevels.For(id, seed)?.Objects.FirstOrDefault(o => o.Type == WaypointObject.MetadataPath) is { } made
+                    ? new WaypointObject(made.X, made.Y, made.Model, made.Rotation, made.Z) : null;
             var data = JsonSerializer.Deserialize<CaptureFileData>(File.ReadAllText(file), Json);
             var o = data?.Objects?.FirstOrDefault(o => o.ObjectType == WaypointObject.MetadataPath);
             return o is null ? null : new WaypointObject(o.X, o.Y, o.Model, o.Rotation, o.Z);

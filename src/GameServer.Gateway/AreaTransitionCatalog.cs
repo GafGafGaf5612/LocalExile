@@ -151,7 +151,11 @@ static class AreaTransitionCatalog
     {
         try
         {
-            if (!Captured(id, seed)) return null;
+            // No capture: the layout the Gateway generated itself, read the same way.
+            if (!Captured(id, seed))
+                return ServerLevels.For(id, seed)?.Objects
+                    .Where(o => o.Type.Contains("AreaTransition") || o.Type.EndsWith("TownEntrance"))
+                    .Select(o => new CapturedObject(o.Type, o.Model, o.X, o.Y, o.Rotation, o.Z)).ToList() is { Count: > 0 } made ? made : null;
             var file = JsonSerializer.Deserialize<CaptureFileData>(File.ReadAllText(CaptureFile(id, seed)), Json);
             // Quest exits extend AreaTransition under their own name (The Twilight Strand's SouthBeachTownEntrance).
             return file?.Objects?.Where(o => o.ObjectType is { } t && (t.Contains("AreaTransition") || t.EndsWith("TownEntrance"))).ToList();

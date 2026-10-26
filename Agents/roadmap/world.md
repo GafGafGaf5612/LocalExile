@@ -30,8 +30,8 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Known:** the port reproduces the client's generator for every recorded trace and logged load
   ([re/011](../docs/re/011-level-generation.md), [status/world.md](../status/world.md)).
   `/tour <file>` with `live.ps1 -Walkmaps` records new (area, seed) loads; `levelgen tourlist` writes the lists.
-- **Start:** have the Gateway generate an area's grids, transitions and waypoints from the seed instead of reading
-  `data/walkability` captures (re/011 §7).
+- **Start:** record the areas never visited (`levelgen survey` lists them; `levelgen tourlist` and `/tour` record
+  them) and fix what differs, so `ServerLevels` supports them; then use random seeds for supported areas.
   For a daily labyrinth: port the rest of `0x1424e30f0` (connections, secrets) and send the layout message
   (`0x141ec7220`: seed, node, difficulty).
 - **Done when:** any seed gets its layout without a capture.
