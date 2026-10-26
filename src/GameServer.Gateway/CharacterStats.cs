@@ -32,12 +32,15 @@ static class CharacterStats
         int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
         bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
         int AttackSpeedPct = 0,
-        int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
+        long CriticalStrikeChancePct = 0, long SpellCriticalStrikeChancePct = 0,
         int CriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int SpellCriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int AttackCriticalStrikeChance = 0,
         int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
         int AccuracyPct = 0,
+        // The Accuracy Mastery's target-conditional "more" effects, kept out of Accuracy: they only apply to a hit's
+        // own target (TargetAccuracy), so the panel must not show them as the character's accuracy.
+        int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0,
         int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0);
@@ -60,10 +63,11 @@ static class CharacterStats
         int BlockChanceInc = 0, int BlockChanceMore = 0,
         bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
         int AttackSpeedPct = 0, int AttackSpeedMorePct = 0,
-        int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
+        long CriticalStrikeChancePct = 0, long SpellCriticalStrikeChancePct = 0,
         int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0,
         int Accuracy = 0, int AccuracyPct = 0, int AccuracyPerLevel = 0,
         bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false,
+        int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0, int ArmourMorePct = 0, int EvasionMorePct = 0, int EnergyShield = 0,
         // The overcapped-resistance flags' derived increases (ResistanceOvercap), computed once in PoolsFor from the
@@ -175,10 +179,12 @@ static class CharacterStats
             SpellCriticalStrikeChancePct: b.SpellCriticalStrikeChancePct + b.LightningOvercapCritPct,
             CriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.CriticalStrikeMultiplier,
             SpellCriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.SpellCriticalStrikeMultiplier,
-            SpellCriticalStrikeChance: (int)Math.Round(DamageModel.CriticalStrikeChance(
+            SpellCriticalStrikeChance: DamageModel.CriticalStrikeChancePerMyriad(
                 DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
-                b.SpellCriticalStrikeChancePct + b.LightningOvercapCritPct) * 100),
+                b.SpellCriticalStrikeChancePct + b.LightningOvercapCritPct),
             AccuracyPct: b.AccuracyPct,
+            AccuracyMoreVsUniquePct: b.AccuracyMoreVsUniquePct,
+            AccuracyMoreInCloseRangePct: b.AccuracyMoreInCloseRangePct,
             ManaReservationEfficiencyPct: b.ManaReservationEfficiencyPct,
             LifeReservationEfficiencyPct: b.LifeReservationEfficiencyPct,
             AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct,
