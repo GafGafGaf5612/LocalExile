@@ -38,7 +38,7 @@ base skill/weapon damage by type
   → conversion (source is consumed; converted damage can convert again)
   → increased / more multipliers per type
   → critical strike
-  → per-type resistance / mitigation
+  → per-type resistance / mitigation (the critical-strike elemental rules resolve first, §4)
   → roll a whole number per type and send the life change
 ```
 
@@ -80,8 +80,8 @@ The unconditional stats the server reads (whole percents, this client's Stats.da
 The `main_hand_…`/`off_hand_…` and `local_…` weapon-hand aliases are not read (the server attacks with the main
 hand's global stats, and a weapon-local scope guess would double-count), and neither are the non-base
 `reduce_enemy_elemental/chaos_resistance_%` variants (Penetration Support's own granted stat in this client) or the
-conditional ones (non-critical strikes, while affected by an aura, against chilled enemies).
-The non-critical companion is handled by #216; aura and enemy-state conditions remain separate work.
+conditional ones tied to auras or enemy state.
+The non-critical companion is handled by the critical resistance rules below; other conditions remain separate work.
 Spells take the supported general stats only; this consumer supports chaos through the attack-only stat in this
 client, only the attack-only one; physical damage never penetrates.
 
@@ -184,7 +184,28 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
 - The hit's penetration (`Penetration.cs`) subtracts from the capped resistance with no second clamp: the general
   per-element and elemental stats on every hit, the attack-only variants on attacks (§2), the
   `cannot_penetrate_or_ignore_elemental_resistances` flag suppressing the elemental ones. Damage over time and the
-  physical part take no penetration; the conditional variants are #216's.
+  physical part take no penetration.
+- Critical elemental hits with `critical_strikes_ignore_elemental_resistances` use effective resistance zero,
+  including when the target's resistance or maximum is negative; ignore overrides penetration.
+  `attack_critical_strikes_ignore_elemental_resistances` covers attacks only.
+  Non-critical elemental hits add `non_critical_strikes_penetrate_elemental_resistances_%` to general penetration.
+  Player and skill contributions to the same key sum; the prohibition suppresses all elemental penetration and ignore.
+  Physical, chaos and DoT keep their separate rules.
+  Damage types roll once, followed by the original single critical draw; deterministic mitigation uses that result.
+  Target physical reduction and damage taken follow mitigation, preserving fractional components until the final total.
+  Ordinary bows retain offensive resistance rules in their release snapshot and resolve the target at contact.
+  Native checks on original head `13c41e5` verified the basic ignore and non-critical rules.
+  Ten composed native groups pass at source `1366f48`, with Gateway/Core/Host embedded Git versions matching it.
+  Critical panels show 657/505, then 657/755 after a spell-only increase; active Sea Legs gives 1204 and empty-set zero.
+  Fixed mana lightning produces actual Life losses 90/120/60 for ranged/melee/ranged-only contexts.
+  Against a level-68 fire skeleton, fixed 100 fire + 100 cold deals 160, or 220 after 40/20 penetration.
+  A 150% critical multiplier then gives 300 with ignore, 330 without it and 240 with the prohibition.
+  These values are read from the native Life component after the authoritative hit.
+  The run uses a fresh unascended Witch and exercises default attacks, not the ascendancy chooser or whole classes.
+  Supported-gem, modifier/bow and Purity-replacement combinations retain their automated integration coverage.
+  Earlier native evidence remains attributed to its original heads; a stale #225 DLL did not test #226.
+  Rebuild after the final checkout and verify embedded Git versions, hashes and the running DLL before `-NoBuild`.
+  See [native build provenance](../dev/client-control.md#build-provenance-for-native-verification).
 - `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
   `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
   `MitigatePhysical`.

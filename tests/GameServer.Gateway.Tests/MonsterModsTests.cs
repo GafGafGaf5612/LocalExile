@@ -266,6 +266,14 @@ public class MonsterModsTests
         // Each 1 becomes .6, then total 1.2 takes 50% less = .6, rounded once to 1.
         Assert.Equal(1, Program.MonsterTakes(spellResistant, mixed, new Random(2), spell: true,
             new Penetration.PerType(-40, -40, 0, 0)));
+        Assert.Equal(1, Program.MonsterDamage(spellResistant, mixed, critical: false, attack: false, default,
+            new Penetration.PerType(-40, -40, 0, 0)).Damage);
+        var both = new SpawnedMonster("both mods", new WalkEstimator(0, 0, 30), 20, 2, 100)
+        { Mods = With(MonsterRarity.Rare, 60, "MonsterModResistantToFire", "MonsterModSpellResistant") };
+        // Ignore removes resistance and penetration; Spell Resistant's 50% less still applies afterwards.
+        Assert.Equal(50, Program.MonsterDamage(both, DamagePacket.Of(DamageType.Fire, 100, 100),
+            critical: true, attack: false, new HitResistances.Mods(1, 0, 10, 0),
+            new Penetration.PerType(35, 0, 0, 0)).Damage);
     }
 
     [Fact]

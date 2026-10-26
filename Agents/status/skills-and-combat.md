@@ -422,6 +422,31 @@ Part of [Status](../Status.md); what to build next in this area is in
   every 500 ms.
   Item mods count through the global item stats;
   346 varieties with NPC / ControlZone / ... components are refused.
+- **Critical-strike elemental resistance rules (Inevitable Judgement).** The hit's
+  already-rolled critical boolean decides the resistance: the packet rolls once (the original per-type draws), the
+  existing single critical draw keeps its original place after them, and the mitigation resolves on the
+  already-rolled packet without a second roll — a critical elemental hit with
+  `critical_strikes_ignore_elemental_resistances` mitigates with an effective resistance
+  of zero, negative included, overriding any penetration; the attack-only variant covers attacks only; a
+  non-critical elemental hit keeps its capped resistance and `non_critical_strikes_penetrate_elemental_resistances_%`
+  (10) subtracts after the cap, stacked with the hit's general penetration;
+  `cannot_penetrate_or_ignore_elemental_resistances` restores the plain capped resistance.
+  Physical, chaos and damage over time are outside the rules; Inevitable Judgement (graph node 48214) grants the
+  generic ignore and the 10 penetration through the ordinary passive stat sum.
+  The shared helper (`HitResistances`, the Gateway's `MonsterDamage`) covers default attacks, bows and gem hits.
+  Default and area damage logs name the decision; gem projectiles emit a separate resistance trace.
+  Core and Gateway checks cover positive/negative resistance, maximum independence and the node's exact stat keys.
+  Eight native checks read monster life: fixed 100 fire dealt 60 normally and 70 with non-critical penetration.
+  Guaranteed critical hits dealt 150 with generic or attack-only ignore, and 90 after removal or prohibition.
+  Those captures belong to original head `13c41e5`; combined penetration/modifier/bow paths need native rechecking.
+  Automated checks preserve same-key source sums, fractional totals, target damage taken and the original RNG order.
+  Sequential C24 handler tests read real `/set_stat` changes after a prior hit on the same connection and target.
+  Skill `0x102`, sequence 0 and flags `0x408` give ignore 300, ordinary critical 330 and prohibition 240.
+  Friendly and hostile controls pass without a production hostility change.
+  The combined run labelled `462c883` used a DLL proven by hash to be #225 `4a71968`; its ninth case is not #226 proof.
+  Ascendancy allocation remains in its separate lifecycle change.
+  Code: `HitResistances.cs`, `HitMitigation.cs`, Gateway (`MonsterDamage`).
+  Docs: [20](../docs/protocol/20-damage.md) §4.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`;
   `DamageConversion` handles the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global
   precedence, the 100% cap and gain-as-extra.
@@ -438,7 +463,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
   Maximum-mana added lightning has original-head native checks and resolved automated checks.
-  Not yet: exposure, conditional penetration (non-critical strikes, aura conditions), other added damage,
+  Not yet: exposure, aura-dependent penetration, other added damage,
   increased/more support modifiers, ailment application/duration ([20](../docs/protocol/20-damage.md)).
   Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
   attack-only variants, the cannot-penetrate flag; DoT and physical take none).
@@ -448,6 +473,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Each check read the actual native monster life after the authoritative update.
   Those captures belong to original head `0d800d1`; resolved bow and target-modifier paths need native rechecking.
   Target mods compose with base resistance before penetration; damage taken follows mitigation and rounds once.
+  Ten fresh composed native groups verify critical rounding, active overcap and default-attack mana lightning.
+  Actual mixed-hit Life losses are 160/220 before criticals, then 300 with ignore, 330 without and 240 prohibited.
+  Build versions and source hashes match `1366f48`; supported-gem, modifier and bow combinations remain automated.
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.

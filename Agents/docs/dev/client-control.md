@@ -96,6 +96,22 @@ Checks: `node --check scripts/dev/client-control.js` and
 local gateway selection, and failed preflights with mocked processes and no GGPK writes.
 
 
+## Build provenance for native verification
+
+Switching branches does not rebuild `bin/`.
+Before a `-NoBuild` pass, build the final source checkout and compare `git rev-parse HEAD` with the embedded
+informational Git version of Gateway, Core and Host; record their hashes in the evidence metadata.
+Verify the listening Gateway's DLL and working directory as well as the source tree.
+A clean repository at the intended commit does not prove that a previously built DLL contains that commit.
+Keep source and build outputs frozen during a native window, then restore the agreed normal runtime.
+
+```powershell
+git rev-parse HEAD
+dotnet build
+(Get-Item src/GameServer.Gateway/bin/Debug/net10.0/GameServer.Gateway.dll).VersionInfo.ProductVersion
+Get-FileHash src/GameServer.Gateway/bin/Debug/net10.0/GameServer.Gateway.dll -Algorithm SHA256
+```
+
 ## Targeted development interactions
 
 JSON RPC also accepts `game:resources` (read-only Life component pools and recent 0x1b1 corrections),

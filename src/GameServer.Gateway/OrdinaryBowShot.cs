@@ -5,6 +5,7 @@ using GameServer.Core.World;
 sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance, int CriticalMultiplier, int ImpaleChance)
 {
     public Penetration.PerType Penetration { get; init; }
+    public HitResistances.Mods ResistanceMods { get; init; }
     public static OrdinaryBowShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
         IEnumerable<(uint, int)> skillConversion, StatCatalog catalog, int accuracy, int criticalChance, int criticalMultiplier)
     {
@@ -15,7 +16,14 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         var hit = DamageStats.Added(weapon.HitDamage(character), Get, spell: false, melee: false)
             .Convert(DamageStats.Conversion(conversion, catalog, attack: true));
         return new(hit, accuracy, criticalChance, criticalMultiplier, Get("impale_on_hit_%_chance"))
-        { Penetration = global::Penetration.Of(character, catalog, attack: true, own) };
+        { Penetration = global::Penetration.Of(character, catalog, attack: true, own),
+            ResistanceMods = new(
+                Get("critical_strikes_ignore_elemental_resistances") | Own("critical_strikes_ignore_elemental_resistances"),
+                Get("attack_critical_strikes_ignore_elemental_resistances") | Own("attack_critical_strikes_ignore_elemental_resistances"),
+                Get("non_critical_strikes_penetrate_elemental_resistances_%") + Own("non_critical_strikes_penetrate_elemental_resistances_%"),
+                Get("cannot_penetrate_or_ignore_elemental_resistances") | Own("cannot_penetrate_or_ignore_elemental_resistances")) };
+
+        int Own(string name) => catalog.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
     }
 
     public bool Hits(int evasion, Random random) =>

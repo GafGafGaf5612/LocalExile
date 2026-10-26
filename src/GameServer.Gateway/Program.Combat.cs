@@ -8,6 +8,7 @@ using TargetAccuracy = GameServer.Core.World.TargetAccuracy;
 using DamageType = GameServer.Core.World.DamageType;
 using DamagePacket = GameServer.Core.World.DamagePacket;
 using DamageRange = GameServer.Core.World.DamageRange;
+using HitResistances = GameServer.Core.World.HitResistances;
 
 partial class Program
 {
@@ -191,6 +192,7 @@ partial class Program
         var ownPenetration = attackEffect >= 0
             ? Skills.EffectStats(attackEffect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2) : null;
         var pen = Penetration.Of(player, Stats, attack: true, ownPenetration);
+        var resistanceMods = HitResistMods(player, ownPenetration);
         var hit = AttackHit(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee)
             .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
         // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
@@ -199,6 +201,7 @@ partial class Program
         double stored, impaleStored;
         int impaleStacks, damage;
         bool impaled, critical;
+        string? resistance;
         lock (conn.Monsters)
         {
             if (m.Life == 0) return;
@@ -215,9 +218,10 @@ partial class Program
             // Read before the hit is applied: a killing blow clears the target's impales.
             impaleStacks = m.Impale.Stacks;
             impaleStored = m.Impale.Bonus;
-            damage = MonsterTakes(m, hit, Random.Shared, spell: false, pen);
+            var rolled = hit.Roll(Random.Shared);
             critical = conn.Pools.AttackCriticalStrikeChance > 0
                 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
+            (damage, resistance) = MonsterDamage(m, rolled, critical, attack: true, resistanceMods, pen);
             if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, conn.Pools.CriticalStrikeMultiplier));
             (m.Life, stageStarts) = TakeDamageLocked(m, damage);
             life = m.Life;
@@ -243,6 +247,7 @@ partial class Program
             $"0x01af player hit on monster 0x{use.TargetId:x} (sequence 0x{use.Sequence:x4})");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(use.TargetId, life),
             $"0x01b1 monster 0x{use.TargetId:x} hit for {damage}{(critical ? " (critical)" : "")}" +
+            (resistance is { } note ? $", {note}" : "") +
             (stored > 0 ? $", impale +{stored:0.#} ({impaleStacks} stack(s))" : "") +
             (impaled ? $", impaled ({impaleStacks} stack(s), {impaleStored:0.#} stored)" : "") +
             $", life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
@@ -682,6 +687,7 @@ partial class Program
             var own = SupportedSkill(conn, skillId).Stats;
             int chance = SupportedCriticalChance(conn, skillId);
             var pen = Penetration.Of(stats, Stats, attack: Skills.IsAttack(gem.Effect), own);
+            var resistanceMods = HitResistMods(stats, own);
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
             if (MonsterBlocks(m, Random.Shared, spell))
@@ -690,14 +696,16 @@ partial class Program
                 return (Blocked, false);
             }
             var hit = SupportedHit(conn, skillId);
-            int damage = MonsterTakes(m, hit, Random.Shared, spell, pen);
+            var rolled = hit.Roll(Random.Shared);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
+            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, resistanceMods, pen);
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
                     CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
             ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, melee: false);
+            if (resistance is not null) Console.WriteLine($"[gateway] {remote} {gem.Name} resistance: {resistance}");
             return (damage, critical);
         }, epoch: epoch);
     }
@@ -772,6 +780,7 @@ partial class Program
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int criticalChance = SupportedCriticalChance(conn, skillId);
         var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats);
+        var mods = HitResistMods(stats, skillStats);
         foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
@@ -781,13 +790,15 @@ partial class Program
                 continue;
             }
             DamagePacket hit = SupportedHit(conn, skillId);
-            int damage = MonsterTakes(m, hit, Random.Shared, spell, pen);
+            var rolled = hit.Roll(Random.Shared);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
+            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
             if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
             if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
-            if (await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}",
+            if (await HitMonster(remote, stream, ciphers, conn, id, m, damage,
+                    $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
                     melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse))
                 ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
         }
@@ -922,7 +933,8 @@ partial class Program
                             if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
                             {
                                 (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared,
-                                    (rolled, _) => MonsterTakesRolled(target, rolled, spell: false, ordinaryShot.Penetration),
+                                    (rolled, crit) => MonsterDamage(target, rolled, crit, attack: true,
+                                        ordinaryShot.ResistanceMods, ordinaryShot.Penetration).Damage,
                                     CriticalMultiplierOn(target, ordinaryShot.CriticalMultiplier));
                                 hit = ApplyMonsterHitLocked(conn, target, damage);
                                 if (target.Life == 0) target.Impale.Clear();
@@ -1025,6 +1037,32 @@ partial class Program
     // multiplier later applies to. Damage over time has neither here and keeps its own path. Internal for the tests.
     internal static int MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random, Penetration.PerType pen) =>
         MonsterTakes(m, hit, random, spell: false, pen);
+
+    // Resolve an already-rolled packet using its single critical draw; target damage taken follows mitigation.
+    internal static (int Damage, string? Resistance) MonsterDamage(SpawnedMonster m, DamagePacket rolled,
+        bool critical, bool attack, HitResistances.Mods mods, Penetration.PerType pen = default)
+    {
+        var described = new List<string>();
+        var strike = new HitResistances.Strike(Critical: critical, Attack: attack);
+        var mitigated = DamageModel.Mitigate(rolled, type =>
+        {
+            var value = MonsterHitResistance(m, type, pen);
+            if (rolled[type].Max > 0 && HitResistances.Describe(type, value, strike, mods) is { } note) described.Add(note);
+            return HitResistances.Effective(type, value, strike, mods);
+        });
+        return (MonsterTakesMitigated(m, mitigated, spell: !attack),
+            described.Count > 0 ? string.Join(", ", described) : null);
+    }
+
+    internal static HitResistances.Mods HitResistMods(IReadOnlyDictionary<uint, int> player,
+        IReadOnlyDictionary<uint, int>? skill = null)
+    {
+        var a = HitResistances.Mods.From(player, Stats.Key);
+        var b = skill is null ? default : HitResistances.Mods.From(skill, Stats.Key);
+        return new(a.CriticalIgnoreElemental | b.CriticalIgnoreElemental,
+            a.AttackCriticalIgnoreElemental | b.AttackCriticalIgnoreElemental,
+            a.NonCriticalPenetration + b.NonCriticalPenetration, a.CannotPenetrateOrIgnore | b.CannotPenetrateOrIgnore);
+    }
 
     // The short state mutation is shared with projectile impact; no awaits under Monsters.
     static MonsterHit? ApplyMonsterHitLocked(ClientState conn, SpawnedMonster m, int damage)

@@ -83,9 +83,11 @@ partial class Program
 
     // Already rolled: no extra RNG or per-component rounding, including ordinary bow contact snapshots.
     internal static int MonsterTakesRolled(SpawnedMonster m, DamagePacket rolled, bool spell, Penetration.PerType pen = default)
+        => MonsterTakesMitigated(m, DamageModel.Mitigate(rolled, type => MonsterHitResistance(m, type, pen)), spell);
+
+    internal static int MonsterTakesMitigated(SpawnedMonster m, DamagePacket mitigated, bool spell)
     {
         var e = m.Mods.Effects;
-        var mitigated = DamageModel.Mitigate(rolled, type => MonsterHitResistance(m, type, pen));
         double physical = mitigated[DamageType.Physical].Min;
         double total = mitigated.MinTotal - physical * e.PhysicalReduction / 100.0;
         return (int)Math.Round(total * e.DamageTaken(spell));
