@@ -29,14 +29,18 @@ Nothing yet.
   include the item-granted/legacy rows, so the pool was narrowed to the quest/starting/exceptional sets.
 
 - **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).** The currency/flask/jewellery vendors
-  that also sell gems give seven tabs of level-1 gems at 1 Scroll of Wisdom each. The stock is the gems of every
+  that also sell gems give seven tabs of level-1 gems, priced by their level-1 requirement tier (1–7 Scroll of Wisdom,
+  8–15 Orb of Transmutation, 16–27 Orb of Alteration, 28–37 Orb of Chance, 38+ Orb of Alchemy). The stock
+  is the gems of every
   completed quest offer (reward shown or taken), filtered to the character's class and to the client's shop list;
   Siosa (after "A Fixture of Fate") and Lilly Roth (after `UnlockedLillyGemShop`) ignore class, and Lilly also the
   quest completion; Faster Attacks (Nessa, after a1q2) and Faster Casting (Yeena, after a2q4) are the 3.29 cross-class
   additions.
-  Live: Nessa listed the Witch's a1q1 + a1q4 gems, then the a1q2 gems and Faster Attacks Support after the flag.
+  Live: Nessa listed the Witch's a1q1 + a1q4 gems, then the a1q2 gems and Faster Attacks Support after the flag; their
+  prices matched the requirement tiers (the a1q1/a1q4 gems 1 Scroll of Wisdom, the a1q2 gems and Faster Attacks 1 Orb of
+  Transmutation).
   Not live-checked: Lilly (the Act 6 town is not captured and spawns the player in water) and Siosa (The Library is
-  not reachable); every gem still costs 1 Scroll of Wisdom; gem drops are in (above).
+  not reachable); gem drops are in (above).
   (`GemVendorStock`, `NpcShops.Tabs`; [17](../docs/protocol/17-npcs.md) §5, [19](../docs/protocol/19-gems.md) §5).
 
 - **Linked support gems.** Native compatibility, link groups, duplicate families and skill-bar support records

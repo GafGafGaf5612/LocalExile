@@ -58,7 +58,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Full unique modifier sets and unique-area routing remain open.
   The gem vendors (Nessa, Yeena, Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) have the seven gem tabs, with
   the completed-quest/class progression, Siosa's and Lilly's all-class stock and the 3.29 cross-class supports
-  (`GemVendorStock`); 1 Scroll of Wisdom each. Nessa was checked live 2026-10-26; Lilly and Siosa are unit-tested only
+  (`GemVendorStock`); their gems cost the currency of their level-1 requirement tier (Wisdom, Transmutation, Alteration,
+  Chance or Alchemy), the rest of the stock 1 Scroll of Wisdom. Nessa was checked live 2026-10-26; Lilly and Siosa are unit-tested only
   (their areas are not reachable/captured yet).
   Shops send one inventory per tab and their names in 0x8c.
   See [17](../docs/protocol/17-npcs.md) §5.

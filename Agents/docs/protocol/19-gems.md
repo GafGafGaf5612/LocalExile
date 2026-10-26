@@ -202,15 +202,18 @@ offer 3 after `/quest_flag a1q4-PlacedGlyphs`: the six Witch gems, claim, flag a
 
 **Vendors.** The currency/flask/jewellery vendors that also sell gems (`GemVendorStock.Sells`: Nessa, Yeena,
 Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) give seven tabs - Red/Green/Blue Skills and Support, White
-Skills - of level-1 gems, 1 Scroll of Wisdom each ([17](17-npcs.md) §5). A quest unlocks its gems once its reward is
+Skills - of level-1 gems, each at the price of its level-1 requirement tier: 1–7 Scroll of Wisdom, 8–15 Orb of
+Transmutation, 16–27 Orb of Alteration, 28–37 Orb of Chance, 38+ Orb of Alchemy ([17](17-npcs.md) §5,
+`GemVendorStock.Price`). A quest unlocks its gems once its reward is
 shown or was taken; act vendors filter that set to the character's class and to `ItemCatalog.ShopGems` (creatable,
 dropping, not Vaal or awakened). Siosa (after `a3q12-DeliveredPages`) and Lilly Roth (after
 `UnlockedLillyGemShop`) ignore the class restriction, and Lilly also the quest completion; the 3.29 cross-class
 additions put Faster Attacks on Nessa after a1q2 and Faster Casting on Yeena after a2q4 (`GemVendorStock`).
 Checked live 2026-10-26 on Nessa: the Witch's stock was the six a1q1 gems plus the six a1q4 gems, then the six a1q2
-gems and Faster Attacks Support after `/quest_flag a1q2-KilledBrutus`. Lilly is unit-tested only (the Act 6 town has
-no walk-map capture and spawns the player in water) and Siosa is not placed (The Library is not reachable).
-
+gems and Faster Attacks Support after `/quest_flag a1q2-KilledBrutus`; the a1q1/a1q4 gems cost 1 Scroll of Wisdom and
+the a1q2 ones plus Faster Attacks 1 Orb of Transmutation, as their requirement tiers say. Lilly is
+unit-tested only (the Act 6 town has no walk-map capture and spawns the player in water) and Siosa is not placed (The
+Library is not reachable).
 **Drops.** A monster's item drops include a gem 4% of the time (`ItemDrops`, our rate until the game's drop pools are
 known): a gem from `GemSources.DropPool` whose `DropLevel` is at most the monster's level, at gem level 1 and with no
 rarity roll. The pool is the obtainable gems only: every class's quest reward gems

@@ -15,7 +15,7 @@ public class GemVendorStockTests
     {
         string data = Data();
         var items = new ItemCatalog(data);
-        return (items, new GemVendorStock(items, QuestRewardCatalog.Load(data), NpcCatalog.Load(data)));
+        return (items, new GemVendorStock(items, QuestRewardCatalog.Load(data), NpcCatalog.Load(data), new SkillCatalog(data)));
     });
 
     const string Nessa = "Metadata/NPC/Act1/Nessa", Yeena = "Metadata/NPC/Act2/Yeena",
@@ -89,6 +89,27 @@ public class GemVendorStockTests
         Assert.Contains("Freezing Pulse", all);  // a1q1 Witch gem, no quest done
         Assert.Contains("Void Sphere", all);     // a4q2 gem, no quest done
         Assert.Contains("Ground Slam", all);
+    }
+
+    [Fact]
+    public void Gem_prices_follow_the_level_one_requirement_tiers()
+    {
+        var (items, stock) = Setup.Value;
+        (string Currency, int Amount) P(string name) => stock.Price(items.Find(name)!);
+        // The official vendor tiers: requirement 1-7 Scroll of Wisdom, 8-15 Orb of Transmutation, 16-27 Orb of Alteration,
+        // 28-37 Orb of Chance, 38+ Orb of Alchemy; one of the currency.
+        Assert.Equal("Metadata/Items/Currency/CurrencyIdentification", P("Perforate").Currency);        // 1
+        Assert.Equal("Metadata/Items/Currency/CurrencyIdentification", P("Frostblink").Currency);        // 4
+        Assert.Equal("Metadata/Items/Currency/CurrencyUpgradeToMagic", P("Arrow Nova Support").Currency); // 8
+        Assert.Equal("Metadata/Items/Currency/CurrencyUpgradeToMagic", P("Chain Hook").Currency);        // 12
+        Assert.Equal("Metadata/Items/Currency/CurrencyRerollMagic", P("Flesh and Stone").Currency);      // 16
+        Assert.Equal("Metadata/Items/Currency/CurrencyRerollMagic", P("Pride").Currency);                // 24
+        Assert.Equal("Metadata/Items/Currency/CurrencyUpgradeRandomly", P("Pestilent Strike").Currency); // 28
+        Assert.Equal("Metadata/Items/Currency/CurrencyUpgradeRandomly", P("Summon Carrion Golem").Currency); // 34
+        Assert.Equal("Metadata/Items/Currency/CurrencyUpgradeToRare", P("Barrage Support").Currency);    // 38
+        Assert.All(new[] { "Perforate", "Pride", "Barrage Support" }, name => Assert.Equal(1, P(name).Amount));
+        Assert.Equal(0, GemVendorStock.Tier(-1));
+        Assert.Equal(4, GemVendorStock.Tier(38));
     }
 
     [Fact]
