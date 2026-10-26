@@ -5,13 +5,23 @@ using GameServer.Core.Protocol.Login;
 
 partial class Program
 {
-    // Sets or clears quest flags for the character (saved at once) and sends the player's flag set again.
+    // Sets or clears quest flags for the character (saved at once) and sends the player's flag set again; one change at a
+    // time per connection (ClientState.QuestGate).
     static async Task SetQuestFlags(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on = true)
+    {
+        await conn.QuestGate.WaitAsync();
+        try { await SetQuestFlagsHeld(remote, stream, ciphers, conn, flags, on); }
+        finally { conn.QuestGate.Release(); }
+    }
+
+    // SetQuestFlags for a caller that holds conn.QuestGate.
+    static async Task SetQuestFlagsHeld(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on)
     {
         var wanted = flags.Distinct().ToList();
         // What the client had before (ClientHasQuestFlag): objects change only where that changes.
         var clientBefore = PlayerQuestFlags(conn);
-        var had = wanted.ToDictionary(f => f, f => Quests.ClientHas(f, conn.QuestFlags, clientBefore));
+        var ownBefore = conn.QuestFlagsSnapshot();
+        var had = wanted.ToDictionary(f => f, f => Quests.ClientHas(f, ownBefore, clientBefore));
         var changed = new List<string>();
         lock (conn.Monsters)
             foreach (string flag in wanted)
@@ -23,7 +33,8 @@ partial class Program
         if (!conn.PlayerSent) return;
         var all = PlayerQuestFlags(conn);
         await Send(remote, stream, ciphers, InstanceEntities.PlayerQuestFlagsUpdate(PlayerId, all), $"0x02ba player quest flags: {all.Count}");
-        bool Has(string flag) => Quests.ClientHas(flag, conn.QuestFlags, all);
+        var own = conn.QuestFlagsSnapshot();
+        bool Has(string flag) => Quests.ClientHas(flag, own, all);
         var effective = Quests.EffectiveChanges(changed, f => had[f], Has);
         // The exits these flags open appear (or go again when a flag is cleared).
         foreach (var (id, transition) in conn.Layout.AreaTransitions)
@@ -100,7 +111,7 @@ partial class Program
     // A quest flag as the client has it: the character's own, or one the World panel's access flags carry (an activated
     // waypoint's area, 16-waypoints.md §4: the Submerged Passage's waypoint brings a1q4-PlacedGlyphs). The client opens
     // its ways by these, so the server's checks follow them.
-    static bool ClientHasQuestFlag(ClientState conn, string flag) => Quests.ClientHas(flag, conn.QuestFlags, PlayerQuestFlags(conn));
+    static bool ClientHasQuestFlag(ClientState conn, string flag) => Quests.ClientHas(flag, conn.QuestFlagsSnapshot(), PlayerQuestFlags(conn));
     static async Task SpawnOpeningTutorial(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         if (conn.Layout.Id != TutorialObjects.Strand || CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { } tutorial) return;
@@ -241,6 +252,7 @@ partial class Program
     // PlacedGlyphs. The recorder writes the capture while the client generates the area: wait briefly for it.
     static async Task SpawnGlyphQuest(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        await RemoveLeftoverGlyphs(remote, stream, ciphers, conn);
         if (conn.Layout.Id != GlyphQuest.Area) return;
         // Usually captured on an earlier visit: created at once, with the area. Else wait for the recorder in the background.
         if (LoadGlyphLayout(remote, conn) is { } now) { await CreateGlyphObjects(remote, stream, ciphers, conn, now); return; }
@@ -333,24 +345,37 @@ partial class Program
     }
 
     // The HaveGlyph flags follow the glyphs the character carries (GlyphQuest.SyncFlags), whatever took them away (a drop,
-    // a sale, the stash). Once the glyphs are placed, any glyph still carried goes (the .it remove_flag): a copy picked up
-    // in another instance.
+    // a sale, the stash). Runs from the player tick: it reads the flags as a snapshot and changes them inside
+    // conn.QuestGate, and it changes no inventory (RemoveLeftoverGlyphs does that on the message path).
     static async Task SyncGlyphs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        await conn.QuestGate.WaitAsync();
+        try
+        {
+            var carried = GlyphQuest.Carried(ItemsOf(conn)).Select(c => GlyphIndex(c.Item.Item)).OfType<int>().ToHashSet();
+            var own = conn.QuestFlagsSnapshot();
+            bool placed = Quests.ClientHas(GlyphQuest.PlacedGlyphs, own, PlayerQuestFlags(conn));
+            var (set, clear) = GlyphQuest.SyncFlags(own, placed, placed ? new HashSet<int>() : carried);
+            if (set.Count > 0) await SetQuestFlagsHeld(remote, stream, ciphers, conn, set, true);
+            if (clear.Count > 0) await SetQuestFlagsHeld(remote, stream, ciphers, conn, clear, false);
+        }
+        finally { conn.QuestGate.Release(); }
+    }
+
+    // Once the glyphs are placed, glyphs still carried go (the .it remove_flag): a copy taken back from the stash or given.
+    // On entering an area, from the message path, so its 0xbf sends keep their order with the other inventory changes.
+    static async Task RemoveLeftoverGlyphs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
         var items = ItemsOf(conn);
-        var carried = GlyphQuest.Carried(items).Select(c => (c.Row, c.Item, Glyph: GlyphIndex(c.Item.Item))).Where(c => c.Glyph is not null).ToList();
-        bool placed = ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs);
-        if (placed && carried.Count > 0)
-            foreach (var row in carried.GroupBy(c => c.Row))
-            {
-                var gone = row.Where(c => items.Remove(row.Key, c.Item.Id) is not null).Select(c => c.Item.Id).ToList();
-                if (gone.Count > 0)
-                    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key), gone, []),
-                        $"0x00bf inventory {PlayerInventories.InventoryId(row.Key)}: glyphs {string.Join(", ", gone)} removed, the glyphs are placed");
-            }
-        var (set, clear) = GlyphQuest.SyncFlags(conn.QuestFlags, placed, placed ? new HashSet<int>() : carried.Select(c => c.Glyph!.Value).ToHashSet());
-        if (set.Count > 0) await SetQuestFlags(remote, stream, ciphers, conn, set);
-        if (clear.Count > 0) await SetQuestFlags(remote, stream, ciphers, conn, clear, on: false);
+        var carried = GlyphQuest.Carried(items).Where(c => GlyphIndex(c.Item.Item) is not null).ToList();
+        if (carried.Count == 0 || !ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs)) return;
+        foreach (var row in carried.GroupBy(c => c.Row))
+        {
+            var gone = row.Where(c => items.Remove(row.Key, c.Item.Id) is not null).Select(c => c.Item.Id).ToList();
+            if (gone.Count > 0)
+                await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key), gone, []),
+                    $"0x00bf inventory {PlayerInventories.InventoryId(row.Key)}: glyphs {string.Join(", ", gone)} removed, the glyphs are placed");
+        }
     }
 
     // C→S 0x24 on a Rhoa Nest: walk up, open it (once per instance) and drop its glyph, unless the character has it already.

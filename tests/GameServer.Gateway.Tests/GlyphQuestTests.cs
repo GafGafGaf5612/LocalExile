@@ -271,6 +271,61 @@ public class GlyphQuestTests : IDisposable
     }
 
     [Fact]
+    public async Task QuestFlagReadsBesideWritesSeeWholeSets()
+    {
+        // SetQuestFlagsHeld changes conn.QuestFlags under the Monsters lock while the player tick (SyncGlyphs,
+        // ClientHasQuestFlag, PlayerQuestFlags) reads it: through QuestFlagsSnapshot/HasQuestFlag the reads never throw
+        // "Collection was modified" and never see half a change (each write swaps one flag for another).
+        var conn = new ClientState(new AreaLayout(1, "test", 200, 200, 10, 10, null, []), 1, 1);
+        lock (conn.Monsters) for (int i = 0; i < 50; i++) conn.QuestFlags.Add($"f{i}");
+        var until = DateTime.UtcNow.AddMilliseconds(400);
+        int reads = 0, torn = 0;
+        var writer = Task.Run(() =>
+        {
+            for (int i = 0; DateTime.UtcNow < until; i++)
+                lock (conn.Monsters)
+                {
+                    conn.QuestFlags.Remove($"f{i % 100}");
+                    conn.QuestFlags.Add($"f{(i + 50) % 100}");
+                }
+        });
+        var readers = Enumerable.Range(0, 3).Select(_ => Task.Run(() =>
+        {
+            while (DateTime.UtcNow < until)
+            {
+                var snapshot = conn.QuestFlagsSnapshot();
+                if (snapshot.Count(f => f.StartsWith('f')) != 50) Interlocked.Increment(ref torn);
+                conn.HasQuestFlag("f7");
+                Interlocked.Increment(ref reads);
+            }
+        })).ToArray();
+        await Task.WhenAll([writer, .. readers]);
+        Assert.True(reads > 0);
+        Assert.Equal(0, torn);
+    }
+
+    [Fact]
+    public async Task TheQuestGateLetsOneChangeThroughAtATime()
+    {
+        var conn = new ClientState(new AreaLayout(1, "test", 200, 200, 10, 10, null, []), 1, 1);
+        int inside = 0, most = 0;
+        async Task Change()
+        {
+            await conn.QuestGate.WaitAsync();
+            try
+            {
+                int now = Interlocked.Increment(ref inside);
+                most = Math.Max(most, now);
+                await Task.Delay(5);
+                Interlocked.Decrement(ref inside);
+            }
+            finally { conn.QuestGate.Release(); }
+        }
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => Task.Run(Change)));
+        Assert.Equal(1, most);
+    }
+
+    [Fact]
     public void AQuestChestOpensOncePerInstance()
     {
         var instance = new InstanceState();
