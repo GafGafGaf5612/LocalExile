@@ -43,6 +43,10 @@ passives, spell suppression, attack speed, critical strikes, accuracy, armour/ev
 conversion and the account stash) pass.
 Tests that need the real client pass quietly without `Client/`.
 
+Teleport-name controls use an unmapped synthetic destination, so real WorldAreas data cannot change their labels.
+Bow hit-recovery controls explicitly start their connection clock before checking input admission.
+These fixture corrections leave production catalogs and the shared module initializer unchanged.
+
 ## Tooling
 
 Everything used to work out the protocol is in the repository: the Ghidra, Frida and Python scripts in `scripts/re/`,
