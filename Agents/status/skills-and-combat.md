@@ -28,7 +28,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Generic attack increases apply; melee increases follow the actual attack type and active weapon set.
   Native switching between wand and club verified ranged exclusion and melee inclusion of that increase.
   These native checks belong to original head `378ffde`.
-  The resolved supported-skill path has automated context, effectiveness and spell-isolation checks; recheck it natively.
+  The resolved supported-skill path has automated context, effectiveness and spell-isolation checks.
+  Recheck that composition natively.
   Code: `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
@@ -311,7 +312,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Attack/spell increased percentages and the pooled spell reference now follow those effective inputs.
   Automated regressions cover these replacements, signed sum bounds and shared integer rounding.
   Attack and spell chances now share half-up permyriad rounding: 650 with +1% gives 657.
-  Native evidence below targets original head `8c4c62d`; the changed midpoint and resolved stack need native rechecking.
+  Native evidence below targets original head `8c4c62d`; recheck the changed midpoint and resolved stack natively.
   Five follow-up native checks verify generic/spell input agreement and maximum/minimum integer saturation.
   Twelve native checks verified 830 → 800 → 900, increased chance → 1800, cannot-crit → zero,
   empty-set/unarmed behavior, weapon restoration and relog.

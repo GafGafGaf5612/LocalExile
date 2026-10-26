@@ -123,7 +123,7 @@ Both constructors read the same raw `DamageStats.ManaAddedLightning` grant befor
 Support restrictions, support multipliers, conversion, target blocking and post-hit stages remain in that pipeline.
 This stack does not introduce the separate derived-damage engine from archival PR #206.
 Automated production-path cases cover ranged and melee gems, effectiveness and a spell isolation control.
-Native evidence in this section belongs to original head `378ffde`; supported-skill composition needs a new native check.
+Native evidence here belongs to original head `378ffde`; supported-skill composition needs a new native check.
 `attack_damage_+%` scales the added range for every attack.
 `melee_damage_+%` applies only in explicit melee context: the default attack uses its active weapon profile,
 and attack gems use `ActiveSkillType Melee` through `SkillCatalog.IsMelee`.
