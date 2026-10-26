@@ -47,7 +47,10 @@ if something is missing, fix the guide.
 
 Optional [native client control](../docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated
 UI input.
-It targets the copied standalone 3.29.3b client and local services only.
+It targets the copied standalone client and local services only. It finds the client's code from
+`scripts/dev/client-signatures.json` (pinned addresses, else signatures and cross-references; `bridge:doctor` shows
+how), so after a client patch only the operations whose code changed stop working; an opt-in workflow
+(`client-patch-watch`) re-resolves the signatures for a new client and opens a pull request for a live check.
 
 ## Doc caveats
 
