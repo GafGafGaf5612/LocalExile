@@ -19,7 +19,7 @@ The Coast (`1_1_2`, WorldAreas row 6, level 2):
 |---|---|---|---|
 | `Act1-CoastCrabs` (row 2) | 100 | 2–4 Savage / Kelp / Shore / Coconut / Spider Crabs; 80%: one large Savage Crab (row 4515) | scattered |
 | `Act1-ZombieDrowned` (row 3) | 100 | 3–4 Drowned; `Grounds`: the beach/ocean ground types | scattered (grounds not checked) |
-| `Act1-SandspitterEmerge` (row 4) | 100 | 3–4 Gravel Eaters | **skipped**: emerge monsters stay hidden ([10](10-chat-and-commands.md) §5) |
+| `Act1-SandspitterEmerge` (row 4) | 100 | 3–4 Gravel Eaters | scattered, buried: they rise when the player comes near ([10](10-chat-and-commands.md) §5) |
 | `1_1_2-cannibalfire` (row 620) | 0 | 2–4 Cannibals (male, female, fire throwers, Fire-eater) | room points `%area%-cannibalfire` |
 | `1_1_2-bosspack` (row 621) | 0 | 6–8 Cannibals | with the boss at `mapboss` |
 | boss: Fire Fury (row 2845, `CannibalFemaleBossWitch`) | | Unique | room point `mapboss` |
@@ -43,7 +43,8 @@ attack). Life is the level's base life (no rarity or mod bonuses yet). Monsters 
 (`InstanceStore`) saves each living monster's variety, level, rarity, team, life and current position (its walk
 estimate, `SavedMonster.Save`); dead ones are not saved. The next connection into that instance re-creates exactly
 those monsters instead of planning the packs: where they were (a dragged group stays a group), idle until the player
-comes within aggro range, and a damaged one gets its life with 0x1b1 right after its 0x2b9. Only a new instance plans
+comes within aggro range, and a damaged one gets its life with 0x1b1 right after its 0x2b9. A buried emerge monster
+is kept buried; one that has risen comes back risen (Transitionable state 2). Only a new instance plans
 fresh packs. The saved state goes with the instance's ground items: kept in the Gateway's memory and wiped when the
 instance expires.
 `Game_MONSTERS=0` turns it off. Only unique and rare monsters are logged one by one; a summary line lists the rest.
@@ -88,7 +89,12 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
 
 - Pack density and magic/rare chances are guesses (§1). Rarity gives no mods, no extra life, no rare names.
 - `Grounds` (Drowned on wet beach) is not checked; we have no ground-type grid.
-- Emerge packs (Gravel Eaters) are skipped until the Emerge action is known.
+- Emerge packs (Gravel Eaters, Dripping Dead, the Strand's Drowned, Tide Striders …) are placed waiting and rise within
+  24 cells of the player ([10](10-chat-and-commands.md) §5); the distance is ours (the official one is in the server's
+  AI files). The pack rule for the 161 varieties whose Id contains "Emerge": the 85 without a Transitionable are
+  ordinary monsters and are placed now (before, every "Emerge" Id was skipped; e.g. PusElementalEmerge in 1_4_6_3
+  stands as usual); the 63 whose type waits to rise are placed waiting; the 13 whose Transitionable is something else
+  (it sets `num_states`, or pauses no clip) are still skipped.
 - Fire Fury uses only her first granted effect. Bosses whose MonsterVarieties row has `BossHealthBar` and whose type
   extends `Metadata/Monsters/BossLifeBar` show the big life bar once they aggro (12-quests.md §6).
 - **Rarity life:** a magic, rare or unique monster has `monster_life_+%_final_from_rarity` of its rarity's monster mod
