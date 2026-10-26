@@ -394,6 +394,11 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
     public volatile bool InNpcTalk;
     public uint TutorialSceneId, TutorialChestId;
+    // a1q4 in The Mud Flats (GlyphQuest): the captured layout, the nests by object id (guarded by itself), the wall and the waterfall.
+    public GlyphQuest.Layout? Glyphs;
+    public readonly Dictionary<uint, GlyphQuest.Nest> GlyphNests = [];
+    public uint GlyphWallId, GlyphWaterId;
+    public double GlyphSyncAt;
     public TutorialObjects.Placement? TutorialChest;
     public AreaPopulation.RoomObject? TutorialZombiePlacement;
     public bool TutorialSceneRunning;
@@ -404,6 +409,13 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>
     public HashSet<string> QuestFlags = [];
+    // QuestFlags is changed under the Monsters lock (SetQuestFlagsHeld); code that may run beside it (the player tick)
+    // reads it through these, under the same lock.
+    public HashSet<string> QuestFlagsSnapshot() { lock (Monsters) return [.. QuestFlags]; }
+    public bool HasQuestFlag(string flag) { lock (Monsters) return QuestFlags.Contains(flag); }
+    // One quest-flag change at a time per connection (SetQuestFlags, SyncGlyphs): each reads, changes and sends the whole
+    // set, so two at once could send an older set last.
+    public readonly SemaphoreSlim QuestGate = new(1, 1);
 
     /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
     public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter, .. Program.Bench.UnlockFlags];

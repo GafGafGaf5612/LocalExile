@@ -249,6 +249,13 @@ partial class Program
     static async Task PickUpGroundItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, WorldItemObject ground,
         InstanceTransfer.UseSkillOnObject use, double requestedAt)
     {
+        // a1q4: a glyph is not needed once the glyphs are placed (a copy left in another instance): it goes, unpicked.
+        if (GlyphIndex(ground.Item) is not null && ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs))
+        {
+            if (conn.Instance.Ground.Take(id) is not null)
+                await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove glyph 0x{id:x}: the glyphs are placed");
+            return;
+        }
         if (!TryBeginObjectWalk(conn, requestedAt, ground.GridX, ground.GridY, PickupReach, out var objectWalk, centreRange: true)) return;
         var (action, now, here, stop, arrive) = objectWalk;
         Console.WriteLine($"[gateway] {remote} <= 0x0024 pick up world item 0x{id:x} at ({ground.GridX}, {ground.GridY}) {use} from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
@@ -309,6 +316,8 @@ partial class Program
         if (conn.Instance.IsStartWeapon(CharacterName(conn), id) && items.ClaimStartWeapon())
             Console.WriteLine($"[gateway] {remote} start weapon picked up");
 
+        // A glyph (a1q4) sets its quest flags with the pickup, in the same save.
+        int? glyph = GlyphIndex(ground.Item);
         var placed = KeepOnGroundIfNotSaved(conn, ground, () =>
         {
             InventoryItem Put() => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
@@ -316,12 +325,13 @@ partial class Program
                 foreach (bool support in new[] { false, true })
                     if (conn.Instance.IsStartWeapon(TutorialObjects.DropKey(CharacterName(conn), tutorial, support), id))
                         return TutorialObjects.Claim(CharacterName(conn), support, ground.Item, Put);
-            return Put();
+            return glyph is int g ? GlyphQuest.Claim(CharacterName(conn), g, Put) : Put();
         }, id);
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
         if (placed is null) return;
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
             toCursor ? $"0x00bf cursor: hold item {placed.Id}" : $"0x00bf inventory 1: add item {placed.Id} at ({cell.X}, {cell.Y})");
+        if (glyph is int picked) await SetQuestFlags(remote, stream, ciphers, conn, GlyphQuest.PickupFlags(picked));
     }
 
     static bool IsGold(WorldItemObject ground) => Items.ByHash(ground.Item.TypeHash)?.Class == ItemDrops.GoldClass;

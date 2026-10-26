@@ -329,6 +329,16 @@ partial class Program
                         && Dist(m.Walk.Position(now), at) <= Quests.SightRange).Select(m => m.Variety!.Id).Distinct()];
                 foreach (string variety in seen) await SetQuestFlags(remote, stream, ciphers, conn, Quests.OnMonsterSeen(conn.Layout.Id, variety));
             }
+            // a1q4: coming near the Glyph Wall ("Investigate the Mud Flats for a way to lower the water").
+            if (conn.Glyphs?.Wall is { } glyphWall && !conn.HasQuestFlag(GlyphQuest.SeenGlyphWall)
+                && Dist(at, (glyphWall.X, glyphWall.Y)) <= Quests.SightRange)
+                await SetQuestFlags(remote, stream, ciphers, conn, [GlyphQuest.SeenGlyphWall]);
+            // a1q4: the HaveGlyph flags follow the glyphs carried (dropped, sold, stashed ones too), about once a second.
+            if (conn.Clock.Elapsed.TotalSeconds >= conn.GlyphSyncAt)
+            {
+                conn.GlyphSyncAt = conn.Clock.Elapsed.TotalSeconds + 1;
+                await SyncGlyphs(remote, stream, ciphers, conn);
+            }
         }
     }
 

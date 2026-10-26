@@ -115,7 +115,9 @@ partial class Program
                     talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
                 break;
             case "QuestReward" when talk.RewardOffer is { } offer:
-                if (offer is not (0 or 8)) break; // Hillock and Nessa's prison preparation; other reward scripts need auditing.
+                // Hillock, Nessa's prison preparation and Tarkleigh's glyph reward (a1q4: level 1 skill gems, as Hillock's);
+                // other reward scripts need auditing.
+                if (offer is not (0 or 3 or 8)) break;
                 var rewardCatalog = QuestRewardCatalog.Load();
                 var rewardItems = rewardCatalog.Choices(offer, conn.ClassRow)
                     .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, Items))).Where(c => c.Item is not null).ToArray();

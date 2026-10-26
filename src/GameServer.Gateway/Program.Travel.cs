@@ -72,6 +72,18 @@ partial class Program
             await OpenTutorialChest(remote, stream, ciphers, conn, use, tutorialChest, requestedAt);
             return;
         }
+        GlyphQuest.Nest? nest;
+        lock (conn.GlyphNests) nest = conn.GlyphNests.GetValueOrDefault(use.TargetId);
+        if (nest is not null)
+        {
+            await OpenRhoaNest(remote, stream, ciphers, conn, use, nest);
+            return;
+        }
+        if (conn.GlyphWallId != 0 && use.TargetId == conn.GlyphWallId)
+        {
+            await UseGlyphWall(remote, stream, ciphers, conn, use);
+            return;
+        }
         if (use.TargetId == WaypointCatalog.ObjectId && conn.Layout.Waypoint is { } waypoint)
         {
             await UseWaypoint(remote, stream, ciphers, conn, use, waypoint, requestedAt);
@@ -146,7 +158,7 @@ partial class Program
         }
         ushort dest = transition.DestinationHash16;
         // A quest can close an exit: The Twilight Strand's way into Lioneye's Watch needs Hillock dead (a1q1).
-        if (AreaTransitionCatalog.IdOf(dest) is { } destId && Quests.FlagToEnter(conn.Layout.Id, destId) is { } needed && !conn.QuestFlags.Contains(needed))
+        if (AreaTransitionCatalog.IdOf(dest) is { } destId && Quests.FlagToEnter(conn.Layout.Id, destId) is { } needed && !ClientHasQuestFlag(conn, needed))
         {
             Console.WriteLine($"[gateway] {remote} <= 0x0024 area transition 0x{use.TargetId:x} to {destId}: closed until quest flag {needed}");
             return;
@@ -264,10 +276,13 @@ partial class Program
         // ThisIsMyHideout only in a hideout and the Mine Encampment, where Niko needs it for his own options; elsewhere NPCs
         // show their "not my hideout" rows. (It does not hide Sell Items: the client offers Sell only in towns and hideouts.)
         bool inHideout = HideoutCatalog.ByArea(conn.Layout.Hash) is not null || conn.Layout.Hash == StashCatalog.DelveHub;
+        // The quest flags as a snapshot, taken before the Waypoints lock (ClientState.QuestFlagsSnapshot): the two locks are
+        // never held together.
+        var own = conn.QuestFlagsSnapshot();
         lock (conn.Waypoints)
             return [.. WaypointCatalog.Areas.Entries.Where(e => conn.Waypoints.Contains(e.Id)).SelectMany(e => e.AccessFlags ?? [])
                 .Concat(conn.Visited.Concat(conn.Waypoints).SelectMany(id => WaypointCatalog.Visits.For(id)))
-                .Concat(Quests.Rows(conn.QuestFlags.Where(f => inHideout || f != Quests.ThisIsMyHideout)))
+                .Concat(Quests.Rows(own.Where(f => inHideout || f != Quests.ThisIsMyHideout)))
                 .Distinct().Order()];
     }
 
