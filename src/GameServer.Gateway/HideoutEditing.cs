@@ -5,11 +5,12 @@ sealed record HideoutPlacement(int X, int Y, float Rotation);
 
 sealed class HideoutEditing
 {
-    public sealed record Entry(string Key, HideoutPlacement Position, int BlockerSize);
+    public sealed record Entry(string Key, HideoutPlacement Position, int BlockerSize, double? CollisionRadius = null);
     readonly Dictionary<uint, Entry> _objects = [];
 
-    public void Register(uint id, string key, int x, int y, float rotation, int size) =>
-        _objects[id] = new(key, new(x, y, rotation), size);
+    public void Register(uint id, string key, int x, int y, float rotation, int size, double? collisionRadius = null) =>
+        _objects[id] = new(key, new(x, y, rotation), size, collisionRadius);
+
 
     public bool TryMove(InstanceHideoutEditing.Move move, Func<int, int, bool>? walkable,
         Action<string, HideoutPlacement> persist, out Entry? moved)

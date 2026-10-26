@@ -297,6 +297,7 @@ partial class Program
             double seconds = tickNow - last;
             last = tickNow;
             if (conn.Paused || seconds <= 0) continue;
+            await PushOutOfCollision(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             if (conn.PlayerLife == 0)
             {

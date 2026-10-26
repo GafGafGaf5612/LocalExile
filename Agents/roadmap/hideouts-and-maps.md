@@ -41,6 +41,9 @@ bench.
   Moving/rotating installed furniture and NPCs now saves per character/template through C→S 0x5b.
   The map device, Nessa and stash were checked live, including restored positions after reconnect.
   Other installed objects use the same handler; their individual editor interactions need manual verification.
+  Device edits rebuild native walkability through 0x161 and replace the server footprint at the saved position.
+  Small-device underfoot escape and walking across its former position are verified in the real client.
+  Check large MTX models and overlapping furniture near walls; save/reentry persistence has automated coverage.
 - **Start:** create the decorations (`HideoutObject`, each type's components from data/object-types.json);
   the Edit mode's placement/removal and appearance messages;
   maps: the arrival point, a return portal, fragments and device recipes and map mods.

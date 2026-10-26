@@ -17,7 +17,7 @@ public class GameDataFilesTests
             string? warning = GameDataFiles.Warning(dir);
             Assert.NotNull(warning);
             Assert.Contains("1 game data file(s) missing", warning);
-            Assert.Contains("data/hideouts.json (hideouts)", warning);
+            Assert.Contains("data/hideouts.json (hideouts and native map-device collision radii)", warning);
             Assert.Contains("extract-data.ps1", warning);
             File.WriteAllText(Path.Combine(dir, "data/hideouts.json"), "{}");
             Assert.Null(GameDataFiles.Warning(dir));

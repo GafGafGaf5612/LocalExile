@@ -214,7 +214,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The blocking objects the client's pathfinder walks around (Positioned blocking = true), with their Positioned size
     // (object_size − 1): NPCs (NPC.ot 5) and the stashes (Stash.ot, GuildStash.ot 3) by object id, and the living
     // hostile monsters where the server's estimate has them now (MonsterVarieties ObjectSize − 1).
-    public const int NpcBlockerSize = 4, StashBlockerSize = 2;
+    public const int NpcBlockerSize = 4, StashBlockerSize = 2, MapDeviceBlockerSize = 3;
     readonly Dictionary<uint, ClientPathfinder.Blocker> _blockers = [];
     volatile IReadOnlyList<ClientPathfinder.Blocker> _blockerList = [];
     public IReadOnlyList<ClientPathfinder.Blocker> Blockers
@@ -236,9 +236,11 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
         }
     }
 
-    public void SetBlocker(uint id, int x, int y, int size)
+    public IReadOnlyList<ClientPathfinder.Blocker> StationaryBlockers => _blockerList;
+
+    public void SetBlocker(uint id, int x, int y, int size, double? collisionRadius = null)
     {
-        lock (_blockers) { _blockers[id] = new(x, y, size); _blockerList = [.. _blockers.Values]; }
+        lock (_blockers) { _blockers[id] = new(x, y, size) { CollisionRadius = collisionRadius }; _blockerList = [.. _blockers.Values]; }
     }
 
     public void RemoveBlocker(uint id)

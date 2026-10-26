@@ -1,4 +1,6 @@
 using System.Text;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 
 namespace Atlas;
@@ -35,9 +37,37 @@ static class HideoutFiles
         {
             note = "Hideouts.dat rows with their area and default decoration (HideoutFile): doodads with MtxTypeGameSpecific hash, grid x/y, rotation r (65536 = a turn), variation fv. scripts/re/atlas hideouts.",
             hideouts = list,
+            collisionRadii = DeviceCollisionRadii(files, root),
         }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
         Console.WriteLine($"{output}: {list.Count} hideouts, {doodads} doodads");
         if (files.Missing.Count > 0) Console.WriteLine($"missing: {string.Join(", ", files.Missing.Keys)}");
+    }
+
+    static Dictionary<string, double> DeviceCollisionRadii(GameFiles files, string root)
+    {
+        using var table = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(root, "data", "tables", "HideoutDoodads.json")));
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var row in table.RootElement.EnumerateArray())
+        {
+            if (row.GetProperty("InheritsFrom").GetString()?.EndsWith("MappingDevice", StringComparison.Ordinal) != true) continue;
+            foreach (var model in row.GetProperty("Variation_AOFiles").EnumerateArray())
+            {
+                string path = model.GetString() ?? "";
+                if (result.ContainsKey(path) || files.Bytes(path) is not { } bytes) continue;
+                string text = bytes.AsSpan().StartsWith(Encoding.Unicode.Preamble)
+                    ? Encoding.Unicode.GetString(bytes) : Encoding.UTF8.GetString(bytes);
+                double radius = 0;
+                foreach (Match match in Regex.Matches(text, "walk_tri\\s*=\\s*\"([^\"]+)\""))
+                {
+                    var values = match.Groups[1].Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(v => double.Parse(v, CultureInfo.InvariantCulture)).ToArray();
+                    for (int i = 0; i + 1 < values.Length; i += 2)
+                        radius = Math.Max(radius, Math.Sqrt(values[i] * values[i] + values[i + 1] * values[i + 1]));
+                }
+                if (radius > 0 && double.IsFinite(radius)) result[path] = radius;
+            }
+        }
+        return result;
     }
 
     public sealed record Doodad(string Name, uint Hash, int X, int Y, int R, int Fv);

@@ -31,7 +31,7 @@ partial class Program
             return;
         }
         var p = entry!.Position;
-        if (entry.BlockerSize > 0) conn.SetBlocker(move.ObjectId, p.X, p.Y, entry.BlockerSize);
+        if (entry.BlockerSize > 0) conn.SetBlocker(move.ObjectId, p.X, p.Y, entry.BlockerSize, entry.CollisionRadius);
         if (move.ObjectId == conn.HeistLockerObject) conn.HeistLockerAt = (p.X, p.Y);
         if (move.ObjectId == conn.StashObject) conn.StashAt = (p.X, p.Y);
         if (move.ObjectId == conn.GuildStashObject) conn.GuildStashAt = (p.X, p.Y);
@@ -46,10 +46,12 @@ partial class Program
         if (move.ObjectId == WaypointCatalog.ObjectId && conn.Layout.Waypoint is { } waypoint)
             conn.MoveWaypoint(waypoint with { GridX = p.X, GridY = p.Y, Rotation = p.Rotation });
         conn.Furniture = null;
-        // Preserve the object identity, dialogue, device state and any portals: update Positioned in place.
         await Send(remote, stream, ciphers, InstanceProtocol.Teleport(move.ObjectId, p.X, p.Y, 0x7fffffff),
             $"hideout move {entry.Key} 0x{move.ObjectId:x} to ({p.X},{p.Y}), saved");
         await Send(remote, stream, ciphers, InstanceHideoutEditing.Rotation(move.ObjectId, p.Rotation),
             $"hideout rotation {p.Rotation:0.###}");
+        await Send(remote, stream, ciphers, InstanceHideoutEditing.RebuildCollision(),
+            "rebuild hideout model collision from current placements");
+        await PushOutOfCollision(remote, stream, ciphers, conn);
     }
 }

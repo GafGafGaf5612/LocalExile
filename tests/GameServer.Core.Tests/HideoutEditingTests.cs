@@ -35,4 +35,10 @@ public class HideoutEditingTests
         Assert.Equal("0008000000C03F", Convert.ToHexString(update.AsSpan(update.Length - 7)));
         Assert.Throws<ArgumentException>(() => InstanceHideoutEditing.ReadMove(packet.AsSpan(0, 14)));
     }
+
+    [Fact]
+    public void Collision_rebuild_uses_global_world_message_with_unused_zero_header()
+    {
+        Assert.Equal("016100000000000000000000", Convert.ToHexString(InstanceHideoutEditing.RebuildCollision()));
+    }
 }
