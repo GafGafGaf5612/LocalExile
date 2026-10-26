@@ -1076,7 +1076,8 @@ The busiest draw sites in the traces (§8): `0x142042fae`/`0x142042fbc` (doodads
 `0x14152e730`/`0x14152e73a` and `0x141530658` (outside the generator range: tile mesh variation), `0x141febf93` /
 `0x141febfcf` (fill tile pick: `Next(1)` then `Next(8)` — orientation), `0x1420437eb`, `0x1420efc0c` (room tiling).
 Draws after the tile grid is final (doodads, meshes) do not change the tile hash but do change the stream for
-anything later, so the port follows the client's order to the end.
+anything later, so the port follows the client's order through the doodads. The stages after them are client-only
+(§6d).
 
 ## 6. Tile hash (`TileHash.cs`)
 
@@ -1279,6 +1280,26 @@ mirror, +0x14 / +0x18 offset; room and tile lines add the angle, multiply the sc
 offset (`0x14202f1c0`), random and vertex doodads (`0x142044180`) add their own angle draw and xor their mirror roll.
 `1_1_6` (`lioneye_swords_hill_set.ao`) now matches both grids and `1_1_3` places its toxic lights, both fixed sets
 (no draws). Weighted sets and the range draws are ported from the code but no matching trace has hit one yet.
+
+## 6d. After the doodads: client-only stages (not ported)
+
+`0x14152d8b0` (the stage that follows the doodads) does its work on the client's graphics object (+0x288). Its stages
+that draw random numbers are all client-only:
+- `0x141530950` → `0x1415306d0` / `0x141530570` (draws at `0x1415307bb` and `0x141530658`): mesh variation. A per-cell grid
+  (+0x220 / +0x228 / +0x230) gets a random mesh. A cell gets a rare variant (list +0x50) when `Next(100)` < the
+  chance at +0x84, unless its left or upper neighbour already has one. Otherwise it gets a mesh from the main list,
+  weighted against its left and upper neighbours (`0x141530570`).
+- `0x14152e4e0` (`0x14152e730`): ground clutter. For each environment layer it places count = area × density points at
+  random positions (23 units per cell). Each point is kept only on a walkable cell (`0x141d85260` > 4) whose tile has
+  flag 4 at +0x16c. It then gets a random rotation (`Next(0x200)` × 2π / 512), a scale within a range and an LCG flip
+  bit, and goes to the renderer's layer +0x2c0 through `0x142bc8ee0` (the LCG callers the gate skips, §8).
+- `0x141544cb0` (`0x141544f0c`): ambient critters, unless the area has the `no_critters` tag. These are local entities
+  (`0x141ec5170`, vtable `0x143456508`), not server objects.
+
+None of these changes the tile grid, the walkability or projectile grids, or the doodads. The grids compare equal to
+the captures, which the client records after this stage. They draw only after the port's last draw, so nothing in the
+generation depends on them. The server sends none of this and reads none of it, so the port ends with the doodad
+stage (§6c). Port these only if the server ever needs clutter or critter positions.
 
 ## 7. What the server will use
 
