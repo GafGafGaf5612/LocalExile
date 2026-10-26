@@ -271,7 +271,8 @@ public class MercyMissionTests : IDisposable
             string area = name[..at];
             var (points, _, captured) = AreaPopulation.FitRooms(area, seed, [], data);
             Assert.All(captured, c => Assert.Contains(c, MercyMission.BoatRooms));
-            if (area == MercyMission.Area && seed == 1) Assert.Contains(points, p => p is { Name: "mapboss", X: 265, Y: 437 });
+            // The Tidal Island's boat room takes its captured placement at any seed; only seed 1's point is known here.
+            if (area == MercyMission.Area) { if (seed == 1) Assert.Contains(points, p => p is { Name: "mapboss", X: 265, Y: 437 }); }
             else Assert.Empty(captured);
             areas++;
         }

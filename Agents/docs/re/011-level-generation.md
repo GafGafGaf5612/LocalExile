@@ -1408,6 +1408,15 @@ three arena gates the port places.
   "Could not fix heights in dungeon" (84), the extra room pool `0x141d8b750` (80+), tiles over a base tile with
   fields of their own (40+), and "No walkable area in the level" (24). By kind: maps 764 of 807, league areas 114 of
   308, Labyrinth 249 of 257, hideouts 100 of 109, act areas 17 of 22.
+- **Random seeds (2026-10-26):** `levelgen tourlist data/tour-random.txt --random 3` (3 seeds per area whose seed-1
+  trace matches), `levelgen tourcheck` (drops the seeds the port cannot generate: 21 of 522, and the two the client
+  was sent anyway, 1_1_3 2042820024 and 1_3_9 603386005, failed in the client at the same place), then `/tour`. 518
+  loads captured, 508 of the 519 new logged loads match by tile hash. Open, by the client's caller at the first
+  difference: `0x1420f16eb` (`0x1420f1590`, dungeon connect) in 1_2_14_3 937454438, 2_10_1 1713779236, 2_8_11
+  41119085, 2_8_6 1588443641 and MapWorldsCourtyardOfWasting 2098160858 / 543933071 / 637784562; 1_1_9 1091417953
+  at `0x14202707c`; 2_8_7_1_ 29983204 at `0x141fffc2c`; 2_9_4 1856718209 at `0x142032498`; 1_1_1 1523283853 matches
+  every draw to the port's last but not the hash. The gate checks only the hash of these loads; their grids, doodads,
+  heights and transitions are captured but not yet compared.
 - **Heights:** `lg.ps1 heights <area> <seed>` compares the port's cell heights with `<area>_seed<seed>.heights.bin`,
   by tile.
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
