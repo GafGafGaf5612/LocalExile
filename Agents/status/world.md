@@ -43,7 +43,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Arrival points: entering through an exit (or `/goto`) puts the player next to the exit back;
   The Twilight Strand → Lioneye's Watch arrives at the town's `entrance1`;
   Resurrect at Checkpoint revives there, or next to the area's waypoint once the character has activated it.
-  Code: `AreaLayout.Arrival`, Gateway.
+  `/tp` (dev) teleports the player to a cell or next to a named monster, NPC, transition, waypoint or captured object.
+  Code: `AreaLayout.Arrival`, `TeleportTargets.cs`, Gateway.
   Docs: [09](../docs/protocol/09-area-change.md) §4.
 - Instances: one per town (all 12 act towns from WorldAreas `IsTown`);
   other areas get private instances that live 6 minutes once empty.
