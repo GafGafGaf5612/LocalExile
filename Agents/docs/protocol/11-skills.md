@@ -1218,6 +1218,10 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   The resolved stack adds the derived critical increase once to the signed pool sum, before final half-up rounding.
   An armed 830 base with 45% overcap gives 1204; raw spell stats expose the same derived source once.
   Selected skills use the complete pool sum so a clipped native raw stat cannot erase negative cancellation.
+  Per-key resistance replacements include the active Purity contribution already in the pool bonus.
+  Equipment 80 plus Purity 40 stays 120 when the typed raw key is replaced with 120, rather than becoming 160.
+  An explicit zero replaces the typed resistance or maximum completely, while other raw keys remain independent.
+  Real aura/catalog/pool tests cover cold, lightning and all-element replacements; this fix needs native rechecking.
   New automated regressions cover those combinations with explicit zero flags and cannot-crit.
   These thirteen native checks belong to original head `39cbda2`; recheck the resolved combinations natively.
   A fresh Witch verified 120% cold/lightning resistance with each flag:
