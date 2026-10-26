@@ -23,6 +23,11 @@ yet confirmed on screen).
   character list and the next tickets carry it). Experience stops at the start of level 100.
 - **Saved** in the character's save (`data/saves.db`, `Experience`): added to the character's total in memory and saved within 5 s, at once at a level-up ([saves](../saves.md)); the saved
   experience decides the level, and a stale account level is corrected at login ([saves](../saves.md)).
+- **Concurrent events:** a character-wide revision invalidates older automatic events after another gain or `/set_level`.
+  Runtime application derives the target from current experience before publishing stats, independently of Auth latency.
+  Queued Player XP updates also sample current experience at the cipher gate.
+  Gateway Auth requests serialize per character, recheck XP after replies and correct obsolete in-flight requests.
+  A delayed Auth answer cannot apply its captured level or undo an intentional downward control.
 
 ## 2. The Passive Skill Tree
 

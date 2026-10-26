@@ -112,7 +112,7 @@ partial class Program
                 if (level != resolved.Level)
                 {
                     // The saved experience is the character's level: Auth's (the ticket's) was not updated at the last level-up.
-                    var fixedLevel = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = ticket, Level = level });
+                    var fixedLevel = await SynchronizeAccountLevel(conn);
                     Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {level} from the saved experience (the account had {resolved.Level})" +
                         (fixedLevel.Ok ? "" : $"; not saved to the account: {fixedLevel.Error}"));
                 }

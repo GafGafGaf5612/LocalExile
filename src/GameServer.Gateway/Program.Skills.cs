@@ -472,14 +472,11 @@ partial class Program
 
     static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
 
-    // A new level from /set_level: the level's starting experience, then the level change (ApplyLevel).
+    // An intentional /set_level reset invalidates older XP events before publishing its current level and points.
     static async Task SetLevel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int level)
     {
-        lock (conn.Monsters) conn.Experience = CharacterStats.ExperienceFor(level);
-        CharacterSaves.SetExperience(CharacterName(conn), conn.Experience);
-        await Send(remote, stream, ciphers, InstanceEntities.PlayerExperienceUpdate(PlayerId, conn.Experience),
-            $"0x02ba player Player: experience {conn.Experience} (level {level})");
-        await ApplyLevel(remote, stream, ciphers, conn, level);
+        var change = RecordExperienceReset(conn, level);
+        await PublishExperienceChange(remote, stream, ciphers, conn, change, $"/set_level {level}");
     }
 
     internal sealed record PassiveLevelChange(int Level, int Before, ushort ExtraPoints,
@@ -528,6 +525,12 @@ partial class Program
     static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int level)
     {
         int before = CommitLevelChange(conn, CaptureLevelChange(conn, level));
+        await PublishLevelChange(remote, stream, ciphers, conn, before, level);
+    }
+
+    static async Task PublishLevelChange(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+        ClientState conn, int before, int level)
+    {
         Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}, {Progression.PassivePoints(level)} passive point(s))");
         await SendCharacterStats(remote, stream, ciphers, conn, $"level {level}");
         int mana = UnreservedMana(conn);

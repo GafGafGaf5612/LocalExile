@@ -583,25 +583,12 @@ partial class Program
 
     // Experience from a kill: added (up to the last level), sent as the Player component's experience (0x2ba; the client
     // derives the level and plays the level up from it), saved, and at a new level the level's stats, life and passive
-    // points (ApplyLevel) and the account's level (Auth set_level, for the character list).
-    static async Task GainExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain, string why)
+    // points from current experience and the account's level (Auth set_level, for the character list).
+    internal static async Task GainExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+        ClientState conn, uint gain, string why, Func<ControlRequest, Task<ControlResponse>>? control = null)
     {
-        // Added to the character's total (an older connection's or another task's gain is never written over), kept in memory
-        // and saved every few seconds; a new level is saved at once.
-        uint start;
-        int oldLevel;
-        lock (conn.Monsters) (start, oldLevel) = (conn.Experience, conn.Pools.Level);
-        var (before, after) = CharacterSaves.AddExperience(CharacterName(conn), start, xp => Progression.AddExperience(xp, gain, CharacterStats.LevelStarts));
-        if (after == before) return;
-        lock (conn.Monsters) conn.Experience = Math.Max(conn.Experience, after);
-        int level = Progression.LevelFor(after, CharacterStats.LevelStarts);
-        await Send(remote, stream, ciphers, InstanceEntities.PlayerExperienceUpdate(PlayerId, after),
-            $"0x02ba player Player: experience {before} + {after - before} = {after} (level {level}; {why})");
-        if (level <= oldLevel) return;
-        CharacterSaves.SaveExperience(CharacterName(conn));   // a new level is saved at once, before the account hears of it
-        var r = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level });
-        if (!r.Ok) Console.WriteLine($"[gateway] {remote} level {level} not saved to the account: {r.Error}");
-        await ApplyLevel(remote, stream, ciphers, conn, level);
+        if (RecordExperienceGain(conn, gain) is { } change)
+            await CompleteExperienceGain(remote, stream, ciphers, conn, change, why, control);
     }
 
     // A kill's experience goes to the gems too: every one socketed in an equipped item, in either weapon set, gains 10% of the

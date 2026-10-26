@@ -316,9 +316,9 @@ partial class Program
         .Add("set_level", "/set_level <1 to 100> (saved to the account; the level's experience and stats are sent at once)", async args =>
         {
             if (args.Length == 0 || !int.TryParse(args[0], out int level) || level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
-            var r = await InstanceControl.CallAsync(new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level });
-            if (!r.Ok) { await conn.Commands!.Reply($"Level not set: {r.Error}"); return; }
             await SetLevel(remote, stream, ciphers, conn, level);
+            var r = await SynchronizeAccountLevel(conn);
+            if (!r.Ok) await conn.Commands!.Reply($"Level saved locally; account update failed: {r.Error}");
         })
         .Add("add_xp", "/add_xp <amount> (experience as from a kill: levels up, saved)", async args =>
         {

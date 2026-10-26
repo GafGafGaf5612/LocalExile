@@ -202,12 +202,17 @@ static class CharacterSaves
     /// <summary>Saves the character's unsaved experience, if any. A character with no save any more (deleted) only drops it.</summary>
     public static void SaveExperience(string character)
     {
-        if (!UnsavedExperience.TryGetValue(character, out uint xp)) return;
+        if (!UnsavedExperience.ContainsKey(character)) return;
+        uint? flushed = null;
         Saves.Atomically(() =>
         {
+            // Sample inside the write transaction: a queued flush must not restore XP captured before a level reset.
+            if (!UnsavedExperience.TryGetValue(character, out uint xp)) return;
             if (Saves.Load<Save>(SaveDatabase.Table.Characters, character, Opts) is { } save) Write(character, save with { Experience = xp });
+            flushed = xp;
         });
-        UnsavedExperience.TryRemove(new KeyValuePair<string, uint>(character, xp));   // a gain meanwhile waits for the next save
+        if (flushed is { } saved)
+            UnsavedExperience.TryRemove(new KeyValuePair<string, uint>(character, saved)); // a later gain waits for the next save
     }
 
     /// <summary>Saves every character's unsaved experience (the Gateway's timer, its shutdown). One that can't be saved

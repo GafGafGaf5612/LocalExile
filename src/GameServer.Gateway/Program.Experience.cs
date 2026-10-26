@@ -1,0 +1,119 @@
+using System.Collections.Concurrent;
+using System.Net.Sockets;
+using GameServer.Core.Protocol.Instance;
+using GameServer.Core.Protocol.Login;
+using Progression = GameServer.Core.World.Progression;
+
+partial class Program
+{
+    sealed class CharacterLevelUpdates
+    {
+        public readonly Lock Gate = new();
+        public readonly SemaphoreSlim Auth = new(1, 1);
+        public long Revision;
+    }
+
+    static readonly ConcurrentDictionary<string, CharacterLevelUpdates> LevelUpdates = new(StringComparer.OrdinalIgnoreCase);
+    static CharacterLevelUpdates LevelUpdatesFor(ClientState conn) => LevelUpdates.GetOrAdd(CharacterName(conn), _ => new());
+
+    internal sealed record ExperienceChange(long Revision, uint Before, uint After, bool LevelChanged, bool Reset = false);
+
+    // All production gains/resets serialize the shared XP ledger before publishing a connection copy.
+    // Lock order is character XP -> connection -> database. No monitor is held across network waits.
+    internal static ExperienceChange? RecordExperienceGain(ClientState conn, uint gain)
+    {
+        var updates = LevelUpdatesFor(conn);
+        lock (updates.Gate)
+        lock (conn.Monsters)
+        {
+            var (before, after) = CharacterSaves.AddExperience(CharacterName(conn), conn.Experience,
+                xp => Progression.AddExperience(xp, gain, CharacterStats.LevelStarts));
+            if (after == before) return null;
+            bool levelChanged = Progression.LevelFor(after, CharacterStats.LevelStarts) != conn.Pools.Level;
+            if (levelChanged) CharacterSaves.SaveExperience(CharacterName(conn));
+            conn.Experience = after;
+            return new(++updates.Revision, before, after, levelChanged);
+        }
+    }
+
+    static ExperienceChange RecordExperienceReset(ClientState conn, int level)
+    {
+        var updates = LevelUpdatesFor(conn);
+        lock (updates.Gate)
+        lock (conn.Monsters)
+        {
+            uint before = CurrentExperience(conn), after = CharacterStats.ExperienceFor(level);
+            CharacterSaves.SetExperience(CharacterName(conn), after);
+            conn.Experience = after;
+            return new(++updates.Revision, before, after, true, Reset: true);
+        }
+    }
+
+    static uint CurrentExperience(ClientState conn) =>
+        CharacterSaves.Load(CharacterName(conn))?.Experience ?? conn.Experience;
+
+    internal static async Task<bool> PublishExperienceChange(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+        ClientState conn, ExperienceChange change, string why)
+    {
+        var updates = LevelUpdatesFor(conn);
+        await Send(remote, stream, ciphers, [], $"0x02ba current player experience ({why})", atGate: () =>
+        {
+            lock (updates.Gate)
+            lock (conn.Monsters)
+            {
+                conn.Experience = CurrentExperience(conn);
+                return InstanceEntities.PlayerExperienceUpdate(PlayerId, conn.Experience);
+            }
+        });
+        int before, level;
+        lock (updates.Gate)
+        lock (conn.Monsters)
+        {
+            // A later gain or intentional reset owns the current event. Never rebase its obsolete target level.
+            if (change.Revision != updates.Revision) return false;
+            conn.Experience = CurrentExperience(conn);
+            level = Progression.LevelFor(conn.Experience, CharacterStats.LevelStarts);
+            if (!change.Reset && level == conn.Pools.Level) return false;
+            before = CommitLevelChange(conn, CaptureLevelChange(conn, level));
+        }
+        await PublishLevelChange(remote, stream, ciphers, conn, before, level);
+        return true;
+    }
+
+    internal static async Task CompleteExperienceGain(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+        ClientState conn, ExperienceChange change, string why, Func<ControlRequest, Task<ControlResponse>>? control = null)
+    {
+        bool applied = await PublishExperienceChange(remote, stream, ciphers, conn, change, why);
+        if (!change.LevelChanged && !applied) return;
+        var result = await SynchronizeAccountLevel(conn, control);
+        if (!result.Ok) Console.WriteLine($"[gateway] {remote} current level not saved to the account: {result.Error}");
+    }
+
+    // Auth has unconditional set_level writes. Serialize every Gateway producer for this character, including resets
+    // and login repair, and correct an in-flight request if XP changed before its answer. Answers never apply a level.
+    internal static async Task<ControlResponse> SynchronizeAccountLevel(ClientState conn,
+        Func<ControlRequest, Task<ControlResponse>>? control = null)
+    {
+        var updates = LevelUpdatesFor(conn);
+        await updates.Auth.WaitAsync();
+        try
+        {
+            while (true)
+            {
+                int level;
+                lock (updates.Gate)
+                lock (conn.Monsters)
+                {
+                    CharacterSaves.SaveExperience(CharacterName(conn));
+                    level = Progression.LevelFor(CurrentExperience(conn), CharacterStats.LevelStarts);
+                }
+                var request = new ControlRequest { Op = "set_level", Ticket = conn.Ticket, Level = level };
+                var result = await (control is null ? InstanceControl.CallAsync(request) : control(request));
+                lock (updates.Gate)
+                lock (conn.Monsters)
+                    if (level == Progression.LevelFor(CurrentExperience(conn), CharacterStats.LevelStarts)) return result;
+            }
+        }
+        finally { updates.Auth.Release(); }
+    }
+}

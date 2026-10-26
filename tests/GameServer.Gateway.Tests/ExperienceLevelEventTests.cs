@@ -1,0 +1,207 @@
+using GameServer.Core.Protocol.Instance;
+
+namespace GameServer.Gateway.Tests;
+
+public sealed partial class AscendancyGatewayIntegrationTests
+{
+    [Fact]
+    public async Task Reverse_completed_XP_events_keep_the_latest_level_and_every_allocated_passive()
+    {
+        using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725], allocate: true)).Error);
+        var first = Program.RecordExperienceGain(game.State, CharacterStats.ExperienceFor(3) - CharacterStats.ExperienceFor(2))!;
+        var second = Program.RecordExperienceGain(game.State, CharacterStats.ExperienceFor(4) - CharacterStats.ExperienceFor(3))!;
+        var auth = new LevelControl();
+        await game.CompleteGain(second, auth.Call);
+        Assert.Null((await game.Change([24377, 35568], allocate: true)).Error);
+        string before = game.SavedJson;
+
+        var late = await game.CompleteGain(first, auth.Call);
+
+        Assert.Equal(4, game.State.Pools.Level);
+        Assert.Equal(CharacterStats.ExperienceFor(4), game.State.Experience);
+        Assert.Equal(CharacterStats.ExperienceFor(4), CharacterSaves.Load(game.Character)!.Experience);
+        Assert.Equal(new ushort[] { 39725, 24377, 35568 }, game.State.Passives);
+        Assert.Equal(before, game.SavedJson);
+        Assert.True(game.State.SavedPassiveProgress!.Matches(CharacterSaves.Load(game.Character)!));
+        Assert.Equal(4, auth.Level);
+        Assert.All(auth.Requests, request => Assert.Equal(4, request.Level));
+        AssertExperiencePrefix(late.Bytes, CharacterStats.ExperienceFor(4));
+    }
+
+    [Fact]
+    public async Task A_pre_reset_automatic_event_cannot_revive_its_old_target_or_undo_a_downward_dev_control()
+    {
+        using var game = new GatewayCharacter(level: 4, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725, 24377, 35568], allocate: true)).Error);
+        var old = Program.RecordExperienceGain(game.State, CharacterStats.ExperienceFor(5) - CharacterStats.ExperienceFor(4))!;
+        await game.SetLevel(3);
+        Assert.Equal(new ushort[] { 39725, 24377 }, game.State.Passives);
+        Assert.Equal(3, game.State.Pools.Level);
+        string reset = game.SavedJson;
+        var auth = new LevelControl();
+
+        var late = await game.CompleteGain(old, auth.Call);
+
+        Assert.Equal(3, game.State.Pools.Level);
+        Assert.Equal(CharacterStats.ExperienceFor(3), game.State.Experience);
+        Assert.Equal(CharacterStats.ExperienceFor(3), CharacterSaves.Load(game.Character)!.Experience);
+        Assert.Equal(new ushort[] { 39725, 24377 }, game.State.Passives);
+        Assert.Equal(reset, game.SavedJson);
+        Assert.Equal(3, auth.Level);
+        Assert.All(auth.Requests, request => Assert.Equal(3, request.Level));
+        AssertExperiencePrefix(late.Bytes, CharacterStats.ExperienceFor(3));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task In_flight_Auth_requests_and_answers_cannot_finish_with_an_obsolete_level(
+        bool applyBeforeReply, bool reset)
+    {
+        int initial = reset ? 4 : 2;
+        using var game = new GatewayCharacter(level: initial, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725], allocate: true)).Error);
+        var auth = new DelayedLevelControl(applyBeforeReply);
+        var first = game.Gain(CharacterStats.ExperienceFor(initial + 1) - CharacterStats.ExperienceFor(initial), auth.Call);
+        Task<ControlResponse>? secondAuth = null;
+        string? settled = null;
+        try
+        {
+            var request = await auth.First.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(initial + 1, request.Level);
+            Assert.Equal(initial + 1, game.State.Pools.Level); // Runtime application never waits for Auth's answer.
+            var second = Program.RecordExperienceGain(game.State,
+                CharacterStats.ExperienceFor(initial + 2) - CharacterStats.ExperienceFor(initial + 1))!;
+            await game.PublishGain(second);
+            Assert.Equal(initial + 2, game.State.Pools.Level);
+            Assert.Null((await game.Change([24377, 35568], allocate: true)).Error);
+            if (reset) await game.SetLevel(3);
+            settled = game.SavedJson;
+
+            secondAuth = Program.SynchronizeAccountLevel(game.State, auth.Call);
+            Assert.False(secondAuth.IsCompleted); // The first request/response owns the character's Auth gate.
+            Assert.Single(auth.Requests);
+        }
+        finally
+        {
+            auth.Release();
+            await first;
+            if (secondAuth is not null) await secondAuth;
+        }
+
+        int expected = reset ? 3 : 4;
+        Assert.Equal(expected, auth.Level);
+        Assert.All(auth.Requests.Skip(1), request => Assert.Equal(expected, request.Level));
+        Assert.Equal(expected, (await secondAuth!).Level);
+        Assert.Equal(expected, game.State.Pools.Level);
+        Assert.Equal(CharacterStats.ExperienceFor(expected), game.State.Experience);
+        Assert.Equal(CharacterStats.ExperienceFor(expected), CharacterSaves.Load(game.Character)!.Experience);
+        Assert.Equal(reset ? new ushort[] { 39725, 24377 } : [39725, 24377, 35568], game.State.Passives);
+        Assert.Equal(settled, game.SavedJson);
+        Assert.True(game.State.SavedPassiveProgress!.Matches(CharacterSaves.Load(game.Character)!));
+    }
+
+    [Fact]
+    public async Task Queued_automatic_XP_publication_samples_after_an_intentional_downward_control()
+    {
+        using var game = new GatewayCharacter(level: 4, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725, 24377, 35568], allocate: true)).Error);
+        var old = Program.RecordExperienceGain(game.State, CharacterStats.ExperienceFor(5) - CharacterStats.ExperienceFor(4))!;
+        var auth = new LevelControl();
+        var queued = await game.QueuedGain(old, auth.Call, async () => { await game.SetLevel(3); });
+
+        AssertExperiencePrefix(queued.Bytes, CharacterStats.ExperienceFor(3));
+        Assert.Equal(3, game.State.Pools.Level);
+        Assert.Equal(3, auth.Level);
+        Assert.Equal(new ushort[] { 39725, 24377 }, game.State.Passives);
+        Assert.Equal(CharacterStats.ExperienceFor(3), CharacterSaves.Load(game.Character)!.Experience);
+    }
+
+    static void AssertExperiencePrefix(byte[] bytes, uint experience)
+    {
+        byte[] expected = InstanceEntities.PlayerExperienceUpdate(0x1000, experience);
+        Assert.Equal(expected, bytes[..expected.Length]);
+    }
+
+    sealed class LevelControl
+    {
+        public List<ControlRequest> Requests { get; } = [];
+        public int Level { get; private set; }
+
+        public Task<ControlResponse> Call(ControlRequest request)
+        {
+            Requests.Add(request);
+            Level = request.Level;
+            return Task.FromResult(new ControlResponse { Ok = true, Level = Level });
+        }
+    }
+
+    sealed class DelayedLevelControl(bool applyBeforeReply)
+    {
+        readonly Lock _gate = new();
+        readonly List<ControlRequest> _requests = [];
+        readonly TaskCompletionSource<bool> _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        int _level;
+        public TaskCompletionSource<ControlRequest> First { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public IReadOnlyList<ControlRequest> Requests { get { lock (_gate) return _requests.ToArray(); } }
+        public int Level { get { lock (_gate) return _level; } }
+        public void Release() => _release.TrySetResult(true);
+
+        public async Task<ControlResponse> Call(ControlRequest request)
+        {
+            bool first;
+            lock (_gate)
+            {
+                first = _requests.Count == 0;
+                _requests.Add(request);
+                if (!first || applyBeforeReply) _level = request.Level;
+            }
+            if (first)
+            {
+                First.TrySetResult(request);
+                await _release.Task;
+                if (!applyBeforeReply) lock (_gate) _level = request.Level;
+            }
+            return new ControlResponse { Ok = true, Level = request.Level };
+        }
+    }
+
+    sealed partial class GatewayCharacter
+    {
+        public Task<(string? Error, byte[] Bytes)> CompleteGain(Program.ExperienceChange change,
+            Func<ControlRequest, Task<ControlResponse>> control) => Exchange(async (stream, cipher) =>
+        {
+            await Program.CompleteExperienceGain("xp-event-test", stream, cipher, State, change, "test", control);
+            return null;
+        });
+
+        public Task<(string? Error, byte[] Bytes)> Gain(uint amount,
+            Func<ControlRequest, Task<ControlResponse>> control) => Exchange(async (stream, cipher) =>
+        {
+            await Program.GainExperience("xp-event-test", stream, cipher, State, amount, "test", control);
+            return null;
+        });
+
+        public Task<(string? Error, byte[] Bytes)> PublishGain(Program.ExperienceChange change) => Exchange(async (stream, cipher) =>
+        {
+            await Program.PublishExperienceChange("xp-event-test", stream, cipher, State, change, "test");
+            return null;
+        });
+
+        public Task<(string? Error, byte[] Bytes)> QueuedGain(Program.ExperienceChange change,
+            Func<ControlRequest, Task<ControlResponse>> control, Func<Task> mutation) => Exchange(async (stream, cipher) =>
+        {
+            var gate = Program.SendGates.GetValue(cipher, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
+            var publication = Program.CompleteExperienceGain("xp-event-test", stream, cipher, State, change, "test", control);
+            Assert.False(publication.IsCompleted);
+            try { await mutation(); }
+            finally { gate.Release(); }
+            await publication;
+            return null;
+        });
+    }
+}
