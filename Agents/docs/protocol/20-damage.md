@@ -123,7 +123,7 @@ Both constructors read the same raw `DamageStats.ManaAddedLightning` grant befor
 Support restrictions, support multipliers, conversion, target blocking and post-hit stages remain in that pipeline.
 This stack does not introduce the separate derived-damage engine from archival PR #206.
 Automated production-path cases cover ranged and melee gems, effectiveness and a spell isolation control.
-Native evidence in this section belongs to original head `378ffde`; supported-skill composition needs a new native check.
+Native evidence here belongs to original head `378ffde`; supported-skill composition needs a new native check.
 `attack_damage_+%` scales the added range for every attack.
 `melee_damage_+%` applies only in explicit melee context: the default attack uses its active weapon profile,
 and attack gems use `ActiveSkillType Melee` through `SkillCatalog.IsMelee`.
@@ -180,7 +180,7 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   Ordinary bows snapshot player/skill penetration at release and resolve target resistance at contact.
   Main has no connection-aware resistance or presence engine; those archival #206 systems are outside this stack.
   Automated mixed fractional-hit, target-modifier, bow RNG and same-key player/skill cases cover the resolved paths.
-  Native penetration checks belong to original head `0d800d1`; the integrated target-modifier and bow paths need rechecking.
+  Native penetration checks belong to original head `0d800d1`; recheck the target-modifier and bow composition natively.
 - The hit's penetration (`Penetration.cs`) subtracts from the capped resistance with no second clamp: the general
   per-element and elemental stats on every hit, the attack-only variants on attacks (§2), the
   `cannot_penetrate_or_ignore_elemental_resistances` flag suppressing the elemental ones. Damage over time and the

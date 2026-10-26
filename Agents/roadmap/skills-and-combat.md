@@ -95,8 +95,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
   Critical elemental ignore and non-critical penetration now compose with it on the same rolled packet.
   Recheck the resolved bow-contact and target-modifier composition natively before claiming new combined proof.
-  Special ES mechanics, conditional penetration, exposure, ailment application, the other added-damage stats and support
-  modifiers remain open.
+  Special ES mechanics, conditional penetration, exposure, ailments and further added-damage/support effects remain open.
   Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
   Its hovered stationary-monster 0x191 path now uses the native size-aware object aim and object-bound confirmation.
   Automated acceptance/queued rejection checks and manual native endpoint experiments pass.
