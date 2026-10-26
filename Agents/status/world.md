@@ -67,6 +67,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `InstancePause.cs`, Gateway (`SetPaused`).
   Docs: [22](../docs/protocol/22-pause.md).
 
+- Instance framing retains split 0x020a and 0x0059 messages at their primary-writer lengths of 3 and 16 bytes.
+  Every-split and coalesced tick/chat regressions pass; integrated native transfers preserve subsequent commands.
+  Unknown message layouts and existing 0x0099 handling remain unchanged.
+  Docs: [instance framing](../docs/protocol/02-instance-connection.md#fixed-message-boundaries-across-tcp-reads).
+
 ## Partly working
 
 - **Positions are estimated, not simulated.** The Gateway estimates where the player is from clicks, walk speed and
