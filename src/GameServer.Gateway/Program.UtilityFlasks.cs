@@ -7,7 +7,7 @@ partial class Program
     // C→S 0x70 on a utility flask (13-items.md §8a): it spends its charges (S→C 0xbf), puts its buff on the player with
     // its duration (S→C 0x1c1) and its stats count in the pools until the duration ends (UtilityFlasks), with the stats
     // and movement speed sent again at the start and the end. Refused while dead, with too few charges, or while this
-    // flask's own effect still runs. A flask of the same kind that still runs ends: effects of one kind do not stack.
+    // flask's own effect still runs. Another flask of the same kind keeps its own timer; only the strongest applies.
     static async Task UseUtilityFlask(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint slot,
         InventoryItem flask, ItemCatalog.BaseType type, UtilityFlasks.Utility utility)
     {
@@ -36,12 +36,11 @@ partial class Program
             extra = utility.Extra is null ? null : conn.NextBuff++;
         }
         var effect = new UtilityFlasks.Active(flask.Id, (byte)slot, type.Name, utility, buff, extra, stats, now, now + seconds);
-        var (replaced, ticker) = UtilityFlasks.Start(conn, effect, () => RecomputePoolsAndSpeed(conn));
+        var ticker = UtilityFlasks.Start(conn, effect, () => RecomputePoolsAndSpeed(conn));
         // The ticker starts before anything is sent: a failed send must not leave an effect without one to end it.
         if (ticker is int ticket) _ = RunUtilityFlasks(remote, stream, ciphers, conn, ticket);
         Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {utility.BuffId} for {seconds:0.##} s: " +
             string.Join(", ", stats.Select(s => $"{s.Stat} {s.Value}")) + $"; walk estimate {conn.Walk.Speed:0.##} cells/s");
-        if (replaced is not null) await SendUtilityFlaskEnd(remote, stream, ciphers, replaced, $"replaced by flask {slot}");
         foreach (var packet in UtilityFlasks.StartPackets(effect, PlayerId))
             await Send(remote, stream, ciphers, packet, $"0x01c1 player buff: {type.Name} (flask {slot}), {seconds:0.##} s");
         await SendCharacterStats(remote, stream, ciphers, conn, $"{type.Name} on");
@@ -71,7 +70,7 @@ partial class Program
                 {
                     bool dead = conn.PlayerLife == 0;
                     var bar = ItemsOf(conn).Items(PlayerInventories.Flask);
-                    bool Gone(UtilityFlasks.Active e) => !bar.Any(i => i.Id == e.ItemId && i.X == e.Slot);
+                    bool Gone(UtilityFlasks.Active e) => UtilityFlasks.LeftItsCell(e, bar);
                     var ended = UtilityFlasks.EndDue(conn, conn.Clock.Elapsed.TotalSeconds, dead, Gone, () => RecomputePoolsAndSpeed(conn), out stop);
                     if (ended.Count == 0) continue;
                     foreach (var e in ended)

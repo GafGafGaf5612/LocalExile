@@ -24,6 +24,8 @@ public class UtilityFlasksTests
 
     static int None(string _) => 0;
 
+    static IEnumerable<(string, int)> Plain(IEnumerable<UtilityFlasks.Source> stats) => stats.Select(s => (s.Stat, s.Value));
+
     [Fact]
     public void The_flasks_come_from_Flasks_dat_BuffDefinitions_and_ComponentCharges()
     {
@@ -91,7 +93,7 @@ public class UtilityFlasksTests
         Assert.Equal("onslaught", silver.Extra!.BuffId);
         Assert.Equal(215, silver.Extra.BuffRow);
         Assert.Equal([("attack_speed_+%", 20), ("base_cast_speed_+%", 20), ("base_movement_velocity_+%", 20)], silver.Extra.Stats);
-        Assert.Equal(silver.Extra.Stats, UtilityFlasks.For(silver, Flask(), new Dictionary<string, int>(), None).Stats);
+        Assert.Equal(silver.Extra.Stats, Plain(UtilityFlasks.For(silver, Flask(), new Dictionary<string, int>(), None).Stats));
     }
 
     [Fact]
@@ -101,14 +103,14 @@ public class UtilityFlasksTests
 
         var plain = UtilityFlasks.For(u, Flask(), new Dictionary<string, int>(), None);
         Assert.Equal(6.0, plain.Seconds, 6);
-        Assert.Equal([("base_movement_velocity_+%", 40)], plain.Stats);
+        Assert.Equal([("base_movement_velocity_+%", 40)], Plain(plain.Stats));
 
         // Path of Building Item.lua: base × (1 + increased) × (1 + quality) × (1 + more).
         Assert.Equal(7.2, UtilityFlasks.For(u, Flask(quality: 20), new Dictionary<string, int>(), None).Seconds, 6);
         Assert.Equal(6 * 1.3 * 1.2, UtilityFlasks.For(u, Flask(quality: 20), new Dictionary<string, int> { ["local_flask_duration_+%"] = 30 }, None).Seconds, 6);
         var tradeOff = UtilityFlasks.For(u, Flask(), new Dictionary<string, int> { ["local_flask_duration_+%"] = -33, ["local_flask_effect_+%"] = 25 }, None);
         Assert.Equal(4.02, tradeOff.Seconds, 6);
-        Assert.Equal([("base_movement_velocity_+%", 50)], tradeOff.Stats);
+        Assert.Equal([("base_movement_velocity_+%", 50)], Plain(tradeOff.Stats));
     }
 
     [Fact]
@@ -122,13 +124,16 @@ public class UtilityFlasksTests
         // Increased duration from the tree adds to the flask's own; increased effect likewise.
         var normal = UtilityFlasks.For(u, Flask(), local, Get);
         Assert.Equal(6 * 1.3, normal.Seconds, 6);
-        Assert.Equal([("base_movement_velocity_+%", 50)], normal.Stats);   // 40 × 1.25
+        Assert.Equal([("base_movement_velocity_+%", 50)], Plain(normal.Stats));   // 40 × 1.25
         // Magic utility flasks also get magic_utility_flask_effect_+%.
-        Assert.Equal([("base_movement_velocity_+%", 56)], UtilityFlasks.For(u, Flask(rarity: ItemRarity.Magic), local, Get).Stats);   // 40 × 1.4
+        Assert.Equal([("base_movement_velocity_+%", 56)], Plain(UtilityFlasks.For(u, Flask(rarity: ItemRarity.Magic), local, Get).Stats));   // 40 × 1.4
     }
 
     static UtilityFlasks.Active Active(uint item, UtilityFlasks.Utility u, double started, ushort buff = 1, ushort? extra = null) =>
-        new(item, (byte)item, "test", u, buff, extra, u.Applied.ToList(), started, started + u.Seconds);
+        new(item, (byte)item, "test", u, buff, extra, Sources(u), started, started + u.Seconds);
+
+    static List<UtilityFlasks.Source> Sources(UtilityFlasks.Utility u) =>
+        [.. UtilityFlasks.For(u, Flask(), new Dictionary<string, int>(), None).Stats];
 
     [Fact]
     public void An_effect_runs_for_its_duration_and_a_flask_cannot_be_used_again_meanwhile()
@@ -136,9 +141,7 @@ public class UtilityFlasksTests
         var effects = new UtilityFlasks.Effects();
         var u = Utility(("base_movement_velocity_+%", 40));
 
-        var (replaced, ticker) = effects.Start(Active(7, u, started: 10));
-        Assert.Null(replaced);
-        Assert.NotNull(ticker);
+        Assert.NotNull(effects.Start(Active(7, u, started: 10)));
         Assert.NotNull(effects.Of(7));
         Assert.Null(effects.Of(8));
         Assert.Equal([("base_movement_velocity_+%", 40)], effects.Stats());
@@ -150,7 +153,7 @@ public class UtilityFlasksTests
         Assert.Null(effects.Of(7));
         Assert.Empty(effects.Stats());
         // The next use starts a ticker again.
-        Assert.NotNull(effects.Start(Active(7, u, started: 20)).Ticker);
+        Assert.NotNull(effects.Start(Active(7, u, started: 20)));
     }
 
     [Fact]
@@ -170,13 +173,13 @@ public class UtilityFlasksTests
     {
         var effects = new UtilityFlasks.Effects();
         var u = Utility(("base_movement_velocity_+%", 40));
-        int first = effects.Start(Active(1, u, started: 0)).Ticker!.Value;
-        Assert.Null(effects.Start(Active(2, Utility(("base_evasion_rating", 1)) with { BuffRow = 124 }, started: 0)).Ticker);
+        int first = effects.Start(Active(1, u, started: 0))!.Value;
+        Assert.Null(effects.Start(Active(2, Utility(("base_evasion_rating", 1)) with { BuffRow = 124 }, started: 0)));
 
         // The ticker failed (a send threw, the connection broke …) with effects still running.
         effects.TickerExited(first);
         Assert.False(effects.Ticking);
-        int second = effects.Start(Active(3, u, started: 1)).Ticker!.Value;
+        int second = effects.Start(Active(3, u, started: 1))!.Value;
         Assert.NotEqual(first, second);
         // A late exit of the old ticker leaves the new one alone.
         effects.TickerExited(first);
@@ -186,23 +189,62 @@ public class UtilityFlasksTests
     }
 
     [Fact]
-    public void Two_kinds_stack_one_kind_replaces_and_death_ends_all()
+    public void Two_kinds_stack_and_death_ends_all()
     {
         var effects = new UtilityFlasks.Effects();
         var quicksilver = Utility(("base_movement_velocity_+%", 40));
         var ruby = new UtilityFlasks.Utility(0, 117, "ruby", [("base_fire_damage_resistance_%", 40)], 8, 20, 50);
 
         effects.Start(Active(1, quicksilver, 0, buff: 1));
-        Assert.Null(effects.Start(Active(2, ruby, 0, buff: 2)).Ticker);
-        Assert.Equal(2, effects.Stats().Count);
-
-        var (replaced, _) = effects.Start(Active(3, quicksilver, 1, buff: 3));
-        Assert.Equal(1, replaced!.Buff);
-        Assert.Equal(2, effects.Stats().Count);
+        Assert.Null(effects.Start(Active(2, ruby, 0, buff: 2)));
+        Assert.Equal([("base_movement_velocity_+%", 40), ("base_fire_damage_resistance_%", 40)], effects.Stats());
 
         Assert.Equal(2, effects.End(1.5, all: true, out bool stop).Count);
         Assert.True(stop);
         Assert.False(effects.Any);
+    }
+
+    [Fact]
+    public void Two_flasks_of_one_kind_keep_their_own_timers_and_only_the_strongest_applies()
+    {
+        // poewiki "Effects of flasks": each has an independent duration and only the strongest applies; when it ends, the
+        // other one goes on. Here a 20% quality Quicksilver with 25% increased effect (50%, 7.2 s) and a plain one (40%, 6 s).
+        var effects = new UtilityFlasks.Effects();
+        var quicksilver = Utility(("base_movement_velocity_+%", 40));
+        var strong = UtilityFlasks.For(quicksilver, Flask(quality: 20), new Dictionary<string, int> { ["local_flask_effect_+%"] = 25 }, None);
+        var plain = UtilityFlasks.For(quicksilver, Flask(), new Dictionary<string, int>(), None);
+        Assert.Equal((50, 7.2), (strong.Stats[0].Value, Math.Round(strong.Seconds, 6)));
+
+        effects.Start(new UtilityFlasks.Active(1, 0, "plain", quicksilver, 1, null, plain.Stats, 0, plain.Seconds));
+        Assert.Equal([("base_movement_velocity_+%", 40)], effects.Stats());
+        effects.Start(new UtilityFlasks.Active(2, 1, "strong", quicksilver, 2, null, strong.Stats, 0.5, 0.5 + strong.Seconds));
+        Assert.Equal([("base_movement_velocity_+%", 50)], effects.Stats());   // not 90
+
+        // The plain one ends at 6 s; the strong one runs on to 7.7 s.
+        Assert.Equal(1u, Assert.Single(effects.End(6, all: false, out _)).ItemId);
+        Assert.Equal([("base_movement_velocity_+%", 50)], effects.Stats());
+        Assert.Equal(2u, Assert.Single(effects.End(7.7, all: false, out bool stop)).ItemId);
+        Assert.True(stop);
+
+        // The other order: the stronger ends first and the weaker one's rest applies again.
+        effects.Start(new UtilityFlasks.Active(2, 1, "strong", quicksilver, 3, null, strong.Stats, 10, 10 + 1));
+        effects.Start(new UtilityFlasks.Active(1, 0, "plain", quicksilver, 4, null, plain.Stats, 10.5, 10.5 + plain.Seconds));
+        Assert.Equal([("base_movement_velocity_+%", 50)], effects.Stats());
+        effects.End(11, all: false, out _);
+        Assert.Equal([("base_movement_velocity_+%", 40)], effects.Stats());
+    }
+
+    [Fact]
+    public void The_strongest_is_the_largest_value_of_one_effect_and_stat()
+    {
+        Assert.Equal([("base_movement_velocity_+%", 50), ("base_movement_velocity_+%", 8)], UtilityFlasks.Strongest(
+        [
+            new("buff 121", "base_movement_velocity_+%", 40), new("buff 121", "base_movement_velocity_+%", 50),
+            new("mod", "base_movement_velocity_+%", 8),   // a different effect stacks
+        ]));
+        // A penalty of one effect: the largest size wins (Aquamarine-like reduced effect on you).
+        Assert.Equal([("base_frozen_effect_on_self_+%", -75)], UtilityFlasks.Strongest(
+            [new("buff 126", "base_frozen_effect_on_self_+%", -60), new("buff 126", "base_frozen_effect_on_self_+%", -75)]));
     }
 
     [Fact]
@@ -214,6 +256,24 @@ public class UtilityFlasksTests
         Assert.Empty(effects.End(1, all: false, out _, gone: _ => false));
         Assert.Equal(4u, Assert.Single(effects.End(1, all: false, out bool stop, gone: e => e.ItemId == 4)).ItemId);
         Assert.True(stop);
+    }
+
+    [Fact]
+    public void Leaving_its_cell_ends_an_effect_while_the_unconfirmed_rule_is_on()
+    {
+        var effect = Active(4, Utility(("base_movement_velocity_+%", 40)), started: 0);   // item 4 in cell 4
+        var flask = Flask();
+        InventoryItem[] there = [new(4, 4, 0, flask)], moved = [new(4, 2, 0, flask)], gone = [new(5, 4, 0, flask)];
+
+        // The current setting (not confirmed by any source): picked up, moved or swapped, the effect ends.
+        Assert.True(UtilityFlasks.EndsWhenFlaskLeavesItsCell);
+        Assert.False(UtilityFlasks.LeftItsCell(effect, there));
+        Assert.True(UtilityFlasks.LeftItsCell(effect, moved));
+        Assert.True(UtilityFlasks.LeftItsCell(effect, gone));
+        Assert.True(UtilityFlasks.LeftItsCell(effect, []));
+        // Flipped, the effect runs on wherever the flask is.
+        Assert.False(UtilityFlasks.LeftItsCell(effect, [], ends: false));
+        Assert.False(UtilityFlasks.LeftItsCell(effect, moved, ends: false));
     }
 
     [Fact]
@@ -301,7 +361,7 @@ public class UtilityFlasksTests
         var ruby = new UtilityFlasks.Utility(0, 117, "ruby", [("base_fire_damage_resistance_%", 40)], 8, 20, 50);
         var quicksilver = Utility(("base_movement_velocity_+%", 40));
 
-        var (_, ticker) = UtilityFlasks.Start(conn, Active(1, quicksilver, 0), () => Recompute(conn));
+        var ticker = UtilityFlasks.Start(conn, Active(1, quicksilver, 0), () => Recompute(conn));
         UtilityFlasks.Start(conn, Active(2, ruby, 0, buff: 2), () => Recompute(conn));
         Assert.NotNull(ticker);
         Assert.Equal(Program.WalkSpeed * 1.4, conn.Walk.Speed, 6);
@@ -356,7 +416,7 @@ public class UtilityFlasksTests
     public void The_silver_flask_puts_and_takes_its_buff_and_onslaught()
     {
         var silver = Of("Silver Flask")!;
-        var effect = new UtilityFlasks.Active(9, 3, "Silver Flask", silver, 5, 6, silver.Applied.ToList(), 10, 16);
+        var effect = new UtilityFlasks.Active(9, 3, "Silver Flask", silver, 5, 6, Sources(silver), 10, 16);
 
         var start = UtilityFlasks.StartPackets(effect, 0x1000).Select(Convert.ToHexString).ToList();
         // flask_utility_haste (row 130): flask-bar cell 3 as source skill, f32 6.0 (0x40C00000) at +0x68.
@@ -369,7 +429,7 @@ public class UtilityFlasksTests
             UtilityFlasks.EndPackets(effect, 0x1000).Select(Convert.ToHexString));
         // A flask without an extra buff sends one of each.
         var quicksilver = Of("Quicksilver Flask")!;
-        var single = new UtilityFlasks.Active(1, 2, "Quicksilver Flask", quicksilver, 7, null, quicksilver.Applied.ToList(), 0, 6);
+        var single = new UtilityFlasks.Active(1, 2, "Quicksilver Flask", quicksilver, 7, null, Sources(quicksilver), 0, 6);
         Assert.Single(UtilityFlasks.StartPackets(single, 0x1000));
         Assert.Single(UtilityFlasks.EndPackets(single, 0x1000));
     }

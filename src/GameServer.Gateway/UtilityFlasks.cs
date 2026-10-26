@@ -104,7 +104,7 @@ static class UtilityFlasks
     /// magic_utility_flask_effect_+% for a magic flask). As Path of Building's Item.lua and CalcPerform.lua: duration =
     /// base × (1 + increased) × (1 + quality) × (1 + local more), quality multiplying the other increases; effect
     /// = 1 + the local and the character's increased effect.</summary>
-    public static (IReadOnlyList<(string Stat, int Value)> Stats, double Seconds) For(Utility u, Item flask,
+    public static (IReadOnlyList<Source> Stats, double Seconds) For(Utility u, Item flask,
         IReadOnlyDictionary<string, int> local, Func<string, int> character)
     {
         int Get(string name) => local.GetValueOrDefault(name);
@@ -113,19 +113,37 @@ static class UtilityFlasks
         int increasedEffect = Get("local_flask_effect_+%") + character("flask_effect_+%")
             + (flask.Rarity == ItemRarity.Magic ? character("magic_utility_flask_effect_+%") : 0);
         double effect = Math.Max(0, 100 + increasedEffect) / 100.0;
-        List<(string, int)> stats = [.. u.Stats.Where(s => Modelled.Contains(s.Stat))
-            .Select(s => (s.Stat, (int)Math.Round(s.Value * effect, MidpointRounding.AwayFromZero)))];
+        List<Source> stats = [.. u.Stats.Where(s => Modelled.Contains(s.Stat))
+            .Select(s => new Source($"buff {u.BuffRow}", s.Stat, Scale(s.Value, effect)))];
         // Onslaught has its own effect stat (onslaught_effect_+%), not the flask's.
-        stats.AddRange(u.Extra?.Stats.Where(s => Modelled.Contains(s.Stat)) ?? []);
+        if (u.Extra is { } x) stats.AddRange(x.Stats.Where(s => Modelled.Contains(s.Stat)).Select(s => new Source($"buff {x.BuffRow}", s.Stat, s.Value)));
         return (stats, Math.Max(0.1, seconds));
     }
+
+    /// <summary>A value scaled by increased effect as the game rounds it (poewiki: "always rounded down"; Path of Building
+    /// ModStore.ScaleAddMod: rounded to two decimals, then the fraction dropped).</summary>
+    public static int Scale(int value, double effect) => (int)Math.Truncate(Math.Round(value * effect, 2));
+
+    /// <summary>One stat an effect applies: the effect it belongs to (its buff, "buff 121", or a flask mod's stat), the
+    /// stat and its value.</summary>
+    public readonly record struct Source(string Effect, string Stat, int Value);
 
     /// <summary>A utility flask's effect under way: the flask (item id and flask-bar cell), its buffs on the player, what it
     /// applies, and when it started and ends (connection clock seconds, which stop while the game is paused).</summary>
     public sealed record Active(uint ItemId, byte Slot, string Name, Utility Flask, ushort Buff, ushort? ExtraBuff,
-        IReadOnlyList<(string Stat, int Value)> Stats, double Started, double Ends);
+        IReadOnlyList<Source> Stats, double Started, double Ends);
 
-    /// <summary>The utility flasks running on one connection, at most one per flask and one per buff. One ticker ends them
+    /// <summary>Whether a flask's effect ends when the flask leaves its cell of the flask bar (picked up, swapped, moved).
+    /// Not confirmed by any source (poewiki, the Fandom mirror, Path of Building and the forum don't say); a flask works
+    /// only from the bar, so here it ends. Flip it if the real game keeps the effect running.</summary>
+    public const bool EndsWhenFlaskLeavesItsCell = true;
+
+    /// <summary>Whether the effect's flask is no longer in its cell of the flask bar (<paramref name="bar"/>), so the effect
+    /// ends (<see cref="EndsWhenFlaskLeavesItsCell"/>).</summary>
+    public static bool LeftItsCell(Active e, IEnumerable<InventoryItem> bar, bool ends = EndsWhenFlaskLeavesItsCell) =>
+        ends && !bar.Any(i => i.Id == e.ItemId && i.X == e.Slot);
+
+    /// <summary>The utility flasks running on one connection, at most one per flask. One ticker ends them
     /// (Program.RunUtilityFlasks): <see cref="Start"/> hands out its ticket when none runs, and it stops when nothing runs
     /// any more (<see cref="End"/>) or when it exits for any other reason (<see cref="TickerExited"/>).</summary>
     public sealed class Effects
@@ -140,18 +158,17 @@ static class UtilityFlasks
             lock (_lock) return _active.FirstOrDefault(a => a.ItemId == itemId);
         }
 
-        /// <summary>Starts an effect. A flask of the same kind (same buff) that still runs ends: effects of one kind do not
-        /// stack. Returns that one, or null, and the ticket of a ticker to start now, or null when one runs.</summary>
-        public (Active? Replaced, int? Ticker) Start(Active effect)
+        /// <summary>Starts an effect, next to any other, of the same kind or not: each keeps its own duration
+        /// (<see cref="Stats"/> applies only the strongest of one kind). Returns the ticket of a ticker to start now, or
+        /// null when one runs.</summary>
+        public int? Start(Active effect)
         {
             lock (_lock)
             {
-                var replaced = _active.FirstOrDefault(a => a.Flask.BuffRow == effect.Flask.BuffRow);
-                if (replaced is not null) _active.Remove(replaced);
                 _active.Add(effect);
-                if (_ticker != 0) return (replaced, null);
+                if (_ticker != 0) return null;
                 _ticker = ++_lastTicket;
-                return (replaced, _ticker);
+                return _ticker;
             }
         }
 
@@ -183,10 +200,10 @@ static class UtilityFlasks
             get { lock (_lock) return _ticker != 0; }
         }
 
-        /// <summary>The stats of every running effect, summed by stat.</summary>
+        /// <summary>What the running effects apply: of the same effect, only the strongest (<see cref="Strongest"/>).</summary>
         public IReadOnlyList<(string Stat, int Value)> Stats()
         {
-            lock (_lock) return [.. _active.SelectMany(a => a.Stats)];
+            lock (_lock) return Strongest(_active.SelectMany(a => a.Stats));
         }
 
         /// <summary>Whether any effect runs.</summary>
@@ -195,6 +212,14 @@ static class UtilityFlasks
             get { lock (_lock) return _active.Count > 0; }
         }
     }
+
+    /// <summary>poewiki, Flask, "Effects of flasks": "When creating multiple of the same (non-recovery) flask effect, each
+    /// effect has an independent duration, and only the strongest applies"; different effects stack. Path of Building
+    /// merges flask buffs the same way (CalcPerform mergeBuff: per effect, the highest value of each stat). So per
+    /// (effect, stat) the value with the largest size wins, a bonus over an equal penalty.</summary>
+    public static IReadOnlyList<(string Stat, int Value)> Strongest(IEnumerable<Source> sources) =>
+        [.. sources.GroupBy(s => (s.Effect, s.Stat))
+            .Select(g => (g.Key.Stat, g.OrderByDescending(s => Math.Abs(s.Value)).ThenByDescending(s => s.Value).First().Value))];
 
     /// <summary>The character's pool bonuses with the running flasks' stats: resistances and their maxima, armour and
     /// evasion (flat, and the Basalt / Stibnite more multipliers on top of any others), movement and attack speed,
@@ -266,7 +291,7 @@ static class UtilityFlasks
 
     /// <summary>Starts an effect and recomputes the character (<paramref name="recompute"/>: the pools and the walk
     /// speed) under the connection's Monsters lock, which every pools writer takes, so no writer keeps a stale total.</summary>
-    public static (Active? Replaced, int? Ticker) Start(ClientState conn, Active effect, Action recompute)
+    public static int? Start(ClientState conn, Active effect, Action recompute)
     {
         lock (conn.Monsters)
         {
