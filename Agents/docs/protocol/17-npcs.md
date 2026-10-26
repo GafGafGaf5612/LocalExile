@@ -177,9 +177,8 @@ row 0 is valid, including `a1q1-KilledHillock`. `NEVER_SET` remains an eligibili
 effect. Eligibility uses the same projected visited/access flags sent to the client, plus saved character flags.
 
 Implemented offers are limited to 0, 1, 2 and 8: their class-filtered level-one gem choices, and offer 1's normal
-flasks at their row's item level (RewardLevel; QuestRewards' rarity column 0, [12](12-quests.md) §7).
-Offer 8's magic armour choices (rarity 1) need item construction not implemented here.
-Nessa's Brutus conversation sets `NessaChatBrutus`,
+flasks at their row's item level (RewardLevel, QuestRewards' rarity column 0; [12](12-quests.md) §7). Offer 8's magic
+armour choices need item construction not implemented here. Nessa's Brutus conversation sets `NessaChatBrutus`,
 enabling her prison reward; claiming sets `a1q2-NessaRewardTaken`. Tarkleigh's Hillock reward sets
 `a1q1-QuestRewardTaken`. Inventory addition and the taken flag commit in one save transaction, with a durable duplicate
 check and rollback on failure/full inventory. The server removes all choices and ends dialogue after claiming.

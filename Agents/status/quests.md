@@ -21,9 +21,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 - a1q5 "Mercy Mission" (played through live, The Tidal Island seed 1): Nessa gives the quest and Bestel his clue
   through their own NPCTalk rows, and the quest tracker follows the flags.
   Hailrake stands at the shipwreck's `mapboss` (the medicine_boat room's captured placement) and drops the Medicine
-  Chest, unless Nessa has it or a copy is carried, stashed or on the instance's ground.
+  Chest, unless Nessa has it, the character carries one or one lies on the instance's ground.
   `a1q5-HaveMedicineChest` follows the carried chest; Nessa's "The Medicine Chest" takes it with
   `a1q5-NessaCongratulated` in one save, and a chest found after that is taken away.
+  Needs the area's `-Walkmaps` captures (seed 1 has them): without them Hailrake is not placed.
   Her two rewards give a normal flask (item level 4) and a support gem of the class, once each.
   Progress survives relogs and server restarts.
   Code: `MercyMission.cs`, `Program.MercyMission.cs`, `QuestRewardCatalog.cs`.

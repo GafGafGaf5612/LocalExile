@@ -269,14 +269,24 @@ separate `…HailrakeGauntletNoQuest` variety exists.
 The rooms have too few doodads for the room fit, so they use their captured placement ([14](14-monster-packs.md) §3):
 seed 1 puts `mapboss` at (265, 437) on the wreck.
 `CannibalBossHailrake.ot` extends `Cannibal`, not `BossLifeBar`, and his row has no `BossHealthBar`: no big life bar.
-His death drops the chest where he fell, unless Nessa has one already or a copy is carried, in the stash or on this
+His death drops the chest where he fell, unless Nessa has one already, this character carries one or one lies on this
 instance's ground; a chest lost any other way drops again from the next Hailrake.
+The stash is not counted: it is the account's, so another character's stashed chest must not block this one (whose
+tracker would still say "Find the Medicine Chest"); a character that stashes its own chest can get a second one.
+Hailrake, and so the quest, needs the area's captures (`1_1_2a_seed<seed>.doodads.json` and `.rooms.json`, from
+`live.ps1 -Walkmaps`): seed 1 has them; with `Game_RANDOM_SEEDS=1` or without them he is not placed and the quest can't
+be finished.
 
 **The item.** BaseItemTypes 1534 `Metadata/Items/QuestItems/MedicineSet1`, "Medicine Chest", 2×3, item class 31.
 Its `.it` Quest component has `grant_flag = "a1q5minusHaveMedicineChest"` and
 `remove_flag = "a1q5minusNessaCongratulated"`.
-The Gateway keeps 49 equal to "a chest is carried" (inventories and cursor), checked after a pickup and about once a
-second; once 42 is set (or `QuestRewardTaken`), a carried chest is taken away and a chest on the ground goes unpicked.
+The Gateway keeps 49 equal to "a chest is carried" (inventories and cursor): on entering an area, after a pickup,
+after a read with an item move (drop, place, pick-up, the stash, a sale, a chat command), and about once a second for
+the flag alone.
+Once 42 is set (or `QuestRewardTaken`), a carried chest is taken away (on entering an area or after an item move: the
+inventory changes stay on the message path, in revision order), and a click on a chest on the ground walks the player
+to it and removes it from the ground.
+Stashed chests stay in the stash; one taken out by a character that is done goes at its next item move.
 Choosing Nessa's row 1 removes the chest and sets 42 and clears 49 in one save transaction; without a chest carried
 (or with it on offer to a vendor) nothing changes and the option list comes back.
 
