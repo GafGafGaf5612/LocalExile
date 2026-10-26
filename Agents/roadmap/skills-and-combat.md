@@ -66,6 +66,13 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.
+  Generic increased attributes have historical native raw-source, derived-pool and requirement controls at `60044ad`.
+  Current-main mana-per-Strength, requirement and inactive-weapon composition has automated coverage.
+  Verify that composition natively on the rebased head before claiming new native evidence.
+  Remaining native composition includes own-item percentage retention, cascading equipment, passive refunds and swaps.
+  The fractional algorithm remains a documented PoB server model; official-server parity is not established.
+  See [Status](../status/skills-and-combat.md) and [the calculation model](../docs/protocol/11-skills.md) section 4.
+  Mana-to-armour conversion and Phrecia play compatibility remain separate prerequisites.
 
 ### Auras: reservation and effects
 

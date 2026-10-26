@@ -17,7 +17,7 @@ partial class Program
     {
         lock (conn.Monsters)
         {
-            sources ??= CharacterStatSources(conn);
+            sources ??= CharacterStatSources(conn).Stats;
             UtilityFlasks.AddRawStats(sources,
                 conn.UtilityFlaskEffects.Stats().Concat(conn.FlaskGrounds.PlayerStats()), Stats);
             return OwnAuraRestriction.Value(sources, conn.PlayerStats);

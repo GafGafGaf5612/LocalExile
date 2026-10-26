@@ -173,14 +173,63 @@ with level), the bases and attributes from Characters.dat:
 | `maximum_energy_shield_+%` | intelligence / 5 |
 | `melee_physical_damage_+%` | strength / 5 |
 
+`AttributeModifiers` combines class attributes and every flat passive/active-equipment source before scaling once.
+It supports the existing single, pair and all-attribute flat stats, plus `strength_+%`, `dexterity_+%`,
+`intelligence_+%` and `all_attributes_+%`.
+For each attribute, its own increase and the all-attribute increase add in the same increased bucket.
+Raw attribute totals stay wide through per-key aggregation, overrides, bucket cancellation and scaling.
+The result is `floor(flat * (100 + increased) / 100 + 0.5)`, clamped to 0 through `int.MaxValue`.
+Only the final attributes and native integer views are bounded; clipped display values never feed the raw calculation.
+Derived evasion, Iron Reflexes, energy shield and melee bounds also clamp before integer conversion.
+Life and mana stop at `int.MaxValue`, matching their native publication and reservation consumers.
+Raw attribute rebuilds clamp current resources to the new caps without refilling or resurrecting the owner.
+They publish fresh mana reservation even when current mana does not change.
+The shared mana sender samples both values under the combat lock after acquiring the send gate.
+Idle-aura and blocked-send reservation behavior has decrypted command-wire coverage.
+
+This rounding model follows PoB commit `16de4b82d57f1c0de6eb40f37143c32d4da36a02`:
+[stats](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Modules/CalcPerform.lua#L401-L408),
+[buckets](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Modules/CalcTools.lua#L14-L35) and
+[rounding](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Modules/Common.lua#L680-L688).
+Those functions do not separately floor the signed flat bucket or increased scale factor at zero.
+Artificial raw input of -10 flat and -150% increased therefore gives +5; the nonnegative clamp follows rounding.
+It is a pinned server model; receiving its computed fractional boundaries does not prove official-server parity.
+The extracted Behemoth small nodes (4561, 9053, 22167 and the other `AscendancyCustomBerserker` small nodes)
+supply 3% increased Strength and 10% increased Armour through ordinary raw stats.
+That source evidence does not enable Phrecia selection or establish native class gameplay.
+
+The final attributes feed life/melee damage, accuracy/evasion and mana/energy shield respectively.
+Existing derived-pool divisions stay unchanged, including odd attributes and this server's Intelligence / 5 ES increase.
+An explicit `AttributesResolved` pool marker distinguishes calculated zero attributes from legacy uninitialized pools.
+Record clones retain the marker; three saturated attributes cannot overflow a sum-based fallback check.
+`ClassAttributes` sends the same final values as both panel attributes and `virtual_*_for_requirements`.
+Equipment requirements recalculate these values from active raw sources at each existing activation stage
+([items](13-items.md#2d-requirements-and-inactive-items)).
+Raw attribute `/set_stat` inputs replace their own passive/item key, including zero, and rebuild pools immediately.
+Final `/set_stat strength`, `dexterity` or `intelligence` keeps its development display/requirement override semantics.
+Those final overrides never become flat sources or change the derived pools.
+Clearing a raw source, refunding a passive or swapping weapons rebuilds from raw inputs without compounding increases.
+Automated boundary, production-pool, command and equipment regressions pass.
+Historical evidence at `60044ad` covers thirteen native controls on an unascended Marauder with raw inputs.
+They verify 32 Strength becoming 33 at 3%, 40 at 25%, and 48 when another 25% all-attribute increase is added.
+The same all-attribute input sends 18 Dexterity and Intelligence from their flat 14 midpoint.
+Life, mana and native requirement stats follow the final values.
+A Plate Vest supplies 19 Armour when its 12-Strength requirement is met, stops contributing below it,
+and resumes after the final Strength rises again.
+Calculated all-zero attributes stay zero; removing the sources and relog restore the expected base pools.
+These controls verify delivery and shared consumers, not the official server's fractional attribute algorithm.
+The rebased composition has automated coverage; fresh native composition checks remain outstanding.
+Combined regressions cross the rounded four-Strength boundary, then verify mana increases and truncation once.
+Equipment, inactive/current weapon snapshots, zero/off raw replacements and idle aura reservation share that result.
+
 Maximum mana also includes the ordinary flat and increased mana sources from passives and active equipment.
 `X_mana_per_4_strength` (Stats row 4992, client key 4993) contributes
 `floor(max(0, final Strength) / 4) * signed raw value` to that same flat mana bucket.
-`CharacterStats.For` uses its existing final `str`; the existing intelligence `/ 2` and final truncation are unchanged.
+`CharacterStats.For` uses rounded final Strength; Intelligence `/ 2` and final mana truncation are unchanged.
 Mana increases apply once to the combined flat total.
 The active consumer uses wide signed arithmetic, clamps nonpositive totals or multipliers to zero, and saturates at
 `int.MaxValue` for the native maximum and existing reservation/damage consumers.
-A missing or zero source keeps the original mana calculation byte-for-byte, including its signed edge behavior.
+A missing or zero source keeps ordinary mana rounding and signed flat-mana/multiplier behavior.
 `PassiveBonus` reads the generic source; `/set_stat X_mana_per_4_strength <value>` replaces it and rebuilds pools.
 The rebuild clamps current mana to the new unreserved cap without filling it when maximum mana increases.
 It explicitly sends the mana pool's `0x1b1`, including reservation, even when current mana is unchanged.
@@ -190,7 +239,7 @@ An explicit zero suppresses the source; repeated builds cannot compound it, and 
 Final native `strength` overrides remain presentation/requirement inputs and do not change this pool calculation.
 Reservation, native `maximum_mana` and maximum-mana attack lightning all read the resulting pool.
 Mental Conditioning (graph node 38080) supplies raw value 8, but its keys 9548 and 21159 are separate, unimplemented
-mechanics; this consumer does not enable Phrecia selection or claim the full node/class.
+mechanics; mana-to-armour conversion and Phrecia selection remain separate work.
 Automated arithmetic, production-source and actual command/reload checks pass.
 Thirteen native checks use a fresh unascended Witch, raw key 4993 and synthetic Plate Vest modifiers.
 Fourteen and fifteen Strength grant three groups: maximum mana rises from 56 to 80 at raw value 8.
