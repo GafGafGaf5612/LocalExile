@@ -516,12 +516,13 @@ sealed class SkillCatalog(string folder = "data")
             return increased;
         }
 
-        /// <summary>The attack's total increased physical damage: the player's damage, physical, melee and melee physical
-        /// damage stats.</summary>
-        public int IncreasedDamage(IReadOnlyDictionary<uint, int>? player)
+        /// <summary>The attack's total increased physical damage: the player's damage, attack, physical, melee
+        /// and melee physical damage stats.</summary>
+        public long IncreasedDamage(IReadOnlyDictionary<uint, int>? player)
         {
-            int increased = 0;
-            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.PhysicalDamagePct, StatKeys.MeleeDamagePct, StatKeys.MeleePhysicalDamagePct])
+            long increased = 0;
+            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.AttackDamagePct, StatKeys.PhysicalDamagePct,
+                StatKeys.MeleeDamagePct, StatKeys.MeleePhysicalDamagePct])
                 increased += player?.GetValueOrDefault(k) ?? 0;
             return increased;
         }

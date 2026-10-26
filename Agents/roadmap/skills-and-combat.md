@@ -93,6 +93,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
   Whisperer's 150% spell-increase transfer has shared attack regression coverage and native hit/panel checks.
   Remaining conditional modifier sources are separate; see [20](../docs/protocol/20-damage.md) §2c.
+  Steel Willed's attack increase from complete groups of final armour has shared regression and native coverage.
+  Its recent-hit armour doubling and the other Behemoth nodes remain separate work.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
