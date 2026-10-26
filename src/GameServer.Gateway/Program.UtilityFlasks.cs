@@ -24,9 +24,7 @@ partial class Program
             return;
         }
         var items = ItemsOf(conn);
-        if (items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Spend(i, charges) ?? i) is not { } spent) return;
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
-            items.NextRevision(PlayerInventories.Flask), [spent.Id], [spent]), $"0x00bf flask {slot}: {spent.Item.Charges}/{charges.MaxCharges} charges");
+        if (await SpendFlask(remote, stream, ciphers, conn, flask, charges, slot) is null) return;
 
         var (stats, seconds) = UtilityFlasks.For(utility, flask.Item, local, Get);
         double now = conn.Clock.Elapsed.TotalSeconds;

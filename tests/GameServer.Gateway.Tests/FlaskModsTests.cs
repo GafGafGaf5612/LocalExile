@@ -68,6 +68,10 @@ public class FlaskModsTests
         var cautious = Local(("local_flask_amount_to_recover_+%_when_on_low_life", 130));
         Assert.Equal(70, FlaskRecovery.For(SmallLife, Flask(), cautious, None, 150, 200).Life, 6);
         Assert.Equal(161, FlaskRecovery.For(SmallLife, Flask(), cautious, None, 50, 200).Life, 6);
+        // Not scaled by flask effect (PoB CalcPerform): 10% increased effect adds 10% of the base, not 10% of the 230%.
+        var withEffect = Local(("local_flask_amount_to_recover_+%_when_on_low_life", 130), ("local_flask_effect_+%", 10));
+        Assert.Equal(70 * (1.1 + 2.3 - 1), FlaskRecovery.For(SmallLife, Flask(), withEffect, None, 50, 200).Life, 6);
+        Assert.Equal(70 * 1.1, FlaskRecovery.For(SmallLife, Flask(), withEffect, None, 150, 200).Life, 6);
     }
 
     [Fact]
@@ -98,14 +102,39 @@ public class FlaskModsTests
         // Enduring: the effect is not removed at full mana.
         Assert.True(FlaskRecovery.For(SmallMana, Flask(), Local(("local_flask_effect_not_removed_at_full_mana", 1)), None, 100, 200).ManaStaysAtFull);
         Assert.True(FlaskRecovery.For(SmallLife, Flask(), Local(), Character(("life_flask_effects_are_not_removed_at_full_life", 1)), 100, 200).LifeStaysAtFull);
+        // "… Flask Effects are not removed when … is Filled / … do not Queue": the character's stats also stop the queue,
+        // each for its own kind of flask; Enduring for its mana flask.
+        Assert.True(FlaskRecovery.For(SmallLife, Flask(), Local(), Character(("life_flask_effects_are_not_removed_at_full_life", 1)), 100, 200).NoQueue);
+        Assert.False(FlaskRecovery.For(SmallLife, Flask(), Local(), Character(("mana_flask_effects_are_not_removed_at_full_mana", 1)), 100, 200).NoQueue);
+        Assert.True(FlaskRecovery.For(SmallMana, Flask(), Local(), Character(("mana_flask_effects_are_not_removed_at_full_mana", 1)), 100, 200).NoQueue);
+        Assert.True(FlaskRecovery.For(SmallMana, Flask(), Local(("local_flask_effect_not_removed_at_full_mana", 1)), None, 100, 200).NoQueue);
+        Assert.False(FlaskRecovery.For(SmallMana, Flask(), Local(), None, 100, 200).NoQueue);
+    }
+
+    [Fact]
+    public void A_flask_brings_no_dead_player_back()
+    {
+        // A monster can kill the player while the flask's charges go out (an await): the instant part must not set life 1.
+        var seething = FlaskRecovery.For(SmallLife, Flask(), Local(("local_flask_recovers_instantly", 1)), None, 100, 200);
+        Assert.Null(FlaskRecovery.Instant(seething, life: 0, mana: 50, maxLife: 200, manaCap: 100));
+        Assert.Equal(((uint)170, (uint)50), FlaskRecovery.Instant(seething, life: 100, mana: 50, maxLife: 200, manaCap: 100));
+        // Costs from the other pool never kill: life stays at least 1, mana at least 0.
+        var cost = new FlaskRecovery.Use(0, 0, 3, 0, 40, RemovesLife: 500, RemovesMana: 0, 0, false, false, 0);
+        Assert.Equal(((uint)1, (uint)90), FlaskRecovery.Instant(cost, life: 100, mana: 50, maxLife: 200, manaCap: 90));
     }
 
     [Fact]
     public void A_life_flask_suffix_recovers_more_life_over_ten_seconds_below_full_life()
     {
         var local = Local(("local_flask_additional_x%_life_recovery_per_second_over_10_seconds_if_not_on_full_life", 40));
-        Assert.Equal(80, FlaskRecovery.For(SmallLife, Flask(), local, None, 150, 200).ExtraLife, 6);
-        Assert.Equal(0, FlaskRecovery.For(SmallLife, Flask(), local, None, 200, 200).ExtraLife);
+        // "Recover an additional 40% of Flask's Life Recovery Amount over 10 seconds": 40% of the Small Life Flask's 70,
+        // whatever the character's maximum life (5000 here).
+        Assert.Equal(28, FlaskRecovery.For(SmallLife, Flask(), local, None, 150, 5000).ExtraLife, 6);
+        Assert.Equal(0, FlaskRecovery.For(SmallLife, Flask(), local, None, 5000, 5000).ExtraLife);
+        // Of the whole amount, the instant part too: Bubbling's 50% instantly and 36% reduced amount, 20% quality.
+        var bubbling = Local(("local_flask_additional_x%_life_recovery_per_second_over_10_seconds_if_not_on_full_life", 40),
+            ("local_flask_recovery_amount_%_to_recover_instantly", 50), ("local_flask_amount_to_recover_+%", -36));
+        Assert.Equal(70 * 1.2 * 0.64 * 0.4, FlaskRecovery.For(SmallLife, Flask(20), bubbling, None, 150, 5000).ExtraLife, 6);
     }
 
     [Fact]

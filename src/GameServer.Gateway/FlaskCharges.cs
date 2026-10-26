@@ -41,23 +41,44 @@ static class FlaskCharges
     /// 0.033 s server frames make 0.132 s (poewiki); not affected by cooldown recovery.</summary>
     public const double CritCooldown = 0.132;
 
-    /// <summary>What a critical strike gives the flasks (<paramref name="flasks"/>: each flask's id, its own "#% chance to
-    /// gain a Flask Charge when you deal a Critical Strike" and whether it is full): one charge to each flask whose chance
-    /// rolls, and the character's <paramref name="globalChance"/> gives the first flask that is not full
-    /// <paramref name="globalAmount"/> (1 without it). Nothing while the shared cooldown runs (<see cref="Carry.TryCrit"/>,
-    /// which starts it only when some flask could gain). <paramref name="roll"/>: a number below its argument.</summary>
-    public static Dictionary<uint, double> OnCrit(IReadOnlyList<(uint Id, int Chance, bool Full)> flasks, int globalChance,
-        int globalAmount, Carry carry, double now, Func<int, int> roll)
+    /// <summary>The character's charges for dealing a critical strike: <paramref name="Chance"/>, "#% chance to gain a
+    /// Flask Charge when you deal a Critical Strike" (gain_flask_chance_on_crit_%), and <paramref name="Sure"/>, "Gain #
+    /// Flask Charges when you deal a Critical Strike" (recharge_flasks_on_crit, and
+    /// recharge_flasks_on_crit_while_affected_by_precision while Precision runs). Not these: gain_flask_charge_when_crit_%
+    /// / _amount are for taking a critical strike (monsters do not deal critical strikes here), and
+    /// gain_flask_charge_on_crit_chance_%_while_at_maximum_frenzy_charges needs frenzy charges, which do not exist here.</summary>
+    public static (int Chance, int Sure) CritSources(Func<string, int> character, bool precision) =>
+        (character("gain_flask_chance_on_crit_%"),
+         character("recharge_flasks_on_crit") + (precision ? character("recharge_flasks_on_crit_while_affected_by_precision") : 0));
+
+    /// <summary>What a critical strike the player deals gives the flasks (<paramref name="flasks"/>: each flask's id, its
+    /// own "#% chance to gain a Flask Charge when you deal a Critical Strike" and whether it is full): one charge to each
+    /// flask whose chance rolls; the character's <see cref="CritSources"/> give the first flask that is not full one
+    /// charge on their chance and their sure charges (poewiki: "This effect grants one charge to one flask"). Nothing while
+    /// the shared cooldown runs (<see cref="Carry.TryCrit"/>, which starts it only when some source exists).
+    /// <paramref name="roll"/>: a number below its argument.</summary>
+    public static Dictionary<uint, double> OnCrit(IReadOnlyList<(uint Id, int Chance, bool Full)> flasks, (int Chance, int Sure) character,
+        Carry carry, double now, Func<int, int> roll)
     {
         var gains = new Dictionary<uint, double>();
-        if (globalChance <= 0 && !flasks.Any(f => f.Chance > 0)) return gains;
+        if (character.Chance <= 0 && character.Sure <= 0 && !flasks.Any(f => f.Chance > 0)) return gains;
         if (!carry.TryCrit(now)) return gains;
         foreach (var f in flasks)
             if (f.Chance > 0 && roll(100) < f.Chance) gains[f.Id] = 1;
-        if (globalChance > 0 && roll(100) < globalChance && flasks.Where(f => !f.Full).Select(f => (uint?)f.Id).FirstOrDefault() is uint id)
-            gains[id] = gains.GetValueOrDefault(id) + Math.Max(1, globalAmount);
+        int charges = (character.Chance > 0 && roll(100) < character.Chance ? 1 : 0) + Math.Max(0, character.Sure);
+        if (charges > 0 && flasks.Where(f => !f.Full).Select(f => (uint?)f.Id).FirstOrDefault() is uint id)
+            gains[id] = gains.GetValueOrDefault(id) + charges;
         return gains;
     }
+
+    /// <summary>What a flask gains every 3 seconds from the character's stats: flask_charges_recovered_per_3_seconds (every
+    /// flask), utility_flask_charges_recovered_per_3_seconds, life_flask_charges_recovered_per_3_seconds (and
+    /// life_flask_charges_recovered_per_3_seconds_on_low_life on low life), mana_flasks_gain_X_charges_every_3_seconds.</summary>
+    public static int PerThreeSeconds(Func<string, int> character, bool life, bool mana, bool utility, bool lowLife) =>
+        character("flask_charges_recovered_per_3_seconds")
+        + (utility ? character("utility_flask_charges_recovered_per_3_seconds") : 0)
+        + (life ? character("life_flask_charges_recovered_per_3_seconds") + (lowLife ? character("life_flask_charges_recovered_per_3_seconds_on_low_life") : 0) : 0)
+        + (mana ? character("mana_flasks_gain_X_charges_every_3_seconds") : 0);
 
     /// <summary>The partial charges of one connection's flasks (poewiki: "tracked with at least two decimals") and when a
     /// crit last gave a charge.</summary>
@@ -84,6 +105,13 @@ static class FlaskCharges
         public double Partial(uint flask)
         {
             lock (_lock) return _partial.GetValueOrDefault(flask);
+        }
+
+        /// <summary>Whether the shared cooldown is over at <paramref name="now"/> (a cheap look before the character's stats
+        /// are worked out; <see cref="TryCrit"/> starts it).</summary>
+        public bool CritReady(double now)
+        {
+            lock (_lock) return now - _lastCrit >= CritCooldown - 1e-9;
         }
 
         /// <summary>Whether a crit at <paramref name="now"/> may give a charge (the shared cooldown is over); if so, the

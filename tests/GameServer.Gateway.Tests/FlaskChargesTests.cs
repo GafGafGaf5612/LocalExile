@@ -73,17 +73,51 @@ public class FlaskChargesTests
         // Flask 1: Surgeon's 35% chance; flask 2: none; flask 3: 20% but full. Rolls below the chance hit.
         (uint, int, bool)[] bar = [(1, 35, false), (2, 0, false), (3, 20, true)];
         var rolls = new Queue<int>([10, 5]);
-        Assert.Equal(new Dictionary<uint, double> { [1] = 1, [3] = 1 }, FlaskCharges.OnCrit(bar, 0, 0, carry, 1.0, _ => rolls.Dequeue()));
+        Assert.Equal(new Dictionary<uint, double> { [1] = 1, [3] = 1 }, FlaskCharges.OnCrit(bar, (0, 0), carry, 1.0, _ => rolls.Dequeue()));
         // Within the cooldown: nothing, and no roll.
-        Assert.Empty(FlaskCharges.OnCrit(bar, 0, 0, carry, 1.1, _ => throw new InvalidOperationException()));
+        Assert.False(carry.CritReady(1.1));
+        Assert.Empty(FlaskCharges.OnCrit(bar, (0, 0), carry, 1.1, _ => throw new InvalidOperationException()));
         // A roll above the chance: no charge.
-        Assert.Empty(FlaskCharges.OnCrit(bar, 0, 0, carry, 2.0, _ => 99));
-        // The character's chance gives the first flask that is not full its amount.
-        Assert.Equal(new Dictionary<uint, double> { [2] = 2 }, FlaskCharges.OnCrit([(2, 0, false), (4, 0, false)], 50, 2, carry, 3.0, _ => 0));
+        Assert.Empty(FlaskCharges.OnCrit(bar, (0, 0), carry, 2.0, _ => 99));
+        // The character's chance (one charge) and sure charges go to the first flask that is not full.
+        Assert.Equal(new Dictionary<uint, double> { [2] = 3 }, FlaskCharges.OnCrit([(2, 0, false), (4, 0, false)], (50, 2), carry, 3.0, _ => 0));
+        Assert.Equal(new Dictionary<uint, double> { [4] = 1 }, FlaskCharges.OnCrit([(2, 0, true), (4, 0, false)], (0, 1), carry, 4.0, _ => 99));
         // No source of crit charges: the cooldown does not start.
         var idle = new FlaskCharges.Carry();
-        Assert.Empty(FlaskCharges.OnCrit([(1, 0, false)], 0, 0, idle, 5.0, _ => 0));
+        Assert.Empty(FlaskCharges.OnCrit([(1, 0, false)], (0, 0), idle, 5.0, _ => 0));
+        Assert.True(idle.CritReady(5.0));
         Assert.True(idle.TryCrit(5.0));
+    }
+
+    [Fact]
+    public void Dealing_a_crit_reads_the_deal_stats_not_the_take_ones()
+    {
+        static Func<string, int> Character(params (string Stat, int Value)[] stats) => name => stats.Where(s => s.Stat == name).Sum(s => s.Value);
+        // "Flasks gain a Charge when you take a Critical Strike": not for the player's own crits.
+        Assert.Equal((0, 0), FlaskCharges.CritSources(Character(("gain_flask_charge_when_crit_%", 100), ("gain_flask_charge_when_crit_amount", 3)), precision: false));
+        // "#% chance to gain a Flask Charge when you deal a Critical Strike", "Gain # Flask Charges when you deal a Critical Strike".
+        Assert.Equal((30, 0), FlaskCharges.CritSources(Character(("gain_flask_chance_on_crit_%", 30)), false));
+        Assert.Equal((0, 2), FlaskCharges.CritSources(Character(("recharge_flasks_on_crit", 2)), false));
+        // "… while affected by Precision": only with Precision running.
+        var precision = Character(("recharge_flasks_on_crit_while_affected_by_precision", 1));
+        Assert.Equal((0, 0), FlaskCharges.CritSources(precision, precision: false));
+        Assert.Equal((0, 1), FlaskCharges.CritSources(precision, precision: true));
+        // Frenzy charges do not exist here.
+        Assert.Equal((0, 0), FlaskCharges.CritSources(Character(("gain_flask_charge_on_crit_chance_%_while_at_maximum_frenzy_charges", 50)), false));
+    }
+
+    [Fact]
+    public void Flasks_gain_charges_every_3_seconds_by_kind()
+    {
+        static Func<string, int> Character(params (string Stat, int Value)[] stats) => name => stats.Where(s => s.Stat == name).Sum(s => s.Value);
+        var c = Character(("flask_charges_recovered_per_3_seconds", 1), ("utility_flask_charges_recovered_per_3_seconds", 2),
+            ("life_flask_charges_recovered_per_3_seconds", 3), ("life_flask_charges_recovered_per_3_seconds_on_low_life", 4),
+            ("mana_flasks_gain_X_charges_every_3_seconds", 5));
+        Assert.Equal(1 + 2, FlaskCharges.PerThreeSeconds(c, life: false, mana: false, utility: true, lowLife: true));
+        Assert.Equal(1 + 3, FlaskCharges.PerThreeSeconds(c, life: true, mana: false, utility: false, lowLife: false));
+        Assert.Equal(1 + 3 + 4, FlaskCharges.PerThreeSeconds(c, life: true, mana: false, utility: false, lowLife: true));
+        Assert.Equal(1 + 5, FlaskCharges.PerThreeSeconds(c, life: false, mana: true, utility: false, lowLife: true));
+        Assert.Equal(1 + 3 + 5, FlaskCharges.PerThreeSeconds(c, life: true, mana: true, utility: false, lowLife: false));   // a hybrid flask
     }
 
     [Fact]

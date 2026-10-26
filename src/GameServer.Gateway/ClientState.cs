@@ -343,6 +343,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public UtilityFlasks.Effects UtilityFlaskEffects { get; } = new();
     /// <summary>The flasks' partial charges and the crit charge cooldown (FlaskCharges).</summary>
     public FlaskCharges.Carry FlaskChargeCarry { get; } = new();
+    /// <summary>One change of the flask bar and its S→C 0xbf at a time (Program.ChangeFlaskBar), so the revisions go out in
+    /// order with the latest charges.</summary>
+    public SemaphoreSlim FlaskBarGate { get; } = new(1, 1);
     /// <summary>The smoke clouds, consecrated ground and taunts of flasks (FlaskGrounds).</summary>
     public FlaskGrounds.State FlaskGrounds { get; } = new();
     /// <summary>Whether the player phases (a Quartz Flask runs): the walk estimate walks through monsters (Blockers).</summary>

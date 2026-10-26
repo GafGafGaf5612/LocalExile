@@ -177,21 +177,25 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {(conn.PlayerLife == 0 ? "dead" : $"{flask.Item.Charges}/{charges.MaxCharges} charges, a use needs {charges.ChargesPerUse}")}");
             return;
         }
-        if (items.Change(PlayerInventories.Flask, flask.Id, i => Flasks.Spend(i, charges) ?? i) is not { } spent) return;
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
-            items.NextRevision(PlayerInventories.Flask), [spent.Id], [spent]), $"0x00bf flask {slot}: {spent.Item.Charges}/{charges.MaxCharges} charges");
+        if (await SpendFlask(remote, stream, ciphers, conn, flask, charges, slot) is null) return;
         var r = FlaskRecovery.For(use, flask.Item, local, Get, conn.PlayerLife, conn.PlayerMaxLife);
         Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {r.Life:0.#} life, {r.Mana:0.#} mana over {r.Seconds:0.##} s, " +
             $"instantly {r.InstantLife:0.#} life, {r.InstantMana:0.#} mana{(r.ManaAtEnd > 0 ? $", {r.ManaAtEnd:0.#} mana at the end" : "")}" +
             $"{(r.RemovesLife + r.RemovesMana > 0 ? $", removes {r.RemovesLife:0.#} life, {r.RemovesMana:0.#} mana" : "")}" +
             $"{(r.ExtraLife > 0 ? $", {r.ExtraLife:0.#} more life over {FlaskRecovery.ExtraLifeSeconds} s" : "")}");
-        // The instant part and what the flask takes from the other pool (never below 1 life), at once.
+        // The instant part and what the flask takes from the other pool (never below 1 life), at once. A monster may have
+        // killed the player while the charges went out: then nothing (FlaskRecovery.Instant), or the death screen would stay
+        // with 1 life.
         uint lifeBefore, manaBefore, lifeAfter, manaAfter;
         lock (conn.Monsters)
         {
             (lifeBefore, manaBefore) = (conn.PlayerLife, conn.PlayerMana);
-            conn.PlayerLife = lifeAfter = (uint)Math.Clamp(Math.Floor(lifeBefore + r.InstantLife - r.RemovesLife), 1, conn.PlayerMaxLife);
-            conn.PlayerMana = manaAfter = (uint)Math.Clamp(Math.Floor(manaBefore + r.InstantMana - r.RemovesMana), 0, UnreservedMana(conn));
+            if (FlaskRecovery.Instant(r, lifeBefore, manaBefore, conn.PlayerMaxLife, UnreservedMana(conn)) is not var (l, m))
+            {
+                Console.WriteLine($"[gateway] {remote} flask {slot} ({type.Name}): the player died meanwhile, no recovery");
+                return;
+            }
+            (conn.PlayerLife, conn.PlayerMana) = (lifeAfter, manaAfter) = (l, m);
         }
         if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), $"0x01b1 player life {lifeAfter} (flask)");
         if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {manaAfter} (flask)");
@@ -225,14 +229,10 @@ partial class Program
         Flasks.Fill(items, Items, charges, saveNow);
 
     // FillFlasks, and the changed flasks to the client (one S→C 0xbf).
-    static async Task GainFlaskCharges(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int charges, string why)
-    {
-        var items = ItemsOf(conn);
-        if (FillFlasks(items, charges, saveNow: false) is not { Count: > 0 } changed) return;
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
-            items.NextRevision(PlayerInventories.Flask), [.. changed.Select(c => c.Id)], changed),
-            $"0x00bf flasks: {string.Join(", ", changed.Select(c => $"{c.X}: {c.Item.Charges}"))} charges ({why})");
-    }
+    static Task GainFlaskCharges(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int charges, string why) =>
+        ChangeFlaskBar(remote, stream, ciphers, conn, items => FillFlasks(items, charges, saveNow: false) is { Count: > 0 } changed
+                ? ([.. changed.Select(c => c.Id)], changed) : null,
+            changed => $"0x00bf flasks: {string.Join(", ", changed.Select(c => $"{c.X}: {c.Item.Charges}"))} charges ({why})");
 
     // A new character's class weapon lies on the ground a few cells from where it appears, as on the real game's Twilight
     // Strand, until it is picked up (PlayerInventories.StartWeapon): put once into each instance it enters outside towns.
