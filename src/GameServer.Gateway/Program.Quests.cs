@@ -6,7 +6,7 @@ using GameServer.Core.Protocol.Login;
 partial class Program
 {
     // Sets or clears quest flags for the character (saved at once) and sends the player's flag set again; one change at a
-    // time per connection (ClientState.QuestGate).
+    // time per connection (QuestGate), so a background sync never interleaves with another change.
     static async Task SetQuestFlags(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on = true)
     {
         await conn.QuestGate.WaitAsync();
@@ -15,7 +15,7 @@ partial class Program
     }
 
     // SetQuestFlags for a caller that holds conn.QuestGate.
-    static async Task SetQuestFlagsHeld(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on)
+    static async Task SetQuestFlagsHeld(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, IEnumerable<string> flags, bool on = true)
     {
         var wanted = flags.Distinct().ToList();
         // What the client had before (ClientHasQuestFlag): objects change only where that changes.

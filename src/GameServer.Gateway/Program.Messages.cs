@@ -525,6 +525,8 @@ partial class Program
                     await SpawnHideoutDoodads(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);
+                    await SyncQuestItems(remote, stream, ciphers, conn, removeItems: true);   // a1q5: the Medicine Chest's flag
+                    _ = RunMercyMission(remote, stream, ciphers, conn);
                     _ = RunServerFrames(remote, stream, ciphers, conn);
                     _ = RunMonsterAi(remote, stream, ciphers, conn);
                     _ = RunPlayerTick(remote, stream, ciphers, conn);
@@ -533,6 +535,9 @@ partial class Program
                 }
             }
         }
+        // a1q5: after a read that moved items, the Medicine Chest's flag (and its removal once Nessa has one), here on the
+        // message path so the inventory revisions stay in order.
+        if (conn.PlayerSent && messages.Any(m => MercyMission.MovesItems(m.Id))) await SyncQuestItems(remote, stream, ciphers, conn, removeItems: true);
         if (unknown.Length > 0)
         {
             ushort uid = unknown.Length > 1 ? (ushort)(unknown[0] << 8 | unknown[1]) : unknown[0];

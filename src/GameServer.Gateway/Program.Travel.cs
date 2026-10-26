@@ -64,6 +64,7 @@ partial class Program
         }
         if (conn.Instance.Ground.Get(use.TargetId) is { } ground)
         {
+            if (await PickUpQuestItem(remote, stream, ciphers, conn, use.TargetId, ground, use, requestedAt)) return;   // a1q5's Medicine Chest
             await PickUpGroundItem(remote, stream, ciphers, conn, use.TargetId, ground, use, requestedAt);
             return;
         }

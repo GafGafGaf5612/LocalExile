@@ -425,7 +425,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // reads it through these, under the same lock.
     public HashSet<string> QuestFlagsSnapshot() { lock (Monsters) return [.. QuestFlags]; }
     public bool HasQuestFlag(string flag) { lock (Monsters) return QuestFlags.Contains(flag); }
-    // One quest-flag change at a time per connection (SetQuestFlags, SyncGlyphs): each reads, changes and sends the whole
+    // One quest-flag change at a time per connection (SetQuestFlags, SyncGlyphs, the a1q5 sync): each reads, changes and sends the whole
     // set, so two at once could send an older set last.
     public readonly SemaphoreSlim QuestGate = new(1, 1);
 

@@ -245,6 +245,66 @@ door, hidden by the tile).
 - No Doorman (above). The gate is created only once Hillock is dead, and the Gateway still checks the flag on it.
 - No quest log or tracker text beyond what the client derives from the flags, no Tarkleigh reward (needs NPCs).
 
+## 7. a1q5 "Mercy Mission": The Tidal Island
+
+Nessa wants a medicine chest; Bestel says his ship ran aground on The Tidal Island (1_1_2a); Hailrake, the area's
+unique boss, drops the Medicine Chest; Nessa takes it and offers two rewards.
+Played through live on 2026-10-25 (`MercyMission.cs`, `Program.MercyMission.cs`).
+
+| QuestFlags row | Id | Set by |
+|---|---|---|
+| 39 | `a1q5-ReceivedQuest` | Nessa's NPCTalk row 5 "Lioneye's Watch" (QuestFlag4/5) |
+| 44 | `a1q5-BestelClue` | Bestel's row 62 "The Medicine Chest" (needs 39, not 42 or 49) |
+| 49 | `a1q5-HaveMedicineChest` | the server, while the chest is carried (below) |
+| 42 | `a1q5-NessaCongratulated` | Nessa's row 1 "The Medicine Chest" (needs 49, not 41): she takes the chest |
+| 40, 41 | `a1q5-QuestRewardSeen`, `-QuestRewardTaken` | row 2 "Medicine Chest Reward" (needs 42), offer 1 |
+| 1876, 1877 | `a1q5-QuestReward2Seen`, `-QuestReward2Taken` | row 3 "Medicine Chest Reward 2" (needs 42), offer 2 |
+
+QuestStates rows 29–34 give the log and tracker from these flags alone (seen live): "Talk to Bestel" after 39, "Travel
+to the Tidal Island / Find the Medicine Chest" after 44, "Travel to Lioneye's Watch" (outside town) or "Talk to Nessa
+for your reward" with 49, and the quest leaves the tracker with 42.
+The dialogue rows are handled by the generic NPCTalk flags ([17](17-npcs.md)); Tarkleigh's row 55 and Bestel's row 75
+are gossip after 42.
+
+**Where the chest comes from: Hailrake.**
+The tile `Metadata/Terrain/Beach/Special/kyrenia_boat_medicinequest_v01_01.tdt` has no `.tmd` (no chest record), and
+the rooms `Area2a/Rooms/medicine_boat_1.arm` / `_2.arm` (tag `medicineboat`) hold only the points `mapboss` and
+`%area%-bosspack` and two snowfall doodads.
+WorldAreas 1_1_2a's Bosses is MonsterVarieties 2887 `Metadata/Monsters/Cannibal/CannibalMaleBossHailrake`; the
+wiki's Medicine Chest page lists that variety as its `drop_monsters` ("acquired after defeating Hailrake"), and a
+separate `…HailrakeGauntletNoQuest` variety exists.
+The rooms have too few doodads for the room fit, so they use their captured placement ([14](14-monster-packs.md) §3):
+seed 1 puts `mapboss` at (265, 437) on the wreck.
+`CannibalBossHailrake.ot` extends `Cannibal`, not `BossLifeBar`, and his row has no `BossHealthBar`: no big life bar.
+His death drops the chest where he fell, unless Nessa has one already, this character carries one or one lies on this
+instance's ground; a chest lost any other way drops again from the next Hailrake.
+The stash is not counted: it is the account's, so another character's stashed chest must not block this one (whose
+tracker would still say "Find the Medicine Chest"); a character that stashes its own chest can get a second one.
+Hailrake, and so the quest, needs the area's captures (`1_1_2a_seed<seed>.doodads.json` and `.rooms.json`, from
+`live.ps1 -Walkmaps`): seed 1 has them; with `Game_RANDOM_SEEDS=1` or without them he is not placed and the quest can't
+be finished.
+
+**The item.** BaseItemTypes 1534 `Metadata/Items/QuestItems/MedicineSet1`, "Medicine Chest", 2×3, item class 31.
+Its `.it` Quest component has `grant_flag = "a1q5minusHaveMedicineChest"` and
+`remove_flag = "a1q5minusNessaCongratulated"`.
+The Gateway keeps 49 equal to "a chest is carried" (inventories and cursor): on entering an area, after a pickup,
+after a read with an item move (drop, place, pick-up, the stash, a sale, a chat command), and about once a second for
+the flag alone.
+Once 42 is set (or `QuestRewardTaken`), a carried chest is taken away (on entering an area or after an item move: the
+inventory changes stay on the message path, in revision order), and a click on a chest on the ground walks the player
+to it and removes it from the ground.
+Stashed chests stay in the stash; one taken out by a character that is done goes at its next item move.
+Choosing Nessa's row 1 removes the chest and sets 42 and clears 49 in one save transaction; without a chest carried
+(or with it on offer to a vendor) nothing changes and the option list comes back.
+
+**Rewards.** Offer 1: Medium Life, Medium Mana or Quicksilver Flask, QuestRewards RewardLevel 4 and rarity column 0
+(normal): created at item level 4 (poedb lists them as iLv4).
+Offer 2: the class's level 1 support gems (Witch: Elemental Proliferation, Spell Cascade, Infused Channelling, Chance
+to Poison, Summon Phantasm).
+Both are claimed like Hillock's reward (one save with the taken flag, once).
+QuestRewardOffers' `__col8` is set on offer 2 (and on a1q4b); its meaning is unknown, the client lists the option
+anyway.
+
 ## Open
 
 - How the real server gives an AreaTransition subtype its Transitionable state (blob tasks?), so the Strand's gate and

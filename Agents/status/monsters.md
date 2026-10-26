@@ -18,6 +18,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   packs, some magic, at least 2 with a rare; cannibal packs at the bonfires) and the unique boss at the camp's
   `mapboss` point with its boss pack (Fire Fury beside the campfire, verified live 2026-10-18);
   room points are found by fitting rooms to the doodads `-Walkmaps` captures.
+  The Tidal Island's boat rooms are too sparse to fit and use their captured placement: Hailrake stands on the wreck.
   Code: `MonsterPacks.cs`, Gateway (`PopulateArea`), `scripts/walkmaps`, `scripts/re/atlas room-points`.
   Docs: [14](../docs/protocol/14-monster-packs.md).
 - Emerge monsters (Gravel Eaters, Dripping Dead, the Twilight Strand's Drowned …) are created buried, cannot be hit
