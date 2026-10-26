@@ -76,17 +76,16 @@ partial class Program
 
     // A click on the Stash (C→S 0x24): walk there, then S→C 0x7b kind 1 opens the stash panel. Its affinity argument selects
     // the tab carrying that affinity bit in the tab list, which only the account's last tab does (AccountStash.Records).
-    static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use)
+    static async Task OpenStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use, double requestedAt)
     {
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         conn.BenchOpen = false;
         if (StashCatalog.In(conn.Layout.Hash) is not { } at) return;
-        int action = Interlocked.Increment(ref conn.ActionCount);
-        double now = conn.Clock.Elapsed.TotalSeconds;
-        var (here, stop, arrive) = conn.Walk.WalkUpTo(at.X, at.Y, ClientState.StashBlockerSize, now);
+        if (!TryBeginObjectWalk(conn, requestedAt, at.X, at.Y, ClientState.StashBlockerSize, out var objectWalk)) return;
+        var (action, now, here, stop, arrive) = objectWalk;
         Console.WriteLine($"[gateway] {remote} <= 0x0024 stash ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
-        if (conn.ActionCount != action) return;
+        if (!PlayerActionCurrent(conn, action)) return;
         conn.GuildStashOpen = false;
         var stash = StashOf(conn);
         // The panel keeps its tab while this connection lasts; only its first open here is moved to the account's last tab.
@@ -97,11 +96,12 @@ partial class Program
             conn.StashForcedTab = stash.LastTab;
             conn.StashForcedUntil = conn.Clock.Elapsed.TotalSeconds + StashForcedWindow;
             await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceStash.OpenStashUi, conn.StashObject, StashSelectAffinity),
-                $"0x007b open the stash on tab {stash.LastTab} \"{stash.NameOf(stash.LastTab)}\" (affinity {StashSelectAffinity})");
+                $"0x007b open the stash on tab {stash.LastTab} \"{stash.NameOf(stash.LastTab)}\" (affinity {StashSelectAffinity})",
+                still: () => PlayerActionCurrent(conn, action));
         }
         else
             await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceStash.OpenStashUi, conn.StashObject, InstanceStash.NoAffinity),
-                "0x007b open the stash on the panel's own tab");
+                "0x007b open the stash on the panel's own tab", still: () => PlayerActionCurrent(conn, action));
     }
 
     // C→S 0xc7: the panel shows a tab whose contents it does not have (or it just opened on it). The first time per

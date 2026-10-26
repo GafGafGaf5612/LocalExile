@@ -146,8 +146,10 @@ partial class Program
         }
     }
 
-    // A cast's time in ms: the effect's CastTime scaled by the player's increased cast speed.
-    static int CastMs(ClientState conn, int effect) => (int)Math.Round(Skills.CastMs(effect) / (1 + CastSpeedPct(CharacterPlayerStats(conn)) / 100.0));
+    // A genuine spell's final server wait; native actions instead receive the unadjusted base milliseconds.
+    // Null refuses an invalid/unrepresentable cast rather than turning it into an immediate hit.
+    static int? CastMs(ClientState conn, int effect) =>
+        SpellCastTiming.ForSkill(Skills, effect, CastSpeedPct(CharacterPlayerStats(conn)))?.DurationMilliseconds;
 
     // cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
     static int CastSpeedPct(IReadOnlyDictionary<uint, int> stats) =>
@@ -545,6 +547,7 @@ partial class Program
             if (conn.PlayerLife > 0) return;
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
+            conn.HitRecovery.Clear();
             conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;
