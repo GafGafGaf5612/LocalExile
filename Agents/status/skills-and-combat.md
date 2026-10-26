@@ -289,6 +289,27 @@ Part of [Status](../Status.md); what to build next in this area is in
   each spell's extracted base chance, and 150% plus `base_critical_strike_multiplier_+`;
   critical damage is multiplied and logged.
   Unarmed has 0% base crit.
+  Two pure base stats replace that base before the increased chance, the way PoB's `WeaponBaseCritChance` replaces
+  an attack pass's `source.CritChance` when that hand has a weapon:
+  `override_weapon_base_critical_strike_chance` (Stats row 9892, permyriad) on the armed main hand — Slayer
+  Overwhelm (graph id 17315) grants 800 = 8.00% and Blind Prophet's Sightless (graph id 24698) grants 900 =
+  9.00% — and `base_melee_critical_strike_chance_while_unarmed_%` (Stats row 3906, permyriad; Behemoth Final Blow,
+  graph id 10135, grants 1000 = 10.00%) on the unarmed melee attack.
+  Each is a base, not a fixed final chance: generic increased crit still applies on top;
+  the weapon override stays out of unarmed and spell rolls, and the unarmed base stays out of a weapon hand.
+  Only the active weapon set supplies the attack base and its weapon-specific increases.
+  `/set_stat` replaces the input and rebuilds the pools, so the panel and the rolls agree.
+  Generic/spell development increases replace the same complete raw input used by spell rolls, including aura sources.
+  Attack/spell increased percentages and the pooled spell reference now follow those effective inputs.
+  Automated regressions cover these replacements, signed sum bounds and shared integer rounding.
+  Attack and spell chances now share half-up permyriad rounding: 650 with +1% gives 657.
+  Native evidence below targets original head `8c4c62d`; recheck the changed midpoint and resolved stack natively.
+  Five follow-up native checks verify generic/spell input agreement and maximum/minimum integer saturation.
+  Twelve native checks verified 830 → 800 → 900, increased chance → 1800, cannot-crit → zero,
+  empty-set/unarmed behavior, weapon restoration and relog.
+  Ascendancy allocation remains in the separate lifecycle change.
+  Global, virtual-global and attack-specific cannot-crit flags suppress the attack chance.
+  `SpellCriticalStrike` reads neither base override.
   The final main-hand and spell crit chance/multiplier stats go to the client for the Offence panel;
   selected spell chance and server projectile/area rolls now share raw player and skill inputs once.
   Precision and Zealotry retain their existing bonuses without counting them twice.

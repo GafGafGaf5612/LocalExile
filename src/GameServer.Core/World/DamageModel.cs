@@ -37,10 +37,15 @@ public static class DamageModel
     /// <summary>Fireball's GrantEffectStatSetsPerLevel SpellCritChance (500 = 5.00%).</summary>
     public const int BaseSpellCriticalStrikeChancePerMyriad = 500;
 
-    /// <summary>A hit's critical strike chance: the base chance (permyriad: 500 = 5%) raised by the increased
-    /// critical strike chance stat, capped at 100%.</summary>
-    public static double CriticalStrikeChance(int basePerMyriad, int increasedPct) =>
-        Math.Clamp(basePerMyriad / 100.0 * (100 + increasedPct) / 100.0, 0, 100);
+    /// <summary>A hit's integer permyriad critical chance. Nonnegative midpoints round half up, shared by
+    /// attack and spell rolls and panels. Keep the complete signed source sum until this final calculation.</summary>
+    public static int CriticalStrikeChancePerMyriad(int basePerMyriad, long increasedPct) =>
+        (int)decimal.Round(Math.Clamp(basePerMyriad * (100m + increasedPct) / 100m, 0m, 10_000m),
+            0, MidpointRounding.AwayFromZero);
+
+    /// <summary>The same critical chance expressed as a percentage for diagnostics and chance-based consumers.</summary>
+    public static double CriticalStrikeChance(int basePerMyriad, long increasedPct) =>
+        CriticalStrikeChancePerMyriad(basePerMyriad, increasedPct) / 100.0;
 
     /// <summary>A critical hit's damage, rounded to the nearest point; <paramref name="multiplier"/> is the final
     /// percentage (150 by default).</summary>

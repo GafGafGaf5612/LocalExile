@@ -85,6 +85,11 @@ public class DamageModelTests
     [InlineData(830, 50, 12.45)]
     [InlineData(0, 200, 0)]
     [InlineData(500, 10000, 100)]
+    [InlineData(650, 1, 6.57)]
+    [InlineData(500, int.MaxValue, 100)]
+    [InlineData(500, int.MinValue, 0)]
+    [InlineData(0, int.MaxValue, 0)]
+    [InlineData(int.MaxValue, int.MaxValue, 100)]
     public void Critical_strike_chance_is_the_base_raised_by_increased(int basePerMyriad, int increased, double expected)
     {
         Assert.Equal(expected, DamageModel.CriticalStrikeChance(basePerMyriad, increased), 2);
