@@ -189,9 +189,19 @@ partial class Program
             {
                 var (u2, node, u6) = InstanceEntities.ReadAllocatePassive(bytes);
                 Console.WriteLine($"[gateway] {remote} <= 0x0034 allocate passive {node} ({Passives.Find(node)?.Name ?? "unknown"}), " +
-                    $"mastery effect {u2}, u8 {u6}");
-                await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree",
-                    u2 == 0 ? null : u2);
+                    $"node high16 {u2}, expansion {u6}");
+                if (u2 == 0 && u6 == 0)
+                    await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree");
+                else
+                {
+                    Console.WriteLine($"[gateway] {remote} allocation refused: expanded/32-bit passive ids are not supported");
+                    await SendPassives(remote, stream, ciphers, conn);
+                }
+            }
+            else if (id == InstanceEntities.MasteryEffectId)
+            {
+                var (node, effect) = InstanceEntities.ReadMasteryEffect(bytes);
+                await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree mastery", effect);
             }
             else if (id == InstanceEntities.RefundPassiveId)
             {
@@ -551,15 +561,8 @@ partial class Program
                 await Send(remote, stream, ciphers, InstanceDelve.Chart(a, b, cells),
                     $"0x0240 Delve chart: {a}, {b}, {cells.Count} cell(s) {string.Join(" ", cells)}");
             }
-            // C→S 0x35: the mastery effect chosen in the passive tree (node, effect HASH16). It allocates the mastery node
-            // and records the effect; the client waits for the 0x33 tree and the updated stats.
-            if (uid == InstanceEntities.MasteryEffectId && unknown.Length >= 6)
-            {
-                var (node, effect) = InstanceEntities.ReadMasteryEffect(unknown);
-                await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree mastery", effect);
-            }
             // The client's answer to 0x2b2 (0x142148690): it is ready to leave, so move it now.
-            else if (uid == InstanceTransfer.LeaveAreaAckId && conn.PendingTransfer is { } t) await Transfer(remote, stream, ciphers, conn, t);
+            if (uid == InstanceTransfer.LeaveAreaAckId && conn.PendingTransfer is { } t) await Transfer(remote, stream, ciphers, conn, t);
         }
     }
 }

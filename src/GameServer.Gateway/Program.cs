@@ -217,6 +217,9 @@ sealed partial class Program
     internal static readonly InstanceStore Instances = new(TimeProvider.System, new GameServer.Core.World.InstanceRegistry().Lifetime);
     // The passive tree's nodes (PassiveSkills.dat by PassiveSkillGraphId).
     internal static readonly PassiveTree Passives = new();
+    internal static readonly OrdinaryPassiveRules OrdinaryPassives = new();
+    internal static readonly AscendancyCatalog Ascendancies = new();
+    internal static readonly AscendancyRules AscendancyRules = new(Ascendancies);
     // How close (cells) the player must be to a dying monster to gain its experience. Game_XP_RANGE overrides it.
     internal const int GodRegenPerSecond = 10_000;
     // /god regenerates 100% of maximum life per second (more than Righteous Fire's 90% burn).

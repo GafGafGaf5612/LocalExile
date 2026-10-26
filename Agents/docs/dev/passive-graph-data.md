@@ -5,7 +5,8 @@ Generated files are analysis artifacts under `data/`; they provide no installed 
 The exporter never writes `Client/Content.ggpk` and has no apply, restore, recovery or installed-graph check modes.
 Standard startup must preserve the installed 3.29.3b archive.
 Any client archive mutation requires separate maintainer agreement.
-Gateway graph enforcement, ascendancy lifecycle/effects and native integration remain separate work.
+The [selection layer](../game/ascendancies.md) consumes JSON topology for server validation and command-based lifecycle.
+Special ascendancy gameplay and Phrecia native integration remain separate work.
 
 ## Inputs and generated data
 
@@ -32,7 +33,7 @@ Output is restricted to these two files under this checkout's `data/`, using ord
 Outputs cannot overwrite the input archive.
 The artifact name is retained from the source implementation; it does not imply native installation.
 `GameDataFiles.cs` lists both outputs to keep the extraction contract in step with the manifest.
-Those entries describe tooling artifacts, not active Gateway consumers.
+The selection layer consumes the JSON for server connectivity; the PSG remains an uninstalled analysis artifact.
 
 The exporter pins the ordinary source `metadata/passiveskillgraph.psg` to SHA-256
 `82D82CD3CD2DAD81606AF0DA9D18FCD53B2E92CF006550947D65A4F7E102DC32` and the original alternate source

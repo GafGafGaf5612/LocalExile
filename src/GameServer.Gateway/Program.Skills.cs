@@ -488,20 +488,34 @@ partial class Program
     // taken back, last allocated first.
     static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int level)
     {
-        int before = conn.Pools.Level;
-        List<ushort>? trimmed = null;
+        int before;
+        List<ushort> next;
         Dictionary<ushort, ushort> effects;
+        AscendancyProgress ascendancy;
+        CharacterSaves.PassiveProgressSnapshot? expected;
+        bool changed;
         lock (conn.Monsters)
         {
-            int had = conn.Passives.Count;
-            TrimPassives(conn, level);
-            if (conn.Passives.Count != had) trimmed = [.. conn.Passives];
-            effects = conn.MasteryEffects.Where(kv => conn.Passives.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            before = conn.Pools.Level;
+            next = [.. conn.Passives];
+            int points = Progression.PassivePoints(level) + conn.ExtraPassivePoints + AscendancyOrdinaryPoints(conn);
+            TrimOrdinaryPassives(conn, next, points);
+            changed = next.Count != conn.Passives.Count;
+            effects = conn.MasteryEffects.Where(kv => next.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            ascendancy = conn.MainAscendancy;
+            expected = conn.SavedPassiveProgress;
+        }
+        // Only a lower level (/set_level) drops passives; otherwise the saved ones stay as they are.
+        if (changed)
+            CharacterSaves.SetMainAscendancy(CharacterName(conn), ascendancy, next, effects, expected: expected);
+        lock (conn.Monsters)
+        {
+            conn.Passives = next;
+            conn.MasteryEffects = effects;
+            if (changed) conn.SavedPassiveProgress = new(ascendancy, next, effects, conn.RefundPoints);
             conn.Pools = PoolsFor(conn, level);
             conn.ApplyMovementSpeed();
         }
-        // Only a lower level (/set_level) drops passives; otherwise the saved ones stay as they are.
-        if (trimmed is not null) CharacterSaves.SetPassives(CharacterName(conn), trimmed, effects);
         Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}, {Progression.PassivePoints(level)} passive point(s))");
         await SendCharacterStats(remote, stream, ciphers, conn, $"level {level}");
         int mana = UnreservedMana(conn);

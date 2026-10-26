@@ -76,13 +76,10 @@ partial class Program
                 await stream.WriteAsync(InstanceProtocol.StartEncryption());
                 Console.WriteLine($"[gateway] {remote} => 0x0011 (start encryption)");
 
-                // Text is the character's league: the map overlay shows it under the area name ("{0} League", 0x1406b2030).
-                var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0, Text: resolved.League ?? "");
-                await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}");
-
                 // Anything after the opening was already encrypted by the client.
                 var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), InstanceNumber = instanceId, LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
                 left = conn;
+                CheckAscendancyClientCompatibility(conn);
                 conn.Commands = Commands(remote, stream, ciphers, conn);
                 conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _) || HideoutCatalog.ByArea(layout.Hash) is not null;
                 conn.ArriveAt = SpotArrivals.TryRemove(ticket, out var spot) ? spot : null;
@@ -99,6 +96,9 @@ partial class Program
                 if (startItems.CancelOffers().Count is > 0 and var cancelled)
                     Console.WriteLine($"[gateway] {remote} {cancelled} item(s) offered in an unfinished sale are back in their cells");
                 int level = LoadProgress(conn, resolved.Level);
+                var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0,
+                    Text: resolved.League ?? "", LeagueStats: LeagueStatsFor(conn.MainAscendancy));
+                await Send(remote, stream, ciphers, area.Encode(), $"0x001d {area}; ascendancy family {conn.MainAscendancy.Selection?.Family}");
                 if (level != resolved.Level)
                 {
                     // The saved experience is the character's level: Auth's (the ticket's) was not updated at the last level-up.

@@ -9,7 +9,7 @@ Everything is in one SQLite file, `data/saves.db` (`Game_SAVES_DB` to put it els
 
 | What | Table | Code |
 |---|---|---|
-| A character's items (every inventory row and the cursor), skill bar, experience, passives and mastery effects, refund and extra passive points, waypoints, visited areas, quest flags, the start weapon still on the ground | `characters`, one row per character | `CharacterSaves`, `PlayerInventories` (Gateway) |
+| A character's items (every inventory row and the cursor), skill bar, experience, passives and mastery effects, refund and extra passive points, main ascendancy identity/nodes/tier awards, waypoints, visited areas, quest flags, the start weapon still on the ground | `characters`, one row per character | `CharacterSaves`, `PlayerInventories` (Gateway) |
 | An account stash's header: its tabs (name, type, colour), last tab, next stash item id, gold | `stashes`, one row per account | `AccountStash` (Gateway) |
 | The items of one stash tab | `stash_tabs`, one row per account and tab | `AccountStash` (Gateway) |
 | Accounts | `accounts` | `SqliteAccountStore` (Auth, Host) |
@@ -49,6 +49,13 @@ none of it is. An item is never lost between its two places, nor counted in both
 | Old per-character gold → the account (login) | the stash's gold, the character save letting go of it |
 | Map device Activate | every slot's item |
 | Delete a character (Auth) | the character out, its save set aside |
+
+Main ascendancy changes save the identity, allocated nodes and idempotent tier awards with any ordinary/mastery
+changes and refund payment in one transaction (`CharacterSaves.SetMainAscendancy`).
+A snapshot comparison rejects an old area's attempt to replace a newer passive state.
+`ChangeMainAscendancy` applies awards/selection to the latest saved state.
+Unknown nested ascendancy fields are kept, and incompatible identities/graphs are refused without dropping progress.
+The production Phrecia compatibility gate runs before inventory loading or save normalization.
 
 A stash change writes the stash's header and only the tab it changed: a click in one tab doesn't rewrite every tab.
 
@@ -96,7 +103,9 @@ nothing changes and the window stays open ("Not enough room in your inventory.")
   `UnknownSavedItemException`, and so do saved passives without the passive tree: the login stops and the save stays.
   Dropping them would lose them at the next save. Extract the game data (`scripts/dev/extract-data.ps1`) and log in
   again.
-- Loading a character writes nothing; only a new character's start kit is saved at once.
+- Loading a character normally writes nothing; a new character's start kit is saved at once.
+  A valid ordinary tree exceeding a reduced development level's budget is normalized only after graph validation,
+  with its retained ascendancy state protected by the same atomic passive snapshot comparison.
 - A ticket Auth can't resolve is refused, instead of playing the session under another save.
 
 ## Saves from before the database

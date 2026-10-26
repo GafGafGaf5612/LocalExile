@@ -338,6 +338,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
     public List<ushort> Passives = [];
+    public AscendancyProgress MainAscendancy = new();
+    public CharacterSaves.PassiveProgressSnapshot? SavedPassiveProgress;
     // Selected mastery effects: mastery node (PassiveSkillGraphId) -> effect HASH16. Saved with the character.
     public Dictionary<ushort, ushort> MasteryEffects = [];
     // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.

@@ -29,9 +29,18 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-Nothing yet.
+- Command-based ordinary ascendancy selection and the ordinary/Phrecia identity, point, refund and save lifecycle.
+  Automated domain, packet and production-handler tests cover ownership, separate budgets, graph connectivity,
+  multiple-choice effects, atomic refunds, stale connections and old/unknown saves.
+  Native verification of this split remains with the parent before moving the entry to Works.
+  Phrecia game connections/selection remain explicitly gated pending an agreed client-compatible graph.
+  Normal startup does not install or recover a graph and ordinary/unascended play has no alternate-graph preflight.
+  The native Labyrinth/Altar flow is separate (#151); special class gameplay is outside this slice.
+  Code: `AscendancyCatalog`, `AscendancyProgress`, `OrdinaryPassiveRules`, `CharacterSaves`, Gateway progression.
+  Docs: [scope and beginner steps](../docs/game/ascendancies.md).
 
 ## Not working yet
 
 - Saving quest progress.
-  Quest passive points, quest refund points and ascendancy ([15](../docs/protocol/15-progression.md) "Open").
+  Quest passive/refund rewards and native Labyrinth/Altar acquisition (#151) remain missing.
+  Special ascendancy gameplay and Phrecia client compatibility are separate work.

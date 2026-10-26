@@ -451,24 +451,27 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x0058 use item {use}: {type.Name} is not handled: {hex}");
             return;
         }
-        ushort refunds;
-        lock (conn.Monsters)
+        // Read the current balance inside the same transaction as consumption. An older area must not restore
+        // refund points another connection has already spent.
+        var result = Saves.Atomically(() =>
         {
-            if (conn.RefundPoints == ushort.MaxValue)
-            {
-                Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: refund points are already at the maximum");
-                return;
-            }
+            ushort held = CharacterSaves.Load(CharacterName(conn))?.RefundPoints ?? 0;
+            if (held == ushort.MaxValue) return (Points: held, Taken: (PlayerInventories.Consumption?)null);
             // An Orb of Regret gives one refund point; a Book of Regrets two (ClientStrings ItemFunction2RespecPoints).
-            refunds = (ushort)Math.Min(ushort.MaxValue, conn.RefundPoints + (type.Name == RegretBook ? 2 : 1));
-        }
-        // The orb and the point are saved together.
-        if (ItemMoves.UseForRefundPoint(items, CharacterName(conn), r, use.ItemId, refunds) is not { } taken)
+            ushort points = (ushort)Math.Min(ushort.MaxValue, held + (type.Name == RegretBook ? 2 : 1));
+            return (Points: points, Taken: ItemMoves.UseForRefundPoint(items, CharacterName(conn), r, use.ItemId, points));
+        });
+        if (result.Taken is not { } taken)
         {
-            Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: item {use.ItemId} disappeared: {hex}");
+            Console.WriteLine($"[gateway] {remote} <= 0x0058 use {type.Name}: refund cap reached or item {use.ItemId} disappeared: {hex}");
             return;
         }
-        lock (conn.Monsters) conn.RefundPoints = refunds;
+        ushort refunds = result.Points;
+        lock (conn.Monsters)
+        {
+            conn.RefundPoints = refunds;
+            conn.SavedPassiveProgress = new(conn.MainAscendancy, conn.Passives, conn.MasteryEffects, refunds);
+        }
         uint inventoryId = PlayerInventories.InventoryId(r);
         // Every change removes the id first: the client keeps an item by id, so a stack that only shrinks needs the remove
         // and the add of the same id with its new Stack component (as SendMerged does).

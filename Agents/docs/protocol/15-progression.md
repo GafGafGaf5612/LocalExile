@@ -35,7 +35,7 @@ yet confirmed on screen).
   | u16 | +0x274 | `extra_skill_points` (quest points; dev extra points for now) |
   | u16 | +0x27c | ascendancy points |
   | u8 | +0x26c | **the level**: the client's `points_from_level` = (level − 1) × points per level |
-  | u8 | +0x268 | the class byte (Characters.dat IntegerId, ascendancy in bits 5–7): the tree's start |
+  | u8 | +0x268 | class byte: base IntegerId + packed ClassNo (`CharacterClassByte`), the tree's start |
   | u8 | +0x269 | |
   | u8 flags | | bit0 → +0x91, bit1 → no lists (then `0x141ef73e0` sets only the numbers) |
   | vec16 u16 | +0x180 | **allocated nodes**: PassiveSkills.dat `PassiveSkillGraphId`, raw (little-endian), **sorted** (§2 Gold respec) |
@@ -46,11 +46,15 @@ yet confirmed on screen).
   The client's check `0x141ef3e60` logs "character passive skills allocated but only allowed {}.
   points_from_level={}, skill_points_from_passives={}, extra_skill_points={}" and drops unconnected nodes itself.
   The Gateway sends it after the player on entry and after every level or passive change.
-- **C→S 0x34** (7 bytes): `u16 0, u16 node (big-endian), u8 0`. A normal allocation has effect 0. Captured normal: `00340000DFB000` = 57264,
+- **C→S 0x34** (7 bytes): `u32 node (big-endian), u8 expansion`. The high half of the node is not a mastery effect.
+  Captured normal: `00340000DFB000` = 57264,
   Spell Damage and Mana, next to the Witch's start. The client waits for the tree back; without 0x33 the click is
   undone. The Gateway
-  checks the node exists, is not an ascendancy node and fits the points (level − 1 plus the nodes' own
-  `SkillPointsGranted`), saves the list (`Passives`) and answers with 0x33; a refused click gets the old tree back.
+  checks the node exists in the active graph and fits its ordinary or ascendancy budget. Ascendancy allocations
+  additionally require the selected class/family and exclusive-choice rules.
+  Both ordinary and ascendancy allocations require graph connectivity.
+  It saves the change
+  and answers with 0x33; a refused click gets the old tree back. Unsupported expansion/32-bit IDs are refused intact.
 - **C→S 0x123** (3 bytes, u8 1 / 0): a panel opened or closed (sent when the tree opens and closes).
 - **C->S 0x35** (6 bytes): u16 node (big-endian, PassiveSkillGraphId), u16 effect (big-endian,
   PassiveSkillMasteryEffects.dat HASH16). Captured `003598091194` = node 38921 (Block Mastery), effect 4500
@@ -92,7 +96,66 @@ yet confirmed on screen).
   saved per character. Using an Orb of Regret (right-click, C→S 0x58) takes one item and adds one point; the stack's
   0xbf and the tree's 0x33 are sent back. `/add_refund_points <n>` remains a dev shortcut. Expansion nodes are still
   refused.
-- `/passives` lists the passive and refund points, `/reset_passives` refunds all (free).
+- `/passives` lists the ordinary passive and refund points; `/reset_passives` refunds ordinary nodes (free).
+
+### Ordinary-tree connectivity
+
+`OrdinaryPassiveRules` checks the complete candidate against the selected normal or generated Phrecia graph before
+`ChangePassives` saves or charges anything.
+The character's implicit root comes from `PassiveSkills.Characters`, translated through `Characters.IntegerId`.
+Other class starts are not paid allocations or traversal bridges.
+An allocated Ascendant Path node can supply another implicit root through `display_can_take_character_start_point`.
+Its value is the target's `IntegerId` directly, not its table row or `IntegerId + 1`.
+For example, Path of the Marauder `24755` grants class `1`; its root is resolved from the extracted tables.
+
+Traversal follows undirected graph links through allocated ordinary nodes.
+Masteries may be reached from an allocated notable but cannot connect other branches.
+Proxy passives and expansion nodes are refused until actual cluster-jewel topology is implemented.
+Ordinary large jewel sockets remain allocatable.
+Allocation batches may arrive in any order; only their final connected set matters.
+The same check covers mastery selection, regret/gold refunds, development commands and family changes.
+It runs after the proposed ascendancy change, so refunding a Path grant cannot orphan ordinary nodes.
+
+On loading, validation precedes normalization and legacy gold migration.
+An invalid saved tree is refused with its original save retained.
+If a valid tree exceeds a lower level's budget, trimming removes the latest safely removable leaf rather than
+blindly deleting the last listed node.
+Mastery effects belonging to removed nodes are removed with them.
+Identity, ordinary/ascendancy allocations and refund payment still share the existing save transaction and stale-save
+comparison.
+
+### Main ascendancies
+
+`AscendancyCatalog` joins the exact target's Ascendancy/Characters/PassiveSkills tables with the generated PSG
+topology (`data/passive-skill-graphs.json`, extraction manifest entry `passive-graphs`). It retains 21 ordinary and
+19 Phrecia choices, including all ordinary Scion alternatives. The durable identity is family + stable table Id +
+revision, not a packed class byte or a table row. See [the feature and limitations](../game/ascendancies.md).
+
+`MainAscendancy` stores that identity, its own allocated nodes and the four idempotent Labyrinth-tier awards (two
+points each). Start nodes are implicit/free and are not sent as allocated nodes. 0x33 sends total earned ascendancy
+points and the union of both allocated lists; the client derives spending. Nodes' `SkillPointsGranted` explicitly
+add to the ordinary budget, independently of their ascendancy cost. Level trimming affects only ordinary nodes.
+
+Refund currency has a different rule from allocation cost: a multiple-choice parent consumes one ascendancy point
+and its effect consumes zero; refunding the parent costs zero regrets, the effect five. Other ascendancy nodes cost
+five, ordinary nodes one. Gold respec remains ordinary-only. Removing point grants or prerequisites cannot leave
+overspending or orphaned ascendancy nodes. Changing the selected class/family requires an empty ascendancy allocation.
+
+Identity, allocations, choices and refund payment commit in one save before runtime/stat publication. A passive
+snapshot comparison inside the transaction prevents an old connection from overwriting newer progress. Unknown
+saved revisions, nodes and graph mismatches refuse loading and preserve the original save. Real refund-currency use
+refreshes the snapshot before the next allocation.
+
+The native class byte is `baseIntegerId | ((ClassNo & 3) << 6) | ((ClassNo & 4) << 3)`; zero ClassNo is unascended.
+Phrecia uses world stat 21146 in **the first** optional compact pair list of 0x1d, not 0x33's secondary-ascendancy byte.
+The character's actual league and account stash are unchanged.
+`/ascendancy normal <name>` chooses an ordinary class and reloads the area.
+`/ascendancy_points` is a dev award shortcut.
+Phrecia selection and game connections are explicitly gated pending an agreed client-compatible graph.
+The installed alternate graph has older ordinary topology; this slice never installs or recovers a graph in the client.
+Ordinary/unascended connections do not run an alternate-graph compatibility check.
+The native Labyrinth/Altar flow is still separate work (#151).
+[Native addresses, wire layout and live traces](../re/ascendancy-client-3.29.3b.md).
 
 **Book of Skill** (`UseSkillBook`). Right-clicking one (C→S 0x58, as an Orb of Regret) uses it up and adds one extra
 passive skill point (`ExtraPassivePoints`, as `/add_passive_points 1`); the book and the point are saved in one
@@ -112,7 +175,10 @@ it off.
 
 ## Open
 
+- Phrecia client compatibility, special ascendancy gameplay and native Labyrinth/Altar acquisition (#151).
+  Selection/points/saves have automated coverage; this slice makes no claim that all 19 classes' gameplay works.
+  See [scope and checks](../game/ascendancies.md).
 - The real rarity experience bonuses, the level 95+ penalty, party sharing.
-- Quest passive points, ascendancy; the tree's connections (PassiveSkillGraph.psg) are not checked by the server.
+- Quest passive-point rewards and cluster/expansion topology; ordinary and ascendancy connectivity are checked.
 - Real drop pools (MonsterVarieties / area drop tables), item rarity and mods, quantity and rarity bonuses; ground
   items only exist on the connection that saw them drop.
