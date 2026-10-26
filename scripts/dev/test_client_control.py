@@ -6,7 +6,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from client_control import chat_packet, collect_replies, flask_packet, log_mark, normalize, read_replies, run_request, tp_text
+import frida
+
+from client_control import (chat_packet, collect_replies, flask_packet, log_mark, normalize, read_replies,
+                            resolution_mode, run_request, tp_text)
 
 
 class ClientControlTests(unittest.TestCase):
@@ -40,6 +43,23 @@ class ClientControlTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertNotIn("do-not-echo", json.dumps(result))
         self.assertEqual("", output.getvalue())
+
+    def test_force_scan_switch(self):
+        self.assertEqual(resolution_mode(""), "pinned")
+        self.assertEqual(resolution_mode("0"), "pinned")
+        self.assertEqual(resolution_mode("1"), "signature")
+        self.assertEqual(resolution_mode("signature"), "signature")
+        self.assertEqual(resolution_mode("xref"), "xref")
+        with self.assertRaises(ValueError):
+            resolution_mode("maybe")
+
+    def test_unsupported_client_errors_drop_the_agent_stack(self):
+        class Unsupported:
+            def execute(self, request):
+                raise frida.RPCException("Error: Unsupported client: play needs play (not found)\n"
+                                         "    at need (/a.js:1:2)")
+        result = run_request(Unsupported(), {"command": "character:play", "name": "OfflineWitch"})
+        self.assertEqual(result["error"], "Unsupported client: play needs play (not found)")
 
     def test_tp_requests_become_tp_commands(self):
         self.assertEqual(tp_text({"x": 120, "y": 340}), "/tp 120 340")

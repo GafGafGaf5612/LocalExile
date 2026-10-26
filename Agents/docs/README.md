@@ -61,4 +61,4 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 
 [Recovery timing](re/recovery-timing.md): read-only client pool tracing, native prediction inputs and ES verification limits.
 
-[Native client control](dev/client-control.md): CLI and persistent JSON RPC for local launch, login, character selection, commands and state reads through the 3.29.3b client.
+[Native client control](dev/client-control.md): CLI and persistent JSON RPC for local launch, login, character selection, commands and state reads through the 3.29.3b client, with signature-based address resolution and `bridge:doctor`.
