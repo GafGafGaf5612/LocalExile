@@ -482,40 +482,52 @@ partial class Program
         await ApplyLevel(remote, stream, ciphers, conn, level);
     }
 
+    internal sealed record PassiveLevelChange(int Level, int Before, ushort ExtraPoints,
+        IReadOnlyList<ushort> Nodes, IReadOnlyDictionary<ushort, ushort> Masteries, AscendancyProgress Ascendancy,
+        ushort RefundPoints, CharacterSaves.PassiveProgressSnapshot? Expected, bool Trimmed);
+
+    internal static PassiveLevelChange CaptureLevelChange(ClientState conn, int level)
+    {
+        lock (conn.Monsters)
+        {
+            var next = new List<ushort>(conn.Passives);
+            int points = Progression.PassivePoints(level) + conn.ExtraPassivePoints + AscendancyOrdinaryPoints(conn);
+            TrimOrdinaryPassives(conn, next, points);
+            var effects = conn.MasteryEffects.Where(kv => next.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            return new(level, conn.Pools.Level, conn.ExtraPassivePoints, next, effects, conn.MainAscendancy,
+                conn.RefundPoints, conn.SavedPassiveProgress, next.Count != conn.Passives.Count);
+        }
+    }
+
+    internal static int CommitLevelChange(ClientState conn, PassiveLevelChange change)
+    {
+        lock (conn.Monsters)
+        {
+            // An allocation/refund may have committed after capture, even when this level did not need a trim.
+            // Rebuild against the current runtime snapshot; keep the durable comparison for other connections.
+            if (!ReferenceEquals(change.Expected, conn.SavedPassiveProgress) || change.Before != conn.Pools.Level ||
+                change.ExtraPoints != conn.ExtraPassivePoints || change.RefundPoints != conn.RefundPoints)
+                change = CaptureLevelChange(conn, change.Level);
+            if (change.Trimmed)
+                CharacterSaves.SetMainAscendancy(CharacterName(conn), change.Ascendancy, change.Nodes, change.Masteries,
+                    expected: change.Expected);
+            conn.Passives = [.. change.Nodes];
+            conn.MasteryEffects = new(change.Masteries);
+            if (change.Trimmed)
+                conn.SavedPassiveProgress = new(change.Ascendancy, change.Nodes, change.Masteries, conn.RefundPoints);
+            conn.Pools = PoolsFor(conn, change.Level);
+            conn.ApplyMovementSpeed();
+            return change.Before;
+        }
+    }
+
     // A new level in place, after the Player component's experience (0x2ba; the client derives the level from it and runs
     // its level change): the level's stats (0x1b3: level, life, mana, accuracy, ...), the skills with them (0x2ba Actor),
-    // full life, as a level up gives, and the passive skill points (0x3d). Passives beyond a lower level's points are
+    // full life, as a level up gives, and the passive skill points (0x33). Passives beyond a lower level's points are
     // taken back, last allocated first.
     static async Task ApplyLevel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int level)
     {
-        int before;
-        List<ushort> next;
-        Dictionary<ushort, ushort> effects;
-        AscendancyProgress ascendancy;
-        CharacterSaves.PassiveProgressSnapshot? expected;
-        bool changed;
-        lock (conn.Monsters)
-        {
-            before = conn.Pools.Level;
-            next = [.. conn.Passives];
-            int points = Progression.PassivePoints(level) + conn.ExtraPassivePoints + AscendancyOrdinaryPoints(conn);
-            TrimOrdinaryPassives(conn, next, points);
-            changed = next.Count != conn.Passives.Count;
-            effects = conn.MasteryEffects.Where(kv => next.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
-            ascendancy = conn.MainAscendancy;
-            expected = conn.SavedPassiveProgress;
-        }
-        // Only a lower level (/set_level) drops passives; otherwise the saved ones stay as they are.
-        if (changed)
-            CharacterSaves.SetMainAscendancy(CharacterName(conn), ascendancy, next, effects, expected: expected);
-        lock (conn.Monsters)
-        {
-            conn.Passives = next;
-            conn.MasteryEffects = effects;
-            if (changed) conn.SavedPassiveProgress = new(ascendancy, next, effects, conn.RefundPoints);
-            conn.Pools = PoolsFor(conn, level);
-            conn.ApplyMovementSpeed();
-        }
+        int before = CommitLevelChange(conn, CaptureLevelChange(conn, level));
         Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: level {before} → {level} (life {conn.Pools.Life}, mana {conn.Pools.Mana}, {Progression.PassivePoints(level)} passive point(s))");
         await SendCharacterStats(remote, stream, ciphers, conn, $"level {level}");
         int mana = UnreservedMana(conn);

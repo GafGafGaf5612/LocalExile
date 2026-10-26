@@ -413,19 +413,23 @@ partial class Program
     // tree's start) and the allocated nodes.
     static async Task SendPassives(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        var (bytes, label) = PassivesMessage(conn);
-        await Send(remote, stream, ciphers, bytes, label);
+        // A queued publication must not restore a tree captured before a later allocation/refund or level change.
+        await Send(remote, stream, ciphers, [], "0x0033 current passive skill tree",
+            atGate: () => PassivesMessage(conn).Bytes);
     }
 
     static (byte[] Bytes, string Label) PassivesMessage(ClientState conn)
     {
-        var (points, refundPoints, nodes, masteries) = PassiveState(conn);
-        int unspent = points + Passives.PointsGranted(nodes) + AscendancyOrdinaryPoints(conn) - nodes.Count;
-        return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, PackedClass(conn), [.. nodes, .. conn.MainAscendancy.Allocated],
-                questPoints: conn.ExtraPassivePoints, refundPoints: refundPoints, ascendancyPoints: (ushort)conn.MainAscendancy.EarnedPoints, masteryEffects: masteries),
-            $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), " +
-            $"{refundPoints} refund point(s), {nodes.Count} allocated, {unspent} unspent; " +
-            $"ascendancy {conn.MainAscendancy.Selection?.Family}/{conn.MainAscendancy.Selection?.Id}, {conn.MainAscendancy.EarnedPoints} earned, {conn.MainAscendancy.Allocated.Count} nodes");
+        lock (conn.Monsters)
+        {
+            var (points, refundPoints, nodes, masteries) = PassiveState(conn);
+            int unspent = points + Passives.PointsGranted(nodes) + AscendancyOrdinaryPoints(conn) - nodes.Count;
+            return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, PackedClass(conn), [.. nodes, .. conn.MainAscendancy.Allocated],
+                    questPoints: conn.ExtraPassivePoints, refundPoints: refundPoints, ascendancyPoints: (ushort)conn.MainAscendancy.EarnedPoints, masteryEffects: masteries),
+                $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), " +
+                $"{refundPoints} refund point(s), {nodes.Count} allocated, {unspent} unspent; " +
+                $"ascendancy {conn.MainAscendancy.Selection?.Family}/{conn.MainAscendancy.Selection?.Id}, {conn.MainAscendancy.EarnedPoints} earned, {conn.MainAscendancy.Allocated.Count} nodes");
+        }
     }
 
     // The native family selector is a world stat, independently of the character's stored league.
@@ -460,6 +464,8 @@ partial class Program
         int refundsSpent = 0;
         AscendancyProgress ascendancyNow;
         CharacterSaves.PassiveProgressSnapshot? expectedProgress;
+        // Validate, save and publish under one connection lock; level changes cannot split these phases.
+        // All network sends remain outside it (connection lock -> database, never connection lock -> cipher gate).
         lock (conn.Monsters)
         {
             var next = new List<ushort>(conn.Passives);
@@ -526,23 +532,20 @@ partial class Program
             ascendancyNow = ascendancy;
             effectsNow = effects;
             refundsNow = (ushort)(conn.RefundPoints - (refundPoints && error is null ? refundsSpent : 0));
-        }
-        // Saved before it applies, in one transaction: the gold (paid last, from the account's gold: nothing is taken when the
-        // change is refused), the passives, their mastery effects and the refund points.
-        if (error is null)
-            error = Saves.Atomically(() =>
-            {
-                if (goldRespec)
+            // Saved before it applies, in one transaction: the gold (paid last, from the account's gold: nothing is taken when the
+            // change is refused), the passives, their mastery effects and the refund points.
+            if (error is null)
+                error = Saves.Atomically(() =>
                 {
-                    if (PersonalStashOf(conn).TrySpendGold(cost) is not uint left) return $"not enough gold ({cost} needed, {PersonalStashOf(conn).Gold} held)";
-                    gold = left;
-                }
-                CharacterSaves.SetMainAscendancy(CharacterName(conn), ascendancyNow, now, effectsNow, refundPoints ? refundsNow : null,
-                    expected: expectedProgress);
-                return null;
-            });
-        lock (conn.Monsters)
-        {
+                    if (goldRespec)
+                    {
+                        if (PersonalStashOf(conn).TrySpendGold(cost) is not uint left) return $"not enough gold ({cost} needed, {PersonalStashOf(conn).Gold} held)";
+                        gold = left;
+                    }
+                    CharacterSaves.SetMainAscendancy(CharacterName(conn), ascendancyNow, now, effectsNow, refundPoints ? refundsNow : null,
+                        expected: expectedProgress);
+                    return null;
+                });
             if (error is null)
             {
                 conn.Passives = now;

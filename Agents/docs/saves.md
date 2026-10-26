@@ -56,6 +56,10 @@ A snapshot comparison rejects an old area's attempt to replace a newer passive s
 `ChangeMainAscendancy` applies awards/selection to the latest saved state.
 Unknown nested ascendancy fields are kept, and incompatible identities/graphs are refused without dropping progress.
 The production Phrecia compatibility gate runs before inventory loading or save normalization.
+Level candidates are rechecked against the current passive snapshot before applying, even when no trim was planned.
+Allocations/refunds and level trims hold the connection lock through validation, saving and runtime publication.
+The durable snapshot comparison still rejects changes from stale connections, and failed saves publish nothing.
+Network sends occur after releasing that lock; `0x33` samples one current tree only after entering the cipher send gate.
 
 A stash change writes the stash's header and only the tab it changed: a click in one tab doesn't rewrite every tab.
 
