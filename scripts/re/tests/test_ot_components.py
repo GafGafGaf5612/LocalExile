@@ -79,6 +79,22 @@ class LifeMetadataTests(unittest.TestCase):
         result = ot.merge("Item", {"Item": ot.parse('Base {} Mods {}')}, {}, first=())
         self.assertNotIn("life", result)
 
+    def test_collision_metadata_and_life_flags_survive_the_same_inheritance_chain(self):
+        result = self.merged('''Positioned { object_size = 5 blocking = true }
+            Animated { animated_object = "base.ao" }
+            Life { corpse_usable = true prevent_corpse_sinking = true }''', '''extends "Type0"
+            Positioned { object_size = 8 static = true block_league_flag = "test_flag" }
+            Animated { animated_object = "child.ao" } Life { corpse_usable = false }
+            client { Positioned { object_size = 99 blocking = false }
+                Animated { animated_object = "client.ao" } Life { corpse_usable = true } }''')
+        self.assertEqual({"object_size": "8", "blocking": "true", "static": "true",
+                          "block_league_flag": "test_flag"}, result["positioned"])
+        self.assertEqual("child.ao", result["animated_object"])
+        self.assertEqual({"corpse_usable": False, "prevent_corpse_sinking": True,
+                          "corpse_use_veto": False}, result["life"])
+        self.assertEqual(["Positioned", "Animated", "Life"], result["components"])
+        self.assertEqual(3, result["read"])
+
     def test_pinned_cached_summon_inheritance_forbids_corpse_reuse(self):
         types = ["Metadata/Monsters/RaisedZombies/RaisedZombieFour",
                  "Metadata/Monsters/SummonedSpider/SummonedSpider"]

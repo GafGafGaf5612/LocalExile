@@ -65,8 +65,9 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-- Inherited Life corpse eligibility and sinking flags flow from object-types manifest v3 through `MonsterCatalog`
+- Inherited Life corpse eligibility and sinking flags flow from object-types manifest v4 through `MonsterCatalog`
   into ordinary monster creation.
+  The combined object-types format retains the stationary collision footprints and models alongside Life data.
   Explicit false, native defaults, missing inheritance and the Player veto have focused extraction and Core tests.
   The ordinary corpse path requires zero Life; a life-1 boss stage remains alive, with sinking handled independently.
   Six integrated native cases at source `dbfe717`, recorded by `53edc77`, cover ordinary alive/dead, Raised Zombie

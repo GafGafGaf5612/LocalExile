@@ -9,6 +9,40 @@ Nothing yet.
 
 ## Partly working
 
+- **Gem quest rewards (verified live 2026-10-26).** Every `QuestRewardOffers` row whose items the server can build is
+  offered by the NPC's QuestReward dialogue row, with the `Characters` class filter and the offer's taken flag;
+  unbuildable rows (level-8 magic armours, magic belts) are skipped instead of an allow list excluding whole offers.
+  This covers the act gem offers: a1q4's six class gems (offer 3), a1q5's support gem (offer 2) and each act's later
+  gem choices.
+  Claiming puts the item in the main inventory and sets the flag in one save; a second claim is refused
+  (`QuestRewardCatalog`; [12](../docs/protocol/12-quests.md) §1, [19](../docs/protocol/19-gems.md) §5).
+  Live: Tarkleigh's "Glyph Reward" after `/quest_flag a1q4-PlacedGlyphs` — six Witch gems, claim, repeat refused.
+
+- **Gem drops (verified live 2026-10-26).** 4% of a monster's item drops are an obtainable gem whose `DropLevel` the
+  monster meets, unlevelled and without a rarity roll (`ItemDrops`, `GemSources.DropPool`,
+  [15](../docs/protocol/15-progression.md) §3).
+  The pool is the quest reward gems, the starting gems and the drop-only exceptional supports; the data's Graft,
+  item-granted/legacy (Envy, Death Aura, Quickstep) and placeholder ("...") rows never drop.
+  `GemDropsTests` cover the pool, the level gate and the unlevelled gem. The rate is our own until the game's drop pools
+  are known.
+  Live: rare monsters dropped normal skill and support gems. The first attempt used the data's ShopTag gems, which
+  include the item-granted/legacy rows, so the pool was narrowed to the quest/starting/exceptional sets.
+
+- **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).** The currency/flask/jewellery vendors
+  that also sell gems give seven tabs of level-1 gems, priced by their level-1 requirement tier (1–7 Scroll of Wisdom,
+  8–15 Orb of Transmutation, 16–27 Orb of Alteration, 28–37 Orb of Chance, 38+ Orb of Alchemy). The stock
+  is the gems of every
+  completed quest offer (reward shown or taken), filtered to the character's class and to the client's shop list;
+  Siosa (after "A Fixture of Fate") and Lilly Roth (after `UnlockedLillyGemShop`) ignore class, and Lilly also the
+  quest completion; Faster Attacks (Nessa, after a1q2) and Faster Casting (Yeena, after a2q4) are the 3.29 cross-class
+  additions.
+  Live: Nessa listed the Witch's a1q1 + a1q4 gems, then the a1q2 gems and Faster Attacks Support after the flag; their
+  prices matched the requirement tiers (the a1q1/a1q4 gems 1 Scroll of Wisdom, the a1q2 gems and Faster Attacks 1 Orb of
+  Transmutation).
+  Not live-checked: Lilly (the Act 6 town is not captured and spawns the player in water) and Siosa (The Library is
+  not reachable); gem drops are in (above).
+  (`GemVendorStock`, `NpcShops.Tabs`; [17](../docs/protocol/17-npcs.md) §5, [19](../docs/protocol/19-gems.md) §5).
+
 - **Linked support gems.** Native compatibility, link groups, duplicate families and skill-bar support records
   are implemented; Cyclone with Increased Area of Effect was read successfully by the real client.
   Ordinary hit, area, speed, critical, cost and reservation calculations use linked support stats.

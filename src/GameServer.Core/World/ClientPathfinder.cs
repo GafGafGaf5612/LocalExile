@@ -15,7 +15,10 @@ namespace GameServer.Core.World;
 public static class ClientPathfinder
 {
     /// <summary>A blocking object: its cell and size (Positioned +0x1e3 = object_size − 1).</summary>
-    public readonly record struct Blocker(int X, int Y, int Size);
+    public readonly record struct Blocker(int X, int Y, int Size)
+    {
+        public double? CollisionRadius { get; init; }
+    }
 
     /// <summary>How long a search may run (0x141e4d890, from the mover's components).</summary>
     public enum SearchLimit
@@ -313,8 +316,14 @@ public static class ClientPathfinder
         int ty0 = Math.Max(0, (y - radius) / Tile), ty1 = (y + radius) / Tile + 1;
         foreach (var b in blockers)
         {
+            if (b.CollisionRadius is double hull)
+            {
+                double dx = b.X - x, dy = b.Y - y, clearance = hull + threshold;
+                if (dx * dx + dy * dy < clearance * clearance) return true;
+            }
             int btx = b.X / Tile, bty = b.Y / Tile;
-            if (btx < tx0 || btx >= tx1 || bty < ty0 || bty >= ty1) continue;
+            // Large bodies can extend across several tile buckets; their centre may be outside this query.
+            if ((btx < tx0 || btx >= tx1 || bty < ty0 || bty >= ty1) && b.Size + threshold <= radius) continue;
             if (Math.Max(Math.Abs(b.X - x), Math.Abs(b.Y - y)) - b.Size < threshold) return true;
         }
         return false;

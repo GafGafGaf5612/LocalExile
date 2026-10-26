@@ -10,6 +10,9 @@ sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int Spawn
 {
     /// <summary>The area's waypoint (WaypointCatalog), if it has one and its place is known.</summary>
     public WaypointObject? Waypoint { get; init; }
+    public Func<int, int, int, bool>? Clearance { get; init; }
+    public bool WalkableFor(int x, int y, int size) => Clearance?.Invoke(x, y, size)
+        ?? (Walkable?.Invoke(x, y) != false);
 
     public string Describe() =>
         $"area {Id} (0x{Hash:x4}) grid {GridW}x{GridH} spawn ({SpawnX}, {SpawnY}), {(Walkable is null ? "no walkability" : "walkability")}, {AreaTransitions.Length} area transition(s)" +
@@ -97,14 +100,15 @@ static class AreaLayouts
             // Older dumps were saved as data/walkability/1_1_town.bin without a .json.
             if (cells is null && File.Exists($"{Folder}/1_1_town.bin")) { cells = File.ReadAllBytes($"{Folder}/1_1_town.bin"); (w, h) = (690, 414); }
             bool fits = cells is not null && cells.Length == 690 * 414 && (w, h) == (690, 414);
-            return new AreaLayout(hash, id, 690, 414, 197, 261, fits ? Walkable(cells!, w, h) : null, transitions);
+            return new AreaLayout(hash, id, 690, 414, 197, 261, fits ? Walkable(cells!, w, h) : null, transitions)
+            { Clearance = fits ? Clearance(cells!, w, h) : null };
         }
         if (cells is not null)
         {
             // The area's start point (a room's "default", e.g. The Twilight Strand's beach), else the deepest cell.
             var start = AreaPopulation.LoadPoints(id, seed, []).FirstOrDefault(p => p.Name == "default");
             var (sx, sy) = start is null ? DeepestCell(cells, w, h) : (start.X, start.Y);
-            return new AreaLayout(hash, id, w, h, sx, sy, Walkable(cells, w, h), transitions);
+            return new AreaLayout(hash, id, w, h, sx, sy, Walkable(cells, w, h), transitions) { Clearance = Clearance(cells, w, h) };
         }
         // No walk map yet: a position inside any grid; the client may place the player on unwalkable ground.
         return new AreaLayout(hash, id, 0, 0, 197, 261, null, transitions);
@@ -179,6 +183,9 @@ static class AreaLayouts
             return null;
         }
     }
+
+    static Func<int, int, int, bool> Clearance(byte[] cells, int w, int h) =>
+        (x, y, size) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x] >= size + 1;
 
     // 1 byte per cell; the client walks on values >= 2 (Agents/docs/protocol/07 §5).
     static Func<int, int, bool> Walkable(byte[] cells, int w, int h) =>

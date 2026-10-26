@@ -15,11 +15,12 @@ static class GameDataFiles
         ("data/tables/UniqueMaps.json", "unique map shop identities"),
         ("data/tables/Words.json", "item names"),
         ("data/tables/ItemVisualIdentity.json", "unique map artwork"),
-        ("data/object-types.json", "monsters (emergence and inherited Life corpse flags), NPCs, area transitions"),
+        // object-types manifest v4 combines inherited Life flags with Positioned/Animated collision metadata.
+        ("data/object-types.json", "monsters (emergence and inherited Life corpse flags), NPCs, area transitions, stationary collision footprints"),
         ("data/item-types.json", "items"),
         ("data/area-transitions.json", "area transitions of fixed layouts"),
         ("data/room-points.json", "unique bosses, The Twilight Strand's encounters and support-gem chest"),
-        ("data/hideouts.json", "hideouts"),
+        ("data/hideouts.json", "hideouts and native stationary model collision radii"),
         ("data/animation-contacts.json", "class spell timing (the Witch's is used)"),
         ("data/monster-takehit.json", "monster hit reactions (the TakeHit flinch and its sound)"),
     ];

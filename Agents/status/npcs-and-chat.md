@@ -21,6 +21,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 - NPCs in every campaign town (acts 1-10, Oriath, the Karui Shores): each town room's own NPC lines, placed as the
   client places the room (checked against its walk-map capture of every town), with name, minimap icon, model and
   facing.
+  Their collision footprints now come from inherited OT metadata, including later-act NPC Id aliases.
+  The shared routing and overlap correction covers spawned NPCs in towns and hideouts.
+  Native walking respected the three NPCs and both stashes in Lioneye's Watch; the guild stash receives
+  its native HaveGuild access flag when locally available, so its client collision matches the server.
   League NPCs and later quest stages are not placed ([17](../docs/protocol/17-npcs.md) §2).
   Clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
   Continue and Goodbye (C→S 0x85) are answered; Purchase Items opens the shop (S→C 0xc0 manager 1 + 0x8c) and buying
@@ -37,10 +41,11 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-- Quest reward offers 0 and 8 open the native reward inventory and grant class-filtered normal level-one gems.
+- Quest rewards open the native reward inventory for every `QuestRewardOffers` row whose items the server can build,
+  and grant the class-filtered choices (level-one gems, normal flasks; unbuildable magic armour rows are skipped).
   The item and claimed flag are saved together, with duplicate, prerequisite, full-inventory and save-failure guards.
-  Tarkleigh's Freezing Pulse and Nessa's Combustion Support claims were checked live on a disposable character.
-  Other offers and offer 8's magic-armour choices remain unimplemented.
+  Tarkleigh's Freezing Pulse and Nessa's Combustion Support claims were checked live on a disposable character, and
+  Tarkleigh's a1q4 Glyph Reward on 2026-10-26.
   See [quest rewards](../docs/protocol/17-npcs.md#quest-dialogue-and-first-rewards-2026-10-25).
 - NPC sale visibility: offered items are hidden from the main inventory and shown only in Your Offer.
   Their original cells/items remain reserved in the durable save;
@@ -55,7 +60,11 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Nessa's shop tabs:** Goods contains her supplies and the legacy MapWorlds catalogue, with automatic extra pages.
   Ordinary maps are white and deduplicated by name; 28 unique names have unique rarity, name and artwork.
   Full unique modifier sets and unique-area routing remain open.
-  Gem tabs remain Red / Green / Blue Skills and Support and White Skills, 1 Scroll of Wisdom each.
+  The gem vendors (Nessa, Yeena, Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) have the seven gem tabs, with
+  the completed-quest/class progression, Siosa's and Lilly's all-class stock and the 3.29 cross-class supports
+  (`GemVendorStock`); their gems cost the currency of their level-1 requirement tier (Wisdom, Transmutation, Alteration,
+  Chance or Alchemy), the rest of the stock 1 Scroll of Wisdom. Nessa was checked live 2026-10-26; Lilly and Siosa are unit-tested only
+  (their areas are not reachable/captured yet).
   Shops send one inventory per tab and their names in 0x8c.
   See [17](../docs/protocol/17-npcs.md) §5.
 

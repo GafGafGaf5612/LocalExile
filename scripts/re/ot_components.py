@@ -171,7 +171,7 @@ def parse(text):
     toks = TOKEN.findall(re.sub(r"//[^\n]*", "", text))
     r = {"extends": [], "abstract": False, "sections": [], "client": [], "server": [], "version": None,
          "shared_states": [], "shared_timers": [], "transitionable": {}, "tags": [], "basic_actions": [],
-         "client_transitionable": {}, "client_targetable": None, "life": {}}
+         "client_transitionable": {}, "client_targetable": None, "life": {}, "positioned": {}, "animated": {}}
     i = 0
 
     def block(i):  # i at '{' -> index after matching '}', plus the names of sections directly inside
@@ -213,6 +213,10 @@ def parse(text):
                     top_level_keys(toks[i + 2:j - 1], keys, ("corpse_usable", "prevent_corpse_sinking"))
                     # Unknown literals must not become true through Python's truthiness.
                     r["life"].update({k: {"true": True, "false": False}.get(v.lower()) for k, v in keys.items()})
+                elif t == "Positioned":
+                    top_level_keys(toks[i + 2:j - 1], r["positioned"], ("object_size", "blocking", "static", "block_league_flag"))
+                elif t == "Animated":
+                    top_level_keys(toks[i + 2:j - 1], r["animated"], ("animated_object",))
                 elif t == "Actor":  # basic actions (ActionTypes Ids): basic_action = "Emerge"
                     body = toks[i + 2:j - 1]
                     r["basic_actions"] += [body[k + 2].strip("\"'") for k in range(len(body) - 2)
@@ -338,6 +342,9 @@ def merge(type_path, files, otc, first=("Positioned",)):
         num_states = 1
     result = {"type": type_path, "chain": [p for p, _ in ch], "missing": [p for p, f in ch if f is None],
             "abstract": bool(files.get(type_path, {}).get("abstract")), "components": comps, "read": read,
+            "positioned": {k: v for _, f in ch for k, v in (f or {}).get("positioned", {}).items()},
+            "animated_object": next((f["animated"]["animated_object"] for _, f in reversed(ch)
+                                     if f and "animated_object" in f.get("animated", {})), None),
             "shared_states": [[k, v] for k, v in states.items()], "shared_timers": timers,
             # The Actor's basic actions (ClientActor ctor 0x142192860 adds one skill per name, id = HASH16 & 0x3fff),
             # parents first: e.g. Monster.ot's Move, and "Emerge" for monsters that rise from the ground.
@@ -444,7 +451,7 @@ def merge_items():
         r["type"] = tid
         # Tags along the chain, parents first (the BaseItemTypes row adds its own TagsKeys on top).
         r["tags"] = list(dict.fromkeys(tag for p in r["chain"] for tag in files.get(p, {}).get("tags", [])))
-        for k in ("shared_states", "shared_timers", "transitionable"):
+        for k in ("shared_states", "shared_timers", "transitionable", "positioned", "animated_object"):
             r.pop(k, None)
         out[tid] = r
     return out

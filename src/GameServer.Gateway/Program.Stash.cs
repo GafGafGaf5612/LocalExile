@@ -32,8 +32,8 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 stash 0x{id:x} enters wake zone");
         conn.StashObject = id;
         conn.StashAt = (at.X, at.Y);
-        if (scene is not null) conn.HideoutEditor.Register(id, "stash", at.X, at.Y, at.Rotation, ClientState.StashBlockerSize);
-        conn.SetBlocker(id, at.X, at.Y, ClientState.StashBlockerSize);
+        await RegisterStationaryCollision(remote, stream, ciphers, conn, id, StashObject.MetadataPath, at.X, at.Y, at.Rotation,
+            scene is not null ? "stash" : null);
         // Hideouts, Lioneye's Watch and the Mine Encampment also get a guild stash.
         if (HideoutCatalog.ByArea(conn.Layout.Hash) is null
             && conn.Layout.Hash is not (StashCatalog.DelveHub or AreaLayouts.LioneyesWatch)) return;
@@ -45,8 +45,8 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(guild), null);
         conn.GuildStashObject = guild;
         conn.GuildStashAt = (gx, gy);
-        if (scene is not null) conn.HideoutEditor.Register(guild, "guild-stash", gx, gy, guildRotation, ClientState.StashBlockerSize);
-        conn.SetBlocker(guild, gx, gy, ClientState.StashBlockerSize);
+        await RegisterStationaryCollision(remote, stream, ciphers, conn, guild, StashObject.GuildMetadataPath, gx, gy, guildRotation,
+            scene is not null ? "guild-stash" : null);
         if (scene?.Bench is { } bench
             && HideoutCatalog.TypeOf(bench.Type!) is var (components, states)
             && HideoutObject.CanSerialize(components))
@@ -60,8 +60,7 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(benchId), null);
             conn.CraftingBenchObject = benchId;
             conn.CraftingBenchAt = (bench.X, bench.Y);
-            conn.HideoutEditor.Register(benchId, "bench", bench.X, bench.Y, bench.Rotation, ClientState.StashBlockerSize);
-            conn.SetBlocker(benchId, bench.X, bench.Y, ClientState.StashBlockerSize);
+            await RegisterStationaryCollision(remote, stream, ciphers, conn, benchId, bench.Type!, bench.X, bench.Y, bench.Rotation, "bench", bench.Model);
         }
         if (scene?.Harvest is { } harvest
             && HideoutCatalog.TypeOf(HideoutCatalog.HorticraftingType) is var (harvestComponents, _)
@@ -75,8 +74,8 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(harvestId), null);
             conn.HorticraftingObject = harvestId;
             conn.HorticraftingAt = (harvest.X, harvest.Y);
-            conn.HideoutEditor.Register(harvestId, "harvest", harvest.X, harvest.Y, harvest.Rotation, 8);
-            conn.SetBlocker(harvestId, harvest.X, harvest.Y, 8);
+            await RegisterStationaryCollision(remote, stream, ciphers, conn, harvestId, HideoutCatalog.HorticraftingType,
+                harvest.X, harvest.Y, harvest.Rotation, "harvest", harvest.Model);
         }
 
         await SpawnHeistLocker(remote, stream, ciphers, conn, scene);
@@ -228,11 +227,11 @@ partial class Program
 
     // An item out of a stash tab into the main inventory (C→S 0xe3), a stack onto the inventory's stacks first
     // (ItemMoves.StashToInventory), one transaction.
-    static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId)
+    static async Task TakeFromStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int tab, uint itemId, bool all)
     {
         var stash = StashOf(conn);
         var items = ItemsOf(conn);
-        if (ItemMoves.StashToInventory(stash, items, tab, itemId, ShapeOf) is not { } moved)
+        if (ItemMoves.StashToInventory(stash, items, tab, itemId, ShapeOf, all) is not { } moved)
         {
             Console.WriteLine($"[gateway] {remote} stash tab {tab} item {itemId}: refused (not there, unknown type or no room in the inventory)");
             return;
