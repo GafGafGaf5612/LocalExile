@@ -57,7 +57,8 @@ public static class InstanceEntities
     /// <summary>
     /// S→C 0x1c1 (world group, class 0x1435ddb78, read 0x141fdf870; world handler case 0x1c1 → the object's Buffs
     /// component, 0x141e11720): object header, u16 buff instance (+0x20, what 0x1c2 removes), u16 BuffDefinitions row,
-    /// u32 +0x64 (the source object), u16 +0x60 (the source skill), u8 flags (bit0 u8 u32 u8 u16, bit1 u32 +0x68, bit2
+    /// u32 +0x64 (the source object), u16 +0x60 (the source skill; a flask buff's flask-bar cell), u8 flags (bit0 u8 u32
+    /// u8 u16, bit1 +0x68: an f32 duration in seconds, default +infinity, so <paramref name="u68"/> takes its bits, bit2
     /// u16 stacks +0x70 (default 1), bit3 u16 ActionTypes HASH16 +0x74 then u16 skill id +0x72 (the active icon),
     /// bit4 u16 BuffVisuals override (default the row's), bit5 u8 +0x80
     /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32

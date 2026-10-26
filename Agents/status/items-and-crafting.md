@@ -14,6 +14,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   every kill, town, hideout and resurrection fills the flasks.
   Code: `Flasks.cs`, Gateway (`UseFlask`, `RunFlaskRecovery`).
   Docs: [13](../docs/protocol/13-items.md) §8.
+- Utility flasks: Quicksilver, Granite, Jade, Ruby, Sapphire, Topaz, Amethyst, Bismuth, Basalt, Stibnite, Diamond,
+  Quartz, Sulphur and Silver (Onslaught) spend their charges and give their buff's stats for its duration, all from the
+  tables (Flasks.dat, BuffDefinitions, ComponentCharges).
+  The stats count in the pools (the walk estimate, `/defences`, `/resistances`, `/hit`) and go to the client.
+  They end with the duration, at death and with the area; a pause holds them (by the game clock, not tested live).
+  Checked live: Quicksilver, Ruby, Granite, Jade, Basalt, Amethyst, Bismuth and Silver; the others by tests.
+  A flask is refused while its own effect runs; the client draws its draining timer bar under that flask.
+  Quality and the flask's duration and effect mods scale a use.
+  Not yet: Quartz phasing, Stibnite and Sulphur ground effects, Aquamarine, Gold, Iron and Corundum flasks.
+  Code: `UtilityFlasks.cs`, Gateway (`UseUtilityFlask`, `RunUtilityFlasks`).
+  Docs: [13](../docs/protocol/13-items.md) §8a.
 - Items: the start kit (Characters.dat skill and support gems, two life flasks on keys 1–2 and a mana flask on key 5)
   in the inventories, and the class weapon with two linked sockets worn in the main hand (`Game_START_WEAPON=ground`:
   on the ground a few cells from the spawn until it is picked up);
@@ -130,5 +141,5 @@ Part of [Status](../Status.md); what to build next in this area is in
   currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb,
   Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb,
   Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble,
-  Fracturing Orb, Mirror of Kalandra, Gemcutter's Prism and Orb of Regret; utility flasks;
+  Fracturing Orb, Mirror of Kalandra, Gemcutter's Prism and Orb of Regret;
   support gems and links ([13](../docs/protocol/13-items.md) "Open").

@@ -736,7 +736,9 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
 
 - **S→C 0x1c1** (world group, class `0x1435ddb78`, read `0x141fdf870`, world handler case 0x1c1 → Buffs component
   `0x141e11720`): object header (u32 id, u32, u16), u16 buff instance (+0x20), u16 BuffDefinitions row, u32 +0x64 (the
-  source object), u16 +0x60 (the source skill), u8 flags (bit0: u8 u32 u8 u16; bit1: u32 +0x68; bit2: u16 stacks,
+  source object), u16 +0x60 (the source skill; for a flask buff its flask-bar cell, under which the client draws the
+  effect's timer bar, [13](13-items.md) §8a), u8 flags (bit0: u8 u32 u8 u16; bit1: +0x68, an f32 duration in seconds,
+  default +infinity; bit2: u16 stacks,
   default 1; bit3: u16 u16; bit4: u16 BE BuffVisuals row override, default the row's, read after bit3's fields (a row past the table gives none); bit5: u8 +0x80, default 2; bit6 → +0x81;
   bit7: f32 +0x6c, default 1.0), a u16 when the row's bool at +0xff is set (`__col44` in the vendored schema), one u32
   per GrantedStats entry when the row's `IsRecovery` (+0x7c) is set, then a u32-counted list of u32. A row with either

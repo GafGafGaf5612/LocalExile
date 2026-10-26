@@ -645,22 +645,90 @@ mana over 3 s, 6 of 24. A use with fewer charges than PerCharge, or while dead, 
    (`base_life_recovery_per_minute_from_flask`, 70 × 60 / 3 = 1400 for the Small Life Flask). Live 2026-10-20: without
    that value the client misread the message and showed no life change from then on, although the server sent every
    0x1b1. `Game_FLASK_BUFFS=0` recovers without the buffs.
-   Being tested: the buff's duration, from which the orb may draw the recovery still to come. `Game_FLASK_BUFF_DURATION`
-   picks the field: `ms` (default) flags bit1, u32 +0x68 = 3000; `f6c` flags bit7, f32 +0x6c = 3.0; `0` none.
+   The buff carries the duration in flags bit1's field, which the reader `0x141fdf870` keeps as an **f32 in seconds**
+   (+0x68; without the bit it is +infinity, `0x14015a670`), and the flask-bar cell as its source skill (u16 +0x60)
+   (`Flasks.Buff`). Until 2026-10-25 a u32 3000 (milliseconds) went there, which the client read as a float of almost
+   0 s. `Game_FLASK_BUFF_DURATION=0` sends no duration. The life orb rose as before with the f32 duration (live
+   2026-10-25); the life and mana buffs are invisible and draw no timer bar.
 3. `RunResourceRecovery` adds the recovery evenly from the use to its end, by the clock, every 16 ms while a flask
    recovers, and sends each whole point at once (S→C 0x1b1): the orb rises by +1 about every 43 ms for a Small Life
    Flask, not in the player tick's 250 ms steps of 6 (live 2026-10-20: those looked jerky). The buff comes off
    (S→C 0x1c2) when the time is up, the pool is full, or the player dies. Using a flask whose effect still runs
    restarts it (the rest of the old one is lost); two flasks recover together.
 
-Charges come back: every kill fills every life and mana flask in the bar (a choice for playing locally; with
+Charges come back: every kill fills every flask in the bar (utility flasks too, §8a) (a choice for playing locally; with
 `Game_FLASK_KILL_CHARGES=rarity` a kill gives 1 normal, 2 magic, 5 rare, 10 unique, our own numbers: the real game's are
 not known yet), and they fill up on entering a town or a hideout and on resurrection.
 
+## 8a. Utility flasks
+
+A flask key (0x70) on a utility flask goes to `UseUtilityFlask` (`Program.UtilityFlasks.cs`, `UtilityFlasks.cs`).
+Everything comes from the tables (`ItemCatalog.UtilityFlaskOf`): the Flasks.dat row names the flask's BuffDefinitions
+row, its BuffStatValues (one value per StatsKeys entry of that row) and its duration (RecoveryTime, tenths of a second;
+the second column, RecoveryTime2, is not used); ComponentCharges gives its charges.
+
+| Flask | Buff (row) | Stats applied | Duration, charges |
+|---|---|---|---|
+| Quicksilver | flask_utility_sprint (121) | base_movement_velocity_+% 40 | 6 s, 30 of 60 |
+| Granite | flask_utility_ironskin (120) | base_physical_damage_reduction_rating 1500 | 6 s, 30 of 60 |
+| Jade | flask_utility_evasion (124) | base_evasion_rating 1500 | 6 s, 30 of 60 |
+| Ruby / Sapphire / Topaz | flask_utility_resist_fire / _cold / _lightning (117-119) | resistance 40, maximum resistance 5 | 8 s, 20 of 50 |
+| Amethyst | flask_utility_resist_chaos (122) | base_chaos_damage_resistance_% 35 | 6.5 s |
+| Bismuth | flask_utility_prismatic (127) | base_resist_all_elements_% 35 | 8.5 s |
+| Basalt | flask_utility_stone (125) | basalt_flask_armour_+%_final 20 (more armour) | 8 s |
+| Stibnite | flask_utility_smoke (128) | stibnite_flask_evasion_rating_+%_final 20 (more evasion) | 8 s |
+| Diamond | flask_utility_critical_strike_chance (116) | critical_strike_chance_+% 100 | 6 s |
+| Quartz | flask_utility_phase (123) | base_spell_suppression_chance_% 10 | 6 s |
+| Sulphur | flask_utility_consecrate (129) | damage_+% 40 | 8 s |
+| Silver | flask_utility_haste (130), invisible | Onslaught (row 215): attack, cast and movement speed 20 each | 6 s |
+
+The Silver Flask's buff has no stats, only the flag `silver_flask_display_onslaught`; the Gateway also puts `onslaught`
+(row 215) on the player with the values of BuffTemplates `MapModPlayerOnslaught` (20, 20, 20). Only the stats the
+server models count (`UtilityFlasks.Modelled`); a flask with none of them is not usable (Aquamarine: frozen effect on
+self, Gold: item rarity, Iron: ward, Corundum: stun threshold), and Quartz's phasing and Stibnite's and Sulphur's ground
+effects are left out.
+
+A use:
+
+1. is refused while dead, with fewer charges than a use needs, or while **this flask's** effect still runs (as in the
+   game; the log says how long is left). A flask of the same kind (same buff row) in another cell ends the running one:
+   effects of one kind do not stack (our choice).
+2. spends the charges (S→C 0xbf, as for life flasks);
+3. puts the buff on the player (S→C 0x1c1, `Flasks.Buff`): f32 duration in seconds at +0x68 and the flask-bar cell as
+   the source skill (+0x60). The client draws a bar under that flask that drains over the duration (live 2026-10-25;
+   with source skill 0 the bar ran under the first flask whatever flask was used; flags bit0's fields, the stacks and
+   the source object do not move it). Flask buffs (BuffCategory 4) do not show in the buff row; Onslaught does, with
+   its countdown;
+4. adds the stats to the pools: `PoolsFor` calls `UtilityFlasks.Apply` (resistances and their maxima, flat armour and
+   evasion raised by their increases, the Basalt / Stibnite more multipliers on top of Determination's and Grace's,
+   movement and attack speed, critical strike chance, spell suppression) and `BaseStats` adds `UtilityFlasks.RawStats`
+   (the maximum resistances, which the client adds to its own 75; increased critical strike chance; increased damage;
+   cast speed). `ApplyMovementSpeed` changes the walk estimate (Quicksilver: 37 × 1.4 = 51.8 cells/s) and the stats go
+   to the client (S→C 0x1b3: `movement_velocity_+%` 40 reached the client's stat setter `0x1424cfaf0`, live
+   2026-10-25). So `/defences`, `/resistances`, `/hit` and the character panel see them;
+5. ends when its time is up, by the connection clock (`RunUtilityFlasks`, every 16 ms while any runs; a pause stops the
+   clock, so it holds), or at death: the buffs come off (S→C 0x1c2) and the stats and movement speed go back. An area
+   change starts a new connection without the effect.
+
+Quality is increased duration, added to the flask's `local_flask_duration_+%` (20% quality: Quicksilver 7.2 s);
+`local_flask_duration_+%_final` multiplies it and `local_flask_effect_+%` scales the stats (not Onslaught's).
+
+Live 2026-10-25 (OfflineWitch, The Twilight Strand; a key press, then the control bridge's `flask:use`): Quicksilver
+spent 30 of 60 charges, the client's `movement_velocity_+%` went 0 → 40 → 0 after 5.94 s, and a second use 2.5 s in was
+refused; Ruby: Fire 13% → 53% (maximum 75% → 80%), `/hit fire 1000` took 470 instead of 870, the bar under flask 4
+drained over 8 s; Granite and Jade: armour 0 → 2145, evasion 16 → 1636, then Basalt on top: 2574; Amethyst and
+Bismuth: all elements 48%, chaos 43%; Silver: the Onslaught icon with its countdown, attack and cast speed 5% → 25%;
+death ended Quicksilver at once and a use while dead was refused; `/goto 1_1_town` during Ruby: 13% again in town.
+Not seen live: the client actually walking faster (the bridge cannot make it walk), the effect across a pause, and the
+tooltip's duration with quality.
+
 ## Open
 
-- Flasks: the real game's charges per kill (a kill fills every flask for now), flask quality and mods, utility and hybrid flasks' effects (a hybrid flask
-  recovers both pools but shows only the life buff), instant recovery, and the effects across an area change (they end).
+- Flasks: the real game's charges per kill (a kill fills every flask for now), life and mana flask quality and mods,
+  charge mods (`local_charges_used_+%`, `local_extra_max_charges`), hybrid flasks' effects (a hybrid flask recovers both
+  pools but shows only the life buff), instant recovery, and the effects across an area change (they end).
+  Utility flasks: phasing (Quartz), the smoke cloud (Stibnite), consecrated ground (Sulphur), Aquamarine, Gold, Iron
+  and Corundum flasks; whether the game lets a flask of the same kind replace a running one.
 - Gem levels and experience, support gems and links.
 - The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); local weapon damage and
   armour / evasion / energy shield mods (items have no base defences or damage on the server yet), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
