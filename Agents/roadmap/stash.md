@@ -14,6 +14,7 @@ verify the corrected fossil/resonator presentation in the real client (18-stash.
 - **Known:** the stash opens on the last tab, tabs load and items move by click and Ctrl + click
   ([18](../docs/protocol/18-stash.md)); special tabs hold only their own items, the currency, essence and fragment
   tabs each item in its slot, and affinities (0xd3) are saved (18 §7).
+  Currency stack limits follow the extracted table; lifeforce merging to 50 000 is verified in the real client.
   Switching to a loaded tab sends nothing to the server.
 - **Start:** check live that the affinity window closes on S→C 0x136 and that currency Ctrl + click (0xe1) lands in
   its slot; tab rename / colour (0xd2), order (0xcc) and folders (0xd1); the unique and divination tabs.

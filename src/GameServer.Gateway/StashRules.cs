@@ -6,15 +6,14 @@ using System.Text.Json;
 /// affinity lists the StashType rows that may hold it (StashTabAffinities). Normal, premium and quad tabs hold anything.
 /// The currency, essence, fragment, delve and blight tabs give each item type one slot (their *StashTabLayout
 /// FirstSlotIndex): the client shows a slot as cell (slot, 0), and an item dropped anywhere on the tab goes into its own
-/// slot. A slot holds <see cref="SlotStack"/> (our own 5000) instead of the item's own stack size.
+/// slot. Currency slots use CurrencyItems.CurrencyTab_StackSize; other slotted tabs default to <see cref="SlotStack"/>.
 /// </summary>
 sealed class StashRules
 {
     public const byte Currency = 3, Unique = 4, Map = 5, Divination = 6, Essence = 8, Fragment = 9, Delve = 12, Blight = 13,
         Ultimatum = 14, Delirium = 15, Breach = 22;
 
-    /// <summary>How many of an item one slot of a slotted tab (currency, essence, fragment, delve, blight) holds: our own
-    /// number for every such tab (2026-10-22).</summary>
+    /// <summary>Fallback limit for slotted tabs without an item-specific currency-tab limit.</summary>
     public const ushort SlotStack = 5000;
 
     // Affinity rows (StashTabAffinityId).
@@ -24,7 +23,7 @@ sealed class StashRules
     readonly Dictionary<uint, HashSet<int>> _affinities = [];        // item type HASH32 → affinities
     readonly Dictionary<int, HashSet<byte>> _heldBy = [];             // affinity → StashType rows
     readonly Dictionary<byte, Dictionary<uint, int>> _slots = [];     // StashType row → item type → slot
-    readonly Dictionary<uint, ushort> _currencyTabStack = [];  // a slot's own limit (tests); else SlotStack
+    readonly Dictionary<uint, ushort> _currencyTabStack = [];  // CurrencyItems.CurrencyTab_StackSize; else SlotStack
     readonly Dictionary<byte, HashSet<int>> _anySlots = [];          // StashType row → slots that take any item
 
     /// <summary>
@@ -73,7 +72,7 @@ sealed class StashRules
 
     /// <summary>How many of the item type one cell of the tab holds, or null for the item's own stack size.</summary>
     public ushort? MaxStack(byte tabType, uint itemType) =>
-        Slotted(tabType) ? _currencyTabStack.TryGetValue(itemType, out var n) ? n : SlotStack : null;
+        Slotted(tabType) ? tabType == Currency && _currencyTabStack.TryGetValue(itemType, out var n) ? n : SlotStack : null;
 
     public static StashRules Load(string folder, IReadOnlyList<ItemCatalog.BaseType> rows)
     {
@@ -86,6 +85,17 @@ sealed class StashRules
         var byId = rows.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First().Hash);
         uint? HashOfRow(int row) => row >= 0 && row < rows.Count ? rows[row].Hash : null;
         void Give(uint hash, int affinity) => (rules._affinities.TryGetValue(hash, out var s) ? s : rules._affinities[hash] = []).Add(affinity);
+
+        if (File.Exists(Table("CurrencyItems")))
+        {
+            using var d = JsonDocument.Parse(File.ReadAllBytes(Table("CurrencyItems")));
+            foreach (var r in d.RootElement.EnumerateArray())
+                if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b
+                    && HashOfRow(b.GetInt32()) is uint hash
+                    && r.TryGetProperty("CurrencyTab_StackSize", out var stack)
+                    && stack.TryGetInt32(out int size) && size is > 0 and <= ushort.MaxValue)
+                    rules._currencyTabStack[hash] = (ushort)size;
+        }
 
         using (var d = JsonDocument.Parse(File.ReadAllBytes(Table("StashTabAffinities"))))
             foreach (var r in d.RootElement.EnumerateArray())

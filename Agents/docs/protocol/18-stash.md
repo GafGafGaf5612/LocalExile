@@ -164,12 +164,17 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   one there; the load-time repair leaves it. Ctrl + click never puts anything there. Currency (from its slot or the inventory) works on the item there: 0x71 / 0x72 name the tab as the target inventory ([13](13-items.md) §4b). 
 - **Spare slots.** The 14 cells under the crafting slot are rows `Generic1`–`Generic14` (no `StoredItem`, slots 30–34
   and 40–48; two rows on screen, YOffset 680 and 770). They take any item the currency tab holds, where dropped, up to
-  the slot size (5000). Ctrl + click (and Ctrl + right click, 0xe1 flags 0x02) puts into them what the item's own slot has
+  the item's currency-tab limit below.
+  Ctrl + click (and Ctrl + right click, 0xe1 flags 0x02) puts into them what the item's own slot has
   no room for: first onto a spare slot of that type with room, then into the first free one, left to right and top to
   bottom (`StashRules.OverflowSlots`, `AccountStash.AddStacked`); what still doesn't fit stays in the inventory.
-- **Stack sizes.** Every slot of a slotted tab (currency, essence, fragment, delve, blight) holds 5000 of its item
-  (`StashRules.SlotStack`, our own number since 2026-10-22; before, CurrencyItems `CurrencyTab_StackSize` for currency
-  and the item's own stack elsewhere, so essences stopped at 10). The Delve (StashType 12, DelveStashTabLayout) and
+- **Stack sizes.** Currency slots use `CurrencyItems.CurrencyTab_StackSize`, keyed by `BaseItemTypesKey`:
+  red, yellow and blue crystallised lifeforce hold 50000, and ordinary currency generally holds 10000.
+  The previous uniform 5000 limit split a 50000 lifeforce deposit across its own slot and nine spare slots.
+  Live client verification: C→S 0xe1 merged 40000 into an existing 10000 in slot 99; S→C 0xbf reported 50000.
+  Automated tests cover manual merging, quick deposits, the 50000 boundary and save reloads.
+  Other slotted tabs retain 5000 (`StashRules.SlotStack`), also the fallback for missing or nonpositive currency limits.
+  The Delve (StashType 12, DelveStashTabLayout) and
   Blight (13, BlightStashTabLayout) and Delirium (15, DeliriumStashTabLayout) tabs are slotted the same way; the
   Divination tab (6) too, a card's slot being its DivinationCardStashTabLayout row (a guess: the table has no slot
   numbers). Unique (4), Breach (22) and Ultimatum (14) tabs exist but take nothing yet (`StashRules.NotShown`: uniques
@@ -186,7 +191,7 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   `StashRules.NotShown` refuses every item, and maps already there move out at load.
 - **A plain click on a special tab's item** sends C→S 0x7c (split) with the whole stack (live 2026-10-20, the currency
   tab: `Amount` = the stack, `B` = 0; Shift + click sends `B` = 3 with the amount chosen). The Gateway puts the whole
-  stack on the cursor, keeping its id; a slot holding more than a stack (up to 5000) gives a full stack
+  stack on the cursor, keeping its id; a slot holding more than the item's inventory stack gives a full stack
   (the item's max) and keeps the rest. A Shift + click split takes at most a full stack too.
 - **Repair.** Items a special tab can't show (an earlier build let any item into any tab) move at load into their slot,
   else into the first normal tab with room, and are saved there. One that finds no room stays where it is, saved.
