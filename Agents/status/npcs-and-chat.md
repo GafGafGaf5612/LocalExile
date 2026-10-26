@@ -18,9 +18,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   The client joins once per session, so every area entry sends 0x135 for the channels already joined.
   One player per server: nobody else sees the lines; party, guild and whisper lines are not echoed.
   Code: `Program.Chat.cs`, `ChatChannels.cs`.
-  Docs: [10](../docs/protocol/10-chat-and-commands.md) §1, §2.
-- NPCs in Lioneye's Watch: Tarkleigh, Nessa and Bestel at their real-game cells, with name, minimap icon and idle
-  model; clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
+- NPCs in every campaign town (acts 1-10, Oriath, the Karui Shores): each town room's own NPC lines, placed as the
+  client places the room (checked against its walk-map capture of every town), with name, minimap icon, model and
+  facing.
+  League NPCs and later quest stages are not placed ([17](../docs/protocol/17-npcs.md) §2).
+  Clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
   Continue and Goodbye (C→S 0x85) are answered; Purchase Items opens the shop (S→C 0xc0 manager 1 + 0x8c) and buying
   (C→S 0x88) costs 1 Scroll of Wisdom; Sell Items: the sell window (S→C 0xb8) takes drops, Ctrl + click (first free
   cell) and Shift + click, Accept pays the quoted reward and Cancel returns them, and the player can walk
@@ -30,7 +32,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Identify Items identifies the inventory for free, prints "N Items identified" in chat (S→C 0x17) and grays the
   option; `/npc`, `/npcs`, `/pos`.
   Dialogue options now enforce their required/excluded quest flags and save their start/finish flags.
-  Code: `InstanceNpcs.cs`, `NpcCatalog.cs`, Gateway (`SpawnTownNpcs`, `TalkToNpc`).
+  Code: `InstanceNpcs.cs`, `NpcCatalog.cs`, `TownNpcs.cs`, Gateway (`SpawnTownNpcs`, `TalkToNpc`).
   Docs: [17](../docs/protocol/17-npcs.md).
 
 ## Partly working
@@ -59,5 +61,11 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- NPC dialogue options, shops, NPCs in other towns and outside towns ([17](../docs/protocol/17-npcs.md) "Open");
+- NPC dialogue options, shops, league NPCs in towns, quest-stage variants of town NPCs, NPCs outside towns
+  ([17](../docs/protocol/17-npcs.md) "Open");
   the 346 monster varieties with NPC, ControlZone, BlightTower … components.
+- `data/room-points.json` gives angle 0 to the server objects (NPCs, stashes …) of version 35 and 36 rooms, every town
+  room among them: `RoomFile` (`src/GameServer.Data/Terrain`) reads the third number of a line, which those versions
+  fill with a 0, and `MonsterPacks.LoadObjects` passes it on.
+  Town NPCs do not use it (`TownNpcs` copies the angles); the Twilight Strand's force walls are older rooms and keep
+  theirs ([17](../docs/protocol/17-npcs.md) §2).

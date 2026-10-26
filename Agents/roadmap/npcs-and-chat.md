@@ -8,7 +8,7 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 
 ### NPCs: dialogue options, shops and the other towns
 
-- **Known:** NPC objects, Lioneye's Watch placements and the dialogue window (S→C 0x84, C→S 0x85) work
+- **Known:** NPC objects, every campaign town's NPCs and the dialogue window (S→C 0x84, C→S 0x85) work
   ([17](../docs/protocol/17-npcs.md)).
   The client picks the NPCTalk row itself (`0x141e76d40`).
   Dialogue quest flags and the class gem choices in reward offers 0 and 8 are implemented and live-checked.
@@ -20,5 +20,6 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   See [vendor recipes](../docs/protocol/24-vendor-recipes.md) for the remaining scope.
   Nessa now stocks the deduplicated legacy MapWorlds catalogue and unique map identities.
   Complete unique modifiers and unique-area routing remain separate follow-up work.
-  Placements for the other towns (`NpcCatalog.Towns`, with `/pos`).
-- **Done when:** talk options play their text, Nessa and Tarkleigh trade, and every town has its NPCs.
+  Quest-stage variants of town NPCs (Dialla withered, Innocence in Bannon's place, Lilly in town) and the league NPCs
+  of the town rooms (`TownNpcs`, [17](../docs/protocol/17-npcs.md) §2).
+- **Done when:** talk options play their text, Nessa and Tarkleigh trade, and town NPCs follow quest progress.
