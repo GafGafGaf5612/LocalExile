@@ -9,6 +9,17 @@ Nothing yet.
 
 ## Partly working
 
+- **Gem quest rewards (verified live 2026-10-26).** Every `QuestRewardOffers` row whose items the server can build is
+  offered by the NPC's QuestReward dialogue row, with the `Characters` class filter and the offer's taken flag;
+  unbuildable rows (level-8 magic armours, magic belts) are skipped instead of an allow list excluding whole offers.
+  This covers the act gem offers: a1q4's six class gems (offer 3), a1q5's support gem (offer 2) and each act's later
+  gem choices.
+  Claiming puts the item in the main inventory and sets the flag in one save; a second claim is refused
+  (`QuestRewardCatalog`; [12](../docs/protocol/12-quests.md) §1, [19](../docs/protocol/19-gems.md) §5).
+  Live: Tarkleigh's "Glyph Reward" after `/quest_flag a1q4-PlacedGlyphs` — six Witch gems, claim, repeat refused.
+  Still placeholder: the act vendors (Nessa sells every gem at level 1), Siosa/Lilly and gem drops
+  ([19](../docs/protocol/19-gems.md) §5).
+
 - **Linked support gems.** Native compatibility, link groups, duplicate families and skill-bar support records
   are implemented; Cyclone with Increased Area of Effect was read successfully by the real client.
   Ordinary hit, area, speed, critical, cost and reservation calculations use linked support stats.
