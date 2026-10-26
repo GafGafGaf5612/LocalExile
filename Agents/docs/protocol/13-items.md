@@ -60,9 +60,11 @@ Minimal item the server sends: flags 0, Base with only the visual identity, Mods
 
 **Base defences:** an `ArmourTypes.dat` row is keyed by `BaseItemTypesKey` (the BaseItemTypes row) and gives
 `ArmourMin`/`ArmourMax` and `EvasionMin`/`EvasionMax`. The client interpolates between them with the item's base
-percentile; our items send the Armour component's default `0`, so the server uses the minimum for the character's
-armour and evasion. Only the base body armour, helmet, gloves and boots are counted for now; mods, quality, local
-defence rolls and shields are not.
+percentile; our items send the Armour component's default `0`, so the server uses the minimum. The equipped body
+armour, helmet, gloves, boots and shield count, and each piece adds its own local flat/increased defence mods and item
+quality (`ItemDefences`: `local_base_physical_damage_reduction_rating`, `local_base_evasion_rating`,
+`local_energy_shield`, `local_evasion_rating_and_energy_shield`, their `+%` forms and the combined ones; +1% per
+quality on armour, evasion and energy shield).
 
 ## 2a. Mods: rarity and mod lists
 
@@ -176,12 +178,15 @@ passives' stats (`CharacterStatSources`), so it reaches the pools (`PassiveBonus
 attributes, resistances, block, suppression, speeds, crit, accuracy …) and the stats the client shows (0x1b3), the same
 way a passive's would. They are sent again when equipment changes (`SendEquipment`).
 
-Local mods on the main hand (row 2, else 14) change the weapon profile: `local_critical_strike_chance_+%` scales the
-WeaponTypes base critical chance, `local_attack_speed_+%` multiplies the attack rate (like a more, before the global
-increases) and `local_accuracy_rating` adds flat accuracy. Weapon damage, armour, evasion and energy shield of items are
-not modelled yet, so their local mods change nothing. Verified live 2026-10-20: +20 maximum Life, +30% fire resistance
-and +25 strength on a ring, a local attack speed mod on the wand, and spell damage on the wand raising Fireball's
-damage (11-skills.md §9).
+Local mods on the main hand (row 2, else 14) change the weapon profile (`ItemWeapons`): `local_physical_damage_+%`,
+`local_minimum/maximum_added_physical_damage` and item quality (+1% local physical damage per quality) on the weapon's
+physical damage, `local_attack_speed_+%` on the attack rate (like a more, before the global increases),
+`local_critical_strike_chance_+%` on the WeaponTypes base critical chance, `local_accuracy_rating` as flat accuracy,
+and the local added elemental/chaos damage (`local_minimum/maximum_added_fire/cold/lightning/chaos_damage`, the
+elemental ones raised by `local_elemental_damage_+%` and `local_attacks_with_this_weapon_elemental_damage_+%`) in every
+hit the weapon makes. The armour, evasion and energy shield side is in "Base defences" above. Verified live 2026-10-20:
++20 maximum Life, +30% fire resistance and +25 strength on a ring, a local attack speed mod on the wand, and spell
+damage on the wand raising Fireball's damage (11-skills.md §9).
 
 ## 2d. Requirements and inactive items
 

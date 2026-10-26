@@ -66,8 +66,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   from Words.dat; equipment drops magic / rare and unidentified; a Scroll of Wisdom identifies (C→S 0x71);
   `/item <type> magic|rare`, `/roll`.
   Equipped items' mods count on the character: global stats like a passive's (life, resistances, attributes, spell
-  damage …), the main hand's local crit, attack speed and accuracy on the weapon.
-  Not yet: local weapon damage and defence mods, uniques and special mods (#60).
+  damage …), the main hand's local crit, attack speed and accuracy, its local physical damage and quality and its local
+  added elemental/chaos damage (`ItemWeapons`), and the armour pieces' and shield's local flat/increased armour,
+  evasion and energy shield mods and quality (`ItemDefences`, [13](../docs/protocol/13-items.md) §2c).
+  Not yet: uniques and special mods (#60).
   Code: `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`,
   `ItemCatalog.cs`, `CharacterSaves.cs`).
   Docs: [13](../docs/protocol/13-items.md) §2a-§2c.

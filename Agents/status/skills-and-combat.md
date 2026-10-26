@@ -118,8 +118,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Chaos Inoculation sets maximum life to 1 (after the life modifiers) and grants chaos immunity in the damage model
   and the panel's Immune row; energy shield remains the pool. The pre-CI life used for stun/ailment thresholds and the
   low-life condition are not modelled.
-  Not yet: item mods/quality, shields or auras.
-  Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway.
+  Armour and evasion items count their local flat/increased mods and quality, and a shield in the off hand adds its base
+  armour/evasion/energy shield (`ItemDefences`); auras are still only the simple set above.
+  Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, `ItemDefences.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
 - Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
   `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; a bow's ordinary attack and attack
