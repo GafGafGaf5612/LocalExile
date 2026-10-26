@@ -596,7 +596,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
 - **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
   cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
   (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets
-  z = height × 7.8125, the height read as a signed world z (positive down; a negative value is above sea level).
+  z = -marker * 7.8125, reading the packet height as the signed Positioned marker, not signed world-z steps.
   With 0 the fireball sat under the ground and did not seem to move; with 0x7fffffff it flies (slowed to 10 cells per
   second with `Game_PROJECTILE_SPEED` to watch it). Positioned's vtable +0xd8, which the move calls when the flag
   byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
@@ -644,9 +644,9 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   tail (`0x141e3162f`) calls `0x141e35250`, which clears the movement durations at +0x240/+0x280 and movement flags.
   Thus the explosion does not continue along the old glide. `InstanceProtocol.Teleport` now accepts an optional
   fixed-height marker and float world z; existing calls retain their two zero fields.
-  Unlike 0x1ba, 0x1b7 copies the fixed pair directly. For signed world-z steps `s`, send
-  marker `-s` and float world z `s * 7.8125`, preserving the projectile creation pair and fixed flight height.
-  Terrain is not resampled at impact, so sloping ground does not make the explosion jump vertically.
+  Unlike 0x1ba, 0x1b7 copies the fixed pair directly. For a Positioned marker `m`, send
+  marker `m` and float world z `-m * 7.8125`, matching the creation pair and the glide endpoint.
+  Terrain is not resampled at impact; consistent native interpolation still needs the fresh integration check below.
   The height getter (`0x141e35800`) compares +0x290 with 0x7fffffff first; that sentinel selects terrain sampling
   and ignores +0x2b4. Current flights use a fixed height, including the bare offset without a height grid.
   Every other marker immediately returns the float at +0x2b4; sending a non-sentinel marker with a zero float
@@ -700,8 +700,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   entries (tile data pointer, +0x36 rotation code, +0x30 i16 height offset), result = the tile's height at the
   tile-local cell (`0x141d7d100`) + terrain +0x104 × the tile's offset; `0x141e35800` interpolates four cells. With a
   height grid (`TerrainHeights`, data/walkability/<area>_seed<seed>.heights.bin, int16 per cell, −32768 = unknown) the
-  Gateway sends the projectile at terrain + `Game_PROJECTILE_HEIGHT` steps (default 5, the torso) as the signed world
-  z: Positioned f0 0x04's i32 is -z / 7.8125 and its f32 is z; 0x1ba carries the same signed z.
+  Gateway uses terrain + `Game_PROJECTILE_HEIGHT` steps (default 5, the torso) as the Positioned marker `m`.
+  Positioned f0 0x04 carries i32 `m` and f32 world z `-m * 7.8125`; 0x1ba carries the same marker `m`.
   Without a grid it uses the bare offset.
   The grid covers natural terrain, not doodads/platforms; the protocol carries no player z, so platforms and doodads
   need a server-side world/surface height model (issue #182).
@@ -725,11 +725,18 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   `scripts/re/frida/capture-terrain-tiles.js` dumps them on entry (no calls into the client; the client stayed up);
   `scripts/walkmaps/heights.py` applies the client's lookup (code tables `0x142fa04b0`, `0x142fb7f98`). The town
   capture reproduces the known grid exactly; The Coast seed 1 is 1725 × 1725, −37..90.
-- **Sign.** World z points down and the protocol's height is a signed world z in 7.8125-unit steps, not a positive
-  "up" value: 0x1ba's u32 is that signed value (a positive height is below sea level, a negative one above), and
-  Positioned's f0 0x04 block is i32 -z / 7.8125 with f32 z. Sending the positive "height up" put the arrow at
-  z = +117 (under the hideout platform); the same value negated (0xfffffff1) put it at z = -117, the torso. The live
-  arrow's i32 -5 / f32 +39.0625 is z = +39.0625, five steps above a player at z = +78.125.
+- **Sign.** World z points down, but 0x1ba's signed height marker points up: `marker = -z / 7.8125`.
+  `ProjectileObject.Height` takes world-z steps and writes the opposite marker plus float world z.
+  The move endpoint takes that encoded marker, not the API argument: marker +5 means world z -39.0625.
+  Static 3.29.3b evidence: `0x141e34921` passes the current marker and `0x141e3491a` the packet endpoint marker
+  into the 3D stepper `0x141e4d180`; `0x141e3495b..0x141e3496b` converts the packet marker to float, multiplies
+  by 7.8125 (`0x1436a36b8`) and flips its sign (`0x1436b3520`) before render interpolation `0x141e4d510`.
+  Using the opposite marker made a creation at -39.0625 glide toward +39.0625 before the stop reset its height.
+  A raw same-path A/B probe showed marker -5 drifting toward positive z, while overriding the endpoint to +5
+  returned it toward -39.0625.
+  Corrected normal launches then retained marker 5/world z -39.0625 at creation, after the glide started,
+  during a paused mid-flight sample and at moving-monster and wall contact stops.
+  The same run verified a moving-away miss, a later-entry hit, pause/resume and zero native glide step after contact.
 - **Flight (live 2026-10-18).** S→C 0x1ba's float is the move's **duration in seconds**, not a speed: the handler
   passes distance / it as the speed, and the step walker sets Positioned +0x23c = that speed and +0x240 = the time per
   cell step (duration / the path's longest axis), advancing +0x244 by the frame time (`0x141e32710`). Sending the

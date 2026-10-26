@@ -197,7 +197,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
 - **Projectiles.** Moving targets are checked throughout flight by sweeping observed relative movement.
   A monster can change course away from a hit, enter the path later, or intercept before a farther target.
-  The client glide is stopped at the contact cell before impact with a height-preserving 0x1b7.
+  The client glide is stopped at the contact cell before impact with the creation marker/world-z pair in 0x1b7.
   Cast release, flight and explosion cleanup use game time and wait through pause.
   Area changes remove outstanding visuals before handoff and invalidate flights even if the transfer fails.
   Disconnects cancel outstanding flight tasks.
@@ -205,7 +205,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks verified a moving-away miss, a later-entry hit, first-wall contact, pause/resume and native glide stop.
   Raw fixed-height and terrain-sentinel stop packets preserved their fields and cleared native movement duration.
   These live collision and raw-stop checks preceded the bow packet/height update; merged bow/collision
-  integration still needs a live recheck. Fixed-height stops preserve the new creation marker/world-z pair.
+  integration still needs a live recheck.
+  Creation, glide endpoint and stop now share one signed marker; packet tests cover positive, negative and zero height.
+  Corrected normal launches retained marker 5/world z -39.0625 at creation, paused mid-flight and both contact stops.
   Broader surface-height accuracy remains open (#182).
   Positions remain integer server walk estimates sampled about every 16 ms, with a shared collision radius
   and straight movement between samples.
