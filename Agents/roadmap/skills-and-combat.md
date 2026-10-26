@@ -91,7 +91,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Added damage has its first stat: the attack's added lightning gets
   `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
   (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
-  Recheck mana damage through the resolved supported-skill path natively; original-head captures remain historical.
+  Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
+  Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
   Critical elemental ignore and non-critical penetration now compose with it on the same rolled packet.
   Rerun critical ignore against a rebuilt final DLL: the previous combined run used the preceding #225 artifact.

@@ -195,15 +195,17 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   Target physical reduction and damage taken follow mitigation, preserving fractional components until the final total.
   Ordinary bows retain offensive resistance rules in their release snapshot and resolve the target at contact.
   Native checks on original head `13c41e5` verified the basic ignore and non-critical rules.
-  The resolved penetration/modifier/bow combinations have automated coverage and need new native verification.
-  The combined run labelled `462c883` accepted eight groups, but its DLL was the preceding #225 build `4a71968`.
-  Rebuilding that commit reproduces SHA-256 `ffc99913dea4ada11cb0ed1fdaaf9caa1f9c360064dc2401e86c4eeea315bf35`.
-  Its ninth 330-damage critical therefore does not test this critical-ignore handler.
-  The parsed C24 handler now has loopback regressions using repeated skill `0x102`, sequence 0 and flags `0x408`.
-  On the same connection and target, a prior 220 hit precedes actual `/set_stat` commands and a 300 ignore critical.
-  Clearing ignore gives 330; prohibition gives 240, for both friendly and hostile targets.
-  No hostility guard was changed; those are automated handler checks, not a new native run.
-  Rebuild after the final checkout and check the DLL's informational Git version and hash before a `-NoBuild` run.
+  Ten composed native groups pass at source `1366f48`, with Gateway/Core/Host embedded Git versions matching it.
+  Critical panels show 657/505, then 657/755 after a spell-only increase; active Sea Legs gives 1204 and empty-set zero.
+  Fixed mana lightning produces actual Life losses 90/120/60 for ranged/melee/ranged-only contexts.
+  Against a level-68 fire skeleton, fixed 100 fire + 100 cold deals 160, or 220 after 40/20 penetration.
+  A 150% critical multiplier then gives 300 with ignore, 330 without it and 240 with the prohibition.
+  These values are read from the native Life component after the authoritative hit.
+  The run uses a fresh unascended Witch and exercises default attacks, not the ascendancy chooser or whole classes.
+  Supported-gem, modifier/bow and Purity-replacement combinations retain their automated integration coverage.
+  Earlier native evidence remains attributed to its original heads; a stale #225 DLL did not test #226.
+  Rebuild after the final checkout and verify embedded Git versions, hashes and the running DLL before `-NoBuild`.
+  See [native build provenance](../dev/client-control.md#build-provenance-for-native-verification).
 - `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
   `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
   `MitigatePhysical`.

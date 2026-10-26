@@ -473,6 +473,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Each check read the actual native monster life after the authoritative update.
   Those captures belong to original head `0d800d1`; resolved bow and target-modifier paths need native rechecking.
   Target mods compose with base resistance before penetration; damage taken follows mitigation and rounds once.
+  Ten fresh composed native groups verify critical rounding, active overcap and default-attack mana lightning.
+  Actual mixed-hit Life losses are 160/220 before criticals, then 300 with ignore, 330 without and 240 prohibited.
+  Build versions and source hashes match `1366f48`; supported-gem, modifier and bow combinations remain automated.
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.
