@@ -56,6 +56,9 @@ sealed class NpcSale(SpawnedNpc npc, uint mine, uint theirs)
     public uint Theirs { get; } = theirs;
     // The offered items stay in the character's inventory cells until the sale ends (PlayerInventories.Offer).
     public List<InventoryItem> Reward = [];
+    public IReadOnlyList<InventoryItem> QuotedItems = [];
+    public IReadOnlyList<Item> QuotedRewards = [];
+    public string? QuoteError;
     public uint MineRevision, TheirsRevision;
 }
 
@@ -296,6 +299,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public double NextAttackAt;
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
     public int ActionCount;
+    public readonly PlayerHitRecovery HitRecovery = new();
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
@@ -303,6 +307,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
     // When each skill with a cooldown (GrantedEffects row) may be used again, in Clock seconds. Guarded by the Monsters lock.
     public readonly Dictionary<int, double> SkillReadyAt = [];
+    // Eligible ordinary one-use cooldowns retain remaining base-time units through recovery-rate changes.
+    public readonly Dictionary<int, SingleUseCooldownState> SingleUseCooldowns = [];
     // The skill ids the client has on this connection's player (SendPlayer, SendSkills): the 0x40 skill list only adds,
     // so the ones that leave are removed by id.
     public HashSet<ushort> ClientSkillIds = [];
@@ -361,6 +367,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>
     public uint GuildStashObject;
     public (int X, int Y) GuildStashAt;
+    public uint HeistLockerObject;
+    public (int X, int Y) HeistLockerAt;
     public uint HorticraftingObject;
     public (int X, int Y) HorticraftingAt;
     public uint CraftingBenchObject;
@@ -369,6 +377,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint BenchBalanceRevision;
     public IReadOnlyList<InventoryItem> BenchBalanceItems = [];
     public HideoutScene? Furniture;
+    public readonly HideoutEditing HideoutEditor = new();
+    public (int X, int Y) StashAt;
+    public void MoveWaypoint(WaypointObject waypoint) => Layout = Layout with { Waypoint = waypoint };
     public (int X, int Y) CraftingBenchAt;
     public readonly HashSet<int> GuildStashTabsSent = [];
     public bool GuildStashOpen;

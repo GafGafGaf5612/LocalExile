@@ -30,7 +30,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Item mods: rarity (normal, magic, rare, unique), identified, and the implicit, explicit, enchant, scourge and hidden
   mod lists in the Mods component; new items roll their BaseItemTypes implicits (Driftwood Wand 8-12% increased Spell
   Damage); magic names come from the affixes; rarity and mods are saved with the item (characters and stash);
-  `/mod`, `/mods`, `/rarity` on the held item.
+  `/mod`, `/mods`, `/rarity`, `/sockets` (colours and links, e.g. `/sockets RRGBBB`) on the held item.
   Magic and rare items: affixes rolled from Mods.dat by domain, item level, the item's tags and families, rare names
   from Words.dat; equipment drops magic / rare and unidentified; a Scroll of Wisdom identifies (C→S 0x71);
   `/item <type> magic|rare`, `/roll`.

@@ -303,6 +303,16 @@ partial class Program
             await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Rarity = rarity, Identified = identified },
                 $"{rarity}{(identified ? "" : ", unidentified")}");
         })
+        .Add("sockets", "/sockets [colours] (the held item's sockets: R G B W, linked within a word, e.g. /sockets RRGBBB a 6-link, /sockets RRG B a 3-link and a single; without colours, shows them)", async args =>
+        {
+            if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
+            if (args.Length == 0) { await conn.Commands!.Reply($"sockets: {SocketLayout.Describe(held.Item)}"); return; }
+            if (Items.ByHash(held.Item.TypeHash) is not { } type) { await conn.Commands!.Reply("Unknown item type"); return; }
+            if (SocketLayout.Parse(args, out string? error) is not var (colours, links)) throw new ArgumentException(error);
+            if (SocketLayout.Apply(held.Item, type, colours, links, out error) is not { } result) { await conn.Commands!.Reply(error!); return; }
+            await ChangeHeldItem(remote, stream, ciphers, conn, i => SocketLayout.Apply(i, type, colours, links, out _) ?? i,
+                $"sockets: {SocketLayout.Describe(result)}", "Sockets");
+        })
         .Add("set_level", "/set_level <1 to 100> (saved to the account; the level's experience and stats are sent at once)", async args =>
         {
             if (args.Length == 0 || !int.TryParse(args[0], out int level) || level is < 1 or > 100) throw new ArgumentException("level 1 to 100");
@@ -825,6 +835,8 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
+        .Add("tp", "/tp <x> <y> | <+dx> <+dy> | <id> | <name> [n] | list [filter] (dev: teleport to a cell, a monster, NPC, transition, waypoint or captured object, e.g. /tp RhoaChest 2)",
+            args => DevTeleport(remote, stream, ciphers, conn, args))
         .Add("mobs", "/mobs (list spawned monsters)", async _ =>
             await conn.Commands!.Reply(conn.Monsters.Count == 0 ? "No monsters." :
                 string.Join(", ", conn.Monsters.Select(m =>
