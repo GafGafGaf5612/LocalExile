@@ -73,4 +73,27 @@ public class InstanceStashTests
         Assert.Empty(partial);
         Assert.Empty(unknown);
     }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 1)]
+    [InlineData(1, 0)]
+    [InlineData(1, 1)]
+    public void Withdrawal_bulk_boolean_is_separate_from_stash_kind_and_token(byte kind, byte bulk)
+    {
+        // Layout from the native 0xe3 builder/writer, not a live right-click capture.
+        byte[] bytes = [0, 0xe3, 0, 7, 0x40, 0, 0, 1, kind, 0xa7, 0xcd, bulk];
+        var messages = InstanceProtocol.SplitClientMessages(bytes, out var partial, out var unknown);
+
+        var move = InstanceStash.ReadTakeFromTab(Assert.Single(messages).Bytes);
+
+        Assert.Equal(7, move.Tab);
+        Assert.Equal(0x40000001u, move.ItemId);
+        Assert.Equal(kind, move.Kind);
+        Assert.Equal(0xa7, move.TokenLo);
+        Assert.Equal(0xcd, move.TokenHi);
+        Assert.Equal(bulk, move.Bulk);
+        Assert.Empty(partial);
+        Assert.Empty(unknown);
+    }
 }

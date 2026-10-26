@@ -116,8 +116,19 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
   +0x491), u16 token (raw, changes per request), u64 raw (0). The item's inventory is not sent. The Gateway moves the
   item to the tab's first free cell (column by column) from whichever inventory holds it.
 - **0xe3** (12 bytes, vtable `0x1435c0500`, write `0x141f97e40`, built by `0x142168e20`): Ctrl + click on a tab item.
-  u16 BE tab, u32 BE item id, u8, u8, u8, u8 (live `00 a7 cd 00`: the middle two change per request). The Gateway moves
-  it to the main inventory's first free cell, keeping its stash id.
+  u16 BE tab, u32 BE item id, u8 stash kind, u16 raw token (low byte first), u8 bulk.
+  Live ordinary click suffix: `00 a7 cd 00`; the middle two bytes change per request.
+  Static 3.29.3b evidence: the builder copies argument 4 to kind, argument 5 to the token and argument 6 to bulk;
+  the writer emits these four bytes in order from message +0x18..+0x1b.
+  The ordinary inventory click (`0x14030e3e0`, call at `0x140310c63`) passes bulk 0 to `0x140312810`;
+  its bulk counterpart (`0x140311440`, call at `0x14031172a`) passes 1.
+  The shared handler forwards that boolean to `0x142168e20` at `0x140313444`.
+  This is a separate boolean from the `0xe1` deposit flags; do not use deposit flag 0x02 for withdrawals.
+  The Gateway limits ordinary withdrawals to one normal inventory stack; bulk 1 withdraws as much of the clicked
+  stack as fits, topping up existing stacks before using free cells.
+  Real-client/Gateway logs confirm both modes: bulk 0 takes 40 from a slot holding 218, leaving 178;
+  bulk 1 takes 178 as four stacks of 40 and one of 18.
+  Wire-layout, capacity, transaction rollback and transfer/reload tests cover the remaining edge cases.
 - **0xe1** (vtable `0x1435c00f8`, write `0x141f97810`): Ctrl + click on an inventory item that has an affinity tab
   (currency, maps, gems …) while the stash is open, whatever tab is shown: the client names the tab. Read from live bytes
   (2026-10-20, Scroll of Wisdom, Armourer's Scrap, Orbs of Alteration and Transmutation, the Currency tab at index 5):
@@ -179,7 +190,11 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   appended.
 - **Ctrl + click** into a tab (0xe0, 0xe1) puts a stack onto the tab's stacks of its type first (in a slotted tab, its
   slot), then into free cells; what doesn't fit stays in the inventory. Out of a tab (0xe3), a stack tops up the
-  inventory's stacks of its type first, and what doesn't fit stays in the tab. Each is one transaction
+  inventory's stacks of its type first, withdrawing at most the item's normal inventory stack size for Ctrl + left click.
+  Ctrl + right click (`0xe3` bulk byte 1) instead tries the entire clicked stack.
+  Stash reduction uses the amount actually moved, so an intentionally limited withdrawal leaves its remainder even
+  when every requested item fits (issue #249).
+  Each is one transaction
   (`ItemMoves`, [saves](../saves.md)).
 - **The map tab takes nothing yet.** The 3.29 client lists a map tab's maps by tier ([maps](../game/maps.md)), not at
   grid cells: two Beach Maps saved at (0, 0) and (0, 1) were not shown (live 2026-10-20). Until its layout is known,
