@@ -10,10 +10,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   (replies as chat lines).
   Code: `Program.Commands.cs` (`Commands`), `ChatCommands.cs`.
   Docs: [10](../docs/protocol/10-chat-and-commands.md).
-- NPCs in every campaign town (acts 1-10, Oriath, the Karui Shores; 53 NPCs): each town room's own NPC lines,
-  placed as the client places the room (verified against its walk-map capture of every town), with name, minimap icon,
-  idle model and facing; League NPCs and later quest stages are not placed
-  ([17](../docs/protocol/17-npcs.md) §2). Clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
+- NPCs in every campaign town (acts 1-10, Oriath, the Karui Shores): each town room's own NPC lines, placed as the
+  client places the room (checked against its walk-map capture of every town), with name, minimap icon, model and
+  facing.
+  League NPCs and later quest stages are not placed ([17](../docs/protocol/17-npcs.md) §2).
+  Clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
   Continue and Goodbye (C→S 0x85) are answered; Purchase Items opens the shop (S→C 0xc0 manager 1 + 0x8c) and buying
   (C→S 0x88) costs 1 Scroll of Wisdom; Sell Items: the sell window (S→C 0xb8) takes drops, Ctrl + click (first free
   cell) and Shift + click, Accept gives 1 Scroll Fragment per item and Cancel returns them, and the player can walk
@@ -52,6 +53,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   the 346 monster varieties with NPC, ControlZone, BlightTower … components.
   "Emerge" monsters (Gravel Eater …) are created but stay hidden until an Emerge action, which the server does not
   send.
+- `data/room-points.json` gives angle 0 to the server objects (NPCs, stashes …) of version 35 and 36 rooms, every town
+  room among them: `RoomFile` (`src/GameServer.Data/Terrain`) reads the third number of a line, which those versions
+  fill with a 0, and `MonsterPacks.LoadObjects` passes it on.
+  Town NPCs do not use it (`TownNpcs` copies the angles); the Twilight Strand's force walls are older rooms and keep
+  theirs ([17](../docs/protocol/17-npcs.md) §2).
 - Chat lines: server text only appears as a message box.
   The chat-line message and the global channel join are unknown (the client logs "Timeout while joining global chat
   channel").

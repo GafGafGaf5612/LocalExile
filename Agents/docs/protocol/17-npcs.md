@@ -43,7 +43,8 @@ The NPC component's debug dump (`0x141e751d0`) prints the NPC and the NPCTalk ro
 
 Each campaign town has one fixed town room (.arm), and the room lists its NPCs among its doodads, one line each:
 `x y 0 angle qx qy qz qw a b flag [z] scale "model.ao" "Metadata/NPC/…"` (room cells; the angle in radians, the quaternion
-is the same turn about z; z only when the flag is 1). Lioneye's Watch's room `beach_town_unique_normal.arm` has
+is the same turn about z; z only when the flag is 1). That is a version 35 or 36 room; version 31 rooms (Oriath's
+`entrance_04.arm`) have no 0 before the angle. Lioneye's Watch's room `beach_town_unique_normal.arm` has
 `230 389 0 -0.155698 … "Metadata/NPC/Act1/Tarkleigh.ao" "Metadata/NPC/Act1/Tarkleigh"`. The client creates the plain
 doodads of those lines itself (type `Metadata/MiscellaneousObjects/Doodad`) and leaves the others (NPCs, stash, notice
 boards …) to the server.
@@ -75,6 +76,7 @@ by the same amount.
 | Highgate (2_9_town) | `Act9/Town/Rooms/town.arm` (R270, 0, 0) | Petarus and Vanja, Irasha, Tasuni, Sin |
 | Oriath Docks (2_10_town) | `Act10/Town/Rooms/dock_town.arm` (I, 0, 0) | Sin, Bannon, Weylam Roth, Lani, Lilly Roth |
 | Oriath (2_11_town) | `Act11/Town/Rooms/Unique/fountain.arm` (node "fountain" I among generated nodes, 299, 299) | Zana, Innocence, Sin, Weylam Roth, Lilly Roth, Lani |
+| | `Act11/Town/Rooms/Unique/entrance_04.arm` (node "entrance_04" I, 161, 851) | Helena |
 | Karui Shores (2_11_endgame_town) | `Act11/Camp/Rooms/camp.arm` (I, 92, 92) | Lilly Roth, Weylam Roth, Lani, Helena |
 
 - **Types without an .ot.** Half of the NPCs.dat Ids have no .ot of their own (`Metadata/NPC/Act6/Tarkleigh`,
@@ -85,25 +87,38 @@ by the same amount.
 - **Model.** A line's .ao is sent in Animated (bit0 + path) when the type has none (Irasha, Act 6's Lilly) or another
   one (Weylam's `Act6/RotTooth.ao` instead of `Act7/Weylam.ao`, Lilly's poses `Act5/Lilly.ao` / `Act6/LillySitting.ao`,
   the Karui Shores' Helena); otherwise Animated stays 0 (the type's model).
-- **Transitionable.** The Karui Shores' Helena (`Epilogue/Helena`, an empty `Transitionable {}`) hides herself
+- **Transitionable.** Helena in Oriath and the Karui Shores (`Epilogue/Helena`, an empty `Transitionable {}`) hides herself
   while untransitioned (`create_untransitioned = { DisableRendering(); … }`): with state 1 she was invisible live
   (her dialogue still opened), with state 2 she shows. Act 10's Bannon at state 1 is Bannon (his `create_transitioned`
   hides him for Innocence). So an empty `Transitionable {}` has two states, not the one `object-types.json` reports.
-- **Height.** A line with flag 1 carries a world z, sent as Positioned's fixed height (flags0 bit2: i32 z / 7.8125,
-  f32 z, before flags1 0x02's two bytes), as the area transitions do.
+- **Height.** A line with flag 1 carries a world z, sent as Positioned's fixed height (flags0 bit2, before flags1
+  0x02's two bytes): i32 −z / 7.8125 and f32 z, the live server's convention for a fixed height (its projectiles,
+  [11](11-skills.md) "Sign"; world z points down). Live the NPCs looked the same with either sign of the i32 (Nessa,
+  Kira, Oyun, Act 6's Lilly on her pier, 2026-10-25): the client draws a placed object at the f32. The area
+  transitions and waypoints still send +z / 7.8125 ([08](08-area-transitions.md) §5), which the client then ignores
+  in the same way; aligning them is left for a later change.
+- **Seed.** The origins other than (0, 0) were captured with seed 1, the seed the Gateway gives towns; `TownNpcs`
+  stores it with those rooms and leaves a room's NPCs out (with a log line) in an instance of another seed. Oriath's
+  rooms are generated around fixed nodes, so their origins could depend on it; the single-room towns' borders
+  probably do not.
+- **Blocked cells.** Several NPCs stand on cells the client's walk map blocks (stalls, platforms, piers: Hargan in both
+  Sarn Encampments, Grigor, Petarus and Vanja and Tasuni in both Highgates, Act 6's Sin and Lilly, Act 7's and Act 8's
+  Sin) or on the edge of walkable ground. They are placed as the room has them, and the Gateway's "not walkable"
+  warning skips town-room placements (`Placement.FromRoom`).
 - **Not placed:** league NPCs of the same rooms (Einhar, Niko, Jun, Alva, Gwennen, Tujen, Rog, Dannig, Divinia,
   Faustus, Kurai, Cassia, Tane, Johan), the Tutorial NPC and Letters of Exile, Tolman (act 8, no NPCTalk rows), Kirac
-  (ControlZone is not serialized) and later quest stages of the same NPC: Highgate's `DiallaTownWithered` at (250, 553),
+  and the Karui Shores' `HelenaIntro` at (510, 173) (a trigger by the tunnel that plays "HelenaThroughTheTunnel" and
+  then hides; both need ControlZone, which is not serialized) and later quest stages of the same NPC: Highgate's `DiallaTownWithered` at (250, 553),
   Oriath Docks' `InnocenceTown` in Bannon's cell, Act 6's Lilly sitting by Bestel at (148, 343) (she is placed by her
   ship, `QuestObjects/Act6/LillyShip`). Which stage the real server shows depends on quest progress; the Gateway places
-  the first one. Oriath is generated around its fixed fountain room; its origin (299, 299) is from seed 1, the seed
-  the Gateway's towns use.
-- **Verified live** (2026-10-25, OfflineWitch, `/goto` into each town): every placed NPC has its name and minimap
-  label, clicking walks up and opens its dialogue (0x84), option 0 plays (Act 6's Tarkleigh shows Act 6's rows, so the
+  the first one.
+- **Verified live** (2026-10-25, OfflineWitch, `/goto` into each town): every placed NPC (Oriath's Helena added
+  afterwards and checked the same way) has its name and minimap label, clicking walks up and opens its dialogue (0x84), option 0 plays (Act 6's Tarkleigh shows Act 6's rows, so the
   client resolves the Act 6 Id), and Goodbye closes it (0x85). Purchase Items and Sell Items open the buy and sell
   windows for these NPCs too (§5); only the NPCs `NpcShops` stocks have goods.
 - `data/room-points.json` lists these lines with `angle` 0: `RoomFile` (GameServer.Data) reads the third number, which
-  is 0 in every town line; the angle is the fourth.
+  is the angle in version 31 and older rooms (the Twilight Strand's force walls have theirs) but a 0 in version 35 and
+  36 rooms (every town room), where the angle is the fourth. `TownNpcs` copies the angles from the lines itself.
 
 ## 3. Messages
 

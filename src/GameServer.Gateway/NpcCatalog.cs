@@ -12,7 +12,8 @@ sealed class NpcCatalog
     public sealed record Npc(int Row, string Id, string Name, IReadOnlyList<string>? Components, StateMachineData? StateMachine,
         byte TransitionState, int ShopRow = -1)
     {
-        /// <summary>The model to send instead of the type's (a town room's line, <see cref="Placement.Model"/>).</summary>
+        /// <summary>The model to send instead of the type's: a town room's line (<see cref="Placement.Model"/>), else the
+        /// model a town room gives this NPC (TownNpcs.ModelOf), so /npc shows Irasha, whose type Metadata/NPC/NPC has none.</summary>
         public string? Model { get; init; }
         /// <summary>A fixed world z (a town room's line, <see cref="Placement.Height"/>).</summary>
         public float? Height { get; init; }
@@ -39,11 +40,14 @@ sealed class NpcCatalog
     /// <summary>An NPC standing in a town: its NPCs.dat Id, cell and facing (radians); optionally the model and fixed
     /// height its town room gives it and a Transitionable state other than the type's.</summary>
     public sealed record Placement(string Id, int X, int Y, float Rotation, string? Model = null, float? Height = null,
-        byte? TransitionState = null);
+        byte? TransitionState = null)
+    {
+        /// <summary>A town room's own line (TownNpcs): it may stand on a cell the walk map blocks (a stall, a pier).</summary>
+        public bool FromRoom { get; init; }
+    }
 
-    // The campaign towns (TownNpcs: their rooms' NPC lines). Facing in radians (Positioned +0x29c).
-    static readonly Dictionary<ushort, Placement[]> Towns = new(TownNpcs.All.Select(t =>
-        new KeyValuePair<ushort, Placement[]>(t.Area, [.. t.Placements()])))
+    // The campaign towns are TownNpcs (their rooms' NPC lines); other towns here. Facing in radians (Positioned +0x29c).
+    static readonly Dictionary<ushort, Placement[]> Towns = new()
     {
         // The Azurite Mine Encampment (Delve_Hub, HASH16 0x8b9b): Niko by the waypoint (333, 402) and the arrival
         // (330, 420); our own cell (2026-10-21). The hideout Niko's row: the hub's own (DelveMinerHub) lists no Sell Items.
@@ -97,12 +101,15 @@ sealed class NpcCatalog
 
     public static IReadOnlyList<Placement> HideoutNpcs => Hideout;
 
-    public static IReadOnlyList<Placement> In(ushort areaHash) =>
-        Towns.GetValueOrDefault(areaHash) ?? (HideoutCatalog.ByArea(areaHash) is not null ? Hideout : []);
+    /// <summary>The NPCs of an area instance of <paramref name="seed"/>: a campaign town's (the notes say which room's are
+    /// left out for another seed), another town's, a hideout's, or none.</summary>
+    public static IReadOnlyList<Placement> In(ushort areaHash, uint seed, List<string>? notes = null) =>
+        TownNpcs.Of(areaHash) is { } town ? town.Placements(seed, notes)
+        : Towns.GetValueOrDefault(areaHash) ?? (HideoutCatalog.ByArea(areaHash) is not null ? Hideout : []);
 
     /// <summary>The NPC a placement stands for, with the placement's model, height and state.</summary>
     public Npc? Place(Placement p) => Find(p.Id) is { } npc
-        ? npc with { Model = p.Model, Height = p.Height, TransitionState = p.TransitionState ?? npc.TransitionState }
+        ? npc with { Model = p.Model ?? npc.Model, Height = p.Height, TransitionState = p.TransitionState ?? npc.TransitionState }
         : null;
 
     /// <summary>An NPC by row, Id or name (exact name first, then the first Id or name containing the text).</summary>
@@ -157,7 +164,7 @@ sealed class NpcCatalog
                 int set = r.GetProperty("ShopSet").ValueKind == JsonValueKind.Number ? r.GetProperty("ShopSet").GetInt32() : -1;
                 rows.Add(new Npc(rows.Count, id, r.GetProperty("Name").GetString() ?? "", list,
                     stateMachines.GetValueOrDefault(type), transitionStates.GetValueOrDefault(type, (byte)1),
-                    set >= 0 && set < shopOfSet.Count ? shopOfSet[set] : -1));
+                    set >= 0 && set < shopOfSet.Count ? shopOfSet[set] : -1) { Model = TownNpcs.ModelOf(id) });
             }
         return new(rows, null, ReadTalk(folder));
     }
