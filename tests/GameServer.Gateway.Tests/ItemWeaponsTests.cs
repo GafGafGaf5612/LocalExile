@@ -15,9 +15,14 @@ public class ItemWeaponsTests
             Local(("local_minimum_added_physical_damage", 5), ("local_maximum_added_physical_damage", 10),
                 ("local_physical_damage_+%", 50)), 20);
 
-        // (10 + 5) * (1 + 50% + 20% quality) = 25.5 -> 25; (20 + 10) * 1.7 = 51.
-        Assert.Equal(25, weapon.MinDamage);
-        Assert.Equal(51, weapon.MaxDamage);
+        // (10 + 5) * 150% * 20% quality = 27; (20 + 10) * 150% * 20% = 54. Quality is a separate factor since 3.25.
+        Assert.Equal(27, weapon.MinDamage);
+        Assert.Equal(54, weapon.MaxDamage);
+
+        // The post-3.25 rule directly: base 100, 100% increased physical and 20% quality -> 100 * 2 * 1.2 = 240.
+        var reviewed = ItemWeapons.Of(1000, 100, 100, 8, Local(("local_physical_damage_+%", 100)), 20);
+        Assert.Equal(240, reviewed.MinDamage);
+        Assert.Equal(240, reviewed.MaxDamage);
     }
 
     [Fact]
@@ -27,12 +32,12 @@ public class ItemWeaponsTests
     }
 
     [Fact]
-    public void Added_elemental_damage_is_scaled_by_the_local_elemental_increase()
+    public void Added_elemental_damage_is_scaled_by_the_local_elemental_increase_but_not_by_quality()
     {
         var weapon = ItemWeapons.Of(1000, 10, 20, 8,
             Local(("local_minimum_added_fire_damage", 4), ("local_maximum_added_fire_damage", 8),
                 ("local_minimum_added_chaos_damage", 2), ("local_maximum_added_chaos_damage", 4),
-                ("local_elemental_damage_+%", 50)), 0);
+                ("local_elemental_damage_+%", 50)), 20);
         var hit = weapon.HitDamage(null);
 
         Assert.Equal(new DamageRange(6, 12), hit[DamageType.Fire]);

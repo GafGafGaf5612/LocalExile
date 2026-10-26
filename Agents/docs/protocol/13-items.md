@@ -179,8 +179,9 @@ attributes, resistances, block, suppression, speeds, crit, accuracy …) and the
 way a passive's would. They are sent again when equipment changes (`SendEquipment`).
 
 Local mods on the main hand (row 2, else 14) change the weapon profile (`ItemWeapons`): `local_physical_damage_+%`,
-`local_minimum/maximum_added_physical_damage` and item quality (+1% local physical damage per quality) on the weapon's
-physical damage, `local_attack_speed_+%` on the attack rate (like a more, before the global increases),
+`local_minimum/maximum_added_physical_damage` and item quality on the weapon's physical damage (quality is a separate
+× (1 + quality/100) multiplier after the local increases, the post-3.25 rule; it does not touch the elemental/chaos
+added damage), `local_attack_speed_+%` on the attack rate (like a more, before the global increases),
 `local_critical_strike_chance_+%` on the WeaponTypes base critical chance, `local_accuracy_rating` as flat accuracy,
 and the local added elemental/chaos damage (`local_minimum/maximum_added_fire/cold/lightning/chaos_damage`, the
 elemental ones raised by `local_elemental_damage_+%` and `local_attacks_with_this_weapon_elemental_damage_+%`) in every

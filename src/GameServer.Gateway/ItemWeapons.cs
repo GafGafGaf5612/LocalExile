@@ -2,19 +2,19 @@ using GameServer.Core.World;
 
 /// <summary>
 /// A weapon's attack from its base WeaponTypes row and the item's local stats (13-items.md §2c): local physical damage
-/// (flat added and increased), weapon quality (+1% local physical damage per quality, additive with the local increase),
-/// local attack speed, and the local added elemental/chaos damage the weapon adds to every hit (scaled by the local
-/// elemental damage increases).
+/// (flat added and increased), weapon quality (+1% local physical damage per quality, a separate multiplier after the
+/// local increases since 3.25), local attack speed, and the local added elemental/chaos damage the weapon adds to every
+/// hit (scaled by the local elemental damage increases; physical quality does not touch it).
 /// </summary>
 static class ItemWeapons
 {
     public static SkillCatalog.Unarmed Of(int attackMs, int minDamage, int maxDamage, int range,
         IReadOnlyDictionary<string, int> local, int quality)
     {
-        int physicalPct = local.GetValueOrDefault("local_physical_damage_+%") + Math.Clamp(quality, 0, 100);
-        double scale = Math.Max(0, 100 + physicalPct) / 100.0;
-        int low = (int)((minDamage + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
-        int high = (int)((maxDamage + local.GetValueOrDefault("local_maximum_added_physical_damage")) * scale);
+        double increased = Math.Max(0, 100 + local.GetValueOrDefault("local_physical_damage_+%")) / 100.0;
+        double qualityFactor = Math.Max(0, 100 + Math.Clamp(quality, 0, 100)) / 100.0;
+        int low = (int)((minDamage + local.GetValueOrDefault("local_minimum_added_physical_damage")) * increased * qualityFactor);
+        int high = (int)((maxDamage + local.GetValueOrDefault("local_maximum_added_physical_damage")) * increased * qualityFactor);
         int ms = (int)Math.Round(attackMs / Math.Max(0.01, 1 + local.GetValueOrDefault("local_attack_speed_+%") / 100.0));
 
         var added = DamagePacket.Empty;
