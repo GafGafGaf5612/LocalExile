@@ -65,6 +65,16 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Inherited Life corpse eligibility and sinking flags flow from object-types manifest v3 through `MonsterCatalog`
+  into ordinary monster creation.
+  Explicit false, native defaults, missing inheritance and the Player veto have focused extraction and Core tests.
+  The ordinary corpse path requires zero Life; a life-1 boss stage remains alive, with sinking handled independently.
+  Six integrated native cases at source `dbfe717`, recorded by `53edc77`, cover ordinary alive/dead, Raised Zombie
+  false, Hillock life 1, sinking and an owned Spectral Wolf forced false by that source's separate summon runtime.
+  This branch preserves the ordinary flag math and fields; it has no independent native pass or owned-actor runtime.
+  The Core helper retains an optional owned guard; corpse identity, final-death registration and consumption remain open.
+  Code: `MonsterLifeData.cs`, `MonsterObject`, `MonsterCatalog.cs`, `Program.Monsters.cs`, `ot_components.py`.
+  Docs: [04](../docs/protocol/04-player-entity.md#44-life-0x141e6c2f0-55-bytes).
 - Monster mods' accuracy (of the Marksman, of Precision): the monster's accuracy is raised in its swing, but only the
   tests check it; live, the player was never evaded.
   Code: `MonsterMods.cs`.

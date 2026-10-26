@@ -47,7 +47,10 @@ partial class Program
         // the life bars kept the base maximum and a unique showed full until its life fell below it (live 2026-10-21).
         foreach (var stat in MonsterModClientStats(mods.Effects, life, baseLife)) (stats ??= []).Add(stat);
         var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, MonsterEmerge.CreateState(variety, emerge, waits), team,
-            skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats) { Mods = mods.Mods, NameWords = mods.NameWords };
+            skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats)
+        {
+            Mods = mods.Mods, NameWords = mods.NameWords, LifeData = variety.LifeData,
+        };
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
