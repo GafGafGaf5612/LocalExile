@@ -33,7 +33,7 @@ values were not used on the wire).
 
 ```
 base skill/weapon damage by type
-  → added damage (not modelled yet)
+  → added damage (DamageStats.Added; the first added-damage stat is read, see §2)
   → gain X% as extra (does not consume the source)
   → conversion (source is consumed; converted damage can convert again)
   → increased / more multipliers per type
@@ -103,6 +103,43 @@ stats apply; `DamageStats` reads the Stats.dat names:
 frozen enemies", ...) are not read yet. Skill conversion takes precedence when skill and global conversion together
 exceed 100%, matching PoB's `buildConversionTable`.
 
+## 2b. Added damage from stats (the first stat)
+
+Added damage is not fully modelled yet, but one stat is read.
+`DamageStats.Added` adds `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` (Stats.dat row
+11881, client key 11882) to an attack's added-lightning range.
+The value is the percentage: both the added lightning minimum and maximum become that percent of `maximum_mana`
+from the same final stat dictionary, so spending mana and reserved mana never change the damage, while a pool
+change (level, equipment, passives) does.
+Path of Building pinned 16de4b82 (ModParser.lua lines 5636–5639) maps the node's value to both LightningMin and
+LightningMax as BASE with PercentStat Mana and ModFlag Attack; the packet agrees.
+At 6% of a 1000 mana pool (Whisperer "we know all", PassiveSkills.dat graph id 22720) the attack gets 60-60
+added lightning, not 1-60.
+The pool bonus joins the added range before the increases, so the increased attack-damage stats and later
+conversion treat it like any other added lightning, and a fractional result is only rounded at the existing roll
+and panel stages.
+Ordinary attacks use `AttackHit` or the bow release snapshot; attack gems retain main's `SupportedHit` pipeline.
+Both constructors read the same raw `DamageStats.ManaAddedLightning` grant before increases and effectiveness.
+Support restrictions, support multipliers, conversion, target blocking and post-hit stages remain in that pipeline.
+This stack does not introduce the separate derived-damage engine from archival PR #206.
+Automated production-path cases cover ranged and melee gems, effectiveness and a spell isolation control.
+Native evidence in this section belongs to original head `378ffde`; supported-skill composition needs a new native check.
+`attack_damage_+%` scales the added range for every attack.
+`melee_damage_+%` applies only in explicit melee context: the default attack uses its active weapon profile,
+and attack gems use `ActiveSkillType Melee` through `SkillCatalog.IsMelee`.
+An inactive weapon set cannot change that context.
+Spell hits and damage over time are untouched, and saved gem quality/experience is not read.
+The node's separate mana-cost drawback (`base_mana_cost_-%`) is a mana-cost change outside this damage
+consumption's scope.
+Fourteen real-client stat checks used a fresh synthetic Witch and development overrides for these inputs.
+With the 6% grant, 56 maximum mana showed 3–3 added lightning and 1000 showed 60–60.
+Adding 50% increased lightning showed 90–90; 997 maximum mana showed 59–59 after the panel's existing floor.
+With 1000 mana, 50% increased attack damage showed 90–90; another 50% melee increase raised unarmed damage to 120–120.
+A wand stayed at 90–90 even with a club in the inactive set; switching to the club gave 120–120 and back gave 90–90.
+Clearing the attack increase left the ranged wand at 60–60 despite the melee input.
+Clearing the grant removed the lightning rows' damage, and relog restored the baseline maximum mana and damage.
+These checks validate the generic damage consumer; ascendancy allocation remains in its separate lifecycle change.
+
 ## 3. Damage over time and ailments
 
 DoT is one damage type, has no hit, cannot critically strike and uses that type's resistance. `DamageOverTime` carries
@@ -138,8 +175,12 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   monster's base resistance: `MonsterTypes.Resistances` → `MonsterResistances`, the level's
   `DefaultMonsterStats.Difficulty` (1/2/3) picking the Normal/Cruel/Merciless columns (`MonsterResistanceCatalog`,
   `MonsterCatalog.BaseResistance`, the shared pass is `HitMitigation`). Without the extracted tables every type reads
-  0, so hits land as they did before. Spawned-monster resistance modifiers, exposure and curses are outside the base
-  table, and monster armour is not modelled yet.
+  0 for the base input.
+  Spawned-monster resistance modifiers add before the cap; physical reduction and damage taken apply after mitigation.
+  Ordinary bows snapshot player/skill penetration at release and resolve target resistance at contact.
+  Main has no connection-aware resistance or presence engine; those archival #206 systems are outside this stack.
+  Automated mixed fractional-hit, target-modifier, bow RNG and same-key player/skill cases cover the resolved paths.
+  Native penetration checks belong to original head `0d800d1`; the integrated target-modifier and bow paths need rechecking.
 - The hit's penetration (`Penetration.cs`) subtracts from the capped resistance with no second clamp: the general
   per-element and elemental stats on every hit, the attack-only variants on attacks (§2), the
   `cannot_penetrate_or_ignore_elemental_resistances` flag suppressing the elemental ones. Damage over time and the
@@ -173,8 +214,8 @@ also check pause, flasks and RF. The new visual behavior awaits that real-client
 
 - Energy shield, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base resistances are
   in, §4, with unconditional penetration).
-- Added flat damage from supports/items, increased/more modifiers per type, damage effectiveness, and skill-specific
-  added-damage scaling.
+- Added flat damage besides the maximum-mana granted lightning stat (supports/items, the other added-damage
+  stats), increased/more modifiers on the base damage, and skill-specific added-damage scaling.
 - Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.
 - Per-monster damage conversion and monster-specific mitigation.
 - Damage reflection, leech, life/mana gain on hit, and recoup.

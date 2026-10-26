@@ -32,14 +32,18 @@ static class CharacterStats
         int SpellBlockPer5AttackBlock = 0, int LifeGainedOnBlock = 0, int ManaGainedOnBlock = 0,
         bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
         int AttackSpeedPct = 0,
-        int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
+        long CriticalStrikeChancePct = 0, long SpellCriticalStrikeChancePct = 0,
         int CriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int SpellCriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int AttackCriticalStrikeChance = 0,
         int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
         int AccuracyPct = 0,
+        // The Accuracy Mastery's target-conditional "more" effects, kept out of Accuracy: they only apply to a hit's
+        // own target (TargetAccuracy), so the panel must not show them as the character's accuracy.
+        int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
-        int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0);
+        int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0,
+        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0);
 
     /// <summary>What allocated passives and equipped base items add to the pools: attributes, flat and increased life,
     /// mana, armour and evasion, increased energy shield and melee physical damage, the base resistances, attack speed's
@@ -59,12 +63,16 @@ static class CharacterStats
         int BlockChanceInc = 0, int BlockChanceMore = 0,
         bool VersatileCombatant = false, bool AttackBlockLucky = false, bool SpellBlockLucky = false,
         int AttackSpeedPct = 0, int AttackSpeedMorePct = 0,
-        int CriticalStrikeChancePct = 0, int SpellCriticalStrikeChancePct = 0,
+        long CriticalStrikeChancePct = 0, long SpellCriticalStrikeChancePct = 0,
         int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0,
         int Accuracy = 0, int AccuracyPct = 0, int AccuracyPerLevel = 0,
         bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false,
+        int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
-        int AuraEffectPct = 0, int AuraAreaPct = 0, int ArmourMorePct = 0, int EvasionMorePct = 0, int EnergyShield = 0)
+        int AuraEffectPct = 0, int AuraAreaPct = 0, int ArmourMorePct = 0, int EvasionMorePct = 0, int EnergyShield = 0,
+        // The overcapped-resistance flags' derived increases (ResistanceOvercap), computed once in PoolsFor from the
+        // final raw resistances and maxima: +1% per 1% of cold overcap on evasion, lightning overcap on crit chance.
+        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -112,20 +120,22 @@ static class CharacterStats
             + (b.AccuracyEqualsIntelligence ? intel : 0));
         int accuracy = Math.Max(0, (int)Math.Floor(accuracyBase * (1 + b.AccuracyPct / 100.0)));
         // PoB CalcDefence: armour and evasion are flat defences raised by their increased modifiers. Evasion keeps the
-        // character's 15 base and gains 1% per 5 dexterity; armour has no base outside items and passives.
+        // character's 15 base and gains 1% per 5 dexterity; armour has no base outside items and passives. The
+        // overcapped cold resistance's increase is one of the evasion increases (it applies before the conversion, so
+        // Iron Reflexes' converted evasion keeps it, as PoB's converted branch reads the same Evasion INC bucket).
         int armourPct = b.ArmourPct;
         int armour = Math.Max(0, (int)(b.Armour * (100m + armourPct) * (100m + b.ArmourMorePct) / 10000m));
-        int evasionPct = dex / 5 + b.EvasionPct;
+        int evasionPct = dex / 5 + b.EvasionPct + b.ColdOvercapEvasionPct;
         int evasionBase = BaseEvasion + b.Evasion;
         int evasion = Math.Max(0, (int)(evasionBase * (100m + evasionPct) * (100m + b.EvasionMorePct) / 10000m));
         if (b.IronReflexes)
         {
             // Iron Reflexes converts all evasion rating to armour and removes dexterity's evasion bonus. The converted
             // evasion keeps the armour, evasion and shared defence increases (each once), but not dexterity.
-            int convertedPct = armourPct + b.EvasionPct - b.SharedDefencesPct;
+            int convertedPct = armourPct + b.EvasionPct + b.ColdOvercapEvasionPct - b.SharedDefencesPct;
             armour = Math.Max(0, armour + (int)(evasionBase * (100m + convertedPct)
                 * (100m + b.EvasionMorePct) * (100m + b.ArmourMorePct) / 1000000m));
-            evasionPct = b.EvasionPct;
+            evasionPct = b.EvasionPct + b.ColdOvercapEvasionPct;
             evasion = 0;
         }
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
@@ -165,16 +175,20 @@ static class CharacterStats
             SpellBlockPer5AttackBlock: b.SpellBlockPer5AttackBlock, LifeGainedOnBlock: b.LifeGainedOnBlock,
             ManaGainedOnBlock: b.ManaGainedOnBlock, VersatileCombatant: b.VersatileCombatant,
             AttackBlockLucky: b.AttackBlockLucky, SpellBlockLucky: b.SpellBlockLucky, AttackSpeedPct: attackSpeedPct,
-            CriticalStrikeChancePct: b.CriticalStrikeChancePct,
-            SpellCriticalStrikeChancePct: b.SpellCriticalStrikeChancePct,
+            CriticalStrikeChancePct: b.CriticalStrikeChancePct + b.LightningOvercapCritPct,
+            SpellCriticalStrikeChancePct: b.SpellCriticalStrikeChancePct + b.LightningOvercapCritPct,
             CriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.CriticalStrikeMultiplier,
             SpellCriticalStrikeMultiplier: DamageModel.BaseCriticalStrikeMultiplier + b.SpellCriticalStrikeMultiplier,
-            SpellCriticalStrikeChance: (int)Math.Round(DamageModel.CriticalStrikeChance(
-                DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct) * 100),
+            SpellCriticalStrikeChance: DamageModel.CriticalStrikeChancePerMyriad(
+                DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
+                b.SpellCriticalStrikeChancePct + b.LightningOvercapCritPct),
             AccuracyPct: b.AccuracyPct,
+            AccuracyMoreVsUniquePct: b.AccuracyMoreVsUniquePct,
+            AccuracyMoreInCloseRangePct: b.AccuracyMoreInCloseRangePct,
             ManaReservationEfficiencyPct: b.ManaReservationEfficiencyPct,
             LifeReservationEfficiencyPct: b.LifeReservationEfficiencyPct,
-            AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct);
+            AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct,
+            ColdOvercapEvasionPct: b.ColdOvercapEvasionPct, LightningOvercapCritPct: b.LightningOvercapCritPct);
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));

@@ -38,10 +38,15 @@ public static class DamageModel
     /// <summary>Fireball's GrantEffectStatSetsPerLevel SpellCritChance (500 = 5.00%).</summary>
     public const int BaseSpellCriticalStrikeChancePerMyriad = 500;
 
-    /// <summary>A hit's critical strike chance: the base chance (permyriad: 500 = 5%) raised by the increased
-    /// critical strike chance stat, capped at 100%.</summary>
-    public static double CriticalStrikeChance(int basePerMyriad, int increasedPct) =>
-        Math.Clamp(basePerMyriad / 100.0 * (100 + increasedPct) / 100.0, 0, 100);
+    /// <summary>A hit's integer permyriad critical chance. Nonnegative midpoints round half up, shared by
+    /// attack and spell rolls and panels. Keep the complete signed source sum until this final calculation.</summary>
+    public static int CriticalStrikeChancePerMyriad(int basePerMyriad, long increasedPct) =>
+        (int)decimal.Round(Math.Clamp(basePerMyriad * (100m + increasedPct) / 100m, 0m, 10_000m),
+            0, MidpointRounding.AwayFromZero);
+
+    /// <summary>The same critical chance expressed as a percentage for diagnostics and chance-based consumers.</summary>
+    public static double CriticalStrikeChance(int basePerMyriad, long increasedPct) =>
+        CriticalStrikeChancePerMyriad(basePerMyriad, increasedPct) / 100.0;
 
     /// <summary>A critical hit's damage, rounded to the nearest point; <paramref name="multiplier"/> is the final
     /// percentage (150 by default).</summary>
@@ -77,6 +82,13 @@ public static class DamageModel
     /// at Path of Building's -200.</summary>
     public static int Capped(int resistance, int maxResistance = DefaultMaxResistance) =>
         Math.Clamp(resistance, ResistFloor, Math.Min(maxResistance, MaxResistCap));
+
+    /// <summary>Path of Building's <c>ResistOverCap</c> (CalcDefence.lua):
+    /// <c>output[type.."ResistOverCap"] = m_max(0, total - max)</c>, where <c>total</c> is the uncapped resistance
+    /// and <c>max</c> the per-type maximum capped at <see cref="MaxResistCap"/>. The overcapped part is what the
+    /// "increased by overcapped resistance" modifiers read (CalcDefence's Evasion / CalcOffence's CritChance).</summary>
+    public static int Overcap(int resistance, int maxResistance) =>
+        Math.Max(0, resistance - Math.Min(maxResistance, MaxResistCap));
 
     /// <summary>The damage left after a resistance, rounded to the nearest point.</summary>
     public static int Mitigate(int damage, int resistance, int maxResistance = DefaultMaxResistance)
@@ -167,11 +179,27 @@ public static class DamageModel
     }
 
     /// <summary>The physical hit left after armour, rounded to the nearest point.</summary>
-    public static int MitigatePhysical(int damage, int armour)
+    public static int MitigatePhysical(int damage, int armour) => MitigatePhysical(damage, armour, 0);
+
+    /// <summary>
+    /// The physical hit left after armour and additional physical damage reduction (Endurance Charges,
+    /// <c>base_additional_physical_damage_reduction_%</c>), rounded to the nearest point. Path of Building's CalcDefence
+    /// adds the two reductions and caps the sum at <see cref="DamageReductionCap"/>.
+    /// </summary>
+    public static int MitigatePhysical(int damage, int armour, int additionalReduction)
     {
         if (damage <= 0) return 0;
-        int reduction = ArmourReduction(armour, damage);
+        int reduction = Math.Clamp(ArmourReduction(armour, damage) + Math.Max(0, additionalReduction), 0, DamageReductionCap);
         return (int)Math.Max(0, Math.Round(damage * (100.0 - reduction) / 100.0));
+    }
+
+    /// <summary>Damage after an additional damage reduction (elemental damage reduction from Endurance Charges, applied
+    /// after resistance as Path of Building's CalcDefence does), capped at <see cref="DamageReductionCap"/>, rounded to
+    /// the nearest point.</summary>
+    public static int Reduce(int damage, int reduction)
+    {
+        if (damage <= 0) return 0;
+        return (int)Math.Max(0, Math.Round(damage * (100.0 - Math.Clamp(reduction, 0, DamageReductionCap)) / 100.0));
     }
 
     /// <summary>The chance for an attack to evade a defender with this evasion rating, given the attacker's accuracy.
