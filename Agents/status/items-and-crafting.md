@@ -91,18 +91,25 @@ Part of [Status](../Status.md); what to build next in this area is in
   See [13](../docs/protocol/13-items.md).
 - Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows now publish `main_hand_weapon_type =
   9`, required by the client's inventory gate; see [13](../docs/protocol/13-items.md).
-- **Jeweller's Orb: initial local implementation verified live (2026-10-21).** Normal use and Shift share the currency
-  handler; rerolls counts 1/2/3/4/6, RGB colours and link groups, limited by class, dimensions and item level.
+- **Jeweller's Orb: verified live (2026-10-21).** Normal use and Shift share the currency handler; rerolls counts
+  1/2/3/4/6 and link groups, limited by class, dimensions and item level, and consumes one orb.
+  3.29: sockets the reroll keeps retain their colours and only the added sockets are white.
   Socketed gems, unsupported targets and maximum base capacity are refused without spending an orb.
   The live-found refusal of level-1 boots/gloves with two sockets is fixed and verified live.
-  Probabilities are approximate; quality and special socket overrides are not modelled.
+  Count and link probabilities are approximate; special socket overrides are not modelled.
   See [13](../docs/protocol/13-items.md), "Jeweller's Orb".
-- **Jeweller's Orb (2026-10-21).** Initial implementation verified live: normal and Shift use rerolls empty sockets,
-  colours and links, consumes one orb, updates inventory and saves the result.
-  Class, dimensions and item level limit socket rolls; only base capacity blocks further use.
-  Local counts are 1/2/3/4/6.
-  Probabilities are approximate; quality, white-socket 3.29 rules and special item overrides remain open.
-  See protocol/13-items.md, Jeweller's Orb.
+- **Socket colours (3.29; verified live 2026-10-26).** Item sockets generate white and may roll a
+  colour in proportion to the base's attribute requirements, with the chance rising with item level; a gem in a
+  matching red/green/blue socket gets +10% quality (the stat path is in [25](../docs/protocol/25-gem-supports.md)).
+  Chromatic Orbs force one socket non-white and roll the rest, with item quality raising their chance; the bench's
+  "At Least Two/Three/Four Non-White Sockets" crafts (`NN`/`NNN`/`NNNN`) reroll until they guarantee that many; Vaal
+  corruption colours one white socket. `/item`, drops and shops use the same generator, and the start weapon's two
+  linked sockets are white.
+  The probabilities are an approximation (5% non-white at item level 1, +0.25 points per level up to 30% at 100, and
+  +0.25 points per 1% quality for Chromatic/bench); `SocketColours`, [13](../docs/protocol/13-items.md),
+  "Socket colours (3.29)".
+  Not modelled: Tainted Chromatic/Jeweller's Orbs, Orb of Binding, the Locus of Corruption, the 25-roll bench reward,
+  special item overrides.
 - **Orb of Alchemy, Chaos Orb, Divine Orb (verified live, 2026-10-21):** Alchemy makes a normal item an identified
   rare with 4-6 random affixes and a rare name; Chaos rerolls all of a rare item's affixes (4-6, new tiers);
   Divine keeps the affixes, tiers and order and rerolls only values.

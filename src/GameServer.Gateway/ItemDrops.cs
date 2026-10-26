@@ -110,7 +110,7 @@ sealed class ItemDrops(ItemCatalog catalog, ItemRolls? rolls = null)
         else if (equipment.Where(e => e.DropLevel <= level).ToList() is { Count: > 0 } e)
             type = e[rng.Next(e.Count)].Type;
         if (type is null) return null;
-        var (sockets, links) = catalog.DefaultSockets(type);
+        var (sockets, links) = catalog.DefaultSockets(type, level);
         var item = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)Math.Clamp(level, 1, 100) };
         if (rolls is not null && EquipmentClasses.Contains(type.Class))
         {
