@@ -67,7 +67,8 @@ defence rolls and shields are not.
 ## 2a. Mods: rarity and mod lists
 
 The Mods component's base magic properties are ObjectMagicProperties, read by `0x142201d70` (decompiled:
-`Tools/re/out/omp.c`). Code: `Item.MagicProperties` (`InstanceItems.cs`), Mods.dat in the Gateway's `ModCatalog.cs`.
+`Tools/re/out/omp.c`). Code: `MagicProperties.cs` (also a monster's, [14](14-monster-packs.md) §5), Mods.dat in the
+Gateway's `ModCatalog.cs`.
 
 ```
 u16  flags   bits 0-2 rarity (0 normal, 1 magic, 2 rare, 3 unique), bit 3 identified,

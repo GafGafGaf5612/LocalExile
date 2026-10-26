@@ -11,28 +11,28 @@ partial class Program
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
         byte level, MonsterRarity rarity, int x, int y, string? name = null, bool friendly = false, bool log = true, uint? damagedLife = null,
-        bool? unrisen = null)
+        MonsterModSet? mods = null, bool alone = true, bool? unrisen = null)
     {
         uint id = conn.NextObjectId++;
         // A monster that rises from the ground starts waiting to rise, unless it was kept after rising (MonsterEmerge.cs).
         var emerge = Emerges.Kind(variety, rarity);
         bool waits = emerge != EmergeKind.None && (unrisen ?? true);
-        // Full life: the client derives the maximum from the level (MonsterCatalog.BaseLife) and the rarity's
-        // monster_life_+%_final_from_rarity, which goes on its Stats; other mods are not sent yet.
-        int rarityLife = MonsterCatalog.RarityLifePct(rarity);
-        uint life = (uint)MonsterCatalog.LifeWithRarity(Monsters.BaseLife(variety, level) ?? 100, rarity);
+        // Its mods (MonsterMods.cs): the kept ones, else rolled for its rarity. They set its life, hit, speed and defences.
+        mods = MonsterModsFor(conn, variety, level, rarity, mods, alone);
+        // Full life: the client derives the base from the level (MonsterCatalog.BaseLife); the mods' maximum goes on its Stats.
+        int baseLife = Monsters.BaseLife(variety, level) ?? 100;
+        uint life = (uint)mods.Effects.MaxLife(baseLife);
         // The type supplies the animated object; Game_MONSTER_AO=1 also sends the variety's first AOFiles path (Animated
         // bit0), which is not needed.
         string? ao = Environment.GetEnvironmentVariable("Game_MONSTER_AO") == "1" ? variety.AnimatedObject : null;
         ushort team = friendly ? (ushort)0 : (ushort)1;
         // Its attack: the variety's first granted effect (Hungry Corpse: Melee) at its level, with the variety's attack time,
         // reach and the level's damage as the skill's final stats (11-skills.md §7).
-        // The rarity's own mods: more damage per hit, then faster attacks with that much less damage (MonsterCatalog.RarityAttack).
-        var (rarityDamage, raritySpeed) = MonsterCatalog.RarityAttack(rarity);
+        // The mods' damage and speed: the rarity's more damage per hit and faster attacks with that much less damage, the
+        // affixes' increased damage, attack speed and extra elemental / chaos damage (MonsterModEffects.Hit).
         var (baseMin, baseMax) = Monsters.BaseDamage(variety, level) ?? (1, 1);
-        var damage = (Min: Math.Max(1, (int)Math.Round(baseMin * rarityDamage)), Max: Math.Max(1, (int)Math.Round(baseMax * rarityDamage)));
-        var attack = new MonsterAttack(SkillCatalog.FirstSkillId, variety.AttackMs / 1000.0 / raritySpeed, variety.AttackRange,
-            DamagePacket.Of(DamageType.Physical, damage.Min, damage.Max));
+        var attack = new MonsterAttack(SkillCatalog.FirstSkillId, mods.Effects.AttackSeconds(variety.AttackMs / 1000.0), variety.AttackRange,
+            mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)));
         var skill = variety.GrantedEffects is [int effect, ..]
             ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
         // A boss with stages also has the skill that changes them (Hillock's sword extract, BossFights).
@@ -45,13 +45,9 @@ partial class Program
         List<(uint, int)>? stats = skill is null ? null : [.. attack.Stats()];
         // The final maximum too: the client applies no modifier of its own (as for the player's maximum_life), so without it
         // the life bars kept the base maximum and a unique showed full until its life fell below it (live 2026-10-21).
-        if (rarityLife > 0)
-        {
-            (stats ??= []).Add((StatKeys.MonsterLifeFromRarityPct, rarityLife));
-            stats.Add((StatKeys.MaximumLife, (int)life));
-        }
+        foreach (var stat in MonsterModClientStats(mods.Effects, life, baseLife)) (stats ??= []).Add(stat);
         var monster = new MonsterObject(x, y, life, variety.ComponentsOrBase, ao, rarity, name, variety.StateMachine, MonsterEmerge.CreateState(variety, emerge, waits), team,
-            skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats);
+            skill is null ? null : stageSkill is null ? [skill] : [skill, stageSkill], stats) { Mods = mods.Mods, NameWords = mods.NameWords };
         // A monster type needs a level: 0x20 registers "<Id>@<level>" (once per connection), the 0x2b9 type is its hash.
         if (conn.MonsterTypes.Add((variety.Row, level)))
             await Send(remote, stream, ciphers, InstanceEntities.MonsterTypes([((ushort)variety.Row, level)]),
@@ -61,13 +57,15 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, monster.Blob()), !log ? null :
             $"0x02b9 create {rarity}{(friendly ? " friendly" : "")}{(waits ? $" {emerge.ToString().ToLowerInvariant()}" : "")} monster 0x{id:x} {variety}{(name is null ? "" : $" \"{name}\"")} type=0x{type:x8} at ({x}, {y}), life {life}, components {string.Join(", ", variety.ComponentsOrBase)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 monster 0x{id:x} enters wake zone");
+        if (log && mods.Affixes.Any()) Console.WriteLine($"[gateway] {remote} monster 0x{id:x} mods: {MonsterModRolls.Value.Describe(mods)}" +
+            (mods.NameWords.Count > 0 ? $", named {MonsterModRolls.Value.NameOf(mods.NameWords)}" : ""));
         lock (conn.Monsters)
-            MonsterEmerge.AddLocked(conn, id, new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, variety.MovementSpeed),
+            MonsterEmerge.AddLocked(conn, id, new SpawnedMonster($"{variety.Name}@{level}", conn.NewWalk(x, y, mods.Effects.MovementSpeed(variety.MovementSpeed)),
                 variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
             {
                 Attack = skill is null ? null : attack, Hostile = !friendly, Variety = variety, Level = level, Rarity = rarity,
                 Life = Math.Min(damagedLife ?? life, life), Stage = stageSkill is null ? null : stage, States = variety.StateMachine,
-                HitAnimations = Monsters.TakeHit(variety.Id),
+                HitAnimations = Monsters.TakeHit(variety.Id), Mods = mods,
             }, emerge, waits);
         if (waits) WatchBuried(remote, stream, ciphers, conn);
         // A kept monster that was hit: its life as a hit sets it (0x1b1).
@@ -89,7 +87,7 @@ partial class Program
             conn.MonstersPlaced = true;
             foreach (var s in saved)
                 if (Monsters.Find(s.Variety.ToString()) is { } kept)
-                    await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life, unrisen: s.Unrisen);
+                    await SpawnMonster(remote, stream, ciphers, conn, kept, s.Level, s.Rarity, s.X, s.Y, friendly: !s.Hostile, log: false, damagedLife: s.Life, mods: s.Mods, unrisen: s.Unrisen);
             Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: {saved.Count} kept from the instance");
             return;
         }
@@ -111,7 +109,7 @@ partial class Program
         {
             var variety = Monsters.Find(s.Variety.ToString())!;
             bool notable = s.Rarity is MonsterRarity.Unique or MonsterRarity.Rare;
-            await SpawnMonster(remote, stream, ciphers, conn, variety, level, s.Rarity, s.X, s.Y, log: notable);
+            await SpawnMonster(remote, stream, ciphers, conn, variety, level, s.Rarity, s.X, s.Y, log: notable, alone: false);
         }
         Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: created {spawns.Count} at level {level}: " +
             string.Join(", ", spawns.GroupBy(s => s.Pack).Select(g => $"{g.Key} × {g.Count()}")) +
@@ -216,7 +214,7 @@ partial class Program
         double now = conn.Clock.Elapsed.TotalSeconds;
         uint life, mana, manaBefore;
         int rawDamage = 0, damage = 0, chaosDamage = 0;
-        bool blocked;
+        bool blocked, monsterCritical = false;
         lock (conn.Monsters)
         {
             if (m.Dead || conn.PlayerLife == 0 || conn.Closed) return;
@@ -229,7 +227,7 @@ partial class Program
             // The monster's accuracy comes from DefaultMonsterStats at its level. Evasion uses PoE's shared entropy
             // counter: every attack adds its hit chance, and reaching 100 consumes 100 and hits (evasion cannot streak
             // indefinitely). A new counter starts after 3.33 s without an attack.
-            int monsterAccuracy = conn.FlaskGrounds.Accuracy(id, Monsters.BaseAccuracy(m.Level) ?? 0);   // blinded in smoke
+            int monsterAccuracy = conn.FlaskGrounds.Accuracy(id, m.Mods.Effects.Accuracy(Monsters.BaseAccuracy(m.Level) ?? 0));   // blinded in smoke
             int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
             if (EvadesLocked(conn, hitChance, now))
             {
@@ -240,6 +238,8 @@ partial class Program
             // Roll each damage type separately, apply its resistance, then armour to the physical part. The attack is
             // currently physical only (MonsterAttack), but the packet path keeps future monster skills correct.
             var rolled = a.Damage.Roll(Random.Shared);
+            rolled = MonsterModHit(m, rolled, conn.PlayerLife, conn.PlayerMaxLife, Random.Shared, out monsterCritical,
+                () => SelfCriticalReduction(conn));   // its crit, Executioner's
             var mitigated = DamageModel.Mitigate(rolled, type =>
                 new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)));
             var immune = PlayerImmunities(conn);
@@ -275,7 +275,7 @@ partial class Program
                 angle: HitAngle(player.X - from.X, player.Y - from.Y)),
             $"0x01af monster 0x{id:x} hit on the player (sequence 0xffff)");
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
-            $"0x01b1 player hit by monster 0x{id:x} for {damage}" +
+            $"0x01b1 player hit by monster 0x{id:x} for {damage}{(monsterCritical ? " (critical)" : "")}" +
             $"{(rawDamage != damage ? $" ({rawDamage} physical before {DamageModel.ArmourReduction(conn.Pools.Armour, rawDamage)}% armour)" : "")}" +
             $"{(blocked ? " (blocked)" : "")}, life {life}/{conn.PlayerMaxLife}{(life == 0 ? " (dies)" : "")}");
         if (mana != manaBefore)

@@ -12,9 +12,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   melee attacks all work ([10](../docs/protocol/10-chat-and-commands.md) §5, [11](../docs/protocol/11-skills.md) §6);
   areas are populated with their MonsterPacks and unique boss ([14](../docs/protocol/14-monster-packs.md));
   emerge monsters rise near the player ([10](../docs/protocol/10-chat-and-commands.md) §5).
-- **Start:** mods for magic/rare monsters (their life bonus is done), stages of other bosses (`BossFights.cs` has
-  Hillock's), pack `Grounds`, the 346 varieties with NPC / ControlZone / BlightTower … components (each needs its
-  deserializer, schema.md).
+- **Start:** the systems the 74 unsupported monster mods need (auras on allies, retaliation and on-death skills, ailments and
+  curses on the player; [14](../docs/protocol/14-monster-packs.md) §5), stages of other bosses (`BossFights.cs` has Hillock's), pack
+  `Grounds`, the 346 varieties with NPC / ControlZone / BlightTower … components (each needs its deserializer, schema.md).
   Emerge monsters: the official emerge distance and whether a pack rises together are unknown (the server's `.ais`
   files); types whose Transitionable lists more states (SpiderBoss: 3) are still created risen.
   Check every new component with `scripts/re/frida/check-components.js`.

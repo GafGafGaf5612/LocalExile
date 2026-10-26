@@ -523,13 +523,12 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 // flags; flags1 0x02 + (hidden 0, shown 1) as for the player.
                 case "Positioned": w.I32(GridX).I32(GridY).U32(0).U16(Team).U8(0).U8(0x02).U8(0).U8(1); break;
                 case "Stats": w.Stats(Stats).U32(0).U32(0).U8(0); break;
-                // base magic properties (0x142201d70): u16 flags (bits 0-2 rarity → +0x7c, 0 = normal; bit 3 identified
-                // → +0x78, which gates the bit 7 / bit 8 / bit 5 sections, all off here), u8 +0x7a; then the own flags.
-                // Without bit 3 the client tags the monster "Unidentified". Identified, bit 7 (0x80) adds a name: u32
-                // UTF-16 unit count + units (→ +0x18), what rare and unique monsters show.
+                // base magic properties (0x142201d70, Instance.MagicProperties): u16 flags (bits 0-2 rarity → +0x7c,
+                // 0 = normal; bit 3 identified → +0x78, which gates the name and the explicit list), u8 +0x7a, the mod
+                // lists; then the own flags. Without bit 3 the client tags the monster "Unidentified". Bit 7 (0x80)
+                // adds a custom name: u32 UTF-16 unit count + units (→ +0x18); bit 8 a rare name from Words.dat keys.
                 case "ObjectMagicProperties":
-                    w.U16((ushort)((ushort)Rarity | Identified | (Name is null ? 0 : CustomName))).U8(0);
-                    if (Name is not null) w.WStr32(Name);
+                    MagicProperties.Write(w, (byte)Rarity, identified: true, Mods, NameWords, Name);
                     w.U8(0);
                     break;
                 case "Buffs": w.U16(0); break;
@@ -566,9 +565,13 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
 
     private static void Pool(BlobWriter w, uint current) => w.U32(current).U32(0).U16(0).U32(0).U32(0);
 
+    /// <summary>The monster's mods in ObjectMagicProperties' lists (Gateway MonsterModCatalog): the rarity's own mods
+    /// and the rolled affixes, one value per stat of each Mods.dat row.</summary>
+    public IReadOnlyList<ItemMod> Mods { get; init; } = [];
 
-    /// <summary>ObjectMagicProperties flags bit 3: identified (+0x78); bit 7: a custom name follows.</summary>
-    const ushort Identified = 0x08, CustomName = 0x80;
+    /// <summary>A rare monster's name: Words.dat HASH32 keys (flags bit 8), prefix then suffix; a custom
+    /// <see cref="Name"/> wins.</summary>
+    public IReadOnlyList<uint> NameWords { get; init; } = [];
 }
 
 /// <summary>

@@ -172,13 +172,18 @@ partial class Program
             if (accuracy != conn.Pools.Accuracy)
                 Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}, {m.Rarity}): accuracy {conn.Pools.Accuracy} -> {accuracy} " +
                     $"for the target ({(unique ? "unique target, " : "")}{(closeRange ? "in close range (20 units) " : "")}accuracy mastery more)");
-            evasion = Monsters.BaseEvasion(m.Level) ?? 0;
+            evasion = m.Mods.Effects.Evasion(Monsters.BaseEvasion(m.Level) ?? 0);
         }
         int hitChance = DamageModel.AccuracyHitChance(conn.FlaskGrounds.Evasion(use.TargetId, evasion), accuracy);   // blinded in smoke
         if (!DamageModel.Hits(hitChance, Random.Shared.Next(100)))
         {
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} missed: accuracy {accuracy} vs evasion {evasion}, " +
                 $"{hitChance}% chance");
+            return;
+        }
+        if (MonsterBlocks(m, Random.Shared, spell: false))   // Stalwart: nothing of the hit happens
+        {
+            Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}) blocked");
             return;
         }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
@@ -207,10 +212,10 @@ partial class Program
             // Read before the hit is applied: a killing blow clears the target's impales.
             impaleStacks = m.Impale.Stacks;
             impaleStored = m.Impale.Bonus;
-            damage = hit.RollTotal(Random.Shared);
+            damage = MonsterTakes(m, hit, Random.Shared, spell: false);   // its mods' resistances, reduction, block
             critical = conn.Pools.AttackCriticalStrikeChance > 0
                 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
-            if (critical) damage = DamageModel.CriticalDamage(damage, conn.Pools.CriticalStrikeMultiplier);
+            if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, conn.Pools.CriticalStrikeMultiplier));
             (m.Life, stageStarts) = TakeDamageLocked(m, damage);
             life = m.Life;
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
@@ -673,14 +678,19 @@ partial class Program
             int chance = SupportedCriticalChance(conn, skillId);
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
+            if (MonsterBlocks(m, Random.Shared, spell))
+            {
+                Console.WriteLine($"[gateway] {remote} {gem.Name} on {m.Label} blocked");
+                return (Blocked, false);
+            }
             var hit = SupportedHit(conn, skillId);
-            int damage = hit.RollTotal(Random.Shared);
+            int damage = MonsterTakes(m, hit, Random.Shared, spell);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
-                    SupportedCriticalMultiplier(conn, skillId));
+                    CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
             return (damage, critical);
         }, epoch: epoch);
     }
@@ -757,12 +767,17 @@ partial class Program
         foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
+            if (MonsterBlocks(m, Random.Shared, spell))
+            {
+                Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x} ({m.Label}) blocked");
+                continue;
+            }
             DamagePacket hit = SupportedHit(conn, skillId);
-            int damage = hit.RollTotal(Random.Shared);
+            int damage = MonsterTakes(m, hit, Random.Shared, spell);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
-            if (critical) damage = DamageModel.CriticalDamage(damage, SupportedCriticalMultiplier(conn, skillId));
+            if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
             if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
             await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}",
                 melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse);
@@ -937,7 +952,7 @@ partial class Program
                                 if (damageTo is not null && step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
                                 {
                                     (damage, critical) = damageTo(target);
-                                    hit = ApplyMonsterHitLocked(conn, target, damage);
+                                    hit = HitUnlessBlockedLocked(conn, target, damage);
                                 }
                                 committed = true;
                                 return true;

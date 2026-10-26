@@ -907,6 +907,8 @@ partial class Program
                 $"0x01b2 monster 0x{id:x} play animation {index} at speed {speed}");
             await conn.Commands!.Reply($"0x1b2 anim {index} (speed {speed}) -> monster 0x{id:x}");
         })
+        .Add("mob_mods", "/mob_mods [id] [mod …|pool] (a monster's mods; with mods: create it again with those affixes, e.g. /mob_mods Quick of_Flames)",
+            args => MonsterModsCommand(remote, stream, ciphers, conn, args))
         .Add("mob_tp", "/mob_tp [id] (0x1b7 next to you; default the last monster)", async args =>
         {
             if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
