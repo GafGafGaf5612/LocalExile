@@ -786,7 +786,7 @@ second use 2.5 s in was refused; two Quicksilvers, a plain one and one with Alch
 reduced duration) and the 14% movement suffix: 40 → 67 (max(40, 50) + 17) → 40 when the stronger ended at 4.5 s → 0 at 6
 s, both bars draining; Ruby: Fire 13% → 53% (maximum 75% → 80%), `/hit fire 1000` took 470 instead of 870; Sapphire and
 Topaz: cold and lightning 53%, maxima +5; Granite and Jade: armour 0 → 2145, evasion 16 → 1636, then Basalt on top:
-2574; Amethyst and Bismuth: all elements 48%, chaos 43%; Diamond: the client's main-hand critical chance 8.30% → 16.60%;
+2574; Amethyst and Bismuth: all elements 48%, chaos 43%; Diamond: the client's main-hand critical chance 16.60%;
 Quartz: spell suppression 10%, `virtual_phase_through_objects` 1; Sulphur: the ground's art, the client's life
 regeneration 15090 → 24840 per minute on it; Stibnite: monsters blinded in the cloud, accuracy 14 → 11, the player's
 evasion 46 → 55; Basalt: two monsters taunted; Silver: the Onslaught icon with its countdown, attack and cast speed 5% →
