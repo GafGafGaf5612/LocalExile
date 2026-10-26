@@ -3,13 +3,14 @@ namespace GameServer.Data.Terrain.Generation;
 /// <summary>The mirror seams (<c>0x142025440</c> on the view: a tile graph's after the overlays, a dungeon's after its
 /// fill, <c>0x1420f3480</c>, with its placed rooms as the room list): row by row, a
 /// tile larger than one entry, without a tag and not a plain fill tile, none of whose vertices took a room's own
-/// vertex ground (room data +0xe8, <c>0x142025fb0</c>), whose neighbour one tile size away is the same tile mirrored is re-picked among
+/// vertex ground (room data +0xe8 of every room in the list, fill rooms included, <c>0x142025fb0</c>), whose neighbour one tile size away is the same tile mirrored is re-picked among
 /// its key's tiles that make no seam with their up and left neighbours (<c>0x142027670</c>). With none, outside rooms,
 /// a neighbour's shared edge point moves instead (<c>0x142026bc0</c>).</summary>
 sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offsetX, int offsetY, int width, int height, TileStore store,
     IReadOnlyList<PlacedRoom> rooms, IReadOnlySet<(int X, int Y)> roomVertices, (string? A0, string? A8, string? B0) grounds, List<string> notes)
 {
     readonly bool[] _roomCells = new bool[width * height];
+    readonly HashSet<(int X, int Y)> _roomVertices = [.. roomVertices];
 
     TileEntry? Entry(int x, int y) => (uint)x < (uint)width && (uint)y < (uint)height ? grid[x + offsetX, y + offsetY] : null;
 
@@ -21,6 +22,16 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
             for (int y = r.Y; y < r.Y + r.Height; y++)
                 for (int x = r.X; x < r.X + r.Width; x++)
                     if ((uint)(x - offsetX) < (uint)width && (uint)(y - offsetY) < (uint)height) _roomCells[(y - offsetY) * width + x - offsetX] = true;
+        // 0x142025440's vertex set: every listed room's inner vertices that have a ground of the room's own, turned.
+        foreach (var r in rooms)
+            if (r.Room.VertexGrounds.Length > 0)
+                for (int v = 1; v < r.Room.Height; v++)
+                    for (int u = 1; u < r.Room.Width; u++)
+                        if (r.Room.VertexGrounds[(v - 1) * (r.Room.Width - 1) + u - 1] is not null)
+                        {
+                            var (dx, dy) = Orientation.MapVertex(r.Orientation, u, v, r.Room.Width, r.Room.Height);
+                            _roomVertices.Add((r.X + dx, r.Y + dy));
+                        }
         bool check = grid.CheckGrounds;
         grid.CheckGrounds = false;
         for (int y = 0; y < height; y++)
@@ -30,7 +41,7 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
                 var (w, h) = Size(e);
                 if (w == 1 && h == 1) continue;
                 if (e.Tile.Tag.Length != 0 || PlainFill(files, e.Tile)) continue;
-                if (TouchesRoomVertex(roomVertices, x + offsetX, y + offsetY, w, h)) continue;
+                if (TouchesRoomVertex(_roomVertices, x + offsetX, y + offsetY, w, h)) continue;
                 for (int d = 0; d < 4; d++)
                 {
                     var (dx, dy) = Orientation.Directions[d];
@@ -125,7 +136,7 @@ sealed class Seams(TerrainCache files, LevelRandom rng, TileGrid grid, int offse
             var (dx, dy) = Orientation.Directions[s];
             int nx = x + dx * w, ny = y + dy * h;
             if (Entry(nx, ny) is not { IsOrigin: true } n || Size(n) != (w, h) || n.Tile.Tag.Length != 0) continue;
-            if (InRoom(nx, ny, w, h)) continue;
+            if (TouchesRoomVertex(_roomVertices, nx + offsetX, ny + offsetY, w, h) || InRoom(nx, ny, w, h)) continue;
             int len = 3 * ((s & 1) == 0 ? key.Width : key.Height);
             for (int p = 0; p < len; p++)
             {

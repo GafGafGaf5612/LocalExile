@@ -197,7 +197,9 @@ For a one-node graph (towns, hideouts):
    of keys counted as the file names them; the port compared the lookup key, which drops them, until 2026-10-26:
    `tree_beachswamp_v01_05.tdt`, corners trims1 / none, was skipped as plain, `1_1_3` 628425663; the accessibility
    check `0x142028510` takes the same test), none of whose vertices took a room's own vertex ground
-   (`0x142025fb0`), whose neighbour one tile size away
+   (`0x142025fb0`: a bit set built from every room in the list, fill rooms included, their inner vertices with a
+   ground of their own, turned; the port counted only special-node rooms until 2026-10-27, `1_1_9` 1091417953's
+   `mud_dune_03.arm`), whose neighbour one tile size away
    (up, right, down, left) is the same tile in the mirrored orientation (left/right: 0↔4, 1↔7, 2↔6, 3↔5; up/down:
    0↔6, 1↔5, 2↔4, 3↔7) is re-picked (`0x142027670`) among its key's candidates that make no such seam with their up
    and left neighbours (`0x142026100`) and do not mirror that neighbour: `Next(total weight)`. With none left, the
@@ -514,7 +516,7 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    later keep the record heights (`0x141d833e0` writes a height only over a null or flag-1 ground, or for a null or
    flag-1 tile ground); with the default ground `1_3_13`, `2_8_6` and `2_9_8` had walls a level off (2026-10-25). The
    "special" rooms of `1_3_9` (`dockarm_end_special*.arm`) do not have it. Not ported: the master's level overrides
-   +0x146 / +0x144. Then, only with FillTiles (master +0x218), the unique rooms (`0x1420f1590`, not ported), the
+   +0x146 / +0x144. Then, only with FillTiles (master +0x218), the unique rooms (`0x1420f1590`, below), the
    shrines (`0x1420f2340`), the pre-unique rooms (`0x1420f3100`, not ported), the **edge fill** (`0x141feed20` on the
    tiler +0x40 records, as for tile graphs, below), the records sorted by (x, y) (`0x14212d520`), the first
    **overlay** pass (`0x141ffe240` on the tiler's view with the context's placed rooms, `0x141fff1a0` with bit 1; as
@@ -553,7 +555,22 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    vertices spread outwards and the buffer is tiled. Then StoreyHeight scales every origin's height (`0x14204cbd0`).
 
 Not ported on this path (no draws in the cave): `0x1420f4010` / `0x1420f4ae0` (RoomOverlap), `0x1420f7960`,
-`0x1420f1590` / `0x1420f3100` (unique, pre-unique rooms). **Edge wiggle** (`0x1420f8f20`, after the second overlay
+`0x1420f3100` (pre-unique rooms). **Unique rooms** (`0x1420f1590`, ported 2026-10-27): with rows left in the extra
+room pool (§3c2's mission rooms take the others first): when the RoomSet has "mission" rooms (+0x130) and master
++0x15a is clear (taken to be so), only the oversize rows (+0x61), and nothing without one; then, for the first
+subgraph (+0x92 = 0, or a "teleport" record's +0x91 bit 1, not tracked), the fill records are shuffled
+(`Next(count)`, the shuffle) and `0x1420f17d0` runs twice, the second time only while rows are left: a copy of the
+rows (only the oversize ones as above, else the oversize ones moved to the front by an unstable partition), in order;
+a row that is not oversize goes only while the share (+0x144) lasts; its only room, or its rooms shuffled
+(`Next(count)`, `0x141f5d130`) until one goes in. `0x1420f1c10`: a room whose key has no edges and one corner ground,
+turned by `Next(8)` (the row allows any) or one of its orientations (`Next(count)`), takes the first fill record that
+is accessible, whose ground and top-left vertex ground are none or flags 4 and 8, where it fits on empty entries
+inside the view and, the first time, lies more than 16 (squared rectangle distance, `0x1420f14b0`) from the rooms
+placed here; the covered vertices with no ground or a flag-8 one take the record's ground (when that is none or flag
+8), the room is tilised at the record's height with its ground (`0x141fe89e0` kind 10), its rectangle goes to the
+pool's placed rooms (`0x141d8abb0`, which the overlays keep off) and the row leaves the pool. The breach hives,
+blight and harvest encounters, ore nodes and Vaal side areas of 7 random-seed loads went in here (`2_8_11`, `2_8_6`,
+`2_10_1`, `1_2_14_3`, MapWorldsCourtyardOfWasting × 3). **Edge wiggle** (`0x1420f8f20`, after the second overlay
 pass, before the seams; 2026-10-25, `1_3_5`): the tiler's +0xb0 cells, a set sorted by x · 0x10000 + y
 (`0x14204e650`), come from the room tiliser (`0x1420ef310`: an untagged square slot key whose edges all have its size
 (.et +0x4b) and one of them a wiggle (.et +0x4d) of at least 2, or 1 for a shared border slot (`0x1420f0a70`), at
@@ -682,7 +699,8 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    "secret1" description (+0x6d, an "entrance<N>" description, is clear in that row); none collected: "Not enough
    secret nodes in …" is logged. The nodes still collected then lose their descriptions too; the exist rolls remove
    them, or blank one with two or more edges (§ exist rolls). **Vaal side areas** (`0x142032320`, `SideAreas`; dungeon graphs: `0x142031d10` from `0x14203c900`, the same grouping
-   `0x14203a410`, and the first graph that keeps an entrance clears +0xa): nodes with a description "sidearea<N>" (the
+   `0x14203a410`, and the first graph that keeps an entrance clears +0xa; a tile graph that is a subgraph because the
+   area has sub-areas takes part too, `2_9_4`'s `oasis_foothills_4.tgr`, 2026-10-27): nodes with a description "sidearea<N>" (the
    first such; N from '1', none = 1) are side area entrances, grouped by N (The Coast: `sidevalley` "sidearea3",
    `cave1` "sidearea2" / "sidearea1", each also "unique1"). When the area rolled its Vaal side area (generator +0xa,
    §3b) one survives: `Next(groups)`, `Next(group size)` (unused), the group shuffled (`0x141f4fb80`), its first node
@@ -965,8 +983,8 @@ are the doodads, `0x142042fae`).
    `0x142000c50` counting tile origins in the spot, checked after the limit; Act 3 / 8 temple door overlays use
    `!door`, `!carpet`). Each room in each allowed orientation adds its key to the group with that key and
    flags; the same room again only ORs in the orientation bit. An exclusion grid marks rooms of nodes with
-   descriptions (0x10), rooms (4 shrunk by RoomOverlap, 8), tagged tiles (2), extra features (0x20) and placed
-   overlays (1); a cell takes an overlay only if the group's flags have every bit set there. Per group (FileOrder),
+   descriptions (0x10), rooms (4 shrunk by RoomOverlap, 8), tagged tiles (2), the extra room pool's placed rooms
+   (0x20: the unique rooms and shrines placed so far, pool +0x60, `0x141d8abb0`) and placed overlays (1); a cell takes an overlay only if the group's flags have every bit set there. Per group (FileOrder),
    every view position (every third when a key edge has size 3) where it fits (`0x141ffef60`: no excluded bits, the
    area holds tiles lying inside it (`0x141d850b0`); `0x141ffa7b0`: the four corner grounds match (`0x141ffa470`), the
    heights agree, each side inside the map matches the edges across it (`0x141ffa390` / `0x141ff9cb0` /
@@ -978,8 +996,9 @@ are the doodads, `0x142042fae`).
    most common other value, ties the highest (a stable sort by count, `0x14200e820`), else 0; added to every slot
    height; `1_1_8`), removes the tiles and vertex grounds there and tilises the room (`0x141fea780`, `RoomTiler`,
    which dungeons share). A **saving** pass (`0x141fff1a0` param 3: the tile graph's second pass and both dungeon
-   passes) first notes, per spot entry row by row, every entry of each tile it removes (tile, orientation, height,
-   `0x142003c70`); after the room: an entry left empty is filled for its top-left vertex's ground (`0x141feb970`, open
+   passes) first notes every entry of each tile it removes (tile, orientation, height, `0x142003c70`: a vector kept
+   sorted by x · 0x10000 + y, so the entries are mended column by column; row by row gave `1_1_1` 1523283853 its ocean
+   floor turned differently, 2026-10-27); after the room: an entry left empty is filled for its top-left vertex's ground (`0x141feb970`, open
    when none or flag 4); one now holding the blank tile (`0x141d80a30` 2, `overlay_blank.tdt`) gets its old tile back
    (`0x141ffb870`) when that was 1 × 1 without (non-wildcard) edges, else is emptied and filled. That keeps the
    columns and statues at the temple door overlays' `f` corners (`1_3_8_1`, `2_8_12_1`, `2_8_7_1_`; 2026-10-25).
@@ -1411,11 +1430,11 @@ three arena gates the port places.
 - **Random seeds (2026-10-26):** `levelgen tourlist data/tour-random.txt --random 3` (3 seeds per area whose seed-1
   trace matches), `levelgen tourcheck` (drops the seeds the port cannot generate: 21 of 522, and the two the client
   was sent anyway, 1_1_3 2042820024 and 1_3_9 603386005, failed in the client at the same place), then `/tour`. 518
-  loads captured, 508 of the 519 new logged loads match by tile hash. Open, by the client's caller at the first
-  difference: `0x1420f16eb` (`0x1420f1590`, dungeon connect) in 1_2_14_3 937454438, 2_10_1 1713779236, 2_8_11
-  41119085, 2_8_6 1588443641 and MapWorldsCourtyardOfWasting 2098160858 / 543933071 / 637784562; 1_1_9 1091417953
-  at `0x14202707c`; 2_8_7_1_ 29983204 at `0x141fffc2c`; 2_9_4 1856718209 at `0x142032498`; 1_1_1 1523283853 matches
-  every draw to the port's last but not the hash. The gate checks only the hash of these loads; their grids, doodads,
+  loads captured, 508 of the 519 new logged loads match by tile hash; 518 after the fixes of 2026-10-27 (the dungeon
+  unique rooms, fill rooms in the seams' vertex set, the Vaal side area in a tile graph subgraph, the overlays keeping
+  off the pool's placed rooms, saved overlay entries mended column by column). Open: `2_8_7_1_` 29983204 at
+  `0x141fffc2c`: the client finds fewer overlay spots for the 3 × 1 and 1 × 3 door overlays, the ones the port has
+  extra all touching the shrine (`generic_01.arm`, 2 × 2 at (90, 29)) or (74, 38). The gate checks only the hash of these loads; their grids, doodads,
   heights and transitions are captured but not yet compared.
 - **Heights:** `lg.ps1 heights <area> <seed>` compares the port's cell heights with `<area>_seed<seed>.heights.bin`,
   by tile.

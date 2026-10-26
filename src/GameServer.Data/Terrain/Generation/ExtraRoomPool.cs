@@ -107,11 +107,20 @@ sealed class ExtraRoomPool
         if (counted && Share != 0) Share--;
     }
 
+    /// <summary>The pool's placed rooms (+0x60, <c>0x141d8abb0</c>): map rectangles of the unique rooms and shrines
+    /// placed. The overlays keep off them (exclusion bit 0x20, <c>0x141ffe240</c>).</summary>
+    public readonly List<(int X0, int Y0, int X1, int Y1)> Placed = [];
+
+    /// <summary><c>0x141d8abb0</c>: a room of w × h at map (x, y) was placed for a row.</summary>
+    public void RoomPlaced(int x, int y, int w, int h) => Placed.Add((x, y, x + w, y + h));
+
     /// <summary><c>0x141d8b9a0</c>: a shrine room was placed. The shrine count drops by one (not below 0), the placed
-    /// count goes up, and the first Shrine row leaves the list (the share stays). The shrine's position goes to the
-    /// pool's placed rooms (<c>0x141d8abb0</c>), which nothing in the layout reads; left out.</summary>
-    public void ShrinePlaced()
+    /// count goes up, and the first Shrine row leaves the list (the share stays). A shrine with a size (map position and
+    /// turned size) goes to the placed rooms; the layout's shrine rooms (<c>0x142103490</c>) give none here (their
+    /// position is the shrine object's, the size not ported).</summary>
+    public void ShrinePlaced(int x = 0, int y = 0, int w = 0, int h = 0)
     {
+        if (w > 0 && h > 0) RoomPlaced(x, y, w, h);
         if (Shrines != 0) Shrines--;
         ShrinesPlaced++;
         int i = Rows.FindIndex(r => r.Name == Shrine);

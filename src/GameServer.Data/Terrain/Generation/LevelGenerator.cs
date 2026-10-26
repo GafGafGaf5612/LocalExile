@@ -318,8 +318,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 // graph's special nodes do not take them (not ported).
                 if (r.Parent <= 0) pool.Spread(0, rng);
                 if (pool.Share != 0) throw new NotSupportedException($"{r.Path}: extra feature rooms in a tile graph subgraph are not ported");
-                var gen = new TileGraphGenerator(files, rng, notes, false) { Hideout = Hideout, Labyrinth = Labyrinth, Master = r.Parent < 0 ? Master : null, Town = Town };
+                // The rolled Vaal side area goes to the first graph with side area nodes (2_9_4's oasis_foothills_4.tgr).
+                var gen = new TileGraphGenerator(files, rng, notes, VaalSideArea)
+                    { Hideout = Hideout, Labyrinth = Labyrinth, Master = r.Parent < 0 ? Master : null, Town = Town, PreparePool = pool };
                 var (_, _, tgFills) = gen.Subgraph(r.Path, r.Orientation, grid, vx, vy, primary: i == 0);
+                if (gen.SideAreaKept) VaalSideArea = false;
                 var tgStore = store = gen.Store;
                 roomsOf.Add(gen.Rooms);
                 outers.Add(() => OuterTileGraph(r, grid, tgStore, tgFills));
@@ -468,7 +471,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 var (w, h) = Orientation.Size(p.Orientation, def.Width, def.Height);
                 placed.Add(new PlacedRoom(def, _ox + step * p.X, _oy + step * p.Y, w, h, p.Descriptions, p.Orientation));
             }
-        var overlayRooms = FillRecords(master, masterPath, placed);
+        var overlayRooms = FillRecords(master, masterPath, placed, r.Parent <= 0);
         Wiggle();
         // The mirror seams (0x142025440) over the layout's view, with the placed rooms as its room list.
         new Seams(files, rng, _grid, _ox, _oy, step * map.Width + map.Overlap, step * map.Height + map.Overlap, _store, placed, roomVertices,
@@ -1357,14 +1360,15 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// Between the shrines and the fill the recorded edge tiles get their open sides filled (<c>0x141feed20</c>,
     /// <see cref="GroundStages.EdgePoints"/>); then the first overlay pass (<c>0x141ffe240</c> on the tiler's view with the
     /// layout's rooms and the shrines, <c>0x141fff1a0</c> with bit 1), and after the fill the second (bit 2). Returns the
-    /// overlays' rooms. Not ported before it: <c>0x1420f1590</c> and <c>0x1420f3100</c> (unique and pre-unique
-    /// rooms).</summary>
-    List<PlacedRoom> FillRecords(Dictionary<string, string> master, string masterPath, List<PlacedRoom> layoutRooms)
+    /// overlays' rooms. Before the shrines the pool's unique rooms (<c>0x1420f1590</c>); not ported after them:
+    /// <c>0x1420f3100</c> (pre-unique rooms).</summary>
+    List<PlacedRoom> FillRecords(Dictionary<string, string> master, string masterPath, List<PlacedRoom> layoutRooms, bool primary)
     {
         if (!master.TryGetValue("FillTiles", out var gft)) return [];
         var (vx, vy, vx1, vy1) = _view;
         var fill = new Fill(files, rng, _grid, vx, vy, vx1 - vx, vy1 - vy, _store,
             files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes) { TilePlaced = Listen };
+        UniqueRooms(master, masterPath, fill, primary);
         Shrines(master, masterPath, fill);
         if (_edgeRecords.Count != 0)
             new GroundStages(_grid, vx, vy, vx1 - vx, vy1 - vy, files).EdgePoints(
@@ -1375,7 +1379,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
         var tiler = new RoomTiler(rng, _grid, vx, vy, _store) { TilePlaced = Listen };
         var overlays = passes.Count == 0 ? null : new Overlays(files, rng, notes, _grid, vx, vy, vx1 - vx, vy1 - vy, tiler,
-            [.. layoutRooms, .. _fillRooms], int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
+            [.. layoutRooms, .. _fillRooms], int.Parse(master.GetValueOrDefault("RoomOverlap", "1")), pool.Placed);
         // Both dungeon passes save the tiles under a room (0x141fff1a0 param 3).
         if (overlays is not null) overlays.FillEntry = (x, y, g, open) => fill.FillEntry(x, y, g, open);
         foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays!.Run(pass, saveTiles: true);
@@ -1388,6 +1392,98 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         foreach (var pass in passes.Where(p => (p.Passes & 2) != 0)) overlays!.Run(pass, saveTiles: true);
         _grid.CheckGrounds = check;
         return tiler.Rooms;
+    }
+
+    /// <summary><c>0x1420f1590</c>: the extra room pool's rows the layout left (<c>DungeonLayout.Inject</c>). With
+    /// "mission" rooms in the RoomSet (+0x130) and master +0x15a clear (taken to be so), only the oversize rows (+0x61),
+    /// and nothing at all without one. For the first subgraph (+0x92 = 0; a "teleport" record's +0x91 bit 1 is not
+    /// tracked): the fill records shuffled in place (<c>Next(count)</c>, the shuffle), then <c>0x1420f17d0</c> twice:
+    /// the second time without the distance test, and only while rows are left.</summary>
+    void UniqueRooms(Dictionary<string, string> master, string masterPath, Fill fill, bool primary)
+    {
+        if (pool.Rows.Count == 0) return;
+        bool missions = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"])).All.Any(r => r.Tag == "mission");
+        if (missions && !pool.Rows.Any(r => r.Oversize)) return;
+        if (!primary) return;
+        rng.Next((uint)_fillRecords.Count);
+        rng.Shuffle(_fillRecords);
+        var placed = new List<(int X0, int Y0, int X1, int Y1)>();
+        UniqueRound(fill, missions, false, placed);
+        if (pool.Rows.Count != 0) UniqueRound(fill, missions, true, placed);
+    }
+
+    /// <summary><c>0x1420f17d0</c>: a copy of the rows, only the oversize ones when <paramref name="oversizeOnly"/>, else
+    /// with the oversize ones moved to the front (an unstable partition); in order, a row that is not oversize goes only
+    /// while the share (+0x144) lasts. Its only room, or its rooms shuffled (<c>Next(count)</c>, the shuffle) until one
+    /// goes in (<see cref="PlaceUniqueRoom"/>).</summary>
+    void UniqueRound(Fill fill, bool oversizeOnly, bool relaxed, List<(int X0, int Y0, int X1, int Y1)> placed)
+    {
+        var rows = oversizeOnly ? pool.Rows.Where(r => r.Oversize).ToList() : pool.Rows.ToList();
+        if (!oversizeOnly)
+            for (int i = 0, end = rows.Count; i != end; i++)
+            {
+                if (rows[i].Oversize) continue;
+                do { if (--end == i) goto partitioned; } while (!rows[end].Oversize);
+                (rows[i], rows[end]) = (rows[end], rows[i]);
+            }
+        partitioned:
+        foreach (var row in rows)
+        {
+            if (!row.Oversize && pool.Share == 0) break;
+            bool any = row.Orientations.Count == 0 || row.Orientations.Contains(8);
+            if (row.Rooms.Count == 1)
+            {
+                PlaceUniqueRoom(fill, row, row.Rooms[0], any, relaxed, placed);
+                continue;
+            }
+            var rooms = row.Rooms.ToList();
+            rng.Next((uint)rooms.Count);
+            rng.Shuffle(rooms);
+            foreach (var path in rooms)
+                if (PlaceUniqueRoom(fill, row, path, any, relaxed, placed)) break;
+        }
+    }
+
+    /// <summary><c>0x1420f1c10</c>: a room whose key has no edges and one ground on its corners turns by
+    /// <c>Next(8)</c> (the row allows any) or one of the row's orientations (<c>Next(count)</c>), and goes on the first
+    /// fill record that is accessible, whose ground and top-left vertex ground are none or flags 4 and 8, where it fits
+    /// on empty entries inside the view and (first round) is more than 16 (squared rectangle distance,
+    /// <c>0x1420f14b0</c>) from the rooms placed here. The vertices it covers with no ground or a flag-8 one take the
+    /// record's ground when that is none or flag 8; tilised at the record's height with its ground (open); the row
+    /// leaves the pool (counted).</summary>
+    bool PlaceUniqueRoom(Fill fill, ExtraFeatureRow row, string path, bool any, bool relaxed, List<(int X0, int Y0, int X1, int Y1)> placed)
+    {
+        var room = files.Room(path) ?? throw new FileNotFoundException(path);
+        if (room.Key.Edges.Any(e => e is not null) || room.Key.Grounds.Distinct().Count() != 1) return false;
+        int o = any ? (int)rng.Next(8u) : row.Orientations[(int)rng.Next((uint)row.Orientations.Count)];
+        var (w, h) = Orientation.Size(o, room.Width, room.Height);
+        int Flags(string? g) => g is null ? 0 : files.Ground(g)?.Flags ?? 0;
+        bool Open(string? g) => g is null || (Flags(g) & 0xc) == 0xc;
+        bool Loose(string? g) => g is null || (Flags(g) & 8) != 0;
+        var (vx, vy, vx1, vy1) = _view;
+        static int Gap(int a0, int a1, int b0, int b1) => b1 <= a0 ? a0 - b1 : a1 <= b0 ? b0 - a1 : 0;
+        foreach (var (x, y, ground, height, accessible) in _fillRecords)
+        {
+            if (!accessible || !Open(ground) || !Open(_grid.Corner(x, y).Ground)) continue;
+            if (x >= vx1 || x + w > vx1 || y >= vy1 || y + h > vy1) continue;
+            bool free = true;
+            for (int v = 0; v < h && free; v++)
+                for (int u = 0; u < w && free; u++)
+                    if (_grid[x + u, y + v] is not null) free = false;
+            if (!free) continue;
+            if (!relaxed && placed.Any(p => { int dx = Gap(p.X0, p.X1, x, x + w), dy = Gap(p.Y0, p.Y1, y, y + h); return dx * dx + dy * dy <= 16; }))
+                continue;
+            for (int v = 0; v <= h; v++)
+                for (int u = 0; u <= w; u++)
+                    if (Loose(_grid.Corner(x + u, y + v).Ground) && Loose(ground)) _grid.SetGround(x + u, y + v, ground);
+            notes.Add($"unique room {Path.GetFileName(room.Path)} ({row.Name}) o{o} at ({x}, {y})");
+            fill.PlaceRoom(room, x - vx, y - vy, o, height, ground, true);
+            pool.RoomPlaced(x, y, w, h);
+            pool.Remove(row, true);
+            placed.Add((x, y, x + w, y + h));
+            return true;
+        }
+        return false;
     }
 
     /// <summary><c>0x1420f2340</c>: with shrines rolled (pool +0x148), the RoomSet's "shrine" rooms (+0x118) whose unit
@@ -1461,7 +1557,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             int o = LevelRandom.OrientationFromMask(pick.Mask, rng.Next(840u));
             var (pw, ph) = Orientation.Size(o, pick.Room.Width, pick.Room.Height);
             placed.Add((x, y, x + pw, y + ph));
-            pool.ShrinePlaced();
+            pool.ShrinePlaced(x, y, pw, ph);
             notes.Add($"shrine {Path.GetFileName(pick.Room.Path)} o{o} at ({x}, {y})");
             fill.PlaceRoom(pick.Room, x - _view.X0, y - _view.Y0, o, height, ground, true);
         }

@@ -24,6 +24,14 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// <summary>The generator's extra room pool (+0x40): the shrine count the features rolled.</summary>
     public ExtraRoomPool? Pool { get; init; }
 
+    /// <summary>The pool the graph preparation adds the VaalSideArea row to when <see cref="Pool"/> is not set (a tile
+    /// graph subgraph, whose later stages do not take the pool's rows).</summary>
+    public ExtraRoomPool? PreparePool { get; init; }
+
+    /// <summary>The graph kept a Vaal side area entrance (<c>0x142032320</c> returned true): the generator's +0xa is
+    /// cleared for the graphs after it.</summary>
+    public bool SideAreaKept { get; private set; }
+
     TileGrid? _grid;
     int _ox, _oy;
 
@@ -116,7 +124,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     {
         Graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         if (orientation != 0) throw new NotSupportedException($"turning a tile graph (orientation {orientation}) is not ported");
-        Prepare(Graph, rng, vaalSideArea, Hideout, primary, Pool, Labyrinth);
+        SideAreaKept = Prepare(Graph, rng, vaalSideArea, Hideout, primary, Pool ?? PreparePool, Labyrinth);
         notes.Add($"graph {graphPath}: {Graph.Nodes.Count} nodes, {Graph.Edges.Count} edges after exist rolls");
         var cells = new VoronoiCells(Graph);
         cells.Jitter(rng);
@@ -226,7 +234,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         // 0x141ffe240, then the first overlay pass (0x141fff1a0 with bit 1).
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
         var overlays = new Overlays(files, rng, notes, grid, _ox, _oy, Graph.Width, Graph.Height, special.Tiler, [.. special.Rooms],
-            int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
+            int.Parse(master.GetValueOrDefault("RoomOverlap", "1")), Pool?.Placed);
         foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays.Run(pass, saveTiles: false);
         onStage?.Invoke("overlays", Graph);
         // 0x141fef070, then the second overlay pass (bit 2, after the fill).
@@ -331,6 +339,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
                         grid.SetGround(x + u + _ox, y + v + _oy, ground);
             notes.Add($"area unique room {Path.GetFileName(room.Path)} ({row.Name}) o{o} at ({x + _ox}, {y + _oy})");
             placer.PlaceRoom(room, x, y, o, grid.Corner(x + _ox, y + _oy).Height, ground, true);
+            Pool!.RoomPlaced(x + _ox, y + _oy, w, h);
             return true;
         }
         return false;
@@ -365,7 +374,8 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             int o = LevelRandom.OrientationFromMask(pick.Mask, rng.Next(840u));
             notes.Add($"shrine {Path.GetFileName(pick.Room.Path)} o{o} at ({x + _ox}, {y + _oy})");
             placer.PlaceRoom(pick.Room, x, y, o, c.Height, ground, true);
-            pool.ShrinePlaced();
+            var (sw, sh) = Orientation.Size(o, pick.Room.Width, pick.Room.Height);
+            pool.ShrinePlaced(x + _ox, y + _oy, sw, sh);
         }
     }
 

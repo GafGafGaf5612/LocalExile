@@ -37,11 +37,12 @@ sealed class Overlays
     readonly Dictionary<OverlayRoom, int> _placed = [];
 
     public Overlays(TerrainCache files, LevelRandom rng, List<string> notes, TileGrid grid, int offsetX, int offsetY, int width, int height,
-        RoomTiler tiler, IReadOnlyList<PlacedRoom> rooms, int roomOverlap)
+        RoomTiler tiler, IReadOnlyList<PlacedRoom> rooms, int roomOverlap, IEnumerable<(int X0, int Y0, int X1, int Y1)>? extraFeatures = null)
     {
         (_files, _rng, _notes, _grid, _offsetX, _offsetY, _width, _height, _tiler) = (files, rng, notes, grid, offsetX, offsetY, width, height, tiler);
         // 0x141ffe240: rooms of nodes with descriptions 0x10; rooms 4 (shrunk by the master's RoomOverlap when the room's
-        // own overlap, room data +1, is the same) and 8; tiles with a tag 2; extra features 0x20 (none in the ported areas).
+        // own overlap, room data +1, is the same) and 8; tiles with a tag 2; the pool's placed rooms (unique rooms and
+        // shrines, pool +0x60) 0x20.
         _excluded = new byte[width * height];
         foreach (var r in rooms)
             if (r.Descriptions.Count != 0) Mark(r.X, r.Y, r.X + r.Width, r.Y + r.Height, 0x10);
@@ -62,6 +63,7 @@ sealed class Overlays
                     var (w, h) = Size(e);
                     Mark(x + offsetX, y + offsetY, x + offsetX + w, y + offsetY + h, 2);
                 }
+        foreach (var (x0, y0, x1, y1) in extraFeatures ?? []) Mark(x0, y0, x1, y1, 0x20);
     }
 
     TileEntry? Entry(int x, int y) => (uint)x < (uint)_width && (uint)y < (uint)_height ? _grid[x + _offsetX, y + _offsetY] : null;
@@ -277,7 +279,8 @@ sealed class Overlays
                 {
                     if (saveTiles && Entry(x, y) is { } e)
                     {
-                        // 0x142003c70: every entry the tile covers, in view entries, with its tile, orientation and height.
+                        // 0x142003c70: every entry the tile covers, in view entries, with its tile, orientation and height,
+                        // kept sorted by x · 0x10000 + y (column by column; 1_1_1's ocean floor refills in that order).
                         int ox = x - e.OffsetX, oy = y - e.OffsetY;
                         var (w, h) = Size(e);
                         for (int v = oy; v < oy + h; v++)
@@ -295,7 +298,7 @@ sealed class Overlays
                 }
             _tiler.Tilise(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, [], offset);
             Mark(spot.X + _offsetX, spot.Y + _offsetY, spot.X + _offsetX + kw, spot.Y + _offsetY + kh, 1);
-            if (saveTiles) Restore(saved);
+            if (saveTiles) Restore([.. saved.OrderBy(s => s.X * 0x10000 + s.Y)]);
             _placed[chosen] = _placed.GetValueOrDefault(chosen) + 1;
             _notes.Add($"overlay {Path.GetFileName(chosen.Room.Path)} o{o} at ({spot.X + _offsetX}, {spot.Y + _offsetY})");
         }
