@@ -428,9 +428,9 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         foreach (var p in map.Rooms)
         {
             if (p.Room?.Def is not { } def) continue;
-            // 0x1420ed9f0 marks at (unit − overlap) × the room's cell without the view's offset, while the slots it is
-            // looked up by are map positions (2_8_2_2 698178759: an outer buffer of 3).
-            if (_doorTiles && _overlap != 0) MarkDoorways(p, step * p.X, step * p.Y);
+            // 0x1420ed9f0 marks at the record's corner plus (unit − overlap) × the room's cell, without the margins, while
+            // the slots it is looked up by are map positions (2_8_2_2 698178759: an outer buffer of 3).
+            if (_doorTiles && _overlap != 0) MarkDoorways(p, r.X + step * p.X, r.Y + step * p.Y);
             TiliseRoom(def, p.Orientation, _ox + step * p.X, _oy + step * p.Y, p.Level, (p.Flags & 1) != 0, p.Descriptions);
         }
         notes.Add($"dungeon tilising: {_borders.Count} shared border slots");
