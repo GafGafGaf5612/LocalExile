@@ -35,16 +35,22 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.MovementVelocityPct, totalPct)]),
                 $"0x01b3 stats: movement_velocity_+% (key {StatKeys.MovementVelocityPct}) = {totalPct} ({conn.Pools.MovementVelocityPct} passive + {percent - 100} dev)");
         })
-        .Add("set_stat", "/set_stat <stat name or client key> <value> (e.g. attack_speed_+% 100)", async args =>
+        .Add("set_stat", "/set_stat <stat name or client key> <value|off> (off removes the dev replacement)", async args =>
         {
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
-            int value = int.Parse(args[1]);
+            bool off = args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
+            int value = off ? 0 : int.Parse(args[1]);
             bool rebuildMana = stat == Stats.Key(StrengthMana.PerFourStrength);
-            lock (conn.Monsters) conn.PlayerStats[stat] = value;
-            // Raw critical, overcap and Strength-derived mana inputs rebuild pools, including zero replacements.
+            lock (conn.Monsters)
+            {
+                if (off) conn.PlayerStats.Remove(stat);
+                else conn.PlayerStats[stat] = value;
+            }
+            // Keep each supported raw consumer and source restoration when another mechanic changes this gate.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
                 || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
-                || rebuildMana)
+                || rebuildMana
+                || Stats.Name(stat) == PlayerHitMitigation.ArmourAppliesToChaos)
             {
                 while (true)
                 {
@@ -64,10 +70,14 @@ partial class Program
             // The client's requirement checks (gear and gems) read virtual_strength/dexterity/intelligence_for_requirements,
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
-                lock (conn.Monsters) conn.PlayerStats[requirement] = value;
+                lock (conn.Monsters)
+                {
+                    if (off) conn.PlayerStats.Remove(requirement);
+                    else conn.PlayerStats[requirement] = value;
+                }
             await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
             () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
-                $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
+                $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {(off ? "the character's own" : value)}, and the attack's final stats");
             // Skills compute with their own stats (the attack and the character panel read those), so send them again.
             await SendSkills(remote, stream, ciphers, conn);
             // Reservation can change with maximum mana even when recovery leaves current mana unchanged.

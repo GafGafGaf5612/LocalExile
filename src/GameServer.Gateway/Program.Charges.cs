@@ -109,14 +109,13 @@ partial class Program
     }
 
     // A hit's damage taken after the player's mitigation (the dev /hit commands, MonsterSwing's rules): physical through
-    // armour plus the additional physical damage reduction, the other types through resistance, and the elemental ones
-    // through the additional elemental damage reduction after it.
+    // armour plus additional physical reduction; the other types take resistance before the shared hit-only pass.
     static int MitigateTaken(ClientState conn, DamageType type, int amount, int resistance, int maxResistance)
     {
         var reduction = PlayerDamageReduction(conn);
-        if (type == DamageType.Physical) return FortificationDamageTaken(conn, DamageModel.MitigatePhysical(amount, conn.Pools.Armour, reduction.Physical));
-        int resisted = DamageModel.Mitigate(amount, resistance, maxResistance);
-        return FortificationDamageTaken(conn, DamageTypes.IsElemental(type) ? DamageModel.Reduce(resisted, reduction.Elemental) : resisted);
+        int resisted = type == DamageType.Physical ? amount : DamageModel.Mitigate(amount, resistance, maxResistance);
+        return FortificationDamageTaken(conn, PlayerHitMitigation.AfterResistance(conn.Pools, type, resisted,
+            reduction.Physical, reduction.Elemental));
     }
 
     // What MitigateTaken applied, for the dev commands' replies: armour or resistance, and the additional reduction.
@@ -126,6 +125,9 @@ partial class Program
         if (type == DamageType.Physical)
             return $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour" + (physical > 0 ? $" + {physical}% physical damage reduction" : "");
         return $"{DamageModel.Capped(resistance, maxResistance)}% resistance" +
+            (type == DamageType.Chaos && conn.Pools.ArmourAppliesToChaosDamage
+                ? $" + {DamageModel.ArmourReduction(conn.Pools.Armour, DamageModel.Mitigate(amount, resistance, maxResistance))}% armour"
+                : "") +
             (DamageTypes.IsElemental(type) && elemental > 0 ? $" + {elemental}% elemental damage reduction" : "");
     }
 
