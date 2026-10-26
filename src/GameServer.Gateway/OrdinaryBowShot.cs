@@ -10,7 +10,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         int Get(string name) => catalog.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
         var conversion = new Dictionary<uint, int>(character);
         foreach (var (key, value) in skillConversion) conversion.TryAdd(key, value);
-        var hit = DamageStats.Added(weapon.HitDamage(character), Get, spell: false)
+        var hit = DamageStats.Added(weapon.HitDamage(character), Get, spell: false, melee: false)
             .Convert(DamageStats.Conversion(conversion, catalog, attack: true));
         return new(hit, accuracy, criticalChance, criticalMultiplier, Get("impale_on_hit_%_chance"));
     }

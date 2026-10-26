@@ -83,7 +83,12 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
-  Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
+  Added damage has its first stat: the attack's added lightning gets
+  `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
+  (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
+  Recheck mana damage through the resolved supported-skill path natively; original-head captures remain historical.
+  Special ES mechanics, penetration, exposure, ailment application, the other added-damage stats and support
+  modifiers remain open.
   Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
   Its hovered stationary-monster 0x191 path now uses the native size-aware object aim and object-bound confirmation.
   Automated acceptance/queued rejection checks and manual native endpoint experiments pass.

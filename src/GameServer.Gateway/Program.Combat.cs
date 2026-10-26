@@ -188,7 +188,7 @@ partial class Program
         }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var player = CharacterPlayerStats(conn);
-        var hit = AttackHit(weapon, player)
+        var hit = AttackHit(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee)
             .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
         // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
         // hits, and the hit's own physical damage may store a new stack for the hits after it.

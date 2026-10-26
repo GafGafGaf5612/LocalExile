@@ -10,6 +10,8 @@ static class SupportedAttackDamage
             string slug = type.ToString().ToLowerInvariant();
             hit = hit.Add(type, new(get($"attack_minimum_added_{slug}_damage"), get($"attack_maximum_added_{slug}_damage")));
         }
+        double manaLightning = DamageStats.ManaAddedLightning(get);
+        hit = hit.Add(DamageType.Lightning, new(manaLightning, manaLightning));
         return hit.Select((type, range) =>
         {
             string slug = type.ToString().ToLowerInvariant();

@@ -9,7 +9,17 @@ using DamageType = GameServer.Core.World.DamageType;
 /// </summary>
 static class DamageStats
 {
-    public static DamagePacket Added(DamagePacket hit, Func<string, int> get, bool spell, double effectiveness = 1)
+    /// <summary>"Attack skills have added lightning damage equal to % of maximum mana" (Stats.dat row 11881, client key
+    /// 11882): PassiveSkills.dat graph id 22720, Whisperer "we know all", grants row 11881 with the value 6.</summary>
+    public const string MaxManaAddedLightning = "attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana";
+
+    // Raw attack-only added damage, before increases, effectiveness, support restrictions and conversion.
+    // Read maximum mana, so spending or reserving the current pool cannot change the grant.
+    public static double ManaAddedLightning(Func<string, int> get) =>
+        get("maximum_mana") is > 0 and var mana ? mana * (get(MaxManaAddedLightning) / 100.0) : 0;
+
+    public static DamagePacket Added(DamagePacket hit, Func<string, int> get, bool spell, bool melee,
+        double effectiveness = 1)
     {
         foreach (var type in Types)
         {
@@ -17,7 +27,20 @@ static class DamageStats
             var range = new DamageRange(get($"{prefix}_minimum_added_{slug}_damage"), get($"{prefix}_maximum_added_{slug}_damage"));
             if (!spell)
             {
-                int increased = get("damage_+%") + get("melee_damage_+%") + get($"{slug}_damage_+%")
+                if (type == DamageType.Lightning)
+                {
+                    // PoB ModParser 16de4b82 lines 5636–5639 grants both attack LightningMin and LightningMax.
+                    double added = ManaAddedLightning(get);
+                    range = range.Add(new DamageRange(added, added));
+                }
+
+                // attack_damage_+% is a plain Attack-flag increase: every attack, no inference from the weapon or the
+                // range. melee_damage_+% is a melee-only one: a bow's or wand's attack must not take it,
+                // so the caller passes whether this swing is actually melee: the default attack and the panel's
+                // main-hand rows by their weapon profile (an inactive weapon is not there; unarmed is melee) and an
+                // attack gem by its own ActiveSkillType Melee classification.
+                int increased = get("damage_+%") + get("attack_damage_+%") + (melee ? get("melee_damage_+%") : 0)
+                    + get($"{slug}_damage_+%")
                     + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0);
                 range = range.Scale(Math.Max(0, 1 + increased / 100.0));
             }

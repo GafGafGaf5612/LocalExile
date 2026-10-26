@@ -21,6 +21,15 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Offence panel damage rows: the hit the server swings with becomes `main_hand_minimum/maximum_total_damage` and the
   per-type minimum/maximum rows, with `skill_uses_main_hand` so the client shows them;
   whole numbers, main hand only, and an empty packet sends none.
+  The rows and the server's hit share `AttackHit`, so the maximum-mana added lightning (Whisperer "we know all")
+  appears in the panel the same way.
+  Fourteen real-client stat checks verified 56 mana → 3–3 lightning, 1000 → 60–60, 50% increased lightning → 90–90,
+  997 → 59–59 at the panel's floor, removal and relog.
+  Generic attack increases apply; melee increases follow the actual attack type and active weapon set.
+  Native switching between wand and club verified ranged exclusion and melee inclusion of that increase.
+  These native checks belong to original head `378ffde`.
+  The resolved supported-skill path has automated context, effectiveness and spell-isolation checks.
+  Recheck that composition natively.
   Code: `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
@@ -426,7 +435,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
-  Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
+  Added damage starts with the maximum-mana granted lightning stat (the Whisperer "we know all" node's damage
+  component; automated packet/panel checks, live verification pending).
+  Not yet: penetration/exposure, the other added-damage stats and more support modifiers, ailment
   application/duration and monster resistances ([20](../docs/protocol/20-damage.md)).
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
