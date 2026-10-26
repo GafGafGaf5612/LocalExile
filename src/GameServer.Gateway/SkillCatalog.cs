@@ -211,6 +211,12 @@ sealed class SkillCatalog(string folder = "data")
         return row >= 0 && row < t.Effectiveness.Count ? Math.Max(0, t.Effectiveness[row]) : 0;
     }
 
+    /// <summary>The inherent weapon attack-rate multiplier at the selected GEPL level, in percent.
+    /// It multiplies weapon rate separately from player increased speed; absent data keeps ordinary weapon timing.</summary>
+    public int AttackSpeedMultiplier(int effectRow, int level) =>
+        effectRow >= 0 && level > 0 && _tables.Value is { } t
+            && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.AttackSpeedMultipliers[row] : 0;
+
     /// <summary>The effect's primary stat set's base spell critical chance at this gem level, in permyriad.
     /// Null means missing/invalid data, distinct from a known zero (a spell with no inherent critical chance).</summary>
     public int? SpellCritChance(int effectRow, int level)
@@ -313,6 +319,12 @@ sealed class SkillCatalog(string folder = "data")
     public int CooldownMs(int effectRow, int level) =>
         _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int gepl and >= 0 ? t.Cooldowns[gepl].Ms : 0;
 
+    public int CooldownUses(int effectRow, int level) =>
+        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.Cooldowns[row].Uses : 0;
+
+    public bool CooldownPausesWhileActive(int effectRow) =>
+        _tables.Value is { } t && effectRow >= 0 && effectRow < t.Effects.Count && t.Effects[effectRow].CooldownPauses;
+
     /// <summary>Whether a GrantedEffects row's skill is instant: its ActiveSkills row has the ActiveSkillType Instant (Haste,
     /// Righteous Fire). An instant skill is used while moving, without an action of its own.</summary>
     public bool IsInstant(int effectRow) => _instantEffects.Value.Contains(effectRow);
@@ -326,11 +338,16 @@ sealed class SkillCatalog(string folder = "data")
     /// attack's, unlike a spell, which the client paces by its cast time.</summary>
     public bool IsAttack(int effectRow) => _attackEffects.Value.Contains(effectRow);
 
+    /// <summary>Whether a GrantedEffects row's skill classifies Melee (the ActiveSkillType). Decides whether an attack
+    /// gem's hit takes melee_damage_+% (the default attack does by its weapon profile instead).</summary>
+    public bool IsMelee(int effectRow) => _meleeEffects.Value.Contains(effectRow);
+
     public bool IsSpell(int effectRow) => _spellEffects.Value.Contains(effectRow);
 
     private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
     private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
     private readonly Lazy<HashSet<int>> _attackEffects = new(() => EffectsOfType(folder, "Attack"));
+    private readonly Lazy<HashSet<int>> _meleeEffects = new(() => EffectsOfType(folder, "Melee"));
     private readonly Lazy<HashSet<int>> _spellEffects = new(() => EffectsOfType(folder, "Spell"));
 
     /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>
@@ -628,10 +645,10 @@ sealed class SkillCatalog(string folder = "data")
     // Quality: per GrantedEffects row its (quality stat, permille).
     private sealed record Tables(Dictionary<string, (int Row, int StatSet)> EffectRows, List<int> StatSets,
         List<(int Effect, int Level)> PerLevel, List<(int StatSet, int Level)> StatSetsPerLevel,
-        List<(int StatSet, int CastTime)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
+        List<(int StatSet, int CastTime, bool CooldownPauses)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
         List<(int, int)[]> StatSetLevelStats, List<(int StatSet, int GemLevel, int PlayerLevelReq)> GemLevelReqs, List<int> ManaCost,
         List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
-        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness, List<int?> SpellCritChances)
+        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness, List<int?> SpellCritChances, List<int> AttackSpeedMultipliers)
     {
         public static Tables? Load(string folder)
         {
@@ -648,7 +665,7 @@ sealed class SkillCatalog(string folder = "data")
             static (int, int)[] Pairs(int[] keys, int[] values) => [.. keys.Zip(values).Where(kv => kv.First >= 0)];
             var effects = new Dictionary<string, (int, int)>();
             var statSets = new List<int>();
-            var effectInfo = new List<(int, int)>();
+            var effectInfo = new List<(int, int, bool)>();
             int row = 0;
             foreach (var r in g.RootElement.EnumerateArray())
             {
@@ -656,7 +673,8 @@ sealed class SkillCatalog(string folder = "data")
                 int statSet = Int(r, "StatSet1");
                 if (id is not null) effects.TryAdd(id, (row, statSet));
                 statSets.Add(statSet);
-                effectInfo.Add((statSet, Math.Max(0, Int(r, "CastTime"))));
+                effectInfo.Add((statSet, Math.Max(0, Int(r, "CastTime")),
+                    r.TryGetProperty("CooldownNotRecoverDuringActive", out var pauses) && pauses.ValueKind == JsonValueKind.True));
                 row++;
             }
             var baseStats = new List<(int[], (int, int)[])>();
@@ -671,6 +689,7 @@ sealed class SkillCatalog(string folder = "data")
             var reservations = new List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)>();
             var cooldowns = new List<(int, int)>();
             var vaalSouls = new List<int>();
+            var attackSpeedMultipliers = new List<int>();
             foreach (var r in p.RootElement.EnumerateArray())
             {
                 perLevel.Add((Int(r, "GrantedEffect"), Int(r, "Level")));
@@ -681,6 +700,8 @@ sealed class SkillCatalog(string folder = "data")
                     Math.Max(0, Int(r, "LifeReservationFlat")), Math.Max(0, Int(r, "LifeReservationPercent"))));
                 cooldowns.Add((Math.Max(0, Int(r, "Cooldown")), Math.Max(0, Int(r, "StoredUses"))));
                 vaalSouls.Add(Math.Max(0, Int(r, "VaalSouls")));
+                attackSpeedMultipliers.Add(r.TryGetProperty("AttackSpeedMultiplier", out var speed)
+                    && speed.ValueKind == JsonValueKind.Number && speed.TryGetInt32(out int multiplier) ? multiplier : 0);
             }
             var quality = new Dictionary<int, (int, int)[]>();
             if (File.Exists(Table("GrantedEffectQualityStats")))
@@ -705,7 +726,7 @@ sealed class SkillCatalog(string folder = "data")
                 if (Int(r, "PlayerLevelReq") is >= 0 and var req) levelReqs.Add((Int(r, "StatSet"), Int(r, "GemLevel"), req));
             }
             return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, levelReqs, mana, reservations, cooldowns,
-                vaalSouls, quality, effectiveness, spellCritChances);
+                vaalSouls, quality, effectiveness, spellCritChances, attackSpeedMultipliers);
         }
     }
 }

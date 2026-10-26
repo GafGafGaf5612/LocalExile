@@ -179,6 +179,30 @@ public class HitResistancesTests
     }
 
     [Fact]
+    public void Combined_player_skill_penetration_and_critical_rules_share_fractional_target_mitigation()
+    {
+        var variety = Program.Monsters.Find("Metadata/Monsters/ZombieBoss/MapZombieBossHillock")!;
+        var monster = new SpawnedMonster("map boss", new WalkEstimator(0, 0, 30), 60, 4, 100)
+        { Variety = variety, Level = 68 };
+        uint Key(string name) => Program.Stats.Key(name)!.Value;
+        uint fire = Key("base_reduce_enemy_fire_resistance_%");
+        uint noncrit = Key("non_critical_strikes_penetrate_elemental_resistances_%");
+        var player = new Dictionary<uint, int> { [fire] = 10, [noncrit] = 7,
+            [Key("critical_strikes_ignore_elemental_resistances")] = 1 };
+        var skill = new Dictionary<uint, int> { [fire] = 10, [noncrit] = 3 };
+        var pen = Penetration.Of(player, Program.Stats, attack: true, skill);
+        var mods = Program.HitResistMods(player, skill);
+        Assert.Equal(20, pen.Fire);
+        Assert.Equal(10, mods.NonCriticalPenetration);
+        var rolled = DamagePacket.Of(DamageType.Fire, 3, 3).Add(DamageType.Cold, new(3, 3));
+        Assert.Equal(5, Program.MonsterDamage(monster, rolled, false, true, mods, pen).Damage);
+        Assert.Equal(6, Program.MonsterDamage(monster, rolled, true, true, mods, pen).Damage);
+        skill[Key("cannot_penetrate_or_ignore_elemental_resistances")] = 1;
+        mods = Program.HitResistMods(player, skill);
+        Assert.Equal(4, Program.MonsterDamage(monster, rolled, true, true, mods, pen).Damage);
+    }
+
+    [Fact]
     public void Inevitable_judgement_grants_the_critical_ignore_and_the_ten_penetration()
     {
         if (Data() is not { } data) return; // Real-client cross-check is optional on a fresh clone.

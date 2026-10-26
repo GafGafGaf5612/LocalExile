@@ -14,7 +14,8 @@ static class SpellDamage
     /// and drops the fraction, <see cref="Roll"/>); (0, 0) for a skill with no base spell damage.</summary>
     public static (double Min, double Max) Hit(Func<string, int> get, double addedEffectiveness = 1)
     {
-        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
+        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0)
+            + (get("is_area_damage") != 0 ? get("area_damage_+%") : 0);
         double min = 0, max = 0;
         foreach (string type in Types)
         {
@@ -34,8 +35,9 @@ static class SpellDamage
     /// mitigation.</summary>
     public static GameServer.Core.World.DamagePacket Packet(GameServer.Core.World.DamagePacket hit, Func<string, int> get, double addedEffectiveness = 1)
     {
-        hit = DamageStats.Added(hit, get, spell: true, effectiveness: addedEffectiveness);
-        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0);
+        hit = DamageStats.Added(hit, get, spell: true, melee: false, effectiveness: addedEffectiveness);
+        int common = get("damage_+%") + get("spell_damage_+%") + (get("base_is_projectile") != 0 ? get("projectile_damage_+%") : 0)
+            + (get("is_area_damage") != 0 ? get("area_damage_+%") : 0);
         return hit.Select((type, range) =>
         {
             string slug = type switch
@@ -57,7 +59,8 @@ static class SpellDamage
 
     static double More(Func<string, int> get, string type) =>
         Math.Max(0, 1 + get("spell_damage_aura_spell_damage_+%_final") / 100.0)
-        * (type == "lightning" ? Math.Max(0, 1 + get("wrath_aura_spell_lightning_damage_+%_final") / 100.0) : 1);
+        * (type == "lightning" ? Math.Max(0, 1 + get("wrath_aura_spell_lightning_damage_+%_final") / 100.0) : 1)
+        * ChargeEffects.DamageMore(get, spell: true);
 
     /// <summary>
     /// An attack's hit scaled by the skill's damage effectiveness (GrantedEffectStatSetsPerLevel DamageEffectiveness,
