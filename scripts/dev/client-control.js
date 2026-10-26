@@ -8,6 +8,11 @@ const module = Process.getModuleByName('Game.patched.exe');
 let config = null, resolved = null;
 const hooks = {};
 const warnings = [];
+function layoutWarning(name, value, expected) {
+  // Inside hooks, where throwing helps nobody: remember it for bridge:doctor (once per name).
+  const text = `Client layout check failed in a hook: ${name} = ${value} (expected ${expected})`;
+  if (!warnings.includes(text)) warnings.push(text);
+}
 
 // What each operation needs, besides `frame` (the hook every queued command runs in). Offsets are `.`-names.
 const STATUS = ['app', 'stack', 'app.login', 'app.instance', 'stack.statesBegin', 'stack.statesEnd', 'state.id',
@@ -35,13 +40,20 @@ function lookup(name) {
   if (resolved.offsets[name]) return resolved.offsets[name].value;
   throw new Error(`Unknown client symbol ${name}`);
 }
+// Operations that call client functions or write client memory never use an offset that is only a pinned fallback
+// (its code was not found in this build); read-only operations may, and doctor marks it unverified.
+const READ_ONLY = new Set(['status', 'resources', 'characters']);
 function missing(op) {
-  const names = ['frame', ...(op === 'status' ? [] : STATUS), ...(NEEDS[op] || [])];
-  return [...new Set(names)].filter(name => lookup(name) === null);
+  // What `op` lacks, as "name (not found)" / "name (unverified)".
+  const names = [...new Set(['frame', ...(op === 'status' ? [] : STATUS), ...(NEEDS[op] || [])])];
+  const absent = names.filter(name => lookup(name) === null).map(name => `${name} (not found)`);
+  const weak = READ_ONLY.has(op) ? [] : names.filter(name => resolved?.offsets[name]?.unverified === true)
+    .map(name => `${name} (unverified)`);
+  return [...absent, ...weak];
 }
 function need(op) {
   const absent = missing(op);
-  if (absent.length) throw new Error(`Unsupported client: ${op} needs ${absent.join(', ')} (not found)`);
+  if (absent.length) throw new Error(`Unsupported client: ${op} needs ${absent.join(', ')}`);
 }
 const sym = name => lookup(name);
 const off = name => lookup(name);
@@ -96,7 +108,9 @@ function resources() {
   if (life === null || !localLife(life) || status().instanceState !== 3) return null;
   const pools = Object.fromEntries([['life', 'life.life'], ['mana', 'life.mana'], ['es', 'life.es']].map(([name, offset]) => {
     const p = life.add(off(offset));
-    return [name, {current: p.add(off('pool.current')).readS32(), fraction: p.add(off('pool.fraction')).readFloat()}];
+    const fraction = p.add(off('pool.fraction')).readFloat();
+    if (!(fraction >= 0 && fraction <= 1)) throw new Error(`Client layout check failed: pool.fraction = ${fraction} (expected 0-1)`);
+    return [name, {current: p.add(off('pool.current')).readS32(), fraction}];
   }));
   return {pools, updates: resourceUpdates.splice(0)};
 }
@@ -109,7 +123,9 @@ function enableResources() {
   hooks.poolUpdate = Interceptor.attach(sym('poolUpdate'), {onEnter(args) {
     try {
       const owner = args[0].add(off('component.owner')).readPointer(); if (!localLife(owner)) return;
-      resourceUpdates.push({timeMs: Date.now(), pool: args[1].add(off('update.pool')).readU8(),
+      const pool = args[1].add(off('update.pool')).readU8();
+      if (pool > 7) { layoutWarning('update.pool', pool, '0-7'); return; }  // a pool id, not a layout we know
+      resourceUpdates.push({timeMs: Date.now(), pool,
         current: args[1].add(off('update.current')).readU32(), previousCurrent: args[0].add(off('pool.current')).readS32(),
         previousFraction: args[0].add(off('pool.fraction')).readFloat()});
       if (resourceUpdates.length > 128) resourceUpdates.shift();
@@ -145,7 +161,7 @@ function characters() {
   });
 }
 function status() {
-  const identity = {pid: Process.id, build: config.build, patchVersion: config.patchVersion};
+  const identity = {pid: Process.id, build: config.build, patchVersion: resolved.build?.version ?? null};
   const a = app(), sm = stack();
   if (a.isNull() || sm.isNull()) return {...identity, screen: 'starting', states: [], loginState: 0, instanceState: 0};
   readable(a, 'app'); readable(sm, 'stack');
@@ -213,9 +229,13 @@ function execute(request) {
       view.writePointer(data); view.add(8).writeU64(chosen.name.length);
       // The Play callback sets the class on state 4, but pushes state 11 (the loading state), not state 4.
       // Loading installs the instance-assignment listener before it enters the in-game state.
+      // The one client field the bridge writes: check the object is the in-game state (its own id is 4) and the
+      // field holds nothing but a class id seen before (0 if never played, else a class from this list).
       const inGame = readable(stateEntry(4).readPointer(), 'in-game state');
-      const classId = inGame.add(off('ingame.classId'));
-      inRange(classId.readU32(), 0, 15, 'ingame.classId');
+      inRange(inGame.add(off('state.id')).readU8(), 4, 4, 'in-game state id');
+      const classId = inGame.add(off('ingame.classId')), previous = classId.readU32();
+      if (previous !== 0 && !characters().some(c => c.classId === previous))
+        throw new Error(`Client layout check failed: ingame.classId = ${previous}, not 0 or a class in the character list`);
       classId.writeU32(chosen.classId);
       play(loginObject(), view, chosen.index); state(11);
       return {submitted: true, character: chosen.name};
@@ -259,7 +279,9 @@ function attachHooks() {
     hooks.dispatch = Interceptor.attach(sym('dispatch'), {onEnter(args) {
       try {
         const message = args[2].readPointer();
-        if (!message.isNull() && message.add(off('message.id')).readU16() === 4) lastLoginResult = message.add(off('message.loginResult')).readU16();
+        if (message.isNull() || message.add(off('message.id')).readU16() !== 4) return;
+        const result = message.add(off('message.loginResult')).readU16();
+        if (result <= 0xff) lastLoginResult = result; else layoutWarning('message.loginResult', result, '0-255');
       } catch (_) {}
     }});
   } else {
@@ -288,22 +310,23 @@ rpc.exports.init = options => {
 function unresolvedNames() {
   return [...Object.entries(resolved.symbols), ...Object.entries(resolved.globals)]
     .filter(([, v]) => v.address === null).map(([name]) => name)
-    .concat(Object.entries(resolved.offsets).filter(([, v]) => v.value === null).map(([name]) => name));
+    .concat(Object.entries(resolved.offsets).filter(([, v]) => v.value === null || v.unverified).map(([name]) => name));
 }
 rpc.exports.doctor = () => {
   const strip = value => value === null ? null : '0x' + value.toString(16);
   const ops = Object.fromEntries(Object.keys(NEEDS).map(op => {
     const absent = missing(op);
-    return [op, absent.length ? `needs ${absent.join(', ')} (not found)` : 'ok'];
+    return [op, absent.length ? `needs ${absent.join(', ')}` : 'ok'];
   }));
   const sanity = {};
   const probe = (name, fn) => { try { sanity[name] = fn(); } catch (e) { sanity[name] = `failed: ${e.message}`; } };
-  probe('app', () => missing('status').includes('app') ? 'not resolved' : (app().isNull() ? 'null (starting)' : `${readable(app(), 'app')} readable`));
-  probe('stack', () => missing('status').includes('stack') ? 'not resolved' : (stack().isNull() ? 'null (starting)' : `${readable(stack(), 'stack')} readable`));
+  probe('app', () => lookup('app') === null ? 'not resolved' : (app().isNull() ? 'null (starting)' : `${readable(app(), 'app')} readable`));
+  probe('stack', () => lookup('stack') === null ? 'not resolved' : (stack().isNull() ? 'null (starting)' : `${readable(stack(), 'stack')} readable`));
   probe('status', () => missing('status').length ? 'not checked' : (({screen, states, loginState, instanceState}) =>
     `screen ${screen}, states [${states}], login.state ${loginState}, instance.state ${instanceState} (all in range)`)(status()));
   return {
     mode: resolved.mode, elapsedMs: resolved.elapsedMs, imageBase: resolved.imageBase, moduleBase: resolved.moduleBase,
+    pinnedBuild: resolved.build,
     warnings, hooks: Object.fromEntries(['frame', 'dispatch', 'loginWriter', 'lifeTick', 'poolUpdate']
       .map(name => [name, hooks[name] ? 'attached' : (sym(name) === null ? 'not found' : (name === 'lifeTick' || name === 'poolUpdate' ? 'on first game:resources' : 'not attached'))])),
     ops, sanity,
@@ -312,7 +335,8 @@ rpc.exports.doctor = () => {
     globals: Object.fromEntries(Object.entries(resolved.globals).map(([name, g]) =>
       [name, {method: g.method, va: g.va, pinned: g.pinned, detail: g.detail}])),
     offsets: Object.fromEntries(Object.entries(resolved.offsets).map(([name, o]) =>
-      [name, {method: o.method, value: strip(o.value), pinned: o.pinned, detail: o.detail}])),
+      [name, {method: o.method, value: strip(o.value), pinned: o.pinned, detail: o.detail,
+        ...(o.unverified ? {unverified: true} : {})}])),
   };
 };
 rpc.exports.command = request => new Promise((resolve, reject) => {
