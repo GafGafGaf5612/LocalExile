@@ -304,7 +304,9 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   Id 0x0102, like the player's (no ActionType masks to it).
 - **Stats.** The final attack stats (`MonsterAttack.Stats`): attack time = MonsterVarieties `AttackSpeed` (2400 ms),
   reach = `MaximumAttackDistance` (8), damage = DefaultMonsterStats `Damage` at the level × `DamageMultiplier` / 100
-  with a ±20% spread (the spread is assumed). They go in the monster's Stats component and in the skill.
+  with a ±20% spread (the spread is assumed), then the monster's mods (its rarity's, its affixes: damage, attack time,
+  extra fire / cold / lightning / chaos; [14](14-monster-packs.md) §5). They go in the monster's Stats component and
+  in the skill.
 - **`skill_is_non_pathing` (0x4f32) on the skill.** The Melee action's begin (vtable +0x38 `0x141938830`) is just that
   stat: when 0, the action runner (`0x141e8e060`) sends the action through the client's own walk-into-range step,
   which drops a server-driven monster's queued attack in the same frame (traced: created, queued, both checks passed,
@@ -313,11 +315,13 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
 - **AI** (`RunMonsterAi`, 500 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
   0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
   the player is still within reach + 2: 0x1b1 on the player.
-- **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level; the server rolls the player's
+- **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level (raised by its mods); the server
+  rolls the player's
   evasion with the same `AccuracyHitChance` formula and sends no life update on a miss. The roll uses PoE's shared
   entropy counter (0–99): each attack adds its hit chance, 100 or more means a hit and subtracts 100, and the counter is
-  randomized after 3.33 s without an attack. A hit then goes through the player's armour (`MitigatePhysical`) and
-  block. `/defences` prints the reference values.
+  randomized after 3.33 s without an attack. A hit can be a critical strike (5% base, Path of Building's default enemy
+  chance, raised by the monster's mods; × Monster.ot's 130% multiplier), then goes through the player's armour
+  (`MitigatePhysical`) and block. `/defences` prints the reference values.
 - **Player life** (`ClientState.PlayerLife`, from the level/class/passive pools). At 0 the client plays the death
   animation and blocks moving. `/heal` sends full life: 0x1b1 from 0 runs the client's revive. The overhead life bar is
   hidden at 0 (`hide_mini_life_bar`, as for monsters) and shown again on revive.

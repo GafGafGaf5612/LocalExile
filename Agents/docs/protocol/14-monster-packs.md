@@ -36,11 +36,11 @@ around them; members stand within 9 cells. The roll is seeded by (area hash, see
 
 `SpawnMonster` is `/spawn_mob`'s path ([10](10-chat-and-commands.md) §5): 0x20 type at the area level, 0x2b9 with the
 rarity in ObjectMagicProperties, 0x1a9 wake zone, and the monster joins the AI (chase, first granted effect as its
-attack). Life is the level's base life (no rarity or mod bonuses yet). Monsters are created after the player (0x7d →
+attack). Its mods (§5) set its life, hit, speed and defences. Monsters are created after the player (0x7d →
 `SendPlayer` → skill bar → `PopulateArea`); towns and areas without a walk map get none.
 
 **An instance keeps its monsters** (#12), as in the real game. When a connection closes, the instance
-(`InstanceStore`) saves each living monster's variety, level, rarity, team, life and current position (its walk
+(`InstanceStore`) saves each living monster's variety, level, rarity, mods, team, life and current position (its walk
 estimate, `SavedMonster.Save`); dead ones are not saved. The next connection into that instance re-creates exactly
 those monsters instead of planning the packs: where they were (a dragged group stays a group), idle until the player
 comes within aggro range, and a damaged one gets its life with 0x1b1 right after its 0x2b9. Only a new instance plans
@@ -86,7 +86,7 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
 
 ## 4. Open
 
-- Pack density and magic/rare chances are guesses (§1). Rarity gives no mods, no extra life, no rare names.
+- Pack density and magic/rare chances are guesses (§1); so are the mod counts (§5).
 - `Grounds` (Drowned on wet beach) is not checked; we have no ground-type grid.
 - Emerge packs (Gravel Eaters) are skipped until the Emerge action is known.
 - Fire Fury uses only her first granted effect. Bosses whose MonsterVarieties row has `BossHealthBar` and whose type
@@ -95,6 +95,10 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
   (Mods.dat MonsterMagic2 148, MonsterRare2 390, MonsterUnique2 698) on top of its base life; the Gateway applies it
   and sends the stat and the final `maximum_life` in the monster's Stats (the client applies no modifier itself: with
   only the rarity stat Hillock's bar stayed full above his base 39).
+  Magic and rare monsters also get `monster_life_+%_final_from_rarity_table` (Stats.dat row 9877, on no Mods.dat
+  row): MagicMonsterLifeScalingPerLevel / RareMonsterLifeScalingPerLevel `Life` at their level (magic +50% at level 1
+  to +75% from 71, rare +33% to +100% from 71); the wiki's "Rarity" page lists the same tables as a life multiplier
+  every magic / rare monster gets. A rare Hungry Corpse at level 70 has 4.9 × 2 × its base life.
 - **Hits:** DefaultMonsterStats `Damage` × DamageMultiplier × the attack time in seconds (unless MonsterTypes
   `BaseDamageIgnoresAttackSpeed`), spread ± MonsterTypes `DamageSpread`; then the rarity's monster mods:
   `monster_rarity_damage_+%_final` (magic 30, rare 50, unique 70) and
@@ -103,6 +107,81 @@ Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bos
 - Kept monsters lose their corpses (a corpse is removed 10 s after death anyway) and a `/spawn_mob` name.
 - Each new (area, seed) needs a `-Walkmaps` visit for its room points; without the capture there is no unique boss
   (the log says so).
+
+## 5. Mods
+
+State of 2026-10-25, verified live (The Twilight Strand, The Coast). Code: `MonsterMods.cs` (`MonsterModCatalog`,
+`MonsterModEffects`), `Program.MonsterMods.cs` (the hooks), `MagicProperties.cs` (Core). Tests: `MonsterModsTests`,
+`InstanceEntitiesTests.Monster_mods_and_rare_name_go_in_the_magic_property_lists`.
+
+**Rolling.** An affix is a Mods.dat row with the monster Domain (3) and GenerationType 1 (prefix) or 2 (suffix); 111
+rows have a spawn weight. It can roll when its `Level` is at most the monster's level and the first of its SpawnWeight
+tags that the monster has gives a weight above 0. The monster's tags are its MonsterVarieties `TagsKeys`, `default`,
+`magic` or `rare` (the client adds the same tag when it reads the mods, `0x1421ff3c0`; many mods have `magic` 0, so
+only rares get them) and `not_part_of_pack` for a monster on its own (`/spawn_mob`). Each affix is drawn by weight
+from the allowed ones, a ModFamily once, at most Rarity.dat's MaxPrefix / MaxSuffix of each kind; every monster mod
+has a fixed value. The counts are not in the client's data, so they follow the patch notes: a magic monster has one
+affix (wiki "Monster modifiers"); a rare one in the campaign one or two ("During the campaign, Rare Monsters you
+encounter will only have one or two modifiers", 3.19.0; 3.19.0c made two rarer): 1 at 75%, 2 at 25%; from area level
+68 two to four ("you'll stop encountering Rare Monsters with one modifier … It is also possible to encounter Rare
+Monsters with four modifiers"): 2 at 50%, 3 at 40%, 4 at 10%. The percentages are ours. The magic monsters of one
+name share one roll per instance ("All monsters in an instance that are the same or very similar will have the same
+magic monster modifier", 3.19.0; The Coast's Drowned are several MonsterVarieties rows). Normal and unique monsters
+roll none.
+
+**The rarity's own mods** (Mods.dat MonsterMagic1–11, MonsterRare1–12, MonsterUnique1–10: life, damage, speed,
+size, rewards) go with every magic, rare and unique monster in the hidden list (flags bit 11), which the client does
+not show; the server applies their stats as it does the affixes'.
+
+**What the client gets** (ObjectMagicProperties' base part, `0x142201d70` as for items, [13](13-items.md) §2a): the
+affixes in the explicit list (bit 5), prefixes first, and a rare monster's name as two Words.dat keys (bit 8): a
+`MONSTER_PREFIX` (word list 3) and a `MONSTER_SUFFIX` (list 4) word drawn by the same tags ("Gore" + "walker"; the
+only default-weighted words are placeholders such as " Broken"). Live, hovering a rare showed "Gorewalker" in yellow
+on its life bar at the top of the screen and under it one line per affix from the monster stat descriptions ("Extra
+Life", "Fire and Ignite Resistant"); a magic one showed "Quick Hungry Corpse" in blue and "Hasted". The client
+applies none of the mods itself: a rare with Fecund (40% increased life) at half its server life showed a half bar.
+So the server sends the final `maximum_life`, the rarity's life stats, `movement_velocity_+%` (the client walks a
+monster at its base × (1 + value / 100), `0x141e7c0b0`: a Quick magic Hungry Corpse stepped every 0.083 s, 12
+cells/s, a normal one every 0.125–0.133 s; the server walks it at the same speed), `actor_scale_+%` and
+`life_regeneration_rate_per_minute_%`.
+
+**Effects** (`MonsterModEffects`, summed per stat over all its mods):
+
+| Stats | Effect |
+|---|---|
+| `maximum_life_+%`, `monster_life_+%_final_from_rarity`, the rarity table (§4) | its life: base × (1 + increased) × each final |
+| `damage_+%`, `physical_damage_+%`, the rarity's damage and attack-speed stats | its hit on the player (increased, then the rarity's more and less) |
+| `physical_damage_%_to_add_as_fire` / `_cold` / `_lightning`, `non_chaos_damage_to_add_as_chaos_damage_%` | extra damage of that type in its hit, through the player's resistances |
+| `attack_speed_+%` (`base_cast_speed_+%` is the same on every mod) | its attack time |
+| `base_movement_velocity_+%` | its walk, on the client and in the server's estimate |
+| `base_*_damage_resistance_%`, `base_resist_all_elements_%` | the player's hits and Righteous Fire's burn, per type, capped at 75% |
+| `base_additional_physical_damage_reduction_%` | the physical part of the player's hits (capped at 75%) |
+| `base_damage_taken_+%`, `rare_monster_mod_spell_damage_taken_+%_final` | the player's hits (the second only spells) |
+| `monster_base_block_%` | blocks the player's attacks (no damage) |
+| `evasion_rating_+%`, `accuracy_rating_+%` | the player's chance to hit it, its chance to hit the player |
+| `critical_strike_chance_+%`, `always_crit` | its critical strikes (5% base, × 130%) |
+| `hit_damage_+%_per_10%_missing_enemy_life` | its hit on a wounded player |
+| `self_take_no_extra_damage_from_critical_strikes` | the player's critical hits deal their normal damage |
+| `life_regeneration_rate_per_minute_%` | it regains life (a 0.5 s server tick, 0x1b1) |
+| `base_cannot_be_stunned` | no hit reaction (the flinch is the hit's stun) |
+
+**Unsupported mods do not roll.** 38 of the 111 can be honoured: 32 fully (every stat acts, or only stops what the
+server never does to monsters: Hexproof, of Congealment, Unstoppable, Mirrored, Reflector's, the ailment parts of the
+resistance mods) and 6 in part (of Flames / of Rime / of Electricity: the extra damage without the exposure on hit; of
+Haste / of Damaging / of Precision: the aura reaches only the monster itself). The other 73 need a system the server
+does not have: an aura or buff without stats of its own, a granted or retaliation skill, a monster or ground on death,
+ailments, curses, blind or stun on the player, charges, energy shield, leech, projectiles, area of effect, minions;
+Berserking's buff has a trigger of its own. Such a mod's name would promise something that does not happen, so the
+pool leaves them out and the others keep their weights against each other. `Game_MONSTER_MODS=all` rolls the whole
+pool (to see how the client shows them). `MonsterModCatalog.SupportOf` decides.
+
+**Dev:** `/mob_mods [id]` lists a monster's affixes and name; `/mob_mods [id] <mod …>` creates it again with those
+affixes (a Mods.dat Id, the Id without `MonsterMod`, or the name with `_` for spaces: `/mob_mods Quick of_Flames`);
+`/mob_mods [id] pool` lists what it could roll.
+
+**Open:** the variety's own mods (MonsterVarieties `ModsKeys`) are not sent or applied; monsters have no base
+resistance or armour yet (open PRs #225 / #226 add base resistance), no energy shield and no auras on their allies;
+the unsupported mods' systems; whether the real server sends the rarity's own mods, and in which list.
 
 ## Maps
 

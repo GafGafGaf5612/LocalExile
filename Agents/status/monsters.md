@@ -31,6 +31,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `HitReaction.cs`, `MonsterCatalog.TakeHit`, Gateway (`SendFlinch`), `scripts/re/monster_takehit.py` →
   `data/monster-takehit.json`.
   Docs: [11](../docs/protocol/11-skills.md).
+- Magic and rare monsters roll their mods from Mods.dat (monster domain, spawn weights by the monster's tags, level,
+  one per family): magic one affix shared by the monsters of one name in an instance, rare one or two in the campaign
+  and two to four from area level 68, with a rare name from the Words.dat monster lists.
+  The client shows them on hover (verified live 2026-10-25: "Gorewalker" / "Extra Life", "Quick Hungry Corpse" /
+  "Hasted").
+  Their life, hit, attack time, walk (sent as movement_velocity_+%, the client walks at the same speed), resistances,
+  physical reduction, block, evasion, accuracy, critical strikes and regeneration act on the server; the instance keeps
+  them.
+  Only the 38 mods the server can honour roll; the other 73 are listed in [14](../docs/protocol/14-monster-packs.md)
+  §5.
+  Code: `MonsterMods.cs`, `Program.MonsterMods.cs`, `MagicProperties.cs`.
+  Docs: [14](../docs/protocol/14-monster-packs.md) §5.
 - Monsters fight back: their first granted effect as a non-pathing skill with MonsterVarieties attack time, reach and
   level damage; they swing (animated) when in reach and the player's life goes down after evasion, armour and block;
   walking away dodges; death plays and blocks moving; the death screen (S→C 0x55) shows "Resurrect in Town" /
@@ -44,8 +56,9 @@ Nothing yet.
 
 ## Not working yet
 
-- Area monsters: pack counts and magic/rare chances are our own numbers;
-  rarity adds its life (MonsterMagic2/Rare2/Unique2 `monster_life_+%_final_from_rarity`) but no other mods;
+- Area monsters: pack counts, magic/rare chances and rare mod counts are our own numbers;
+  73 monster mods need systems the server lacks (auras on allies, monster skills, ailments on the player …) and do
+  not roll;
   Drowned ignore their ground types; emerge packs (Gravel Eaters) are skipped;
   the boss life bar and boss stages exist for Hillock only (`BossFights.cs`;
   other bosses with `BossHealthBar` get the bar too); monsters respawn on every entry;

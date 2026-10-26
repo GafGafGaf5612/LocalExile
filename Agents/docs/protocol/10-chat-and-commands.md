@@ -113,6 +113,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/mob_walk [0x<id>] [skill hex]` | 0x1ab: the monster starts its Move action (skill 0x2909) toward the player; it walks, animated, along the client's path |
 | `/mob_move [0x<id>] [cells/s]` | 0x1ba: slides the monster in a straight line (probe; no animation or pathing) |
 | `/mob_tp [0x<id>]` | 0x1b7: teleports the monster next to the player |
+| `/mob_mods [id] [mod …\|pool]` | a monster's affixes and rare name; with mods, creates it again with those affixes; `pool`: what it could roll ([14](14-monster-packs.md) §5) |
 | `/npc <row, Id or name> [rotation°]`, `/npcs`, `/pos` | creates an NPC next to the player ([17](17-npcs.md)), lists the NPCs, prints the player's cell |
 | `/ai [on\|off]` | monster AI for this connection (on by default): monsters chase the player (below) |
 | `/cosmetic portal <name, number or part of a name>`, `/cosmetic list [filter]`, `/cosmetic off` | the shop's portal effects, as game data ([21](21-hideouts.md) §5). Several effects containing what was typed are listed with their numbers rather than the first being picked |
@@ -245,6 +246,5 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
 ## 6. Open
 
 - The chat line's flags and channels, and the channel join request and its answer.
-- Monsters: **skills** (their GrantedEffects, so they fight back), mods (the
-  ObjectMagicProperties mod lists; rarity life bonuses come from mods), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
+- Monsters: **skills** (their GrantedEffects, so they fight back), the boss life bar (StateMachine `boss_life_bar`), the Emerge action for emerge monsters, the 346
   varieties with other components (NPC, ControlZone, …), AI and combat.
