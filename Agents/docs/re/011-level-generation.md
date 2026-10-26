@@ -665,9 +665,18 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    row (Id at +0, node tag +8, override tags +0x10, weights +0x20 — empty in every row): "Boss1_Sec1" (tag
    `boss_entrance1` → `boss_entrance1_1`), or for an id containing "_end" "FinalBossEasy" (difficulty 1: the id's
    first digit, 'E' = 4) / "FinalBoss" (`0x1420339a0` → `0x142033ad0`: a node with the row's tag takes the only
-   override, none empties the tag; with several, `0x1424e5ee0` picks with a small RNG seeded from (difficulty + 4 ×
-   the node's index in the labyrinth layout `0x1424e5ca0` builds) × 0x13d, no level draw; not ported, FinalBoss has
-   4). Any other area whose id contains "_quad_door" or "_branch_door" gets the gold door: the collected nodes are
+   override, none empties the tag; with several (FinalBoss has 4), `0x1424e5ee0` picks, no level draw). **The boss
+   pick:** a TinyMT (TinyMT32's parameters; `0x140e0bec0` seeds it the TinyMT32 way and steps it 8 times, its step
+   puts the two shifts on the other words; `0x140484fa0` draws a uniform index of 32-bit outputs, rejecting the last
+   incomplete bucket) seeded from (difficulty + 4 × row) × 0x13d + the layout's seed. The row is the layout's last
+   node's LabyrinthSectionLayout row (0x6c-byte rows). `0x1424e5ca0(…, seed 0, difficulty, node -1)` builds the layout
+   with `0x1424e30f0`. `0x1424e2c10` picks one LabyrinthSection per slot (Labyrinths +0x40 slots, the row whose tier
+   +0 is the difficulty). From row 1 on, a section is a candidate when its slot range +0x20..+0x24 holds slot + 1 and
+   its tier range +0x18..+0x1c holds the tier, and it is not picked already (no exclusion group +8) or shares no
+   picked row's group. A TinyMT seeded from seed + 0x11 + (tier + 4 × slot) × 0x13d picks among the candidates. Each
+   section's LabyrinthSectionLayout rows become nodes, sorted by +0x10 (`0x1424e62c0`). With a server layout (seed,
+   node index and difficulty, read by `0x141ec7220`) the seed is the day's; the Gateway sends none, so the client
+   uses 0. `LabyrinthPass.LastLayoutRow` / `TinyMt` port all this, and the three boss-end traces match. Any other area whose id contains "_quad_door" or "_branch_door" gets the gold door: the collected nodes are
    shuffled when all are plain "secret" (`Next(count − i)` per place, swap with the front) or else stably sorted by
    tag (`0x1420393f0`); the first takes LabyrinthSecrets "GoldDoor" +8 (`gold_door`) as its tag, exist 100 and a
    "secret1" description (+0x6d, an "entrance<N>" description, is clear in that row); none collected: "Not enough
