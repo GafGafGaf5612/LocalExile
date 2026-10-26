@@ -1254,7 +1254,12 @@ grids still exact. The `l(8)` draws at `0x142063b9c` the traces show inside the 
 `2_10_2`) are `0x142063a60`, an animated entity's random start time (`rand()` 8 bits × 1/256 × the animation's
 length) as the doodad is created: they read only the LCG, which `0x142046a70` reseeds from the MT before each pick,
 so they move nothing; `levelgen` leaves them out of the comparison, and `2_10_6` then matches every doodad-stage
-draw. Left:
+draw. The other object-script LCG draws are left out the same way (`Shared.ObjectScriptDraws`): RandomElement in the
+Animated object actions `0x1420aa460` (call site `0x1420aa41b`) and `0x1420d6780` (vtable `0x1435cfc50`, call site
+`0x1420d67eb`), and `0x142bc8ee0`'s bits (`0x142be7a0b`). With them out, `1_5_1`, `1_5_2`, `1_5_3`, `1_5_3b`,
+`1_5_town`, `2_10_2` and `2_11_endgame_town` match every draw the port makes (2026-10-26): every seed-1 trace whose
+tile hash matches now does, and the client's draws after the port's are the stages not ported (mesh variation
+`0x141530658` / `0x1415307bb`, `0x141544f0c` / `0x14152e730`, the Aqueducts' `rand()` ranges at `0x140e3b43f`). Left:
 - Tiles made of sub-tiles: ported, no capture has one.
 
 **AOSet** (`0x14202ede0`, every room, tile, random and vertex line resolves its `.ao` through it, room and tile lines
@@ -1310,7 +1315,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   started on first use from a copy of the build, replaced after a rebuild), which keeps the game files and the
   terrain cache open: ~0.5 s a call. `LEVELGEN_LOCAL=1` runs a command in its own process.
 - **Gate:** `scripts/re/levelgen/gate.ps1` before every commit to the generator: every seed-1 trace (tile hash,
-  matching draws through the doodad stage, both grids, the doodads) and every logged (area, seed), run by worker
+  every draw the port makes, both grids, the doodads; a trace with no `.doodads.json` is counted apart, not as a
+  doodad failure) and every logged (area, seed), run by worker
   processes (~5 min), compared with `scripts/re/levelgen/gate-baseline.json` (gained / lost per check), then the
   three test suites; it fails when anything was lost. A logged load whose hash is wrong (or that stops) is also run
   against its own trace (every logged load has one since the capture tours), for its draws and first difference. It
@@ -1319,8 +1325,8 @@ area, the Gateway keeps reading `data/walkability/<area>_seed<seed>.*` captures.
   the change); `-NoTests`, `--only <area regex>`, `--no-oracle`, `--jobs N`.
 - **Check:** `lg.ps1 hash <trace.gen.json>…` recomputes the tile hash from a
   traced grid. `… generate <area> <seed> [trace.gen.json]` runs the port and, with a trace, compares draw by draw
-  (kind, argument, result; the first difference names the client's caller; the animation-start LCG draws of
-  `0x142063b9c` are skipped, §6c) and entry by entry, also when the port
+  (kind, argument, result; the first difference names the client's caller; the object scripts' LCG draws,
+  `Shared.ObjectScriptDraws`, are skipped, §6c) and entry by entry, also when the port
   stops at a part that is not ported (`LEVELGEN_STACK=1` prints where in the port), and graph by graph at each recorded stage. `… objects [area regex]` places the area transitions and waypoints of every logged load the port matches (`AreaObjects`) and compares them with the client's `transitions.json` (2026-10-25: 1 760 of 1 794 at the client's cell and height; the extras are quest and boss gates no topology names, the missing ones `AreaTransitionEffects` types). `… cat <game path>…` prints terrain files, `… tile <.tdt>…` a tile's tag and key, `… subtiles` every `.tdt` made of sub-tiles, `… tmds` where each `.tdt`'s objects come from (+0x178 / +0x180), `… ls <regex>` the game paths
   that match (e.g. every `.arm` of a folder, to find rooms no room set lists). `… doodads <area> <seed>` compares the
   placed doodads with `<area>_seed<seed>.doodads.json` (`LEVELGEN_ALL` prints every capture-only one with its tile). Traces also record the area level
