@@ -40,7 +40,7 @@ public static class DamageModel
     /// <summary>A hit's critical strike chance: the base chance (permyriad: 500 = 5%) raised by the increased
     /// critical strike chance stat, capped at 100%.</summary>
     public static double CriticalStrikeChance(int basePerMyriad, int increasedPct) =>
-        Math.Clamp(basePerMyriad / 100.0 * (100 + increasedPct) / 100.0, 0, 100);
+        Math.Clamp(basePerMyriad / 100.0 * (100.0 + increasedPct) / 100.0, 0, 100);
 
     /// <summary>A critical hit's damage, rounded to the nearest point; <paramref name="multiplier"/> is the final
     /// percentage (150 by default).</summary>

@@ -53,8 +53,18 @@ public class AttackBaseCriticalStrikeTests
     [InlineData(900, -100, 0)]
     [InlineData(900, -101, 0)]
     [InlineData(900, 2000, 10000)]
+    [InlineData(900, int.MaxValue, 10000)]
+    [InlineData(900, int.MinValue, 0)]
     public void Final_chance_rounds_permyriad_once_and_clamps(int baseChance, int increased, int expected)
         => Assert.Equal(expected, AttackBaseCriticalStrike.Chance(true, 830, increased, Raw((OverrideStat, baseChance))));
+
+    [Fact]
+    public void Extreme_increases_keep_unarmed_base_and_zero_base_chances_bounded()
+    {
+        Assert.Equal(10000, AttackBaseCriticalStrike.Chance(false, 0, int.MaxValue, Raw((UnarmedStat, 1000))));
+        Assert.Equal(0, AttackBaseCriticalStrike.Chance(false, 0, int.MinValue, Raw((UnarmedStat, 1000))));
+        Assert.Equal(0, AttackBaseCriticalStrike.Chance(false, 0, int.MaxValue, Raw()));
+    }
 
     [Theory]
     [InlineData("critical_strike_chance_+%", true)]
