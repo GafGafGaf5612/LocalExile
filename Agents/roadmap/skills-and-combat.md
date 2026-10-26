@@ -94,7 +94,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Recheck mana damage through the resolved supported-skill path natively; original-head captures remain historical.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
   Recheck the resolved bow-contact and target-modifier composition natively before claiming new combined proof.
-  Special ES mechanics, penetration, exposure, ailment application, the other added-damage stats and support
+  Special ES mechanics, conditional penetration, exposure, ailment application, the other added-damage stats and support
   modifiers remain open.
   Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
   Its hovered stationary-monster 0x191 path now uses the native size-aware object aim and object-bound confirmation.
