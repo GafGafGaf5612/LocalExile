@@ -401,8 +401,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
-- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
-  yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
+- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour yet; each damage
+  type of a hit takes the monster's own base resistance with the hit's penetration subtracted from the capped value,
+  `HitMitigation`/`Penetration`; the player's hit lands at the attack animation's contact keyframe, a monster's still
+  at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour
   and block.
   Ordinary physical melee hits can trigger native player TakeHit recovery through 0x1d1.
@@ -435,10 +437,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
-  Added damage starts with the maximum-mana granted lightning stat (the Whisperer "we know all" node's damage
-  component; automated packet/panel checks, live verification pending).
-  Not yet: penetration/exposure, the other added-damage stats and more support modifiers, ailment
-  application/duration and monster resistances ([20](../docs/protocol/20-damage.md)).
+  Maximum-mana added lightning has original-head native checks and resolved automated checks.
+  Not yet: exposure, conditional penetration (non-critical strikes, aura conditions), other added damage,
+  increased/more support modifiers, ailment application/duration ([20](../docs/protocol/20-damage.md)).
+  Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
+  attack-only variants, the cannot-penetrate flag; DoT and physical take none).
+  Player and skill contributions to the same raw penetration stat add without overwriting either source.
+  Nine native checks verified fixed 100-fire hits for 60 → 80 → 90 → 100 damage as penetration stacked,
+  the prohibition returning 60, cold penetration giving 120 against zero resistance, and chaos 75 → 105.
+  Each check read the actual native monster life after the authoritative update.
+  Those captures belong to original head `0d800d1`; resolved bow and target-modifier paths need native rechecking.
+  Target mods compose with base resistance before penetration; damage taken follows mitigation and rounds once.
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.

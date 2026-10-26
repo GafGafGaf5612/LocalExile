@@ -77,6 +77,11 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   packets.
   The default attack, Fireball and monster melee use packets and read the player's/skill's conversion stats
   ([20](../docs/protocol/20-damage.md)).
+  Player hits on monsters take the target's base resistance per type (`MonsterTypes.Resistances` →
+  `MonsterResistances` by the level's difficulty, `MonsterResistanceCatalog`/`HitMitigation`), with the hit's
+  unconditional penetration subtracted from the capped value and no second clamp (`Penetration`): general
+  per-element and elemental stats on every hit, attack-only variants on attacks, the cannot-penetrate flag
+  suppressing the elemental ones; DoT and physical take none. Monster armour is still not modelled.
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
   Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
@@ -87,8 +92,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
   (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
   Recheck mana damage through the resolved supported-skill path natively; original-head captures remain historical.
-  Special ES mechanics, penetration, exposure, ailment application, the other added-damage stats and support
-  modifiers remain open.
+  Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
+  Recheck the resolved bow-contact and target-modifier composition natively before claiming new combined proof.
+  Special ES mechanics, conditional penetration, exposure, ailments and further added-damage/support effects remain open.
   Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
   Its hovered stationary-monster 0x191 path now uses the native size-aware object aim and object-bound confirmation.
   Automated acceptance/queued rejection checks and manual native endpoint experiments pass.
@@ -100,7 +106,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Production use during an active walk still needs measurement; native manual walk-stop experiments passed.
   Its departure/arrival damage, chilled ground, enemy-dependent recovery and shared Blink groups remain open.
   Extend terrain and movement restrictions from native evidence before accepting other instant movement skills.
-- **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
+- **Start:** special ES mechanics, exposure, conditional penetration and the remaining critical strike stats
   from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
   Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.
   Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.

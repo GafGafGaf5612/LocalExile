@@ -188,6 +188,9 @@ partial class Program
         }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var player = CharacterPlayerStats(conn);
+        var ownPenetration = attackEffect >= 0
+            ? Skills.EffectStats(attackEffect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2) : null;
+        var pen = Penetration.Of(player, Stats, attack: true, ownPenetration);
         var hit = AttackHit(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee)
             .Convert(ConversionFor(conn, attackEffect, 1, attack: true));
         // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
@@ -212,7 +215,7 @@ partial class Program
             // Read before the hit is applied: a killing blow clears the target's impales.
             impaleStacks = m.Impale.Stacks;
             impaleStored = m.Impale.Bonus;
-            damage = MonsterTakes(m, hit, Random.Shared, spell: false);   // its mods' resistances, reduction, block
+            damage = MonsterTakes(m, hit, Random.Shared, spell: false, pen);
             critical = conn.Pools.AttackCriticalStrikeChance > 0
                 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, conn.Pools.CriticalStrikeMultiplier));
@@ -678,6 +681,7 @@ partial class Program
             var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             var own = SupportedSkill(conn, skillId).Stats;
             int chance = SupportedCriticalChance(conn, skillId);
+            var pen = Penetration.Of(stats, Stats, attack: Skills.IsAttack(gem.Effect), own);
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
             if (MonsterBlocks(m, Random.Shared, spell))
@@ -686,7 +690,7 @@ partial class Program
                 return (Blocked, false);
             }
             var hit = SupportedHit(conn, skillId);
-            int damage = MonsterTakes(m, hit, Random.Shared, spell);
+            int damage = MonsterTakes(m, hit, Random.Shared, spell, pen);
             bool critical = spell
                 ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : chance > 0 && Random.Shared.Next(10_000) < chance;
@@ -767,6 +771,7 @@ partial class Program
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int criticalChance = SupportedCriticalChance(conn, skillId);
+        var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats);
         foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
@@ -776,7 +781,7 @@ partial class Program
                 continue;
             }
             DamagePacket hit = SupportedHit(conn, skillId);
-            int damage = MonsterTakes(m, hit, Random.Shared, spell);
+            int damage = MonsterTakes(m, hit, Random.Shared, spell, pen);
             bool critical = spell
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
@@ -916,7 +921,9 @@ partial class Program
                             if (!step.Finished || (step.TargetId == 0 && !step.Wall)) return null;
                             if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
                             {
-                                (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared);
+                                (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared,
+                                    (rolled, _) => MonsterTakesRolled(target, rolled, spell: false, ordinaryShot.Penetration),
+                                    CriticalMultiplierOn(target, ordinaryShot.CriticalMultiplier));
                                 hit = ApplyMonsterHitLocked(conn, target, damage);
                                 if (target.Life == 0) target.Impale.Clear();
                             }
@@ -1012,6 +1019,12 @@ partial class Program
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
         return hit is not null;
     }
+
+    // The damage a player's outgoing hit deals to its monster: one roll per type, then each type's own base resistance
+    // with the hit's penetration subtracted from the capped value (HitMitigation), summed to the total the critical
+    // multiplier later applies to. Damage over time has neither here and keeps its own path. Internal for the tests.
+    internal static int MonsterDamage(SpawnedMonster m, DamagePacket hit, Random random, Penetration.PerType pen) =>
+        MonsterTakes(m, hit, random, spell: false, pen);
 
     // The short state mutation is shared with projectile impact; no awaits under Monsters.
     static MonsterHit? ApplyMonsterHitLocked(ClientState conn, SpawnedMonster m, int damage)

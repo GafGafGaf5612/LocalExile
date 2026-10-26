@@ -4,21 +4,25 @@ using GameServer.Core.World;
 /// at contact. This preserves the ordinary attack's existing damage/crit/impale arithmetic.</summary>
 sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance, int CriticalMultiplier, int ImpaleChance)
 {
+    public Penetration.PerType Penetration { get; init; }
     public static OrdinaryBowShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
         IEnumerable<(uint, int)> skillConversion, StatCatalog catalog, int accuracy, int criticalChance, int criticalMultiplier)
     {
         int Get(string name) => catalog.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
         var conversion = new Dictionary<uint, int>(character);
-        foreach (var (key, value) in skillConversion) conversion.TryAdd(key, value);
+        var own = skillConversion.ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        foreach (var (key, value) in own) conversion.TryAdd(key, value);
         var hit = DamageStats.Added(weapon.HitDamage(character), Get, spell: false, melee: false)
             .Convert(DamageStats.Conversion(conversion, catalog, attack: true));
-        return new(hit, accuracy, criticalChance, criticalMultiplier, Get("impale_on_hit_%_chance"));
+        return new(hit, accuracy, criticalChance, criticalMultiplier, Get("impale_on_hit_%_chance"))
+        { Penetration = global::Penetration.Of(character, catalog, attack: true, own) };
     }
 
     public bool Hits(int evasion, Random random) =>
         DamageModel.Hits(DamageModel.AccuracyHitChance(evasion, Accuracy), random.Next(100));
 
-    public (int Damage, bool Critical) Roll(ImpaleState impale, Random random)
+    public (int Damage, bool Critical) Roll(ImpaleState impale, Random random,
+        Func<DamagePacket, bool, int>? mitigate = null, int? criticalMultiplier = null)
     {
         var hit = Hit;
         // Keep the existing ordinary attack convention: store the converted physical maximum before the bonus/crit.
@@ -27,9 +31,10 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         if (stored > 0) hit = hit.Add(DamageType.Physical, new DamageRange(stored, stored));
         impale.AfterHit();
         if (ImpaleChance > 0 && random.Next(100) < ImpaleChance) impale.Apply(physical);
-        int damage = hit.RollTotal(random);
+        var rolled = hit.Roll(random);
         bool critical = CriticalChance > 0 && random.Next(10_000) < CriticalChance;
-        if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplier);
+        int damage = mitigate?.Invoke(rolled, critical) ?? (int)Math.Round(rolled.MinTotal);
+        if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier ?? CriticalMultiplier);
         return (damage, critical);
     }
 }

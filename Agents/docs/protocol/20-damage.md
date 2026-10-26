@@ -49,6 +49,42 @@ conversion fills whatever remains of the 100% cap, and the final conversion for 
 as in Path of Building. Gains are added to the destination without reducing the source, matching the wiki's
 "gain as extra" rule.
 
+A player hit on a monster rolls each type once and then takes the monster's own base resistance on each type
+(MonsterResistanceCatalog, §4), before the critical multiplier and the life update. A monster's attack on the player
+does the mirror pass through the player's resistances. Damage over time is outside this pass: it has no hit, and
+Righteous Fire's monster burn keeps its per-tick percentage-of-life model with no resistance or penetration.
+
+Penetration lowers the target's resistance before the damage is reduced. The server caps the monster's base
+resistance first (the 75 default, the 90 absolute maximum, the −200 floor) and subtracts the hit's penetration from
+that capped value with no second clamp, as Path of Building's `calcResistForType` and hit branch do (16de4b8, lines
+494..509 and 3490..3500): the effective resistance can go below the floor, so penetration against a negative
+resistance deals more than the raw damage. Penetration is read per hit from the player's and the skill's own stats
+and never touches the rolled input; the critical multiplier still applies once, to the mitigated total.
+Player and skill contributions to the same raw penetration stat add in `Penetration.Of`.
+All three hit paths collect those contributions before the general damage-stat dictionary overlays skill values.
+Nine real-client checks read the target's native Life component after each authoritative update.
+A level-68 fire skeleton took 60 from fixed 100 fire, then 80, 90 and 100 as penetration sources stacked.
+The prohibition restored 60; its zero cold resistance took 100, then 120 with 20 cold penetration.
+Map Hillock's 25% chaos resistance took 75, then 105 with 30 attack chaos penetration.
+
+The unconditional stats the server reads (whole percents, this client's Stats.dat names):
+
+| Stats | Scope |
+|---|---|
+| `base_reduce_enemy_{fire,cold,lightning}_resistance_%` | every hit on that element; the historical penetration stats despite the name (the per-element Penetration support gems grant them, as do the Heart of Flame/Ice/Thunder passives and the jewel mods) |
+| `base_penetrate_elemental_resistances_%` | every hit on fire, cold and lightning (the Inquisitor's start node, Martyr's Legacy) |
+| `base_attack_damage_penetrates_{fire,cold,lightning,chaos}_resist_%` | attacks only |
+| `base_attack_damage_penetrates_elemental_resist_%` | attacks only, on fire, cold and lightning (Forces of Nature, Warden) |
+| `cannot_penetrate_or_ignore_elemental_resistances` | a flag: every elemental penetration is off for the player's hits; chaos is not elemental |
+
+The `main_hand_…`/`off_hand_…` and `local_…` weapon-hand aliases are not read (the server attacks with the main
+hand's global stats, and a weapon-local scope guess would double-count), and neither are the non-base
+`reduce_enemy_elemental/chaos_resistance_%` variants (Penetration Support's own granted stat in this client) or the
+conditional ones (non-critical strikes, while affected by an aura, against chilled enemies).
+The non-critical companion is handled by #216; aura and enemy-state conditions remain separate work.
+Spells take the supported general stats only; this consumer supports chaos through the attack-only stat in this
+client, only the attack-only one; physical damage never penetrates.
+
 The same packet is used for attacks, spells and monster hits. The caller decides whether the attack-only or spell-only
 stats apply; `DamageStats` reads the Stats.dat names:
 
@@ -135,6 +171,20 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   rolls it and sends the life change.
 - Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands, applies each
   type's resistance and then armour to the physical part.
+- Player hits on monsters (default attack, gem projectile and area hits) roll each type once and reduce it by the
+  monster's base resistance: `MonsterTypes.Resistances` → `MonsterResistances`, the level's
+  `DefaultMonsterStats.Difficulty` (1/2/3) picking the Normal/Cruel/Merciless columns (`MonsterResistanceCatalog`,
+  `MonsterCatalog.BaseResistance`, the shared pass is `HitMitigation`). Without the extracted tables every type reads
+  0 for the base input.
+  Spawned-monster resistance modifiers add before the cap; physical reduction and damage taken apply after mitigation.
+  Ordinary bows snapshot player/skill penetration at release and resolve target resistance at contact.
+  Main has no connection-aware resistance or presence engine; those archival #206 systems are outside this stack.
+  Automated mixed fractional-hit, target-modifier, bow RNG and same-key player/skill cases cover the resolved paths.
+  Native penetration checks belong to original head `0d800d1`; recheck the target-modifier and bow composition natively.
+- The hit's penetration (`Penetration.cs`) subtracts from the capped resistance with no second clamp: the general
+  per-element and elemental stats on every hit, the attack-only variants on attacks (§2), the
+  `cannot_penetrate_or_ignore_elemental_resistances` flag suppressing the elemental ones. Damage over time and the
+  physical part take no penetration; the conditional variants are #216's.
 - `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
   `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
   `MitigatePhysical`.
@@ -162,7 +212,8 @@ also check pause, flasks and RF. The new visual behavior awaits that real-client
 
 ## 6. Not modelled yet
 
-- Energy shield, penetration, exposure, shock and other damage-taken modifiers; monster armour and resistances.
+- Energy shield, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base resistances are
+  in, §4, with unconditional penetration).
 - Added flat damage besides the maximum-mana granted lightning stat (supports/items, the other added-damage
   stats), increased/more modifiers on the base damage, and skill-specific added-damage scaling.
 - Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.

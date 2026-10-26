@@ -255,6 +255,20 @@ public class MonsterModsTests
     }
 
     [Fact]
+    public void Penetration_composes_with_target_mods_and_damage_taken_before_rounding_the_fractional_total()
+    {
+        var resistant = Monster(With(MonsterRarity.Rare, 60, "MonsterModResistantToFire"));
+        Assert.Equal(60, Program.MonsterTakes(resistant, DamagePacket.Of(DamageType.Fire, 100, 100),
+            new Random(1), spell: false, new Penetration.PerType(35, 0, 0, 0)));
+        var spellResistant = new SpawnedMonster("fractional", new WalkEstimator(0, 0, 30), 20, 2, 100)
+        { Mods = With(MonsterRarity.Rare, 60, "MonsterModSpellResistant") };
+        var mixed = DamagePacket.Of(DamageType.Fire, 1, 1).Add(DamageType.Cold, new(1, 1));
+        // Each 1 becomes .6, then total 1.2 takes 50% less = .6, rounded once to 1.
+        Assert.Equal(1, Program.MonsterTakes(spellResistant, mixed, new Random(2), spell: true,
+            new Penetration.PerType(-40, -40, 0, 0)));
+    }
+
+    [Fact]
     public void Stalwart_blocks_half_the_attacks_and_no_spell()
     {
         var m = Monster(With(MonsterRarity.Rare, 60, "MonsterModAttackBlock"));

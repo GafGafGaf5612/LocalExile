@@ -12,14 +12,14 @@ public class OrdinaryBowShotTests
         try
         {
             string[] names = ["attack_minimum_added_fire_damage", "attack_maximum_added_fire_damage",
-                "physical_damage_%_to_convert_to_fire", "impale_on_hit_%_chance"];
+                "physical_damage_%_to_convert_to_fire", "impale_on_hit_%_chance", "base_reduce_enemy_fire_resistance_%"];
             File.WriteAllText(Path.Combine(folder, "tables", "Stats.json"),
                 System.Text.Json.JsonSerializer.Serialize(names.Select(name => new { Id = name })));
             var catalog = new StatCatalog(folder);
-            var raw = new Dictionary<uint, int> { [1] = 3, [2] = 7, [3] = 50, [4] = 25,
+            var raw = new Dictionary<uint, int> { [1] = 3, [2] = 7, [3] = 50, [4] = 25, [5] = 20,
                 [StatKeys.MeleePhysicalDamagePct] = 20 };
             var weapon = new SkillCatalog.Unarmed(714, 5, 13, 120);
-            var shot = OrdinaryBowShot.Capture(weapon, raw, [(3, 100)], catalog, 321, 1234, 175);
+            var shot = OrdinaryBowShot.Capture(weapon, raw, [(3, 100), (5, 10)], catalog, 321, 1234, 175);
             // Retain the existing ordinary attack's melee-physical treatment, and the player's conversion wins
             // a colliding default-skill key. Added fire is added before conversion, exactly once.
             Assert.Equal(new DamageRange(3, 7.8), shot.Hit[DamageType.Physical]);
@@ -28,8 +28,31 @@ public class OrdinaryBowShotTests
             weapon = weapon with { MinDamage = 1000, MaxDamage = 2000 };
             Assert.Equal(new DamageRange(3, 7.8), shot.Hit[DamageType.Physical]);
             Assert.Equal((321, 1234, 175, 25), (shot.Accuracy, shot.CriticalChance, shot.CriticalMultiplier, shot.ImpaleChance));
+            Assert.Equal(30, shot.Penetration.Fire);
         }
         finally { Directory.Delete(folder, recursive: true); }
+    }
+
+    [Fact]
+    public void Contact_mitigation_uses_one_rolled_packet_and_preserves_the_critical_draw_order()
+    {
+        var packet = DamagePacket.Of(DamageType.Fire, 1, 50).Add(DamageType.Cold, new(1, 50));
+        var shot = new OrdinaryBowShot(packet, 100, 10000, 150, 0);
+        var random = new Random(731);
+        var reference = new Random(731);
+        var expectedRoll = packet.Roll(reference);
+        reference.Next(10000);
+        int calls = 0;
+        var actual = shot.Roll(new ImpaleState(), random, (rolled, critical) =>
+        {
+            calls++;
+            Assert.True(critical);
+            Assert.Equal(expectedRoll.MinTotal, rolled.MinTotal);
+            return (int)Math.Round(rolled.MinTotal * .6);
+        });
+        Assert.Equal(1, calls);
+        Assert.True(actual.Critical);
+        Assert.Equal(reference.Next(), random.Next());
     }
 
     sealed class Rolls(params int[] values) : Random
