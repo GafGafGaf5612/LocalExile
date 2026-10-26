@@ -14,17 +14,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   Quality, the flask's prefixes and suffixes and the character's flask stats count (amount, rate, instant and partial
   instant, low life, other-pool costs, mana at the end, not removed at full, extra life), as Path of Building does.
   Several recovery flasks queue, the highest rate first (poewiki).
-  Checked live: the base recovery; the mods and queueing by tests.
+  Checked live: the base recovery and the extra-life suffix; the other mods and queueing by tests.
   Code: `Flasks.cs`, `FlaskRecovery.cs`, Gateway (`UseFlask`, `RunResourceRecovery`).
   Docs: [13](../docs/protocol/13-items.md) §8.
 - Flask charges: kills give 1 / 3.5 / 6 / 11 charges by rarity (Mods.dat monster rarity mods, poewiki), increased
   flask charges gained and charge recovery multiply, partial charges are kept.
-  Charges on critical strike (one 0.132 s cooldown), when hit and every 3 seconds; charges used and maximum charges
-  with mods.
+  Charges on dealing a critical strike (one 0.132 s cooldown), when hit and every 3 seconds; charges used and maximum
+  charges with mods.
   Towns, hideouts and resurrection fill every flask; a flask put on the bar in a hostile area starts empty.
   `Game_FLASK_CHARGES=full` brings back "every kill fills every flask".
-  Not yet: fewer charges in acts 6 to 10 and maps.
-  Checked live: kill charges and the hostile-area rule; crit, hit and timed charges by tests.
+  Not yet: fewer charges in acts 6 to 10 and maps; charges on taking a critical strike (monsters deal none) and at
+  maximum frenzy charges (none here).
+  Checked live: kill and crit charges and the hostile-area rule; charges when hit and every 3 seconds by tests.
   Code: `FlaskCharges.cs`, Gateway (`Program.FlaskCharges.cs`).
   Docs: [13](../docs/protocol/13-items.md) §8b.
 - Utility flasks: every utility flask spends its charges, shows its buff and the timer bar under it, and gives its
