@@ -221,12 +221,11 @@ partial class Program
             // Impale is stored reflected damage, not part of the direct roll which can generate Fortification.
             var rolled = stored > 0 ? ownRolled.Add(DamageType.Physical,
                 new DamageRange(Math.Floor(stored), Math.Floor(stored))) : ownRolled;
-            critical = conn.Pools.AttackCriticalStrikeChance > 0
-                && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
+            critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration);
+            int criticalMultiplier = CriticalMultiplierOn(m, AttackCriticalMultiplier(conn, player));
             (damage, resistance) = MonsterDamage(m, rolled, critical, attack: true, resistanceMods, pen);
-            if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, conn.Pools.CriticalStrikeMultiplier));
-            FortificationOnHitLocked(conn, m, RawFortificationDamage(ownRolled, critical,
-                CriticalMultiplierOn(m, conn.Pools.CriticalStrikeMultiplier)),
+            if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
+            FortificationOnHitLocked(conn, m, RawFortificationDamage(ownRolled, critical, criticalMultiplier),
                 WeaponProfileFor(conn, activeSet: true).Melee, player, ownPenetration);
             (m.Life, stageStarts) = TakeDamageLocked(m, damage);
             life = m.Life;
@@ -702,9 +701,7 @@ partial class Program
             }
             var hit = SupportedHit(conn, skillId);
             var rolled = hit.Roll(Random.Shared);
-            bool critical = spell
-                ? chance > 0 && SpellCriticalStrike.Hits(chance, Random.Shared.Next(SpellCriticalStrike.RollSize))
-                : chance > 0 && Random.Shared.Next(10_000) < chance;
+            bool critical = RollCriticalStrike(conn, chance, own, attack: !spell);
             var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, resistanceMods, pen);
             if (critical)
                 damage = DamageModel.CriticalDamage(damage,
@@ -797,11 +794,10 @@ partial class Program
             }
             DamagePacket hit = SupportedHit(conn, skillId);
             var rolled = hit.Roll(Random.Shared);
-            bool critical = spell
-                ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
-                : criticalChance > 0 && Random.Shared.Next(10_000) < criticalChance;
+            bool critical = RollCriticalStrike(conn, criticalChance, skillStats, attack: !spell);
+            int criticalMultiplier = CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId));
             var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
-            if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
+            if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
             if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
             if (await HitMonster(remote, stream, ciphers, conn, id, m, damage,
                     $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
@@ -809,8 +805,8 @@ partial class Program
                     accepted: () =>
                     {
                         if (!fortificationGranted)
-                            fortificationGranted = FortificationOnHitLocked(conn, m, RawFortificationDamage(rolled, critical,
-                                CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId))),
+                            fortificationGranted = FortificationOnHitLocked(conn, m,
+                                RawFortificationDamage(rolled, critical, criticalMultiplier),
                                 !spell && Skills.IsMelee(gem.Effect), player, skillStats);
                     }))
                 ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
@@ -948,7 +944,10 @@ partial class Program
                                 (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared,
                                     (rolled, crit) => MonsterDamage(target, rolled, crit, attack: true,
                                         ordinaryShot.ResistanceMods, ordinaryShot.Penetration).Damage,
-                                    CriticalMultiplierOn(target, ordinaryShot.CriticalMultiplier));
+                                    CriticalMultiplierOn(target, ordinaryShot.CriticalMultiplier),
+                                    extraCriticalRolls: ordinaryShot.CriticalChance > 0 ? CriticalExtraRolls(conn) : 0,
+                                    criticalRandom: conn.CriticalRandom,
+                                    cannotCrit: ordinaryShot.CriticalChance > 0 && CriticalProhibited(conn, attack: true));
                                 hit = ApplyMonsterHitLocked(conn, target, damage);
                                 if (target.Life == 0) target.Impale.Clear();
                             }

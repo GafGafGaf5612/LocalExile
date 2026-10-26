@@ -133,6 +133,12 @@ partial class Program
         // The conditions as they are now; the player tick sends the chance again when they change.
         int suppression = Suppression(conn).Chance;
         foreach (uint key in SuppressionChanceKeys) stats[key] = suppression;
+        if (Stats.Key("main_hand_critical_strike_multiplier") is uint multiplier)
+            stats[multiplier] = AttackCriticalMultiplier(conn, stats);
+        if (Stats.Key("virtual_on_low_life") is uint lowLife)
+            stats[lowLife] = CriticalOnLowLife(conn, stats) ? 1 : 0;
+        if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
+            stats[rolls] = CriticalExtraRollsFor(conn, stats);
         return stats;
     }
 
@@ -275,6 +281,8 @@ partial class Program
             var supported = SupportedSkill(conn, id);
             var own = supported.Stats;
             var stats = MergeSkillStats(playerStats, own);
+            if (Stats.Key("virtual_extra_critical_rolls") is uint criticalRolls)
+                stats[criticalRolls] = CriticalExtraRollsFor(conn, playerStats, own);
             if (singleSources.Contains(effect) && SingleUseCooldown.ForSkill(Skills, Stats, effect, level, playerStats, own) is { } cooldown
                 && Stats.Key("virtual_cooldown_speed_+%") is uint recoveryKey)
                 stats[recoveryKey] = cooldown.RecoveryPercent;

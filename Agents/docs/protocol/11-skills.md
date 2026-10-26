@@ -313,6 +313,75 @@ The shared half-up midpoint and resolved stack need a new native check; automate
 Signed increases stay in 64 bits through the pool and player-plus-skill sum; only final native values are bounded.
 Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
 Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.
+
+**Conditional critical policy (#242).**
+The supplied 3.29.3b static evidence identifies `0x1427e5480` as the virtual critical-extra-roll getter.
+It adds `extra_critical_rolls`, `extra_critical_rolls_while_on_low_life` when virtual stat 7751 holds,
+`extra_critical_rolls_during_focus` while `has_focus` holds, and one for `keystone_sharp_and_brittle`.
+Its final signed clamp at `0x1427e59f9` is -1..1, after the addition; two lucky sources still mean two total rolls.
+There is no Attack or Melee restriction on the low-life term, so supported spell hits qualify too.
+`CriticalStrikePolicy` and `Program.CriticalStrikes` consume those raw inputs independently of any class choice.
+Low life is derived from current living owner Life and maximum Life with an inclusive 50% default threshold.
+`low_life_threshold_%_override` takes precedence over `low_life_threshold_%` when positive.
+The not-full-Life and Vulnerability count-as-low-life flags use current Life and current curse-state stats.
+The Focus skill and curse application lifecycles are not implemented by this critical policy.
+
+The existing positive-chance `Next(10000)` stays after the damage packet's original per-type draws.
+A nonzero signed extra adds exactly one following `Next(10000)` even if the first draw decides the result.
+Positive luck combines with OR, negative luck with AND, and zero luck uses only the original draw.
+This ordering is LocalExile's local RNG policy, not an established official-server RNG sequence.
+Cannot-crit flags take precedence and consume no critical draws, including under lucky conditions.
+The default attack, supported attack/spell projectiles and area hits share this policy at accepted contact.
+Ordinary bow arrows keep their existing released damage/chance/multiplier snapshot and sample conditional luck
+and cannot-crit flags from the live owner at impact.
+No additional packet, accuracy or impale draw is introduced by the policy.
+
+`unarmed_melee_attack_critical_strike_multiplier_+` adds points to the ordinary multiplier only for an active
+empty-hand melee Attack context without Spell; an inactive-set weapon cannot arm that context.
+A selected ranged attack and every spell exclude it, including when their owner is unarmed.
+The unarmed melee base also stays out of a selected ranged attack's chance.
+Final Blow's raw graph node 10135 grants 1000 base permyriad, one low-life extra roll and 50 multiplier points.
+The generic consumer uses the raw stats; it adds no ascendancy choice, class or node-allocation behavior.
+Default and selected supported panel multipliers use the same context and add linked support bonuses once.
+The panel retains the ordinary permyriad chance; `virtual_extra_critical_rolls` carries the separate lucky policy.
+`virtual_on_low_life` and the selected skill's extra-roll virtual follow current owner state.
+The player tick refreshes player/skill stats when Life, Focus or the effective extra-roll condition changes.
+Combat samples contact state directly and does not wait for that panel refresh cadence.
+Full player-stat and Actor refreshes use the shared `SendPlayerStatSnapshot` factory inside the connection's send gate.
+The factory locks `Monsters`, rejects closed/leaving connections and samples current stats at send time.
+A queued character or charge refresh cannot replay old low-life virtuals or an earlier active-weapon multiplier.
+Held-gate wire regressions cover both directions across the 50% boundary and active-set swaps in both packet kinds.
+
+Automated tests parse `0x24` into the actual object-use route and check Life losses and deterministic critical draws.
+Controls cover default contact, ordinary bows, linked melee/ranged attacks, spell projectiles and spell areas,
+the 50% boundary, signed cancellation/clamping, live state changes, active sets and cannot-crit precedence.
+The existing module initializer supplies the checkout root once; production catalogs retain relative `data/` paths.
+The tests consume node 10135's raw stats without allocating an ascendancy node or selecting a Phrecia class.
+An unselected ascendancy refund is refused without spending points; removing the raw inputs clears the policy.
+Upstream's separate ascendancy lifecycle and `AscendancyClientCompatibility` play gate remain unchanged.
+A successful paid Final Blow refund is not established by these raw-source controls or the native checks below.
+Fifteen native checks used a new unascended Marauder with raw inputs.
+The active empty hand dealt a 200-damage critical hit; an active wand dealt 150, and an inactive wand did not suppress
+its empty alternate hand's 200 multiplier.
+Removing the raw bonus restored 150.
+A 66-Life owner at 34 Life was above low life, at exactly 33 was low life, and remained low at 32.
+Native received virtuals confirmed signed cancellation, the one-extra-roll clamp, unlucky state and condition clearing.
+Cannot-crit forced an actual noncritical 100-damage hit despite a capped base chance and positive luck.
+Healing, death and relog cleared the conditional state.
+The spell multiplier stayed 150 while the unarmed melee multiplier was 200.
+The hit checks exercise the default attack; supported spell/projectile contacts and exact RNG draw order are covered
+by deterministic automated tests, not a native statistical-distribution claim.
+The fifteen controls were also repeated on the resolved `effb797` composition.
+The Fortification combination below has automated coverage; the native controls do not allocate Final Blow.
+The merged Fortification path uses the same resolved critical multiplier as target damage.
+Its source is the direct rolled packet before target mitigation and excludes stored Impale damage.
+A parsed default-attack control with raw stats deals 200 damage to a 400-Life target and grants 14 Fortification.
+Removing the unarmed bonus gives 150 damage and 12 stacks; cannot-crit gives 100 damage and 10 stacks.
+These are automated checks of LocalExile's explicit Fortification generation model, not new native evidence.
+Once Phrecia play is compatible, allocate/refund node 10135.
+Verify that base, multiplier and conditional luck clear together.
+
+**Existing base-chance native checks (historical).**
 Twelve real-client checks used a fresh synthetic character and read the client's received stat values.
 A Driftwood Wand's 830 became 800 and 900; 100% increased chance raised 900 to 1800, then cannot-crit set it to zero.
 Switching to an empty second set gave zero despite the inactive wand; the unarmed base gave 1000.

@@ -30,7 +30,8 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         DamageModel.Hits(DamageModel.AccuracyHitChance(evasion, Accuracy), random.Next(100));
 
     public (int Damage, bool Critical) Roll(ImpaleState impale, Random random,
-        Func<DamagePacket, bool, int>? mitigate = null, int? criticalMultiplier = null)
+        Func<DamagePacket, bool, int>? mitigate = null, int? criticalMultiplier = null,
+        int extraCriticalRolls = 0, Random? criticalRandom = null, bool cannotCrit = false)
     {
         var hit = Hit;
         // Keep the existing ordinary attack convention: store the converted physical maximum before the bonus/crit.
@@ -40,7 +41,8 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         impale.AfterHit();
         if (ImpaleChance > 0 && random.Next(100) < ImpaleChance) impale.Apply(physical);
         var rolled = hit.Roll(random);
-        bool critical = CriticalChance > 0 && random.Next(10_000) < CriticalChance;
+        bool critical = CriticalStrikePolicy.Roll(cannotCrit ? 0 : CriticalChance,
+            criticalRandom ?? random, extraCriticalRolls);
         int damage = mitigate?.Invoke(rolled, critical) ?? (int)Math.Round(rolled.MinTotal);
         if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier ?? CriticalMultiplier);
         return (damage, critical);

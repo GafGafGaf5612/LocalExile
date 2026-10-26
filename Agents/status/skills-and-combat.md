@@ -10,6 +10,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   Elapsed Life regeneration, stopping at expiry, area carry, death and relog were also verified.
   The evidence uses a new unascended character with raw inputs; it does not establish Behemoth selection.
   See [Fortification](../docs/game/fortification.md) for the formula, source coverage and remaining extensions.
+- Conditional critical policy (#242): ordinary, low-life, Focus and Sharp and Brittle sources share a signed clamp.
+  Opposing luck cancels, and multiple lucky sources still add at most one critical draw.
+  The unarmed multiplier applies only to the active empty-hand melee attack, with matching panel values.
+  Fifteen native checks verified real 200/150 critical hits, active-set switching and bonus removal.
+  A 66-Life Marauder verified above, exactly at and below the inclusive 50% boundary.
+  Native virtuals confirmed cancellation, clamping, unlucky state, cannot-crit, healing, death and relog.
+  Native evidence targets `ea24316`; the resolved `effb797` composition has automated coverage and awaits native reruns.
+  The checks use raw inputs on an unascended character; spell/bow contact rules and RNG order have automated coverage.
+  A parsed 200-damage critical hit against 400 Life generates 14 Fortification from the same resolved multiplier.
+  Removing the unarmed bonus gives 150 damage and 12 stacks; cannot-crit gives 100 damage and 10 stacks.
+  Successful paid ascendancy refunds and Focus/curse lifecycles remain separate integration work.
+  See [11-skills.md](../docs/protocol/11-skills.md), conditional critical policy.
 
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
@@ -349,7 +361,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Combined generic/spell bonuses add once; the no-crit flag clears the native chance and hides its row.
   A hitless Scorching Ray cast dealt no weapon damage, while the same connection's Fireball dealt a critical hit.
   Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
-  Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
+  Focus skill and curse lifecycles, other enemy-state/more and added-base crit mechanics remain separate work.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
 - **Overcapped-resistance modifiers.** While the flag stat is set, the uncapped resistance above its maximum is a
   generic increased modifier, exactly PoB's `ResistOverCap` (the maximum capped at 90): +1% increased evasion per 1%

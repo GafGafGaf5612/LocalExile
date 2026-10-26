@@ -132,9 +132,12 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   protocol/11-skills.md §critical strikes).
   Recheck the resolved stack's shared half-up midpoint natively; the original head's native checks remain historical.
   Recheck development generic/spell increases and rounding live after the input-consistency review fixes.
-  Deliver their nodes through the separate ascendancy lifecycle; Slayer's per-nearby-enemy crit multiplier and
-  Final Blow's remaining unarmed bonuses are separate work.
-  Added-base, lucky/more and conditional crit remain separate work.
+  Deliver their nodes through the separate ascendancy lifecycle; Slayer's per-nearby-enemy crit multiplier is separate.
+  Generic conditional rolls and the unarmed melee multiplier are implemented and native-verified separately.
+  Continue native spell/projectile checks and the resolved critical-hit/Fortification composition on `effb797`.
+  Verify successful paid Final Blow refunds once Phrecia play has an agreed client-compatible graph.
+  Focus/curse lifecycles and statistical RNG validation remain separate from the deterministic policy tests.
+  Added-base and other conditional/more crit remain separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
