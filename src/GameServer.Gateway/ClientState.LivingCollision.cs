@@ -1,0 +1,49 @@
+using GameServer.Core.World;
+
+sealed partial class ClientState
+{
+    public IReadOnlyList<ClientPathfinder.Blocker> CorrectionBlockers()
+    {
+        var result = new List<ClientPathfinder.Blocker>(StationaryBlockers);
+        if (Phasing) return result;
+        double now = Clock.Elapsed.TotalSeconds;
+        lock (Monsters)
+            foreach (var m in Monsters.Values.Where(LivingCollision.Blocks))
+            {
+                var p = m.Walk.Position(now);
+                result.Add(new(p.X, p.Y, LivingCollision.Size(m)));
+            }
+        // Deterministic arrival arbitration: the later actor moves, instead of both choosing the same exit.
+        foreach (var peer in Instance?.PlayersExcept(PeerId) ?? [])
+            if (peer.Id < PeerId && peer.Life > 0) result.Add(new(peer.X, peer.Y, LivingCollision.PlayerSize));
+        return result;
+    }
+
+    public IReadOnlyList<ClientPathfinder.Blocker> MonsterBlockers(uint self, bool includePrevious = false)
+    {
+        var result = new List<ClientPathfinder.Blocker>(StationaryBlockers);
+        double now = Clock.Elapsed.TotalSeconds;
+        lock (Monsters)
+            foreach (var (id, m) in Monsters)
+            {
+                if (id == self || !LivingCollision.Blocks(m)) continue;
+                var p = m.Walk.Position(now);
+                result.Add(new(p.X, p.Y, LivingCollision.Size(m)));
+                if (includePrevious && m.CollisionPosition is { } previous && previous != p)
+                    result.Add(new(previous.X, previous.Y, LivingCollision.Size(m)));
+            }
+        if (PlayerSent && PlayerLife > 0 && !Phasing)
+        {
+            var p = Walk.Position(now);
+            result.Add(new(p.X, p.Y, LivingCollision.PlayerSize));
+        }
+        foreach (var peer in Instance?.PlayersExcept(PeerId) ?? [])
+            if (peer.Life > 0) result.Add(new(peer.X, peer.Y, LivingCollision.PlayerSize));
+        return result;
+    }
+
+    public WalkEstimator NewMonsterWalk(uint id, int x, int y, double speed, int size, bool unique) =>
+        new(x, y, Math.Max(1, speed), (cx, cy) => Layout.WalkableFor(cx, cy, Math.Max(0, size)) && !Barrier.Contains((cx, cy)),
+            Layout.GridW > 0 ? Layout.GridW : 4096, Layout.GridH > 0 ? Layout.GridH : 4096,
+            () => size < 0 ? StationaryBlockers : MonsterBlockers(id), Math.Max(0, size), ClientPathfinder.SearchLimit.Expansions1000);
+}

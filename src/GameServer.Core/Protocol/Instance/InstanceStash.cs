@@ -187,10 +187,12 @@ public static class InstanceStash
 
     /// <summary>
     /// C→S 0xe3 (12 bytes, vtable 0x1435c0500, write 0x141f97e40; built by 0x142168e20): an item out of a stash tab. u16
-    /// BE tab, u32 BE item id, u8, u8, u8, u8 (0x142168e20's 4th, 5th (two bytes) and 6th arguments). The special tabs'
+    /// BE tab, u32 BE item id, u8 kind, u16 raw token (low byte first), u8 bulk (0: one stack; 1: Ctrl + right click).
+    /// The builder copies its 6th argument to the last byte; 0x140312810 forwards the click's bulk boolean there.
+    /// The special tabs'
     /// pages (0x140b3c040, 0x140b57810) and 0x14031b950 send it; whether a normal tab's Ctrl + click does is not checked.
     /// </summary>
-    public static (ushort Tab, uint ItemId, byte A, byte B, byte C, byte D) ReadTakeFromTab(ReadOnlySpan<byte> m)
+    public static (ushort Tab, uint ItemId, byte Kind, byte TokenLo, byte TokenHi, byte Bulk) ReadTakeFromTab(ReadOnlySpan<byte> m)
     {
         var r = new LoginReader(m[2..]);
         return (r.U16(), r.U32(), r.U8(), r.U8(), r.U8(), r.U8());

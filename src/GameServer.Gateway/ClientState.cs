@@ -108,6 +108,7 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     // lock.
     public double FlinchUntil = double.NegativeInfinity;
     public bool Aggro, Dead;
+    public (int X, int Y)? CollisionPosition;
     public (int X, int Y)? LastTarget;
     // A boss's stage (BossFights) and whether a hit has started it.
     public BossFights.Stage? Stage { get; init; }
@@ -133,7 +134,7 @@ sealed record RighteousFireState(ushort Buff, ushort SelfAura, uint? Ring, ushor
 // The last instance list shown (0xae); 0xaf picks a row of it.
 sealed record ChooserList(ushort Area, IReadOnlyList<ulong> Ids, bool AtWaypoint = false);
 
-sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
+sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
 {
     public AreaLayout Layout { get; private set; } = layout;
     public uint Ticket => ticket;
@@ -214,7 +215,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The blocking objects the client's pathfinder walks around (Positioned blocking = true), with their Positioned size
     // (object_size − 1): NPCs (NPC.ot 5) and the stashes (Stash.ot, GuildStash.ot 3) by object id, and the living
     // hostile monsters where the server's estimate has them now (MonsterVarieties ObjectSize − 1).
-    public const int NpcBlockerSize = 4, StashBlockerSize = 2;
+    public const int NpcBlockerSize = 4, StashBlockerSize = 2, MapDeviceBlockerSize = 3;
     readonly Dictionary<uint, ClientPathfinder.Blocker> _blockers = [];
     volatile IReadOnlyList<ClientPathfinder.Blocker> _blockerList = [];
     public IReadOnlyList<ClientPathfinder.Blocker> Blockers
@@ -228,17 +229,27 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
             lock (Monsters)
                 foreach (var m in Monsters.Values)
                 {
-                    if (m.Dead || !m.Hostile || m.Variety is not { } v) continue;
+                    if (!LivingCollision.Blocks(m)) continue;
                     var (x, y) = m.Walk.Position(now);
-                    (all ??= [.. fixedOnes]).Add(new(x, y, Math.Max(0, v.ObjectSize - 1)));
+                    (all ??= [.. fixedOnes]).Add(new(x, y, LivingCollision.Size(m)));
                 }
+            foreach (var peer in Instance?.PlayersExcept(PeerId) ?? [])
+                if (peer.Life > 0) (all ??= [.. fixedOnes]).Add(new(peer.X, peer.Y, LivingCollision.PlayerSize));
             return all ?? fixedOnes;
         }
     }
 
-    public void SetBlocker(uint id, int x, int y, int size)
+    public IReadOnlyList<ClientPathfinder.Blocker> StationaryBlockers => _blockerList;
+
+    public int StationaryInteractionSize(uint id)
     {
-        lock (_blockers) { _blockers[id] = new(x, y, size); _blockerList = [.. _blockers.Values]; }
+        lock (_blockers) return _blockers.TryGetValue(id, out var b)
+            ? Math.Max(b.Size, (int)Math.Ceiling(b.CollisionRadius ?? 0)) : 0;
+    }
+
+    public void SetBlocker(uint id, int x, int y, int size, double? collisionRadius = null)
+    {
+        lock (_blockers) { _blockers[id] = new(x, y, size) { CollisionRadius = collisionRadius }; _blockerList = [.. _blockers.Values]; }
     }
 
     public void RemoveBlocker(uint id)

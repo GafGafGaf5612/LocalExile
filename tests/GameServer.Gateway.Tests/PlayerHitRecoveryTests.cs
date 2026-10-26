@@ -144,6 +144,7 @@ public class PlayerHitRecoveryTests
     public void Bow_ground_attacks_cannot_reserve_pacing_or_a_new_token_from_recovery_input(double began, double requestedAt)
     {
         var conn = ObjectWalkState();
+        conn.Clock.Start(); // This control isolates recovery input, so the connection must be running.
         var before = conn.Walk.Position(0);
         conn.HitRecovery.Begin(began, .5f);
         Assert.False(global::Program.TryBeginBowAttack(conn, requestedAt, 1, 0x102, 7, out _));

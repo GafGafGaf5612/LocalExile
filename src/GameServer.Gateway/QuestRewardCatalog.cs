@@ -13,6 +13,7 @@ sealed class QuestRewardCatalog
     public sealed record Offer(int Row, string TakenFlag, IReadOnlyList<Choice> Choices);
     readonly Dictionary<int, Offer> offers = [];
     public Offer? Find(int row) => offers.GetValueOrDefault(row);
+    public IReadOnlyCollection<Offer> Offers => offers.Values;
     public IReadOnlyList<Choice> Choices(int row, int classRow) =>
         Find(row) is { } offer ? [.. offer.Choices.Where(c => c.Classes.Count == 0 || c.Classes.Contains(classRow))] : [];
 
@@ -43,14 +44,11 @@ sealed class QuestRewardCatalog
         return result;
     }
 
-    /// <summary>The offers whose reward scripts are audited: Hillock's (0), Nessa's Medicine Chest flasks and support gems
-    /// (a1q5: 1, 2) and her prison preparation (8). Other reward scripts need auditing.</summary>
-    public static bool Implemented(int offer) => offer is 0 or MercyMission.RewardOffer or MercyMission.SupportRewardOffer or 8;
-
     // Grant only the simple items whose complete construction is modelled here: level-one gems and other level-one normal
     // items, and normal-rarity flasks at their row's item level (a1q5's Medium Life, Medium Mana and Quicksilver Flask:
     // level 4, rarity 0). Other quest rewards may require affixes (offer 8's magic armours: rarity 1), sockets, levels or
-    // scripted effects; a table row alone does not implement those mechanics.
+    // scripted effects; a table row alone does not implement those mechanics. Program.Npcs skips the choices this returns
+    // null for and opens no window when an offer has none, so the QuestRewardOffers table decides what is offered.
     public static Item? Create(Choice choice, ItemCatalog items)
     {
         if (choice.Stack <= 0 || items.Row(choice.ItemRow) is not { Supported: true } type) return null;

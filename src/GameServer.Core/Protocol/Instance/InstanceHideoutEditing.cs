@@ -25,4 +25,9 @@ public static class InstanceHideoutEditing
     /// <summary>Positioned's update reader 0x141e30910: little-endian mask bit 3, then f32 radians.</summary>
     public static byte[] Rotation(uint objectId, float radians) =>
         InstanceEntities.ComponentUpdate(objectId, 0, new BlobWriter().U16(8).F32(radians).ToArray());
+
+    /// <summary>S→C 0x161: world handler 0x142187480 calls 0x142185500 to restore the hideout's
+    /// baseline walk grids and reapply all current model hulls. Its unused object header is zero.</summary>
+    public static byte[] RebuildCollision() =>
+        new GameServer.Core.Protocol.Login.LoginWriter().U16(0x161).U32(0).U32(0).U16(0).ToArray();
 }

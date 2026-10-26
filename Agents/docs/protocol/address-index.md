@@ -289,7 +289,8 @@ G = global / static data.
 | `0x140a8d1b0` | Fn | stash panel: refresh on opening (requests the current tab) |
 | `0x14025b420` | Fn | tab settings: rename / recolour |
 | `0x142168ab0` / `0x141f97560` | Fn | C→S 0xe0 (Ctrl + click into a tab): build / write |
-| `0x142168e20` / `0x141f97e40` | Fn | C→S 0xe3 (Ctrl + click out of a tab): build / write |
+| `0x142168e20` / `0x141f97e40` | Fn | C→S 0xe3 withdrawal: build / write (kind, raw token, bulk boolean) |
+| `0x140312810` / `0x140311440` | Fn | Shared stash withdrawal click handler / bulk click entry; forwards bulk 1 to 0xe3 |
 | `0x140dc4db0` | Fn | show / hide a panel (a second 0x7b kind 1 would close the stash) |
 
 ## Strings worth searching

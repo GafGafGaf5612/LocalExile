@@ -77,7 +77,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   older per-character gold moves into the account at login; `/gold <±amount>`.
   Code: `InstanceEntities.Gold`, `AccountStash`, Gateway.
   Docs: [04](../docs/protocol/04-player-entity.md) §6.
-- Loot: dying monsters drop currency, flasks and equipment (our own table) around the corpse.
+- Loot: dying monsters drop currency, gems, flasks and equipment (our own table) around the corpse.
   Code: `ItemDrops.cs`, Gateway (`DropLoot`).
   Docs: [15](../docs/protocol/15-progression.md) §3.
 

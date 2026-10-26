@@ -399,8 +399,36 @@ This implementation applies translation and rotation; variation and mirroring ch
 Save first, then update the runtime interaction coordinates, path blockers, NPC lookup and device placement.
 S→C 0x1b7 moves the existing object with terrain-height marker 0x7fffffff.
 S→C 0x2ba updates Positioned (component 0): LE u16 mask 8 followed by LE f32 radians.
-The update reader is `0x141e30910`; objects are never removed/recreated for an edit.
-This preserves dialogue identity, map-device state and existing portals.
+The update reader is `0x141e30910`; ordinary furniture/NPC edits preserve the existing object.
+Map devices declare `static = true`, `object_size = 4` and `blocking = false` in CraftingBenchBase.ot;
+client collision comes from their AO Hull, rather than that small Positioned footprint.
+After position and rotation updates, send S→C **0x161**, followed by its unused zero object header
+(u32 object id, u32, u16; all zero). World handler `0x142187480` calls `0x142185500`, which restores
+the two baseline hideout walk grids saved at world +0x998, then `0x141d88690` reapplies all current model hulls.
+A teleport, remove/recreate or HideoutDoodad component refresh alone leaves stale blocked cells in hideouts.
+The object id, device state and portal list are preserved; no object recreation is needed.
+The server replaces its blocker by id and restores it at the saved position on entry.
+NPCs, personal/guild stashes, the crafting bench, Harvest station and Heist Locker share
+`RegisterStationaryCollision` at spawn in towns and hideouts. `object-types.json` version 3 carries inherited
+Positioned object_size/blocking/static/block_league_flag plus Animated's model. NPC Id aliases resolve through NPCs.dat Metadata.
+When local guild storage is spawned, its block_league_flag HaveGuild (native id 2) is included in the player's
+league flags through the ordinary Player component update. GuildStash's native collision predicate checks this
+flag even though the local storage is per-account and no real guild membership is implemented. Disabling the
+Positioned blocking flag through 0x2b0 is incorrect: it also removes the stash from blocking spatial buckets.
+Blocking objects use object_size minus one (Heist Locker 2, Harvest station 7); static nonblocking objects use
+their model hull (ordinary crafting bench about 9.273 cells). Interaction approaches use the registered clearance.
+A nonblocking object has editor size -1, distinct from a blocking object whose size is 0.
+Waypoints and dropped loot remain traversable; built-in scenery remains governed by the area's terrain walk grid.
+The complete stationary scene is registered before arrival collision correction, in addition to regular tick checks.
+Live checks covered all nine functional hideout objects (Nessa, Niko, Helena, Kirac, both stashes, both benches
+and the Heist Locker): each was moved onto the player, ejected the player, restored, and its former centre reached.
+In Lioneye's Watch, native walking stopped outside Tarkleigh, Nessa, Bestel and both stashes, including the guild
+stash after its normal access flag was supplied. Test placements were restored and the character returned home.
+All supported NPC types also have automated metadata and collision-escape checks; other towns share this spawn path.
+`hideouts.json` version 3 extracts conservative rotation-independent collision radii from native AO `walk_tri`
+and `walk_circle`, including inherited AO files, for map devices, bench variants and static NPC models.
+Map-device radii are about 7.236 cells for CartographyDevice2 and 30.662 for the large MTX model. The server uses
+these radii plus mover clearance when routing and ejecting the player; it does not rasterize the exact triangles.
 Already-open portals remain in their current positions; subsequent portals use the device's new position.
 
 `CharacterSaves.HideoutPlacements` stores placements by WorldAreas Id and stable furniture/NPC keys.
@@ -410,6 +438,17 @@ A failed save leaves the previous placement authoritative and closes the connect
 Stash interaction now approaches its runtime position, including after a move in any selected hideout.
 
 Tests cover captured framing, rotation endianness, invalid requests, persistence, save failure and scene restoration.
+CollisionEscape finds the nearest clear cell against terrain, quest barriers and all stationary blockers.
+It uses the player's mover clearance and ignores mobile monsters for this correction.
+A successful correction invalidates the current action/channel, updates the server walk origin, sends ActionEnded
+and teleports the player with terrain-height marker 0x7fffffff.
+Checks run after edits and during player ticks, covering a blocked entry cell as furniture is restored.
+Search is bounded to 128 cells; no teleport is sent if no safe destination exists within that search.
+Regression tests cover overlapping blockers, map edges, blocked terrain, released old positions and save/reentry state.
+Real-client checks moved the small map device onto the player on clear floor: the player escaped 9.434 cells,
+could walk immediately, and could reach the former device centre after the device was restored.
+Large-model radii, bounded path progress and save/reentry persistence have automated coverage; large-model
+and wall-adjacent layouts still need separate live checks.
 Real-client movement/rotation and reconnect persistence were checked for the map device, Nessa and personal stash.
 The test placements were returned to their original positions afterwards.
 Other registered objects share the same update path; their individual Edit UI interactions still need manual checks.
