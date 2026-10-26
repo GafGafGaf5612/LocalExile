@@ -4,18 +4,6 @@ Part of the [Roadmap](../Roadmap.md); what already works in this area is in
 [status/npcs-and-chat.md](../status/npcs-and-chat.md).
 Items keep the Roadmap's priority groups, and are in rough priority order within each group.
 
-## 1. Quality of life
-
-### Chat lines and the global channel
-
-- **Known:** C→S 0x15 (chat text) is parsed; command replies use S→C 0x17 (chat line). 0x12d shows BackendErrors rows,
-  0x157 is a PvP challenge, 0x26 disconnects.
-  The client logs "Timeout while joining global chat channel 820".
-- **Start:** [10](../docs/protocol/10-chat-and-commands.md) §2 and §6.
-  Find the S→C message that adds a line (sender + text) to the chat panel, and the channel join request and its
-  answer.
-- **Done when:** command replies and server messages appear as chat lines, and the channel join stops timing out.
-
 ## 2. The world
 
 ### NPCs: dialogue options, shops and the other towns

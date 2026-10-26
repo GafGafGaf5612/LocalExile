@@ -437,6 +437,12 @@ partial class Program
                 var chat = InstanceChat.ReadChat(bytes);
                 Console.WriteLine($"[gateway] {remote} <= 0x0015 chat \"{chat.Text}\" (u8 {chat.U8})");
                 if (chat.IsCommand) await conn.Commands!.RunAsync(chat.Text);
+                else await EchoChat(remote, stream, ciphers, conn, chat.Text);
+            }
+            else if (id == InstanceChat.JoinChannelId)
+            {
+                if (InstanceChat.ReadJoinChannel(bytes) is { } join) await JoinChatChannel(remote, stream, ciphers, conn, join);
+                else Console.WriteLine($"[gateway] {remote} <= 0x0134 join with an unknown channel kind, ignored: {Convert.ToHexString(bytes)}");
             }
             else if (id == InstanceTransfer.ChooseInstanceId)
             {
@@ -500,6 +506,8 @@ partial class Program
                     await SendWornCosmetics(remote, stream, ciphers, conn, "entering the area");
                     // The saved skill bar (S→C 0x53), right after the player and the area.
                     await SendSkillBar(remote, stream, ciphers, conn);
+                    // The chat channels joined earlier in the session (Program.Chat.cs).
+                    await SendChatChannels(remote, stream, ciphers, conn);
                     // The equipment again (S→C 0x02ba), as after an equip: the player object's own list does not set how a
                     // two-handed weapon is held, the update does (live 2026-10-22: it was held one-handed after every load).
                     var worn = Looks(conn, ItemsOf(conn));
