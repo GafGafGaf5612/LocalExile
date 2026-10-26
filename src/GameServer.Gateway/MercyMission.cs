@@ -21,8 +21,10 @@ static class MercyMission
     /// a1q5-HaveMedicineChest (held while carried), remove_flag a1q5-NessaCongratulated (gone once Nessa has it).</summary>
     public const string MedicineChest = "Metadata/Items/QuestItems/MedicineSet1";
 
-    /// <summary>QuestRewardOffers 1 (Nessa's "Medicine Chest Reward"): a normal Medium Life, Medium Mana or Quicksilver Flask.</summary>
-    public const int RewardOffer = 1;
+    /// <summary>QuestRewardOffers 1 (Nessa's "Medicine Chest Reward"): a normal Medium Life, Medium Mana or Quicksilver Flask
+    /// at item level 4; QuestRewardOffers 2 ("Medicine Chest Reward 2", a1q5-QuestReward2Taken): a level 1 support gem of
+    /// the character's class. Both are listed by the client once Nessa has the chest.</summary>
+    public const int RewardOffer = 1, SupportRewardOffer = 2;
 
     /// <summary>Whether Nessa has the chest already (or the reward is taken): no chest is needed, dropped or kept any more.</summary>
     public static bool Done(Func<string, bool> has) => has(NessaCongratulated) || has(QuestRewardTaken);

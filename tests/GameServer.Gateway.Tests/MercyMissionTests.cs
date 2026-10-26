@@ -24,7 +24,7 @@ public class MercyMissionTests : IDisposable
         Assert.Equal("1_1_2a", MercyMission.Area);
         Assert.Equal("Metadata/Monsters/Cannibal/CannibalMaleBossHailrake", MercyMission.Hailrake);
         Assert.Equal("Metadata/Items/QuestItems/MedicineSet1", MercyMission.MedicineChest);
-        Assert.Equal(1, MercyMission.RewardOffer);
+        Assert.Equal((1, 2), (MercyMission.RewardOffer, MercyMission.SupportRewardOffer));
     }
 
     [Fact] public void HailrakeDropsTheChestOnlyWhileNoCopyIsWithinReach()
