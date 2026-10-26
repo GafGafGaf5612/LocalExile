@@ -172,8 +172,8 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   red, yellow and blue crystallised lifeforce hold 50000, and ordinary currency generally holds 10000.
   The previous uniform 5000 limit split a 50000 lifeforce deposit across its own slot and nine spare slots.
   Live client verification: C→S 0xe1 merged 40000 into an existing 10000 in slot 99; S→C 0xbf reported 50000.
-  Automated tests cover manual merging, quick deposits, the 50000 boundary and save reloads.
-  Other slotted tabs retain 5000 (`StashRules.SlotStack`), also the fallback for missing or nonpositive currency limits.
+  Automated tests cover manual merging, quick deposits, all five Harvest currency types, overflow and save reloads.
+  Other slotted tabs retain 5000 (`StashRules.SlotStack`), also the fallback for absent or invalid currency limits.
   The Delve (StashType 12, DelveStashTabLayout) and
   Blight (13, BlightStashTabLayout) and Delirium (15, DeliriumStashTabLayout) tabs are slotted the same way; the
   Divination tab (6) too, a card's slot being its DivinationCardStashTabLayout row (a guess: the table has no slot
@@ -213,8 +213,7 @@ Gold stays with the personal stash.
 
 - **Last tab:** switching to an already loaded tab sends nothing, so a switch followed by a logout without reopening
   the stash or moving an item is not seen; the next login opens on the tab before it.
-- Not checked live yet: currency into its slot from Ctrl + click (0xe1), the affinity window closing on S→C 0x136, and
-  the special tabs other than currency and map.
+- Not checked live yet: the affinity window closing on S→C 0x136, and the special tabs other than currency and map.
 - Tab folders (0xd1 is logged), 0xe2, the unique, divination and other special tabs, the
   real guilds (shared guild stash, members, rights), stashes per league, and stashes in the other towns.
 
@@ -236,8 +235,11 @@ and all eight resonator families/tiers. The user confirmed the correction in the
 
 ## Lifeforce limits and Delve crafting cells
 
-Currency-tab HarvestSeed slots hold 65,535 units each, the maximum unsigned 16-bit Stack component value.
-Ordinary special slots retain their 5,000 limit; inventory stacks retain their item-defined limit.
+Currency-tab HarvestSeed slots use `CurrencyItems.CurrencyTab_StackSize`, as described in section 7:
+red, yellow and blue lifeforce hold 50,000; Sacred Crystallised Lifeforce and Crystallised Rancour hold 10,000.
+The former HarvestSeed override of 65,535 was the wire maximum, not the data-defined storage limit.
+Saved stacks above the corrected limit are retained without truncation; further deposits use overflow or stay outside.
+Other special tabs retain their 5,000 fallback; inventory stacks retain their item-defined limit.
 Excess lifeforce goes to available overflow cells or remains with the source, without truncation.
 DelveStashTabLayout GenericSlot1 and GenericSlot2 are manual crafting cells at (37,0) and (39,0).
 They accept equipment at its normal stack size; dropping another item swaps the old item onto the cursor.

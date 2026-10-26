@@ -15,7 +15,6 @@ sealed class StashRules
 
     /// <summary>Fallback limit for slotted tabs without an item-specific currency-tab limit.</summary>
     public const ushort SlotStack = 5000;
-    public const ushort LifeforceStack = ushort.MaxValue;
 
     // Affinity rows (StashTabAffinityId).
     const int CurrencyItems = 3, Maps = 5, DivinationCards = 6, Essences = 8, Fragments = 9, DelveItems = 12, BlightItems = 13,
@@ -93,7 +92,7 @@ sealed class StashRules
             foreach (var r in d.RootElement.EnumerateArray())
                 if (r.GetProperty("BaseItemTypesKey") is { ValueKind: JsonValueKind.Number } b
                     && HashOfRow(b.GetInt32()) is uint hash
-                    && r.TryGetProperty("CurrencyTab_StackSize", out var stack)
+                    && r.TryGetProperty("CurrencyTab_StackSize", out var stack) && stack.ValueKind == JsonValueKind.Number
                     && stack.TryGetInt32(out int size) && size is > 0 and <= ushort.MaxValue)
                     rules._currencyTabStack[hash] = (ushort)size;
         }
@@ -149,9 +148,6 @@ sealed class StashRules
                 foreach (uint hash in types)
                 {
                     slots.TryAdd(hash, slot);
-                    if (tabType == Currency && rows.Any(t => t.Hash == hash
-                        && t.Id.StartsWith("Metadata/Items/Currency/HarvestSeed", StringComparison.Ordinal)))
-                        rules._currencyTabStack[hash] = LifeforceStack;
                     Give(hash, affinity);
                 }
             }

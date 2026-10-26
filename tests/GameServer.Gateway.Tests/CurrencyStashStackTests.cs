@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Storage;
 
 namespace GameServer.Gateway.Tests;
 
@@ -7,7 +9,7 @@ public class CurrencyStashStackTests : IDisposable
 {
     const uint Lifeforce = 0x12340001, Scroll = 0x12340002;
     const int Tab = StashRulesTests.Currency;
-    readonly string _folder = TestSaves.Catalog(new(Lifeforce, "Lifeforce", StackSize: 50000),
+    readonly string _folder = TestSaves.Catalog(new(Lifeforce, "Metadata/Items/Currency/HarvestSeedGreen", StackSize: 50000),
         new(Scroll, "Scroll", StackSize: 40));
     readonly string _account = "currency-" + Guid.NewGuid().ToString("N");
     readonly ItemCatalog _catalog;
@@ -73,6 +75,46 @@ public class CurrencyStashStackTests : IDisposable
         var saved = Assert.Single(Open().Inventory(Tab).Items);
         Assert.Equal(99, saved.X);
         Assert.Equal(50000, saved.Item.StackSize);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("null")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("65536")]
+    public void Missing_or_invalid_currency_limits_use_the_existing_5000_fallback(string value)
+    {
+        string path = Path.Combine(_folder, "tables", "CurrencyItems.json");
+        var rows = JsonNode.Parse(File.ReadAllText(path))!.AsArray();
+        var row = rows[0]!.AsObject();
+        if (value == "missing") row.Remove("CurrencyTab_StackSize");
+        else row["CurrencyTab_StackSize"] = JsonNode.Parse(value);
+        File.WriteAllText(path, rows.ToJsonString());
+        var catalog = new ItemCatalog(_folder);
+        var stash = AccountStash.For(_account, catalog);
+        var item = ItemCatalog.Create(catalog.ByHash(Lifeforce)!);
+
+        var moved = stash.AddStacked(Tab, item with { StackSize = 5001 }, Shape, out _)!;
+
+        Assert.Equal(1, moved.Left);
+        Assert.Equal(5000, Assert.Single(moved.Added).Item.StackSize);
+    }
+
+    [Fact]
+    public void Previously_saved_stacks_above_the_new_limit_are_preserved()
+    {
+        Open();
+        AccountStash.Forget(_account);
+        var item = ItemCatalog.Create(_catalog.ByHash(Lifeforce)!) with { StackSize = ushort.MaxValue };
+        Saves.Db.PutStashTab(_account, Tab, JsonSerializer.Serialize(new List<CharacterSaves.SavedPlacement>
+            { new(AccountStash.FirstItemId, 99, 0, CharacterSaves.ToSaved(item)) }, CharacterSaves.Opts));
+        var stash = Open();
+
+        Assert.Null(stash.Merge(Tab, 99, 0, new(1, 0, 0, item with { StackSize = 1 }), Shape));
+        Assert.Equal(1, stash.AddStacked(Tab, item with { StackSize = 1 }, Shape, out _)!.Left);
+        AccountStash.Forget(_account);
+        Assert.Equal(ushort.MaxValue, Assert.Single(Open().Inventory(Tab).Items).Item.StackSize);
     }
 
     public void Dispose()
