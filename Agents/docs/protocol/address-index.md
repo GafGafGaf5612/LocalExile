@@ -110,13 +110,33 @@ G = global / static data.
 | `0x1435a6ba0`, `0x1435a0078`, `0x143468920`, `0x14346c238` | Vt | Pathfinding, comp7, comp10, comp11 |
 | `0x1400f0f00` | Fn | empty `ret` (no-op slot) |
 | `0x141e3f4a0` | Fn | StateMachine update reader (vtable `0x1435da8b8` / `0x1435a14e0` +0xa0, S→C 0x2ba): the creation blob's states and timers again; changed values run their events (boss life bar, [12](12-quests.md) §6) |
+| `0x141e42410` | Fn | Transitionable component constructor: state `+0x120` = 1, `+0x121` = the type's `transition_on_damage_taken` |
 | `0x141e42a80` | Fn | Transitionable .ot keys: `num_states` (2..127, else "That number of states is unsupported"), `transition_on_damage_taken` |
+| `0x141e42d50` | Fn | Transitionable type constructor (vtable `0x1435a0a60`): `num_states` (`+0xb0`) defaults to **2** ([10](10-chat-and-commands.md) §5, emerge monsters) |
 | `0x141d876e0` | Fn | TriggerableBlockage: blocks the cells of the Animated model's footprint at the object's grid position ([12](12-quests.md) §6) |
 | `0x1421c2310` | Fn | Transitionable update reader (vtable `0x1435dd290` +0xa0, S→C 0x2ba): u8 target state, steps toward it ([12](12-quests.md) §6) |
 | `0x141e44290` | Fn | TriggerableBlockage reader: u8 blocked, then only while blocked u8 count + count × u8 |
 | `0x141ee0ba0` | Fn | blob task lookup by u16 task type (registry), used by the tasks reader `0x141ee00f0` |
 | `0x142f496a0` | G | static initializer table entry (Positioned) |
 | `0x1445bb240`, `0x1445bb6f0`, `0x1445bbe50`, `0x1445bbd60`, `0x1445bb760`, `0x1445bbd10`, `0x1445ba850`, `0x1445bc610` | G | component pools (Positioned, Stats, Pathfinding, Life, Animated, Player, Inventories, Actor) |
+
+## Chat ([10](10-chat-and-commands.md) §1, §2)
+| Address | Kind | What |
+|---|---|---|
+| `0x14215ddd0` | Fn | send a typed line (instance, text, linked items): client slash commands, else C→S 0x15 |
+| `0x14215c3b0` | Fn | the client's slash commands (Commands.dat); `/global N`, `/trade N` (row + 1 = 0x2a, 0x2b) → `0x142169250` |
+| `0x142169250` | Fn | join a chat channel: C→S 0x134, 5 s deadline (instance +0xcf08 trade, +0xcf18 global), listeners +0xdf8 |
+| `0x1435bf730` / `0x141f9ae30` | Cls / Fn | C→S 0x134 class / write |
+| `0x1435dc240` / `0x1421a6cd0` | Cls / Fn | S→C 0x135 class / read (ctor `0x1421a6c00`, dispatcher case 0x56 at `0x14214f1f3`) |
+| `0x140d5bf60` | Fn | in-game listener (instance +0x240): joins global and trade after entering an area (once, flag +0xa08) |
+| `0x14190f7d0` / `0x14190f8a0` / `0x141912640` | Fn | settings `join_global_channel` / `join_trade_channel` / chat language |
+| `0x143a60ce8` / `0x143a60c98` | G | remembered global / trade channel (0xffff until `/global N`, `/trade N`) |
+| `0x142148880` | Fn | instance network update: a passed join deadline fires the instance +0xe78 listeners |
+| `0x140178a80` | Fn | chat panel attaches to the instance: listeners +0xb78 (0x17 line), +0xd78, +0xe78 (join timeout) |
+| `0x14017dd10` | Fn | chat panel: "Timeout while joining {0} chat channel {1}" (ClientStrings rows 207 / 206) |
+| `0x140195a60` | Fn | chat panel channel popup ("Joining {0} channel …", "Connected to {0} channel …") |
+| `0x1422dbfc0` / `0x1421fdc40` | Fn | dat row by index / ClientStrings text by id (row + 1) |
+| `0x1435c0258` / `0x141f95200` | Cls / Fn | C→S 0x99 class / write (4 bytes) |
 
 ## Monsters ([10](10-chat-and-commands.md) §5)
 | Address | Kind | What |
@@ -330,6 +350,14 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 |---|---|---|
 | `0x1435db980` | VT | ActiveSkillManager (Actor +0x598; skills at +0x158, sorted by instance +0x40) |
 | `0x141eea6a0` | Fn | ActiveSkillManager::SkillInstanceAdded (manager slot 7) |
+| `0x141eea440` | Fn | find/create skill cooldown record (requires virtual cooldown count) |
+| `0x141eebed0` | Fn | cooldown object constructor: base duration from skill +0xc8 or override |
+| `0x141eebfe0` | Fn | cooldown consume: base-time entry and separate recovery rate |
+| `0x141eebdb0..0x141eebdc8` | Fn | cooldown tick subtracts elapsed time times recovery rate |
+| `0x141eeb7aa..0x141eeb7e7` | Fn | refresh an active cooldown entry's recovery rate |
+| `0x141eead13..0x141eead4a` | Fn | skill replacement refreshes cooldown only for base/count changes or zero rate |
+| `0x142197d24..0x142197e7b` | Fn | Actor 0x40 cooldown trailer reads base-time progress/total, rate and flags |
+| `0x142197f90..0x142197fd8` | Fn | Actor 0x40 replaces the matching existing cooldown entry vector |
 | `0x1401232e0` | Fn | instant input sender: mode 4 ground 0x190, modes 5/6 object/self 0x191 |
 | `0x1435c0718` | Cls | C→S 0x190 location instant; writer `0x141f91f60`, reader `0x141f92000` |
 | `0x142195880` | Fn | S→C 0x1ce instant action and use consumption, without an ordinary action sequence |

@@ -12,6 +12,8 @@ partial class Program
         if (HideoutCatalog.ByArea(conn.Layout.Hash) is null || conn.Layout.Waypoint is not { } waypoint) return;
         if (SavedHideoutPlacements(conn)?.GetValueOrDefault("waypoint") is { } p)
             conn.MoveWaypoint(waypoint = waypoint with { GridX = p.X, GridY = p.Y, Rotation = p.Rotation });
+        // A hideout always starts on its saved waypoint, including logins and portal returns.
+        conn.Use(conn.Layout with { SpawnX = waypoint.GridX, SpawnY = waypoint.GridY });
         conn.HideoutEditor.Register(WaypointCatalog.ObjectId, "waypoint", waypoint.GridX, waypoint.GridY,
             waypoint.Rotation, 0);
     }
@@ -30,6 +32,7 @@ partial class Program
         }
         var p = entry!.Position;
         if (entry.BlockerSize > 0) conn.SetBlocker(move.ObjectId, p.X, p.Y, entry.BlockerSize);
+        if (move.ObjectId == conn.HeistLockerObject) conn.HeistLockerAt = (p.X, p.Y);
         if (move.ObjectId == conn.StashObject) conn.StashAt = (p.X, p.Y);
         if (move.ObjectId == conn.GuildStashObject) conn.GuildStashAt = (p.X, p.Y);
         if (move.ObjectId == conn.CraftingBenchObject) conn.CraftingBenchAt = (p.X, p.Y);

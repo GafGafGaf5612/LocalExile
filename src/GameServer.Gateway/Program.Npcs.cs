@@ -11,7 +11,7 @@ partial class Program
         int x, int y, float rotation)
     {
         uint id = conn.NextObjectId++;
-        var obj = new NpcObject(x, y, npc.Components!, rotation, npc.StateMachine, npc.TransitionState);
+        var obj = new NpcObject(x, y, npc.Components!, rotation, npc.StateMachine, npc.TransitionState, npc.Model, npc.Height);
         uint type = InstanceEntities.ObjectTypeHash(npc.Id);
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob()),
             $"0x02b9 create npc 0x{id:x} {npc} type=0x{type:x8} at ({x}, {y}) rotation {rotation:0.##}, components {string.Join(", ", npc.Components!)}");
@@ -25,13 +25,15 @@ partial class Program
     // The town's NPCs (NpcCatalog.In) at their cells.
     static async Task SpawnTownNpcs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        var placements = HideoutFurniture(conn)?.Npcs ?? NpcCatalog.In(conn.Layout.Hash);
+        var notes = new List<string>();
+        var placements = HideoutFurniture(conn)?.Npcs ?? NpcCatalog.In(conn.Layout.Hash, conn.Seed, notes);
+        foreach (var note in notes) Console.WriteLine($"[gateway] {remote} npcs: {note}");
         if (placements.Count == 0 || Environment.GetEnvironmentVariable("Game_NPCS") == "0") return;
         if (Npcs.Value.Error is { } error) { Console.WriteLine($"[gateway] {remote} npcs: {error}"); return; }
         foreach (var p in placements)
         {
-            if (Npcs.Value.Find(p.Id) is not { Supported: true } npc) { Console.WriteLine($"[gateway] {remote} npc {p.Id}: unknown or unsupported components"); continue; }
-            if (conn.Layout.Walkable is { } w && !w(p.X, p.Y)) Console.WriteLine($"[gateway] {remote} npc {npc.Name}: ({p.X}, {p.Y}) is not walkable");
+            if (Npcs.Value.Place(p) is not { Supported: true } npc) { Console.WriteLine($"[gateway] {remote} npc {p.Id}: unknown or unsupported components"); continue; }
+            if (!p.FromRoom && conn.Layout.Walkable is { } w && !w(p.X, p.Y)) Console.WriteLine($"[gateway] {remote} npc {npc.Name}: ({p.X}, {p.Y}) is not walkable");
             await SpawnNpc(remote, stream, ciphers, conn, npc, p.X, p.Y, p.Rotation);
         }
     }
@@ -103,6 +105,7 @@ partial class Program
             (talk is null ? "no NPCTalk row" : $"NPCTalk row {talk.Row} \"{talk.Option}\" ({talk.Category}), text audio [{string.Join(", ", talk.TextAudio)}]"));
         if (talk is null) return;
         if (!talk.Available(Quests.Names(PlayerQuestFlags(conn)))) return;
+        if (!await HandInQuestItems(remote, stream, ciphers, conn, talk)) return;   // a1q5: Nessa takes the Medicine Chest
         if (talk.StartFlag is { } start) await SetQuestFlags(remote, stream, ciphers, conn, [start]);
         conn.NpcFinishFlag = talk.FinishFlag;
         switch (talk.Category)
@@ -115,7 +118,7 @@ partial class Program
                     talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
                 break;
             case "QuestReward" when talk.RewardOffer is { } offer:
-                if (offer is not (0 or 8)) break; // Hillock and Nessa's prison preparation; other reward scripts need auditing.
+                if (!QuestRewardCatalog.Implemented(offer)) break;
                 var rewardCatalog = QuestRewardCatalog.Load();
                 var rewardItems = rewardCatalog.Choices(offer, conn.ClassRow)
                     .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, Items))).Where(c => c.Item is not null).ToArray();

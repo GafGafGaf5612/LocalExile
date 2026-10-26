@@ -156,7 +156,7 @@ partial class Program
             }
             // The instance keeps its monsters as they are now, for the next connection (#12).
             if (left.MonstersPlaced)
-                lock (left.Monsters) left.Instance.Monsters = SavedMonster.Save(left.Monsters.Values, left.Clock.Elapsed.TotalSeconds);
+                lock (left.Monsters) left.Instance.Monsters = SavedMonster.Save(left.Monsters.Values, left.Clock.Elapsed.TotalSeconds, MonsterEmerge.Unrisen(left));
             Instances.Leave(left.Instance);
         }
         if (ticket != 0) await InstanceControl.CallAsync(new ControlRequest { Op = "leave", Ticket = ticket });
@@ -265,7 +265,7 @@ partial class Program
     // before another task's packets were sent can check that it still applies (SendFlinch).
     // Projectile impacts commit their short locked damage mutation inside this gate before relocation.
     // A factory samples clock-sensitive state and constructs its packet after earlier sends; null sends nothing.
-    static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
+    internal static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
         Func<bool>? still = null, Func<byte[]?>? atGate = null)
     {
         var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));

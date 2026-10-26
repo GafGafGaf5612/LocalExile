@@ -32,6 +32,7 @@ sealed class HideoutEditing
         var guild = saved.TryGetValue("guild-stash", out var g) ? (g.X, g.Y) : scene.Guild;
         return scene with
         {
+            Heist = scene.Heist is { } heist ? D("heist-locker", heist) : null,
             Stash = D("stash", scene.Stash), Guild = guild, Bench = D("bench", scene.Bench),
             Harvest = D("harvest", scene.Harvest), Device = D("map-device", scene.Device),
             Npcs = [.. scene.Npcs.Select(n => saved.TryGetValue("npc:" + n.Id, out var p)

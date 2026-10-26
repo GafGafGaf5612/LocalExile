@@ -43,31 +43,46 @@ partial class Program
         // A self-cast skill (Righteous Fire) targets the player itself: echo it in place, then cast.
         if (use.TargetId == PlayerId && Skills.IsGemSkill(use.SkillId))
         {
-            int selfAction;
-            (int X, int Y) self;
-            lock (conn.Monsters)
-            {
-                if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
-                selfAction = Interlocked.Increment(ref conn.ActionCount);
-                double at = conn.Clock.Elapsed.TotalSeconds;
-                self = conn.Walk.Position(at);
-                conn.Walk.Order(self.X, self.Y, at);
-            }
+            var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId);
+            double at = conn.Clock.Elapsed.TotalSeconds;
+            (int X, int Y) self = default;
+            if (!TryBeginCooldownUse(conn, gem.Effect,
+                gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+                () =>
+                {
+                    Interlocked.Increment(ref conn.ActionCount);
+                    self = conn.Walk.Position(at);
+                    conn.Walk.Order(self.X, self.Y, at);
+                }, out var cooldownUse, requestedAt: requestedAt)) return;
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, self.X, self.Y, self.X, self.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: PlayerId),
                 $"0x01ab player skill 0x{use.SkillId:x4} cast on itself at ({self.X}, {self.Y})",
-                still: () => PlayerActionCurrent(conn, selfAction));
-            await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId, sequence: use.Sequence, actionToken: selfAction);
+                still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? true);
+            await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId, sequence: use.Sequence,
+                actionToken: cooldownUse?.ActionToken, cooldownUse: cooldownUse);
             return;
         }
         if (conn.Instance.Ground.Get(use.TargetId) is { } ground)
         {
+            if (await PickUpQuestItem(remote, stream, ciphers, conn, use.TargetId, ground, use, requestedAt)) return;   // a1q5's Medicine Chest
             await PickUpGroundItem(remote, stream, ciphers, conn, use.TargetId, ground, use, requestedAt);
             return;
         }
         if (conn.TutorialChestId == use.TargetId && conn.TutorialChest is { } tutorialChest)
         {
             await OpenTutorialChest(remote, stream, ciphers, conn, use, tutorialChest, requestedAt);
+            return;
+        }
+        GlyphQuest.Nest? nest;
+        lock (conn.GlyphNests) nest = conn.GlyphNests.GetValueOrDefault(use.TargetId);
+        if (nest is not null)
+        {
+            await OpenRhoaNest(remote, stream, ciphers, conn, use, nest);
+            return;
+        }
+        if (conn.GlyphWallId != 0 && use.TargetId == conn.GlyphWallId)
+        {
+            await UseGlyphWall(remote, stream, ciphers, conn, use);
             return;
         }
         if (use.TargetId == WaypointCatalog.ObjectId && conn.Layout.Waypoint is { } waypoint)
@@ -121,6 +136,11 @@ partial class Program
             await OpenGuildStash(remote, stream, ciphers, conn, use, requestedAt);
             return;
         }
+        if (conn.HeistLockerObject != 0 && use.TargetId == conn.HeistLockerObject)
+        {
+            await OpenHeistLocker(remote, stream, ciphers, conn);
+            return;
+        }
         if (conn.CraftingBenchObject != 0 && use.TargetId == conn.CraftingBenchObject)
         {
             await OpenCraftingBench(remote, stream, ciphers, conn, use, requestedAt);
@@ -139,7 +159,7 @@ partial class Program
         }
         ushort dest = transition.DestinationHash16;
         // A quest can close an exit: The Twilight Strand's way into Lioneye's Watch needs Hillock dead (a1q1).
-        if (AreaTransitionCatalog.IdOf(dest) is { } destId && Quests.FlagToEnter(conn.Layout.Id, destId) is { } needed && !conn.QuestFlags.Contains(needed))
+        if (AreaTransitionCatalog.IdOf(dest) is { } destId && Quests.FlagToEnter(conn.Layout.Id, destId) is { } needed && !ClientHasQuestFlag(conn, needed))
         {
             Console.WriteLine($"[gateway] {remote} <= 0x0024 area transition 0x{use.TargetId:x} to {destId}: closed until quest flag {needed}");
             return;
@@ -257,10 +277,13 @@ partial class Program
         // ThisIsMyHideout only in a hideout and the Mine Encampment, where Niko needs it for his own options; elsewhere NPCs
         // show their "not my hideout" rows. (It does not hide Sell Items: the client offers Sell only in towns and hideouts.)
         bool inHideout = HideoutCatalog.ByArea(conn.Layout.Hash) is not null || conn.Layout.Hash == StashCatalog.DelveHub;
+        // The quest flags as a snapshot, taken before the Waypoints lock (ClientState.QuestFlagsSnapshot): the two locks are
+        // never held together.
+        var own = conn.QuestFlagsSnapshot();
         lock (conn.Waypoints)
             return [.. WaypointCatalog.Areas.Entries.Where(e => conn.Waypoints.Contains(e.Id)).SelectMany(e => e.AccessFlags ?? [])
                 .Concat(conn.Visited.Concat(conn.Waypoints).SelectMany(id => WaypointCatalog.Visits.For(id)))
-                .Concat(Quests.Rows(conn.QuestFlags.Where(f => inHideout || f != Quests.ThisIsMyHideout)))
+                .Concat(Quests.Rows(own.Where(f => inHideout || f != Quests.ThisIsMyHideout)))
                 .Distinct().Order()];
     }
 
@@ -354,6 +377,7 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} transfer failed: {r.Error}");
             return;
         }
+        CarryCharges(conn, r.Ticket);
         if (t.AtWaypoint) WaypointArrivals[r.Ticket] = 0;
         else if (t.ArriveAt is { } spot) SpotArrivals[r.Ticket] = spot;
         else if (!t.AtSpawn) AreaLayouts.CameFrom[r.Ticket] = conn.Layout.Hash;

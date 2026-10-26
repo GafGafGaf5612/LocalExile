@@ -27,7 +27,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses
   send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` /
   `off_hand_accuracy_rating` and the Chance to Hit rows at the character's level; `/accuracy [level]`.
-  Code: `CharacterStats.cs`, `DamageModel.cs`, `MonsterCatalog.cs`, Gateway.
+  The Mastery's two target-conditional effects are final multipliers applied to the roll's own target
+  (`TargetAccuracy`): 40% more accuracy against Unique enemies (`SpawnedMonster.Rarity`) and 50% more against enemies
+  in the constant 20-unit close range (2 metres; 10 units per metre), multiplying when both hold and never folded into
+  the panel's rating or `/accuracy`'s unconditional rating.
+  Gems' attack hits do not roll accuracy yet, so the conditions apply where a roll exists (the default attack).
+  Ten native checks used connected ordinary paths and actual mastery selection requests.
+  The panel stayed at 711 while target rolls used 995 against Unique, 1066 in close range and 1493 when both held.
+  A far Unique kept only 995; target movement, relog and refund restored the expected conditions and baseline.
+  Code: `CharacterStats.cs`, `TargetAccuracy.cs`, `DamageModel.cs`, `MonsterCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4–5.
 - Armour and Evasion: flat armour/evasion from the passive tree (`base_physical_damage_reduction_rating`,
   `base_evasion_rating`) and the base body armour/helmet/gloves/boots (the `ArmourTypes.dat` minimum), with
@@ -47,6 +55,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   contact (0.374 of the attack time).
   Attack gems deal the weapon's damage × `DamageEffectiveness` with the attack's crit; a bow arrow has no Fireball
   impact.
+  Ordinary bow ground/object attacks now share contact-time release and damage at the actual flight collision
+  (#203, automated and native collision/release/pause checks pass).
+  Object uses no longer also deal a melee contact hit.
   Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
   without a capture they use the bare offset.
   Code: `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`, `AreaSkillHit`), `ProjectileObject`.
@@ -86,6 +97,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   in parentheses and the spell block row.
   Code: `CharacterStats.cs`, `DamageModel.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §12.
+- Endurance, Frenzy and Power charges: gained from the on-kill, on-hit, on-crit, on-non-crit, when-hit and on-block
+  chance stats, the timed ones (each second, while stationary or moving, if hit recently) and skills (Frenzy, Power
+  Siphon, Flicker Strike, Enduring Cry); 10 s duration with the duration mods, a gain refreshes the whole type, all
+  expire together, minimum charges always held, lost on death, carried over area changes with the time left.
+  Character.ot's per-charge bonuses and every "per charge" mod the server calculates with apply to the pools, hits,
+  damage taken, walk speed and the sent stats; the Charges tab gets `current_*_charges` and the per-charge rows.
+  The HUD shows one icon per type with the count (0x1c1 flags bit2) and time left (bit1), and the orbs.
+  Live 2026-10-25: gains when hit, on non-critical hit and on kill, refresh, expiry, death, area change, minimum
+  charges, 3 Power Charges taking attack crit 8.3% → 20.75%, a Frenzy Charge shortening the attack, 3 Endurance
+  Charges taking 12% off physical and fire hits; towns draw no charge icons.
+  The maximum rows (with the maximum-charge mods) were verified on the native Charges tab at `0 / 3` before this;
+  the current counts there and Enduring Cry and the timed gains are not live-checked.
+  Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
+  `Program.Charges.cs`.
+  Docs: [11](../docs/protocol/11-skills.md) §15.
 - Character panel sums: about 150 panel stats that sum base forms are computed from passives, items and auras with
   their unconditional combined stats: stun, ailment avoidance, durations and effects (ignite, chill, freeze, shock,
   scorch, brittle, sap), ailment chances, penetration, leech, life/mana/ES on kill, rarity and quantity, cooldown,
@@ -144,6 +170,18 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
   `skill_is_instant`, so the client sends them as C→S 0x191 and keeps walking;
   the server applies them and answers S→C 0x1ce, which starts the skill bar's cooldown.
+  Skill records retain GEPL Cooldown as the native base and carry the cooldown count.
+  Ordinary one-use spells/attacks now resolve player and skill generic recovery once, and the server keeps remaining
+  base-time budget through stat changes and pause.
+  Preflight reserves before action/movement/echo side effects; queued effects retain the original action/area ticket.
+  Real-client Dash initial +100%/-50% recovery, early raw rejection without movement/echo/mana, and pause checks pass.
+  The native positive-rate cache required an explicit cooldown-state refresh after skill-stat changes;
+  this preserves remaining/total base time at the send gate without consuming another use.
+  Native Dash mid-cooldown recovery changes now pass live: one entry changes rate with base/total/progress preserved,
+  early input has no echo/cost, and reuse succeeds after native expiry.
+  Wire, active/expired/zero-rate and queued encrypted-send checks also pass.
+  Multi-use, duplicate same-effect gems, shared groups, extra uses, bypass, typed/conditional/more recovery and official
+  tick equivalence remain outside this slice.
   Skill records carry the GEPL Cooldown and the stats the cooldown count, and the server refuses a skill until its
   cooldown is over.
   Ground-target C→S 0x190 now frames its 12 bytes and routes ordinary Frostblink through mana/cooldown acceptance.
@@ -188,7 +226,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes stat names or keys.
   The player's life, mana, accuracy, armour and evasion come from its class and level, with the attributes' bonuses
   (energy shield, evasion and melee physical damage increases);
-  accuracy also takes its flat/increased passives, weapon-specific stats and Accuracy Mastery, and the final value is
+  accuracy also takes its flat/increased passives, weapon-specific stats and Accuracy Mastery (rating for the panel,
+  the two target-conditional effects at the roll), and the final rating value is
   sent as `main_hand_accuracy_rating` / `off_hand_accuracy_rating` for the Offence panel;
   armour and evasion also take their flat/increased passives and the base equipped armour pieces (body, helmet,
   gloves, boots), while life and mana still ignore passives and items (attack speed is handled below)
@@ -267,11 +306,30 @@ Part of [Status](../Status.md); what to build next in this area is in
   Cast release, flight and explosion cleanup use game time and wait through pause.
   Area changes remove outstanding visuals before handoff and invalidate flights even if the transfer fails.
   Disconnects cancel outstanding flight tasks.
+  Ordinary bows snapshot current position, weapon and offensive inputs after their release wait, retaining the
+  original aim; target evasion and impales resolve at the accepted collision's actual send gate.
+  An evaded target is skipped once per straight flight, including a later hit within the same swept interval.
+  This is a current-wiki-supported policy; official-server evasion continuation and snapshot equivalence remain
+  unverified. Already-paused uses are rejected; accepted queued confirmations run outside
+  ground input dispatch and can wait for resume or original-token cancellation.
+  Actual queued-send tests cover pause, action replacement, death and transfer, plus released arrows surviving
+  later actions/player death. Ordinary hits use ranged notifications, preserve existing damage/crit/impale
+  approximations and clear impales on death. Native before-controls confirmed the old visual-only ground arrow
+  and independent melee contact hit on object use. On the combined runtime, native ground/object right-clicks
+  each dealt one hit only at the arrow stop (13 at (296,221), 6 at (296,220)), without melee `0x1af 0x4201`.
+  Creation now occurs in the bow clip near contact; frame/server scheduling delay remains visible.
+  Native wall-before-object, nearer interceptor, moving-away miss, framed Move before/after release, flight pause,
+  release pause and paused raw ground/object dispatch controls passed. Added cold removed after release stayed
+  in the arrow's 112-damage killing hit, with one 4-XP award (loot unmeasured).
+  Combined-only Frostblink checks passed: actual Q after release preserved the old hit; a timed framed `0x190`
+  before release changed the sampled origin while retaining the original aim. Combined recovery controls
+  cancelled a pending release, denied recovery-time input and accepted fresh input after expiry; an already
+  released arrow still stopped/removed. These checks compose separate Frostblink/recovery contributions.
   Automated trajectory, wall, lifecycle and packet checks pass.
   Live checks verified a moving-away miss, a later-entry hit, first-wall contact, pause/resume and native glide stop.
   Raw fixed-height and terrain-sentinel stop packets preserved their fields and cleared native movement duration.
-  These live collision and raw-stop checks preceded the bow packet/height update; merged bow/collision
-  integration still needs a live recheck.
+  Earlier Fireball/raw-stop checks preceded the bow packet/height update; the ordinary bow controls above cover
+  its combined path on natural ground. Attack-gem height/collision composition still needs a live recheck.
   Creation, glide endpoint and stop now share one signed marker; packet tests cover positive, negative and zero height.
   Corrected normal launches retained marker 5/world z -39.0625 at creation, paused mid-flight and both contact stops.
   Broader surface-height accuracy remains open (#182).
@@ -287,7 +345,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   The development speed override retains priority.
   Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline, 0.606 at +100% and 2.425 at -50%.
   Conditional/more/less speed and support-gem application remain open.
-  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
+  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `OrdinaryBowShot.cs`, `Program.Bows.cs`,
+  `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
 - **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
@@ -307,7 +366,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   The player's life comes from the class/level/passive pools.
   The server has no simulation loop: hits use timers, attacks are bounded by a 30/s tick (`TickRate`), the AI runs
   every 500 ms.
-  Item mods count through the global item stats; "emerge" monsters stay hidden;
+  Item mods count through the global item stats;
   346 varieties with NPC / ControlZone / ... components are refused.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`;
   `DamageConversion` handles the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global
@@ -333,15 +392,13 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Cyclone area of effect (2026-10-25).** `/set_aoe` now resends Cyclone's calculated final radius in the skill
   record, using the same radius calculation for server hits.
   Cyclone/CycloneAltX use a 16-cell base when their exported stat set has none.
+  The player's increased area counts once for every area skill (`AreaPlayerStats`); it counted twice before.
   Spell-only area does not affect the attack.
   Tested calculations; live visual check pending.
   The first live check found that direct radius alone did not scale the channelled visual;
   its conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
   Cyclone's additional melee-range and stage modifiers remain partial.
   See protocol/11-skills.md.
-- Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses.
-  Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented.
-  See [skills](../docs/protocol/11-skills.md).
 
 ## Not working yet
 
