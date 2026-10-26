@@ -322,7 +322,8 @@ public static class ClientPathfinder
                 if (dx * dx + dy * dy < clearance * clearance) return true;
             }
             int btx = b.X / Tile, bty = b.Y / Tile;
-            if (btx < tx0 || btx >= tx1 || bty < ty0 || bty >= ty1) continue;
+            // Large bodies can extend across several tile buckets; their centre may be outside this query.
+            if ((btx < tx0 || btx >= tx1 || bty < ty0 || bty >= ty1) && b.Size + threshold <= radius) continue;
             if (Math.Max(Math.Abs(b.X - x), Math.Abs(b.Y - y)) - b.Size < threshold) return true;
         }
         return false;
