@@ -22,7 +22,7 @@ static class Gate
         int Placed = 0, int Matched = 0, int Captured = 0, int Heights = -1, int Objects = -1)
     {
         /// <summary>The port's area transitions and waypoints (<see cref="AreaObjects"/>) are the captured ones
-        /// (.transitions.json: type and cell), no more and no fewer.</summary>
+        /// (.transitions.json: type, model and cell), no more and no fewer.</summary>
         [System.Text.Json.Serialization.JsonIgnore] public bool ObjectsOk => HashOk && Objects == 0;
         [System.Text.Json.Serialization.JsonIgnore] public bool HeightsOk => HashOk && Heights == 0;
         [System.Text.Json.Serialization.JsonIgnore] public bool HashOk => Hash == "match";
@@ -311,10 +311,10 @@ static class Gate
             {
                 using var tj = JsonDocument.Parse(File.ReadAllText(stem + ".transitions.json"));
                 var recorded = tj.RootElement.GetProperty("objects").EnumerateArray()
-                    .Select(o => (o.GetProperty("objectType").GetString()!, o.GetProperty("x").GetInt32(), o.GetProperty("y").GetInt32())).ToHashSet();
+                    .Select(o => (o.GetProperty("objectType").GetString()!, o.GetProperty("model").GetString()!.ToLowerInvariant(), o.GetProperty("x").GetInt32(), o.GetProperty("y").GetInt32())).ToHashSet();
                 // The recorder keeps only type names it knows (walkmaps.js: AreaTransition, …Waypoint, …TownEntrance);
                 // the port finds every type with the AreaTransition component (BossArenaEntranceTransition, …).
-                var generated = AreaObjects.Transitions(files, result).Where(o => Recorded.IsMatch(o.Type)).Select(o => (o.Type, o.X, o.Y)).ToHashSet();
+                var generated = AreaObjects.Transitions(files, result).Where(o => Recorded.IsMatch(o.Type)).Select(o => (o.Type, o.Model.ToLowerInvariant(), o.X, o.Y)).ToHashSet();
                 objectDiff = recorded.Except(generated).Count() + generated.Except(recorded).Count();
             }
             if (File.Exists(stem + ".heights.bin"))

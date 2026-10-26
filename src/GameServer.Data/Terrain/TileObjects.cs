@@ -14,9 +14,12 @@ public sealed record TileObject(float X, float Y, float Z, uint Flags, float Ang
     public int CellY => Cell?.Y ?? (int)MathF.Floor(Y / TilePlacement.WorldPerCell);
 
     /// <summary>The virtual model the client registers for the record: "&lt;.tdt folder&gt;/&lt;record name&gt;.ao"
-    /// (not in the bundle index; Agents/docs/protocol/08-area-transitions.md §5).</summary>
+    /// (not in the bundle index; Agents/docs/protocol/08-area-transitions.md §5). A text .tmd record without a name gives
+    /// the model's whole path as its first string instead (Act 3's slum_sewer_entrance_battlefront.tmd: the recorder
+    /// captured that path).</summary>
     public string VirtualModel(string tdtPath)
     {
+        if (Name.Length == 0 && Animation is { } path && path.EndsWith(".ao", StringComparison.OrdinalIgnoreCase)) return path;
         int slash = tdtPath.LastIndexOf('/');
         return (slash < 0 ? "" : tdtPath[..(slash + 1)]) + Name + ".ao";
     }
