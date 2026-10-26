@@ -41,6 +41,24 @@ static class FlaskCharges
     /// 0.033 s server frames make 0.132 s (poewiki); not affected by cooldown recovery.</summary>
     public const double CritCooldown = 0.132;
 
+    /// <summary>What a critical strike gives the flasks (<paramref name="flasks"/>: each flask's id, its own "#% chance to
+    /// gain a Flask Charge when you deal a Critical Strike" and whether it is full): one charge to each flask whose chance
+    /// rolls, and the character's <paramref name="globalChance"/> gives the first flask that is not full
+    /// <paramref name="globalAmount"/> (1 without it). Nothing while the shared cooldown runs (<see cref="Carry.TryCrit"/>,
+    /// which starts it only when some flask could gain). <paramref name="roll"/>: a number below its argument.</summary>
+    public static Dictionary<uint, double> OnCrit(IReadOnlyList<(uint Id, int Chance, bool Full)> flasks, int globalChance,
+        int globalAmount, Carry carry, double now, Func<int, int> roll)
+    {
+        var gains = new Dictionary<uint, double>();
+        if (globalChance <= 0 && !flasks.Any(f => f.Chance > 0)) return gains;
+        if (!carry.TryCrit(now)) return gains;
+        foreach (var f in flasks)
+            if (f.Chance > 0 && roll(100) < f.Chance) gains[f.Id] = 1;
+        if (globalChance > 0 && roll(100) < globalChance && flasks.Where(f => !f.Full).Select(f => (uint?)f.Id).FirstOrDefault() is uint id)
+            gains[id] = gains.GetValueOrDefault(id) + Math.Max(1, globalAmount);
+        return gains;
+    }
+
     /// <summary>The partial charges of one connection's flasks (poewiki: "tracked with at least two decimals") and when a
     /// crit last gave a charge.</summary>
     public sealed class Carry

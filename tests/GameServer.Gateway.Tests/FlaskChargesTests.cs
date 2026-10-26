@@ -67,6 +67,26 @@ public class FlaskChargesTests
     }
 
     [Fact]
+    public void A_crit_gives_the_flasks_whose_chance_rolls_one_charge_with_the_shared_cooldown()
+    {
+        var carry = new FlaskCharges.Carry();
+        // Flask 1: Surgeon's 35% chance; flask 2: none; flask 3: 20% but full. Rolls below the chance hit.
+        (uint, int, bool)[] bar = [(1, 35, false), (2, 0, false), (3, 20, true)];
+        var rolls = new Queue<int>([10, 5]);
+        Assert.Equal(new Dictionary<uint, double> { [1] = 1, [3] = 1 }, FlaskCharges.OnCrit(bar, 0, 0, carry, 1.0, _ => rolls.Dequeue()));
+        // Within the cooldown: nothing, and no roll.
+        Assert.Empty(FlaskCharges.OnCrit(bar, 0, 0, carry, 1.1, _ => throw new InvalidOperationException()));
+        // A roll above the chance: no charge.
+        Assert.Empty(FlaskCharges.OnCrit(bar, 0, 0, carry, 2.0, _ => 99));
+        // The character's chance gives the first flask that is not full its amount.
+        Assert.Equal(new Dictionary<uint, double> { [2] = 2 }, FlaskCharges.OnCrit([(2, 0, false), (4, 0, false)], 50, 2, carry, 3.0, _ => 0));
+        // No source of crit charges: the cooldown does not start.
+        var idle = new FlaskCharges.Carry();
+        Assert.Empty(FlaskCharges.OnCrit([(1, 0, false)], 0, 0, idle, 5.0, _ => 0));
+        Assert.True(idle.TryCrit(5.0));
+    }
+
+    [Fact]
     public void A_flask_equipped_in_a_hostile_area_starts_empty()
     {
         var flask = new Item(0x1111, ["Base", "Charges", "Flask"], 0x2222) { Charges = 60 };

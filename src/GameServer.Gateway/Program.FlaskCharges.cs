@@ -45,18 +45,14 @@ partial class Program
     {
         var character = CharacterPlayerStats(conn);
         int Get(string name) => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
-        var bar = ItemsOf(conn).Items(PlayerInventories.Flask);
-        int global = Get("gain_flask_charge_when_crit_%");
-        if (global <= 0 && !bar.Any(f => ItemModStats.Local(f.Item, Items.Mods).GetValueOrDefault("local_recharge_on_crit_%") > 0)) return;
-        if (!conn.FlaskChargeCarry.TryCrit(conn.Clock.Elapsed.TotalSeconds)) return;
-        uint? globalFlask = global > 0 && Random.Shared.Next(100) < global
-            ? bar.FirstOrDefault(f => Items.ByHash(f.Item.TypeHash) is { } t && Items.FlaskChargesOf(t) is { } c
-                && f.Item.Charges < FlaskCharges.Of(c, ItemModStats.Local(f.Item, Items.Mods)).MaxCharges)?.Id
-            : null;
-        int globalAmount = Math.Max(1, Get("gain_flask_charge_when_crit_amount"));
-        await GainFlaskCharges(remote, stream, ciphers, conn, (f, local) =>
-            (Random.Shared.Next(100) < local.GetValueOrDefault("local_recharge_on_crit_%") ? 1 : 0) + (f.Id == globalFlask ? globalAmount : 0),
-            "critical strike");
+        var bar = ItemsOf(conn).Items(PlayerInventories.Flask).Select(f => (f.Id,
+            Chance: ItemModStats.Local(f.Item, Items.Mods).GetValueOrDefault("local_recharge_on_crit_%"),
+            Full: Items.ByHash(f.Item.TypeHash) is not { } t || Items.FlaskChargesOf(t) is not { } c
+                || f.Item.Charges >= FlaskCharges.Of(c, ItemModStats.Local(f.Item, Items.Mods)).MaxCharges)).ToList();
+        var gains = FlaskCharges.OnCrit(bar, Get("gain_flask_charge_when_crit_%"), Get("gain_flask_charge_when_crit_amount"),
+            conn.FlaskChargeCarry, conn.Clock.Elapsed.TotalSeconds, Random.Shared.Next);
+        if (gains.Count > 0)
+            await GainFlaskCharges(remote, stream, ciphers, conn, (f, _) => gains.GetValueOrDefault(f.Id), "critical strike");
     }
 
     // The player was hit (not evaded or blocked): "Gain # Charges when you are Hit by an Enemy" (local_flask_gain_X_charges_when_hit).
