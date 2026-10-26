@@ -1,7 +1,6 @@
-"""Fast, structured control of the local client through its native functions.
+"""Fast, structured control of the local 3.29.3b client through its native functions.
 
     .venv/Scripts/python.exe scripts/dev/client_control.py game:status
-    .venv/Scripts/python.exe scripts/dev/client_control.py bridge:doctor
     .venv/Scripts/python.exe scripts/dev/client_control.py game:open
     .venv/Scripts/python.exe scripts/dev/client_control.py login:offline --password-stdin
     .venv/Scripts/python.exe scripts/dev/client_control.py character:list
@@ -13,9 +12,6 @@
 
 Use --stdio for persistent JSON-lines RPC (one request/result per line). Each request is
 {"command":"character:play","name":"OfflineWitch"}; login takes account/password fields.
-Client addresses come from client-signatures.json, resolved at attach (pinned, else by signature or
-cross-reference); bridge:doctor shows how each was found. --force-scan (or LOCALEXILE_CONTROL_FORCE_SCAN=1)
-skips the pinned addresses; --force-scan xref also prefers cross-references over signatures.
 The transport writes no credentials or tokens to disk. It attaches only to this checkout's
 copied Game.patched.exe; it never starts an official/Steam client or changes save files.
 """
@@ -24,7 +20,6 @@ import ctypes
 from ctypes import wintypes
 import getpass
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -38,31 +33,7 @@ import frida
 
 ROOT = Path(__file__).resolve().parents[2]
 CLIENT = ROOT / "Client" / "Game.patched.exe"
-UNPATCHED = ROOT / "Client" / "Game.exe"
 AGENT = Path(__file__).with_name("client-control.js")
-RESOLVER = Path(__file__).with_name("client-resolver.js")
-SIGNATURES = Path(__file__).with_name("client-signatures.json")
-FORCE_SCAN = "LOCALEXILE_CONTROL_FORCE_SCAN"
-
-
-def _offline_resolver():
-    """scripts/ci/resolve_client.py (standard library only): the build label and SHA-256 helpers."""
-    spec = importlib.util.spec_from_file_location("resolve_client", ROOT / "scripts" / "ci" / "resolve_client.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def resolution_mode(value=None):
-    """pinned (default), signature (skip the pinned fast path) or xref (also prefer cross-references)."""
-    value = (os.environ.get(FORCE_SCAN, "") if value is None else value).strip().lower()
-    if value in ("", "0", "false", "no", "pinned"):
-        return "pinned"
-    if value in ("1", "true", "yes", "signature", "scan"):
-        return "signature"
-    if value == "xref":
-        return "xref"
-    raise ValueError(f"{FORCE_SCAN} must be 0, 1/signature or xref")
 
 
 def live_process(pid):
@@ -197,16 +168,11 @@ def collect_replies(start, wait=1.5, quiet=0.25, path=GATEWAY_LOG):
 
 
 class ClientControl:
-    def __init__(self, mode=None):
+    def __init__(self):
         self.device = frida.get_local_device()
         self.session = self.script = None
         self.pid = None
         self.detached = False
-        self.mode = resolution_mode(mode)
-        self.signatures = json.loads(SIGNATURES.read_text(encoding="utf-8"))
-        self.offline = _offline_resolver()
-        self.build = None
-        self.warnings = []
 
     def close(self):
         if self.session is not None:
@@ -240,8 +206,7 @@ class ClientControl:
         self.session = self.device.attach(self.pid)
         self.detached = False
         self.session.on("detached", lambda *unused: setattr(self, "detached", True))
-        source = RESOLVER.read_text(encoding="utf-8") + "\n" + AGENT.read_text(encoding="utf-8")
-        self.script = self.session.create_script(source, name="localexile-client-control")
+        self.script = self.session.create_script(AGENT.read_text(encoding="utf-8"), name="localexile-client-control")
         errors = []
         self.script.on("message", lambda message, data: errors.append(message.get("description", "Agent error"))
                        if message.get("type") == "error" else None)
@@ -250,13 +215,6 @@ class ClientControl:
             identity = self.script.exports_sync.identity()
             if Path(identity["path"]).resolve() != CLIENT.resolve():
                 raise RuntimeError("Refusing a client outside this checkout's Client directory")
-            # Resolve symbols and attach hooks only once the executable is known to be this checkout's copy.
-            if self.build is None:
-                self.build = self.offline.build_label(CLIENT.read_bytes()) or "unknown"
-            init = self.script.exports_sync.init({"signatures": self.signatures, "mode": self.mode, "build": self.build})
-            self.warnings = init["warnings"]
-            for warning in self.warnings:
-                print(f"client_control: {warning}", file=sys.stderr, flush=True)
         except Exception:
             self.close()
             if errors:
@@ -271,20 +229,6 @@ class ClientControl:
         if self.script is None and self._find_client() is None:
             return {"running": False}
         return {"running": True, **self.rpc("status")}
-
-    def doctor(self):
-        """How every symbol, global and offset was resolved in the running client, and the executables' identity."""
-        self.attach()
-        report = self.script.exports_sync.doctor()
-        unpatched = self.offline.sha256_file(UNPATCHED) if UNPATCHED.exists() else None
-        builds = self.signatures["builds"]
-        report["client"] = {
-            "path": str(CLIENT), "build": self.build, "sha256": self.offline.sha256_file(CLIENT),
-            "unpatchedSha256": unpatched, "versionResource": None,
-            "knownBuilds": {sha: f"{b['version']} ({b['label']})" for sha, b in builds.items()},
-            # Builds are keyed by the official executable; the copied Game.exe is that file unchanged.
-            "unpatchedIsKnownBuild": unpatched in builds}
-        return report
 
     def wait(self, predicate, description, timeout=15):
         deadline = time.monotonic() + timeout
@@ -331,8 +275,6 @@ class ClientControl:
             return self.open()
         if command == "game:status":
             return self.status()
-        if command == "bridge:doctor":
-            return self.doctor()
         if command == "game:resources":
             result = self.rpc("resources")
             deadline = time.monotonic()+5
@@ -440,9 +382,6 @@ def run_request(control, request):
     started = time.monotonic()
     try:
         result = {"ok": True, "result": control.execute(request)}
-    except frida.RPCException as error:
-        # The agent's message without its JavaScript stack, e.g. "Unsupported client: play needs play (not found)".
-        result = {"ok": False, "error": str(error).splitlines()[0].removeprefix("Error: ")}
     except Exception as error:
         result = {"ok": False, "error": str(error)}
     result["elapsedMs"] = round((time.monotonic() - started) * 1000)
@@ -455,11 +394,9 @@ def main():
     parser.add_argument("text", nargs="?", help="slash command, chat text, or tp target")
     parser.add_argument("--password-stdin", action="store_true", help="read one password line from stdin")
     parser.add_argument("--stdio", action="store_true", help="persistent JSON-lines RPC on stdin/stdout")
-    parser.add_argument("--force-scan", nargs="?", const="signature", choices=("signature", "xref"),
-                        help=f"skip the pinned addresses (same as {FORCE_SCAN}=1); xref also prefers cross-references")
     options = parser.parse_args()
     os.chdir(ROOT)
-    with ClientControl(options.force_scan) as control:
+    with ClientControl() as control:
         if options.stdio:
             for line in sys.stdin:
                 try:
