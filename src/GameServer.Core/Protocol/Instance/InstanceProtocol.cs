@@ -89,6 +89,7 @@ public static class InstanceProtocol
         InstanceMicrotransactions.SkillPickId => InstanceMicrotransactions.SkillPickLength,
         InstanceMicrotransactions.RequestId => InstanceMicrotransactions.RequestLength,
         InstanceHideouts.SelectId => InstanceHideouts.SelectLength,
+        InstanceHideoutEditing.MoveId => InstanceHideoutEditing.MoveLength,
         InstanceBench.CraftId => InstanceBench.CraftLength, _ => null,
     };
 

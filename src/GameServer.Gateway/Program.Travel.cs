@@ -304,7 +304,7 @@ partial class Program
 
     static HideoutScene? HideoutFurniture(ClientState conn) => conn.Furniture ??=
         HideoutCatalog.ByArea(conn.Layout.Hash) is { } hideout && HideoutCatalog.Default is { } fallback
-            ? HideoutScene.Build(hideout, fallback, conn.Layout.Walkable) : null;
+            ? HideoutEditing.Apply(HideoutScene.Build(hideout, fallback, conn.Layout.Walkable), SavedHideoutPlacements(conn)) : null;
 
     static async Task SelectHideout(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int Row, bool Guild) selected)
     {

@@ -373,6 +373,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint BenchBalanceRevision;
     public IReadOnlyList<InventoryItem> BenchBalanceItems = [];
     public HideoutScene? Furniture;
+    public readonly HideoutEditing HideoutEditor = new();
+    public (int X, int Y) StashAt;
+    public void MoveWaypoint(WaypointObject waypoint) => Layout = Layout with { Waypoint = waypoint };
     public (int X, int Y) CraftingBenchAt;
     public readonly HashSet<int> GuildStashTabsSent = [];
     public bool GuildStashOpen;

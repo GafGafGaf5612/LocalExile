@@ -18,6 +18,8 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 npc 0x{id:x} enters wake zone");
         lock (conn.Npcs) conn.Npcs[id] = new SpawnedNpc(npc, x, y);
         conn.SetBlocker(id, x, y, ClientState.NpcBlockerSize);
+        if (HideoutCatalog.ByArea(conn.Layout.Hash) is not null)
+            conn.HideoutEditor.Register(id, "npc:" + npc.Id, x, y, rotation, ClientState.NpcBlockerSize);
     }
 
     // The town's NPCs (NpcCatalog.In) at their cells.
