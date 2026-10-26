@@ -5,15 +5,20 @@ using GameServer.Core.Protocol.Login;
 partial class Program
 {
     // Handles the framed messages of one read, ticks taken out (OnClientData):
-    // 0x7d (area generated) в†’ the local player id (0x22), the player object (0x2b9), inventories, passive slots, the area transitions,
-    // and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x25 (move) в†’ 0x1ab echo;
-    // 0x24 on an area transition в†’ change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
+    // 0x7d (area generated) → the local player id (0x22), the player object (0x2b9), inventories, passive slots, the area transitions,
+    // and with Game_GATEWAY_ENTER=1 enter area (0x21) + wake zone; 0x25 (move) → 0x1ab echo;
+    // 0x24 on an area transition → change area (0x2b2, then 0x27 with the new instance) or, with Ctrl, the instance chooser (0xae).
     // Anything else is logged in hex: those are the next messages to map.
-    static async Task OnClientMessages(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+    internal static async Task OnClientMessages(string remote, NetworkStream stream, ConnectionCiphers ciphers,
         IReadOnlyList<(ushort Id, byte[] Bytes)> messages, byte[] unknown, ClientState conn, long readAt = 0)
     {
         foreach (var (id, bytes) in messages)
         {
+            // Native TakeHit blocks predicted action starts too. Buffered normal actions must not restart the server's
+            // movement/cast timeline during that same recovery. Flasks and instant skills retain their own paths.
+            if (id is InstanceProtocol.UseSkillAtLocationId or InstanceTransfer.UseSkillOnObjectId or InstanceProtocol.ChannelUpdateId)
+                lock (conn.Monsters)
+                    if (conn.HitRecovery.BlocksInput(conn.ClockAt(readAt), conn.Clock.Elapsed.TotalSeconds)) continue;
             if (id == InstanceProtocol.UseSkillAtLocationId)
             {
                 // Echo the action so the client runs it (Move on a ground click); an attack gem is paced and may be movement
@@ -36,34 +41,21 @@ partial class Program
                 // The ordinary attack on a ranged weapon: clicking the ground with the attack skill bound swings at the point
                 // and the client draws an arrow to it, instead of walking there (live 2026-10-25: the arrow stayed in the
                 // hand, because every non-gem ground click was movement).
-                if (use.SkillId == SkillCatalog.FirstSkillId && WeaponProfileFor(conn).Bow)
+                if (use.SkillId == SkillCatalog.FirstSkillId && WeaponProfileFor(conn, activeSet: true).Bow)
                 {
                     double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
-                    double now = conn.Clock.Elapsed.TotalSeconds, next;
-                    bool ready;
-                    lock (conn.Monsters)
-                    {
-                        next = conn.NextAttackAt;
-                        ready = AttackTiming.Ready(now, next, duration);
-                        if (ready) conn.NextAttackAt = AttackTiming.After(now, next, duration);
-                    }
-                    if (!ready) continue;
+                    if (!TryBeginBowAttack(conn, at, duration, use.SkillId, use.Slot, out var bow)) continue;
                     int projectileEpoch;
                     lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
-                    var (bx, by) = conn.Walk.Position(at);
-                    conn.Walk.Order(bx, by, at);
-                    Interlocked.Increment(ref conn.ActionCount);
-                    await Send(remote, stream, ciphers,
-                        InstanceProtocol.ActionStarted(PlayerId, bx, by, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                        $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bx}, {by}) (t={at:0.000})");
-                    if (Skills.Projectile("Metadata/Projectiles/DefaultArrow") is { } arrow)
-                        _ = FlyProjectile(remote, stream, ciphers, conn, BowArrow(conn, arrow), (bx, by), (use.X, use.Y), damageTo: null, impact: "none", epoch: projectileEpoch);
-                    conn.ChannelSkill = use.SkillId;
-                    conn.ChannelSkillSequence = use.Slot;
+                    // Release work must not block serial input dispatch: resume/move can invalidate a queued echo.
+                    _ = ConfirmAndLaunchOrdinaryBow(remote, stream, ciphers, conn,
+                        InstanceProtocol.ActionStarted(PlayerId, bow.X, bow.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
+                        $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bow.X}, {bow.Y}) (t={at:0.000})",
+                        (bow.X, bow.Y), (use.X, use.Y), duration, bow.Action, projectileEpoch);
                     continue;
                 }
-                // An attack gem (Holy Strike, Ground Slam вЂ¦) used on the ground with "Always Attack Without Moving" off is an
-                // attack-move: the client walks to the aimed point itself and sends no Cв†’S 0x25 Move for that walk, so the
+                // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an
+                // attack-move: the client walks to the aimed point itself and sends no C→S 0x25 Move for that walk, so the
                 // server walks its own estimate after it and echoes from there. A point with a living monster on it is a
                 // swing (the client aims at the cell, not at the object); an empty point is movement only, so running costs
                 // no mana. Before 2026-10-25 every use swung, which paid the cost at the click and echoed the server's stale
@@ -76,50 +68,76 @@ partial class Program
                     var here = conn.Walk.Position(at);
                     if (!MonsterAtAim(conn, gem, use.X, use.Y, at) || Dist(here, (use.X, use.Y)) > WeaponFor(conn).Range)
                     {
-                        Interlocked.Increment(ref conn.ActionCount);
-                        conn.Walk.Order(use.X, use.Y, at);
-                        conn.ChannelSkill = 0;
+                        int walkAction = 0;
+                        if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+                            () => { walkAction = Interlocked.Increment(ref conn.ActionCount); conn.Walk.Order(use.X, use.Y, at); conn.ChannelSkill = 0; },
+                            out var approachTicket, reserve: false, requestedAt: at)) continue;
                         await Send(remote, stream, ciphers,
                             InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                            $"0x01ab {gem.Name}: attack-move to ({use.X}, {use.Y}) from ({here.X}, {here.Y}) (t={at:0.000})");
+                            $"0x01ab {gem.Name}: attack-move to ({use.X}, {use.Y}) from ({here.X}, {here.Y}) (t={at:0.000})",
+                            still: () => approachTicket?.Current(conn) ?? PlayerActionCurrent(conn, walkAction));
                         continue;
                     }
                 }
                 // An attack gem swings with the weapon's attack time, while the client keeps aiming it for as long as the
                 // button is held. A use before the next attack is not a new action: it must not cancel the swing in progress
                 // (its pending hit), pay its cost or get a 0x1ab (live 2026-10-25).
-                if (attack && !AttackReady(conn, out double attackSeconds))
+                if (attack && !AttackReady(conn, gem.Effect, gem.Level, out double attackSeconds))
                 {
                     Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name}: ignored, the previous attack is still running (attack time {attackSeconds:0.00} s) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
                     continue;
                 }
-                Interlocked.Increment(ref conn.ActionCount);   // a new action replaces the current one: a pending hit no longer lands
-                var (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
-                if (cast) conn.Walk.Order(px, py, at);
-                // A movement skill (Leap Slam вЂ¦) takes the player to the aimed point: the server keeps the position the
-                // client will have, or a later resync would pull the player back to where the skill started.
-                if (gem.Name is not null && Skills.IsMovement(gem.Effect)
-                    && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
-                    conn.Walk.Teleport(use.X, use.Y, at);
+                int action = 0;
+                (int px, int py) = (0, 0);
+                CooldownUseTicket? cooldownUse = null;
+                void StartAction()
+                {
+                    action = Interlocked.Increment(ref conn.ActionCount);
+                    (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
+                    if (cast) conn.Walk.Order(px, py, at);
+                    // Readiness and reservation precede movement: a raw early Dash cannot teleport anyway.
+                    if (gem.Name is not null && Skills.IsMovement(gem.Effect)
+                        && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
+                        conn.Walk.Teleport(use.X, use.Y, at);
+                    conn.ChannelSkill = cast ? use.SkillId : (ushort)0;
+                    conn.ChannelSkillSequence = use.Slot;
+                }
+                if (cast && gem.Name is not null)
+                {
+                    if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
+                        false, StartAction, out cooldownUse, requestedAt: at)) continue;
+                }
+                else
+                {
+                    lock (conn.Monsters)
+                    {
+                        if (conn.HitRecovery.BlocksInput(at, conn.Clock.Elapsed.TotalSeconds)) continue;
+                        StartAction();
+                    }
+                }
                 await Send(remote, stream, ciphers,
                     InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                    $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})");
-                conn.ChannelSkill = cast ? use.SkillId : (ushort)0;
-                conn.ChannelSkillSequence = use.Slot;
-                if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y), sequence: use.Slot);
+                    $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})",
+                    still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, action));
+                if (cooldownUse?.Current(conn) == false) continue;
+                if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y), sequence: use.Slot,
+                    actionToken: cooldownUse?.ActionToken ?? action, cooldownUse: cooldownUse);
                 else await FollowRighteousFire(remote, stream, ciphers, conn);
+                if (!PlayerActionCurrent(conn, action)) continue;
                 string mode = Environment.GetEnvironmentVariable("Game_MOVE_MODE") ?? "echo";
                 if (mode == "teleport")
-                    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, use.X, use.Y), $"0x01b7 teleport to ({use.X}, {use.Y})");
+                    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, use.X, use.Y),
+                        $"0x01b7 teleport to ({use.X}, {use.Y})", still: () => PlayerActionCurrent(conn, action));
                 else if (mode == "move")
                 {
                     float speed = float.TryParse(Environment.GetEnvironmentVariable("Game_MOVE_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var sp) ? sp : 37f;
-                    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(PlayerId, use.X, use.Y, speed), $"0x01ba move to ({use.X}, {use.Y}) speed {speed}");
+                    await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(PlayerId, use.X, use.Y, speed),
+                        $"0x01ba move to ({use.X}, {use.Y}) speed {speed}", still: () => PlayerActionCurrent(conn, action));
                 }
             }
             else if (InstanceProtocol.IsLockstepMovement(id))
             {
-                // The client moves this way only in lockstep, which the Gateway does not serve yet (07 В§6): say so once per
+                // The client moves this way only in lockstep, which the Gateway does not serve yet (07 §6): say so once per
                 // connection.
                 if (conn.WarnedLockstep) continue;
                 conn.WarnedLockstep = true;
@@ -139,6 +157,12 @@ partial class Program
                 await PickCosmetic(remote, stream, ciphers, conn, InstanceMicrotransactions.ReadSlot(bytes));
             else if (id == InstanceMicrotransactions.SkillPickId)
                 await PickSkillCosmetic(remote, stream, ciphers, conn, InstanceMicrotransactions.ReadSkillPick(bytes));
+            else if (id == InstanceProtocol.UseInstantSkillAtLocationId)
+            {
+                var (x, y, skill) = InstanceProtocol.ReadUseInstantSkillAtLocation(bytes);
+                Console.WriteLine($"[gateway] {remote} <= 0x0190 instant skill 0x{skill:x4} at ({x}, {y})");
+                if (Skills.IsGemSkill(skill)) _ = UseInstantSkillAtLocation(remote, stream, ciphers, conn, skill, (x, y));
+            }
             else if (id == InstanceProtocol.UseInstantSkillId)
             {
                 // An instant skill (skill_is_instant: Haste, Righteous Fire) has no action: the walk and a pending hit go on,
@@ -152,7 +176,7 @@ partial class Program
             {
                 var use = InstanceTransfer.ReadUseSkillOnObject(bytes);
                 // In the background: the player may first walk to the target, and the read loop must keep answering ticks.
-                _ = OnUseObject(remote, stream, ciphers, conn, use);
+                _ = OnUseObject(remote, stream, ciphers, conn, use, conn.ClockAt(readAt));
             }
             else if (id == InstanceProtocol.BindSkillId)
             {
@@ -259,8 +283,8 @@ partial class Program
                 await PickUpItem(remote, stream, ciphers, conn, InstanceItems.ReadPickUpItem(bytes));
             else if (id == InstanceProtocol.ExitToCharacterSelectId)
             {
-                // Esc в†’ "Exit to Character Selection" or the hardcore death screen's Exit. Closing the instance connection
-                // is the answer: the client keeps its login connection and goes back to the character list (09 В§6).
+                // Esc → "Exit to Character Selection" or the hardcore death screen's Exit. Closing the instance connection
+                // is the answer: the client keeps its login connection and goes back to the character list (09 §6).
                 Console.WriteLine($"[gateway] {remote} <= 0x0153 exit to character selection: closing the instance connection");
                 conn.Closed = true;
                 return;
@@ -272,7 +296,7 @@ partial class Program
             else if (id == InstanceNpcs.TradeOfferId)
             {
                 var offer = InstanceNpcs.ReadTradeOffer(bytes);
-                // Ctrl + click on an inventory item sends x = y = 0xff (0x14030e3e0 в†’ 0x142166660): any free offer cell.
+                // Ctrl + click on an inventory item sends x = y = 0xff (0x14030e3e0 → 0x142166660): any free offer cell.
                 if (conn.Sale is { } sale && offer.X == 0xff && offer.Y == 0xff) await OfferFromInventory(remote, stream, ciphers, conn, sale, offer.InventoryId, offer.ItemId);
                 else if (conn.Sale is { } open) await OfferForSale(remote, stream, ciphers, conn, open, offer.InventoryId, offer.ItemId, offer.X, offer.Y);
                 else Console.WriteLine($"[gateway] {remote} <= 0x00b2 trade offer {offer}: no sale open");
@@ -316,7 +340,13 @@ partial class Program
                 // skill hits around it (AreaSkillHit).
                 var (cx, cy) = InstanceProtocol.ReadChannelUpdate(bytes);
                 double t = conn.ClockAt(readAt);
-                conn.Walk.Teleport(cx, cy, t);
+                int channelAction;
+                lock (conn.Monsters)
+                {
+                    if (conn.HitRecovery.BlocksInput(t, conn.Clock.Elapsed.TotalSeconds)) continue;
+                    channelAction = conn.ActionCount;
+                    conn.Walk.Teleport(cx, cy, t);
+                }
                 var channelled = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == conn.ChannelSkill);
                 if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
                 {
@@ -330,7 +360,8 @@ partial class Program
                         continue;
                     }
                     if (channelCost > 0) await SendPlayerMana(remote, stream, ciphers, conn, $"channel cost {channelCost}");
-                    _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy), immediate: true, sequence: conn.ChannelSkillSequence);
+                    _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy),
+                        immediate: true, sequence: conn.ChannelSkillSequence, actionToken: channelAction);
                 }
             }
             else if (id == InstanceProtocol.ChannelEndId)
@@ -338,7 +369,7 @@ partial class Program
             else if (id == InstanceProtocol.SwapWeaponsId)
             {
                 // The weapon swap: the hands' rows and the other set's trade their items (the client shows the active set in
-                // the hands' rows), each of the four inventories gets its new contents (0xbf), Sв†’C 0xde gives the set (which
+                // the hands' rows), each of the four inventories gets its new contents (0xbf), S→C 0xde gives the set (which
                 // also ends the client's wait), then what the hands hold, with the new set's stats and skills (13-items.md).
                 var swapItems = ItemsOf(conn);
                 byte wanted = (byte)(bytes[2] == 1 ? 1 : 0);
@@ -465,11 +496,11 @@ partial class Program
                     await SendWaypoints(remote, stream, ciphers, conn);
                     uint gold = PersonalStashOf(conn).Gold;
                     await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
-                    // The worn cosmetics (Sв†’C 0x1f3): the client's worn table starts empty with every instance connection.
+                    // The worn cosmetics (S→C 0x1f3): the client's worn table starts empty with every instance connection.
                     await SendWornCosmetics(remote, stream, ciphers, conn, "entering the area");
-                    // The saved skill bar (Sв†’C 0x53), right after the player and the area.
+                    // The saved skill bar (S→C 0x53), right after the player and the area.
                     await SendSkillBar(remote, stream, ciphers, conn);
-                    // The equipment again (Sв†’C 0x02ba), as after an equip: the player object's own list does not set how a
+                    // The equipment again (S→C 0x02ba), as after an equip: the player object's own list does not set how a
                     // two-handed weapon is held, the update does (live 2026-10-22: it was held one-handed after every load).
                     var worn = Looks(conn, ItemsOf(conn));
                     await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, worn),
@@ -496,14 +527,14 @@ partial class Program
         {
             ushort uid = unknown.Length > 1 ? (ushort)(unknown[0] << 8 | unknown[1]) : unknown[0];
             Console.WriteLine($"[gateway] {remote} <= unframed 0x{uid:x4} ({unknown.Length} bytes): {Convert.ToHexString(unknown.AsSpan(0, Math.Min(unknown.Length, 256)))}");
-            // Cв†’S 0x23f: the Delve chart (opened by Niko) asks for its data; Sв†’C 0x240 answers (an empty chart for now).
+            // C→S 0x23f: the Delve chart (opened by Niko) asks for its data; S→C 0x240 answers (an empty chart for now).
             if (uid == InstanceDelve.ChartRequestId && unknown.Length == 2)
             {
                 var (a, b, cells) = conn.DelveChartProbe;
                 await Send(remote, stream, ciphers, InstanceDelve.Chart(a, b, cells),
                     $"0x0240 Delve chart: {a}, {b}, {cells.Count} cell(s) {string.Join(" ", cells)}");
             }
-            // Cв†’S 0x35: the mastery effect chosen in the passive tree (node, effect HASH16). It allocates the mastery node
+            // C→S 0x35: the mastery effect chosen in the passive tree (node, effect HASH16). It allocates the mastery node
             // and records the effect; the client waits for the 0x33 tree and the updated stats.
             if (uid == InstanceEntities.MasteryEffectId && unknown.Length >= 6)
             {

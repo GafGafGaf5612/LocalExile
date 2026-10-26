@@ -146,13 +146,15 @@ partial class Program
         }
     }
 
-    // A cast's time in ms: the effect's CastTime scaled by the player's increased cast speed.
-    static int CastMs(ClientState conn, int effect, ushort skillId = 0)
+    // A genuine spell's final server wait; native actions instead receive the unadjusted base milliseconds.
+    // Null refuses an invalid/unrepresentable cast rather than turning it into an immediate hit. A supported skill's
+    // own base_cast_speed_+% (skillId) adds to the player's.
+    static int? CastMs(ClientState conn, int effect, ushort skillId = 0)
     {
         var own = skillId == 0 ? new Dictionary<uint, int>() : SupportedSkill(conn, skillId).Stats;
         int speed = CastSpeedPct(CharacterPlayerStats(conn));
         if (Stats.Key("base_cast_speed_+%") is uint k) speed += own.GetValueOrDefault(k);
-        return Math.Max(1, (int)Math.Round(Skills.CastMs(effect) / Math.Max(.01, 1 + speed / 100.0)));
+        return SpellCastTiming.ForSkill(Skills, effect, speed)?.DurationMilliseconds;
     }
 
     // cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
@@ -160,7 +162,7 @@ partial class Program
         Stats.Key("cast_speed_+%") is uint k ? stats.GetValueOrDefault(k) : 0;
 
     // Righteous Fire (GrantedEffects RighteousFire): casting it puts the righteous_fire buff (BuffDefinitions row 12: the
-    // flames around the player, BuffVisuals 15) on the player with Sв†’C 0x1c1. While it lasts the player burns for 90% of
+    // flames around the player, BuffVisuals 15) on the player with S→C 0x1c1. While it lasts the player burns for 90% of
     // maximum life per second, nonlethal (base_nonlethal_fire_damage_%_of_maximum_life_taken_per_minute 5400), and enemies
     // within its radius (active_skill_base_area_of_effect_radius 18 cells at level 1, plus their size) take 70% of the
     // player's maximum life per second as fire damage (base_righteous_fire_%_of_max_life_to_deal_to_nearby_per_minute 4200)
@@ -178,7 +180,7 @@ partial class Program
     // Righteous Fire's ring stays on the player. It is an object of its own, which the client moves only when the server
     // says so, so every RingFollowMs (RunRingFollow) and after each move order it glides (0x1ba) to where the player will be
     // RingFollowMs later, along the walk's path. Before 2026-10-23 it glided once per ground click to where that walk
-    // ended: a walk started any other way (a click on a stash or an item, Cв†’S 0x24 в†’ Walk.Approach) never moved it, and
+    // ended: a walk started any other way (a click on a stash or an item, C→S 0x24 → Walk.Approach) never moved it, and
     // the straight glide cut the path's corners.
     static async Task FollowRighteousFire(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
@@ -404,7 +406,7 @@ partial class Program
         }
     }
 
-    // The ended flask effects' buffs come off the player (Sв†’C 0x1c2).
+    // The ended flask effects' buffs come off the player (S→C 0x1c2).
     static async Task EndFlaskEffects(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, List<Flasks.Effect> ended, string why)
     {
         foreach (var e in ended)
@@ -539,7 +541,7 @@ partial class Program
         _ => null,
     };
 
-    // The death screen's buttons (Cв†’S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
+    // The death screen's buttons (C→S 0x54). Both hide the screen (0x55 with bit1) and give the player full life; "at
     // checkpoint" revives next to the area's activated waypoint, else at its arrival point (teleport 0x1b7, AreaLayout.Checkpoint),
     // "in town" in the character's last town (an area change;
     // in that town it is the same as the checkpoint).
@@ -550,6 +552,7 @@ partial class Program
             if (conn.PlayerLife > 0) return;
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
+            conn.HitRecovery.Clear();
             conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;
@@ -589,6 +592,7 @@ partial class Program
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
         var stats = CharacterPlayerStats(conn);
+        var characterInputs = new Dictionary<uint, int>(stats);
         // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:
         // before, every area started with the class's unarmed attack, so a weapon's added damage and attack speed showed only
         // after taking it off and putting it back. After the stats, which mark the inactive items WeaponFor skips.
@@ -603,7 +607,7 @@ partial class Program
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList])], Stats: [.. weaponStats, .. statList],
+            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList], characterInputs, weapon)], Stats: [.. weaponStats, .. statList],
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));
@@ -616,7 +620,7 @@ partial class Program
             ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
             ($"0x02b9 create {player} ({cls.ObjectType}) type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, player.Blob())),
         };
-        // The player's inventories (id = row + 1), needed by UI built on entering (flask bar в†’ row 11), with the character's items.
+        // The player's inventories (id = row + 1), needed by UI built on entering (flask bar → row 11), with the character's items.
         var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items);
         if (Items.Error is not null) Console.WriteLine($"[gateway] items: {Items.Error}");
         foreach (var slot in InstanceInventories.PlayerDefaults)

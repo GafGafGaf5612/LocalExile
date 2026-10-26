@@ -1,5 +1,5 @@
 /// <summary>
-/// A spell's hit before crits and the target's mitigation (Agents/docs/protocol/11-skills.md В§9): per damage type, the
+/// A spell's hit before crits and the target's mitigation (Agents/docs/protocol/11-skills.md §9): per damage type, the
 /// skill's spell_minimum/maximum_base_{type}_damage scaled by 1 + the summed increases that apply: damage_+%,
 /// spell_damage_+%, elemental_damage_+% (fire, cold, lightning), the type's own {type}_damage_+%, and
 /// projectile_damage_+% for projectile skills (base_is_projectile). The skill's stats include the player's (passives,
@@ -74,7 +74,7 @@ static class SpellDamage
     /// <summary>One hit: uniform between the minimum and the maximum, fraction dropped.</summary>
     public static int Roll((double Min, double Max) hit, Random rng) => (int)Math.Floor(hit.Min + rng.NextDouble() * (hit.Max - hit.Min));
 
-    /// <summary>The panel's Damage per Use and Damage per Second (both Г— 100) for a spell cast this often.</summary>
+    /// <summary>The panel's Damage per Use and Damage per Second (both × 100) for a spell cast this often.</summary>
     public static (int PerUse, int PerSecond) Display((double Min, double Max) hit, double castsPerSecond)
     {
         double average = (hit.Min + hit.Max) / 2.0;
