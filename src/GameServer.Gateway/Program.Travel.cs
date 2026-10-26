@@ -43,21 +43,23 @@ partial class Program
         // A self-cast skill (Righteous Fire) targets the player itself: echo it in place, then cast.
         if (use.TargetId == PlayerId && Skills.IsGemSkill(use.SkillId))
         {
-            int selfAction;
-            (int X, int Y) self;
-            lock (conn.Monsters)
-            {
-                if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
-                selfAction = Interlocked.Increment(ref conn.ActionCount);
-                double at = conn.Clock.Elapsed.TotalSeconds;
-                self = conn.Walk.Position(at);
-                conn.Walk.Order(self.X, self.Y, at);
-            }
+            var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId);
+            double at = conn.Clock.Elapsed.TotalSeconds;
+            (int X, int Y) self = default;
+            if (!TryBeginCooldownUse(conn, gem.Effect,
+                gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+                () =>
+                {
+                    Interlocked.Increment(ref conn.ActionCount);
+                    self = conn.Walk.Position(at);
+                    conn.Walk.Order(self.X, self.Y, at);
+                }, out var cooldownUse, requestedAt: requestedAt)) return;
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, self.X, self.Y, self.X, self.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: PlayerId),
                 $"0x01ab player skill 0x{use.SkillId:x4} cast on itself at ({self.X}, {self.Y})",
-                still: () => PlayerActionCurrent(conn, selfAction));
-            await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId, sequence: use.Sequence, actionToken: selfAction);
+                still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? true);
+            await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId, sequence: use.Sequence,
+                actionToken: cooldownUse?.ActionToken, cooldownUse: cooldownUse);
             return;
         }
         if (conn.Instance.Ground.Get(use.TargetId) is { } ground)

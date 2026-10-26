@@ -265,7 +265,7 @@ partial class Program
     // before another task's packets were sent can check that it still applies (SendFlinch).
     // Projectile impacts commit their short locked damage mutation inside this gate before relocation.
     // A factory samples clock-sensitive state and constructs its packet after earlier sends; null sends nothing.
-    static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
+    internal static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
         Func<bool>? still = null, Func<byte[]?>? atGate = null)
     {
         var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));

@@ -233,20 +233,20 @@ partial class Program
             }
             var weapon = WeaponFor(conn);
             double now = conn.Clock.Elapsed.TotalSeconds;
-            int action;
-            (int X, int Y) target, here, stop;
-            double arrive;
-            lock (conn.Monsters)
-            {
-                if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
-                action = Interlocked.Increment(ref conn.ActionCount);
-                target = m.Walk.Position(now);
-                (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now, tolerance: m.StopRange - 2);
-            }
+            int action = 0;
+            (int X, int Y) target = default, here = default, stop = default;
+            double arrive = now;
+            if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+                () =>
+                {
+                    action = Interlocked.Increment(ref conn.ActionCount);
+                    target = m.Walk.Position(now);
+                    (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now, tolerance: m.StopRange - 2);
+                }, out var approachTicket, reserve: false, requestedAt: requestedAt)) return;
             Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x}: player ({here.X}, {here.Y}), " +
                 $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s (t={now:0.000})");
             if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
-            if (conn.ActionCount != action)
+            if (conn.ActionCount != action || approachTicket?.Current(conn) == false)
             {
                 Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x} cancelled before the swing");
                 return;
@@ -258,42 +258,48 @@ partial class Program
                 Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x} out of reach: {Dist(stop, target):0.0} > {weapon.Range}");
                 return;
             }
+            if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+                () => { }, out var cooldownUse, actionToken: action)) return;
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
                 $"0x01ab player skill 0x{use.SkillId:x4} {gem.Name} on monster 0x{use.TargetId:x} ({m.Label}) from ({stop.X}, {stop.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4} (t={conn.Clock.Elapsed.TotalSeconds:0.000})",
-                still: () => PlayerActionCurrent(conn, action));
-            _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stop, target, use.TargetId, sequence: use.Sequence, actionToken: action);
+                still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, action));
+            _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stop, target, use.TargetId, sequence: use.Sequence,
+                actionToken: action, cooldownUse: cooldownUse);
             return;
         }
-        int castAction;
-        (int X, int Y) aim, stand;
-        lock (conn.Monsters)
-        {
-            if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
-            castAction = Interlocked.Increment(ref conn.ActionCount);
-            double castAt = conn.Clock.Elapsed.TotalSeconds;
-            aim = m.Walk.Position(castAt);
-            stand = conn.Walk.Position(castAt);
-            conn.Walk.Order(stand.X, stand.Y, castAt);
-        }
+        double castAt = conn.Clock.Elapsed.TotalSeconds;
+        int castAction = 0;
+        (int X, int Y) aim = default, stand = default;
+        if (!TryBeginCooldownUse(conn, gem.Effect, gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+            () =>
+            {
+                castAction = Interlocked.Increment(ref conn.ActionCount);
+                aim = m.Walk.Position(castAt);
+                stand = conn.Walk.Position(castAt);
+                conn.Walk.Order(stand.X, stand.Y, castAt);
+            }, out var spellUse, requestedAt: requestedAt)) return;
         await Send(remote, stream, ciphers,
             InstanceProtocol.ActionStarted(PlayerId, stand.X, stand.Y, aim.X, aim.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
             $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({stand.X}, {stand.Y}) to ({aim.X}, {aim.Y}), flags 0x{use.Flags:x4}",
-            still: () => PlayerActionCurrent(conn, castAction));
-        _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stand, aim, use.TargetId, sequence: use.Sequence, actionToken: castAction);
+            still: () => spellUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, castAction));
+        _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stand, aim, use.TargetId, sequence: use.Sequence,
+            actionToken: spellUse?.ActionToken ?? castAction, cooldownUse: spellUse);
     }
 
     // A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one). False when
     // it was refused (cooldown, mana), so its use is not confirmed to the client.
     static async Task<bool> CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0, int? actionToken = null,
-        bool locationInstant = false)
+        ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0,
+        int? actionToken = null, CooldownUseTicket? cooldownUse = null, bool locationInstant = false)
     {
         int action = actionToken ?? conn.ActionCount;
         lock (conn.Monsters)
             if (actionToken is not null && (conn.ActionCount != action || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
         if (InTown(conn) || conn.PlayerLife == 0) return false;
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        bool Current() => cooldownUse?.Current(conn) ?? (actionToken is null || PlayerActionCurrent(conn, action));
+        if (!Current()) return false;
         if (locationInstant && (gem.Name is null || !InstantLocationSkill.Supported(Skills, gem.Effect))) return false;
         if (gem.Name is not null && Skills.IsSpell(gem.Effect) && !Skills.IsAttack(gem.Effect)
             && CastMs(conn, gem.Effect) is null)
@@ -317,14 +323,27 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: needs {souls} Vaal souls, has 0");
             return false;
         }
-        // A skill with a cooldown (GEPL Cooldown: auras 1200 ms) is refused until it is over: spamming Haste toggled it.
-        if (gem.Name is not null && Skills.CooldownMs(gem.Effect, gem.Level) is int cooldown and > 0)
+        // Eligible uses arrive with their one original preflight reservation. Never reserve again after an await.
+        if (cooldownUse is not null)
+        {
+            if (!cooldownUse.TryExecute(conn, gem.Effect)) return false;
+            if (!cooldownUse.Instant) await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
+            if (!Current()) return false;
+        }
+        else if (gem.Name is not null && CooldownFor(conn, gem.Effect, gem.Level, gem.Quality) is not null)
+            return false;
+        // Multi-use and unsupported cooldown mechanics retain their existing raw-deadline behavior.
+        else if (gem.Name is not null && Skills.CooldownMs(gem.Effect, gem.Level) is int cooldown and > 0)
         {
             double now = conn.Clock.Elapsed.TotalSeconds, readyAt;
             lock (conn.Monsters)
             {
                 readyAt = conn.SkillReadyAt.GetValueOrDefault(gem.Effect);
-                if (now >= readyAt) conn.SkillReadyAt[gem.Effect] = now + cooldown / 1000.0;
+                if (now >= readyAt)
+                {
+                    conn.SkillReadyAt[gem.Effect] = now + cooldown / 1000.0;
+                    conn.SingleUseCooldowns.Remove(gem.Effect);
+                }
             }
             if (now < readyAt)
             {
@@ -355,12 +374,20 @@ partial class Program
         }
         if (gem.Name is not null && Skills.Reservation(gem.Effect, gem.Level) is { } reservation)
         {
+            if (!Current()) return false;
             await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, gem.Level, gem.Quality);
             return true;
         }
         if (gem.Name is not null)
         {
-            if (!PayMana(conn, gem.Effect, gem.Level, gem.Quality, out uint cost))
+            uint cost;
+            bool paid;
+            lock (conn.Monsters)
+            {
+                if (!Current()) return false;
+                paid = PayMana(conn, gem.Effect, gem.Level, gem.Quality, out cost);
+            }
+            if (!paid)
             {
                 Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: not enough mana ({conn.PlayerMana} < {cost})");
                 return false;
@@ -369,6 +396,7 @@ partial class Program
                 await SendPlayerMana(remote, stream, ciphers, conn,
                     $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
         }
+        if (!Current()) return false;
         // Location instant acceptance handles only Frostblink's repositioning, without inventing its departure/arrival
         // hits or chilled ground. In particular do not route it through the generic single-area hit approximation.
         if (locationInstant) return true;
@@ -380,7 +408,7 @@ partial class Program
             if (CastMs(conn, gem.Effect) is not int castMs) return false;
             _ = Task.Delay(castMs).ContinueWith(async _ =>
             {
-                if (!conn.Closed && PlayerActionCurrent(conn, action))
+                if (!conn.Closed && PlayerActionCurrent(conn, action) && Current())
                     await OpenTownPortal(remote, stream, ciphers, conn, from.X, from.Y, "Portal skill");
             });
             return true;
@@ -388,7 +416,8 @@ partial class Program
         if (gem.Name is not null && IsRighteousFire(gem.Effect))
             await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
         else
-            await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId, sequence: sequence, actionToken: action);
+            await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId, sequence: sequence,
+                actionToken: actionToken, cooldownUse: cooldownUse);
         return true;
     }
 
@@ -410,10 +439,16 @@ partial class Program
             epoch = conn.ProjectileEpoch;
             if (!conn.ProjectileActive(epoch) || conn.Paused || !conn.PlayerSent || conn.PendingTransfer is not null) return;
         }
-        if (await CastGemSkill(remote, stream, ciphers, conn, skillId, at, at, targetId))
+        if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
+            true, () => { }, out var cooldownUse)) return;
+        if (await CastGemSkill(remote, stream, ciphers, conn, skillId, at, at, targetId, cooldownUse: cooldownUse))
+        {
             await Send(remote, stream, ciphers, InstanceProtocol.InstantAction(PlayerId, skillId, at.X, at.Y, targetId),
                 $"0x01ce player skill 0x{skillId:x4}: instant action (its use and cooldown)",
-                still: () => conn.ProjectileActive(epoch) && conn.PlayerLife > 0 && !conn.Paused);
+                still: () => conn.ProjectileActive(epoch) && conn.PlayerLife > 0 && !conn.Paused
+                    && (cooldownUse?.CommitNativeUse(conn, skillId) ?? true));
+            await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
+        }
     }
 
     static async Task UseInstantSkillAtLocation(string remote, NetworkStream stream, ConnectionCiphers ciphers,
@@ -440,7 +475,9 @@ partial class Program
             }
             else if (!InstantLocationSkill.TryResolve(conn, epoch, aim, InTown(conn), CurrentStats(), out from, out to)) return;
         }
-        if (!await CastGemSkill(remote, stream, ciphers, conn, skillId, from, to, locationInstant: true)) return;
+        if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
+            true, () => { }, out var cooldownUse)) return;
+        if (!await CastGemSkill(remote, stream, ciphers, conn, skillId, from, to, cooldownUse: cooldownUse, locationInstant: true)) return;
         bool accepted = false;
         // Keep the raw aim: IceDash resolves it from the client's position when 0x1ce runs. Sending an already rounded
         // endpoint can normalize a short diagonal twice and move another cell. Resolve the server copy at this gate too.
@@ -462,11 +499,16 @@ partial class Program
                         if (!InstantLocationSkill.TryCommit(conn, epoch, aim, InTown(conn), CurrentStats(), out _)) return null;
                         rawAim = ((int)aim.X, (int)aim.Y);
                     }
+                    if (cooldownUse?.CommitNativeUse(conn, skillId) == false) return null;
                     accepted = true;
                     return InstanceProtocol.InstantAction(PlayerId, skillId, rawAim.X, rawAim.Y, targetObjectId);
                 }
             });
-        if (accepted) await FollowRighteousFire(remote, stream, ciphers, conn);
+        if (accepted)
+        {
+            await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
+            await FollowRighteousFire(remote, stream, ciphers, conn);
+        }
     }
 
     // Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them
@@ -539,22 +581,24 @@ partial class Program
     // cell), stopping at the first wall or monster on its path; a monster takes the skill's damage packet
     // (SkillCatalog.HitDamage, after conversion). It explodes there; then the object is removed.
     static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0, int? actionToken = null)
+        ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0,
+        int? actionToken = null, CooldownUseTicket? cooldownUse = null)
     {
-        int action = actionToken ?? conn.ActionCount;
-        if (conn.ActionCount != action) return;
+        int action = actionToken ?? cooldownUse?.ActionToken ?? conn.ActionCount;
+        if (cooldownUse?.Instant != true && !PlayerActionCurrent(conn, action)) return;
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
         if (gem.Name is null) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4}: no gem skill"); return; }
         if (Skills.ProjectileFor(gem.Effect) is not { } projectile)
         {
             // Not a projectile skill (strikes, slams, areas): its hit lands on the monsters around the aimed point.
-            await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence, actionToken: action);
+            await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence,
+                actionToken: actionToken, cooldownUse: cooldownUse);
             return;
         }
         var projectileHitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
         if (!projectileHitPlan.CanHit) return;
         int epoch;
-        lock (conn.Monsters) epoch = conn.ProjectileEpoch;
+        lock (conn.Monsters) epoch = cooldownUse?.ProjectileEpoch ?? conn.ProjectileEpoch;
         // Released at the action's contact keyframe. An attack gem (Burning Arrow, Caustic Arrow …) plays the weapon's
         // attack1 animation, which the client stretches to the weapon's attack time: its contact is attack1_bow's 399/1066
         // (0.374 for the Ranger) of that time. A spell plays its spell_projectile clip instead (Dex: 699/1133 = 0.617 of
@@ -569,7 +613,8 @@ partial class Program
             ? AttackContactDelay(conn, SkillAttackSeconds(conn, gem.Effect, gem.Level), approach: false)
             : castDuration.Value / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
         if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, releaseDelay), epoch)
-            || !PlayerActionCurrent(conn, action)) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
+            || (cooldownUse?.Instant != true && !PlayerActionCurrent(conn, action)) || cooldownUse?.Current(conn) == false)
+        { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
         // A worn skill effect (its skill_art_variation) flies its own projectile and explodes in its own art (SkillArt).
         int variation = SkillArtVariation(conn, gem.Gem);
         projectile = (Art.Projectile(projectile.Id, variation), projectile.Speed);
@@ -586,7 +631,7 @@ partial class Program
         int SkillSpeedStat(string name) => Stats.Key(name) is uint key ? skillSpeedStats.GetValueOrDefault(key) : 0;
         float speed = ProjectileSpeed.CellsPerSecond(projectile.Speed, PlayerSpeedStat, SkillSpeedStat,
             Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));
-        await FlyProjectile(remote, stream, ciphers, conn, (projectile.Id, speed), from, to, impact: impact, actionToken: action, damageTo: m =>
+        await FlyProjectile(remote, stream, ciphers, conn, (projectile.Id, speed), from, to, impact: impact, actionToken: cooldownUse is null || cooldownUse.Instant ? null : action, damageTo: m =>
         {
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
             // types separate so conversion and per-type mitigation apply. An attack gem (Burning Arrow, Caustic Arrow …) has
@@ -645,8 +690,10 @@ partial class Program
     // cones, chains), stun, and the attack's accuracy roll.
     static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
-        bool immediate = false, ushort sequence = 0, int? actionToken = null)
+        bool immediate = false, ushort sequence = 0, int? actionToken = null, CooldownUseTicket? cooldownUse = null)
     {
+        bool Current() => cooldownUse?.Current(conn) ?? (actionToken is null || conn.ActionCount == actionToken);
+        if (!Current()) return;
         var skillStats = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
         int effectiveness = Skills.DamageEffectiveness(gem.Effect, gem.Level);
@@ -665,13 +712,13 @@ partial class Program
         int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
         // A melee skill aimed far away still lands in front of the player.
         var centre = !spell && Dist(from, to) > radius + weapon.Range ? from : to;
-        int action = actionToken ?? conn.ActionCount;
-        if (conn.ActionCount != action) return;
+        int action = actionToken ?? cooldownUse?.ActionToken ?? conn.ActionCount;
+        if (cooldownUse?.Instant != true && conn.ActionCount != action) return;
         // A channel's hits (Cyclone, C→S 0x197) land at once, where the player is.
         if (!immediate)
         {
             await Task.Delay(TimeSpan.FromSeconds(Math.Max(0.05, delay)));
-            if (conn.ActionCount != action || conn.Closed) return;
+            if ((cooldownUse?.Instant != true && conn.ActionCount != action) || conn.Closed || !Current()) return;
         }
         double now = conn.Clock.Elapsed.TotalSeconds;
         List<(uint Id, SpawnedMonster M)> targets;
@@ -693,7 +740,8 @@ partial class Program
                 ? criticalChance > 0 && SpellCriticalStrike.Hits(criticalChance, Random.Shared.Next(SpellCriticalStrike.RollSize))
                 : conn.Pools.AttackCriticalStrikeChance > 0 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
             if (critical) damage = DamageModel.CriticalDamage(damage, spell ? conn.Pools.SpellCriticalStrikeMultiplier : conn.Pools.CriticalStrikeMultiplier);
-            await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}", melee: !spell, sequence: sequence, actionToken: action);
+            await HitMonster(remote, stream, ciphers, conn, id, m, damage, $"{gem.Name}{(critical ? " (critical)" : "")}",
+                melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
@@ -788,7 +836,6 @@ partial class Program
                         return true;
                     }
                 });
-            // Object creation is the release boundary; later flight is independent of the caster's action token.
             if (!released) return;
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null :
                 $"0x01a9 projectile 0x{id:x} enters wake zone", still: Active);
@@ -882,12 +929,13 @@ partial class Program
 
     // A hit on a living monster: life is mutated once under Monsters, then notifications await outside the lock.
     static async Task HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
-        int damage, string by, bool log = true, bool melee = false, ushort sequence = 0, int? actionToken = null)
+        int damage, string by, bool log = true, bool melee = false, ushort sequence = 0, int? actionToken = null,
+        CooldownUseTicket? cooldownUse = null)
     {
         MonsterHit? hit;
         lock (conn.Monsters)
         {
-            if (actionToken is int token && !PlayerActionCurrent(conn, token)) return;
+            if (cooldownUse is not null ? !cooldownUse.Current(conn) : actionToken is int token && !PlayerActionCurrent(conn, token)) return;
             hit = ApplyMonsterHitLocked(conn, m, damage);
         }
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
