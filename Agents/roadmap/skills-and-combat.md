@@ -39,6 +39,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   inherited weapon hit damage. Automated checks pass; verify selection, equipment updates and relog in the client.
   DPS remains a pre-crit/pre-mitigation average; crit weighting, integer-roll expectation, cooldowns and DoT/beam
   displays remain separate work. Quality conversion and existing modifier precedence are unchanged.
+  Selected attack-gem main-hand ranges and pre-crit averages now share the existing converted combat packet.
+  Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.
+  Equipment UI refresh remains to be checked separately.
+  Off-hand alternation, conditional damage, supports and modifier-scope corrections remain separate work.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 

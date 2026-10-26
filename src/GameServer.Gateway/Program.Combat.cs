@@ -526,9 +526,8 @@ partial class Program
                 () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
             var hit = projectileHitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
-                        Skills.DamageEffectiveness(gem.Effect, gem.Level))
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
+                () => AttackSkillHit.Resolve(WeaponFor(conn), CharacterPlayerStats(conn),
+                    Skills.EffectStats(gem.Effect, gem.Level), Stats, Skills.DamageEffectiveness(gem.Effect, gem.Level)),
                 _ => SpellHit.Resolve(projectileHitPlan, Stats, stats, own,
                     ConversionFor(conn, gem.Effect, gem.Level, attack: false), AddedEffectiveness(gem.Effect, gem.Level)));
             int damage = hit.RollTotal(Random.Shared);
@@ -614,8 +613,7 @@ partial class Program
         foreach (var (id, m) in targets)
         {
             DamagePacket hit = hitPlan.BuildHit(
-                () => SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
-                    .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
+                () => AttackSkillHit.Resolve(weapon, player, Skills.EffectStats(gem.Effect, gem.Level), Stats, effectiveness),
                 _ => SpellHit.Resolve(hitPlan, Stats, stats, skillStats,
                     ConversionFor(conn, gem.Effect, gem.Level, attack: false), AddedEffectiveness(gem.Effect, gem.Level)));
             int damage = hit.RollTotal(Random.Shared);

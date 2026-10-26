@@ -1118,6 +1118,40 @@ game has a spell form).
 sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
 the main hand is filled, since the server attacks with it; an empty packet adds no rows.
 
+**Selected attack-gem hit rows (#196)** (`AttackSkillHit`, `AttackPanelStats`): main-hand total and per-type
+ranges now use the same packet constructor as projectile and area attack combat.
+The constructor preserves the current order: the actual weapon's hit with character modifiers, flat added attack
+damage from character inputs, the skill's level-aware effectiveness, then conversion and gain-as-extra.
+Conversion retains `ConversionFor` precedence: player keys win and level-only skill keys fill gaps, without quality
+conversion. Skill-owned damage modifiers are not newly applied; this panel change preserves current combat rules.
+Burning Arrow level one uses effectiveness 18000 and 100% skill physical-to-fire conversion; Heavy Strike uses 12430.
+All twelve main-hand range fields are explicit and floored, including zeros for absent types after conversion.
+`CharacterPanelStats` reads whole-number total keys 670/671, physical 279/280, fire 267/268, cold 263/264,
+lightning 271/272 and chaos 275/276. These rows retain the existing main-hand and spell/secondary gates.
+Per-use average (2044) and DPS (679) are hundredths; packet fractions are retained through the average, and DPS
+uses the skill's already-emitted `hundred_times_attacks_per_second` (678), rather than recalculating attack timing.
+Consequently DPS uses that rounded displayed rate, not a new precise action-rate calculation.
+Copied-save GUI baseline: a 5-13 physical bow with Strength 14 showed 5-13 physical/total, per-use 9.18 and DPS 12.86
+for both ordinary attack and Burning Arrow, while Burning Arrow already showed its corrected APS 0.98.
+The preserved raw packet is 5.1-13.26; Burning Arrow resolves 9.18-23.868 fire, average 16.524.
+Actual native checks now show 9-23 fire/total, physical zero, per-use 16.52 and DPS 16.19 at emitted APS 0.98.
+Adding 5 flat cold attack damage showed cold 9-9, fire 9-23, total 18-32, per-use 25.52 and DPS 25.01.
+An actual noncritical server hit dealt 24 damage to an 86-life Ash Harvester.
+Clearing the added cold stat returned every cold field to zero and restored the 9-23 fire/total display.
+Relog retained Burning Arrow's 9-23, per-use 16.52 and DPS 16.19; ordinary attack stayed 5-13 physical,
+per-use 9.18, DPS 12.86 and APS 1.40.
+The fixture is also regression-tested.
+Crit weighting, accuracy, target mitigation, integer-roll expectation and downtime are excluded.
+Initial creation and refresh both pass raw `CharacterPlayerStats` plus the actual weapon into `GemSkills` separately
+from inherited final display stats. Derived hand ranges cannot feed back into the packet.
+Only attack gems receive this override; ordinary attacks, spells, non-attack actions and off-hand rows keep their
+existing display paths. Supports, conditional mechanics, off-hand alternation and broader modifier-scope corrections
+remain separate work. Existing character modifiers are preserved even where their weapon scope remains approximate.
+Real catalog, packet/source-isolation, conversion, added-damage, flooring, absent-type and native-table tests pass.
+Native skill selection, stat refresh/clearing and relog checks passed; equipment UI refresh was not separately exercised.
+Local integration captures are `logs/attack-damage-burning-arrow-{default,added-cold,cleared,relog}.json`
+and `logs/attack-damage-server-hit.json`; no extracted data changes are needed.
+
 **Selected spell hit rows** (`SpellPanelStats`, issue #188): `spell_minimum/maximum_total_damage` and
 `spell_minimum/maximum_{physical,fire,cold,lightning,chaos}_damage` come from `SpellHit.Resolve`, the same converted
 packet used by projectile and area combat. Every spell range is written, including zeros for absent types and hitless

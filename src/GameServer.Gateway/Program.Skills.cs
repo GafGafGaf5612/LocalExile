@@ -15,7 +15,7 @@ partial class Program
     static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
     {
         var player = FinalPlayerStats(conn).ToList();
-        return [.. Skills.PlayerDefaults(player), .. GemSkills(conn.Character, player, CharacterPlayerStats(conn))];
+        return [.. Skills.PlayerDefaults(player), .. GemSkills(conn.Character, player, CharacterPlayerStats(conn), WeaponFor(conn))];
     }
 
     // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
@@ -222,7 +222,7 @@ partial class Program
     // (SkillCatalog.EffectStats: damage, cast time, mana cost) after the player's, with ids after the default attack's that
     // no basic action uses (SkillCatalog.SkillIds).
     static IEnumerable<GrantedSkill> GemSkills(string? character, IEnumerable<(uint, int)> player,
-        IReadOnlyDictionary<uint, int> conversionPlayer)
+        IReadOnlyDictionary<uint, int> characterInputs, SkillCatalog.Unarmed mainHand)
     {
         var playerStats = new Dictionary<uint, int>();
         foreach (var (key, value) in player) playerStats[key] = value;
@@ -277,9 +277,17 @@ partial class Program
             {
                 // Match ConversionFor: character inputs win and level-only skill inputs fill missing keys.
                 // Quality still affects the base hit and modifiers, but not conversion, as in combat today.
-                var conversion = DamageStats.Conversion(conversionPlayer, Skills.EffectStats(effect, level), Stats, attack: false);
+                var conversion = DamageStats.Conversion(characterInputs, Skills.EffectStats(effect, level), Stats, attack: false);
                 var hit = SpellHit.Resolve(hitPlan, Stats, playerStats, own, conversion, AddedEffectiveness(effect, level));
                 foreach (var (stat, value) in SpellPanelStats.Compute(hitPlan, hit, Get("hundred_times_casts_per_second")))
+                    if (Stats.Key(stat) is uint key) stats[key] = value;
+            }
+            var attackPlan = SkillHitPlan.ForSkill(Skills, effect, level, quality);
+            if (attackPlan.Kind == SkillHitKind.Attack)
+            {
+                var attackHit = AttackSkillHit.Resolve(mainHand, characterInputs, Skills.EffectStats(effect, level),
+                    Stats, Skills.DamageEffectiveness(effect, level));
+                foreach (var (stat, value) in AttackPanelStats.Compute(attackPlan, attackHit, Get("hundred_times_attacks_per_second")))
                     if (Stats.Key(stat) is uint key) stats[key] = value;
             }
             if (Skills.FindByRow(id, effect, level, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)

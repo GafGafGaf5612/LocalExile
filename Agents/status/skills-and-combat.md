@@ -178,6 +178,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   Original weapon base 714 ms and player speed 0% stayed unchanged; release/contact timing was not separately measured.
   Catalog, modifier-order, native-field and spell-exclusion tests pass.
   Supports, conditional/per-charge speed, special time overrides and attack-gem damage/DPS remain separate work.
+  Selected attack-gem main-hand ranges now share the converted combat packet, including skill effectiveness.
+  All twelve ranges clear absent types; pre-crit averages retain fractions and DPS uses the emitted APS value.
+  Creation and refresh pass raw character stats and the actual weapon separately from inherited display values.
+  Native Burning Arrow showed 9-23 fire/total, physical zero, per-use 16.52 and DPS 16.19 at APS 0.98.
+  Added cold damage showed 9-9 cold and 18-32 total; clearing it removed the cold rows.
+  Relog retained the base result.
+  A noncritical server hit dealt 24 damage, while ordinary attack retained its original ranges and averages.
+  Packet, catalog, conversion, source-isolation and native row-format tests also pass.
+  Ordinary attacks, spells and off-hand display paths are unchanged.
+  Conditional/support effects, crit weighting and broader weapon modifier scope remain separate work.
   The default attack also sends the panel's `hundred_times_damage_per_second` and
   `display_hundred_times_damage_per_skill_use`.
   Live verified: the dual-wield character's APS follows the passives (2.93 → 2.98 after a node).
