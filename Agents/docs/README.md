@@ -53,6 +53,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [dev/passive-graph-data.md](dev/passive-graph-data.md) | pinned PSG format and read-only analysis exports; no client installation or gameplay integration |
 | [dev-server.md](dev-server.md) | the JSON-lines dev server, `GameServer.Auth` and `GameServer.Patch` usage |
 | [saves.md](saves.md) | how player progress is saved: the SQLite save database, transactions, what a failed save does |
+| [game/fortification.md](game/fortification.md) | melee-hit protection and the explicit server model |
 | [game/maps.md](game/maps.md) | 3.29 maps and the Atlas: the 20 generic map bases, tiers, drops, Voidstones (rules to build to) |
 
 ## Working notes (history)

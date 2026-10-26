@@ -211,18 +211,23 @@ partial class Program
                 return;
             }
             stored = m.Impale.Bonus;
-            if (stored > 0) hit = hit.Add(DamageType.Physical, new DamageRange(stored, stored));
             m.Impale.AfterHit();
             int impaleChance = Stats.Key("impale_on_hit_%_chance") is uint impaleKey ? player.GetValueOrDefault(impaleKey) : 0;
             impaled = impaleChance > 0 && Random.Shared.Next(100) < impaleChance && m.Impale.Apply(physical);
             // Read before the hit is applied: a killing blow clears the target's impales.
             impaleStacks = m.Impale.Stacks;
             impaleStored = m.Impale.Bonus;
-            var rolled = hit.Roll(Random.Shared);
+            var ownRolled = hit.Roll(Random.Shared);
+            // Impale is stored reflected damage, not part of the direct roll which can generate Fortification.
+            var rolled = stored > 0 ? ownRolled.Add(DamageType.Physical,
+                new DamageRange(Math.Floor(stored), Math.Floor(stored))) : ownRolled;
             critical = conn.Pools.AttackCriticalStrikeChance > 0
                 && Random.Shared.Next(10_000) < conn.Pools.AttackCriticalStrikeChance;
             (damage, resistance) = MonsterDamage(m, rolled, critical, attack: true, resistanceMods, pen);
             if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, conn.Pools.CriticalStrikeMultiplier));
+            FortificationOnHitLocked(conn, m, RawFortificationDamage(ownRolled, critical,
+                CriticalMultiplierOn(m, conn.Pools.CriticalStrikeMultiplier)),
+                WeaponProfileFor(conn, activeSet: true).Melee, player, ownPenetration);
             (m.Life, stageStarts) = TakeDamageLocked(m, damage);
             life = m.Life;
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
@@ -782,6 +787,7 @@ partial class Program
         var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats);
         var mods = HitResistMods(stats, skillStats);
         foreach (var (k, v) in skillStats) stats[k] = v;
+        bool fortificationGranted = false; // One simultaneous sweep, independent of notification latency.
         foreach (var (id, m) in targets)
         {
             if (MonsterBlocks(m, Random.Shared, spell))
@@ -799,7 +805,14 @@ partial class Program
             if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
             if (await HitMonster(remote, stream, ciphers, conn, id, m, damage,
                     $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
-                    melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse))
+                    melee: !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse,
+                    accepted: () =>
+                    {
+                        if (!fortificationGranted)
+                            fortificationGranted = FortificationOnHitLocked(conn, m, RawFortificationDamage(rolled, critical,
+                                CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId))),
+                                !spell && Skills.IsMelee(gem.Effect), player, skillStats);
+                    }))
                 ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
@@ -1020,13 +1033,14 @@ partial class Program
     // the monster was dead already or the action was replaced (the hit did not land).
     static async Task<bool> HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
         int damage, string by, bool log = true, bool melee = false, ushort sequence = 0, int? actionToken = null,
-        CooldownUseTicket? cooldownUse = null)
+        CooldownUseTicket? cooldownUse = null, Action? accepted = null)
     {
         MonsterHit? hit;
         lock (conn.Monsters)
         {
             if (cooldownUse is not null ? !cooldownUse.Current(conn) : actionToken is int token && !PlayerActionCurrent(conn, token)) return false;
             hit = ApplyMonsterHitLocked(conn, m, damage);
+            if (hit is not null) accepted?.Invoke();
         }
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
         return hit is not null;

@@ -11,6 +11,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 
 ## 3. Gameplay
 
+- **Fortification extensions:** the hit-generated system is implemented and native-verified separately from Behemoth.
+  Other conditional sources, permanent grants and specialised monster ailment thresholds remain separate work.
+  See [Fortification](../docs/game/fortification.md).
+
 - **Ordinary aura activation:** nine previously rejected self auras now share reservation, presentation and the
   supported stat/damage paths.
   Remaining work: Discipline's ES pool, Pride's enemy debuff, conditional consecrated ground, herald/minion/banner

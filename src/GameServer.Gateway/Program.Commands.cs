@@ -62,7 +62,8 @@ partial class Program
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
                 lock (conn.Monsters) conn.PlayerStats[requirement] = value;
-            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
                 $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
             // Skills compute with their own stats (the attack and the character panel read those), so send them again.
             await SendSkills(remote, stream, ciphers, conn);
@@ -670,7 +671,8 @@ partial class Program
             bool off = args[0].Equals("off", StringComparison.OrdinalIgnoreCase);
             int value = off ? 0 : int.Parse(args[0]);
             lock (conn.Monsters) { if (off) conn.PlayerStats.Remove(stat); else conn.PlayerStats[stat] = value; }
-            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
                 $"0x01b3 stats: base_skill_area_of_effect_+% = {(off ? "the character's own" : value)}");
             await SendSkills(remote, stream, ciphers, conn);
             bool relit = await RelightRighteousFire(remote, stream, ciphers, conn, "/set_aoe");

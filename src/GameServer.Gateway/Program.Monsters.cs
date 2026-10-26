@@ -264,6 +264,8 @@ partial class Program
                     ? DamageModel.MitigatePhysical(value, conn.Pools.Armour, reduction.Physical)
                     : GameServer.Core.World.DamageTypes.IsElemental(type) ? DamageModel.Reduce(value, reduction.Elemental) : value;
             }
+            damage = FortificationDamageTaken(conn, damage);
+            chaosDamage = FortificationDamageTaken(conn, chaosDamage);
             blocked = DamageModel.Blocks(conn.Pools.BlockChance, Random.Shared.NextDouble() * 100, conn.Pools.AttackBlockLucky);
             if (blocked) { damage = 0; chaosDamage = 0; }
             manaBefore = conn.PlayerMana;
