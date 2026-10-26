@@ -4,6 +4,17 @@ using GameServer.Core.Protocol.Login;
 
 partial class Program
 {
+    // Until the ES pool integration owns stun avoidance, exclude any known source, including raw aura/item ES and
+    // active armour/shield bases which the standalone server does not yet fold into maximum_energy_shield.
+    static bool PlayerHasEnergyShieldForRecovery(ClientState conn, Func<string, int> get)
+    {
+        if (PlayerHitRecovery.EnergyShieldPresent(get)) return true;
+        return ItemModStats.EquipmentRows.SelectMany(ItemsOf(conn).Items)
+            .Where(i => !IsInactive(conn, i.Id)).Any(i =>
+                Items.ByHash(i.Item.TypeHash) is { } type && Items.Defences(type) is { EnergyShieldMin: > 0 }
+                || ItemModStats.Local(i.Item, Items.Mods).GetValueOrDefault("local_energy_shield") > 0);
+    }
+
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
     // The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes

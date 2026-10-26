@@ -27,6 +27,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Start:** the remaining quest reward offers and offer 8's magic-armour choices.
   NPCDialogueWindow's option handler is `0x140723d60` / `0x14071f6d0`.
   Shops from NPCShop / ShopSets.
+  Common vendor recipes and transactional quoted settlement are implemented.
+  Verify quote/acceptance in the real client; complete special league/unique recipes and audit all affix sale prices.
+  See [vendor recipes](../docs/protocol/24-vendor-recipes.md) for the remaining scope.
   Nessa now stocks the deduplicated legacy MapWorlds catalogue and unique map identities.
   Complete unique modifiers and unique-area routing remain separate follow-up work.
   Placements for the other towns (`NpcCatalog.Towns`, with `/pos`).

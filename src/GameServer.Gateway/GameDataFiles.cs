@@ -8,6 +8,7 @@ static class GameDataFiles
     public static readonly (string File, string Feature)[] All =
     [
         ("data/tables/WorldAreas.json", "the game tables (stats, areas, waypoints, items, monsters, NPCs)"),
+        ("data/tables/ModType.json", "vendor affix sale-price categories"),
         ("data/tables/Essences.json", "essence crafting and class-specific guaranteed modifiers"),
         ("data/tables/CraftingBenchOptions.json", "crafting bench recipes, unlocks and costs"),
         ("data/tables/CraftingItemClassCategories.json", "crafting bench item compatibility"),
