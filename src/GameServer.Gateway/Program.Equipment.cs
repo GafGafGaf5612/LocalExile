@@ -231,12 +231,14 @@ partial class Program
         await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
     }
 
-    // Dev commands (/mod, /rarity): changes the held item and replaces it on the cursor (0xbf removing and adding its id).
-    static async Task ChangeHeldItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Func<Item, Item> change, string what)
+    // Dev commands (/mod, /rarity, /sockets): changes the held item and replaces it on the cursor (0xbf removing and adding
+    // its id). The item needs the component the change is about.
+    static async Task ChangeHeldItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Func<Item, Item> change, string what,
+        string component = "Mods")
     {
         var items = ItemsOf(conn);
         if (items.Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
-        if (!held.Item.Components.Contains("Mods")) { await conn.Commands!.Reply($"{Items.ByHash(held.Item.TypeHash)?.Name} has no Mods component"); return; }
+        if (!held.Item.Components.Contains(component)) { await conn.Commands!.Reply($"{Items.ByHash(held.Item.TypeHash)?.Name} has no {component} component"); return; }
         if (items.Change(PlayerInventories.Cursor, held.Id, change) is not { } changed) return;
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
             items.NextRevision(PlayerInventories.Cursor), [held.Id], [changed]), $"0x00bf cursor: item {held.Id} {what}");
