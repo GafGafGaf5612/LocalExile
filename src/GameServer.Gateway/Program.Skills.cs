@@ -254,10 +254,12 @@ partial class Program
             // Cyclone's client effect reads the final radius, not the increased-area input. Match AreaSkillHit.
             if (SkillArea.IsCyclone(Skills.EffectId(effect)))
             {
-                int baseRadius = SkillArea.BaseRadius(Skills.EffectId(effect), Get);
-                int increased = SkillArea.Increased(Get, spell: false);
-                int radiusPercent = SkillArea.RadiusPercent(Get, spell: false);
-                int radius = SkillArea.Radius(baseRadius, Get, spell: false);
+                // The player's base area is in the panel total already (AreaPlayerStats): only the gem's own counts here.
+                int AreaGet(string name) => name == SkillArea.BaseIncreased ? (Stats.Key(name) is uint k ? own.GetValueOrDefault(k) : 0) : Get(name);
+                int baseRadius = SkillArea.BaseRadius(Skills.EffectId(effect), AreaGet);
+                int increased = SkillArea.Increased(AreaGet, spell: false);
+                int radiusPercent = SkillArea.RadiusPercent(AreaGet, spell: false);
+                int radius = SkillArea.Radius(baseRadius, AreaGet, spell: false);
                 if (Stats.Key("active_skill_base_area_of_effect_radius") is uint baseKey) stats[baseKey] = baseRadius;
                 if (Stats.Key("active_skill_area_of_effect_radius") is uint radiusKey)
                     stats[radiusKey] = radius;
