@@ -731,6 +731,8 @@ refused; Ruby: Fire 13% → 53% (maximum 75% → 80%), `/hit fire 1000` took 470
 drained over 8 s; Granite and Jade: armour 0 → 2145, evasion 16 → 1636, then Basalt on top: 2574; Amethyst and
 Bismuth: all elements 48%, chaos 43%; Silver: the Onslaught icon with its countdown, attack and cast speed 5% → 25%;
 death ended Quicksilver at once and a use while dead was refused; `/goto 1_1_town` during Ruby: 13% again in town.
+Then, with the ticker and slot changes: picking Basalt up off the bar ended its effect at once; Granite ended after
+6.01 s (the client's armour 2145 → 0) and a new use started a new ticker (2145 again).
 Not seen live: the client actually walking faster (the bridge cannot make it walk), the effect across a pause, and the
 tooltip's duration with quality.
 
