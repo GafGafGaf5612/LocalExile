@@ -39,6 +39,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   The native check uses development stat inputs; Phrecia node selection and the rest of Whisperer remain separate.
   Code: `DamageStats`, `SkillCatalog.Unarmed.HitDamage`, `SupportedAttackDamage`.
   Docs: [20](../docs/protocol/20-damage.md) §2c.
+- Behemoth Steel Willed: each complete group of 450 final armour adds 2% increased attack damage.
+  The contribution joins raw attack increases once and feeds weapon physical, added damage and supported attacks.
+  Native fixed-hit checks verify thresholds, additive 204/214, modifier removal and maximum-mana lightning.
+  Weapon physical panel checks show 2â€“5 becoming 6â€“15; relog clears the development inputs.
+  Native checks use raw stats on an unascended character; selection and recent-hit armour doubling remain separate.
+  Code: `ArmourAttackDamage`, Gateway (`CharacterPlayerStats`), `SkillCatalog.Unarmed.IncreasedDamage`.
+  Docs: [20](../docs/protocol/20-damage.md) Â§2d.
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
   Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses
   send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` /
