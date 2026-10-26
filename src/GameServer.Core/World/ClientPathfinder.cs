@@ -320,7 +320,6 @@ public static class ClientPathfinder
             {
                 double dx = b.X - x, dy = b.Y - y, clearance = hull + threshold;
                 if (dx * dx + dy * dy < clearance * clearance) return true;
-                continue;
             }
             int btx = b.X / Tile, bty = b.Y / Tile;
             if (btx < tx0 || btx >= tx1 || bty < ty0 || bty >= ty1) continue;

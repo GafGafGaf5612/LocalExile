@@ -39,6 +39,12 @@ few ControlZone, Functions, Stats or Brackets (not written yet).
 The NPC component's debug dump (`0x141e751d0`) prints the NPC and the NPCTalk row the client picks for the player
 (`0x141e76d40`): the client chooses the dialogue itself.
 
+NPC collision uses the same inherited Positioned metadata as the client, including NPCs.dat Id aliases whose
+OT is the row's Metadata. Server routing and overlap escape register every spawned NPC with its own footprint,
+in both towns and hideouts; moving an NPC replaces its registered footprint rather than adding a second one.
+NPCs explicitly marked nonblocking stay nonblocking. Their model hull is used when the type is static.
+The common implementation is `StationaryCollision` / `Program.StationaryCollision.cs` (21, installed furniture).
+
 ## 2. Where town NPCs stand
 
 Each campaign town has one fixed town room (.arm), and the room lists its NPCs among its doodads, one line each:

@@ -43,7 +43,9 @@ bench.
   Other installed objects use the same handler; their individual editor interactions need manual verification.
   Device edits rebuild native walkability through 0x161 and replace the server footprint at the saved position.
   Small-device underfoot escape and walking across its former position are verified in the real client.
-  Check large MTX models and overlapping furniture near walls; save/reentry persistence has automated coverage.
+  NPCs and functional furniture now use inherited OT footprints and static-model hulls through one registry.
+  Waypoints and loot remain passable. Check large MTX models and wall-adjacent layouts separately.
+  Save/reentry persistence and collision escape for all supported NPC types have automated coverage.
 - **Start:** create the decorations (`HideoutObject`, each type's components from data/object-types.json);
   the Edit mode's placement/removal and appearance messages;
   maps: the arrival point, a return portal, fragments and device recipes and map mods.

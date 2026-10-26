@@ -17,9 +17,8 @@ partial class Program
             $"0x02b9 create npc 0x{id:x} {npc} type=0x{type:x8} at ({x}, {y}) rotation {rotation:0.##}, components {string.Join(", ", npc.Components!)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 npc 0x{id:x} enters wake zone");
         lock (conn.Npcs) conn.Npcs[id] = new SpawnedNpc(npc, x, y);
-        conn.SetBlocker(id, x, y, ClientState.NpcBlockerSize);
-        if (HideoutCatalog.ByArea(conn.Layout.Hash) is not null)
-            conn.HideoutEditor.Register(id, "npc:" + npc.Id, x, y, rotation, ClientState.NpcBlockerSize);
+        await RegisterStationaryCollision(remote, stream, ciphers, conn, id, npc.Id, x, y, rotation,
+            HideoutCatalog.ByArea(conn.Layout.Hash) is not null ? "npc:" + npc.Id : null, npc.Model);
     }
 
     // The town's NPCs (NpcCatalog.In) at their cells.
@@ -42,7 +41,7 @@ partial class Program
     static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, SpawnedNpc npc, double requestedAt)
     {
-        if (!TryBeginObjectWalk(conn, requestedAt, npc.X, npc.Y, ClientState.NpcBlockerSize, out var objectWalk)) return;
+        if (!TryBeginObjectWalk(conn, requestedAt, npc.X, npc.Y, Math.Max(0, StationaryCollision.Resolve(npc.Npc.Id, npc.Npc.Model).Size), out var objectWalk)) return;
         var (action, now, here, stop, arrive) = objectWalk;
         Console.WriteLine($"[gateway] {remote} <= 0x0024 npc {npc.Npc} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
