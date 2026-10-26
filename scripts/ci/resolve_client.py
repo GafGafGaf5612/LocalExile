@@ -121,7 +121,10 @@ class Image:
         return None
 
     def build_label(self):
-        return build_label(self.data)
+        for _, _, size, raw, flags in self.sections:  # data sections only: no need to page in the code
+            if not flags & EXECUTE and (label := build_label(memoryview(self.data)[raw:raw + size])):
+                return label
+        return None
 
 
 class Pattern:
@@ -518,7 +521,7 @@ def main():
               f"OK: {len(result['symbols'])} symbols ({mode}), {len(result['globals'])} globals and "
               f"{len(result['offsets'])} offsets reproduce the pinned values in {options.exe.name}")
         return 1 if problems else 0
-    sha256 = hashlib.sha256(image.data).hexdigest()
+    sha256 = sha256_file(options.exe)  # streamed: hashing the mmap would keep all 79 MB resident
     new = updated(signatures, image, result, sha256, options.version)
     text = report(signatures, new, result, options.exe)
     if options.report:
