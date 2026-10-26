@@ -128,10 +128,13 @@ sealed class InstanceGround
 // shortcut: a /spawn_mob name is not kept (packs have none), add it when named monsters matter.
 sealed record SavedMonster(int Variety, byte Level, MonsterRarity Rarity, bool Hostile, int X, int Y, uint Life)
 {
+    /// <summary>Its mods as rolled (MonsterMods.cs): the same affixes, values and rare name on the next entry.</summary>
+    public MonsterModSet Mods { get; init; } = MonsterModSet.None;
+
     public static List<SavedMonster> Save(IEnumerable<SpawnedMonster> monsters, double now) =>
         [.. monsters.Where(m => !m.Dead && m.Variety is not null).Select(m =>
         {
             var (x, y) = m.Walk.Position(now);
-            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life);
+            return new SavedMonster(m.Variety!.Row, m.Level, m.Rarity, m.Hostile, x, y, m.Life) { Mods = m.Mods };
         })];
 }

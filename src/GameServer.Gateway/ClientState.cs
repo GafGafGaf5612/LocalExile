@@ -85,8 +85,12 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public IReadOnlyList<HitAnimation> HitAnimations { get; init; } = [];
     public byte Level { get; init; } = 1;
     public MonsterRarity Rarity { get; init; }
+    // Its mods (MonsterMods.cs): the rarity's own and the rolled affixes, with what they change. Kept with the instance.
+    public MonsterModSet Mods { get; init; } = MonsterModSet.None;
     // Damage over time not yet applied (fractions of a point between ticks).
     public double Burn;
+    // Life regeneration not yet applied (fractions of a point between ticks; RegenerateMonsters).
+    public double Regen;
     // The impales the player's attacks have left on it (Impale.cs); cleared when it dies.
     public readonly ImpaleState Impale = new();
     // While a swing runs (Clock seconds) the monster neither chases nor swings again.
