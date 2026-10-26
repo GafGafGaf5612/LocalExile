@@ -282,6 +282,16 @@ public static class InstanceProtocol
 
     public const ushort AnimationUpdateId = 0x1b2;
 
+    public const ushort ActorAnimationId = 0x1d1;
+
+    /// <summary>S→C 0x1d1: object header, BE float duration, Animation.dat row (not a rig clip index), bool.
+    /// Actor handler 0x1421949c3 calls 0x141e95e60, which cancels predictive actions, selects the current stance's
+    /// animation and blocks action starts until recovery ends. Row 5 is TakeHit. The optional bool enables the
+    /// client's avoid-interruption check; the server normally decides eligibility itself.</summary>
+    public static byte[] ActorAnimation(uint objectId, float seconds, byte animationType, bool checkInterruption = false) =>
+        new LoginWriter().U16(ActorAnimationId).U32(objectId).U32(0).U16(0)
+            .U32(BitConverter.SingleToUInt32Bits(seconds)).U8(animationType).U8(checkInterruption ? (byte)1 : (byte)0).ToArray();
+
     /// <summary>
     /// S→C 0x1b2 "InstanceClientAnimationUpdate" (world group; the handler maps it and 0x26f/0x270/0x271 to the
     /// Animated component's <c>0x141e58ef0</c>): object header, u8 kind, then per kind — 0/1: u32 animation index
@@ -311,9 +321,10 @@ public static class InstanceProtocol
 
     /// <summary>
     /// S→C 0x1ba (world group, class 0x1435dd7b8, read 0x141fe0ff0; Positioned handler 0x141e30c90): move an object to a
-    /// grid cell. Object header, i32 x, i32 y, u32 height (+0x28: 0x7fffffff = follow the terrain; otherwise it is the
-    /// object's world z in 7.8125-unit steps, read as a signed i32 and <b>positive down</b>: z = height × 7.8125. A
-    /// positive height goes below sea level, a negative one above; 0 put a projectile under the ground), f32 duration
+    /// grid cell. Object header, i32 x, i32 y, u32 height marker (+0x28: 0x7fffffff = follow the terrain;
+    /// otherwise signed i32 marker = -world z / 7.8125). The native endpoint is z = -marker * 7.8125, so positive
+    /// markers are above sea level and negative ones below. This is the Positioned blob's i32, not the opposite-sign
+    /// ProjectileObject.Height API argument. The float is duration
     /// (+0x2c, seconds: the handler passes distance / duration as the speed to 0x141e34120; Positioned +0x23c = that
     /// speed, +0x240 = the time per cell step = duration / the path's longest axis in cells. Live 2026-10-18: sending
     /// 95.7 meant "~1 s per cell" and the fireball crawled), u8 (+0x30). 0x1b7 (teleport) is the same header, x, y, u32
