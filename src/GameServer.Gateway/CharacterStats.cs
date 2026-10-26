@@ -38,6 +38,9 @@ static class CharacterStats
         int AttackCriticalStrikeChance = 0,
         int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
         int AccuracyPct = 0,
+        // The Accuracy Mastery's target-conditional "more" effects, kept out of Accuracy: they only apply to a hit's
+        // own target (TargetAccuracy), so the panel must not show them as the character's accuracy.
+        int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0);
 
@@ -63,6 +66,7 @@ static class CharacterStats
         int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0,
         int Accuracy = 0, int AccuracyPct = 0, int AccuracyPerLevel = 0,
         bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false,
+        int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0, int ArmourMorePct = 0, int EvasionMorePct = 0, int EnergyShield = 0)
     {
@@ -172,6 +176,8 @@ static class CharacterStats
             SpellCriticalStrikeChance: (int)Math.Round(DamageModel.CriticalStrikeChance(
                 DamageModel.BaseSpellCriticalStrikeChancePerMyriad, b.SpellCriticalStrikeChancePct) * 100),
             AccuracyPct: b.AccuracyPct,
+            AccuracyMoreVsUniquePct: b.AccuracyMoreVsUniquePct,
+            AccuracyMoreInCloseRangePct: b.AccuracyMoreInCloseRangePct,
             ManaReservationEfficiencyPct: b.ManaReservationEfficiencyPct,
             LifeReservationEfficiencyPct: b.LifeReservationEfficiencyPct,
             AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct);

@@ -42,25 +42,24 @@ partial class Program
     // After Nessa has one (the .it remove_flag), the player walks to it as for a pickup (the echo, the same action check)
     // and the chest is removed from the ground instead of entering the inventory. False when the item is not a chest.
     static async Task<bool> PickUpQuestItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, WorldItemObject ground,
-        InstanceTransfer.UseSkillOnObject use)
+        InstanceTransfer.UseSkillOnObject use, double requestedAt)
     {
         switch (MercyMission.PickupOf(IsMedicineChest(ground.Item), MercyDone(conn)))
         {
             case MercyMission.Pickup.NotQuestItem:
                 return false;
             case MercyMission.Pickup.PickUp:
-                await PickUpGroundItem(remote, stream, ciphers, conn, id, ground, use);
+                await PickUpGroundItem(remote, stream, ciphers, conn, id, ground, use, requestedAt);
                 await SyncQuestItems(remote, stream, ciphers, conn, removeItems: false);
                 return true;
         }
-        int action = Interlocked.Increment(ref conn.ActionCount);
-        double now = conn.Clock.Elapsed.TotalSeconds;
-        var (here, _, arrive) = conn.Walk.Approach(ground.GridX, ground.GridY, PickupReach, now);
+        if (!TryBeginObjectWalk(conn, requestedAt, ground.GridX, ground.GridY, PickupReach, out var objectWalk, centreRange: true)) return true;
+        var (action, now, here, _, arrive) = objectWalk;
         await Send(remote, stream, ciphers,
             InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, ground.GridX, ground.GridY, use.SkillId, use.Sequence, use.Flags, targetObjectId: id),
             $"0x01ab player walks to Medicine Chest 0x{id:x}");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
-        if (conn.ActionCount != action) return true;
+        if (!PlayerActionCurrent(conn, action)) return true;
         if (conn.Instance.Ground.Take(id) is not null)
             await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove Medicine Chest 0x{id:x}: Nessa has one");
         return true;
