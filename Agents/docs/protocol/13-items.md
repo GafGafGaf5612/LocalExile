@@ -836,7 +836,11 @@ bridge cannot make it walk), the tooltip's duration with quality.
 
 Live 2026-10-25 (The Twilight Strand): a normal Drowned's kill gave every flask that was not full 1 charge (30 → 31);
 two magic ones 3 and 4 (31 → 34 → 38, the half kept); a Jade Flask put on the bar there had 0 of 60 charges and its use
-was refused. Not seen live: crit charges, charges when hit and every 3 seconds (tests only).
+was refused. Then (after the review fixes): with a Diamond Flask carrying Surgeon's 35% and `recharge_flasks_on_crit`
+1, of 25 hits on a rare Drowned two were critical; the first gave the first flask that was not full 1 (14 → 15) and the
+Diamond its roll (20 → 21), the second only the sure charge (15 → 16); a Small Life Flask with "40% of Flask's Life
+Recovery Amount" used below full life added 28 more life over 10 s (a 3250-life character). Not seen live: charges when
+hit and every 3 seconds (tests only).
 
 ## Open
 
