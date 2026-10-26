@@ -116,9 +116,13 @@ which ends the dialogue (without an answer the client stays in its dialogue stat
   (the m × (compact uint index, wstr name, u8) list). `NpcShops.Tabs`: the NPC's stock in "Goods", and Nessa also sells
   every shop gem (`ItemCatalog.ShopGems`: creatable, dropping, not Vaal or awakened, one per name) in seven tabs by
   SkillGems GemColour and IsSupport: Red Skills, Red Support, Green Skills, Green Support, Blue Skills, Blue Support,
-  White Skills (2026-10-21). 1 Scroll of Wisdom each, as everything. Nessa's goods also list one of every map of tiers
-  1-16 (Maps.dat Tier, a name once at its lowest tier, by tier then name; 225 in 3.29.3b); what does not fit in Goods
-  goes into Goods2, Goods3 …. Tabs fill row by row. With more than one tab 0x8c's u8 is sent as 1 (the window at UI
+  White Skills (2026-10-21). 1 Scroll of Wisdom each, as everything.
+  Nessa's goods use exact MapWorlds base identifiers, one ordinary white item per display name, ordered by tier/name.
+  UniqueMaps supplies one identified unique item per name, with Words HASH32 and ItemVisualIdentity HASH16.
+  These are catalogue identities; complete unique modifier sets and unique-area device routing remain unimplemented.
+  No MapAtlas, MapTier or generic MapKey entries are mixed into this stock.
+  Goods2, Goods3 and later pages are created automatically when needed.
+  Tabs fill row by row. With more than one tab 0x8c's u8 is sent as 1 (the window at UI
   +0x7b8; 0 opens +0x7b0, which drew 8 tabs over its title, live 2026-10-21; being tested).
 - **Sell**: S→C 0xb8 (write `0x141d6acc0`): u32 BE other party (0 = NPC sale → VendorSell, UI +0x7c8), u32 BE your offer,
   u32 BE their offer (both manager-1 inventories, grids `0x140317440` / `0x140c605f0`), u8 flags, wstr name, u32 BE
