@@ -86,6 +86,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   in parentheses and the spell block row.
   Code: `CharacterStats.cs`, `DamageModel.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §12.
+- Endurance, Frenzy and Power charges: gained from the on-kill, on-hit, on-crit, on-non-crit, when-hit and on-block
+  chance stats, the timed ones (each second, while stationary or moving, if hit recently) and skills (Frenzy, Power
+  Siphon, Flicker Strike, Enduring Cry); 10 s duration with the duration mods, a gain refreshes the whole type, all
+  expire together, minimum charges always held, lost on death, carried over area changes with the time left.
+  Character.ot's per-charge bonuses and every "per charge" mod the server calculates with apply to the pools, hits,
+  damage taken, walk speed and the sent stats; the Charges tab gets `current_*_charges` and the per-charge rows.
+  The HUD shows one icon per type with the count (0x1c1 flags bit2) and time left (bit1), and the orbs.
+  Live 2026-10-25: gains when hit, on non-critical hit and on kill, refresh, expiry, death, area change, minimum
+  charges, 3 Power Charges taking attack crit 8.3% → 20.75%, a Frenzy Charge shortening the attack, 3 Endurance
+  Charges taking 12% off physical and fire hits; towns draw no charge icons.
+  Not live-checked: the Charges tab itself, Enduring Cry and the timed gains.
+  Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
+  `Program.Charges.cs`.
+  Docs: [11](../docs/protocol/11-skills.md) §15.
 - Character panel sums: about 150 panel stats that sum base forms are computed from passives, items and auras with
   their unconditional combined stats: stun, ailment avoidance, durations and effects (ignite, chill, freeze, shock,
   scorch, brittle, sap), ailment chances, penetration, leech, life/mana/ES on kill, rarity and quantity, cooldown,
@@ -261,9 +275,6 @@ Part of [Status](../Status.md); what to build next in this area is in
   its conditional path now also receives aggregate area (0xd7) and radius percentage (0x1591).
   Cyclone's additional melee-range and stage modifiers remain partial.
   See protocol/11-skills.md.
-- Standard maximum-charge rows now include unconditional maximum Endurance/Frenzy/Power charge bonuses.
-  Current-charge mechanics, conditional bonuses and replacement rules remain unimplemented.
-  See [skills](../docs/protocol/11-skills.md).
 
 ## Not working yet
 
