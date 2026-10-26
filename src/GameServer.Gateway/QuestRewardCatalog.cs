@@ -43,6 +43,10 @@ sealed class QuestRewardCatalog
         return result;
     }
 
+    /// <summary>The offers whose reward scripts are audited: Hillock's (0), Nessa's Medicine Chest flasks and support gems
+    /// (a1q5: 1, 2) and her prison preparation (8). Other reward scripts need auditing.</summary>
+    public static bool Implemented(int offer) => offer is 0 or MercyMission.RewardOffer or MercyMission.SupportRewardOffer or 8;
+
     // Grant only the simple items whose complete construction is modelled here: level-one gems and other level-one normal
     // items, and normal-rarity flasks at their row's item level (a1q5's Medium Life, Medium Mana and Quicksilver Flask:
     // level 4, rarity 0). Other quest rewards may require affixes (offer 8's magic armours: rarity 1), sockets, levels or

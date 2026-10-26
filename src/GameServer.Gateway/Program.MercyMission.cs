@@ -3,29 +3,29 @@ using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 
 // a1q5 "Mercy Mission" (MercyMission, 12-quests.md §7): Hailrake's Medicine Chest, its quest flag, and Nessa taking it.
+// The quest flags are read through conn.QuestFlagsSnapshot / HasQuestFlag (under the lock SetQuestFlags writes under);
+// the a1q5 flags are the character's own (no waypoint's access flags carry them). Flag changes and the sync hold
+// conn.QuestGate. Inventory removals happen only on the message path (area entry, after a read that moved items); the
+// once-a-second tick syncs the flag alone.
 partial class Program
 {
-    // A quest flag as the client has it: the character's own, or one the player's flag set carries for the World panel.
-    // (PR #229 adds a shared ClientHasQuestFlag for the same check; this is the minimal local version.)
-    static bool MercyClientHas(ClientState conn, string flag) => Quests.Names(PlayerQuestFlags(conn)).Contains(flag);
-
-    static bool MercyDone(ClientState conn) => MercyMission.Done(f => MercyClientHas(conn, f));
+    static bool MercyDone(ClientState conn) => MercyMission.Done(conn.HasQuestFlag);
 
     static ItemCatalog.BaseType? MedicineChestType() => Items.Find(MercyMission.MedicineChest) is { Supported: true } type ? type : null;
 
     static bool IsMedicineChest(Item item) => Items.ByHash(item.TypeHash)?.Id == MercyMission.MedicineChest;
 
     // Hailrake died on The Tidal Island: the Medicine Chest where he fell (the item's drop_monsters), unless Nessa has it
-    // already or a copy is carried, in the stash or on this instance's ground (MercyMission.HailrakeDrops).
+    // already, this character carries one or one lies on this instance's ground (MercyMission.HailrakeDrops).
     static async Task DropQuestItems(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string varietyId, (int X, int Y) at)
     {
-        if (conn.Layout.Id != MercyMission.Area || varietyId != MercyMission.Hailrake) return;
+        if (!MercyMission.DropsChest(conn.Layout.Id, varietyId)) return;
         if (MedicineChestType() is not { } type)
         {
             Console.WriteLine($"[gateway] {remote} a1q5: {MercyMission.MedicineChest} is not in the item data");
             return;
         }
-        if (!MercyMission.HailrakeDrops(type.Hash, MercyDone(conn), ItemsOf(conn), PersonalStashOf(conn).CountOf, conn.Instance.Ground))
+        if (!MercyMission.HailrakeDrops(type.Hash, MercyDone(conn), ItemsOf(conn), conn.Instance.Ground))
         {
             Console.WriteLine($"[gateway] {remote} Hailrake: no {type.Name}, the character has one or Nessa has it");
             return;
@@ -38,54 +38,71 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), null);
     }
 
-    // C→S 0x24 on a ground item: the Medicine Chest is picked up as any item, then its flag follows (SyncMercyMission).
-    // Once Nessa has a chest, another one (left on an instance's ground) goes unpicked: the .it remove_flag. False when the
-    // item is not a Medicine Chest.
+    // C→S 0x24 on a ground item. A Medicine Chest the character still needs is picked up as any item, then its flag follows.
+    // After Nessa has one (the .it remove_flag), the player walks to it as for a pickup (the echo, the same action check)
+    // and the chest is removed from the ground instead of entering the inventory. False when the item is not a chest.
     static async Task<bool> PickUpQuestItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, WorldItemObject ground,
         InstanceTransfer.UseSkillOnObject use)
     {
-        if (!IsMedicineChest(ground.Item)) return false;
-        if (MercyDone(conn))
+        switch (MercyMission.PickupOf(IsMedicineChest(ground.Item), MercyDone(conn)))
         {
-            if (conn.Instance.Ground.Take(id) is not null)
-                await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove Medicine Chest 0x{id:x}: Nessa has one");
-            return true;
+            case MercyMission.Pickup.NotQuestItem:
+                return false;
+            case MercyMission.Pickup.PickUp:
+                await PickUpGroundItem(remote, stream, ciphers, conn, id, ground, use);
+                await SyncQuestItems(remote, stream, ciphers, conn, removeItems: false);
+                return true;
         }
-        await PickUpGroundItem(remote, stream, ciphers, conn, id, ground, use);
-        await SyncMercyMission(remote, stream, ciphers, conn);
+        int action = Interlocked.Increment(ref conn.ActionCount);
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        var (here, _, arrive) = conn.Walk.Approach(ground.GridX, ground.GridY, PickupReach, now);
+        await Send(remote, stream, ciphers,
+            InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, ground.GridX, ground.GridY, use.SkillId, use.Sequence, use.Flags, targetObjectId: id),
+            $"0x01ab player walks to Medicine Chest 0x{id:x}");
+        if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
+        if (conn.ActionCount != action) return true;
+        if (conn.Instance.Ground.Take(id) is not null)
+            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove Medicine Chest 0x{id:x}: Nessa has one");
         return true;
     }
 
     // HaveMedicineChest follows the chest the character carries (MercyMission.Sync), whatever took it away (a drop, a sale,
-    // the stash); once Nessa has one, a chest still carried goes (the .it remove_flag).
-    static async Task SyncMercyMission(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    // the stash). With removeItems (the message path only, so the 0xbf revisions stay in order with the other inventory
+    // changes), a chest carried after Nessa has one goes (the .it remove_flag).
+    static async Task SyncQuestItems(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool removeItems)
     {
         if (MedicineChestType() is not { } type) return;
-        var items = ItemsOf(conn);
-        bool done = MercyDone(conn);
-        bool carried = MercyMission.Carried(items).Any(c => c.Item.Item.TypeHash == type.Hash);
-        var (set, remove) = MercyMission.Sync(conn.QuestFlags.Contains(MercyMission.HaveMedicineChest), done, carried);
-        if (remove)
-            foreach (var row in MercyMission.RemoveAll(items, type.Hash).GroupBy(r => r.Row))
-                await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
-                    [.. row.Select(r => r.Item.Id)], []), $"0x00bf inventory {PlayerInventories.InventoryId(row.Key)}: Medicine Chest removed, Nessa has one");
-        if (set is bool on) await SetQuestFlags(remote, stream, ciphers, conn, [MercyMission.HaveMedicineChest], on);
-    }
-
-    // The sync about once a second while the player is in this area (started with the area, like the player tick).
-    static async Task RunMercyMission(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
-    {
+        await conn.QuestGate.WaitAsync();
         try
         {
-            while (!conn.Closed)
-            {
-                if (conn.PlayerSent) await SyncMercyMission(remote, stream, ciphers, conn);
-                await Task.Delay(1000);
-            }
+            var flags = conn.QuestFlagsSnapshot();
+            var items = ItemsOf(conn);
+            bool carried = MercyMission.Carried(items).Any(c => c.Item.Item.TypeHash == type.Hash);
+            var (set, remove) = MercyMission.Sync(flags.Contains(MercyMission.HaveMedicineChest), MercyMission.Done(flags.Contains), carried);
+            if (remove && removeItems)
+                foreach (var row in MercyMission.RemoveAll(items, type.Hash).GroupBy(r => r.Row))
+                    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
+                        [.. row.Select(r => r.Item.Id)], []), $"0x00bf inventory {PlayerInventories.InventoryId(row.Key)}: Medicine Chest removed, Nessa has one");
+            if (set is bool on) await SetQuestFlagsHeld(remote, stream, ciphers, conn, [MercyMission.HaveMedicineChest], on);
         }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+        finally { conn.QuestGate.Release(); }
+    }
+
+    // A safety net for the flag about once a second while the player is in this area (started with the area): flags only,
+    // no inventory change. An error is logged and the next tick runs again; the loop ends with the connection.
+    static async Task RunMercyMission(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        while (!conn.Closed)
         {
-            // The connection closed while sending.
+            await Task.Delay(1000);
+            if (conn.Closed || !conn.PlayerSent) continue;
+            try { await SyncQuestItems(remote, stream, ciphers, conn, removeItems: false); }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException) { return; }   // the connection closed
+            catch (Exception ex)
+            {
+                if (conn.Closed) return;
+                Console.WriteLine($"[gateway] {remote} a1q5 sync: {ex.GetType().Name}: {ex.Message}");
+            }
         }
     }
 
@@ -94,19 +111,26 @@ partial class Program
     // when the talk may go on.
     static async Task<bool> HandInQuestItems(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, NpcCatalog.Talk talk)
     {
-        if (talk.StartFlag != MercyMission.NessaCongratulated || MercyClientHas(conn, MercyMission.NessaCongratulated)) return true;
+        if (!MercyMission.HandsIn(talk.StartFlag, MercyDone(conn))) return true;
         var items = ItemsOf(conn);
-        if (MedicineChestType() is not { } type || MercyMission.HandIn(CharacterName(conn), items, type.Hash) is not var (row, chest))
+        (byte Row, InventoryItem Item)? handed = null;
+        await conn.QuestGate.WaitAsync();
+        try
         {
-            Console.WriteLine($"[gateway] {remote} Nessa: no Medicine Chest carried");
-            await SyncMercyMission(remote, stream, ciphers, conn);
-            await Send(remote, stream, ciphers, InstanceNpcs.Talk(conn.TalkingTo), $"0x0084 npc 0x{conn.TalkingTo:x}: options again (no Medicine Chest)");
-            return false;
+            if (MedicineChestType() is { } type && MercyMission.HandIn(CharacterName(conn), items, type.Hash) is var (row, chest))
+            {
+                handed = (row, chest);
+                await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [chest.Id], []),
+                    $"0x00bf inventory {PlayerInventories.InventoryId(row)}: Medicine Chest {chest.Id} given to Nessa");
+                await SetQuestFlagsHeld(remote, stream, ciphers, conn, [MercyMission.NessaCongratulated]);
+                await SetQuestFlagsHeld(remote, stream, ciphers, conn, [MercyMission.HaveMedicineChest], on: false);
+            }
         }
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [chest.Id], []),
-            $"0x00bf inventory {PlayerInventories.InventoryId(row)}: Medicine Chest {chest.Id} given to Nessa");
-        await SetQuestFlags(remote, stream, ciphers, conn, [MercyMission.NessaCongratulated]);
-        await SetQuestFlags(remote, stream, ciphers, conn, [MercyMission.HaveMedicineChest], on: false);
-        return true;
+        finally { conn.QuestGate.Release(); }
+        if (handed is not null) return true;
+        Console.WriteLine($"[gateway] {remote} Nessa: no Medicine Chest carried");
+        await SyncQuestItems(remote, stream, ciphers, conn, removeItems: true);
+        await Send(remote, stream, ciphers, InstanceNpcs.Talk(conn.TalkingTo), $"0x0084 npc 0x{conn.TalkingTo:x}: options again (no Medicine Chest)");
+        return false;
     }
 }

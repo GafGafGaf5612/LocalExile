@@ -393,6 +393,19 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>
     public HashSet<string> QuestFlags = [];
+    /// <summary>A copy of <see cref="QuestFlags"/> taken under <see cref="Monsters"/>' lock, the lock SetQuestFlags writes
+    /// under: background tasks read the flags through this, never the set itself. (#229 adds the same helper.)</summary>
+    public HashSet<string> QuestFlagsSnapshot()
+    {
+        lock (Monsters) return [.. QuestFlags];
+    }
+    /// <summary>Whether the character has this quest flag, read under the writers' lock.</summary>
+    public bool HasQuestFlag(string flag)
+    {
+        lock (Monsters) return QuestFlags.Contains(flag);
+    }
+    /// <summary>One quest-flag change or quest-item sync at a time on this connection (SetQuestFlags, the a1q5 sync).</summary>
+    public readonly SemaphoreSlim QuestGate = new(1, 1);
 
     /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
     public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter, .. Program.Bench.UnlockFlags];

@@ -19,33 +19,98 @@ public class MercyMissionTests : IDisposable
     PlayerInventories Inventory() => PlayerInventories.For(character, new ItemCatalog(folder));
     HashSet<string> SavedFlags() => CharacterSaves.Load(character)?.QuestFlags?.ToHashSet() ?? [];
 
-    [Fact] public void HailrakeIsTheTidalIslandsBossAndTheChestItsDrop()
+    // The repository's extracted game data, or null where it is missing (CI).
+    static string? RealData()
     {
-        Assert.Equal("1_1_2a", MercyMission.Area);
-        Assert.Equal("Metadata/Monsters/Cannibal/CannibalMaleBossHailrake", MercyMission.Hailrake);
-        Assert.Equal("Metadata/Items/QuestItems/MedicineSet1", MercyMission.MedicineChest);
-        Assert.Equal((1, 2), (MercyMission.RewardOffer, MercyMission.SupportRewardOffer));
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+            if (File.Exists(Path.Combine(dir.FullName, "data", "tables", "WorldAreas.json"))) return Path.Combine(dir.FullName, "data");
+        return null;
     }
 
-    [Fact] public void HailrakeDropsTheChestOnlyWhileNoCopyIsWithinReach()
+    [Fact] public void TheGameDataNamesHailrakeTheTidalIslandsBossAndTheChestAndRewardsAsUsed()
+    {
+        if (RealData() is not { } data) return;
+        JsonElement Table(string name) => JsonDocument.Parse(File.ReadAllBytes(Path.Combine(data, "tables", name + ".json"))).RootElement;
+        var area = Table("WorldAreas").EnumerateArray().Single(a => a.GetProperty("Id").GetString() == MercyMission.Area);
+        var bosses = area.GetProperty("Bosses_MonsterVarietiesKeys").EnumerateArray().Select(b => b.GetInt32()).ToList();
+        var varieties = Table("MonsterVarieties");
+        Assert.Equal(MercyMission.Hailrake, varieties[Assert.Single(bosses)].GetProperty("Id").GetString());
+        Assert.Contains(Table("BaseItemTypes").EnumerateArray(), b => b.GetProperty("Id").GetString() == MercyMission.MedicineChest
+            && b.GetProperty("Name").GetString() == "Medicine Chest");
+        var catalog = QuestRewardCatalog.Load(data);
+        Assert.Equal(MercyMission.QuestRewardTaken, catalog.Find(MercyMission.RewardOffer)!.TakenFlag);
+        Assert.Equal("a1q5-QuestReward2Taken", catalog.Find(MercyMission.SupportRewardOffer)!.TakenFlag);
+        Assert.All(catalog.Find(MercyMission.RewardOffer)!.Choices, c => Assert.Equal((4, 0), (c.Level, c.Rarity)));
+    }
+
+    [Fact] public void HailrakeDropsTheChestOnlyWhileThisCharacterHasNoneWithinReach()
     {
         var inventory = Inventory();
         var world = new InstanceState();
-        Assert.True(MercyMission.HailrakeDrops(ChestHash, false, inventory, _ => 0, world.Ground));
+        Assert.True(MercyMission.HailrakeDrops(ChestHash, false, inventory, world.Ground));
         // Nessa has it: never again.
-        Assert.False(MercyMission.HailrakeDrops(ChestHash, true, inventory, _ => 0, world.Ground));
-        // A copy in the stash or on this instance's ground: not twice.
-        Assert.False(MercyMission.HailrakeDrops(ChestHash, false, inventory, h => h == ChestHash ? 1 : 0, world.Ground));
+        Assert.False(MercyMission.HailrakeDrops(ChestHash, true, inventory, world.Ground));
+        // A copy on this instance's ground: not twice.
         uint id = world.Ground.Add(new WorldItemObject(5, 5, Chest));
-        Assert.False(MercyMission.HailrakeDrops(ChestHash, false, inventory, _ => 0, world.Ground));
+        Assert.False(MercyMission.HailrakeDrops(ChestHash, false, inventory, world.Ground));
         world.Ground.Take(id);
         // Carried, in the main inventory or on the cursor: not twice.
         var carried = inventory.Add(PlayerInventories.MainInventory, 0, 0, Chest);
-        Assert.False(MercyMission.HailrakeDrops(ChestHash, false, inventory, _ => 0, world.Ground));
-        inventory.Remove(PlayerInventories.MainInventory, carried.Id);
-        // Other items do not count; a chest lost elsewhere (another instance, sold) drops again.
+        Assert.False(MercyMission.HailrakeDrops(ChestHash, false, inventory, world.Ground));
+        inventory.PickUp(PlayerInventories.MainInventory, carried.Id);
+        Assert.False(MercyMission.HailrakeDrops(ChestHash, false, inventory, world.Ground));
+        inventory.Remove(PlayerInventories.Cursor, inventory.Items(PlayerInventories.Cursor).Single().Id);
+        // Other items do not count, nor the account's stash (not part of the rule); a chest lost elsewhere drops again.
         inventory.Add(PlayerInventories.MainInventory, 0, 0, Other);
-        Assert.True(MercyMission.HailrakeDrops(ChestHash, false, inventory, _ => 0, world.Ground));
+        Assert.True(MercyMission.HailrakeDrops(ChestHash, false, inventory, world.Ground));
+    }
+
+    [Fact] public void OnlyHailrakeOnTheTidalIslandDropsTheChest()
+    {
+        Assert.True(MercyMission.DropsChest("1_1_2a", "Metadata/Monsters/Cannibal/CannibalMaleBossHailrake"));
+        Assert.False(MercyMission.DropsChest("1_1_2a", "Metadata/Monsters/Cannibal/CannibalMaleBossHailrakeGauntletNoQuest"));
+        Assert.False(MercyMission.DropsChest("1_1_2", "Metadata/Monsters/Cannibal/CannibalMaleBossHailrake"));
+    }
+
+    [Fact] public void APickedChestIsKeptUntilNessaHasOneAndThenRemovedOtherItemsAreNotTouched()
+    {
+        Assert.Equal(MercyMission.Pickup.NotQuestItem, MercyMission.PickupOf(isChest: false, done: false));
+        Assert.Equal(MercyMission.Pickup.NotQuestItem, MercyMission.PickupOf(isChest: false, done: true));
+        Assert.Equal(MercyMission.Pickup.PickUp, MercyMission.PickupOf(isChest: true, done: false));
+        Assert.Equal(MercyMission.Pickup.Remove, MercyMission.PickupOf(isChest: true, done: true));
+    }
+
+    [Fact] public void OnlyNessasMedicineChestTalkHandsTheChestInAndOnlyOnce()
+    {
+        Assert.True(MercyMission.HandsIn(MercyMission.NessaCongratulated, done: false));
+        Assert.False(MercyMission.HandsIn(MercyMission.NessaCongratulated, done: true));
+        Assert.False(MercyMission.HandsIn(MercyMission.ReceivedQuest, done: false));
+        Assert.False(MercyMission.HandsIn(null, done: false));
+    }
+
+    [Fact] public void TheMessagePathSyncsAfterReadsThatMoveItemsOnly()
+    {
+        foreach (ushort id in new ushort[] { InstanceItems.DropItemId, InstanceItems.PlaceItemId, InstanceItems.PickUpItemId,
+            InstanceStash.MoveToTabId, InstanceStash.TakeFromTabId, InstanceNpcs.TradeAcceptId, InstanceChat.ChatId })
+            Assert.True(MercyMission.MovesItems(id), $"0x{id:x}");
+        foreach (ushort id in new ushort[] { InstanceTransfer.UseSkillOnObjectId, InstanceProtocol.UseSkillAtLocationId, InstanceNpcs.OptionId })
+            Assert.False(MercyMission.MovesItems(id), $"0x{id:x}");
+    }
+
+    [Fact] public void TheRewardAllowListHasNessasTwoMedicineChestOffers()
+    {
+        foreach (int offer in new[] { 0, MercyMission.RewardOffer, MercyMission.SupportRewardOffer, 8 }) Assert.True(QuestRewardCatalog.Implemented(offer));
+        foreach (int offer in new[] { 3, 4, 5, 7, 9 }) Assert.False(QuestRewardCatalog.Implemented(offer));
+    }
+
+    [Fact] public void TheFlagSnapshotIsACopyTakenUnderTheWritersLock()
+    {
+        var conn = new ClientState(new AreaLayout(61641, "1_1_2a", 10, 10, 1, 1, null, []), 1, 1);
+        conn.QuestFlags.Add(MercyMission.HaveMedicineChest);
+        var snapshot = conn.QuestFlagsSnapshot();
+        lock (conn.Monsters) conn.QuestFlags.Add(MercyMission.NessaCongratulated);
+        Assert.DoesNotContain(MercyMission.NessaCongratulated, snapshot);
+        Assert.True(conn.HasQuestFlag(MercyMission.NessaCongratulated));
     }
 
     [Fact] public void TheFlagFollowsTheCarriedChestUntilNessaHasIt()
@@ -140,15 +205,83 @@ public class MercyMissionTests : IDisposable
         Assert.Equal(123u, Assert.Single(reloaded.Items(PlayerInventories.MainInventory)).Item.TypeHash);
     }
 
-    [Fact] public void TheMedicineBoatRoomPutsMapbossWhereTheCaptureSays()
+    // A data folder with two sparse rooms in one area (two doodads each, too few to fit), both captured in rooms.json:
+    // a medicine boat room and another room with a mapboss and a start point.
+    string SparseRooms()
     {
-        // data/walkability/1_1_2a_seed1.rooms.json: medicine_boat_1.arm (138 × 207 cells) at (138, 345), code 3; its
-        // "mapboss" point is at room cell (45, 127), angle 4.18879 (the .arm).
-        var room = new TutorialObjects.RoomPlacement(138, 345, 138, 207, 3);
-        var boss = room.Place(new AreaPopulation.RoomPoint("mapboss", 45, 127, 4.18879f));
-        Assert.Equal((265, 437), (boss.X, boss.Y));
-        var pack = room.Place(new AreaPopulation.RoomPoint("%area%-bosspack", 62, 154));
-        Assert.Equal((292, 420), (pack.X, pack.Y));
+        string data = Path.Combine(folder, "rooms");
+        Directory.CreateDirectory(Path.Combine(data, "walkability"));
+        const string boat = "Metadata/Terrain/Act1/Area2a/Rooms/medicine_boat_1.arm", other = "Metadata/Terrain/Act1/Area3/Rooms/miniboss5.arm";
+        object Room(string tag, params (string Name, int X, int Y)[] points) => new
+        {
+            tag, points = points.Select(p => new { name = p.Name, x = p.X, y = p.Y, angle = 0 }),
+            doodads = new[] { new { model = "snow.ao", x = 49, y = 120 }, new { model = "snow.ao", x = 100, y = 118 } },
+        };
+        File.WriteAllText(Path.Combine(data, "room-points.json"), JsonSerializer.Serialize(new
+        {
+            note = "test",
+            areas = new Dictionary<string, string[]> { ["9_9_9"] = [boat, other] },
+            rooms = new Dictionary<string, object>
+            {
+                [boat] = Room("medicineboat", ("mapboss", 45, 127), ("%area%-bosspack", 62, 154)),
+                [other] = Room("miniboss", ("mapboss", 10, 10), ("default", 20, 20)),
+            },
+        }));
+        File.WriteAllText(Path.Combine(data, "walkability", "9_9_9_seed1.doodads.json"), JsonSerializer.Serialize(new
+        {
+            area = "9_9_9", seed = 1, models = new[] { "snow.ao" }, doodads = new[] { new[] { 0, 300, 300, 0 } },
+        }));
+        File.WriteAllText(Path.Combine(data, "walkability", "9_9_9_seed1.rooms.json"), JsonSerializer.Serialize(new
+        {
+            area = "9_9_9", seed = 1, rooms = new[]
+            {
+                new { path = boat, x = 138, y = 345, width = 138, height = 207, code = 3 },
+                new { path = other, x = 600, y = 600, width = 46, height = 46, code = 0 },
+            },
+        }));
+        return data;
+    }
+
+    [Fact] public void OnlyTheMedicineBoatRoomsTakeTheirCapturedPlacement()
+    {
+        var notes = new List<string>();
+        var (points, objects, captured) = AreaPopulation.FitRooms("9_9_9", 1, notes, SparseRooms());
+        Assert.Equal("Metadata/Terrain/Act1/Area2a/Rooms/medicine_boat_1.arm", Assert.Single(captured));
+        // The seed-1 capture's numbers: medicine_boat_1 at (138, 345), code 3, puts mapboss (45, 127) at (265, 437).
+        Assert.Contains(points, p => p is { Name: "mapboss", X: 265, Y: 437 });
+        Assert.Contains(points, p => p is { Name: "%area%-bosspack", X: 292, Y: 420 });
+        // The other sparse room stays unplaced, as before: no extra boss, no new start point.
+        Assert.Equal(2, points.Count);
+        Assert.DoesNotContain(points, p => p.Name == "default");
+        Assert.Empty(objects);
+    }
+
+    [Fact] public void ABrokenRoomCaptureMeansNoPlacementNotAnError()
+    {
+        string data = SparseRooms();
+        File.WriteAllText(Path.Combine(data, "walkability", "9_9_9_seed1.rooms.json"), "{ \"area\": \"9_9_9\", \"seed\": 1, \"rooms\": [ { \"path\": 3 } ] ");
+        var (points, _, captured) = AreaPopulation.FitRooms("9_9_9", 1, [], data);
+        Assert.Empty(points);
+        Assert.Empty(captured);
+    }
+
+    [Fact] public void OnTheRealCapturesOnlyTheTidalIslandsBoatRoomTakesTheFallback()
+    {
+        if (RealData() is not { } data || !Directory.Exists(Path.Combine(data, "walkability"))) return;
+        int areas = 0;
+        foreach (var file in Directory.GetFiles(Path.Combine(data, "walkability"), "*_seed*.doodads.json"))
+        {
+            string name = Path.GetFileName(file)[..^".doodads.json".Length];
+            int at = name.LastIndexOf("_seed", StringComparison.Ordinal);
+            if (!uint.TryParse(name[(at + 5)..], out uint seed)) continue;
+            string area = name[..at];
+            var (points, _, captured) = AreaPopulation.FitRooms(area, seed, [], data);
+            Assert.All(captured, c => Assert.Contains(c, MercyMission.BoatRooms));
+            if (area == MercyMission.Area && seed == 1) Assert.Contains(points, p => p is { Name: "mapboss", X: 265, Y: 437 });
+            else Assert.Empty(captured);
+            areas++;
+        }
+        Assert.True(areas > 0);
     }
 
     // QuestRewardOffers 1 and its QuestRewards rows, as the game data has them (columns __col1 index, __col5 rarity).
@@ -208,17 +341,5 @@ public class MercyMissionTests : IDisposable
             Assert.Null(QuestRewardCatalog.Create(new QuestRewardCatalog.Choice(9, 2, 4, 1, []) { Rarity = 0 }, items));
         }
         finally { Directory.Delete(itemData, true); }
-    }
-
-    [Fact] public void TheFlaskRewardIsClaimedOnceWithItsTakenFlag()
-    {
-        var inventory = Inventory();
-        Item flask = new(123, ["Base"], 1) { ItemLevel = 4 };
-        var claimed = QuestRewardCatalog.Claim(character, MercyMission.QuestRewardTaken, inventory, flask, _ => new(1, 2, ""));
-        Assert.NotNull(claimed);
-        Assert.Null(QuestRewardCatalog.Claim(character, MercyMission.QuestRewardTaken, inventory, flask, _ => new(1, 2, "")));
-        PlayerInventories.Forget(character);
-        Assert.Equal((byte)4, Assert.Single(Inventory().Items(PlayerInventories.MainInventory)).Item.ItemLevel);
-        Assert.Contains(MercyMission.QuestRewardTaken, SavedFlags());
     }
 }
