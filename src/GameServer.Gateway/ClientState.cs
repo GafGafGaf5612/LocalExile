@@ -238,6 +238,12 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     public IReadOnlyList<ClientPathfinder.Blocker> StationaryBlockers => _blockerList;
 
+    public int StationaryInteractionSize(uint id)
+    {
+        lock (_blockers) return _blockers.TryGetValue(id, out var b)
+            ? Math.Max(b.Size, (int)Math.Ceiling(b.CollisionRadius ?? 0)) : 0;
+    }
+
     public void SetBlocker(uint id, int x, int y, int size, double? collisionRadius = null)
     {
         lock (_blockers) { _blockers[id] = new(x, y, size) { CollisionRadius = collisionRadius }; _blockerList = [.. _blockers.Values]; }

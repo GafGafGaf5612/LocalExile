@@ -8,10 +8,10 @@ partial class Program
     // Opens the native recipe browser. Harvest recipe execution is a separate feature.
     static async Task OpenHorticrafting(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, double requestedAt)
     {
-        if (!TryBeginObjectWalk(conn, requestedAt, conn.HorticraftingAt.X, conn.HorticraftingAt.Y, 8, out var objectWalk)) return;
+        if (!TryBeginObjectWalk(conn, requestedAt, conn.HorticraftingAt.X, conn.HorticraftingAt.Y, conn.StationaryInteractionSize(conn.HorticraftingObject), out var objectWalk)) return;
         var (action, now, _, stop, arrive) = objectWalk;
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
-        if (conn.Closed || !PlayerActionCurrent(conn, action) || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, 8)) return;
+        if (conn.Closed || !PlayerActionCurrent(conn, action) || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, conn.StationaryInteractionSize(conn.HorticraftingObject))) return;
         conn.BenchOpen = false;
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HorticraftingUi),
@@ -22,12 +22,12 @@ partial class Program
     static async Task OpenCraftingBench(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, double requestedAt)
     {
-        if (!TryBeginObjectWalk(conn, requestedAt, conn.CraftingBenchAt.X, conn.CraftingBenchAt.Y, ClientState.StashBlockerSize, out var objectWalk)) return;
+        if (!TryBeginObjectWalk(conn, requestedAt, conn.CraftingBenchAt.X, conn.CraftingBenchAt.Y, conn.StationaryInteractionSize(conn.CraftingBenchObject), out var objectWalk)) return;
         var (action, now, here, stop, arrive) = objectWalk;
         Console.WriteLine($"[gateway] {remote} <= 0x0024 crafting bench ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
         if (conn.Closed || !PlayerActionCurrent(conn, action)
-            || !PlayerWalk.InWalkUpRange(stop, conn.CraftingBenchAt, ClientState.StashBlockerSize)) return;
+            || !PlayerWalk.InWalkUpRange(stop, conn.CraftingBenchAt, conn.StationaryInteractionSize(conn.CraftingBenchObject))) return;
         conn.BenchOpen = true;
         await RefreshBenchBalance(remote, stream, ciphers, conn);
         await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.CraftingBenchUi),
@@ -112,8 +112,7 @@ partial class Program
                 $"0x02b9 create hideout doodad 0x{id:x} {d.Name} ({d.Type}) at ({d.X}, {d.Y}), components {string.Join(", ", components)}");
             await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 hideout doodad 0x{id:x} enters wake zone");
             lock (conn.HideoutDoodads) conn.HideoutDoodads[id] = d;
-            conn.HideoutEditor.Register(id, "map-device", d.X, d.Y, d.Rotation, ClientState.MapDeviceBlockerSize, d.CollisionRadius);
-            conn.SetBlocker(id, d.X, d.Y, ClientState.MapDeviceBlockerSize, d.CollisionRadius);
+            await RegisterStationaryCollision(remote, stream, ciphers, conn, id, d.Type!, d.X, d.Y, d.Rotation, "map-device", d.Model);
         }
         // The portals of the character's open map stand at the device again.
         if (MapDevice.OpenOf(CharacterName(conn)) is { PortalsLeft: > 0 } open) await SpawnMapPortals(remote, stream, ciphers, conn, open, firstAfterMs: MapPortalEntryMs);

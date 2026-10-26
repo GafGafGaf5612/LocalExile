@@ -41,6 +41,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Placements persist per character/template; runtime interactions and path blockers follow the moved objects.
   Furniture moves send 0x161 to rebuild native hideout model collision without changing object ids.
   Server blockers are registered again at saved positions on entry.
+  NPCs and all functional furniture share inherited OT collision footprints and interaction clearance.
+  Arrival correction runs after the full scene is registered; waypoints and ground loot remain passable.
+  Live overlap escape and released-floor checks passed for all nine functional hideout objects.
   A player overlapping terrain or stationary objects is moved to a nearby clear cell after edits and during ticks.
   The map-device underfoot escape and walking through its released old position were verified in the client.
   Extracted AO hull radii cover small and large map devices; persistence and clearance have automated coverage.

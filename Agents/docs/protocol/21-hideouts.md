@@ -408,8 +408,26 @@ the two baseline hideout walk grids saved at world +0x998, then `0x141d88690` re
 A teleport, remove/recreate or HideoutDoodad component refresh alone leaves stale blocked cells in hideouts.
 The object id, device state and portal list are preserved; no object recreation is needed.
 The server replaces its blocker by id and restores it at the saved position on entry.
-`hideouts.json` version 2 extracts conservative rotation-independent collision radii from native AO `walk_tri`
-vertices: about 7.236 cells for CartographyDevice2 and 30.662 for the large MTX model. The server uses
+NPCs, personal/guild stashes, the crafting bench, Harvest station and Heist Locker share
+`RegisterStationaryCollision` at spawn in towns and hideouts. `object-types.json` version 3 carries inherited
+Positioned object_size/blocking/static/block_league_flag plus Animated's model. NPC Id aliases resolve through NPCs.dat Metadata.
+When local guild storage is spawned, its block_league_flag HaveGuild (native id 2) is included in the player's
+league flags through the ordinary Player component update. GuildStash's native collision predicate checks this
+flag even though the local storage is per-account and no real guild membership is implemented. Disabling the
+Positioned blocking flag through 0x2b0 is incorrect: it also removes the stash from blocking spatial buckets.
+Blocking objects use object_size minus one (Heist Locker 2, Harvest station 7); static nonblocking objects use
+their model hull (ordinary crafting bench about 9.273 cells). Interaction approaches use the registered clearance.
+A nonblocking object has editor size -1, distinct from a blocking object whose size is 0.
+Waypoints and dropped loot remain traversable; built-in scenery remains governed by the area's terrain walk grid.
+The complete stationary scene is registered before arrival collision correction, in addition to regular tick checks.
+Live checks covered all nine functional hideout objects (Nessa, Niko, Helena, Kirac, both stashes, both benches
+and the Heist Locker): each was moved onto the player, ejected the player, restored, and its former centre reached.
+In Lioneye's Watch, native walking stopped outside Tarkleigh, Nessa, Bestel and both stashes, including the guild
+stash after its normal access flag was supplied. Test placements were restored and the character returned home.
+All supported NPC types also have automated metadata and collision-escape checks; other towns share this spawn path.
+`hideouts.json` version 3 extracts conservative rotation-independent collision radii from native AO `walk_tri`
+and `walk_circle`, including inherited AO files, for map devices, bench variants and static NPC models.
+Map-device radii are about 7.236 cells for CartographyDevice2 and 30.662 for the large MTX model. The server uses
 these radii plus mover clearance when routing and ejecting the player; it does not rasterize the exact triangles.
 Already-open portals remain in their current positions; subsequent portals use the device's new position.
 

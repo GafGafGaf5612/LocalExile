@@ -15,7 +15,7 @@ partial class Program
         // A hideout always starts on its saved waypoint, including logins and portal returns.
         conn.Use(conn.Layout with { SpawnX = waypoint.GridX, SpawnY = waypoint.GridY });
         conn.HideoutEditor.Register(WaypointCatalog.ObjectId, "waypoint", waypoint.GridX, waypoint.GridY,
-            waypoint.Rotation, 0);
+            waypoint.Rotation, -1);
     }
 
     static async Task MoveHideoutObject(string remote, NetworkStream stream, ConnectionCiphers ciphers,
@@ -31,7 +31,7 @@ partial class Program
             return;
         }
         var p = entry!.Position;
-        if (entry.BlockerSize > 0) conn.SetBlocker(move.ObjectId, p.X, p.Y, entry.BlockerSize, entry.CollisionRadius);
+        if (entry.BlockerSize >= 0) conn.SetBlocker(move.ObjectId, p.X, p.Y, entry.BlockerSize, entry.CollisionRadius);
         if (move.ObjectId == conn.HeistLockerObject) conn.HeistLockerAt = (p.X, p.Y);
         if (move.ObjectId == conn.StashObject) conn.StashAt = (p.X, p.Y);
         if (move.ObjectId == conn.GuildStashObject) conn.GuildStashAt = (p.X, p.Y);

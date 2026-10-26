@@ -523,6 +523,8 @@ partial class Program
                     await SpawnOpeningTutorial(remote, stream, ciphers, conn);
                     await SpawnGlyphQuest(remote, stream, ciphers, conn);
                     await SpawnHideoutDoodads(remote, stream, ciphers, conn);
+                    // All stationary objects must exist before validating the arrival cell.
+                    await PushOutOfCollision(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);
                     _ = RunMonsterRegeneration(remote, stream, ciphers, conn);
