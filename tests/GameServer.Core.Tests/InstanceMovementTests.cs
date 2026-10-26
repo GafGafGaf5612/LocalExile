@@ -37,6 +37,43 @@ public class InstanceMovementTests
     }
 
     [Fact]
+    public void Location_instant_skill_preserves_unsigned_coordinates_and_has_no_sequence()
+    {
+        byte[] bytes = Convert.FromHexString("01900000011A0000012B0103");
+        Assert.Equal(12, InstanceProtocol.KnownClientLength(InstanceProtocol.UseInstantSkillAtLocationId));
+        Assert.Equal((282u, 299u, (ushort)0x0103), InstanceProtocol.ReadUseInstantSkillAtLocation(bytes));
+        Assert.Equal((uint.MaxValue, 0x80000000u, (ushort)0x0103),
+            InstanceProtocol.ReadUseInstantSkillAtLocation(Convert.FromHexString("0190FFFFFFFF800000000103")));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(6)]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void Split_location_instant_request_keeps_following_object_instant_and_tick(int cut)
+    {
+        byte[] location = Convert.FromHexString("01900000011A0000012B0103");
+        Assert.Empty(InstanceProtocol.SplitClientMessages(location[..cut], out var partial, out var unknown));
+        Assert.Equal(location[..cut], partial);
+        Assert.Empty(unknown);
+        byte[] remainder = [.. partial, .. location[cut..], .. Convert.FromHexString("0191000010000105001B00")];
+        var messages = InstanceProtocol.SplitClientMessages(remainder, out partial, out unknown);
+        Assert.Equal(new ushort[] { 0x190, 0x191 }, messages.Select(m => m.Id));
+        Assert.Equal(location, messages[0].Bytes);
+        Assert.Equal("001B00", Convert.ToHexString(partial));
+        Assert.Empty(unknown);
+    }
+
+    [Fact]
+    public void Location_instant_acceptance_has_a_ground_target_and_no_action_sequence()
+    {
+        Assert.Equal("01CE000010000000000000000103FFFF000080FE8138",
+            Convert.ToHexString(InstanceProtocol.InstantAction(0x1000, 0x0103, 254, 312)));
+    }
+
+    [Fact]
     public void Use_instant_skill_parses_a_live_capture()
     {
         // Haste (skill 0x0105) cast on the player itself.

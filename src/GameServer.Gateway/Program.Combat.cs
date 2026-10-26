@@ -286,13 +286,15 @@ partial class Program
     // A gem skill's cast: Righteous Fire puts its buff on, any other skill launches its projectile (if it has one). False when
     // it was refused (cooldown, mana), so its use is not confirmed to the client.
     static async Task<bool> CastGemSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0, int? actionToken = null)
+        ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0, int? actionToken = null,
+        bool locationInstant = false)
     {
         int action = actionToken ?? conn.ActionCount;
         lock (conn.Monsters)
             if (actionToken is not null && (conn.ActionCount != action || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
         if (InTown(conn) || conn.PlayerLife == 0) return false;
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        if (locationInstant && (gem.Name is null || !InstantLocationSkill.Supported(Skills, gem.Effect))) return false;
         if (gem.Name is not null && Skills.IsSpell(gem.Effect) && !Skills.IsAttack(gem.Effect)
             && CastMs(conn, gem.Effect) is null)
         {
@@ -367,6 +369,9 @@ partial class Program
                 await SendPlayerMana(remote, stream, ciphers, conn,
                     $"0x01b1 player mana {conn.PlayerMana} (-{cost} for {gem.Name}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
         }
+        // Location instant acceptance handles only Frostblink's repositioning, without inventing its departure/arrival
+        // hits or chilled ground. In particular do not route it through the generic single-area hit approximation.
+        if (locationInstant) return true;
         // The Portal skill: a town portal, as the Portal Scroll's, once its cast (2.5 s) is over.
         if (actionToken is not null && !PlayerActionCurrent(conn, action)) return false;
         if (gem.Name is not null && Skills.EffectId(gem.Effect) == "Portal")
@@ -389,12 +394,79 @@ partial class Program
 
     // An instant skill (C→S 0x191): its effect, then S→C 0x1ce, which has the client run the skill's action without animation
     // and consume a use of it: the skill bar's cooldown starts (the tooltip showed the cooldown, the bar did not run it).
-    static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    internal static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, uint targetId, (int X, int Y) at)
     {
+        var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        if (gem.Name is not null && InstantLocationSkill.Supported(Skills, gem.Effect))
+        {
+            await UseInstantSkillAtLocation(remote, stream, ciphers, conn, skillId, default, targetId);
+            return;
+        }
+        if (gem.Name is null || !InstantLocationSkill.ObjectTargetSupported(Skills, gem.Effect)) return;
+        int epoch;
+        lock (conn.Monsters)
+        {
+            epoch = conn.ProjectileEpoch;
+            if (!conn.ProjectileActive(epoch) || conn.Paused || !conn.PlayerSent || conn.PendingTransfer is not null) return;
+        }
         if (await CastGemSkill(remote, stream, ciphers, conn, skillId, at, at, targetId))
             await Send(remote, stream, ciphers, InstanceProtocol.InstantAction(PlayerId, skillId, at.X, at.Y, targetId),
-                $"0x01ce player skill 0x{skillId:x4}: instant action (its use and cooldown)");
+                $"0x01ce player skill 0x{skillId:x4}: instant action (its use and cooldown)",
+                still: () => conn.ProjectileActive(epoch) && conn.PlayerLife > 0 && !conn.Paused);
+    }
+
+    static async Task UseInstantSkillAtLocation(string remote, NetworkStream stream, ConnectionCiphers ciphers,
+        ClientState conn, ushort skillId, (uint X, uint Y) aim, uint? targetObjectId = null)
+    {
+        var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        if (gem.Name is null || !InstantLocationSkill.Supported(Skills, gem.Effect)) return;
+        var own = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        int epoch;
+        (int X, int Y) from, to;
+        // GemSkills places the skill's own stat over the player's; use the same inputs for native distance resolution.
+        Func<string, int> CurrentStats()
+        {
+            var player = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+            return name => Stats.Key(name) is uint k ? own.TryGetValue(k, out int value) ? value : player.GetValueOrDefault(k) : 0;
+        }
+        lock (conn.Monsters)
+        {
+            epoch = conn.ProjectileEpoch;
+            if (targetObjectId is uint target)
+            {
+                if (!InstantLocationSkill.TryResolveObject(conn, epoch, target, InTown(conn), CurrentStats(),
+                    out from, out to, out _)) return;
+            }
+            else if (!InstantLocationSkill.TryResolve(conn, epoch, aim, InTown(conn), CurrentStats(), out from, out to)) return;
+        }
+        if (!await CastGemSkill(remote, stream, ciphers, conn, skillId, from, to, locationInstant: true)) return;
+        bool accepted = false;
+        // Keep the raw aim: IceDash resolves it from the client's position when 0x1ce runs. Sending an already rounded
+        // endpoint can normalize a short diagonal twice and move another cell. Resolve the server copy at this gate too.
+        await Send(remote, stream, ciphers, [],
+            $"0x01ce player skill 0x{skillId:x4}: instant {(targetObjectId is uint id ? $"on 0x{id:x}" : $"location ({aim.X}, {aim.Y})")}, movement only", atGate: () =>
+            {
+                lock (conn.Monsters)
+                {
+                    var current = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+                    if (current != gem || GemDisabled(conn, gem.Effect) is not null) return null;
+                    (int X, int Y) rawAim;
+                    if (targetObjectId is uint target)
+                    {
+                        if (!InstantLocationSkill.TryCommitObject(conn, epoch, target, InTown(conn), CurrentStats(),
+                            out rawAim, out _)) return null;
+                    }
+                    else
+                    {
+                        if (!InstantLocationSkill.TryCommit(conn, epoch, aim, InTown(conn), CurrentStats(), out _)) return null;
+                        rawAim = ((int)aim.X, (int)aim.Y);
+                    }
+                    accepted = true;
+                    return InstanceProtocol.InstantAction(PlayerId, skillId, rawAim.X, rawAim.Y, targetObjectId);
+                }
+            });
+        if (accepted) await FollowRighteousFire(remote, stream, ciphers, conn);
     }
 
     // Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them

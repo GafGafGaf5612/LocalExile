@@ -146,6 +146,30 @@ Part of [Status](../Status.md); what to build next in this area is in
   the server applies them and answers S→C 0x1ce, which starts the skill bar's cooldown.
   Skill records carry the GEPL Cooldown and the stats the cooldown count, and the server refuses a skill until its
   cooldown is over.
+  Ground-target C→S 0x190 now frames its 12 bytes and routes ordinary Frostblink through mana/cooldown acceptance.
+  The ground 0x1ce uses the raw aim; the server mirrors native 32/42-cell distance limits and ends the old walk.
+  Placement requires a captured grid and clear terrain, barriers and endpoint clearance.
+  Action tokens and pending releases remain unchanged; other location instant movement is withheld.
+  Actual Q input and a cooldown retry matched native/server positions, with two 12-mana costs and two confirmations.
+  Early retry, noninstant Fireball and unsigned-invalid coordinate requests changed no position or mana.
+  Manual native experiments separately verified near/far clamps and the old predicted walk ending after a blink.
+  Hovered-monster Frostblink sends 0x191 and now shares movement acceptance, with an object-bound 0x1ce.
+  Its size-aware object candidate trace precedes the distance clamp;
+  it does not reuse the monster centre as a ground aim.
+  Both preflight and the send gate require a living known-size monster with no active walk, and recheck placement.
+  Invalid preflight changes no mana/cooldown; later invalidation withholds confirmation under the existing cost policy.
+  Automated actual-send tests cover current target/player sampling, target death/walk, pause, transfer, barriers and unequip.
+  Four manual native object confirmations verified clear near/far/diagonal/off-axis endpoints.
+  A reflected terrain fallback is deliberately rejected.
+  Actual hovered Q on a stationary monster emitted 0x191 and one object-bound 0x1ce with flags 0x20.
+  From `(280,220)` against `(300,220)`, native/server position became `(317,220)` for one 12-mana cost.
+  A framed ground retry at 0.5 seconds changed no mana or position and sent no extra confirmation.
+  Combined #197 synchronization retained base 3000 ms, total 3 seconds and rate 1.
+  Production framed off-axis/far object requests matched native/server endpoints with one 12-mana cost each.
+  Framed moving-target, reflected-terrain, missing-target and noninstant requests changed no mana or position.
+  They sent no confirmation, and the invalid-combination control kept native cooldown entries empty.
+  Production movement during an active walk has not been measured.
+  Frostblink damage, chilled ground, enemy-dependent recovery and shared Blink cooldown groups remain unsupported.
   The skill bar keeps its slots when skills are re-sent or a gem is socketed again (the saved bar goes out as 0x53)
   ([11](../docs/protocol/11-skills.md) §9, §11).
 - **Auras (the simple set is verified live).** Reservation is read from GrantedEffectsPerLevel (`ManaReservationFlat`

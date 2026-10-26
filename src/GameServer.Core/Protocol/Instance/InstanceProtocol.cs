@@ -83,7 +83,8 @@ public static class InstanceProtocol
         InstanceItems.LevelUpGemId => 14, InstanceItems.LockGemId => InstanceItems.LockGemLength,
         InstanceEntities.AllocatePassiveId => 7, InstanceEntities.RefundPassiveId => InstanceEntities.RefundPassiveLength,
         InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength, InstanceStash.RequestTabId => InstanceStash.RequestTabLength, InstanceStash.MoveTabId => InstanceStash.MoveTabLength, InstanceStash.MoveToTabId => InstanceStash.MoveToTabLength, InstanceStash.TakeFromTabId => InstanceStash.TakeFromTabLength, InstanceMapDevice.ActivateId => InstanceMapDevice.ActivateLength,
-        SwapWeaponsId => 3, ChannelUpdateId => 10, ChannelEndId => 2, LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2, UseInstantSkillId => 8,
+        SwapWeaponsId => 3, ChannelUpdateId => 10, ChannelEndId => 2, LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2,
+        UseInstantSkillAtLocationId => 12, UseInstantSkillId => 8,
         InstancePause.RequestId => InstancePause.RequestLength, InstanceMicrotransactions.SlotId => InstanceMicrotransactions.SlotLength,
         InstanceMicrotransactions.SkillPickId => InstanceMicrotransactions.SkillPickLength,
         InstanceMicrotransactions.RequestId => InstanceMicrotransactions.RequestLength,
@@ -92,10 +93,22 @@ public static class InstanceProtocol
     };
 
     /// <summary>
-    /// C→S 0x191 (8 bytes, live 2026-10-21): use an instant skill, one whose stats have <c>skill_is_instant</c> (Haste,
-    /// Purity of Elements, Righteous Fire). u32 target object id (the player's own for a self-cast), u16 skill id. It has
-    /// no action sequence: the client starts no action for it and waits for no echo. The layout is read from captures
-    /// (0191 00001000 0105), not from the client's serializer.
+    /// C→S 0x190 (12 bytes): use an instant skill at a ground point, without an action sequence.
+    /// 0x1401232e0 selects target mode 4; vtable 0x1435c0718's writer 0x141f91f60 writes id, x, y and skill
+    /// in network byte order. Frostblink Q captured 0190 0000011A 000000DC 0103.
+    /// </summary>
+    public const ushort UseInstantSkillAtLocationId = 0x190;
+
+    public static (uint X, uint Y, ushort SkillId) ReadUseInstantSkillAtLocation(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return (r.U32(), r.U32(), r.U16());
+    }
+
+    /// <summary>
+    /// C→S 0x191 (8 bytes, live 2026-10-21): u32 target object id (the player's own for a self-cast), u16 skill id.
+    /// An instant skill (Haste, Purity of Elements, Righteous Fire) has no action sequence.
+    /// Sender 0x1401232e0 uses target modes 5/6; captured Haste: 0191 00001000 0105.
     /// </summary>
     public const ushort UseInstantSkillId = 0x191;
 

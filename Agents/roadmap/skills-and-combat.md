@@ -76,6 +76,17 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
   Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
+  Ordinary Frostblink's bounded ground-instant acceptance passed actual Q, retry and invalid-request checks.
+  Its hovered stationary-monster 0x191 path now uses the native size-aware object aim and object-bound confirmation.
+  Automated acceptance/queued rejection checks and manual native endpoint experiments pass.
+  Actual hovered Q reached native/server `(317,220)` with one object confirmation and one 12-mana cost.
+  A framed early ground retry was refused without extra cost or confirmation.
+  Production framed off-axis/far controls matched native/server endpoints.
+  Framed moving-target, partial-terrain, missing-target and noninstant controls were refused without spending.
+  Moving targets, coincident random aim and partial object-candidate terrain fallback remain outside this path.
+  Production use during an active walk still needs measurement; native manual walk-stop experiments passed.
+  Its departure/arrival damage, chilled ground, enemy-dependent recovery and shared Blink groups remain open.
+  Extend terrain and movement restrictions from native evidence before accepting other instant movement skills.
 - **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
   from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
   Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.

@@ -174,7 +174,7 @@ partial class Program
         var messages = InstanceProtocol.SplitClientMessages(all, out conn.Carry, out byte[] unknown);
         if (MoveTrace)
             foreach (var (id, bytes) in messages)
-                if (id is 0x0024 or 0x0025 or 0x0191)
+                if (id is 0x0024 or 0x0025 or 0x0190 or 0x0191)
                     Console.WriteLine($"[move-trace] qpc={readAt} recv 0x{id:x4} {Convert.ToHexString(bytes)}");
         foreach (var bytes in inbox.Post(messages, unknown, readAt))
         {
@@ -264,14 +264,20 @@ partial class Program
     // `still`, when given, is checked inside the connection's send gate and drops the packet when false: a packet decided
     // before another task's packets were sent can check that it still applies (SendFlinch).
     // Projectile impacts commit their short locked damage mutation inside this gate before relocation.
+    // A factory samples clock-sensitive state and constructs its packet after earlier sends; null sends nothing.
     static async Task Send(string remote, NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes, string? log,
-        Func<bool>? still = null)
+        Func<bool>? still = null, Func<byte[]?>? atGate = null)
     {
         var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
         try
         {
             if (still is not null && !still()) return;
+            if (atGate is not null)
+            {
+                if (atGate() is not { } current) return;
+                bytes = current;
+            }
             if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
             string? trace = MoveTrace && bytes.Length >= 6 && (bytes[0] << 8 | bytes[1]) is 0x01ab or 0x01b7 or 0x01ba
                 ? Convert.ToHexString(bytes) : null;

@@ -422,13 +422,97 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   arrival, unlike a spell) and a spell casts from where it stands. An attack with "Always Attack Without Moving" on
   casts in place. On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server
   echoes 0x1ab in place.
-  An **instant** skill (stat `skill_is_instant`, below) is not sent this way: C→S **0x191** (8 bytes: u32 target
-  object id, u16 skill id; `InstanceProtocol.ReadUseInstantSkill`) uses it without an action or a sequence, so the
-  client keeps walking. The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
+  An **instant** skill (stat `skill_is_instant`, below) is not sent this way.
+  C→S **0x191** carries an object target (8 bytes: u32 object id, u16 skill id).
+  C→S **0x190** carries a ground aim (12 bytes: u32 x, u32 y, u16 skill id), without an action sequence.
+  Sender `0x1401232e0` selects 0x190 for target mode 4 and 0x191 for object/self modes 5/6.
+  The 0x190 class `0x1435c0718` writer `0x141f91f60` confirms network order and these widths.
+  Actual Frostblink Q sent `0190 0000011A 000000DC 0103`; unframed, this discarded the rest of its receive chunk.
+  Both messages now frame independently, including fragments and coalesced following messages.
+  Only an equipped Instant gem may use either route; movement currently supports ordinary Frostblink only.
+  The server applies the effect and answers with S→C **0x1ce** (`InstanceProtocol.InstantAction`:
   object header, u16 skill id, u16 sequence (0xffff), u16 flags (0x20 → u32 target object), compact target position;
   handler `0x142195880`): the client runs the skill's action without animation and consumes a use of the skill
   (actor vtable +0x198), which starts the skill bar's cooldown. Without it the tooltip showed the cooldown but the bar
   never ran it: the cooldown records had no entries (Frida, live 2026-10-21; not yet checked with 0x1ce).
+  A location acceptance has flags 0, no object id, sequence 0xffff and the original ground aim.
+  Ordinary Frostblink uses the existing mana and cooldown checks but skips the generic single-area hit approximation.
+  Its server movement commits inside the 0x1ce send gate after repeating life, area, gem and placement checks.
+  IceDash action `0x1412f1200` records its departure and aim; endpoint resolver `0x141bfe240` clamps distance
+  to an integer maximum `42 * (100 + skill_maximum_travel_distance_+%) / 100` and a 32-cell minimum.
+  Component rounding is `floor(component * factor + .5)` in `0x140671d00`, including negative components.
+  The server uses the same emitted player/skill stat precedence, refuses overflow and unsupported minimum/maximum cases,
+  and requires a captured grid, in-bounds aim/endpoint, clear straight terrain, quest barriers and endpoint clearance.
+  It rejects cases needing the client's terrain endpoint search instead of guessing a destination.
+  Manual native 0x1ce experiments confirmed near aim `(290,229) -> (300,220)` resolves to `(314,208)`;
+  far aim `(311,220) -> (200,220)` resolves to `(269,220)`.
+  While walking from `(279,221)`, aim `(310,220)` resolved to `(311,220)` and ended the old predicted Move.
+  These manual protocol experiments establish resolver and walk-stop behavior separately from production validation.
+  The server mirrors that walk stop with `Walk.Teleport`, preserving ActionCount, channel and pending release tokens.
+  Hovering a monster sends Frostblink as **0x191**, rather than 0x190; the former nonmovement-only gate rejected it.
+  The object confirmation uses flags 0x20 and the target id, with its raw cell as the coordinate fallback.
+  Handler `0x142195ab1..0x142195b0e` binds the entity through `0x14193e0a0` and replaces the packet aim with its
+  Positioned cell. IceDash `0x141bfe1e0` and `0x141bfe240` then route a bound object through `0x141bfe610` before
+  applying the usual distance limits. Simply passing the monster's centre to the ground resolver is incorrect.
+  The object resolver first extends a short direction to 32 cells, rounds its components, then normalizes that
+  rounded vector again and extends it by player Positioned size + target Positioned size + 2.
+  Positioned size is `object_size - 1`; the normal player has size 1, and Ash Harvester ObjectSize 3 gives size 2.
+  `0x141c02050` traces those candidates in inclusive Bresenham order, retaining the last valid cell.
+  Its first terrain-layer threshold can abort the trace; other terrain or target-footprint failures skip a cell.
+  The target-footprint check is `0x141c02c30 -> 0x141c03c80`; the outer resolver may then search terrain again.
+  The server accepts only a wholly clear candidate extension and the existing conservative final placement.
+  Partial traces, coincident targets requiring seeded random direction, unknown sizes and other object types reject.
+  Both preflight and the actual confirmation gate require a living monster whose current walk has ended.
+  The object id makes the client resolve its target again on delivery, so moving-target parity is not claimed.
+  At the gate the current equipped gem, player/area state, target, sizes, raw cell and placement are checked again;
+  one game-time sample observes both walkers. No invalid preflight pays mana or reserves a cooldown.
+  A start invalidated after payment retains the existing accepted-use cost policy, but sends no late confirmation.
+  The object route skips generic area damage and preserves action/channel tokens, as the ground route does.
+  Manual native object confirmations from `(280,220)` with player/target sizes 1/2 established these clear cases:
+  target `(300,220)` traces `(312,220)..(317,220)` and lands `(317,220)`;
+  target `(330,220)` traces `(330,220)..(335,220)` and lands at the 42-cell clamp `(322,220)`;
+  target `(300,240)` traces `(303,243)..(307,247)` and lands `(307,247)`;
+  target `(300,230)` traces `(309,234)..(314,236)` and lands `(314,236)`.
+  The last case distinguishes normalizing the rounded minimum vector from reusing the original direction.
+  Reflected target `(260,220)` computed `(248,220)..(243,220)`, but terrain retained `(248,220)` and the native
+  fallback landed `(264,220)`; the server rejects such partial traces instead of guessing that fallback.
+  Evidence is `logs/instant-location-object-manual-{near,far,diagonal,offaxis,reflected}.json` in integration.
+  These are injected native protocol experiments, without server movement or production cost acceptance.
+  Actual hovered Q before this extension produced 0x191, no confirmation, no cost and no movement.
+  Production hovered Q now passed from `(280,220)` against stationary target `(300,220)`, with sizes 1/2.
+  The native request hook recorded message 401 (`0x191`), skill 259 and target 12288.
+  Exactly one 12-mana cost changed mana 175 to 163 and emitted one object-bound 0x1ce.
+  Its flags were 0x20, target id 12288 and raw aim `(300,220)`.
+  Native position and server `/pos` both became `(317,220)`.
+  A framed ground 0x190 retry after 0.5 seconds produced no extra mana cost or confirmation.
+  Combined #197 progress synchronization retained base 3000 ms, total 3 seconds and recovery rate 1.
+  Near evidence: integration `logs/instant-location-object-live-near.json`.
+  Final evidence: integration `logs/instant-location-object-live-near-final.json`.
+  Framed production 0x191 controls from `(280,220)` matched native/server endpoints for two stationary targets.
+  Off-axis target `(300,230)` reached `(314,236)`; far target `(330,220)` reached `(322,220)`.
+  Each accepted control paid 12 mana once and emitted one object-bound confirmation.
+  A framed request on a target walking from `(330,220)` toward `(283,220)` was rejected without cost or movement.
+  Reflected partial terrain, missing target `0xdeadbeef` and noninstant Fireball 260 were also rejected.
+  Those three framed invalid requests left mana 175, native cooldown entries empty and position `(280,220)`.
+  They emitted no 0x1ce.
+  These are production framed-request controls, distinct from actual hovered Q and injected native RE confirmations.
+  Framed positives: integration `logs/instant-location-object-framed-{offaxis,far}.json`.
+  Moving rejection: integration `logs/instant-location-object-framed-moving-reject.json`.
+  Other invalid cases: integration `logs/instant-location-object-framed-invalid.json`.
+  End-to-end stationary validation subsequently passed with actual Q input from `(280,220)`:
+  raw aim `(308,221)` resolved to native/server `(312,221)`.
+  Requests after 0.3 seconds, with noninstant Fireball, or with an unsigned-invalid x coordinate were rejected.
+  Rejections sent no confirmation and changed no mana or position.
+  A retry after 3.2 seconds aimed at `(300,220)` and reached native/server `(280,218)`.
+  Exactly two accepted uses paid 12 mana each, generated two ground confirmations and consumed two native uses.
+  The combined validation also included the separate #197 cooldown progress synchronization after each acceptance;
+  its record retained base 3000 ms, total 3 seconds and rate 1.
+  No 0x190 request remained unframed.
+  Evidence: `logs/instant-location-live-default.json` in the integration validation checkout.
+  Production ground Frostblink use during an active walk has not been measured;
+  the walking evidence is manual native RE.
+  Departure/arrival damage, chilled ground, nearby-enemy cooldown recovery, shared Blink cooldown groups,
+  other location instant skills and complete movement restriction/terrain searches remain unimplemented.
 - **Hit reaction (live 2026-10-25).** A monster that takes a hit plays its rig's **TakeHit** clip with S→C **0x1b2**
   (`InstanceProtocol.AnimationUpdate`, kind 0): object header, u8 kind, u32 clip index (+0x24), u32 float bits (speed,
   +0x28). The index is 0-based into the actor's animation list, which is the rig `.amd`'s animations in file order

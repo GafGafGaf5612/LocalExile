@@ -330,6 +330,17 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 |---|---|---|
 | `0x1435db980` | VT | ActiveSkillManager (Actor +0x598; skills at +0x158, sorted by instance +0x40) |
 | `0x141eea6a0` | Fn | ActiveSkillManager::SkillInstanceAdded (manager slot 7) |
+| `0x1401232e0` | Fn | instant input sender: mode 4 ground 0x190, modes 5/6 object/self 0x191 |
+| `0x1435c0718` | Cls | C→S 0x190 location instant; writer `0x141f91f60`, reader `0x141f92000` |
+| `0x142195880` | Fn | S→C 0x1ce instant action and use consumption, without an ordinary action sequence |
+| `0x1432823d0` | Vt | IceDash action, installed by factory `0x1412805a0` |
+| `0x1412f1200` | Fn | IceDash start: departure at action +0x318, aim at +0x320 |
+| `0x141bfe240` | Fn | blink endpoint: max 42 cells scaled by stat 11856, min 32, then terrain validation |
+| `0x142195ab1..0x142195b0e` | Code | object instant confirmation binds target and reads its Positioned cell |
+| `0x141bfe610` | Fn | object blink aim: minimum vector, size-aware extension, candidate trace before clamp |
+| `0x141c02050` | Fn | object blink candidate Bresenham trace, retaining the last terrain/target-valid cell |
+| `0x141c02c30` | Fn | candidate target-footprint check through `0x141c03c80` |
+| `0x140671d00` | Fn | normalized cell vector: floor(component * scale + .5), including negative components |
 | `0x141ee97f0` | Fn | create the action for a skill id |
 | `0x142192860` | Fn | ClientActor ctor: basic actions from the type's u16 list (`type+0xf8`) |
 | `0x142198d40` | Fn | AddSkill(manager, ActionTypes HASH16): basic action |
