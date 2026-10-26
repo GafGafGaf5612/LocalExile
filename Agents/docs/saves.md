@@ -90,6 +90,9 @@ character list; when a level-up's update to Auth fails, the next login corrects 
 last town.
 Automatic XP events use current character XP rather than the target captured when a gain began.
 An old-area gain cannot prevent another connection from reconciling its own level, including a pending level reset.
+XP-driven level changes read, validate and trim the current saved passive tree in one transaction.
+Runtime publication follows commit, retaining another area's paid refunds and completed level trims.
+Ordinary allocation and refund requests still compare their original snapshot and reject stale writes.
 Their runtime target and queued XP packet come from current experience, never a level captured before an await.
 Auth updates serialize per character and recheck current XP after replies, including gains, controls and login repair.
 An in-flight obsolete request is corrected before releasing that gate; its answer never applies a runtime level.

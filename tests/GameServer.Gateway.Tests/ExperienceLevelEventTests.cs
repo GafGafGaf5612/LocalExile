@@ -34,7 +34,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     public async Task An_old_area_gain_cannot_suppress_an_intentional_downward_controls_runtime_publication()
     {
         using var game = new GatewayCharacter(level: 4, family: AscendancyFamily.Normal, choice: "Slayer");
-        Assert.Null((await game.Change([39725, 24377], allocate: true)).Error);
+        Assert.Null((await game.Change([39725, 24377, 35568], allocate: true)).Error);
         var oldArea = game.Reload();
         var reset = ProgramValue<Program.ExperienceChange>("RecordExperienceReset", game.State, 3);
         var oldGain = Program.RecordExperienceGain(oldArea, 1)!;
@@ -54,6 +54,53 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(3, auth.Level);
         Assert.Equal(saved, game.SavedJson);
         Assert.Equal(new ushort[] { 39725, 24377 }, game.State.Passives);
+        Assert.True(game.State.SavedPassiveProgress!.Matches(CharacterSaves.Load(game.Character)!));
+    }
+
+    [Fact]
+    public async Task A_delayed_level_gain_adopts_a_newer_paid_refund_without_restoring_the_node_or_payment()
+    {
+        using var game = new GatewayCharacter(level: 2, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725], allocate: true)).Error);
+        var oldArea = game.Reload();
+        var gain = Program.RecordExperienceGain(game.State,
+            CharacterStats.ExperienceFor(3) - CharacterStats.ExperienceFor(2))!;
+        Assert.Null((await game.Change([39725], allocate: false, refundPoints: true, state: oldArea)).Error);
+        string refunded = game.SavedJson;
+
+        await game.CompleteGain(gain, new LevelControl().Call);
+
+        Assert.Equal(3, game.State.Pools.Level);
+        Assert.Empty(game.State.Passives);
+        Assert.Equal((ushort)19, game.State.RefundPoints);
+        Assert.Equal(refunded, game.SavedJson);
+        Assert.True(game.State.SavedPassiveProgress!.Matches(CharacterSaves.Load(game.Character)!));
+    }
+
+    [Fact]
+    public async Task A_failed_experience_trim_publishes_no_runtime_tree_and_can_retry_from_current_progress()
+    {
+        using var game = new GatewayCharacter(level: 4, family: AscendancyFamily.Normal, choice: "Slayer");
+        Assert.Null((await game.Change([39725, 24377, 35568], allocate: true)).Error);
+        var reset = ProgramValue<Program.ExperienceChange>("RecordExperienceReset", game.State, 3);
+        string saved = game.SavedJson;
+        var snapshot = game.State.SavedPassiveProgress;
+        var pools = game.State.Pools;
+        Saves.FailWrite = name => name == game.Character;
+        try { await Assert.ThrowsAsync<IOException>(() => game.PublishGain(reset)); }
+        finally { Saves.FailWrite = null; }
+
+        Assert.Equal(saved, game.SavedJson);
+        Assert.Equal(new ushort[] { 39725, 24377, 35568 }, game.State.Passives);
+        Assert.Same(snapshot, game.State.SavedPassiveProgress);
+        Assert.Same(pools, game.State.Pools);
+        Assert.Equal(InstanceEntities.PlayerExperienceUpdate(0x1000, CharacterStats.ExperienceFor(3)), game.LastBytes);
+
+        await game.PublishGain(reset);
+
+        Assert.Equal(3, game.State.Pools.Level);
+        Assert.Equal(new ushort[] { 39725, 24377 }, game.State.Passives);
+        Assert.Equal((ushort)20, game.State.RefundPoints);
         Assert.True(game.State.SavedPassiveProgress!.Matches(CharacterSaves.Load(game.Character)!));
     }
 

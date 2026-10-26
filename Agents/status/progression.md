@@ -36,6 +36,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Level changes recheck concurrent passive mutations before applying; queued tree packets publish current state.
   Old XP events cannot undo later gains or explicit level resets; Auth follows current XP.
   Old-area gains cannot suppress the live connection's pending level publication.
+  XP level reconciliation adopts completed saved trims/refunds atomically before updating runtime state.
   Native verification of this split remains with the parent before moving the entry to Works.
   Phrecia game connections/selection remain explicitly gated pending an agreed client-compatible graph.
   Normal startup does not install or recover a graph and ordinary/unascended play has no alternate-graph preflight.

@@ -388,9 +388,11 @@ partial class Program
 
     // A batch may list its leaf before its prerequisite. Removing the last allocation alone could orphan that leaf.
     // Keep the historical last-first preference, but only remove a node whose remaining tree is still connected.
-    static void TrimOrdinaryPassives(ClientState conn, List<ushort> nodes, int points)
+    static void TrimOrdinaryPassives(ClientState conn, List<ushort> nodes, int points,
+        AscendancyProgress? ascendancy = null)
     {
-        ValidateOrdinaryPassives(conn, nodes, conn.MainAscendancy);
+        ascendancy ??= conn.MainAscendancy;
+        ValidateOrdinaryPassives(conn, nodes, ascendancy);
         while (nodes.Count > points + Passives.PointsGranted(nodes))
         {
             int removable = -1;
@@ -398,7 +400,7 @@ partial class Program
             {
                 try
                 {
-                    ValidateOrdinaryPassives(conn, nodes.Where((_, index) => index != i), conn.MainAscendancy);
+                    ValidateOrdinaryPassives(conn, nodes.Where((_, index) => index != i), ascendancy);
                     removable = i;
                     break;
                 }

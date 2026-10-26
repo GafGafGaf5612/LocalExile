@@ -508,14 +508,50 @@ partial class Program
             if (change.Trimmed)
                 CharacterSaves.SetMainAscendancy(CharacterName(conn), change.Ascendancy, change.Nodes, change.Masteries,
                     expected: change.Expected);
-            conn.Passives = [.. change.Nodes];
-            conn.MasteryEffects = new(change.Masteries);
-            if (change.Trimmed)
-                conn.SavedPassiveProgress = new(change.Ascendancy, change.Nodes, change.Masteries, conn.RefundPoints);
-            conn.Pools = PoolsFor(conn, change.Level);
-            conn.ApplyMovementSpeed();
-            return change.Before;
+            return PublishCommittedLevel(conn, change);
         }
+    }
+
+    // XP is shared by overlapping area connections. Reconcile from the durable tree, not a stale connection's
+    // candidate; the read, optional trim and comparison stay in one transaction before runtime publication.
+    static int CommitExperienceLevel(ClientState conn, int level)
+    {
+        lock (conn.Monsters)
+        {
+            var change = Saves.Atomically(() =>
+            {
+                var save = CharacterSaves.Load(CharacterName(conn)) ?? new CharacterSaves.Save([]);
+                ValidateSavedProgress(conn, save);
+                var ascendancy = save.MainAscendancy ?? new();
+                var nodes = new List<ushort>(save.Passives ?? []);
+                ushort extra = save.ExtraPassivePoints ?? 0, refunds = save.RefundPoints ?? 0;
+                int points = Progression.PassivePoints(level) + extra + AscendancyRules.OrdinaryPointsGranted(
+                    (byte)Skills.ClassFor(conn.ClassRow).IntegerId, ascendancy);
+                TrimOrdinaryPassives(conn, nodes, points, ascendancy);
+                var masteries = (save.MasteryEffects ?? []).Where(kv => nodes.Contains(kv.Key))
+                    .ToDictionary(kv => kv.Key, kv => kv.Value);
+                var current = new PassiveLevelChange(level, conn.Pools.Level, extra, nodes, masteries, ascendancy,
+                    refunds, CharacterSaves.PassiveProgressSnapshot.From(save), nodes.Count != (save.Passives?.Count ?? 0));
+                if (current.Trimmed)
+                    CharacterSaves.SetMainAscendancy(CharacterName(conn), ascendancy, nodes, masteries,
+                        expected: current.Expected);
+                return current;
+            });
+            return PublishCommittedLevel(conn, change);
+        }
+    }
+
+    static int PublishCommittedLevel(ClientState conn, PassiveLevelChange change)
+    {
+        conn.Passives = [.. change.Nodes];
+        conn.MasteryEffects = new(change.Masteries);
+        conn.MainAscendancy = change.Ascendancy;
+        conn.ExtraPassivePoints = change.ExtraPoints;
+        conn.RefundPoints = change.RefundPoints;
+        conn.SavedPassiveProgress = new(change.Ascendancy, change.Nodes, change.Masteries, change.RefundPoints);
+        conn.Pools = PoolsFor(conn, change.Level);
+        conn.ApplyMovementSpeed();
+        return change.Before;
     }
 
     // A new level in place, after the Player component's experience (0x2ba; the client derives the level from it and runs

@@ -25,6 +25,7 @@ yet confirmed on screen).
   experience decides the level, and a stale account level is corrected at login ([saves](../saves.md)).
 - **Concurrent events:** each receiving connection reconciles its level from current character experience.
   An old-area gain cannot suppress a live connection's pending level gain or explicit reset.
+  Level changes reconcile the latest saved tree and refund balance before publishing, including another area's trim.
   Runtime application derives the target from current experience before publishing stats, independently of Auth latency.
   Queued Player XP updates also sample current experience at the cipher gate.
   Gateway Auth requests serialize per character, recheck XP after replies and correct obsolete in-flight requests.

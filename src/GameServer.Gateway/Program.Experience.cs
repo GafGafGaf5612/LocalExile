@@ -75,7 +75,7 @@ partial class Program
             level = Progression.LevelFor(conn.Experience, CharacterStats.LevelStarts);
             bool currentReset = change.Reset && change.Revision == updates.Revision;
             if (!currentReset && level == conn.Pools.Level) return false;
-            before = CommitLevelChange(conn, CaptureLevelChange(conn, level));
+            before = CommitExperienceLevel(conn, level);
         }
         await PublishLevelChange(remote, stream, ciphers, conn, before, level);
         return true;
