@@ -28,6 +28,21 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
+- **Spell cast timing (#192):** native base milliseconds are preserved and cast speed adjusts server waits and
+  displayed rate once. Automated checks and real-client -80%/+100%/zero clip durations pass.
+  Projectile release/contact alignment was not separately measured.
+  Instant casts and attack timing stay separate; conditional action-speed and special native mechanics remain open.
+  Attack gems now share level-aware inherent speed with server pacing/contact and native total-duration/APS stats.
+  Native input verified the ordinary 0.714 s bow duration and Burning Arrow 1.02 s; automated checks also pass.
+  Attack-gem damage/DPS and conditional speed remain separate work.
+- **Spell hit panel (#188):** selected-spell ranges now share combat's converted packet and hitless spells clear
+  inherited weapon hit damage. Automated checks pass; verify selection, equipment updates and relog in the client.
+  DPS remains a pre-crit/pre-mitigation average; crit weighting, integer-roll expectation, cooldowns and DoT/beam
+  displays remain separate work. Quality conversion and existing modifier precedence are unchanged.
+  Selected attack-gem main-hand ranges and pre-crit averages now share the existing converted combat packet.
+  Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.
+  Equipment UI refresh remains to be checked separately.
+  Off-hand alternation, conditional damage, supports and modifier-scope corrections remain separate work.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
 
@@ -56,6 +71,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   ([20](../docs/protocol/20-damage.md)).
   The player's real life, resistances, armour and evasion are computed from level, passives and base equipment, and
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
+  Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
+  Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
   Special ES mechanics, penetration, exposure, ailment application, added damage and support modifiers remain open.
@@ -72,6 +89,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Extend terrain and movement restrictions from native evidence before accepting other instant movement skills.
 - **Start:** special ES mechanics, penetration/exposure and the remaining conditional critical strike stats
   from the stats both sides already carry; monster skills beyond the first granted effect (ranged, spells).
+  Extend player stun rules to ES avoidance, substituted thresholds, conditional defences and monster-specific modifiers.
   Spell base critical chance now comes from each skill's level and shares its panel/combat calculation.
   Native skill switching, combined bonuses, no-crit, relog and hitless-spell controls are verified.
   Added-base, lucky/more and conditional crit remain separate work.
@@ -95,7 +113,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   and disconnect handling through the game clock and flight lifetime. Default-attack arrows are visual only.
   Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
   Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume passed before the
-  bow packet/height update; merged bow/collision integration needs a live recheck. Integer monster walk estimates,
+  bow packet/height update; merged bow/collision integration and corrected glide height need a live recheck.
+  Integer monster walk estimates,
   a shared collision radius and straight movement between samples still limit accuracy.
 - **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
   (or in the walk-map recorder), and collision with doodads and objects that have their own colliders.

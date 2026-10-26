@@ -291,6 +291,8 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x142fe0da0` | Data | HNC 64-byte mask |
 | `0x141ec0aa0` | Fn | ObjectInWakeZone (0x1a9) |
 | `0x1421940a0` | Fn | Actor message handler (0x1ab action started, …) |
+| `0x141c06c2a`..`0x141c06c8e` | Code | Attack timing reads total base ms 0x221a and final player speed 0x126 |
+| `0x142706568`..`0x14270658f` | Code | Explicit total base attack duration getter returns stored 0x221a |
 | `0x141e30c90` | Fn | Positioned message handler (0x1b7 teleport, 0x1ba move, …) |
 | `0x142166300` | Fn | C→S 0x25 / 0x24 sender (use skill at location / on object) |
 | `0x141fdda70` | Fn | 0x1ab read |
@@ -360,6 +362,11 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x140221fd0` | Fn | mini life bar: visible? |
 | `0x141e8cf10` | Fn | Actor: start (queue) an action |
 | `0x141e8e060` | Fn | Actor: per-frame runner of the queued action |
+| `0x141fde9d0` | Fn | 0x1d1/0x1d2 reader: duration float, Animation.dat type byte, boolean |
+| `0x141e95e60` | Fn | 0x1d1 Actor animation: cancel prediction, select stance ACT, lock input during recovery |
+| `0x141e90740` | Fn | End local predicted action (Actor +0x1b8) |
+| `0x141e934b0` | Fn | End Actor animation recovery; clear +0x219 bit 2 and resume queued/idle actions |
+| `0x141dba530` | Fn | Play(controller, resource pair, index in r8d, speed); main state at controller +0x180 |
 | `0x141938830` | Fn | Melee action begin = skill_is_non_pathing |
 | `0x14219f820` | Fn | S→C 0x55 death screen read |
 | `0x14028fc80` | Fn | `death_screen` panel ctor (setup `0x140290820`, buttons `0x140290bf0` → C→S 0x54 / 0x153) |
@@ -371,9 +378,14 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x140ae0fb0` | Fn | skill bar vtable +0x390: rebuild from 13 skill ids (lookup in ActiveSkillManager +0x158, slot set +0x398, clear +0x3a0) |
 | `0x1435a0d10` | VT | Projectile component (0x20 bytes; slot 17 reads nothing, almost every slot a `ret`) |
 | `0x141e30c90` | Fn | Positioned message handler: 0x1b7 teleport, 0x1b8, 0x1b9, 0x1ba move (height u32 +0x28, speed f32 +0x2c), 0x1bc |
+| `0x1419e7660` / `0x1419eef50` | Fn | Spell duration: virtual base milliseconds / 1000 / (1 + cast speed / 100) |
+| `0x1419e7500` / `0x1419e763c` | Fn / Code | Ordinary spell speed getter / read cast_speed_+% (296) |
 | `0x141d84b00` | Fn | terrain height of a cell (terrain, int cell[2]) in steps of 7.8125; `0x141e35800` interpolates for a Positioned |
 | `0x1415f53c0` | Fn | Render: model transform; tilt = −`0x141e35c00`(Positioned) when the type has `tilt_to_target` |
 | `0x141e34400` | Fn | Positioned: start a move (interpolation `0x141e4d180`; height 0x7fffffff = terrain, else z = −height × 7.8125) |
+| `0x141e3491a` / `0x141e34921` | Fn | Move endpoint/current Positioned markers passed to the 3D stepper |
+| `0x141e3495b` to `0x141e3496b` | Code | Move endpoint world z = -marker * 7.8125 before render interpolation |
+| `0x141e4d510` | Fn | Render interpolation setup: stores endpoint world z minus current world z |
 | `0x142042360` | Fn | create one client-side doodad from a placed record (grid x, y +0, +4; angle +0x14; type +0x30; .ao +0x38): rooms' doodads too ([14](14-monster-packs.md) §3) |
 | `0x14214dbe1` | Fn | instance dispatcher case 0xe2 (S→C 0x2a9 gold, read `0x140913050`, u32 BE): stores it at session +0xc40c, plays Gold_Spend.ogg when it drops |
 | `0x140d62ec0` | Fn | 0xb8 listener on the UI state: flags bit 0 → +0x984 = other party, +0x988 = 1 (the active trade) |

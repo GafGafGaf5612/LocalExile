@@ -205,6 +205,34 @@ hits. `/set_stat` overrides any of these. The packet, conversion order and damag
 `f0 0x40, f1 0, skill list`: the list replaces the skill of the same id, new stats included. Live: the swing sped up at
 once. The Gateway now sends the 0x20 update instead (above), which also removes skills and updates the character panel.
 
+**Inherent attack-gem speed (#191).** `GrantedEffectsPerLevel.AttackSpeedMultiplier` multiplies weapon attack
+rate separately from the player's increased/more speed: Burning Arrow -30%, Heavy Strike -15%, Flicker Strike +20%.
+The level-aware catalog accessor follows the same selected-level rule as other GEPL values.
+[PoB CalcOffence](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/1afbc4cdcc4fe83273ce8e06a51c5cf986999250/src/Modules/CalcOffence.lua#L2299)
+multiplies `source.AttackRate` by `1 + attackSpeedMultiplier / 100` before ordinary speed modifiers.
+For the supported ordinary weapon-based path, `SkillAttackTiming` sends total base weapon ms as
+`round(weapon base ms / (1 + inherent percent / 100))`, midpoint away from zero, with a minimum of one ms.
+It retains the original weapon base ms (0x142/0x143) and final player speed percent (0x126/0x127).
+The native total base fields (0x221a/0x221b) are integer ms, so the server uses that same rounded base, then player
+speed, then its existing 30 Hz attack-duration floor; rounding the base changes the uncapped time by at most
+0.5 ms divided by the player-speed factor.
+Native action code `0x141c06c2a..0x141c06c8e` reads 0x221a and divides by 1000 and `1 + stat(0x126) / 100`.
+The explicit 0x221a getter (`0x142706568..0x14270658f`) returns the stored value without another GEPL multiplier.
+Gem pacing, attack contact/projectile release and channel intervals share that duration; selected APS is `100 / seconds`.
+Ordinary attacks and non-attack skills retain their previous paths.
+Native baseline before this fix: a 714 ms bow had stored speed 0%, base/total base 714 ms and APS 140 for both
+ordinary attacks and Burning Arrow, with actual native clip duration 0.714 seconds in each case.
+After the fix, actual native input verified Burning Arrow total base 1020 ms, clip duration 1.019999959 seconds
+and stored APS 98; its original base stayed 714 ms and player speed stayed 0%.
+The ordinary bow attack retained total base 714 ms, clip duration 0.7140000038 seconds and stored APS 140.
+These checks verify native duration and stored APS, not a separate measurement of release/contact timing.
+Local before/after captures are `logs/skill-timing-{before,after}-default-bow-real.json` and
+`logs/skill-timing-{before,after}-burning-arrow-real.json` in the integration checkout.
+Catalog, native-field, modifier-order, pacing/contact and spell-exclusion tests pass.
+This excludes support/conditional/per-charge speed, skill-specific attack-time overrides and off-hand alternation rules.
+Selected attack-gem damage ranges/DPS still inherit the existing weapon display; correcting those is separate work.
+No generator output changes are needed: the multiplier is already extracted.
+
 ## 5. Combat timing (Gateway `Attack`)
 
 1. C→S 0x24 arrives when the player clicks, before the client walks into range. The server walks its position estimate
@@ -508,6 +536,57 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   types TakeHitForward/Backward/Left/Right, but the `.act` files that set them alias them all to `@TakeHit`, so they add
   no variants. 0x262 (a Life "changed by" event with a signed delta) reaches the Life listeners but plays no flinch,
   sound or blood.
+- **Player hit recovery.** S→C **0x1d1** selects an `Animation.dat` type through the actor's current class/stance ACT.
+  `InstanceProtocol.ActorAnimation` writes object header, BE float seconds, u8 animation type, u8 boolean.
+  Type **5** is `TakeHit`; this is not a rig clip index.
+  Reader `0x141fde9d0` widens the type to message `+0x24` and stores the boolean at `+0x28`.
+  Actor handler `0x1421949c3` calls virtual `+0xe0`, `0x141e95e60`.
+  It ends predictive action `+0x1b8` through `0x141e90740`, cancels queued work, and sets Actor `+0x219` bit 2.
+  Action gate `0x141e8d900` rejects starts while that bit is set.
+  Completion `0x141e934b0` clears the bit and resumes queued/idle processing.
+  Ground bow attacks reserve their pacing and token under the same recovery gate; queued arrow creation checks it.
+  Live on a captured Strand, a 0.5 s packet stopped predictive walking and a subsequent cast.
+  The predicted/current action became null, movement stopped, and recovery cleared after about 0.508 s.
+  A new cast worked afterward.
+  Integrated copied-save tests used a level 1 Witch (57 life, no ES) and Ash Harvester row 717 at level 7.
+  Actual 24/27 physical damage hits stopped client prediction and the server walk estimate at cell (283, 216).
+  TakeHit selected Witch clip 177 and cleared Actor `+0x219` bit 2 after the requested 429 ms recovery.
+  A slow Fireball cast was cancelled before release, with no projectile created.
+  An already released Fireball continued through recovery to impact and removal.
+  A bow-equipped copied character also lost a pending Burning Arrow before release after an actual monster hit.
+  An ordinary ground arrow request during recovery produced no action echo or projectile; a fresh request worked afterward.
+  Burning Arrow released before the hit continued to removal, while native recovery blocked the new arrow request.
+  With `cannot_be_stunned = 1`, another actual 24 damage hit sent no 0x1d1 and did not set the recovery flag.
+  Evidence: `logs/monster-hit-recovery-{walk,cast,flight,immune}.json` in the validation checkout.
+  In contrast, 0x1b2 merely replaced the clip while movement or server cast release continued.
+  Its Play ABI is `0x141dba530(controller, &resourcePair, index, speed, ...)`, with the index in **r8d**.
+  Actor `+0x1a0` is the body controller; its main state is `+0x180`, clip index `+0x190`, elapsed `+0x1a4`.
+  `trace-player-hit-animation.js` records these fields and Positioned movement without sending packets.
+  The trailing 0x1d1 boolean enables a client avoid-interruption roll; the server sends false and decides eligibility.
+
+  The supported slice is surviving, unblocked **physical monster melee**.
+  [PoB's defence calculation](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcDefence.lua#L2154-L2250)
+  gives effective physical damage a 25% bonus, then rolls `min(100, 200 × effectiveDamage / stunThreshold)`.
+  Base chances at or below 20% are discarded before applying unconditional stun avoidance.
+  The life threshold includes unconditional `stun_threshold_+%`; known stun immunity is respected.
+  Duration uses PoB's 350 ms base, the extracted Monster.ot's 20% more melee stun duration, self duration modifiers,
+  and the player's final stun recovery, rounded upward to a 33 ms frame (normally 429 ms).
+  Invalid stats yielding a nonpositive duration or more than 60 s disable recovery rather than locking input.
+  `SendPlayerHitRecovery` commits cancellation inside the send gate after rechecking survival and active recovery.
+  It increments `ActionCount`, clears channel hits, and stops `PlayerWalk` at its current cell.
+  Pending melee, casts and area hits retain their original token across awaits; released projectiles keep flying.
+  Projectile creation rechecks the token inside the send gate; cancellation resets ordinary attack pacing too.
+  Buffered 0x24/0x25/0x197 inputs are rejected using socket-read game time through the recovery end.
+  Object walk-ups reserve movement and the original token under the same recovery check.
+  Their delayed continuations and queued action/teleport echoes recheck that token.
+  Recovery does not restart while active; flasks and instant skills keep their existing paths.
+  This does not implement block recovery, ES stun avoidance, CI/mana/ES threshold substitutions, conditional defences,
+  attacker-specific stun modifiers or monster spell/ranged stuns.
+  Known final or raw base ES, active equipped ES bases and local flat ES disable this slice until ES avoidance exists.
+  This includes Discipline before a separate ES pool implementation computes `maximum_energy_shield`.
+  Conditional stun-defence builds, flat/substituted thresholds and CI are also skipped conservatively.
+  An equipped skill with `skill_cannot_be_stunned` or contact-phase immunity disables this slice for the build.
+  Its precise active action phase is not tracked, so even an inactive equipped skill is conservatively excluded.
 - **Hit effects (2026-10-25).** The target's blood and the weapon impact sound come from S→C **0x1af** "action hit"
   (`InstanceProtocol.ActionHit`; class `0x1435ddb38`, read `0x141fddba0` → `0x1419bd6f0`, Actor handler `0x1421940a0`
   → `0x141e90f50`): object header (the attacker), u16 action sequence (must match the action's), u8, u8 skill index
@@ -521,8 +600,31 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
   contacts to data/animation-contacts.json (`AnimationContacts`); the Gateway waits cast time × that fraction.
-- **Cast speed.** `base_cast_speed_+%` and `cast_speed_+%` shorten `virtual_base_spell_cast_time_ms` and
-  `hundred_times_casts_per_second` in the skill's stats and the server's release time.
+- **Cast speed (#192).** Genuine Spell/non-Attack skills keep the catalog milliseconds in both
+  `base_spell_cast_time_ms` and `virtual_base_spell_cast_time_ms`. The native spell action already divides that
+  virtual base by `1 + cast_speed_+% / 100`; pre-dividing it on the server applied cast speed twice.
+  `SpellCastTiming` adjusts only the server duration and final `hundred_times_casts_per_second`, using the same
+  computed cast-speed total. A 750 ms Fireball at +100% therefore takes 375 ms, and at -80% takes 3750 ms;
+  the panel rates are 2.67 and 0.27 casts/s. The outgoing virtual base remains 750 in both cases.
+  Native 3.29.3b evidence: `0x1419e7660` reads key 0x24b9 at `0x1419e7683`, divides by 1000 at
+  `0x1419e7698`, then divides by one plus getter +0x498 / 100 at `0x1419e76a0..0x1419e76bd`.
+  Its speed getter `0x1419e7500` ordinarily reads `cast_speed_+%` (296) at `0x1419e763c`.
+  The alternate action `0x1419eef50` uses the same formula with getter +0x788.
+  In the earlier recovery capture (`logs/monster-hit-recovery-cast.json`), a 1.066-second clip at playback speed
+  0.0568533279 took 18.7500015 seconds: the old 3750 virtual milliseconds were divided by 0.2 again.
+  Real-client Q casts in the combined validation build now have native clip durations 3.750000157 seconds at
+  -80%, 0.375 seconds at +100%, and 0.75 seconds at zero. The native virtual base was 750 in all three captures;
+  emitted cast rates were 27, 267 and 133 hundredths. Duration was measured as clip length / playback speed.
+  Captures: `logs/skill-timing-after-fireball-{minus80,plus100,default}-real.json` in the integration checkout.
+  These checks establish native clip duration; projectile release/contact alignment was not separately measured.
+  Server projectile release, area-spell delay and the Portal spell's cast wait use the adjusted duration once.
+  Catalog instant skills retain their instant flag, zero server cast duration and no finite casts-per-second rate.
+  A channelled spell's native base is also preserved; this does not implement beam damage or change the existing
+  server channel-hit cadence. Attack and non-spell timing paths are unchanged.
+  For non-instant spells, a nonpositive speed factor or a duration exceeding signed integer milliseconds has
+  no server duration, no hit/effect or mana cost, and zero displayed cast rate. Positive server durations round
+  to milliseconds with a 1 ms numeric floor; this bound is not an official cast-speed cap. Conditional action-speed
+  rules, skill-specific speed substitutions and further native timing mechanics remain outside this fix.
 - **Instant skills.** The client knows an instant skill by its stat **`skill_is_instant`** (0x2064), not by the
   ActiveSkillType `Instant`; the server derives it from the type and sends it with `base_skill_is_instant`
   (`SkillCatalog.EffectStats`). Without it Haste's and Righteous Fire's actions used the spell action class (vtable
@@ -574,20 +676,25 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `holy_strike_maximum_number_of_animated_weapons` itself from `base_holy_strike_maximum_number_of_animated_weapons` and
   `double_holy_strike_animated_weapons_limit`: 0x1400c37d1 registers 0x14279ee30), and the Templar rig's missing
   mace/sceptre stances (`Art/Models/CHARACTERS/Templar/rig.amd`).
-- **Damage** (`SpellDamage.cs`). A spell's hit is, per damage type, its `spell_minimum/maximum_base_{type}_damage`
-  × (1 + `damage_+%` + `spell_damage_+%` + `elemental_damage_+%` for fire / cold / lightning + `{type}_damage_+%` +
-  `projectile_damage_+%` for `base_is_projectile` skills), from the player's stats (passives, item mods, auras) under
-  the skill's own. The server's hits roll between the unrounded minimum and maximum and drop the fraction; the skill's
-  tooltip gets `display_hundred_times_damage_per_skill_use` (the unrounded average × 100) and
-  `hundred_times_damage_per_second` (× casts per second). Before 2026-10-20 a gem skill carried the default attack's
-  DPS with the player's stats. Conversion is applied per type through `DamagePacket`; more multipliers and added
-  damage are not modelled.
+- **Damage** (`SpellHit.cs`, `SpellDamage.cs`). Projectile hits, area hits and the selected spell's panel
+  share the same typed packet: the catalog base hit, flat added spell damage scaled by damage effectiveness,
+  applicable generic/spell/elemental/type/projectile increases, supported aura more multipliers, then conversion
+  and gain-as-extra. The skill's own level/quality modifiers replace a player's value on the same key, preserving
+  the existing combat rule. Conversion uses separate character inputs: player keys win, and level-only skill inputs
+  fill missing keys. Quality conversion is still excluded, as it was before this panel change.
+  Damage ranges are floored only for display/rolls; the packet keeps fractions through conversion.
+  The displayed per-use average and DPS retain the unrounded packet average, before critical strikes and target
+  mitigation. DPS uses the skill's emitted casts-per-second value, not the weapon's attacks per second.
+  This is the current server convention, not an official DPS calculation: crit weighting, target defences,
+  per-type integer-roll expectation, cooldown/downtime and special skill mechanics are excluded.
+  Hitless spells do not borrow weapon hits or turn flat added spell damage into a hit; their hit ranges and
+  inherited weapon DPS/per-use fields are explicitly zeroed. This does not implement a beam or DoT damage panel.
 - **Damage effectiveness** (2026-10-24). An attack gem's hit is the weapon's damage × its `DamageEffectiveness` (the
   GESSPL row, permyriad: Flicker Strike 7730 at level 1, 30890 at 20, 69600 at 40 — the gem's "Deals 77.3% of base
   Attack Damage"), through `SkillCatalog.DamageEffectiveness` and `SpellDamage.WithEffectiveness`. A row of 0 (the
   default attack's) or a negative one (a few skills have them) scales nothing. A **spell**'s own base damage is already
   final: its effectiveness is the added-damage one (Fireball 200%), and the GESSPL `BaseMultiplier` is 0 for every spell,
-  so spells are left alone until added damage is modelled.
+  so that multiplier does not scale a spell's own base hit; its added damage is scaled separately.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
@@ -629,7 +736,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
 - **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
   cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
   (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets
-  z = height × 7.8125, the height read as a signed world z (positive down; a negative value is above sea level).
+  z = -marker * 7.8125, reading the packet height as the signed Positioned marker, not signed world-z steps.
   With 0 the fireball sat under the ground and did not seem to move; with 0x7fffffff it flies (slowed to 10 cells per
   second with `Game_PROJECTILE_SPEED` to watch it). Positioned's vtable +0xd8, which the move calls when the flag
   byte has bit 0, is a `ret`; the interpolation is `0x141e4d180`.
@@ -677,9 +784,9 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   tail (`0x141e3162f`) calls `0x141e35250`, which clears the movement durations at +0x240/+0x280 and movement flags.
   Thus the explosion does not continue along the old glide. `InstanceProtocol.Teleport` now accepts an optional
   fixed-height marker and float world z; existing calls retain their two zero fields.
-  Unlike 0x1ba, 0x1b7 copies the fixed pair directly. For signed world-z steps `s`, send
-  marker `-s` and float world z `s * 7.8125`, preserving the projectile creation pair and fixed flight height.
-  Terrain is not resampled at impact, so sloping ground does not make the explosion jump vertically.
+  Unlike 0x1ba, 0x1b7 copies the fixed pair directly. For a Positioned marker `m`, send
+  marker `m` and float world z `-m * 7.8125`, matching the creation pair and the glide endpoint.
+  Terrain is not resampled at impact; consistent native interpolation still needs the fresh integration check below.
   The height getter (`0x141e35800`) compares +0x290 with 0x7fffffff first; that sentinel selects terrain sampling
   and ignores +0x2b4. Current flights use a fixed height, including the bare offset without a height grid.
   Every other marker immediately returns the float at +0x2b4; sending a non-sentinel marker with a zero float
@@ -733,8 +840,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   entries (tile data pointer, +0x36 rotation code, +0x30 i16 height offset), result = the tile's height at the
   tile-local cell (`0x141d7d100`) + terrain +0x104 × the tile's offset; `0x141e35800` interpolates four cells. With a
   height grid (`TerrainHeights`, data/walkability/<area>_seed<seed>.heights.bin, int16 per cell, −32768 = unknown) the
-  Gateway sends the projectile at terrain + `Game_PROJECTILE_HEIGHT` steps (default 5, the torso) as the signed world
-  z: Positioned f0 0x04's i32 is -z / 7.8125 and its f32 is z; 0x1ba carries the same signed z.
+  Gateway uses terrain + `Game_PROJECTILE_HEIGHT` steps (default 5, the torso) as the Positioned marker `m`.
+  Positioned f0 0x04 carries i32 `m` and f32 world z `-m * 7.8125`; 0x1ba carries the same marker `m`.
   Without a grid it uses the bare offset.
   The grid covers natural terrain, not doodads/platforms; the protocol carries no player z, so platforms and doodads
   need a server-side world/surface height model (issue #182).
@@ -758,11 +865,18 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   `scripts/re/frida/capture-terrain-tiles.js` dumps them on entry (no calls into the client; the client stayed up);
   `scripts/walkmaps/heights.py` applies the client's lookup (code tables `0x142fa04b0`, `0x142fb7f98`). The town
   capture reproduces the known grid exactly; The Coast seed 1 is 1725 × 1725, −37..90.
-- **Sign.** World z points down and the protocol's height is a signed world z in 7.8125-unit steps, not a positive
-  "up" value: 0x1ba's u32 is that signed value (a positive height is below sea level, a negative one above), and
-  Positioned's f0 0x04 block is i32 -z / 7.8125 with f32 z. Sending the positive "height up" put the arrow at
-  z = +117 (under the hideout platform); the same value negated (0xfffffff1) put it at z = -117, the torso. The live
-  arrow's i32 -5 / f32 +39.0625 is z = +39.0625, five steps above a player at z = +78.125.
+- **Sign.** World z points down, but 0x1ba's signed height marker points up: `marker = -z / 7.8125`.
+  `ProjectileObject.Height` takes world-z steps and writes the opposite marker plus float world z.
+  The move endpoint takes that encoded marker, not the API argument: marker +5 means world z -39.0625.
+  Static 3.29.3b evidence: `0x141e34921` passes the current marker and `0x141e3491a` the packet endpoint marker
+  into the 3D stepper `0x141e4d180`; `0x141e3495b..0x141e3496b` converts the packet marker to float, multiplies
+  by 7.8125 (`0x1436a36b8`) and flips its sign (`0x1436b3520`) before render interpolation `0x141e4d510`.
+  Using the opposite marker made a creation at -39.0625 glide toward +39.0625 before the stop reset its height.
+  A raw same-path A/B probe showed marker -5 drifting toward positive z, while overriding the endpoint to +5
+  returned it toward -39.0625.
+  Corrected normal launches then retained marker 5/world z -39.0625 at creation, after the glide started,
+  during a paused mid-flight sample and at moving-monster and wall contact stops.
+  The same run verified a moving-away miss, a later-entry hit, pause/resume and zero native glide step after contact.
 - **Flight (live 2026-10-18).** S→C 0x1ba's float is the move's **duration in seconds**, not a speed: the handler
   passes distance / it as the speed, and the step walker sets Positioned +0x23c = that speed and +0x240 = the time per
   cell step (duration / the path's longest axis), advancing +0x244 by the frame time (`0x141e32710`). Sending the
@@ -1087,6 +1201,60 @@ game has a spell form).
 `Skills.UnarmedFor(ClassRow).HitDamage(stats)` after conversion, rounded down because the client shows whole numbers, and
 sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
 the main hand is filled, since the server attacks with it; an empty packet adds no rows.
+
+**Selected attack-gem hit rows (#196)** (`AttackSkillHit`, `AttackPanelStats`): main-hand total and per-type
+ranges now use the same packet constructor as projectile and area attack combat.
+The constructor preserves the current order: the actual weapon's hit with character modifiers, flat added attack
+damage from character inputs, the skill's level-aware effectiveness, then conversion and gain-as-extra.
+Conversion retains `ConversionFor` precedence: player keys win and level-only skill keys fill gaps, without quality
+conversion. Skill-owned damage modifiers are not newly applied; this panel change preserves current combat rules.
+Burning Arrow level one uses effectiveness 18000 and 100% skill physical-to-fire conversion; Heavy Strike uses 12430.
+All twelve main-hand range fields are explicit and floored, including zeros for absent types after conversion.
+`CharacterPanelStats` reads whole-number total keys 670/671, physical 279/280, fire 267/268, cold 263/264,
+lightning 271/272 and chaos 275/276. These rows retain the existing main-hand and spell/secondary gates.
+Per-use average (2044) and DPS (679) are hundredths; packet fractions are retained through the average, and DPS
+uses the skill's already-emitted `hundred_times_attacks_per_second` (678), rather than recalculating attack timing.
+Consequently DPS uses that rounded displayed rate, not a new precise action-rate calculation.
+Copied-save GUI baseline: a 5-13 physical bow with Strength 14 showed 5-13 physical/total, per-use 9.18 and DPS 12.86
+for both ordinary attack and Burning Arrow, while Burning Arrow already showed its corrected APS 0.98.
+The preserved raw packet is 5.1-13.26; Burning Arrow resolves 9.18-23.868 fire, average 16.524.
+Actual native checks now show 9-23 fire/total, physical zero, per-use 16.52 and DPS 16.19 at emitted APS 0.98.
+Adding 5 flat cold attack damage showed cold 9-9, fire 9-23, total 18-32, per-use 25.52 and DPS 25.01.
+An actual noncritical server hit dealt 24 damage to an 86-life Ash Harvester.
+Clearing the added cold stat returned every cold field to zero and restored the 9-23 fire/total display.
+Relog retained Burning Arrow's 9-23, per-use 16.52 and DPS 16.19; ordinary attack stayed 5-13 physical,
+per-use 9.18, DPS 12.86 and APS 1.40.
+The fixture is also regression-tested.
+Crit weighting, accuracy, target mitigation, integer-roll expectation and downtime are excluded.
+Initial creation and refresh both pass raw `CharacterPlayerStats` plus the actual weapon into `GemSkills` separately
+from inherited final display stats. Derived hand ranges cannot feed back into the packet.
+Only attack gems receive this override; ordinary attacks, spells, non-attack actions and off-hand rows keep their
+existing display paths. Supports, conditional mechanics, off-hand alternation and broader modifier-scope corrections
+remain separate work. Existing character modifiers are preserved even where their weapon scope remains approximate.
+Real catalog, packet/source-isolation, conversion, added-damage, flooring, absent-type and native-table tests pass.
+Native skill selection, stat refresh/clearing and relog checks passed; equipment UI refresh was not separately exercised.
+Local integration captures are `logs/attack-damage-burning-arrow-{default,added-cold,cleared,relog}.json`
+and `logs/attack-damage-server-hit.json`; no extracted data changes are needed.
+
+**Selected spell hit rows** (`SpellPanelStats`, issue #188): `spell_minimum/maximum_total_damage` and
+`spell_minimum/maximum_{physical,fire,cold,lightning,chaos}_damage` come from `SpellHit.Resolve`, the same converted
+packet used by projectile and area combat. Every spell range is written, including zeros for absent types and hitless
+spells. CharacterPanelStats reads total keys 674/675, physical 261/262, fire 255/256, cold 253/254, lightning 257/259
+and chaos 258/260 as whole integers, with `casting_spell` (438) required and
+`display_skill_deals_secondary_damage` (1675) excluded. DPS (679), damage per use (2044) and casts per second (682)
+are hundredths (the table's formatter 14), so range values must not be multiplied by 100.
+For example, level-one Fireball's 9–14 with +12% spell damage gives a 10.08–15.68 packet: the range is 10–15,
+per use is 12.88, and DPS at the emitted 1.33 casts/s is 17.13. These averages exclude crit and mitigation.
+The same skill construction runs on initial player creation and subsequent refresh; character conversion inputs
+are passed separately from the inherited final weapon/display stats. Attack and unsupported-action displays keep
+their existing path.
+Native panel/getter checks with a +12% spell-damage wand show Fireball 10-15 fire, 12.88 per use and 17.13 DPS,
+and Freezing Pulse 10-15 cold, 12.88 per use and 19.84 DPS.
+With 50% fire-to-chaos conversion and 20% fire gained as chaos, Fireball shows total 12-18, fire 5-7 and chaos 7-10,
+15.46 per use and 20.56 DPS; an actual noncritical server hit dealt 14 damage.
+Scorching Ray has twelve zero hit-range fields and zero DPS/per-use, also after adding 100 flat spell fire damage.
+The same added-damage control gives Fireball 234-239 fire, confirming that hit-capable spells still receive it.
+Automated packet, conversion, hitless, creation/refresh and table-format checks also pass.
 
 **Rows that combine a pool with a stat** (`PanelStats.FromPools`): `projectile_attack_block_%` = attack block +
 `additional_block_chance_against_projectiles_%`, `spell_projectile_block_%` = spell block + `base_spell_projectile_block_%`

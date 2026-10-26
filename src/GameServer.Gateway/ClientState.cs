@@ -56,6 +56,9 @@ sealed class NpcSale(SpawnedNpc npc, uint mine, uint theirs)
     public uint Theirs { get; } = theirs;
     // The offered items stay in the character's inventory cells until the sale ends (PlayerInventories.Offer).
     public List<InventoryItem> Reward = [];
+    public IReadOnlyList<InventoryItem> QuotedItems = [];
+    public IReadOnlyList<Item> QuotedRewards = [];
+    public string? QuoteError;
     public uint MineRevision, TheirsRevision;
 }
 
@@ -296,6 +299,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public double NextAttackAt;
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
     public int ActionCount;
+    public readonly PlayerHitRecovery HitRecovery = new();
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
