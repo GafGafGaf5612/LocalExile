@@ -78,5 +78,7 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **HNC packets from the client** (type 0xDD): what the server should do with them
   ([07](../docs/protocol/07-latency-visibility-movement.md)).
 - **Server-side world simulation** (monsters, combat): no project for it yet; add one when it is needed.
-- **Several players** in one instance: the instance registry already supports it;
-  the Gateway sends only the local player.
+- **Several players** in one instance: player presence, poses, life, departure and body blockers are published.
+  Verify two authenticated connections together, then add party admission to private instances and shared combat.
+  The native remote-player body and normal/unique monster clearance have single-client checks.
+  See [status/world.md](../status/world.md) and [07](../docs/protocol/07-latency-visibility-movement.md).

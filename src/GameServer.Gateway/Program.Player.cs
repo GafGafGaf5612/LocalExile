@@ -625,8 +625,10 @@ partial class Program
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));
+        conn.PeerTemplate = player;
         conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
         uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
+        conn.PeerType = type;
         var messages = new List<(string Name, byte[] Bytes)>
         {
             ("0x01f6 campaign hideout unlocks", InstanceMicrotransactions.HideoutUnlocks(

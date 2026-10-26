@@ -4,7 +4,7 @@ using GameServer.Core.Protocol.Login;
 
 partial class Program
 {
-    static async Task PushOutOfCollision(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    static async Task PushOutOfCollision(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool living = false)
     {
         if (!conn.PlayerSent || conn.PlayerLife == 0 || conn.PendingTransfer is not null || conn.Closed
             || conn.Layout.GridW <= 0 || conn.Layout.GridH <= 0) return;
@@ -15,7 +15,7 @@ partial class Program
             from = conn.Walk.Position(now);
             bool Walkable(int x, int y) => conn.Layout.Walkable?.Invoke(x, y) != false && !conn.Barrier.Contains((x, y));
             if (CollisionEscape.Find(from, conn.Layout.GridW, conn.Layout.GridH, Walkable,
-                conn.StationaryBlockers) is not { } free) return;
+                living ? conn.CorrectionBlockers() : conn.StationaryBlockers) is not { } free) return;
             to = free;
             Interlocked.Increment(ref conn.ActionCount);
             conn.ChannelSkill = 0;

@@ -4,14 +4,14 @@ using GameServer.Core.World;
 static class CollisionEscape
 {
     public static bool Clear((int X, int Y) at, int width, int height, Func<int, int, bool>? walkable,
-        IReadOnlyList<ClientPathfinder.Blocker> blockers) =>
+        IReadOnlyList<ClientPathfinder.Blocker> blockers, int moverSize = 1) =>
         at.X >= 0 && at.Y >= 0 && at.X < width && at.Y < height && walkable?.Invoke(at.X, at.Y) != false
-        && !ClientPathfinder.ObjectBlocks(blockers, at.X, at.Y, 2, 5);
+        && !ClientPathfinder.ObjectBlocks(blockers, at.X, at.Y, moverSize + 1, moverSize + 4);
 
     public static (int X, int Y)? Find((int X, int Y) from, int width, int height,
-        Func<int, int, bool>? walkable, IReadOnlyList<ClientPathfinder.Blocker> blockers, int maxRadius = 128)
+        Func<int, int, bool>? walkable, IReadOnlyList<ClientPathfinder.Blocker> blockers, int maxRadius = 128, int moverSize = 1)
     {
-        if (width <= 0 || height <= 0 || Clear(from, width, height, walkable, blockers)) return null;
+        if (width <= 0 || height <= 0 || Clear(from, width, height, walkable, blockers, moverSize)) return null;
         (int X, int Y)? best = null;
         long distance = long.MaxValue;
         void Try(int dx, int dy)
@@ -19,7 +19,7 @@ static class CollisionEscape
             long d = (long)dx * dx + (long)dy * dy;
             if (d >= distance) return;
             var at = (from.X + dx, from.Y + dy);
-            if (!Clear(at, width, height, walkable, blockers)) return;
+            if (!Clear(at, width, height, walkable, blockers, moverSize)) return;
             best = at;
             distance = d;
         }
