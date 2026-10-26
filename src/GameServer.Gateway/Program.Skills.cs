@@ -240,8 +240,14 @@ partial class Program
             foreach (var (key, worn) in skillCosmetics)
                 if (CharacterSaves.SkillCosmeticGem(key) == gem && Mtx.Find(worn.Record) is { } record && MtxEffects.Of(record.MtxTypeHash) is { } fx)
                     foreach (var (k, v) in fx.Stats) stats[k] = v;
-            // Increased cast speed shortens the cast the client plays (the final values: 11-skills.md §4).
-            if (CastSpeedPct(stats) is int castSpeed and not 0 && Skills.CastMs(effect) is int castMs and > 0)
+            // The native spell action divides virtual BASE time by cast speed itself. Keep the catalog base
+            // intact; only the panel's final casts-per-second stat is adjusted here.
+            if (SpellCastTiming.ForSkill(Skills, effect, CastSpeedPct(stats)) is { } spellTiming)
+            {
+                spellTiming.ApplyTo(stats, Stats);
+            }
+            // Preserve the legacy non-spell/attack display path; attack timing is outside this fix.
+            else if (CastSpeedPct(stats) is int castSpeed and not 0 && Skills.CastMs(effect) is int castMs and > 0)
             {
                 int ms = (int)Math.Round(castMs / (1 + castSpeed / 100.0));
                 if (Stats.Key("virtual_base_spell_cast_time_ms") is uint vk) stats[vk] = ms;

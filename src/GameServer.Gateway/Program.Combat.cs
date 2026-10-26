@@ -293,6 +293,13 @@ partial class Program
             if (actionToken is not null && (conn.ActionCount != action || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
         if (InTown(conn) || conn.PlayerLife == 0) return false;
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        if (gem.Name is not null && Skills.IsSpell(gem.Effect) && !Skills.IsAttack(gem.Effect)
+            && CastMs(conn, gem.Effect) is null)
+        {
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: invalid cast duration (no effect or mana cost)");
+            await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (invalid cast duration, cost back)");
+            return false;
+        }
         // A gem whose requirements the character's level does not meet is disabled: its skill stays on the skill bar but
         // cannot be used (the client shows the gem red but still sends the use; the server withholds the action, see
         // OnClientMessages). Attributes are not checked yet: their formula is not fitted (19-gems.md "Open").
@@ -365,7 +372,7 @@ partial class Program
         if (gem.Name is not null && Skills.EffectId(gem.Effect) == "Portal")
         {
             if (!PortalAllowed(conn)) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} Portal: not here"); return false; }
-            int castMs = Skills.CastTimeMs(gem.Effect);
+            if (CastMs(conn, gem.Effect) is not int castMs) return false;
             _ = Task.Delay(castMs).ContinueWith(async _ =>
             {
                 if (!conn.Closed && PlayerActionCurrent(conn, action))
@@ -484,9 +491,11 @@ partial class Program
         // ~0.37 of it).
         var cls = Skills.ClassFor(conn.ClassRow);
         bool attack = gem.Name is not null && Skills.IsAttack(gem.Effect);
+        int? castDuration = attack ? 0 : CastMs(conn, gem.Effect);
+        if (castDuration is null) return;
         double releaseDelay = attack
             ? AttackContactDelay(conn, SkillAttackSeconds(conn, gem.Effect, gem.Level), approach: false)
-            : CastMs(conn, gem.Effect) / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
+            : castDuration.Value / 1000.0 * Animations.SpellRelease(cls.AnimatedObject);
         if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, releaseDelay), epoch)
             || !PlayerActionCurrent(conn, action)) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} cancelled before release"); return; }
         // A worn skill effect (its skill_art_variation) flies its own projectile and explodes in its own art (SkillArt).
@@ -576,9 +585,11 @@ partial class Program
         if (!hitPlan.CanHit) return;
         bool spell = hitPlan.Kind == SkillHitKind.Spell;
         var weapon = WeaponFor(conn);
+        int? castDuration = spell ? CastMs(conn, gem.Effect) : 0;
+        if (castDuration is null) return;
         double delay;
         // An attack lands at its contact keyframe; the player swings where it stands, so without the walk-in offset.
-        lock (conn.Monsters) delay = spell ? CastMs(conn, gem.Effect) / 1000.0
+        lock (conn.Monsters) delay = spell ? castDuration.Value / 1000.0
             : AttackContactDelay(conn, SkillAttackSeconds(conn, gem.Effect, gem.Level), approach: false);
         int radius = SkillRadius(conn, skillStats, spell, gem.Effect);
         // A melee skill aimed far away still lands in front of the player.

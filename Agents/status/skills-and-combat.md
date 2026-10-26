@@ -107,7 +107,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: Gateway (`ActivateRighteousFire`, `RunPlayerTick`), `SkillArea.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §12.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
-  every class's from its rig .amd), sped up by cast speed.
+  every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
   Docs: [11](../docs/protocol/11-skills.md) §9.
 
@@ -185,6 +185,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   the character panel's APS stays cached after a passive allocation (reopening the panel or switching its tab does not
   refresh it; only a relog does).
   ([11](../docs/protocol/11-skills.md) §4)
+- **Spell cast timing (#192).** Catalog base/virtual cast milliseconds now stay unchanged for native spell actions,
+  which apply cast speed themselves.
+  Server waits and displayed casts per second share `SpellCastTiming`; attacks keep their existing path.
+  The old -80% Fireball recovery capture lasted 18.75 seconds instead of 3.75 due to two divisions by 0.2.
+  Automated 0/+100/-80 timing, instant/channel classification, invalid-rate and existing aura/sum checks pass.
+  Real-client Q Fireball clips measured 3.750000157 s at -80%, 0.375 s at +100%, and 0.75 s at zero.
+  Native virtual base stayed 750 ms; emitted cast rates were 0.27, 2.67 and 1.33 casts/s respectively.
+  Projectile release/contact alignment was not separately measured.
+  Instant casts remain instant; channel damage cadence and conditional action-speed mechanics are unchanged.
+  Numeric server durations below 1 ms are floored, and invalid factors/unrepresentable waits produce no spell effect.
+  Code: `SpellCastTiming.cs`, Gateway (`GemSkills`, `CastMs`, `CastGemSkill`, `LaunchProjectile`, `AreaSkillHit`).
+  Docs: [11](../docs/protocol/11-skills.md) section 9.
 - **Selected spell hit damage panel (#188).** Spell total/per-type ranges and pre-crit average damage/DPS
   now use the same converted packet as projectile and area combat.
   All range fields are explicit, including zeros for absent types; hitless spells clear inherited weapon DPS/per-use.

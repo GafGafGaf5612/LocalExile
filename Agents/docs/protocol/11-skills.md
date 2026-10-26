@@ -516,8 +516,31 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
   contacts to data/animation-contacts.json (`AnimationContacts`); the Gateway waits cast time × that fraction.
-- **Cast speed.** `base_cast_speed_+%` and `cast_speed_+%` shorten `virtual_base_spell_cast_time_ms` and
-  `hundred_times_casts_per_second` in the skill's stats and the server's release time.
+- **Cast speed (#192).** Genuine Spell/non-Attack skills keep the catalog milliseconds in both
+  `base_spell_cast_time_ms` and `virtual_base_spell_cast_time_ms`. The native spell action already divides that
+  virtual base by `1 + cast_speed_+% / 100`; pre-dividing it on the server applied cast speed twice.
+  `SpellCastTiming` adjusts only the server duration and final `hundred_times_casts_per_second`, using the same
+  computed cast-speed total. A 750 ms Fireball at +100% therefore takes 375 ms, and at -80% takes 3750 ms;
+  the panel rates are 2.67 and 0.27 casts/s. The outgoing virtual base remains 750 in both cases.
+  Native 3.29.3b evidence: `0x1419e7660` reads key 0x24b9 at `0x1419e7683`, divides by 1000 at
+  `0x1419e7698`, then divides by one plus getter +0x498 / 100 at `0x1419e76a0..0x1419e76bd`.
+  Its speed getter `0x1419e7500` ordinarily reads `cast_speed_+%` (296) at `0x1419e763c`.
+  The alternate action `0x1419eef50` uses the same formula with getter +0x788.
+  In the earlier recovery capture (`logs/monster-hit-recovery-cast.json`), a 1.066-second clip at playback speed
+  0.0568533279 took 18.7500015 seconds: the old 3750 virtual milliseconds were divided by 0.2 again.
+  Real-client Q casts in the combined validation build now have native clip durations 3.750000157 seconds at
+  -80%, 0.375 seconds at +100%, and 0.75 seconds at zero. The native virtual base was 750 in all three captures;
+  emitted cast rates were 27, 267 and 133 hundredths. Duration was measured as clip length / playback speed.
+  Captures: `logs/skill-timing-after-fireball-{minus80,plus100,default}-real.json` in the integration checkout.
+  These checks establish native clip duration; projectile release/contact alignment was not separately measured.
+  Server projectile release, area-spell delay and the Portal spell's cast wait use the adjusted duration once.
+  Catalog instant skills retain their instant flag, zero server cast duration and no finite casts-per-second rate.
+  A channelled spell's native base is also preserved; this does not implement beam damage or change the existing
+  server channel-hit cadence. Attack and non-spell timing paths are unchanged.
+  For non-instant spells, a nonpositive speed factor or a duration exceeding signed integer milliseconds has
+  no server duration, no hit/effect or mana cost, and zero displayed cast rate. Positive server durations round
+  to milliseconds with a 1 ms numeric floor; this bound is not an official cast-speed cap. Conditional action-speed
+  rules, skill-specific speed substitutions and further native timing mechanics remain outside this fix.
 - **Instant skills.** The client knows an instant skill by its stat **`skill_is_instant`** (0x2064), not by the
   ActiveSkillType `Instant`; the server derives it from the type and sends it with `base_skill_is_instant`
   (`SkillCatalog.EffectStats`). Without it Haste's and Righteous Fire's actions used the spell action class (vtable
