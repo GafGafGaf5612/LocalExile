@@ -10,22 +10,37 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `InstanceStore.cs`, Gateway.
   Docs: [13](../docs/protocol/13-items.md) §5.
 - Life and mana flasks: a flask key (C→S 0x70) spends the flask's charges and recovers Flasks.dat's life or mana over
-  its time in a 20 ms loop, the orb rising by +1, with the flask_effect buff;
-  every kill, town, hideout and resurrection fills the flasks.
-  Code: `Flasks.cs`, Gateway (`UseFlask`, `RunFlaskRecovery`).
+  its time in a 20 ms loop, the orb rising by +1, with the flask_effect buff.
+  Quality, the flask's prefixes and suffixes and the character's flask stats count (amount, rate, instant and partial
+  instant, low life, other-pool costs, mana at the end, not removed at full, extra life), as Path of Building does.
+  Several recovery flasks queue, the highest rate first (poewiki).
+  Checked live: the base recovery; the mods and queueing by tests.
+  Code: `Flasks.cs`, `FlaskRecovery.cs`, Gateway (`UseFlask`, `RunResourceRecovery`).
   Docs: [13](../docs/protocol/13-items.md) §8.
-- Utility flasks: Quicksilver, Granite, Jade, Ruby, Sapphire, Topaz, Amethyst, Bismuth, Basalt, Stibnite, Diamond,
-  Quartz, Sulphur and Silver (Onslaught) spend their charges and give their buff's stats for its duration, all from the
-  tables (Flasks.dat, BuffDefinitions, ComponentCharges).
+- Flask charges: kills give 1 / 3.5 / 6 / 11 charges by rarity (Mods.dat monster rarity mods, poewiki), increased
+  flask charges gained and charge recovery multiply, partial charges are kept.
+  Charges on critical strike (one 0.132 s cooldown), when hit and every 3 seconds; charges used and maximum charges
+  with mods.
+  Towns, hideouts and resurrection fill every flask; a flask put on the bar in a hostile area starts empty.
+  `Game_FLASK_CHARGES=full` brings back "every kill fills every flask".
+  Not yet: fewer charges in acts 6 to 10 and maps.
+  Checked live: kill charges and the hostile-area rule; crit, hit and timed charges by tests.
+  Code: `FlaskCharges.cs`, Gateway (`Program.FlaskCharges.cs`).
+  Docs: [13](../docs/protocol/13-items.md) §8b.
+- Utility flasks: every utility flask spends its charges, shows its buff and the timer bar under it, and gives its
+  buff's stats for its duration, all from the tables (Flasks.dat, BuffDefinitions, ComponentCharges).
   The stats count in the pools (the walk estimate, `/defences`, `/resistances`, `/hit`) and go to the client.
-  They end with the duration, at death, with the area and when the flask leaves its cell; a pause holds them (by the
-  game clock, not tested live).
-  Checked live: Quicksilver, Ruby, Granite, Jade, Basalt, Amethyst, Bismuth and Silver; the others by tests.
-  A flask is refused while its own effect runs; the client draws its draining timer bar under that flask.
-  Quality, the flask's duration and effect mods and the character's increased flask effect and duration scale a use.
-  Every utility flask refills; Aquamarine, Gold, Iron and Corundum do nothing yet when used.
-  Not yet: Quartz phasing, Stibnite and Sulphur ground effects.
-  Code: `UtilityFlasks.cs`, Gateway (`UseUtilityFlask`, `RunUtilityFlasks`).
+  Two flasks of one kind keep their own timers and only the strongest applies (poewiki); different effects stack.
+  They end with the duration, at death, with the area and when the flask leaves its cell; a pause holds them.
+  Quality, the flask's duration and effect mods, its "during effect" suffixes and the character's flask effect and
+  duration count.
+  Stibnite blinds monsters in its smoke cloud, Sulphur's consecrated ground regenerates life, Basalt taunts, Quartz
+  phases through monsters, Gold raises the rarity of drops, Silver gives Onslaught.
+  Checked live: every flask's use, stats on the client, bars, pause, death, area change; not the client walking faster
+  or phasing (the control bridge cannot make it walk).
+  Not yet: Iron Flask's Ward (PR #206), ailments, stun and curses on the player (Aquamarine, Corundum and the ailment
+  suffixes reach the panel only), Aquamarine's chilled ground, the smoke cloud's art, leech suffixes.
+  Code: `UtilityFlasks.cs`, `FlaskGrounds.cs`, Gateway (`UseUtilityFlask`, `RunUtilityFlasks`, `RunFlaskGrounds`).
   Docs: [13](../docs/protocol/13-items.md) §8a.
 - Items: the start kit (Characters.dat skill and support gems, two life flasks on keys 1–2 and a mana flask on key 5)
   in the inventories, and the class weapon with two linked sockets worn in the main hand (`Game_START_WEAPON=ground`:
