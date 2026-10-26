@@ -84,10 +84,19 @@ partial class Program
             Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
                 string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
                     $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
-        return WithCharges(conn, ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats)));
+        return WithFortification(conn, WithCharges(conn, ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats))));
     }
 
     internal static CharacterStats.Pools PoolsFor(ClientState conn, int level)
+    {
+        lock (conn.Monsters)
+        {
+            using var snapshot = FortificationOf(conn).Capture(conn.Clock.Elapsed.TotalSeconds);
+            return BuildPoolsFor(conn, level);
+        }
+    }
+
+    static CharacterStats.Pools BuildPoolsFor(ClientState conn, int level)
     {
         // The stat sources first: they decide which worn items are inactive, which the weapon profile reads.
         var sources = CharacterStatSources(conn, level: level);
@@ -200,7 +209,8 @@ partial class Program
                     SpellBlockChance = Math.Min(pools.SpellBlockChance + 2 * overcap, pools.SpellBlockChanceMax)
                 };
         }
-        return pools;
+        ConfigureFortificationRecovery(conn, pools.Life);
+        return pools with { FortificationRevision = FortificationOf(conn).Revision };
     }
 
     // What the allocated passives add to the pools: attributes (base_* and additional_*, all attributes and the pairs),

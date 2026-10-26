@@ -114,9 +114,9 @@ partial class Program
     static int MitigateTaken(ClientState conn, DamageType type, int amount, int resistance, int maxResistance)
     {
         var reduction = PlayerDamageReduction(conn);
-        if (type == DamageType.Physical) return DamageModel.MitigatePhysical(amount, conn.Pools.Armour, reduction.Physical);
+        if (type == DamageType.Physical) return FortificationDamageTaken(conn, DamageModel.MitigatePhysical(amount, conn.Pools.Armour, reduction.Physical));
         int resisted = DamageModel.Mitigate(amount, resistance, maxResistance);
-        return DamageTypes.IsElemental(type) ? DamageModel.Reduce(resisted, reduction.Elemental) : resisted;
+        return FortificationDamageTaken(conn, DamageTypes.IsElemental(type) ? DamageModel.Reduce(resisted, reduction.Elemental) : resisted);
     }
 
     // What MitigateTaken applied, for the dev commands' replies: armour or resistance, and the additional reduction.
@@ -252,8 +252,10 @@ partial class Program
             await SendCharacterStats(remote, stream, ciphers, conn, $"charges {why}");
             return;
         }
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats (charges {why})");
-        await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, []),
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats (charges {why})");
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []),
             $"0x02ba player Actor: {skills.Count} skill(s), charge stats");
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }

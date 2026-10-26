@@ -68,11 +68,15 @@ partial class Program
     }
 
     // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
-    internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
+    internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn) =>
+        CharacterPlayerStatsCore(conn, out _);
+
+    static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond)
     {
         Dictionary<uint, int> stats;
         lock (conn.Monsters) stats = new(conn.PlayerStats);
         foreach (var (k, v) in BaseStats(conn)) stats.TryAdd(k, v);
+        EnsureFortificationPools(conn);
         // The overcapped lightning resistance's increased crit (PoolsFor derived it once into Pools): the spell
         // consumers read the raw increased stats here (SpellCriticalStrike), while the attack and panel chances
         // already fold the same value into the pools. Additive with whatever won above, as a derived stat source.
@@ -92,6 +96,18 @@ partial class Program
         HashSet<uint> devSet;
         lock (conn.Monsters) devSet = [.. conn.PlayerStats.Keys];
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        // Capture the unmodified recovery baseline from this same snapshot, before the temporary contribution.
+        // The resource writer integrates Fortification separately across exact expiry boundaries.
+        baselineLifePerSecond = PanelStats.LifePerMinute(Get, conn.Pools.Life) / 60;
+        lock (conn.Monsters)
+        {
+            var session = FortificationOf(conn);
+            var value = session.Read(conn.Clock.Elapsed.TotalSeconds);
+            AddFortificationCounts(stats, value);
+            if (Stats.Key(FortificationSession.Regeneration) is uint regen && !devSet.Contains(regen))
+                stats[regen] = (int)Math.Clamp((long)stats.GetValueOrDefault(regen)
+                    + value.LifeRegenerationPerMinutePercent(session.RegenPerStack), int.MinValue, int.MaxValue);
+        }
         var (mainLocal, offLocal) = HandLocalStats(conn);
         foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
             .Concat(PanelStats.FromPools(Get, conn.Pools))
@@ -528,7 +544,8 @@ partial class Program
     // The player's stats (0x1b3) and the skills computed with them (0x2ba Actor), after the level or the passives changed.
     static async Task SendCharacterStats(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
     {
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
         await SendSkills(remote, stream, ciphers, conn);
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
@@ -548,13 +565,15 @@ partial class Program
             };
         }
         if (conn.Auras.Count > 0) conn.Pools = PoolsFor(conn, conn.Pools.Level);
-        var skills = PlayerSkills(conn);
-        var gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
-        var added = skills.Select(s => s.Id).Where(id => !conn.ClientSkillIds.Contains(id)).ToList();
-        conn.ClientSkillIds = [.. skills.Select(s => s.Id)];
-        await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone),
-            $"0x02ba player Actor: {skills.Count} skill(s) with {skills.Sum(k => k.Stats?.Count ?? 0)} stats" +
-            (gone.Count > 0 ? $", remove skill(s) {string.Join(", ", gone.Select(id => $"0x{id:x4}"))}" : ""));
+        List<ushort> gone = [], added = [];
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn, () =>
+        {
+            var skills = PlayerSkills(conn);
+            gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
+            added = skills.Select(s => s.Id).Where(id => !conn.ClientSkillIds.Contains(id)).ToList();
+            conn.ClientSkillIds = [.. skills.Select(s => s.Id)];
+            return InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone);
+        }, "0x02ba player Actor: current skill stats");
         await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
         if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
         IReadOnlyList<AuraCatalog.Aura> resumed = [];

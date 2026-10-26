@@ -5,6 +5,12 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Works (verified with the real client)
 
+- Fortification: qualifying melee hits build temporary protection through an explicit LocalExile generation model.
+  Native checks confirmed the buff component, expiry, 20/30-stack limits, attack speed and actual hit protection.
+  Elapsed Life regeneration, stopping at expiry, area carry, death and relog were also verified.
+  The evidence uses a new unascended character with raw inputs; it does not establish Behemoth selection.
+  See [Fortification](../docs/game/fortification.md) for the formula, source coverage and remaining extensions.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks
@@ -147,6 +153,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [11](../docs/protocol/11-skills.md) §9.
 
 ## Partly working
+
 
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.

@@ -43,7 +43,11 @@ static class CharacterStats
         int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0,
-        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0);
+        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0)
+    {
+        // Identifies the transient source snapshot used by this immutable pool calculation, including with-clones.
+        internal long FortificationRevision { get; init; }
+    }
 
     /// <summary>What allocated passives and equipped base items add to the pools: attributes, flat and increased life,
     /// mana, armour and evasion, increased energy shield and melee physical damage, the base resistances, attack speed's
