@@ -39,7 +39,8 @@ static class ResistanceOvercap
     /// The one derived source for a pool build: re-derives the raw cold and lightning resistances and maxima from the
     /// aggregated bonus (passives, items and auras) with an explicit dev value replacing its own stat's contribution —
     /// /set_stat sets a stat, it does not add to the aggregate — and folds the flags' derived increases in.
-    /// PoolsFor passes the Kitava penalty inside the resistances; CharacterStats.For stores the increases in Pools.</summary>
+    /// Sources must include the aura's raw resistance/max keys already folded into bonus, so a replacement subtracts
+    /// the complete contribution. PoolsFor passes the Kitava penalty; CharacterStats.For stores the increases in Pools.</summary>
     public static CharacterStats.Bonus Applied(CharacterStats.Bonus bonus, IReadOnlyDictionary<uint, int> sources,
         IReadOnlyDictionary<uint, int> devStats, int penalty, StatCatalog stats)
     {

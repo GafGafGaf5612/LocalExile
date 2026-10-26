@@ -345,6 +345,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Automated checks cover below/equal/above cap, the 90 maximum, both penalties, flag removal and override, additive
   behaviour, spell/attack isolation and the Iron Reflexes conversion.
   Combined automated checks retain the 830 +45% =1204 armed chance and complete signed critical cancellation.
+  Purity-aware raw replacements now remove the aura contribution for that exact key, including explicit zero maxima.
+  Real aura/catalog/pool regressions pass; the corrected aura-override composition needs a native recheck.
   The resolved stack needs native rechecking; the following thirteen checks belong to original head `39cbda2`.
   Real-client stat checks verified evasion 15 → 22 and spell crit 500 → 725 at 120% resistances,
   raised maxima, replacement of global inputs, both Kitava penalties, flag removal and relog.
