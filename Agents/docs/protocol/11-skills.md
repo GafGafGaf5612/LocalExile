@@ -205,7 +205,8 @@ and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `ba
 `physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%`
 (Cloth and Chain and similar nodes), `global_defences_+%` and the combined armour/evasion increase are additive
 increased modifiers. The overcapped cold resistance's increase is one of them (§12); it applies before the conversion,
-so Iron Reflexes' converted evasion keeps it, and the monster attacks roll against the boosted rating. **Iron Reflexes**
+so Iron Reflexes' converted evasion keeps it, and monster attacks roll against the boosted rating.
+**Iron Reflexes**
 (`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
 passive/item flat evasion, to armour and removes dexterity's 1% per 5 evasion; the converted part keeps the armour,
 evasion and shared defence increases once each. Item mods, quality, local defence rolls, shields and auras are not counted
@@ -1218,7 +1219,7 @@ for every item: every skill with a weapon restriction was greyed out (Ground Sla
   An armed 830 base with 45% overcap gives 1204; raw spell stats expose the same derived source once.
   Selected skills use the complete pool sum so a clipped native raw stat cannot erase negative cancellation.
   New automated regressions cover those combinations with explicit zero flags and cannot-crit.
-  The following thirteen native stat checks belong to original head `39cbda2`; the resolved combinations need rechecking.
+  These thirteen native checks belong to original head `39cbda2`; recheck the resolved combinations natively.
   A fresh Witch verified 120% cold/lightning resistance with each flag:
   evasion 15 → 22 (45% additional increased evasion), spell crit 500 → 725 (45% increased chance).
   Raising maxima to 90 reduced these to 19 and 650; a global +5 maximum gave 21 and 700.
