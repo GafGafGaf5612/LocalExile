@@ -82,9 +82,12 @@ stale connections, regret items and the production passive-message handlers.
 Run the Core, Data and Gateway suites from the repository root with the extracted public data available.
 The shared Gateway `TestEnvironment` sets the repository working directory once.
 
-The isolated source `aeab8dd` passed Core 454, Data 18 and Gateway 2168 tests and a warning-free solution build.
+The main-integrated source `fd125e7` passed Core 495, Data 18 and Gateway 2375 tests and a warning-free solution build.
 Independent review found no remaining substantial issues in the corrected XP and extra-point grant paths.
+The merge review preserved both main's locked passive snapshot and the selected ascendancy's stat contribution.
 Fourteen deterministic regressions cover delayed XP, overlapping area connections, paid refunds and failed saves.
+The complete suites ran in a clean public-data checkout with freshly extracted collision and hideout catalogs.
+That checkout has no recorded walk maps; the optional real-capture quest check is outside this verification.
 
 The real 3.29.3b client passed eleven smoke checks on a new synthetic Duelist, choosing ordinary Slayer.
 The read-only `scripts/re/frida/trace-ascendancies.js` observed the client's applied tree and counters.
@@ -97,9 +100,9 @@ Choice, nodes and budgets survived relog and a Gateway process restart, with Aut
 A Phrecia selection request was refused and the synthetic character's saved JSON remained byte-for-byte unchanged.
 Admission of an existing saved Phrecia choice is covered by automated tests, not this native smoke.
 
-Local evidence is in `logs/phrecia-completion/choice274-20261026-202811/` in the verification checkout.
+Local evidence is in `logs/phrecia-completion/choice274-20261026-204858/` in the verification workspace.
 The tested Gateway SHA-256 was
-`932d26ab0df1f90c64b49613a341f98f46fd7f7533bc59d9660972dd4e6fe967`.
+`d08482d2c90ed3ac42ab8f4e1ed37619cfb511be50b8442e55f9ce8b24e7b93d`.
 Gateway, Core and Host embedded versions matched the source; the live Gateway path and working directory were checked.
 The optional merged-graph analysis PSG was absent locally; the JSON graph catalog supplied the ordinary lifecycle.
 The client archive was unchanged, and the accepted normal Gateway was restored after the smoke.
