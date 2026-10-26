@@ -118,7 +118,6 @@ partial class Program
                     talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
                 break;
             case "QuestReward" when talk.RewardOffer is { } offer:
-                if (!QuestRewardCatalog.Implemented(offer)) break;
                 var rewardCatalog = QuestRewardCatalog.Load();
                 var rewardItems = rewardCatalog.Choices(offer, conn.ClassRow)
                     .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, Items))).Where(c => c.Item is not null).ToArray();

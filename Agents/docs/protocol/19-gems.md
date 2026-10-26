@@ -189,6 +189,25 @@ test the threshold: with `remaining = next − experience` it wants `remaining <
 exercised live (experience one below the threshold); whether the client also draws the "+" for the last quarter of a
 level's bar is not checked, and the server only ever leaves a gem one point below the threshold.
 
+## 5. Getting gems (quest rewards, 2026-10-26)
+
+Quest rewards are the first acquisition path (`QuestRewardCatalog`, [12](12-quests.md) §1). `QuestRewardOffers` has
+140 offers; the gem ones give level-1 gems filtered by the `Characters` class rows (Witch's a1q4 offer 3 is Frost
+Bomb, Orb of Storms, Summon Raging Spirit, Contagion, Detonate Dead and Flame Wall). Talking to the NPC opens the
+window the client's NPCTalk row names (`QuestRewardOffersKey`); taking a choice puts the item in the main inventory and
+sets the offer's `QuestFlag` (the "taken" flag) in one save. The Gateway now offers every table row whose items
+`Create` can build (level-1 items and normal flasks), instead of the hardcoded offers 0/1/2/8; unbuildable rows
+(level-8 magic armours, magic belts) are skipped, as are offers with no buildable choice. Checked live 2026-10-26 on
+offer 3 after `/quest_flag a1q4-PlacedGlyphs`: the six Witch gems, claim, flag and repeat refusal.
+
+Still placeholder: vendors and drops.
+
+- `NpcShops` gives Nessa `ItemCatalog.ShopGems` — every creatable gem of each colour at level 1 — instead of the act
+  vendors' class/quest progression, and only Nessa sells them.
+- Siosa (Act 3, after "A Fixture of Fate") and Lilly Roth (Act 6 and later) sell all gems in the game; neither is
+  modelled.
+- `ItemDrops` never drops a gem.
+
 ## Open
 
 - What IndexableSupportGems (+0x40) is for; the u8's other bits.
