@@ -171,6 +171,7 @@ partial class Program
             // The instance keeps its monsters as they are now, for the next connection (#12).
             if (left.MonstersPlaced)
                 lock (left.Monsters) left.Instance.Monsters = SavedMonster.Save(left.Monsters.Values, left.Clock.Elapsed.TotalSeconds, MonsterEmerge.Unrisen(left));
+            left.Instance.RemovePlayer(left.PeerId);
             Instances.Leave(left.Instance);
         }
         if (ticket != 0) await InstanceControl.CallAsync(new ControlRequest { Op = "leave", Ticket = ticket });

@@ -26,12 +26,14 @@ sealed class BenchCrafting(ItemCatalog catalog, ItemRolls rolls, string folder =
         if (socketCraft)
         {
             int capacity = CurrencyEffects.SocketCapacity(item, type);
+            var requirements = catalog.Requirements(type);
             if (recipe.Sockets > 0)
             {
                 int count = recipe.Sockets;
                 if (count > capacity || count == item.Sockets.Count || item.Sockets.Any(s => s.Gem is not null)) return null;
                 var sockets = item.Sockets.Take(count).ToList();
-                while (sockets.Count < count) sockets.Add(new(RollColour(type, rng)));
+                // 3.29: sockets the bench adds are white; the sockets that stay keep their colours.
+                while (sockets.Count < count) sockets.Add(new(SocketColour.White));
                 // Preserve links between retained sockets; added sockets begin unlinked.
                 var links = new List<byte>();
                 int left = count;
@@ -50,10 +52,20 @@ sealed class BenchCrafting(ItemCatalog catalog, ItemRolls rolls, string folder =
             }
             else
             {
-                if (item.Sockets.Count < recipe.Colours.Length || capacity == 0) return null;
+                // 3.29 replaced the single-colour crafts with "At Least N Non-White Sockets" ("NN"/"NNN"/"NNNN" in
+                // CraftingBenchOptions SocketColours): the colours are rerolled and the result keeps at least N coloured.
+                int need = recipe.Colours.Length;
+                if (need == 0 || item.Sockets.Count < need || capacity == 0) return null;
                 var sockets = item.Sockets.ToArray();
-                var selected = Enumerable.Range(0, sockets.Length).OrderBy(_ => rng.Next()).Take(recipe.Colours.Length).ToArray();
-                foreach (int index in selected) sockets[index] = sockets[index] with { Colour = RollColour(type, rng) };
+                for (int attempt = 0; attempt < 25 && sockets.Count(s => SocketColours.IsColoured(s.Colour)) < need; attempt++)
+                    for (int i = 0; i < sockets.Length; i++)
+                        sockets[i] = sockets[i] with
+                        {
+                            Colour = SocketColours.Roll(requirements, item.ItemLevel, item.Quality, rng, chromatic: true),
+                        };
+                for (int i = 0; i < sockets.Length && sockets.Count(s => SocketColours.IsColoured(s.Colour)) < need; i++)
+                    if (sockets[i].Colour == SocketColour.White)
+                        sockets[i] = sockets[i] with { Colour = SocketColours.Colour(requirements, rng) };
                 result = item with { Sockets = sockets };
             }
             if (item.Corrupted)
@@ -118,14 +130,6 @@ sealed class BenchCrafting(ItemCatalog catalog, ItemRolls rolls, string folder =
         }
         if (result is null) return null;
         return new(result, costs.GroupBy(c => c.Currency).Select(g => (g.Key, g.Sum(c => c.Amount))).ToList());
-    }
-
-    SocketColour RollColour(ItemCatalog.BaseType type, Random rng)
-    {
-        var req = catalog.Requirements(type);
-        int r = req.Str + 10, g = req.Dex + 10, b = req.Int + 10;
-        int value = rng.Next(r + g + b);
-        return value < r ? SocketColour.Red : value < r + g ? SocketColour.Green : SocketColour.Blue;
     }
 
     Item? RerollAffixes(Item item, ItemCatalog.BaseType type, int count, Random rng)

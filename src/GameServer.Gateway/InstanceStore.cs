@@ -33,7 +33,7 @@ sealed class InstanceStore(TimeProvider clock, TimeSpan lifetime)
     }
 }
 
-sealed class InstanceState
+sealed partial class InstanceState
 {
     public InstanceGround Ground { get; } = new();
     /// <summary>The living monsters as the last connection left them (issue #12), or null before the first connection

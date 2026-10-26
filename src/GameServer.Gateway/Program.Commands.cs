@@ -40,6 +40,24 @@ partial class Program
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
             int value = int.Parse(args[1]);
             lock (conn.Monsters) conn.PlayerStats[stat] = value;
+            // Raw critical and overcap inputs rebuild the same pools and respect explicit zero replacements.
+            if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
+                || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0]))
+            {
+                while (true)
+                {
+                    CharacterStats.Pools before;
+                    lock (conn.Monsters) before = conn.Pools;
+                    var pools = PoolsFor(conn, before.Level);
+                    lock (conn.Monsters)
+                    {
+                        // A concurrent level/aura rebuild wins; retry against its current inputs and level.
+                        if (!ReferenceEquals(conn.Pools, before)) continue;
+                        conn.Pools = pools;
+                        break;
+                    }
+                }
+            }
             // The client's requirement checks (gear and gems) read virtual_strength/dexterity/intelligence_for_requirements,
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
@@ -114,12 +132,13 @@ partial class Program
                 if (stacked.Left > 0) await conn.Commands!.Reply($"No room for {stacked.Left} of them");
                 return;
             }
-            var (sockets, links) = Items.DefaultSockets(type);
+            int itemLevel = Math.Clamp(conn.Pools.Level, 1, 100);
             var added = new List<InventoryItem>();
             for (int i = 0; i < count; i++)
             {
                 if (items.FreeCell(PlayerInventories.MainInventory, type.Width, type.Height, ShapeOf) is not { } cell) break;
-                var created = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)Math.Clamp(conn.Pools.Level, 1, 100) };
+                var (sockets, links) = Items.DefaultSockets(type, itemLevel);
+                var created = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)itemLevel };
                 if (rolled != ItemRarity.Normal) created = Rolls.Roll(created, rolled, Random.Shared);
                 added.Add(items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, created)));
             }
@@ -943,7 +962,12 @@ partial class Program
             float speed = sp is null ? 20f : float.Parse(sp, System.Globalization.CultureInfo.InvariantCulture);
             var (x, y) = NextToPlayer(conn);
             await Send(remote, stream, ciphers, InstanceProtocol.MoveTo(id, x, y, speed), $"0x01ba move monster 0x{id:x} to ({x}, {y}) speed {speed}");
-            lock (conn.Monsters) conn.Monsters[id].Walk = conn.NewWalk(x, y, conn.Monsters[id].Walk.Speed);
+            lock (conn.Monsters)
+            {
+                conn.Monsters[id].Walk = conn.NewMonsterWalk(id, x, y, conn.Monsters[id].Walk.Speed,
+                    LivingCollision.Size(conn.Monsters[id]), conn.Monsters[id].Rarity == MonsterRarity.Unique);
+                conn.Monsters[id].CollisionPosition = (x, y);
+            }
         })
         // Action probe: start the monster's Move action (0x1ab) toward the player, like the echo of a player's click. The skill
         // id is the player's Move (0x2909) unless given (hex); sequence 0xffff (the monster is not client-predicted).
@@ -982,7 +1006,12 @@ partial class Program
             if (MonsterArg(conn, args, 0) is not { } id) { await conn.Commands!.Reply("No such monster."); return; }
             var (x, y) = NextToPlayer(conn);
             await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y), $"0x01b7 teleport monster 0x{id:x} to ({x}, {y})");
-            lock (conn.Monsters) conn.Monsters[id].Walk = conn.NewWalk(x, y, conn.Monsters[id].Walk.Speed);
+            lock (conn.Monsters)
+            {
+                conn.Monsters[id].Walk = conn.NewMonsterWalk(id, x, y, conn.Monsters[id].Walk.Speed,
+                    LivingCollision.Size(conn.Monsters[id]), conn.Monsters[id].Rarity == MonsterRarity.Unique);
+                conn.Monsters[id].CollisionPosition = (x, y);
+            }
         })
         .Add("ai", "/ai [on|off] (monsters chase you when you come near; emerge monsters rise either way)", async args =>
         {

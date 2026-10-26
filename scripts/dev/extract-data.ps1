@@ -20,7 +20,7 @@ $manifest = @(
        Args = @('run', '--project', 'Tools/PoEDataExtractor', '--', 'decode', 'Client/Content.ggpk'); Version = 1; Needs = @()
        UsedBy = 'every game table: stats, levels, areas, waypoints, items, mods, monsters, NPCs; all other entries' }
     @{ Name = 'object-types'; Outputs = @('data\object-types.json'); Runner = 'python'
-       Args = @('scripts/re/ot_components.py', '--all', '--json', 'data/object-types.json'); Version = 2; Needs = @('tables')
+       Args = @('scripts/re/ot_components.py', '--all', '--json', 'data/object-types.json'); Version = 3; Needs = @('tables')
        UsedBy = 'monsters, NPCs, area transitions, hideout decorations (their components); which monsters wait to rise (basic actions, client scripts)' }
     @{ Name = 'item-types'; Outputs = @('data\item-types.json'); Runner = 'python'
        Args = @('scripts/re/ot_components.py', '--items', '--json', 'data/item-types.json'); Version = 1; Needs = @('tables')
@@ -32,7 +32,7 @@ $manifest = @(
        Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'room-points'); Version = 3; Needs = @('tables')
        UsedBy = 'unique bosses and named packs (14-monster-packs.md), quest room objects (12-quests.md)' }
     @{ Name = 'hideouts'; Outputs = @('data\hideouts.json'); Runner = 'dotnet'
-       Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'hideouts'); Version = 1; Needs = @('tables')
+       Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'hideouts'); Version = 3; Needs = @('tables', 'object-types')
        UsedBy = 'hideouts and their decorations (21-hideouts.md)' }
     @{ Name = 'animation-contacts'; Outputs = @('data\animation-contacts.json'); Runner = 'python'
        Args = @('scripts/re/anim_contacts.py'); Version = 1; Needs = @('tables')

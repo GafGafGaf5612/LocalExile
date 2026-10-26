@@ -17,7 +17,7 @@ public class GameDataFilesTests
             string? warning = GameDataFiles.Warning(dir);
             Assert.NotNull(warning);
             Assert.Contains("1 game data file(s) missing", warning);
-            Assert.Contains("data/hideouts.json (hideouts)", warning);
+            Assert.Contains("data/hideouts.json (hideouts and native stationary model collision radii)", warning);
             Assert.Contains("extract-data.ps1", warning);
             File.WriteAllText(Path.Combine(dir, "data/hideouts.json"), "{}");
             Assert.Null(GameDataFiles.Warning(dir));
@@ -34,5 +34,16 @@ public class GameDataFilesTests
         string script = File.ReadAllText(Path.Combine(root, "scripts", "dev", "extract-data.ps1"));
         foreach (var (file, _) in GameDataFiles.All)
             Assert.Contains($"'{file.Replace('/', '\\')}'", script);
+    }
+
+    [Fact]
+    public void The_program_catalogs_find_the_tables_from_the_shared_repository_root()
+    {
+        // TestEnvironment sets the repository root before Program initializes its relative production catalogs.
+        // All three suppression keys resolve when Stats is present, and stay empty without the extracted table.
+        bool stats = File.Exists(Path.Combine("data", "tables", "Stats.json"));
+        Assert.Equal(stats ? 3 : 0, Program.SuppressionChanceKeys.Length);
+        if (stats)
+            Assert.True(File.Exists(Path.Combine("data", "tables", "MonsterTypes.json")));
     }
 }

@@ -17,9 +17,8 @@ partial class Program
             $"0x02b9 create npc 0x{id:x} {npc} type=0x{type:x8} at ({x}, {y}) rotation {rotation:0.##}, components {string.Join(", ", npc.Components!)}");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 npc 0x{id:x} enters wake zone");
         lock (conn.Npcs) conn.Npcs[id] = new SpawnedNpc(npc, x, y);
-        conn.SetBlocker(id, x, y, ClientState.NpcBlockerSize);
-        if (HideoutCatalog.ByArea(conn.Layout.Hash) is not null)
-            conn.HideoutEditor.Register(id, "npc:" + npc.Id, x, y, rotation, ClientState.NpcBlockerSize);
+        await RegisterStationaryCollision(remote, stream, ciphers, conn, id, npc.Id, x, y, rotation,
+            HideoutCatalog.ByArea(conn.Layout.Hash) is not null ? "npc:" + npc.Id : null, npc.Model);
     }
 
     // The town's NPCs (NpcCatalog.In) at their cells.
@@ -42,7 +41,7 @@ partial class Program
     static async Task TalkToNpc(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, SpawnedNpc npc, double requestedAt)
     {
-        if (!TryBeginObjectWalk(conn, requestedAt, npc.X, npc.Y, ClientState.NpcBlockerSize, out var objectWalk)) return;
+        if (!TryBeginObjectWalk(conn, requestedAt, npc.X, npc.Y, Math.Max(0, StationaryCollision.Resolve(npc.Npc.Id, npc.Npc.Model).Size), out var objectWalk)) return;
         var (action, now, here, stop, arrive) = objectWalk;
         Console.WriteLine($"[gateway] {remote} <= 0x0024 npc {npc.Npc} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
@@ -118,7 +117,6 @@ partial class Program
                     talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
                 break;
             case "QuestReward" when talk.RewardOffer is { } offer:
-                if (!QuestRewardCatalog.Implemented(offer)) break;
                 var rewardCatalog = QuestRewardCatalog.Load();
                 var rewardItems = rewardCatalog.Choices(offer, conn.ClassRow)
                     .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, Items))).Where(c => c.Item is not null).ToArray();
@@ -505,7 +503,14 @@ partial class Program
         if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
         var notes = new List<string>();
         var items = ItemsOf(conn);
-        var tabs = NpcShops.Tabs(npc.Npc.Id, Items, items.NewItemId, notes);
+        // A gem vendor's stock follows the character's completed quests, class and Siosa/Lilly (GemVendorStock), and its
+        // gems cost the currency of their level-1 requirement tier.
+        var gemVendor = GemVendorStock.Sells(npc.Npc.Id)
+            ? new GemVendorStock(Items, QuestRewardCatalog.Load(), Npcs.Value, Skills)
+            : null;
+        var gemStock = gemVendor?.Stock(npc.Npc.Id, conn.ClassRow, conn.QuestFlagsSnapshot());
+        var tabs = NpcShops.Tabs(npc.Npc.Id, Items, items.NewItemId, notes, gemStock: gemStock,
+            gemPrice: gemVendor is null ? null : gemVendor.Price);
         int shopRow = Npcs.Value.TalkSource(npc.Npc).ShopRow;
         foreach (var n in notes) Console.WriteLine($"[gateway] {remote} shop {npc.Npc.Name}: {n}");
         // One manager-1 inventory per tab (S→C 0xc0), then 0x8c lists them with their names.

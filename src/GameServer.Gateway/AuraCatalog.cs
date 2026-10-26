@@ -151,6 +151,25 @@ static class AuraCatalog
             ArmourMorePct: armourMore, EvasionMorePct: evasionMore);
     }
 
+    /// <summary>The raw keys behind Purity's resistance and maximum bonuses, for per-key dev replacements.
+    /// Keep these separate from RawStats: resistance presentation already reads the completed pools.</summary>
+    public static IEnumerable<(uint Key, int Value)> ResistanceStats(IEnumerable<Aura> auras, int auraEffectPct,
+        SkillCatalog skills, StatCatalog stats)
+    {
+        foreach (var aura in auras)
+        {
+            string? element = aura.EffectId switch
+            {
+                "PurityOfFire" => "fire", "PurityOfIce" => "cold", "PurityOfLightning" => "lightning", _ => null,
+            };
+            string[] names = aura.EffectId == "PurityOfElements" ? ["base_resist_all_elements_%"]
+                : element is not null ? [$"base_{element}_damage_resistance_%", $"base_maximum_{element}_damage_resistance_%"]
+                : [];
+            foreach (string name in names)
+                if (stats.Key(name) is uint key) yield return (key, Value(skills, stats, aura, name, auraEffectPct));
+        }
+    }
+
     /// <summary>The flat stat bonuses from the active auras (regeneration and Haste's cast speed), scaled by aura effect.</summary>
     public static IEnumerable<(uint Key, int Value)> RawStats(IEnumerable<Aura> auras, int auraEffectPct,
         SkillCatalog skills, StatCatalog stats)

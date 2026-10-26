@@ -69,8 +69,14 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-- **Positions are estimated, not simulated.** The Gateway estimates where the player is from clicks, walk speed and
-  the walk map; there is no server-side pathing or collision.
+- **Predictive actor collision.** Player paths include living monsters and published players in the same instance.
+  Monster paths use their `MonsterVarieties.ObjectSize` clearance and avoid other living bodies, including friendlies.
+  A 50 ms correction loop sweeps monster movement and separates overlaps; death/removal releases the occupied space.
+  Native-client checks cover a normal zombie, unique Hillock and an injected remote player object.
+  Two authenticated clients in the same instance still need an end-to-end check.
+  Remote player creation, movement, life and departure are replicated; party formation and shared combat remain open.
+  Code: `LivingCollision.cs`, `ClientState.LivingCollision.cs`, `Program.LivingCollision.cs`, `InstancePlayers.cs`.
+  Docs: [07](../docs/protocol/07-latency-visibility-movement.md).
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch use
   the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
