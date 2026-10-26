@@ -92,15 +92,15 @@ public class MonsterModsTests
     }
 
     [Fact]
-    public void Campaign_rares_have_one_or_two_affixes_and_map_rares_two_to_four()
+    public void Rares_have_two_or_three_affixes_in_the_campaign_and_two_to_four_in_maps()
     {
         var rng = new Random(2);
         var campaign = Enumerable.Range(0, 2000).Select(_ => Rolls.Roll(Corpse, 40, MonsterRarity.Rare, rng).Affixes.Count()).ToList();
-        Assert.All(campaign, n => Assert.InRange(n, 1, 2));
-        Assert.InRange(campaign.Count(n => n == 1) / 2000.0, 0.70, 0.80);
+        Assert.All(campaign, n => Assert.InRange(n, 2, 3));
+        Assert.InRange(campaign.Count(n => n == 2) / 2000.0, 0.70, 0.80);
         var maps = Enumerable.Range(0, 2000).Select(_ => Rolls.Roll(Corpse, 75, MonsterRarity.Rare, rng).Affixes.Count()).ToList();
         Assert.All(maps, n => Assert.InRange(n, 2, 4));
-        Assert.InRange(maps.Count(n => n == 4) / 2000.0, 0.07, 0.13);
+        Assert.InRange(maps.Count(n => n == 4) / 2000.0, 0.17, 0.23);
         Assert.Equal(0, MonsterModCatalog.AffixCount(MonsterRarity.Normal, 75, rng));
         Assert.Equal(0, MonsterModCatalog.AffixCount(MonsterRarity.Unique, 75, rng));
     }
@@ -188,17 +188,17 @@ public class MonsterModsTests
     public void Damage_takes_the_rarity_the_increases_and_the_extra_elements()
     {
         var plain = With(MonsterRarity.Rare, 40);
-        var hit = plain.Effects.Hit(DamagePacket.Of(DamageType.Physical, 100, 200));
-        // Rare: 50% more, 33% less per hit.
-        Assert.Equal(100 * 1.5 * 0.67, hit[DamageType.Physical].Min, 6);
+        var hit = plain.Effects.Hit(DamagePacket.Of(DamageType.Physical, 110, 200));
+        // Rare: 50% more, 33% less per hit, rounded as before: 110 × 1.5 × 0.67 = 110.55 → 111.
+        Assert.Equal(111, hit[DamageType.Physical].Min);
+        Assert.Equal(201, hit[DamageType.Physical].Max);
         var fire = With(MonsterRarity.Rare, 40, "MonsterModExtraFireDamage", "MonsterModExtraChaosDamage").Effects
-            .Hit(DamagePacket.Of(DamageType.Physical, 100, 200));
-        double phys = 100 * 1.5 * 0.67;
-        Assert.Equal(phys, fire[DamageType.Physical].Min, 6);
-        Assert.Equal(phys * 0.5, fire[DamageType.Fire].Min, 6);
-        Assert.Equal((phys + phys * 0.5) * 0.15, fire[DamageType.Chaos].Min, 6);
+            .Hit(DamagePacket.Of(DamageType.Physical, 110, 200));
+        Assert.Equal(111, fire[DamageType.Physical].Min);
+        Assert.Equal(56, fire[DamageType.Fire].Min);                       // 50% of 111, rounded
+        Assert.Equal(Math.Round((111 + 56) * 0.15), fire[DamageType.Chaos].Min);
         var aura = With(MonsterRarity.Rare, 40, "MonsterModPhysicalDamageAura").Effects.Hit(DamagePacket.Of(DamageType.Physical, 100, 100));
-        Assert.Equal(100 * 1.4 * 1.5 * 0.67, aura[DamageType.Physical].Min, 6);
+        Assert.Equal(Math.Round(100 * 1.4 * 1.5 * 0.67), aura[DamageType.Physical].Min);
     }
 
     [Fact]
@@ -221,8 +221,8 @@ public class MonsterModsTests
         Assert.Equal(0, e.Resistance(DamageType.Cold));
         Assert.Equal(400, e.Evasion(200));
         Assert.Equal(600, e.Accuracy(300));
-        Assert.Equal(2000, e.CriticalChance);   // 5% × 4
-        Assert.Equal(500, MonsterModSet.None.Effects.CriticalChance);
+        Assert.Equal(0, e.CriticalChance);   // of Incision: 300% more of no base chance is none
+        Assert.Equal(0, MonsterModSet.None.Effects.CriticalChance);
         Assert.Equal(10_000, With(MonsterRarity.Rare, 60, "MonsterModAlwaysCrit").Effects.CriticalChance);
         var touched = With(MonsterRarity.Rare, 70, "MonsterModKitavaTouched").Effects;
         Assert.Equal(40, touched.Resistance(DamageType.Lightning));
@@ -258,11 +258,26 @@ public class MonsterModsTests
     public void Stalwart_blocks_half_the_attacks_and_no_spell()
     {
         var m = Monster(With(MonsterRarity.Rare, 60, "MonsterModAttackBlock"));
-        var hit = DamagePacket.Of(DamageType.Physical, 100, 100);
         var rng = new Random(9);
-        int blocked = Enumerable.Range(0, 4000).Count(_ => Program.MonsterTakes(m, hit, rng, spell: false) == 0);
+        int blocked = Enumerable.Range(0, 4000).Count(_ => Program.MonsterBlocks(m, rng, spell: false));
         Assert.InRange(blocked / 4000.0, 0.47, 0.53);
-        Assert.All(Enumerable.Range(0, 200), _ => Assert.Equal(100, Program.MonsterTakes(m, hit, rng, spell: true)));
+        Assert.DoesNotContain(true, Enumerable.Range(0, 200).Select(_ => Program.MonsterBlocks(m, rng, spell: true)));
+        Assert.DoesNotContain(true, Enumerable.Range(0, 200).Select(_ => Program.MonsterBlocks(Monster(MonsterModSet.None), rng, false)));
+    }
+
+    [Fact]
+    public void A_blocked_hit_applies_nothing_of_the_hit()
+    {
+        var conn = new ClientState(new AreaLayout(1, "test", 200, 200, 10, 10, null, []), 1, 1);
+        var m = Monster(With(MonsterRarity.Rare, 60, "MonsterModAttackBlock"));
+        conn.LastEnemyHitAt = -5;
+        Assert.Null(Program.HitUnlessBlockedLocked(conn, m, Program.Blocked));
+        Assert.Equal(1000u, m.Life);
+        Assert.Equal(-5, conn.LastEnemyHitAt);
+        Assert.Equal(0, m.Impale.Stacks);
+        // An unblocked hit lands: life and the "hit recently" time change.
+        Assert.Equal(990u, Program.HitUnlessBlockedLocked(conn, m, 10)!.Value.Life);
+        Assert.NotEqual(-5, conn.LastEnemyHitAt);
     }
 
     [Fact]
@@ -280,11 +295,46 @@ public class MonsterModsTests
         var crit = Program.MonsterModHit(always, rolled, 100, 100, new Random(1), out bool critical);
         Assert.True(critical);
         Assert.Equal(130, crit[DamageType.Physical].Min, 6);
+        // The player's reduced extra damage from critical strikes lowers the 130%, never below 100%.
+        Assert.Equal(110, Program.MonsterModHit(always, rolled, 100, 100, new Random(1), out _, () => 20)[DamageType.Physical].Min, 6);
+        Assert.Equal(100, Program.MonsterModHit(always, rolled, 100, 100, new Random(1), out _, () => 50)[DamageType.Physical].Min, 6);
         // Executioner's: 20% increased per 10% of the player's missing life; 45% missing → 4 steps.
         var exec = Monster(With(MonsterRarity.Rare, 60, "MonsterModDamagePerMissingLife"));
-        int noCrit = Enumerable.Range(0, 100).First(seed => { Program.MonsterModHit(exec, rolled, 55, 100, new Random(seed), out bool c); return !c; });
-        var hit = Program.MonsterModHit(exec, rolled, 55, 100, new Random(noCrit), out _);
+        var hit = Program.MonsterModHit(exec, rolled, 55, 100, new Random(1), out bool execCrit);
+        Assert.False(execCrit);
         Assert.Equal(180, hit[DamageType.Physical].Min, 6);
+    }
+
+    [Fact]
+    public void A_monster_without_a_crit_mod_never_crits()
+    {
+        var rolled = DamagePacket.Of(DamageType.Physical, 100, 100);
+        var rng = new Random(12);
+        foreach (var m in new[] { Monster(MonsterModSet.None), Monster(With(MonsterRarity.Rare, 60, "MonsterModIncreasedCriticalStrikeChance")),
+            Monster(Rolls.Roll(Corpse, 60, MonsterRarity.Unique, rng)) })
+            for (int i = 0; i < 2000; i++)
+            {
+                var hit = Program.MonsterModHit(m, rolled, 100, 100, rng, out bool critical);
+                Assert.False(critical);
+                Assert.Equal(100, hit[DamageType.Physical].Min, 6);
+            }
+    }
+
+    [Fact]
+    public void Hillock_and_every_raritys_hit_are_as_before()
+    {
+        // Main's rule: max(1, round(base × (1 + more) × (1 − faster))) per end of the range (MonsterCatalog.RarityAttack).
+        var hillock = Setup.Value.Monsters.Find("Metadata/Monsters/ZombieBoss/ZombieBossHillockNormal")!;
+        foreach (var rarity in new[] { MonsterRarity.Normal, MonsterRarity.Magic, MonsterRarity.Rare, MonsterRarity.Unique })
+            foreach (byte level in new byte[] { 1, 13, 45, 70 })
+            {
+                var (min, max) = Setup.Value.Monsters.BaseDamage(hillock, level)!.Value;
+                var (factor, _) = MonsterCatalog.RarityAttack(rarity);
+                var hit = Rolls.Roll(hillock, level, rarity, new Random(0), count: 0).Effects.Hit(DamagePacket.Of(DamageType.Physical, min, max));
+                Assert.Equal(Math.Max(1, (int)Math.Round(min * factor)), hit[DamageType.Physical].Min);
+                Assert.Equal(Math.Max(1, (int)Math.Round(max * factor)), hit[DamageType.Physical].Max);
+                Assert.Equal(hit[DamageType.Physical].Max, hit.MaxTotal);
+            }
     }
 
     [Fact]
@@ -294,6 +344,8 @@ public class MonsterModsTests
         var m = Monster(With(MonsterRarity.Rare, 60, "MonsterModResistantToFire"));
         Assert.Equal(25, Program.MonsterBurn(m, burn, 1).Damage);
         Assert.Equal(100, Program.MonsterBurn(Monster(MonsterModSet.None), burn, 1).Damage);
+        // Spell Resistant is for spell hits only.
+        Assert.Equal(100, Program.MonsterBurn(Monster(With(MonsterRarity.Rare, 60, "MonsterModSpellResistant")), burn, 1).Damage);
     }
 
     [Fact]
@@ -371,8 +423,6 @@ public class MonsterModsTests
         var conn = Conn();
         var first = Program.MonsterModsFor(conn, Corpse, 10, MonsterRarity.Magic, null, alone: false);
         Assert.Same(first, Program.MonsterModsFor(conn, Corpse, 10, MonsterRarity.Magic, null, alone: false));
-        // Another variety of the same name (The Coast's Drowned rows) shares it too.
-        Assert.Same(first, Program.MonsterModsFor(conn, Corpse with { Row = 99999 }, 10, MonsterRarity.Magic, null, alone: false));
         // Another instance, a rare, or a monster on its own rolls its own.
         Assert.NotSame(first, Program.MonsterModsFor(Conn(), Corpse, 10, MonsterRarity.Magic, null, alone: false));
         Assert.NotSame(Program.MonsterModsFor(conn, Corpse, 10, MonsterRarity.Rare, null, alone: false),
@@ -383,6 +433,55 @@ public class MonsterModsTests
         Assert.Same(kept, Program.MonsterModsFor(conn, Corpse, 10, MonsterRarity.Rare, kept, alone: false));
     }
 
+    [Fact]
+    public void A_shared_magic_roll_goes_only_to_the_varieties_that_can_have_it()
+    {
+        // The Coast's Savage Crabs: the small ones (not_str) can be Blurred, the large one (not_dex) cannot.
+        var small = Variety(4501);
+        var otherSmall = Variety(4497);
+        var large = Crab;
+        Assert.Equal(small.Name, large.Name);
+        var shared = new Dictionary<string, MonsterModSet>
+        {
+            [small.Name] = Rolls.Roll(small, 2, MonsterRarity.Magic, new Random(1), count: 1, forced: [Mod("MonsterModIncreasedEvasionRating")]),
+        };
+        var rng = new Random(13);
+        Assert.Same(shared[small.Name], Rolls.SharedMagic(shared, otherSmall, 2, rng));
+        var forLarge = Rolls.SharedMagic(shared, large, 2, rng);
+        Assert.NotSame(shared[small.Name], forLarge);
+        Assert.DoesNotContain(Affixes(forLarge), m => m.Id == "MonsterModIncreasedEvasionRating");
+        Assert.Same(forLarge, Rolls.SharedMagic(shared, large, 2, rng));   // the large ones share theirs
+        // The Coast's cannibals: of Rime has fire_affinity 0, so a fire thrower never shares it.
+        var cannibal = Cannibal;
+        var thrower = Variety(2849);
+        Assert.Contains("fire_affinity", Rolls.TagsOf(thrower, MonsterRarity.Magic, false));
+        shared[cannibal.Name] = Rolls.Roll(cannibal, 2, MonsterRarity.Magic, new Random(1), count: 1, forced: [Mod("MonsterModExtraColdDamage")]);
+        for (int i = 0; i < 20; i++)
+        {
+            var forThrower = Rolls.SharedMagic(new Dictionary<string, MonsterModSet>(shared), thrower, 2, new Random(i));
+            Assert.DoesNotContain(Affixes(forThrower), m => m.Id == "MonsterModExtraColdDamage");
+        }
+    }
+
+    [Fact]
+    public void A_regenerated_life_is_not_sent_after_a_kill()
+    {
+        var hydra = Monster(With(MonsterRarity.Rare, 60, "MonsterModLifeRegeneration"));
+        hydra.Life = 500;
+        var monsters = new Dictionary<uint, SpawnedMonster> { [7] = hydra };
+        var (id, life) = Assert.Single(Program.RegenerateMonstersLocked(monsters, 1));
+        Assert.True(Program.RegenStillCurrent(monsters, id, life));
+        // A kill lands before the 0x1b1 goes out: the old life would revive it on the client.
+        hydra.Life = 0;
+        hydra.Dead = true;
+        Assert.False(Program.RegenStillCurrent(monsters, id, life));
+        // A hit in between changed the life: its own 0x1b1 is the current one.
+        hydra.Dead = false;
+        hydra.Life = life - 100;
+        Assert.False(Program.RegenStillCurrent(monsters, id, life));
+        Assert.False(Program.RegenStillCurrent(new Dictionary<uint, SpawnedMonster>(), id, life));   // despawned
+    }
+
     // ---- Unsupported mods ----
 
     [Theory]
@@ -391,6 +490,9 @@ public class MonsterModsTests
     [InlineData("MonsterModHexproof", "Full")]                  // no curses to stop
     [InlineData("MonsterModExtraFireDamage", "Partial")]        // the fire exposure is missing
     [InlineData("MonsterModSpeedAura", "Partial")]              // the aura's allies are missing
+    [InlineData("MonsterModAccuracyAndCritAura", "Partial")]    // its accuracy acts; its increased crit has no base
+    [InlineData("MonsterModIncreasedCriticalStrikeChance", "None")]  // of Incision: increases a 0% base
+    [InlineData("MonsterModAlwaysCrit", "Full")]
     [InlineData("MonsterModBerserker", "None")]                 // its buff's trigger is server logic
     [InlineData("MonsterModInfernoBolt", "None")]               // a retaliation skill
     [InlineData("MonsterModBurningGroundOnDeath", "None")]      // a monster on death
@@ -425,7 +527,7 @@ public class MonsterModsTests
         Assert.Empty(set.Mods);
         Assert.Equal(MonsterCatalog.LifeWithRarity(39, MonsterRarity.Unique), set.Effects.MaxLife(39));
         var (damage, speed) = MonsterCatalog.RarityAttack(MonsterRarity.Unique);
-        Assert.Equal(100 * damage, set.Effects.Hit(DamagePacket.Of(DamageType.Physical, 100, 100))[DamageType.Physical].Min, 6);
+        Assert.Equal(Math.Round(100 * damage), set.Effects.Hit(DamagePacket.Of(DamageType.Physical, 100, 100))[DamageType.Physical].Min);
         Assert.Equal(1.0 / speed, set.Effects.AttackSeconds(1), 6);
     }
 }

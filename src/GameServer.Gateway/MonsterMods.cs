@@ -28,11 +28,9 @@ sealed class MonsterModEffects(IReadOnlyDictionary<string, int> stats)
 {
     public static readonly MonsterModEffects None = new(new Dictionary<string, int>());
 
-    /// <summary>A monster's base chance to deal a critical strike, permyriad: Path of Building's default enemy critical
-    /// strike chance (5%), as monster skills have no weapon of their own.</summary>
-    public const int BaseCriticalChance = 500;
-
-    /// <summary>Monster.ot's <c>base_critical_strike_multiplier</c> (130), the critical multiplier of every monster.</summary>
+    /// <summary>Monster.ot's <c>base_critical_strike_multiplier</c> (130), the critical multiplier of every monster. Their
+    /// attacks have no base critical strike chance in the data (the monster Melee stat sets' AttackCritChance is 0), so
+    /// only a mod that sets one (always_crit) makes them crit.</summary>
     public const int CriticalMultiplier = 130;
 
     /// <summary>Monster.ot's <c>maximum_physical_damage_reduction_%</c> and <c>base_maximum_all_resistances_%</c>.</summary>
@@ -52,8 +50,9 @@ sealed class MonsterModEffects(IReadOnlyDictionary<string, int> stats)
 
     /// <summary>The monster's hit before the player's defences: the base physical damage raised by damage_+% and
     /// physical_damage_+% (increased, the gains inherit them), by the rarity's monster_rarity_damage_+%_final (more)
-    /// and lowered by monster_rarity_attack_cast_speed_+%_and_damage_-%_final (less); then the "gain as extra"
-    /// stats add their types (fire, cold or lightning from physical, chaos from the non-chaos part).</summary>
+    /// and lowered by monster_rarity_attack_cast_speed_+%_and_damage_-%_final (less), rounded and at least 1 as the
+    /// rarity's hit always was (Hillock at level 1: 6.6–12.3 → 7–12); then the "gain as extra" stats add their types
+    /// (fire, cold or lightning from physical, chaos from the non-chaos part), rounded.</summary>
     public DamagePacket Hit(DamagePacket physical)
     {
         double factor = (1 + (this["damage_+%"] + this["physical_damage_+%"]) / 100.0)
@@ -63,13 +62,15 @@ sealed class MonsterModEffects(IReadOnlyDictionary<string, int> stats)
             .AddGain(DamageType.Physical, DamageType.Fire, this["physical_damage_%_to_add_as_fire"])
             .AddGain(DamageType.Physical, DamageType.Cold, this["physical_damage_%_to_add_as_cold"])
             .AddGain(DamageType.Physical, DamageType.Lightning, this["physical_damage_%_to_add_as_lightning"]);
-        var hit = physical.Scale(factor).Convert(gains);
+        var physicalRange = physical[DamageType.Physical];
+        var hit = DamagePacket.Of(DamageType.Physical, Math.Max(1, Math.Round(physicalRange.Min * factor)),
+            Math.Max(1, Math.Round(physicalRange.Max * factor))).Convert(gains).Round();
         int chaos = this["non_chaos_damage_to_add_as_chaos_damage_%"];
         if (chaos <= 0) return hit;
         double minChaos = 0, maxChaos = 0;
         foreach (var (type, range) in hit.Components)
             if (type != DamageType.Chaos) { minChaos += range.Min * chaos / 100.0; maxChaos += range.Max * chaos / 100.0; }
-        return hit.Add(DamageType.Chaos, new GameServer.Core.World.DamageRange(minChaos, maxChaos));
+        return hit.Add(DamageType.Chaos, new GameServer.Core.World.DamageRange(minChaos, maxChaos).Round());
     }
 
     /// <summary>The attack time: the base over (1 + attack_speed_+%) and the rarity's more speed
@@ -102,9 +103,12 @@ sealed class MonsterModEffects(IReadOnlyDictionary<string, int> stats)
 
     public int Evasion(int baseEvasion) => (int)Math.Round(baseEvasion * (1 + this["evasion_rating_+%"] / 100.0));
 
-    /// <summary>The chance its hit is a critical strike, permyriad: always_crit, else 5% × (1 + critical_strike_chance_+%).</summary>
-    public int CriticalChance => this["always_crit"] > 0 ? 10_000
-        : (int)Math.Round(DamageModel.CriticalStrikeChance(BaseCriticalChance, this["critical_strike_chance_+%"]) * 100);
+    /// <summary>The chance its hit is a critical strike, permyriad: always_crit, else none (no base chance to increase).</summary>
+    public int CriticalChance => this["always_crit"] > 0 ? 10_000 : 0;
+
+    /// <summary>A monster's critical multiplier on the player: Monster.ot's 130%, less the player's
+    /// base_self_critical_strike_multiplier_-% (the panel's extra_damage_taken_from_crit_+%), at least 100%.</summary>
+    public static int CriticalMultiplierOnPlayer(int selfCriticalReduction) => Math.Max(100, CriticalMultiplier - selfCriticalReduction);
 
     /// <summary>Life regenerated per second: life_regeneration_rate_per_minute_% of the maximum.</summary>
     public double LifeRegenPerSecond(uint maxLife) => maxLife * this["life_regeneration_rate_per_minute_%"] / 6000.0;
@@ -162,7 +166,7 @@ sealed class MonsterModCatalog(ModCatalog mods, string folder = "data")
         "non_chaos_damage_to_add_as_chaos_damage_%", "attack_speed_+%", "base_cast_speed_+%", "base_movement_velocity_+%",
         "base_fire_damage_resistance_%", "base_cold_damage_resistance_%", "base_lightning_damage_resistance_%",
         "base_chaos_damage_resistance_%", "base_resist_all_elements_%", "base_additional_physical_damage_reduction_%",
-        "evasion_rating_+%", "accuracy_rating_+%", "critical_strike_chance_+%", "always_crit",
+        "evasion_rating_+%", "accuracy_rating_+%", "always_crit",
         "life_regeneration_rate_per_minute_%", "rare_monster_mod_spell_damage_taken_+%_final", "base_damage_taken_+%",
         "monster_base_block_%", "base_cannot_be_stunned", "hit_damage_+%_per_10%_missing_enemy_life",
         "self_take_no_extra_damage_from_critical_strikes",
@@ -225,17 +229,18 @@ sealed class MonsterModCatalog(ModCatalog mods, string folder = "data")
             .Select(m => (m, m.WeightFor(tags))).Where(p => p.Item2 > 0)];
 
     /// <summary>
-    /// How many affixes a monster rolls. Magic: one (wiki "Monster modifiers": magic monsters have one affix).
-    /// Rare: in the campaign one or two, one more often (3.19.0 patch notes: "only have one or two modifiers"; 3.19.0c
-    /// made two rarer): 1 at 75%, 2 at 25%; from area level 68 (maps) two to four, mostly two or three (3.19.0:
-    /// "stop encountering Rare Monsters with one modifier … possible to encounter … four"): 2 at 50%, 3 at 40%,
-    /// 4 at 10%. The percentages are ours; the official server's are not known. Other rarities roll none.
+    /// How many affixes a monster rolls; the client's data has no count (Rarity.dat's 1–2 / 4–6 are the items'). Magic:
+    /// one (poewiki "Rarity": "given one monster modifier"). Rare: two to four (poewiki "Rarity": "given two to four
+    /// monster modifiers"; the 3.20 FAQ balances around 2 to 4). The 3.19.0 patch notes gave campaign rares one or two,
+    /// but 3.20 replaced that mod system, so the current page wins; the campaign keeps fewer (the notes' intent): below area
+    /// level 68 2 at 75%, 3 at 25%; from 68 2 at 40%, 3 at 40%, 4 at 20%. These percentages are invented. Other
+    /// rarities roll none.
     /// </summary>
     public static int AffixCount(MonsterRarity rarity, int level, Random rng) => rarity switch
     {
         MonsterRarity.Magic => 1,
-        MonsterRarity.Rare when level < MapLevel => rng.Next(100) < 75 ? 1 : 2,
-        MonsterRarity.Rare => rng.Next(100) switch { < 50 => 2, < 90 => 3, _ => 4 },
+        MonsterRarity.Rare when level < MapLevel => rng.Next(100) < 75 ? 2 : 3,
+        MonsterRarity.Rare => rng.Next(100) switch { < 40 => 2, < 80 => 3, _ => 4 },
         _ => 0,
     };
 
@@ -289,6 +294,24 @@ sealed class MonsterModCatalog(ModCatalog mods, string folder = "data")
         var all = (IReadOnlyList<ItemMod>)[.. innate, .. affixes];
         var name = rarity == MonsterRarity.Rare ? RareName(tags, rng) : [];
         return Create(all, name, rarity, level);
+    }
+
+    /// <summary>
+    /// The mods a magic monster of an area pack gets: the ones the magic monsters of its name already have in this
+    /// instance (<paramref name="shared"/>, "all monsters in an instance that are the same or very similar will have the
+    /// same magic monster modifier", 3.19.0), unless one of those affixes could not roll on it (a weight of 0 for its
+    /// tags, or above its level: The Coast's small Savage Crabs can be Blurred, the large one cannot); then the ones of
+    /// its name and tags, rolled once. Call under a lock on <paramref name="shared"/>.
+    /// </summary>
+    public MonsterModSet SharedMagic(IDictionary<string, MonsterModSet> shared, MonsterCatalog.Variety variety, int level, Random rng)
+    {
+        var tags = TagsOf(variety, MonsterRarity.Magic, alone: false);
+        bool Fits(MonsterModSet set) => set.Affixes.All(a => mods.ByHash(a.Hash) is { } m && m.Level <= level && m.WeightFor(tags) > 0);
+        if (shared.TryGetValue(variety.Name, out var set) && Fits(set)) return set;
+        string key = variety.Name + "|" + string.Join(",", tags.Order(StringComparer.Ordinal));
+        if (!shared.TryGetValue(key, out set)) shared[key] = set = Roll(variety, level, MonsterRarity.Magic, rng);
+        shared.TryAdd(variety.Name, set);
+        return set;
     }
 
     /// <summary>A set from known mods (a kept monster, a test): its effects from the mods' values, plus the rarity

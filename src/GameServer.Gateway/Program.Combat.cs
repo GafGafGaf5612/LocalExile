@@ -122,6 +122,11 @@ partial class Program
                 $"{hitChance}% chance");
             return;
         }
+        if (MonsterBlocks(m, Random.Shared, spell: false))   // Stalwart: nothing of the hit happens
+        {
+            Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}) blocked");
+            return;
+        }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var player = CharacterPlayerStats(conn);
         var hit = AttackHit(weapon, player)
@@ -466,6 +471,11 @@ partial class Program
                 () => SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level), Stats, stats, own));
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
+            if (MonsterBlocks(m, Random.Shared, spell))
+            {
+                Console.WriteLine($"[gateway] {remote} {gem.Name} on {m.Label} blocked");
+                return (Blocked, false);
+            }
             var hit = projectileHitPlan.BuildHit(
                 () => SpellDamage.WithEffectiveness(AttackHit(WeaponFor(conn), CharacterPlayerStats(conn)),
                         Skills.DamageEffectiveness(gem.Effect, gem.Level))
@@ -553,6 +563,11 @@ partial class Program
         foreach (var (k, v) in skillStats) stats[k] = v;
         foreach (var (id, m) in targets)
         {
+            if (MonsterBlocks(m, Random.Shared, spell))
+            {
+                Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x} ({m.Label}) blocked");
+                continue;
+            }
             DamagePacket hit = hitPlan.BuildHit(
                 () => SpellDamage.WithEffectiveness(AttackHit(weapon, player), effectiveness)
                     .Convert(ConversionFor(conn, gem.Effect, gem.Level, attack: true)),
@@ -713,7 +728,7 @@ partial class Program
                                 if (damageTo is not null && step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
                                 {
                                     (damage, critical) = damageTo(target);
-                                    hit = ApplyMonsterHitLocked(conn, target, damage);
+                                    hit = HitUnlessBlockedLocked(conn, target, damage);
                                 }
                                 committed = true;
                                 return true;

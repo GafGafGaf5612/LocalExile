@@ -15,7 +15,7 @@ partial class Program
 
     // Per instance, the mods its magic monsters share: "all monsters in an instance that are the same or very similar
     // will have the same magic monster modifier" (3.19.0 patch notes). Very similar: the same name (The Coast's
-    // Drowned are several MonsterVarieties rows).
+    // Drowned are several MonsterVarieties rows), as long as the affix can roll on it (MonsterModCatalog.SharedMagic).
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<InstanceState, Dictionary<string, MonsterModSet>> MagicModsOf = new();
 
     /// <summary>The mods a new monster gets: <paramref name="kept"/> (a monster of a kept instance, a /mob_mods
@@ -28,11 +28,7 @@ partial class Program
         var rolls = MonsterModRolls.Value;
         if (rarity != MonsterRarity.Magic || alone) return rolls.Roll(variety, level, rarity, Random.Shared, alone);
         var shared = MagicModsOf.GetValue(conn.Instance, _ => []);
-        lock (shared)
-        {
-            if (!shared.TryGetValue(variety.Name, out var set)) shared[variety.Name] = set = rolls.Roll(variety, level, rarity, Random.Shared);
-            return set;
-        }
+        lock (shared) return rolls.SharedMagic(shared, variety, level, Random.Shared);
     }
 
     /// <summary>The stats the client needs for the mods (it applies no modifier of its own to a monster, 14 §2): the
@@ -51,14 +47,15 @@ partial class Program
     }
 
     /// <summary>The monster's own part of its hit on the player, after the roll and before the player's defences: its
-    /// critical strike (5% × increased critical strike chance, or always; × Monster.ot's 130% multiplier) and the
-    /// increased damage per 10% of the player's missing life (Executioner's). Call under the Monsters lock.</summary>
+    /// critical strike (only with a chance from its mods: of Deadliness; × Monster.ot's 130% multiplier less the
+    /// player's <paramref name="selfCriticalReduction"/>, base_self_critical_strike_multiplier_-%, read only on a crit)
+    /// and the increased damage per 10% of the player's missing life (Executioner's). Call under the Monsters lock.</summary>
     internal static DamagePacket MonsterModHit(SpawnedMonster m, DamagePacket rolled, uint playerLife, uint playerMaxLife, Random random,
-        out bool critical)
+        out bool critical, Func<int>? selfCriticalReduction = null)
     {
         var e = m.Mods.Effects;
-        critical = random.Next(10_000) < e.CriticalChance;
-        double factor = critical ? MonsterModEffects.CriticalMultiplier / 100.0 : 1;
+        critical = e.CriticalChance > 0 && random.Next(10_000) < e.CriticalChance;
+        double factor = critical ? MonsterModEffects.CriticalMultiplierOnPlayer(selfCriticalReduction?.Invoke() ?? 0) / 100.0 : 1;
         if (e.ExecutionerPct(playerLife, playerMaxLife) is int executioner and > 0)
         {
             int increased = e["damage_+%"] + e["physical_damage_+%"];
@@ -70,13 +67,13 @@ partial class Program
     /// <summary>
     /// The damage a hit of the player deals to a monster, rolled: each type less the resistance the monster's mods give
     /// (capped at Monster.ot's 75%), the physical part less its physical damage reduction, then its damage taken
-    /// (Berserking's reduction, Spell Resistant's less spell damage). An attack can be blocked (Stalwart): 0 damage.
-    /// The monster has no base resistance of its own here (open PRs #225/#226 add it per type).
+    /// (Berserking's reduction, Spell Resistant's less spell damage). Blocking is rolled before (<see cref="MonsterBlocks"/>).
+    /// The monster has no base resistance of its own here (open PRs #225/#226 add it per type), and the player has
+    /// no penetration yet.
     /// </summary>
     internal static int MonsterTakes(SpawnedMonster m, DamagePacket hit, Random random, bool spell)
     {
         var e = m.Mods.Effects;
-        if (!spell && e.BlockChance > 0 && random.Next(100) < e.BlockChance) return 0;
         var mitigated = DamageModel.Mitigate(hit.Roll(random),
             type => new DamageModel.ResistanceValue(e.Resistance(type), MonsterModEffects.MaxResistance));
         double physical = mitigated[DamageType.Physical].Min;
@@ -84,17 +81,34 @@ partial class Program
         return (int)Math.Round(total * e.DamageTaken(spell));
     }
 
+    /// <summary>The player's base_self_critical_strike_multiplier_-% (critical strikes against them deal less extra damage).</summary>
+    static int SelfCriticalReduction(ClientState conn) =>
+        Stats.Key("base_self_critical_strike_multiplier_-%") is uint key ? CharacterPlayerStats(conn).GetValueOrDefault(key) : 0;
+
+    /// <summary>Whether the monster blocks a hit of the player (Stalwart's monster_base_block_%: attacks only). Rolled
+    /// before anything of the hit happens: a blocked hit has no damage, impale, flinch or hit message.</summary>
+    internal static bool MonsterBlocks(SpawnedMonster m, Random random, bool spell) =>
+        !spell && m.Mods.Effects.BlockChance > 0 && random.Next(100) < m.Mods.Effects.BlockChance;
+
+    /// <summary>A blocked projectile's damage (<see cref="MonsterBlocks"/>): the impact applies nothing.</summary>
+    internal const int Blocked = -1;
+
+    /// <summary>A projectile's hit on the monster unless it was blocked (<see cref="Blocked"/>); under the Monsters lock.</summary>
+    internal static MonsterHit? HitUnlessBlockedLocked(ClientState conn, SpawnedMonster m, int damage) =>
+        damage == Blocked ? null : ApplyMonsterHitLocked(conn, m, damage);
+
     /// <summary>The critical strike multiplier a critical hit of the player has on this monster: 100% when it takes no
     /// extra damage from critical strikes (of Toughness).</summary>
     internal static int CriticalMultiplierOn(SpawnedMonster m, int multiplier) =>
         m.Mods.Effects.NoExtraCriticalDamage ? 100 : multiplier;
 
     /// <summary>One burn tick on a monster (Righteous Fire, fire damage over time): less its fire resistance and its
-    /// damage taken (a spell's).</summary>
+    /// damage taken. Spell Resistant counts for hits only: its stat has no description saying it covers damage over
+    /// time.</summary>
     internal static (int Damage, double Carry) MonsterBurn(SpawnedMonster m, DamageOverTime burn, double seconds)
     {
         var e = m.Mods.Effects;
-        double factor = (100 - DamageModel.Capped(e.Resistance(burn.Type), MonsterModEffects.MaxResistance)) / 100.0 * e.DamageTaken(spell: true);
+        double factor = (100 - DamageModel.Capped(e.Resistance(burn.Type), MonsterModEffects.MaxResistance)) / 100.0 * e.DamageTaken(spell: false);
         return (burn with { DamagePerSecond = burn.DamagePerSecond * factor }).Tick(seconds, m.Burn);
     }
 
@@ -114,8 +128,11 @@ partial class Program
                 if (conn.Paused || seconds <= 0) continue;
                 List<(uint Id, uint Life)> changed;
                 lock (conn.Monsters) changed = RegenerateMonstersLocked(conn.Monsters, seconds);
+                // Checked again in the send gate: a kill in between sends 0 first, and an older life after it would
+                // revive the monster on the client.
                 foreach (var (id, life) in changed)
-                    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life), null);
+                    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life), null,
+                        still: () => { lock (conn.Monsters) return RegenStillCurrent(conn.Monsters, id, life); });
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
@@ -123,6 +140,10 @@ partial class Program
             // The connection closed while sending.
         }
     }
+
+    /// <summary>Whether a regenerated life is still the monster's when its 0x1b1 goes out: alive and unchanged.</summary>
+    internal static bool RegenStillCurrent(IReadOnlyDictionary<uint, SpawnedMonster> monsters, uint id, uint life) =>
+        monsters.TryGetValue(id, out var m) && !m.Dead && m.Life == life;
 
     /// <summary>One regeneration step over the living, damaged monsters (under the Monsters lock): the ones whose life
     /// changed, with their new life.</summary>

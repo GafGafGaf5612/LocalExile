@@ -233,7 +233,8 @@ partial class Program
             // Roll each damage type separately, apply its resistance, then armour to the physical part. The attack is
             // currently physical only (MonsterAttack), but the packet path keeps future monster skills correct.
             var rolled = a.Damage.Roll(Random.Shared);
-            rolled = MonsterModHit(m, rolled, conn.PlayerLife, conn.PlayerMaxLife, Random.Shared, out monsterCritical);   // crit, Executioner's
+            rolled = MonsterModHit(m, rolled, conn.PlayerLife, conn.PlayerMaxLife, Random.Shared, out monsterCritical,
+                () => SelfCriticalReduction(conn));   // its crit, Executioner's
             var mitigated = DamageModel.Mitigate(rolled, type =>
                 new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)));
             var immune = PlayerImmunities(conn);
