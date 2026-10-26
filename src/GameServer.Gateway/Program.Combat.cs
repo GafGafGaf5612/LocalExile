@@ -115,7 +115,7 @@ partial class Program
             accuracy = conn.Pools.Accuracy;
             evasion = Monsters.BaseEvasion(m.Level) ?? 0;
         }
-        int hitChance = DamageModel.AccuracyHitChance(evasion, accuracy);
+        int hitChance = DamageModel.AccuracyHitChance(conn.FlaskGrounds.Evasion(use.TargetId, evasion), accuracy);   // blinded in smoke
         if (!DamageModel.Hits(hitChance, Random.Shared.Next(100)))
         {
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} missed: accuracy {accuracy} vs evasion {evasion}, " +

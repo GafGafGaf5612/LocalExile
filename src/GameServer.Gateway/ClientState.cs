@@ -342,6 +342,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public UtilityFlasks.Effects UtilityFlaskEffects { get; } = new();
     /// <summary>The flasks' partial charges and the crit charge cooldown (FlaskCharges).</summary>
     public FlaskCharges.Carry FlaskChargeCarry { get; } = new();
+    /// <summary>The smoke clouds, consecrated ground and taunts of flasks (FlaskGrounds).</summary>
+    public FlaskGrounds.State FlaskGrounds { get; } = new();
     public ushort NextBuff = 1;
     public uint PlayerMaxLife => Pools.Life;
     // The player's life as the server keeps it (PlayerObject's Life, full on creation); 0 = dead.

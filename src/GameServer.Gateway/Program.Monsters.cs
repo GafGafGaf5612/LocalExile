@@ -223,7 +223,7 @@ partial class Program
             // The monster's accuracy comes from DefaultMonsterStats at its level. Evasion uses PoE's shared entropy
             // counter: every attack adds its hit chance, and reaching 100 consumes 100 and hits (evasion cannot streak
             // indefinitely). A new counter starts after 3.33 s without an attack.
-            int monsterAccuracy = Monsters.BaseAccuracy(m.Level) ?? 0;
+            int monsterAccuracy = conn.FlaskGrounds.Accuracy(id, Monsters.BaseAccuracy(m.Level) ?? 0);   // blinded in smoke
             int hitChance = DamageModel.AccuracyHitChance(conn.Pools.Evasion, monsterAccuracy);
             if (EvadesLocked(conn, hitChance, now))
             {

@@ -339,6 +339,7 @@ static class UtilityFlasks
                     or "base_maximum_lightning_damage_resistance_%" or "base_maximum_chaos_damage_resistance_%"
                     or "critical_strike_chance_+%" or "damage_+%" or "base_item_found_rarity_+%" => stat,
                 "base_cast_speed_+%" => "cast_speed_+%",
+                "life_regeneration_rate_per_minute_%" => stat,   // consecrated ground (FlaskGrounds)
                 _ when PanelOnly.Contains(stat) => stat,
                 _ => null,
             };

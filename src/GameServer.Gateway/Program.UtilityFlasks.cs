@@ -45,6 +45,7 @@ partial class Program
             string.Join(", ", stats.Select(s => $"{s.Stat} {s.Value}")) + $"; walk estimate {conn.Walk.Speed:0.##} cells/s");
         foreach (var packet in UtilityFlasks.StartPackets(effect, PlayerId))
             await Send(remote, stream, ciphers, packet, $"0x01c1 player buff: {type.Name} (flask {slot}), {seconds:0.##} s");
+        await MakeFlaskGrounds(remote, stream, ciphers, conn, type.Name, local, seconds);
         await SendCharacterStats(remote, stream, ciphers, conn, $"{type.Name} on");
     }
 
