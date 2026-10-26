@@ -982,11 +982,26 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     void NoteWiggle(int x, int y) => _wiggleCells.TryAdd(x * 0x10000 + y, (x, y));
 
-    /// <summary><c>0x1420f1230</c>'s first part, the listener the dungeon tiler puts on its FillTiles placer (the
-    /// shrines, edge fill, overlays and fill): a placed tile that wiggles has its view cell noted.</summary>
+    /// <summary><c>0x1420f1230</c>, the listener the dungeon tiler puts on its FillTiles placer (the shrines, edge fill,
+    /// overlays and fill; view coordinates): a placed tile that wiggles has its view cell noted. Then, with heights and a
+    /// graph top or bottom ground, every vertex of the tile without a ground takes the top ground at or above the
+    /// layout's highest level, else the bottom ground at or below its lowest (the levels of <see cref="RoomGrounds"/>,
+    /// listener +0x1c / +0x20). MapWorldsCourtyardOfWasting's fill rooms take the graph's deep_snow.gt this way.</summary>
     void Listen(TileDef tile, int o, int x, int y)
     {
         if (Wiggles(tile, 1)) NoteWiggle(x, y);
+        var (top, bottom, _) = _graphGrounds;
+        if (!_grid.HasHeights || (top is null && bottom is null)) return;
+        var (w, h) = Orientation.Size(o, tile.Width, tile.Height);
+        for (int v = 0; v <= h; v++)
+            for (int u = 0; u <= w; u++)
+            {
+                int cx = x + u + _view.X0, cy = y + v + _view.Y0;
+                if (!_grid.InsideCorners(cx, cy) || _grid.Corner(cx, cy).Ground is not null) continue;
+                int at = _grid.Corner(cx, cy).Height;
+                if (at >= _levels.High && top is not null) _grid.SetGround(cx, cy, top);
+                else if (at <= _levels.Low && bottom is not null) _grid.SetGround(cx, cy, bottom);
+            }
     }
 
     /// <summary><c>0x1420ed900</c>'s test: an untagged (tile data +0x10) square tile whose edges all have its size
@@ -1257,6 +1272,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary>The graph's grounds (+0xa0 top, +0xa8 bottom, +0xb0 default), the tiler's +0x30 / +0x28 / +0x20.</summary>
     (string? Top, string? Bottom, string? Default) _graphGrounds;
+    // The layout's highest and lowest vertex heights (0x141ffc700 / 0x141ffc7d0), as RoomGrounds found them.
+    (int High, int Low) _levels = (int.MaxValue, int.MinValue);
 
     /// <summary>Room data +0xa (<c>0x141ff4e70</c>, which clears it first): a fill room (+9,
     /// <see cref="DungeonRoomSet.IsFill"/>) whose slots' four key grounds are all in the room ground's class (none or .gt
@@ -1290,6 +1307,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
                 hi = Math.Max(hi, h);
                 lo = Math.Min(lo, h);
             }
+        _levels = (hi, lo);
         bool check = _grid.CheckGrounds;
         _grid.CheckGrounds = false;
         var (top, bottom, fallback) = _graphGrounds;
