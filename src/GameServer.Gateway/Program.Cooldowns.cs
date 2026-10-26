@@ -26,13 +26,14 @@ partial class Program
     // Readiness, reservation and action side effects are one short critical section, before any echo/await.
     // An approach checks readiness without spending; arrival must reserve under its original action token.
     internal static bool TryBeginCooldownUse(ClientState conn, int effect, SingleUseCooldown? plan, bool instant,
-        Action sideEffects, out CooldownUseTicket? ticket, int? actionToken = null, bool reserve = true)
+        Action sideEffects, out CooldownUseTicket? ticket, int? actionToken = null, bool reserve = true, double? requestedAt = null)
     {
         lock (conn.Monsters)
         {
             ticket = null;
             SingleUseCooldownState? state = null;
             if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0 || conn.Paused
+                || requestedAt is double asked && conn.HitRecovery.BlocksInput(asked, conn.Clock.Elapsed.TotalSeconds)
                 || actionToken is int original && conn.ActionCount != original) return false;
             if (plan is { } cooldown)
             {

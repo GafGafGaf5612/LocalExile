@@ -368,10 +368,51 @@ Entry uses the selected template's waypoint and fixed seed 1.
 `HideoutScene` recreates personal/guild stashes, crafting bench, map device, Nessa, Niko,
 Helena and Kirac on the destination floor. It retains decoration appearance, translates NPC
 positions relative to the new waypoint, and searches for nonoverlapping walkable footprints.
-The default template supplies missing functional furniture. Arbitrary decorative objects and
-interactive decoration editing remain outside this implementation. Automated coverage checks
+The default template supplies missing functional furniture. Arbitrary decorative object placement/removal remains outside this implementation.
+Moving the installed furniture and NPCs is described below. Automated coverage checks
 selection bytes, persisted choice and placement; final client verification requires selecting
 a different template and reconnecting after restarting both Auth and Gateway.
+
+### Moving installed furniture and NPCs
+
+The native Edit UI sends C→S **0x5b**, 15 bytes, when a selected object is dropped or rotated.
+Sender `0x142160100` is called by editor callbacks `0x140204880` and `0x140204ae0`.
+Serializer `0x141f93820` and reader `0x141f93920` agree on this layout:
+
+| Field | Encoding |
+|---|---|
+| Message id | u16 BE, 0x5b |
+| Runtime object id | u32 BE |
+| Grid x, y | two u16 BE |
+| Appearance flags | u8: bit 0 mirror, bits 1-7 variation |
+| Rotation in radians | raw IEEE-754 f32 bits as u32 BE |
+
+Captured `005B0000300A010B00EA0000000000` moves object 0x300a to (267,234), rotation zero.
+Previously this packet was unframed and discarded, so the editor reverted the attempted move.
+It now has an explicit framing length, including when followed by another message in the same read.
+
+The Gateway accepts registered functional objects and NPCs only in the character's selected personal hideout.
+Town objects, pets, portals, unknown ids, out-of-grid/blocked terrain and nonfinite rotations are rejected.
+The Edit toggle is local client UI state; no separate server edit-mode toggle was observed.
+This implementation applies translation and rotation; variation and mirroring changes are not implemented.
+
+Save first, then update the runtime interaction coordinates, path blockers, NPC lookup and device placement.
+S→C 0x1b7 moves the existing object with terrain-height marker 0x7fffffff.
+S→C 0x2ba updates Positioned (component 0): LE u16 mask 8 followed by LE f32 radians.
+The update reader is `0x141e30910`; objects are never removed/recreated for an edit.
+This preserves dialogue identity, map-device state and existing portals.
+Already-open portals remain in their current positions; subsequent portals use the device's new position.
+
+`CharacterSaves.HideoutPlacements` stores placements by WorldAreas Id and stable furniture/NPC keys.
+Runtime object ids are not saved; reconnecting or restarting restores the positions for that template.
+Different characters and different templates keep independent layouts.
+A failed save leaves the previous placement authoritative and closes the connection through normal error handling.
+Stash interaction now approaches its runtime position, including after a move in any selected hideout.
+
+Tests cover captured framing, rotation endianness, invalid requests, persistence, save failure and scene restoration.
+Real-client movement/rotation and reconnect persistence were checked for the map device, Nessa and personal stash.
+The test placements were returned to their original positions afterwards.
+Other registered objects share the same update path; their individual Edit UI interactions still need manual checks.
 
 ### Horticrafting Station (recipe browser only)
 

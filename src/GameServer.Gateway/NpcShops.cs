@@ -53,8 +53,6 @@ static class NpcShops
     public const string Currency = "Scroll of Wisdom";
     public const int PriceInCurrency = 1;
 
-    /// <summary>What the NPC gives for any sold item, for now: one Scroll Fragment.</summary>
-    public const string SellReward = "Scroll Fragment";
 
     /// <summary>A shop tab: its name in the buy window (S→C 0x8c) and its items.</summary>
     public sealed record ShopTab(string Name, List<InventoryItem> Items);

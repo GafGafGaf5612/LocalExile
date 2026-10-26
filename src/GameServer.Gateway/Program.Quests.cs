@@ -194,15 +194,14 @@ partial class Program
         await Send(remote,stream,ciphers,InstanceProtocol.EnterWakeZone(id),null);
     }
 
-    static async Task OpenTutorialChest(string remote,NetworkStream stream,ConnectionCiphers ciphers,ClientState conn,InstanceTransfer.UseSkillOnObject use,TutorialObjects.Placement chest)
+    static async Task OpenTutorialChest(string remote,NetworkStream stream,ConnectionCiphers ciphers,ClientState conn,InstanceTransfer.UseSkillOnObject use,TutorialObjects.Placement chest,double requestedAt)
     {
         if(CharacterSaves.Load(CharacterName(conn))?.Tutorial is not { ChestOpened:false }) return;
-        int action=Interlocked.Increment(ref conn.ActionCount);
-        double now=conn.Clock.Elapsed.TotalSeconds;
-        var (here,stop,arrive)=conn.Walk.WalkUpTo(chest.X,chest.Y,1,now);
-        await Send(remote,stream,ciphers,InstanceProtocol.ActionStarted(PlayerId,here.X,here.Y,chest.X,chest.Y,use.SkillId,use.Sequence,use.Flags,targetObjectId:use.TargetId),null);
+        if (!TryBeginObjectWalk(conn, requestedAt, chest.X, chest.Y, 1, out var objectWalk)) return;
+        var (action, now, here, stop, arrive) = objectWalk;
+        await Send(remote,stream,ciphers,InstanceProtocol.ActionStarted(PlayerId,here.X,here.Y,chest.X,chest.Y,use.SkillId,use.Sequence,use.Flags,targetObjectId:use.TargetId),null,still:()=>PlayerActionCurrent(conn,action));
         if(arrive>now) await Task.Delay(TimeSpan.FromSeconds(arrive-now));
-        if(conn.ActionCount!=action || conn.Closed) return;
+        if(!PlayerActionCurrent(conn,action) || conn.Closed) return;
         if(!GameServer.Core.World.PlayerWalk.InWalkUpRange(stop,(chest.X,chest.Y),1))
         {
             await Send(remote,stream,ciphers,InstanceProtocol.ActionEnded(PlayerId),null);

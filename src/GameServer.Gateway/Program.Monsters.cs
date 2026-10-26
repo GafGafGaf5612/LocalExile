@@ -258,6 +258,8 @@ partial class Program
             mana = conn.PlayerMana;
         }
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
+        if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+            await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);
         // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
