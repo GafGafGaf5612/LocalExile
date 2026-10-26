@@ -108,6 +108,7 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   The overcapped-resistance modifiers (Sea Legs' flags: cold overcap as increased evasion, lightning overcap as
   increased critical chance) are implemented through the pools with automated and original-head native checks.
   Recheck the combined armed 830 +45% =1204 result and extreme signed cancellation on the resolved stack natively.
+  Recheck Purity plus typed/all-element dev replacements and zero maximum overrides after the aura-source correction.
   The pure base overrides are in as a generic stat consumer (`override_weapon_base_critical_strike_chance` and the
   unarmed base in `AttackBaseCriticalStrike`): Slayer Overwhelm, Blind Prophet's Sightless and Behemoth Final Blow
   have native-verified base calculations, active-set isolation and cannot-crit gates (Status and

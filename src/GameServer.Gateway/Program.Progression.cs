@@ -146,7 +146,12 @@ partial class Program
         // raw inputs: the resistances after the Kitava penalty and the per-type maxima, with an explicit dev stat
         // (/set_stat) replacing its own contribution. Pools stores the derived increases, so the pools, the panel and
         // the spell consumers read them from one place and nothing counts them twice.
-        bonus = ResistanceOvercap.Applied(bonus, sources, devStats, ResistancePenalty(conn), Stats);
+        // The bonus already includes Purity. Replacing one raw key must subtract its aura contribution too,
+        // including an explicit zero maximum, without removing other resistance keys or altering presentation.
+        var resistanceSources = new Dictionary<uint, int>(sources);
+        foreach (var (key, value) in AuraCatalog.ResistanceStats(auras, bonus.AuraEffectPct, Skills, Stats))
+            resistanceSources[key] = resistanceSources.GetValueOrDefault(key) + value;
+        bonus = ResistanceOvercap.Applied(bonus, resistanceSources, devStats, ResistancePenalty(conn), Stats);
         var pools = CharacterStats.For(Skills.ClassFor(conn.ClassRow), level, bonus);
         // The pure base critical stats (/set_stat too) sit outside the passive increases: the weapon override replaces
         // the armed main hand's base and the unarmed base replaces the empty one, before the global increases.
