@@ -510,6 +510,14 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Actor_take_hit_uses_animation_type_and_native_recovery_duration()
+    {
+        Assert.Equal("01D1000010000000000000003F0000000500",
+            Convert.ToHexString(InstanceProtocol.ActorAnimation(0x1000, .5f, 5)));
+        Assert.Equal(1, InstanceProtocol.ActorAnimation(0x1000, .5f, 5, checkInterruption: true)[^1]);
+    }
+
+    [Fact]
     public void A_skill_records_cooldown_is_its_third_u32()
     {
         // Haste: 1200 ms → skill +0xc8, which the client's cooldown reads.

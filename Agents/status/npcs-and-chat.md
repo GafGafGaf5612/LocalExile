@@ -14,7 +14,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   model; clicking walks to them and opens the dialogue window (S→C 0x84); talk options play (0x82 → 0x84 + index);
   Continue and Goodbye (C→S 0x85) are answered; Purchase Items opens the shop (S→C 0xc0 manager 1 + 0x8c) and buying
   (C→S 0x88) costs 1 Scroll of Wisdom; Sell Items: the sell window (S→C 0xb8) takes drops, Ctrl + click (first free
-  cell) and Shift + click, Accept gives 1 Scroll Fragment per item and Cancel returns them, and the player can walk
+  cell) and Shift + click, Accept pays the quoted reward and Cancel returns them, and the player can walk
   afterwards; Respecialisation opens the character's passive tree (0x7b kind 0x5f), where Apply refunds (C→S 0x36) and
   Refund All (0x37) refund passives for the client's gold price;
   the normal tree's Apply refunds (0x36 with flag 0) spend saved refund points;
@@ -36,7 +36,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   take-back/cancel restores the view, disconnect/crash preserves items, and acceptance exchanges items/payment in one
   save.
   Player-to-player trade remains unimplemented.
-  Live visibility verification pending; see protocol/17-npcs.md.
+  Recipe quotes cover rare sets, gem transformations, socket/quality salvage, upgrades and common equipment recipes.
+  Acceptance pays the cached outputs atomically, refuses a full inventory and preserves ingredients on save failure.
+  Exact affix prices and special league/unique recipes remain partial; real-client recipe verification is pending.
+  See [vendor recipes](../docs/protocol/24-vendor-recipes.md) for supported cases and explicit limitations.
 - **Nessa's shop tabs (2026-10-21; the gem tabs verified live, the maps and the tabbed window flag being tested):**
   Goods (her stock, one Beach Map, then every map of tiers 1-16) and Goods2 for the rest, then every shop gem in Red /
   Green / Blue Skills and Support and White Skills, 1 Scroll of Wisdom each, filled row by row.
