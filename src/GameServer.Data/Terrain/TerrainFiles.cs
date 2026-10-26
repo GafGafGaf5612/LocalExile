@@ -62,8 +62,9 @@ public static class TerrainText
         {
             var t = Tokenize(line);
             if (t.Count < 2 || t[0].Quoted) continue;
+            // The first quoted value, else every token after the key (OuterBufferSize takes up to four numbers).
             var value = t.Skip(1).FirstOrDefault(x => x.Quoted);
-            map[t[0].Text] = value.Text ?? t[1].Text;
+            map[t[0].Text] = value.Text ?? string.Join(' ', t.Skip(1).Select(x => x.Text));
         }
         return map;
     }

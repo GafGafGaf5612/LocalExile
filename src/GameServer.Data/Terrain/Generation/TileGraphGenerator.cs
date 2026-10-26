@@ -127,6 +127,8 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
         if (shared is null)
         {
             // The tile map has the graph's size plus the outer buffer on every side; graph positions sit at the buffer.
+            if (master.GetValueOrDefault("OuterBufferSize", "0").Split(' ') is { Length: > 1 })
+                throw new NotSupportedException($"{masterPath}: an OuterBufferSize with several margins on a tile graph's own map is not ported");
             int buffer = int.Parse(master.GetValueOrDefault("OuterBufferSize", "0"));
             grid = new TileGrid(Graph.Width + 2 * buffer, Graph.Height + 2 * buffer) { GroundFlags = g => files.Ground(g)?.Flags ?? 0, Unmirrored = files.Unmirrored };
             (_ox, _oy) = (buffer, buffer);
