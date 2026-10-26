@@ -63,6 +63,19 @@ sealed class InstanceState
         lock (_startWeapons) return _startWeapons.TryGetValue(character, out var placed) && placed.Id == id;
     }
 
+    readonly HashSet<(int X, int Y)> _openedChests = [];
+
+    /// <summary>Opens the quest chest standing at this cell (a Rhoa Nest): true the first time in this instance.</summary>
+    public bool OpenChest(int x, int y)
+    {
+        lock (_openedChests) return _openedChests.Add((x, y));
+    }
+
+    public bool ChestOpened(int x, int y)
+    {
+        lock (_openedChests) return _openedChests.Contains((x, y));
+    }
+
     public uint? PlaceTutorialItem(string key, WorldItemObject item)
     {
         lock (_startWeapons)

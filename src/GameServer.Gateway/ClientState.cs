@@ -56,6 +56,9 @@ sealed class NpcSale(SpawnedNpc npc, uint mine, uint theirs)
     public uint Theirs { get; } = theirs;
     // The offered items stay in the character's inventory cells until the sale ends (PlayerInventories.Offer).
     public List<InventoryItem> Reward = [];
+    public IReadOnlyList<InventoryItem> QuotedItems = [];
+    public IReadOnlyList<Item> QuotedRewards = [];
+    public string? QuoteError;
     public uint MineRevision, TheirsRevision;
 }
 
@@ -296,6 +299,7 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public double NextAttackAt;
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
     public int ActionCount;
+    public readonly PlayerHitRecovery HitRecovery = new();
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
@@ -303,6 +307,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
     // When each skill with a cooldown (GrantedEffects row) may be used again, in Clock seconds. Guarded by the Monsters lock.
     public readonly Dictionary<int, double> SkillReadyAt = [];
+    // Eligible ordinary one-use cooldowns retain remaining base-time units through recovery-rate changes.
+    public readonly Dictionary<int, SingleUseCooldownState> SingleUseCooldowns = [];
     // The skill ids the client has on this connection's player (SendPlayer, SendSkills): the 0x40 skill list only adds,
     // so the ones that leave are removed by id.
     public HashSet<ushort> ClientSkillIds = [];
@@ -361,6 +367,8 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>
     public uint GuildStashObject;
     public (int X, int Y) GuildStashAt;
+    public uint HeistLockerObject;
+    public (int X, int Y) HeistLockerAt;
     public uint HorticraftingObject;
     public (int X, int Y) HorticraftingAt;
     public uint CraftingBenchObject;
@@ -369,6 +377,9 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint BenchBalanceRevision;
     public IReadOnlyList<InventoryItem> BenchBalanceItems = [];
     public HideoutScene? Furniture;
+    public readonly HideoutEditing HideoutEditor = new();
+    public (int X, int Y) StashAt;
+    public void MoveWaypoint(WaypointObject waypoint) => Layout = Layout with { Waypoint = waypoint };
     public (int X, int Y) CraftingBenchAt;
     public readonly HashSet<int> GuildStashTabsSent = [];
     public bool GuildStashOpen;
@@ -383,6 +394,11 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Whether the open dialogue shows an NPCTalk row's talk (0x84 with its index) rather than the option list.
     public volatile bool InNpcTalk;
     public uint TutorialSceneId, TutorialChestId;
+    // a1q4 in The Mud Flats (GlyphQuest): the captured layout, the nests by object id (guarded by itself), the wall and the waterfall.
+    public GlyphQuest.Layout? Glyphs;
+    public readonly Dictionary<uint, GlyphQuest.Nest> GlyphNests = [];
+    public uint GlyphWallId, GlyphWaterId;
+    public double GlyphSyncAt;
     public TutorialObjects.Placement? TutorialChest;
     public AreaPopulation.RoomObject? TutorialZombiePlacement;
     public bool TutorialSceneRunning;
@@ -393,6 +409,13 @@ sealed class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly Dictionary<uint, SpawnedNpc> Npcs = [];
     /// <summary>The character's quest flags (QuestFlags.dat Ids), saved in data/saves/.</summary>
     public HashSet<string> QuestFlags = [];
+    // QuestFlags is changed under the Monsters lock (SetQuestFlagsHeld); code that may run beside it (the player tick)
+    // reads it through these, under the same lock.
+    public HashSet<string> QuestFlagsSnapshot() { lock (Monsters) return [.. QuestFlags]; }
+    public bool HasQuestFlag(string flag) { lock (Monsters) return QuestFlags.Contains(flag); }
+    // One quest-flag change at a time per connection (SetQuestFlags, SyncGlyphs): each reads, changes and sends the whole
+    // set, so two at once could send an older set last.
+    public readonly SemaphoreSlim QuestGate = new(1, 1);
 
     /// <summary>The character's league quest flags (client ids, Quests.League); not saved: every character has the same.</summary>
     public HashSet<int> LeagueQuestFlags = [.. Quests.League.EveryCharacter, .. Program.Bench.UnlockFlags];

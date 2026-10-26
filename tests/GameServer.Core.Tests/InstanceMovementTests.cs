@@ -37,6 +37,43 @@ public class InstanceMovementTests
     }
 
     [Fact]
+    public void Location_instant_skill_preserves_unsigned_coordinates_and_has_no_sequence()
+    {
+        byte[] bytes = Convert.FromHexString("01900000011A0000012B0103");
+        Assert.Equal(12, InstanceProtocol.KnownClientLength(InstanceProtocol.UseInstantSkillAtLocationId));
+        Assert.Equal((282u, 299u, (ushort)0x0103), InstanceProtocol.ReadUseInstantSkillAtLocation(bytes));
+        Assert.Equal((uint.MaxValue, 0x80000000u, (ushort)0x0103),
+            InstanceProtocol.ReadUseInstantSkillAtLocation(Convert.FromHexString("0190FFFFFFFF800000000103")));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(6)]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void Split_location_instant_request_keeps_following_object_instant_and_tick(int cut)
+    {
+        byte[] location = Convert.FromHexString("01900000011A0000012B0103");
+        Assert.Empty(InstanceProtocol.SplitClientMessages(location[..cut], out var partial, out var unknown));
+        Assert.Equal(location[..cut], partial);
+        Assert.Empty(unknown);
+        byte[] remainder = [.. partial, .. location[cut..], .. Convert.FromHexString("0191000010000105001B00")];
+        var messages = InstanceProtocol.SplitClientMessages(remainder, out partial, out unknown);
+        Assert.Equal(new ushort[] { 0x190, 0x191 }, messages.Select(m => m.Id));
+        Assert.Equal(location, messages[0].Bytes);
+        Assert.Equal("001B00", Convert.ToHexString(partial));
+        Assert.Empty(unknown);
+    }
+
+    [Fact]
+    public void Location_instant_acceptance_has_a_ground_target_and_no_action_sequence()
+    {
+        Assert.Equal("01CE000010000000000000000103FFFF000080FE8138",
+            Convert.ToHexString(InstanceProtocol.InstantAction(0x1000, 0x0103, 254, 312)));
+    }
+
+    [Fact]
     public void Use_instant_skill_parses_a_live_capture()
     {
         // Haste (skill 0x0105) cast on the player itself.
@@ -92,11 +129,17 @@ public class InstanceMovementTests
     [Fact]
     public void Splitter_frames_known_messages_and_keeps_partials()
     {
-        // 0x0099 then a tick, as one live chunk; then a tick cut in two.
-        byte[] chunk = Convert.FromHexString("0099000001340334000100013400010101000129" + "001B0005768AF5" + "001B00");
+        // 0x0099, the two chat channel joins and 0x0129, then a tick, as one live chunk; then a tick cut in two.
+        byte[] chunk = Convert.FromHexString("00990000" + "01340334000100" + "01340001010100" + "0129" + "001B0005768AF5" + "001B00");
         var msgs = InstanceProtocol.SplitClientMessages(chunk, out byte[] partial, out byte[] unknown);
-        Assert.Equal(new ushort[] { 0x0099, 0x001b }, msgs.Select(m => m.Id));
+        Assert.Equal(new ushort[] { 0x0099, 0x0134, 0x0134, 0x0129, 0x001b }, msgs.Select(m => m.Id));
         Assert.Equal("001B00", Convert.ToHexString(partial));
+        Assert.Empty(unknown);
+
+        // A join cut across two reads waits for its last bytes.
+        msgs = InstanceProtocol.SplitClientMessages(Convert.FromHexString("0129" + "01340334"), out partial, out unknown);
+        Assert.Equal(new ushort[] { 0x0129 }, msgs.Select(m => m.Id));
+        Assert.Equal("01340334", Convert.ToHexString(partial));
         Assert.Empty(unknown);
 
         InstanceProtocol.SplitClientMessages(Convert.FromHexString("ABCD01"), out _, out unknown);
