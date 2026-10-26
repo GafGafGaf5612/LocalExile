@@ -83,4 +83,24 @@ public class HideoutEditingTests
         Assert.Equal(scene.Device.Model, changed.Device.Model);
         Assert.Equal(scene, HideoutEditing.Apply(scene, null));
     }
+
+    [Fact]
+    public void Device_placement_survives_inventory_and_progress_saves_before_reentry()
+    {
+        TestSaves.Ensure();
+        string name = "Device-" + Guid.NewGuid().ToString("N");
+        CharacterSaves.Write(name, new([], Experience: 1));
+        CharacterSaves.SetHideoutPlacement(name, "HideoutArenaMaven", "map-device", new(100, 200, 1.5f));
+        CharacterSaves.SetInventories(name, []);
+        CharacterSaves.SetAuraActive(name, "Grace", true);
+        var position = CharacterSaves.Load(name)!.HideoutPlacements!["HideoutArenaMaven"]["map-device"];
+        Assert.Equal(new HideoutPlacement(100, 200, 1.5f), position);
+        var editor = new HideoutEditing();
+        editor.Register(999, "map-device", position.X, position.Y, position.Rotation, ClientState.MapDeviceBlockerSize);
+        Assert.True(editor.TryMove(new(999, 110, 210, 0, 2), (_, _) => true,
+            (key, p) => CharacterSaves.SetHideoutPlacement(name, "HideoutArenaMaven", key, p), out var moved));
+        Assert.Equal(ClientState.MapDeviceBlockerSize, moved!.BlockerSize);
+        Assert.Equal(new HideoutPlacement(110, 210, 2),
+            CharacterSaves.Load(name)!.HideoutPlacements!["HideoutArenaMaven"]["map-device"]);
+    }
 }
