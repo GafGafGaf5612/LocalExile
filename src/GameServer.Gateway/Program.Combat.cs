@@ -4,12 +4,23 @@ using GameServer.Core.Protocol.Login;
 using WalkEstimator = GameServer.Core.World.WalkEstimator;
 using Progression = GameServer.Core.World.Progression;
 using DamageModel = GameServer.Core.World.DamageModel;
+using TargetAccuracy = GameServer.Core.World.TargetAccuracy;
 using DamageType = GameServer.Core.World.DamageType;
 using DamagePacket = GameServer.Core.World.DamagePacket;
 using DamageRange = GameServer.Core.World.DamageRange;
 
 partial class Program
 {
+    // Sample both moving actors at the hit time, after the approach and contact delay.
+    internal static (int Accuracy, bool Unique, bool CloseRange) AttackAccuracyAt(
+        ClientState conn, SpawnedMonster target, double at)
+    {
+        bool unique = target.Rarity == MonsterRarity.Unique;
+        bool close = TargetAccuracy.InCloseRange(Dist(conn.Walk.Position(at), target.Walk.Position(at)));
+        return (TargetAccuracy.AgainstTarget(conn.Pools.Accuracy, conn.Pools.AccuracyMoreVsUniquePct,
+            conn.Pools.AccuracyMoreInCloseRangePct, unique, close), unique, close);
+    }
+
     // A ground bow shot reserves pacing, its action token and stationary walk together with the input-time gate.
     internal static bool TryBeginBowAttack(ClientState conn, double requestedAt, double duration,
         ushort skill, ushort sequence, out (int Action, int X, int Y) started)
@@ -153,7 +164,14 @@ partial class Program
                 Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled by a later action");
                 return;
             }
-            accuracy = conn.Pools.Accuracy;
+            // The Accuracy Mastery's target conditions at the roll: the target's own rarity and its distance at the hit
+            // resolution time (TargetAccuracy). Spells do not roll, so spells never see these.
+            var targetAccuracy = AttackAccuracyAt(conn, m, conn.Clock.Elapsed.TotalSeconds);
+            bool unique = targetAccuracy.Unique, closeRange = targetAccuracy.CloseRange;
+            accuracy = targetAccuracy.Accuracy;
+            if (accuracy != conn.Pools.Accuracy)
+                Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}, {m.Rarity}): accuracy {conn.Pools.Accuracy} -> {accuracy} " +
+                    $"for the target ({(unique ? "unique target, " : "")}{(closeRange ? "in close range (20 units) " : "")}accuracy mastery more)");
             evasion = Monsters.BaseEvasion(m.Level) ?? 0;
         }
         int hitChance = DamageModel.AccuracyHitChance(evasion, accuracy);
