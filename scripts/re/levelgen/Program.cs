@@ -18,6 +18,7 @@ return args.FirstOrDefault() switch
     "serve" => Serve.Run(Dispatch),
     "worker" => Gate.Worker(),
     "gate" => Gate.Run(args.Skip(1).ToArray()),
+    "survey" => Gate.Survey(args.Skip(1).ToArray()),
     _ => Serve.Forward(args) ?? Dispatch(args),
 };
 
@@ -169,6 +170,11 @@ static int Dispatch(string[] args)
                 // walk [<area id> <seed>]: the port's walkability and projectile grids against the walk-map capture
                 // (data/walkability/<area>_seed<seed>.bin and .projectile.bin); without an area, one line per seed-1 capture.
                 Walk(args.Length > 1 ? args[1] : null, args.Length > 2 ? uint.Parse(args[2]) : 1);
+                break;
+            case "heights":
+                // heights <area id> <seed>: the port's cell heights (CellHeights) against the recorder's
+                // (data/walkability/<area>_seed<seed>.heights.bin): how many cells differ, the first ones, by tile.
+                Heights(args[1], uint.Parse(args[2]));
                 break;
             case "doodads":
                 // doodads <area id> <seed>: the doodad stage after the port's generation, its draws against the trace and its
@@ -367,6 +373,35 @@ static void Walk(string? areaId, uint seed)
         {
             Console.WriteLine($"{id} stop ({e.Message.Split('\n')[0]})");
         }
+    }
+}
+
+static void Heights(string areaId, uint seed)
+{
+    var fs = OpenGame();
+    var files = Files();
+    string stem = Path.Combine(Root(), "data", "walkability", $"{areaId}_seed{seed}");
+    int level = 1;
+    if (File.Exists(stem + ".gen.json"))
+        using (var head = JsonDocument.Parse(File.ReadAllText(stem + ".gen.json")))
+            level = head.RootElement.TryGetProperty("level", out var l) ? l.GetInt32() : 1;
+    var area = AreaInfo.Load(p => fs.TryReadFile(p, out var d) ? d : null, areaId, level);
+    var grid = LevelGenerator.Generate(files, area, seed).Grid;
+    var mine = CellHeights.Build(grid, t => files.Walk(t.Path));
+    int w = grid.Width * 23;
+    Console.WriteLine($"{areaId} seed {seed}: {grid.Width}x{grid.Height} tiles, heights {mine.Min()} … {mine.Max()}");
+    if (!File.Exists(stem + ".heights.bin")) { Console.WriteLine($"no {stem}.heights.bin (live.ps1 -Walkmaps)"); return; }
+    var bytes = File.ReadAllBytes(stem + ".heights.bin");
+    if (bytes.Length != mine.Length * 2) { Console.WriteLine($"capture has {bytes.Length / 2} cells, the port {mine.Length}"); return; }
+    var diffs = Enumerable.Range(0, mine.Length).Where(i => mine[i] != BitConverter.ToInt16(bytes, i * 2)).ToList();
+    Console.WriteLine($"cells: {diffs.Count} of {mine.Length} differ");
+    foreach (var g in diffs.GroupBy(i => (i % w / 23, i / w / 23)).Take(12))
+    {
+        var (tx, ty) = g.Key;
+        var e = grid[tx, ty];
+        int i = g.First();
+        Console.WriteLine($"  tile ({tx}, {ty}) {e?.Tile.Path ?? "empty"} o{e?.Orientation} +{e?.HeightOffset}: {g.Count()} cells, " +
+            $"first ({i % w}, {i / w}) client {BitConverter.ToInt16(bytes, i * 2)} port {mine[i]}");
     }
 }
 

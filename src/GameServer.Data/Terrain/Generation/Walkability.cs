@@ -20,6 +20,22 @@ public sealed record SubTileWalk(byte F, byte G, byte[]? Hull)
     public int Mesh { get; init; }
     /// <summary>The sub-tile's placement code in the tile (+0x37 bits 5–7, the second extra byte).</summary>
     public int Code { get; init; }
+
+    /// <summary>The sub-tile's height byte map as the client keeps it (<c>0x1429f59a0</c>): empty (all 0), one value,
+    /// or 23 × 23 cells packed against a palette (<see cref="HeightAt"/>).</summary>
+    public byte[] Heights { get; init; } = [];
+
+    /// <summary><c>0x141d8fc40</c>: the height of cell <paramref name="i"/> (y × 23 + x in the sub-tile's own frame).
+    /// 0x45 bytes: a palette of 2 and 1 bit per cell; 0x89: 4 and 2 bits; 0x119: 16 and 4 bits; 0x211: one byte each.</summary>
+    public sbyte HeightAt(int i) => (sbyte)(Heights.Length switch
+    {
+        0 => 0,
+        1 => Heights[0],
+        0x45 => Heights[Heights[(i >> 3) + 2] >> (i & 7) & 1],
+        0x89 => Heights[Heights[(i >> 2) + 4] >> ((i & 3) * 2) & 3],
+        0x119 => Heights[Heights[(i >> 1) + 0x10] >> ((i & 1) << 2) & 0xf],
+        _ => Heights[i],
+    });
 }
 
 /// <summary>A tile's walkability data (<c>0x1429f31a0</c>): the hull plane masks (tile data +0x172 count − 1, +0x173
@@ -84,17 +100,31 @@ public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
                 // The three extra bytes: mesh index, placement code, height step (+0x37 low nibble and 0x10, not ported).
                 int mesh = 0, code = 0;
                 if ((flags & 0x200) != 0) { mesh = data[p]; code = data[p + 1] & 7; p += 3; }
+                byte[] heights = [];
                 if ((f & 4) == 0)
                 {
-                    if (version < 10) p += 0x211;
+                    if (version < 10) { heights = data[p..(p + 0x211)]; p += 0x211; }
                     else
                     {
                         // 0x1429f59a0: bits 0-2 compression (0: one value), bits 3-4 extra length bytes, bits 5-7 the
-                        // low bits of the value (the compressed length).
+                        // low bits of the value (mode 0: the value itself, none when 0; else the compressed length,
+                        // LZ4 into 0x45 / 0x89 / 0x119 / 0x211 bytes for modes 1 … 4).
                         byte head = data[p++];
                         int value = head >> 5;
                         for (int k = 0; k < ((head >> 3) & 3); k++) value |= data[p++] << (3 + 8 * k);
-                        if ((head & 7) != 0) p += value;
+                        int mode = head & 7;
+                        if (mode == 0) heights = value == 0 ? [] : [(byte)value];
+                        else
+                        {
+                            int size = mode switch
+                            {
+                                1 => 0x45, 2 => 0x89, 3 => 0x119, 4 => 0x211,
+                                _ => throw new InvalidDataException("Unknown data compression"),
+                            };
+                            heights = new byte[size];
+                            if (Lz4.Decompress(data[p..(p + value)], heights) != size) throw new InvalidDataException("Failed to decompress byte map");
+                            p += value;
+                        }
                     }
                 }
                 if (version < 10 && (f & 3) != 3) { f |= 0xe0; g |= 1; }
@@ -105,7 +135,7 @@ public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
                     hull = data[(p + 2)..(p + 2 + n)];
                     p += 2 + n;
                 }
-                subs[i] = new SubTileWalk(f, g, hull) { Mesh = mesh, Code = code };
+                subs[i] = new SubTileWalk(f, g, hull) { Mesh = mesh, Code = code, Heights = heights };
             }
             return new TileWalk(masks, subs);
         }

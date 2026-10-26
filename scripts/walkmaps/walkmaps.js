@@ -159,6 +159,35 @@ function hookDoodads(exe) {
 //   draws: [kind, caller VA, argument, result]; kind 'n' = 0x141ff9720(n), 'u' = 0x141f5d130(n) called directly,
 //   'r' = a raw mt19937 draw (0x140a0f990) not made by those two, 'l' = LCG bits (0x140e3b310).
 //   tiles: [x, y, .tdt path, height (+0x30), rotation (+0x36), flags +0x34, +0x35] for every non-empty grid entry.
+// The ground height of every cell of the finished tile map, as the client reads it (0x141d84a10(map, &[x, y]): the
+// highest of the map's height rectangles at +0x130 that has the cell, else the tile's byte map at the cell turned by
+// the entry's code plus map +0x104 × the entry's height +0x30; × 7.8125 gives world units, 0x141d84be0). Sent as i16
+// per cell, row by row; walkmaps.py writes <area>_seed<seed>.heights.bin. Also the map's +0x104 and how many height
+// rectangles it has, to see whether generation ever adds any.
+let heightModule = null;
+function sendCellHeights(area, seed, map, w, h) {
+  const fn = exe.base.add(ptr('0x141d84a10').sub(IMAGE_BASE));
+  if (heightModule === null)
+    heightModule = new CModule(`
+      typedef int (*height_fn)(void *, int *);
+      int cell_heights(void *map, height_fn f, int w, int h, short *out) {
+        int c[2], bad = 0;
+        for (int y = 0; y < h; y++)
+          for (int x = 0; x < w; x++) {
+            c[0] = x; c[1] = y;
+            int v = f(map, c);
+            if (v < -32768 || v > 32767) { bad++; v = v < 0 ? -32768 : 32767; }
+            out[y * w + x] = (short)v;
+          }
+        return bad;
+      }`);
+  const run = new NativeFunction(heightModule.cell_heights, 'int', ['pointer', 'pointer', 'int', 'int', 'pointer']);
+  const out = Memory.alloc(w * h * 2);
+  const clipped = run(map, fn, w, h, out);
+  const rects = map.add(0x138).readPointer().sub(map.add(0x130).readPointer()).toInt32() / 0x30;
+  send({ type: 'cell-heights', area, seed, w, h, storey: map.add(0x104).readS16(), rects, clipped }, out.readByteArray(w * h * 2));
+}
+
 function hookGeneration(exe) {
   const at = va => exe.base.add(ptr(va).sub(IMAGE_BASE));
   const hooks = {
@@ -223,6 +252,7 @@ function hookGeneration(exe) {
           }
         send({ type: 'generation', area, level: world.add(0xd4).readU8(), seed: this.seed, finalSeed: gen.add(0x30).readPointer().add(4).readU32(),
                tileHash: world.add(0x114).readU32(), w, h, tiles, draws, graphs: graphStages, relaxRecords, fillVertices, paint, dungeon, dungeons, subgraphs, fills: dungeonFills, heights: heightStages });
+        sendCellHeights(area, this.seed, grid, w * 23, h * 23);
       } catch (e) {
         send({ type: 'error', message: 'generation: ' + String(e) });
       }

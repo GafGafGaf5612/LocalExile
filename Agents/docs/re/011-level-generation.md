@@ -1146,6 +1146,24 @@ doodads (without doodads: none; median 99.44% walk, 99.89% projectile). The dung
 the outer buffer's vertex flag 8 (§3g step 7): a buffer tile with a hull cell of 1 and only the two corners the pass
 had flagged; with all four flagged it lays a blocked patch.
 
+**Cell heights** (`CellHeights.cs`). The terrain height at a world point is `0x141d84be0`. It takes the cell (× 0.092,
+23 cells per tile), reads the four cells around the point with `0x141d84a10`, multiplies each by 7.8125 and
+interpolates bilinearly. A cell's height (`0x141d84a10`) is the highest of the map's height rectangles at +0x130
+that hold it (0x30-byte entries: u16 x, y, w, h at +4, i32 base +0xc, an i8 per cell at +0x18, −0x80 = none). With
+none, `0x141d84b00` gives the entry's sub-tile height at the cell (`0x141d7d100`) plus map +0x104 × the entry's
+height +0x30. `0x141d7d100` turns the cell back into the tile's frame. Its code is `0x142fb7f98[orientation]`
+(0, 3, 2, 1, 4 … 8: 1 and 3 swap); `0x142fa04b0` then picks the column and row from (22 − x, x, 22 − y, y). The
+sub-tile height is a byte map in the `.tdt`, the field the walkability parser used to skip. `0x1429f59a0` reads
+it. Before version 10 it is 0x211 raw bytes. From version 10 a head byte has fields of 3, 2 and 3 bits: the mode,
+the count of extra length bytes, and the value's low bits. Mode 0 is one value (none when 0, which reads as 0).
+Modes 1 … 4 are an LZ4 block of `value` bytes into 0x45 / 0x89 / 0x119 / 0x211 bytes, "Unknown data
+compression" otherwise. `0x141d8fc40` reads a cell from it: 0x45 bytes are a palette of 2 then 1 bit per cell,
+0x89 a palette of 4 then 2 bits, 0x119 a palette of 16 then 4 bits, 0x211 one signed byte per cell. The recorder
+reads every cell through `0x141d84a10` once generation ends (`<area>_seed<seed>.heights.bin`, i16). In all 30 loads
+captured (2026-10-26), map +0x104 is 1 and there are no height rectangles. The port's entry heights already carry
+StoreyHeight, so it uses neither. All of those loads match cell for cell (`levelgen heights`, the gate's "cell
+heights").
+
 ## 6c. Doodads (`DoodadStage.cs`, `DoodadHull.cs`)
 
 `0x1420425d0` ("Generating doodads...", step +0x58 of §1) over the subgraph records (generator +0x30 → +0x10, 0x98

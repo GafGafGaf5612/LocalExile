@@ -81,7 +81,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
 - **Level generator port (not used by the Gateway yet).** `GameServer.Data/Terrain/Generation` reproduces the client's
-  level generator: the tile grid, the walkability and projectile grids, and the doodads.
+  level generator: the tile grid, the walkability and projectile grids, the doodads and every cell's ground height
+  (`CellHeights.cs`; all 30 loads with a height capture match cell for cell).
   All 197 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
   and every 3.29.3 load the client logged matches by tile hash (`scripts/re/levelgen/gate.ps1`).
   The client's stages after the doodads (mesh variation, ground clutter, critters) are client-only and not ported.

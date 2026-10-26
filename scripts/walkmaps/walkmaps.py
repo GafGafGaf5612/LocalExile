@@ -102,6 +102,8 @@ def on_message(message, data, out):
         save_doodads(out, payload.get("doodads") or [])
     elif kind == "generation":
         save_generation(out, payload)
+    elif kind == "cell-heights" and data is not None:
+        save_cell_heights(out, payload, data)
     elif kind == "room":
         save_room(out, payload)
 
@@ -231,6 +233,19 @@ def save_doodads(out, batch):
     os.replace(stem + ".doodads.json.tmp", stem + ".doodads.json")
     if len(found) == len(batch) or len(found) // 1000 != (len(found) - len(batch)) // 1000:
         log(f"{os.path.basename(stem)}: {len(found)} doodads")
+
+
+def save_cell_heights(out, info, cells):
+    """Every cell's ground height (i16, row by row, the client's 0x141d84a10) of one generated area:
+    <area>_seed<seed>.heights.bin, named like the generation trace."""
+    if not info.get("area"):
+        return
+    stem = os.path.join(out, f"{info['area']}_seed{info['seed']}")
+    with open(stem + ".heights.bin.tmp", "wb") as f:
+        f.write(cells)
+    os.replace(stem + ".heights.bin.tmp", stem + ".heights.bin")
+    log(f"{os.path.basename(stem)}: cell heights {info.get('w')}x{info.get('h')}, map +0x104 {info.get('storey')}, "
+        f"{info.get('rects')} height rectangles, {info.get('clipped')} clipped to i16")
 
 
 def save_generation(out, gen):

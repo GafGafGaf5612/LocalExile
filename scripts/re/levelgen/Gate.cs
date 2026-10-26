@@ -16,10 +16,12 @@ namespace LevelGenTool;
 static class Gate
 {
     /// <summary>One check's outcome. Capture checks fill all fields, oracle checks only <see cref="Hash"/>.
-    /// <see cref="Captured"/> is -1 for a trace with no doodad capture (no .doodads.json).</summary>
+    /// <see cref="Captured"/> is -1 for a trace with no doodad capture (no .doodads.json); <see cref="Heights"/> (cells
+    /// whose ground height differs) is -1 with no height capture (no .heights.bin).</summary>
     public sealed record Result(string Hash, int Draws = 0, int TraceDraws = 0, string? FirstDiff = null, int Walk = -1, int Projectile = -1,
-        int Placed = 0, int Matched = 0, int Captured = 0)
+        int Placed = 0, int Matched = 0, int Captured = 0, int Heights = -1)
     {
+        [System.Text.Json.Serialization.JsonIgnore] public bool HeightsOk => HashOk && Heights == 0;
         [System.Text.Json.Serialization.JsonIgnore] public bool HashOk => Hash == "match";
         [System.Text.Json.Serialization.JsonIgnore] public bool GridsOk => Walk == 0 && Projectile == 0;
         /// <summary>The port placed the captured doodads, and only those; an empty capture (an area that places none)
@@ -84,6 +86,50 @@ static class Gate
         return lost > 0 ? 1 : 0;
     }
 
+    /// <summary>`levelgen survey [--jobs N]`: every WorldAreas row with a topology that has no generation trace
+    /// (data/tables/WorldAreas.json), run through the port at seed 1 and its area level: generation, walkability,
+    /// the doodad stage and the cell heights. Nothing to compare with: "ok" says only that the port got through, a
+    /// stop names what it does not support. Written to survey-latest.json beside the baseline (local).</summary>
+    public static int Survey(string[] args)
+    {
+        string root = Shared.Root();
+        int jobs = Math.Clamp(Environment.ProcessorCount / 2, 1, 8);
+        for (int i = 0; i < args.Length; i++)
+            if (args[i] == "--jobs") jobs = int.Parse(args[++i]);
+        using var areas = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "data", "tables", "WorldAreas.json")));
+        var tasks = new List<string>();
+        foreach (var row in areas.RootElement.EnumerateArray())
+        {
+            string id = row.GetProperty("Id").GetString()!;
+            if (row.GetProperty("TopologiesKeys").GetArrayLength() == 0) continue;
+            if (Directory.GetFiles(Path.Combine(root, "data", "walkability"), $"{id}_seed*.gen.json").Length > 0) continue;
+            tasks.Add($"survey\t{id}\t{Math.Max(1, row.GetProperty("AreaLevel").GetInt32())}");
+        }
+        var clock = Stopwatch.StartNew();
+        var results = RunWorkers(tasks, jobs);
+        Console.WriteLine($"survey: {tasks.Count} areas with {jobs} workers in {clock.Elapsed.TotalSeconds:0}s");
+        Write(Path.Combine(root, "scripts", "re", "levelgen", "survey-latest.json"), results);
+        foreach (var g in results.Values.GroupBy(r => r.Hash.StartsWith("stop") ? r.Hash : "ok").OrderByDescending(g => g.Count()))
+            Console.WriteLine($"  {g.Count(),4} × {g.Key}");
+        return 0;
+    }
+
+    /// <summary>A survey task: the port at seed 1, as far as it goes (<see cref="Survey"/>). The size goes in
+    /// <see cref="Result.FirstDiff"/> ("w x h tiles, n doodads, heights lo … hi").</summary>
+    static Result SurveyArea(string areaId, int level)
+    {
+        var files = Shared.Files();
+        var area = AreaInfo.Load(Shared.Read, areaId, level);
+        var rng = new LevelRandom(1, area.RandomnessDisabled);
+        var result = LevelGenerator.Generate(files, area, 1, rng: rng);
+        var walk = Walkability.Build(result.Grid, tile => files.Walk(tile.Path));
+        var stage = new DoodadStage(files, rng, result.Grid, walk, []);
+        stage.Run(result.Records);
+        var heights = CellHeights.Build(result.Grid, tile => files.Walk(tile.Path));
+        return new Result("ok", FirstDiff: $"{result.Grid.Width}x{result.Grid.Height} tiles, {stage.Placed.Count} doodads, " +
+            $"heights {(heights.Length == 0 ? 0 : heights.Min())} … {(heights.Length == 0 ? 0 : heights.Max())}");
+    }
+
     /// <summary>One check per line, so a diff of the baseline shows the checks that changed.</summary>
     static void Write(string path, SortedDictionary<string, Result> results) =>
         File.WriteAllText(path, "{\n" + string.Join(",\n", results.Select(r => $"  {JsonSerializer.Serialize(r.Key)}: {JsonSerializer.Serialize(r.Value, Json)}")) + "\n}\n");
@@ -138,7 +184,7 @@ static class Gate
     static string Key(string task)
     {
         var f = task.Split('\t');
-        return f[0] == "capture" ? $"capture {f[1]}" : $"oracle {f[1]} {f[2]}";
+        return f[0] switch { "capture" => $"capture {f[1]}", "survey" => $"survey {f[1]}", _ => $"oracle {f[1]} {f[2]}" };
     }
 
     /// <summary>`levelgen worker`: one task per stdin line, one JSON result per stdout line.</summary>
@@ -151,7 +197,15 @@ static class Gate
         {
             var f = line.Split('\t');
             Result r;
-            try { r = f[0] == "capture" ? Capture(f[1]) : Oracle(f[1], uint.Parse(f[2]), int.Parse(f[3]), uint.Parse(f[4])); }
+            try
+            {
+                r = f[0] switch
+                {
+                    "capture" => Capture(f[1]),
+                    "survey" => SurveyArea(f[1], int.Parse(f[2])),
+                    _ => Oracle(f[1], uint.Parse(f[2]), int.Parse(f[3]), uint.Parse(f[4])),
+                };
+            }
             catch (Exception e) { r = new Result("stop: " + Reason(e)); }
             finally { Shared.ResetHooks(); }
             output.WriteLine(JsonSerializer.Serialize(r));
@@ -177,7 +231,7 @@ static class Gate
         }
         catch (Exception) when (traced) { }
         finally { Shared.ResetHooks(); }
-        return Capture(areaId, seed, hash) with { Walk = -1, Projectile = -1, Placed = 0, Matched = 0, Captured = 0 };
+        return Capture(areaId, seed, hash) with { Walk = -1, Projectile = -1, Placed = 0, Matched = 0, Captured = 0, Heights = -1 };
     }
 
     static Result Capture(string areaId, uint seed = 1, uint? loggedHash = null)
@@ -198,7 +252,7 @@ static class Gate
             hash = result.Grid.Hash() == clientHash ? "match" : "mismatch";
         }
         catch (Exception e) { hash = "stop: " + Reason(e); }
-        int walkDiff = -1, projDiff = -1, placed = 0, matched = 0, captured = File.Exists(stem + ".doodads.json") ? 0 : -1;
+        int walkDiff = -1, projDiff = -1, placed = 0, matched = 0, captured = File.Exists(stem + ".doodads.json") ? 0 : -1, heightDiff = -1;
         if (result is not null)
         {
             var walk = Walkability.Build(result.Grid, tile => files.Walk(tile.Path));
@@ -207,6 +261,13 @@ static class Gate
             catch (Exception e) when (e is NotSupportedException or InvalidDataException or InvalidOperationException) { }
             walkDiff = Differ(walk.Walk, stem + ".bin");
             projDiff = Differ(walk.Projectile, stem + ".projectile.bin");
+            if (File.Exists(stem + ".heights.bin"))
+            {
+                var heights = CellHeights.Build(result.Grid, tile => files.Walk(tile.Path));
+                var recorded = File.ReadAllBytes(stem + ".heights.bin");
+                heightDiff = recorded.Length != heights.Length * 2 ? int.MaxValue
+                    : heights.Where((v, i) => v != BitConverter.ToInt16(recorded, i * 2)).Count();
+            }
             if (File.Exists(stem + ".doodads.json"))
             {
                 using var dd = JsonDocument.Parse(File.ReadAllText(stem + ".doodads.json"));
@@ -225,7 +286,7 @@ static class Gate
         int same = 0;
         while (same < theirs.Count && same < mine.Count && theirs[same].Kind == mine[same].Kind && theirs[same].Arg == mine[same].Arg && theirs[same].Result == mine[same].Result) same++;
         string? first = same < theirs.Count ? theirs[same].Caller + (same < mine.Count ? "" : " (port stopped)") : null;
-        return new Result(hash, same, theirs.Count, first, walkDiff, projDiff, placed, matched, captured);
+        return new Result(hash, same, theirs.Count, first, walkDiff, projDiff, placed, matched, captured, heightDiff);
     }
 
     static int Differ(byte[] mine, string file)
@@ -255,6 +316,9 @@ static class Gate
         Console.WriteLine($"  seed-1 traces, both grids exact: {g1} of {c1}{D(g1, g0)}");
         Console.WriteLine($"  seed-1 traces, every port draw: {r1} of {c1}{D(r1, r0)}");
         Console.WriteLine($"  seed-1 traces, every doodad:    {d1} of {c1 - uncaptured}{D(d1, d0)} ({uncaptured} with no doodad capture)");
+        static int Heights(SortedDictionary<string, Result> r) => r.Count(p => p.Key.StartsWith("capture ") && p.Value.HeightsOk);
+        int withHeights = now.Count(p => p.Key.StartsWith("capture ") && p.Value.Heights >= 0);
+        Console.WriteLine($"  seed-1 traces, cell heights:    {Heights(now)} of {withHeights}{D(Heights(now), Heights(before))} ({c1 - withHeights} with no height capture)");
         var stops = now.Where(p => p.Key.StartsWith("capture ")).Select(p => p.Value.Hash).GroupBy(h => h.StartsWith("stop") ? "stop" : h)
             .ToDictionary(g => g.Key, g => g.Count());
         Console.WriteLine($"  seed-1 traces: {stops.GetValueOrDefault("match")} match, {stops.GetValueOrDefault("mismatch")} another hash, {stops.GetValueOrDefault("stop")} stop");
@@ -280,6 +344,7 @@ static class Gate
                 Check(b.HashOk && b.GridsOk, r.HashOk && r.GridsOk, "grids");
                 Check(b.DrawsOk, r.DrawsOk, "every port draw");
                 Check(b.DoodadsOk, r.DoodadsOk, "doodads");
+                Check(b.HeightsOk, r.HeightsOk, "cell heights");
                 if (r.Draws < b.Draws) lost.Add($"{key}: draws {b.Draws} → {r.Draws} (first difference {r.FirstDiff})");
                 else if (r.Draws > b.Draws) gained.Add($"{key}: draws {b.Draws} → {r.Draws}");
                 if (b.HashOk && r.HashOk && r.Matched < b.Matched) lost.Add($"{key}: doodads matched {b.Matched} → {r.Matched}");
@@ -299,7 +364,7 @@ static class Gate
     static void Clusters(SortedDictionary<string, Result> now)
     {
         var diffs = now.Where(p => p.Key.StartsWith("capture ") && p.Value.FirstDiff is not null &&
-                !(p.Value.HashOk && p.Value.GridsOk && p.Value.DrawsOk && (p.Value.DoodadsOk || p.Value.Captured < 0)))
+                !(p.Value.HashOk && p.Value.GridsOk && p.Value.DrawsOk && (p.Value.DoodadsOk || p.Value.Captured < 0) && (p.Value.HeightsOk || p.Value.Heights < 0)))
             .GroupBy(p => p.Value.FirstDiff!).OrderByDescending(g => g.Count()).Take(12);
         Console.WriteLine("first differences (traces not fully matching), by the client's caller:");
         foreach (var g in diffs)
