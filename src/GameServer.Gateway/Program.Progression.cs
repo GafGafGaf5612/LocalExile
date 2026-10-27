@@ -180,6 +180,8 @@ partial class Program
             Accuracy = bonus.Accuracy + aura.Accuracy,
             Armour = bonus.Armour + aura.Armour,
             Evasion = bonus.Evasion + aura.Evasion,
+            // Discipline is a global flat ES source, added after equipment ES-to-Life conversion.
+            EnergyShield = (int)Math.Min(int.MaxValue, (long)bonus.EnergyShield + aura.EnergyShield),
             ArmourMorePct = aura.ArmourMorePct,
             EvasionMorePct = aura.EvasionMorePct,
             CriticalStrikeChancePct = attackIncrease,
