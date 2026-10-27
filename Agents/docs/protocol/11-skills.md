@@ -1760,6 +1760,7 @@ it:
 | `chance_to_freeze_%`, `chance_to_shock_%`, the ignite chances | `chance_to_freeze_shock_ignite_%` |
 | `reduce_enemy_fire/cold/lightning_resistance_%` | `reduce_enemy_elemental_resistance_%`, `base_penetrate_elemental_resistances_%` |
 | `cast_speed_+%` | `attack_and_cast_speed_+%` (also counted in attack speed) |
+| `attack_speed_+%_per_frenzy_charge`, `cast_speed_+%_per_frenzy_charge` | the matching `base_` coefficient and `attack_and_cast_speed_+%_per_frenzy_charge` |
 | `life/mana_leech_from_*_damage_permyriad` | the elemental leech for fire, cold, lightning; life also `horrible_ugly_life_leech_from_*_damage_perhundredthousand` ÷ 10 |
 | `virtual_life/mana/energy_shield_leech_speed_+%` | `life_mana_es_leech_speed_+%` |
 | `virtual_endurance/frenzy/power_charge_duration_+%` | `charge_duration_+%`, `base_charge_duration_+%` |
@@ -1939,6 +1940,16 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   the per-charge rows read. A count change recomputes the pools and the walk speed and sends 0x1b3 and the skills'
   stats (the client swings and casts with the speed in its skill records), without the skill-bar work of
   `SendCharacterStats` (`SendChargeStats`).
+  The Frenzy attack/cast speed rows publish the coefficient per charge, independent of the held count.
+  Each includes its matching base coefficient and the combined attack/cast coefficient. Native Mods row 7236
+  (`AttackAndCastSpeedPerFrenzyChargeUniqueBootsDex4`) supplies -4 to the combined coefficient, cancelling the
+  inherent 4 for both rows. `WithCharges` already expands that raw source once for actual speed; display alias
+  composition does not feed back into it. Seventeen selected automated cases (15 new) cover both modes,
+  source removal, signed/zero replacements, held counts, typed composition and an explicit final zero.
+  Eight native supplied-source controls verify owned player values, held-count speed, clearing and relog.
+  Natural percentage formatting shows +4%, +6% and attack-only +5%; zero coefficients hide their rows, so
+  explicit owned zero publication and visual suppression are distinct from a zero formatter callback.
+  These raw controls do not equip the unique boots or establish official-server arithmetic.
 - **The HUD** (live 2026-10-25). One buff per type: BuffDefinitions rows 28 `endurance_charge`, 27 `frenzy_charge` and
   29 `power_charge` (`ShowCount`; BuffVisuals 41, 40 and 42 with the BuffVisualOrbs `ChargeEndurance`, `ChargeFrenzy`,
   `ChargePower`), the player as its source. S→C 0x1c1 flags bit1 carries the time left (f32 seconds) and bit2 the

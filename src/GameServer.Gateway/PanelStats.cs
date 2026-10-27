@@ -158,8 +158,8 @@ static class PanelStats
         new("virtual_endurance_charge_duration_+%", ["endurance_charge_duration_+%", ChargeDuration, BaseChargeDuration]),
         new("virtual_frenzy_charge_duration_+%", ["base_frenzy_charge_duration_+%", ChargeDuration, BaseChargeDuration]),
         new("virtual_power_charge_duration_+%", ["power_charge_duration_+%", ChargeDuration, BaseChargeDuration]),
-        new("attack_speed_+%_per_frenzy_charge", ["base_attack_speed_+%_per_frenzy_charge"]),
-        new("cast_speed_+%_per_frenzy_charge", ["base_cast_speed_+%_per_frenzy_charge"]),
+        new("attack_speed_+%_per_frenzy_charge", ["base_attack_speed_+%_per_frenzy_charge", "attack_and_cast_speed_+%_per_frenzy_charge"]),
+        new("cast_speed_+%_per_frenzy_charge", ["base_cast_speed_+%_per_frenzy_charge", "attack_and_cast_speed_+%_per_frenzy_charge"]),
     ];
 
     // A row for each hand: main_hand_… with the main hand weapon's local stats, off_hand_… with the off hand's.

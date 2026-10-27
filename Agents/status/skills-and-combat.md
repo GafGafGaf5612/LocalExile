@@ -278,7 +278,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   charges, 3 Power Charges taking attack crit 8.3% → 20.75%, a Frenzy Charge shortening the attack, 3 Endurance
   Charges taking 12% off physical and fire hits; towns draw no charge icons.
   The maximum rows (with the maximum-charge mods) were verified on the native Charges tab at `0 / 3` before this;
-  the current counts there and Enduring Cry and the timed gains are not live-checked.
+  controlled native counts of 0 and 3 now agree with the held state. Enduring Cry and timed gains are not live-checked.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
   `Program.Charges.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §15.
@@ -294,6 +294,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   Energy Shield's row excludes recharge and clears when its sources are removed or regeneration is prohibited.
   Native checks verified the row at 2 per second, modifier totals, zero clearing and relog.
   During recharge its total stayed at 60 per minute while native recovery prediction changed from 60 to 340.
+  Frenzy attack/cast speed coefficients include the combined per-charge modifier. Native Mods row 7236's -4
+  cancels the inherent 4 for both; held charges still expand the raw source once. Seventeen selected tests
+  (15 new) cover source removal and explicit zero in both modes. Eight native supplied-source controls agree,
+  including +4%/+6%/attack-only +5% formatting, zero publication, charge clearing and relog.
+  Zero rows are visually suppressed; missing formatter callbacks do not prove zero rendering or gear acquisition.
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.

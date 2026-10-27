@@ -78,6 +78,10 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Determination/Grace integer aura scaling and exact aura/flask more-factor composition now feed those pools.
   Body-specific ES increases, doubled Armour and no-Armour operators now retain their slot scope, including IR.
   Full-ES suppression chance now follows the effective resource state and shares the panel/combat consumer.
+  Frenzy attack/cast speed coefficients include the combined per-charge modifier, with signed/zero,
+  source-removal and held-count agreement covered in both modes (17 selected tests, 15 new).
+  Eight native supplied-source controls verify values, positive formatting, clearing and relog; native unique-gear
+  acquisition and zero-row formatter evidence remain outside those controls.
   Continue auditing the remaining rows against the current implementation before adding formulas.
   Leech limits now have native display, modifier, prohibition, pool-conversion, reservation and relog controls.
   Active leech recovery and unsupported conditional sources remain open; official fractional endpoint rounding is unmeasured.
