@@ -360,9 +360,7 @@ partial class Program
             await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (invalid cast duration, cost back)");
             return false;
         }
-        // A gem whose requirements the character's level does not meet is disabled: its skill stays on the skill bar but
-        // cannot be used (the client shows the gem red but still sends the use; the server withholds the action, see
-        // OnClientMessages). Attributes are not checked yet: their formula is not fitted (19-gems.md "Open").
+        // Shared backstop for actor restrictions and gem requirements, before cooldown/payment/effect admission.
         if (gem.Name is not null && GemDisabled(conn, gem.Effect) is { } disabled)
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {disabled} (disabled)");

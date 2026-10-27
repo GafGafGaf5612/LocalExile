@@ -35,6 +35,8 @@ partial class Program
             if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0 || conn.Paused
                 || requestedAt is double asked && conn.HitRecovery.BlocksInput(asked, conn.Clock.Elapsed.TotalSeconds)
                 || actionToken is int original && conn.ActionCount != original) return false;
+            // Covers object/self and instant routes before creating or spending cooldown state or a new action.
+            if (ActorSkillDisabled(conn, effect) is not null) return false;
             if (plan is { } cooldown)
             {
                 double now = conn.Clock.Elapsed.TotalSeconds;

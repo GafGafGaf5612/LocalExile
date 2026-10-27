@@ -58,6 +58,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.
   Equipment UI refresh remains to be checked separately.
   Off-hand alternation, conditional damage, supports and modifier-scope corrections remain separate work.
+- **Warcry restriction (#297):** shared actor admission has regression and seven real-client controls in Status.
+  Blocked input, source clearing, paid retries and an accepted cry's release are verified.
+  See [11](../docs/protocol/11-skills.md) section 10b; broader warcry engines and Phrecia enablement remain separate.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.
