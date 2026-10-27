@@ -283,9 +283,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// <summary>The worn cosmetics as 0x1f3 lists them (WornCosmetics), read from the save on first use; null after a
     /// pick, so the next use reads it again.</summary>
     public List<InstanceMicrotransactions.Equipped>? WornCosmetics;
-    /// <summary>The Cosmetics tab's skill slots last sent (SkillSlots): key (50 up, what 0x1fa names) → gem BaseItemTypes HASH32 and
-    /// effect slot type.</summary>
-    public Dictionary<uint, (uint Gem, byte SlotType)> SkillSlots = [];
+    /// <summary>The Cosmetics tab's last published skill targets, built inside the send gate with 0x1f3.
+    /// A key lives only while its full target remains present; retired keys are never reassigned on this connection.</summary>
+    public Dictionary<uint, InstanceMicrotransactions.SkillSlot> SkillSlots = [];
+    public uint NextSkillCosmeticKey = InstanceMicrotransactions.SlotCount;
     /// <summary>The worn pets by object id (SpawnPets), replaced when a Pet slot changes; RunPetFollow walks them.</summary>
     public readonly Dictionary<uint, SpawnedPet> Pets = [];
     public bool PetFollowRunning;
