@@ -275,7 +275,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Ordinary generic/typed added BASE now follows intrinsic-base replacement and precedes increased chance, including
   native weapon-local flat-before-increase ordering and linked Increased Critical Strikes once.
   Mode-specific passive/item, source-removal, zero, prohibition and hitless controls have automated cases;
-  combined automated results are in the panel entry; new native checks remain pending.
+  combined automated results are in the panel entry.
+  Sixteen positive Fireball/ICS selected-field controls on `0aabeb6` pass at actual level 100 in both modes, including
+  actor/support removal, relinking and relog, plus separate default-sentinel and current-Actor absence controls.
+  The after-capture Standard sentinel correction and its current-identity/historical-numeric boundary are in protocol 11 §5.
+  Continue native attack/local-weapon/Assassin, signed/zero/prohibition/hitless and actual critical-hit checks.
+  These controls do not establish rendered zero or certify a complete issue75 row.
   Isolated modifiers do not prove acquisition; the local-flat fixture does not certify its no-extra-critical-damage
   consumer, and exact official rounding is unproved.
   Other conditional/more crit remains separate work.

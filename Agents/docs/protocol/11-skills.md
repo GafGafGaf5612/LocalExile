@@ -458,9 +458,50 @@ before `local_critical_strike_chance_+%`; that rounded permyriad becomes the int
 Signed BASE and increased sums remain wide through the completed expression, then round halfway up and cap.
 Linked Increased Critical Strikes contributes its own BASE and increased chance once through the shared calculation.
 Real native item modifiers, mode-specific Ascendant Assassin sources, local ordering, source removal, explicit zero
-and selected supports have automated coverage; combined results are in §14 and new native checks remain pending.
+and selected supports have automated coverage; combined results are in §14.
+The bounded selected-spell native controls below cover actor-plus-own BASE before increased chance.
 The local-flat fixture retains its real no-extra-critical-damage flag; its chance checks do not certify multiplier
 behavior. The formulas follow pinned PoB `16de4b8` as a labelled 3.29.x fallback, without exact official rounding proof.
+
+On source `0aabeb6`, sixteen positive selected Fireball controls pass at actual level 100 in Standard and Ruthless.
+Fireball and Increased Critical Strikes are genuine L1/Q0 gems in a two-white-socket linked host.
+An in-range native spell BASE50 vector (Mods row 8490, HASH16 8721) supplies the actor source on a controlled carrier.
+The support supplies BASE200 and 60% increased chance once, so `(500 + 50 + 200) × 1.60 = 1200` permyriad.
+An in-range +100 all-attributes qualifier gives final attributes 114/114/132.
+Fresh owned Actor/primary records and natural selected getters bind key554 to exact converter14/function15 text.
+
+| Stage in each mode | Sources after the ordinary refresh | Selected permyriad / native text |
+|---|---|---|
+| C0 | Fireball alone | 500 / `5%` |
+| C1 | Add actor BASE50 | 550 / `5.5%` |
+| C2 | Link Increased Critical Strikes | 1200 / `12%` |
+| C3 | Remove the support | 550 / `5.5%` |
+| C4 | Reinsert the support | 1200 / `12%` |
+| C5 | Remove actor BASE50, retain the support | 1120 / `11.2%` |
+| C6 | Restore actor BASE50 and relog | 1200 / `12%` |
+| C7 | Remove actor BASE50 and the support | 500 / `5%` |
+
+Two further controls prove current Fireball identity disappears after removing its gem; they do not prove numeric zero.
+Two D0 default sentinels observe their own current primary/DPS receiver and raw spell fallback550.
+The original Standard D0 verdict remains UNPROVED: its assessor required C2's old Fireball instance pointer
+to survive a source refresh, although the ordinary skill update can replace an object with the same skill ID.
+Separately reviewed sentinel-v2 was authored after that capture and frozen before the Ruthless sentinel capture.
+It checks the unique current Fireball ID/effect and a distinct current Default object, with C2's source-equal 1200
+numeric capture explicitly historical; it makes no simultaneous current Fireball primary/receiver claim.
+Original frozen inputs, scalar expectations and the failed verdict remain unchanged.
+
+Canonical full item payloads, cells, empty host, returned gems and full flask charges were restored.
+Ordinary unsocketing retained gem placement remaps 603/604 to 607/606 in both modes, without database normalization.
+All eight identities, original account/probes, both stash banks, all 40 tabs/meta and four nonparticipant saves held.
+Participant last-played timestamps and the saved slot2 Fireball intent changed normally; Ruthless current Life
+1345 → 1245 retained the temporary qualifier-removal maximum clamp, and restoration did not heal it.
+Cleanup passed with all 774 frozen hashes unchanged; the post-run audit matched 773 source hashes.
+Observers/client were detached/closed, and normal `data/saves.db` services were restored.
+Evidence is under `artifacts/issue75-completion/selected-crit-native/`, its sibling assessment directory and
+`artifacts/issue75-completion/selected-crit-native-preservation/post-run-audit.json`.
+These controls establish selected publication, not native critical hits, rendered zero, legal carrier acquisition,
+attack/local-weapon/Assassin coverage, exact official rounding or a complete issue75 row.
+
 `/set_stat` replaces its source value and rebuilds the pools for critical-chance inputs and prohibitions.
 The panel's final `main_hand_critical_strike_chance` and the rolls share that result.
 Generic and spell increases use the same effective raw inputs as `CharacterPlayerStats`: a development value,
@@ -470,8 +511,8 @@ The attack base feeds shared `AddedBaseCriticalStrike` evaluation used by pools,
 Nonnegative half permyriad values round up: a 650 base with +1% increased gives 657.
 Generic and applicable typed inputs are summed as signed `long` values before the final cap;
 large positive and negative inputs may cancel before clamping.
-Native checks recorded below belong to the original PR head `8c4c62d`.
-The shared half-up midpoint and resolved stack need a new native check; automated coverage establishes the contract.
+The earlier native checks elsewhere in this section belong to the original PR head `8c4c62d`.
+The shared half-up midpoint and remaining resolved contexts still need native checks.
 Signed increases stay in 64 bits through the pool and player-plus-skill sum; only final native values are bounded.
 Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
 Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.
@@ -1898,7 +1939,8 @@ plus 95 existing focused controls, for 188/188 with no skips. Fresh full suites 
 disposed-NetworkStream task faults, all `MonsterKilled` at `Program.Combat.cs:1260` through
 `Program.Send` / `Program.Connection.cs:326`; 385 first-chance records are separate from that fault count.
 No diagnostic errors, text truncation or cap hit occurred, and no captured fault names a new operator path.
-Passing suites therefore do not establish fault-free background execution; new native validation remains outstanding.
+Passing suites therefore do not establish fault-free background execution.
+Native validation of the defaults/mirrors and selected aliases remains outstanding; the bounded critical slice is in §5.
 The historical G14/full 3710 and native results below do not validate these new operators or certify all 387 rows.
 
 The four elemental self-duration reduction sums also subtract the unconditional raw

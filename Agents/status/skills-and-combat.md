@@ -314,7 +314,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   for 4488 freshly rerun cases. The current hook records six actual unobserved disposed-NetworkStream task faults,
   all `MonsterKilled` through `Program.Send`; 385 first-chance records are separate from those six faults.
   No diagnostic errors/truncation/cap hit or new operator path appears in the captured faults.
-  Passing tests do not mean fault-free background execution; new native checks remain pending.
+  Passing tests do not mean fault-free background execution.
+  Native default/mirror and selected-alias checks remain pending; the critical entry below records its bounded controls.
   Earlier G14/full 3710 and native observations below do not validate these new operators or certify all 387 rows.
   Energy Shield's row excludes recharge and clears when its sources are removed or regeneration is prohibited.
   Native checks verified the row at 2 per second, modifier totals, zero clearing and relog.
@@ -727,6 +728,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   added BASE, while missing/negative data, hitless skills and cannot-crit gates still fail closed.
   Native modifier identities, mode-specific Ascendant Assassin sources, active-set isolation, removal, zero and
   support composition have automated coverage; current combined results are in the panel entry above.
+  Sixteen positive Fireball/ICS native controls on `0aabeb6` pass at actual level 100 in both modes.
+  Selected permyriad values 500/550/1200/1120 render as 5/5.5/12/11.2%, including actor/support removal, relinking and relog.
+  Two current-Actor Fireball-removal controls and two default sentinels also pass without numeric-zero inference.
+  The original Standard D0 sentinel remains UNPROVED; its separately reviewed after-capture correction uses current
+  Fireball/Default identities and historical C2 numeric evidence, with no simultaneous Fireball receiver claim.
+  Its version freeze preceded the Ruthless sentinel capture.
+  Canonical stock/charges and protected data held; gem-ID remaps and retained participant state are qualified in
+  protocol 11 §5, and normal services were restored.
+  Native critical hits, rendered zero and the remaining attack/local/Assassin/rounding contexts remain unverified here.
   Isolated carriers do not establish legal unique acquisition, and the local-flat chance fixture retains its real
   no-extra-critical-damage flag without certifying multiplier behavior. Pinned PoB 3.29.x is a labelled fallback.
   `/set_stat` replaces the input and rebuilds the pools, so the panel and the rolls agree.
