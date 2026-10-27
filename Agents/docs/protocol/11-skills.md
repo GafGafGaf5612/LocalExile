@@ -824,8 +824,9 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   Recovery does not restart while active; flasks and instant skills keep their existing paths.
   This does not implement block recovery, ES stun avoidance, CI/mana/ES threshold substitutions, conditional defences,
   attacker-specific stun modifiers or monster spell/ranged stuns.
-  Known final or raw base ES, active equipped ES bases and local flat ES disable this slice until ES avoidance exists.
-  This includes Discipline before a separate ES pool implementation computes `maximum_energy_shield`.
+  Effective maximum ES or published base ES disables this slice until ES avoidance exists.
+  Suppressed or converted raw equipment ES does not disable it by itself.
+  This includes Discipline's effective ES pool and its published flat ES source.
   Conditional stun-defence builds, flat/substituted thresholds and CI are also skipped conservatively.
   An equipped skill with `skill_cannot_be_stunned` or contact-phase immunity disables this slice for the build.
   Its precise active action phase is not tracked, so even an inactive equipped skill is conservatively excluded.
@@ -1534,10 +1535,18 @@ A foreign-source packet non-removal control establishes no party aura executor o
   Zero flags and relog removed the development bonuses.
   These validate the generic consumers; allocating Sea Legs belongs to the separate ascendancy lifecycle change.
 - **Spell Suppression** (`CharacterStats`, `DamageModel`): the passives' `base_spell_suppression_chance_%` is summed into
-  `Pools` (capped at 100%, PoB `SuppressionChanceCap`); a successful roll makes a spell hit take 40% less damage
+  `Pools` (raw base retained, displayed chance bounded to 0..100%, PoB `SuppressionChanceCap`).
+  A successful roll makes a spell hit take 40% less damage
   (`SuppressionEffect` in PoB `src/Modules/Data.lua`). The passives' unconditional
   `base_spell_damage_%_suppressed` is added to the 40% effect (e.g. Inveterate +3, Primal Instinct -10); the effect is
-  not hard-capped, matching PoB. Conditional effect stats (`...while_on_full_energy_shield`,
+  independent of conditional chance. Full Life, moving, recent enemy hit and full ES chance sources add to the raw
+  base before one final 0..100 clamp. Full ES uses a living character's positive effective maximum and whole current
+  ES at that maximum; zero ES and fractional recovery below maximum do not activate it. The native consumer gates
+  stat 15406 with public flag 2431 (`0x1428c6862..0x1428c68bf`); this server supplies the condition from its ES model.
+  Panel publication, `/suppression` and `/spellhit` share that result and the existing 250 ms condition refresh.
+  Same-area resurrection sends its own restored stat snapshot: a pre-death tick cache must not retain the dead
+  snapshot after ES refills. The native death/aura-clear/checkpoint sequence restored all three suppression keys.
+  The effect is not hard-capped, matching PoB. Conditional effect stats (`...while_on_full_energy_shield`,
   `...if_not_suppressed_recently`, per-hit/per-bark) are not modelled yet. Chance above 100 is overcap
   (`SpellSuppressionChanceOverCap`), but the effective chance is still 100. The passive
   `spell_suppression_chance_is_lucky` rolls twice and keeps the better roll (PoB `suppressRolls`, effective
@@ -1623,8 +1632,9 @@ Determination and Grace add their level/quality-based flat and more defences, in
 Anger/Envy supply added attack/spell damage, Hatred feeds gain-as-extra conversion, Wrath adds attack
 lightning damage and more spell lightning damage, Zealotry supplies spell crit and more spell damage.
 Spell added damage uses the gem's damage effectiveness. Malevolence's more DoT affects the implemented
-Righteous Fire burn; its duration stat and Discipline's ES stats are published, but the server's ES pool,
-recharge, general DoT skills and Zealotry's conditional consecrated ground remain unimplemented.
+Righteous Fire burn; its duration stat is published.
+Discipline now contributes flat ES to the authoritative pool and its existing recharge-rate increase to recovery.
+General DoT skills and Zealotry's conditional consecrated ground remain separate work.
 
 **Source and recipient pair (2026-10-25).** Sending only the source fixed ground art but the live
 client stopped showing top-left aura icons. Each self aura now owns two buff instances of its
@@ -1678,13 +1688,36 @@ ring will require its actual radius rather than this marker. The skill-bar assoc
   values; reservation efficiency comes from `base_mana_reservation_efficiency_+%`,
   `base_reservation_efficiency_+%` and the mana/global efficiency stats. `AuraCatalog.Bonus` and `RawStats`
   apply these to `Pools` and `CharacterStats`.
+  Determination and Grace use the integer aura-scaling rule for both flat and more inputs.
+  At level 20 with 50% aura effect, Determination supplies 1539 flat Armour and 73% more Armour;
+  Grace supplies 2317 flat Evasion and 43% more Evasion.
+  Their Ruthless variants have no flat defence and supply 88% more at the same level/effect.
+  Quality changes area rather than these values.
+  Aura and Basalt/Stibnite more factors multiply without rounding the combined percentage first.
+  For example, 73% more and 20% more retain factor 2.076 until the final defence total is rounded.
+  The integer input rule follows the pinned PoB reference below; other aura families retain their existing policy.
+  Discipline grants 60 flat ES at level 1 or 217 at level 20, plus 30% increased ES recharge rate.
+  Ordinary quality changes area of effect only.
+  Its flat ES enters after equipment ES-to-Life conversion and receives Intelligence and global ES increases once.
+  Shield-only increases and exclusions do not affect this global aura source.
+  Aura effect truncates Discipline's integer flat ES and recharge increase before their character-wide calculations.
+  This follows pinned PoB `16de4b82` `CalcPerform.lua:2462-2474` and `ModStore.lua:56-92`.
+  For example, 217 ES with 50% increased aura effect supplies 325 flat ES; 30 recharge with 5% effect supplies 31.
+  Exact official aura-effect arithmetic is unmeasured; this is the accepted 3.29.x reference rule.
+  Pool assignment updates ES capacity without refilling it, clamps current ES when the aura ends, and feeds the
+  same published maximum, damage absorption and recharge calculation.
+  Raw aura-stat publication saturates instead of overflowing when combined with a large independent source.
+  Native checks on an INT-200 Witch matched 84 ES at level 1 and 304 at level 20, with 257/734 mana reserved.
+  Level 20 with 50% aura effect supplied 325 flat ES and 455 maximum ES; adding 100% global ES gave 780.
+  A 40 fire hit changed current ES from 84 to 44 without Life loss, followed by delayed recovery at 2184 per minute.
+  Native toggle, quality, gem-host, conversion, shield, town and death controls passed.
+  Both fixture characters retained identical inventories and remembered intent across a Gateway restart.
 - **Not implemented yet.** Casting one of these logs that its reservation is known but its effect is not implemented and does not
   reserve mana:
   - **Enemy auras:** Pride still needs a radius- and time-dependent enemy physical-damage-taken debuff.
   - **Heralds:** Ash, Ice and Thunder need on-kill/overkill/shatter/storm effects; Agony and Purity need minions.
   - **Banners:** Defiance, Dread and War need the planted banner, stages and their pulses.
   - **Curse auras:** Blasphemy-style skills need the curse system.
-  - **Discipline:** activation, reservation and presentation work; the energy-shield pool/recharge mechanics remain open.
   - **Partial effects:** Purity of Elements' elemental-ailment immunity is not applied. Purity of Fire/Ice/Lightning
     max-resistance values are read at the gem's level (0 at level 1).
   - **Masteries:** Mana6, Reservation3 (life efficiency), Reservation4 (area) and Reservation5 (self aura effect) are mapped;

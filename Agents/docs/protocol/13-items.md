@@ -64,6 +64,7 @@ Minimal item the server sends: flags 0, Base with only the visual identity, Mods
 Ordinary values 0 through 31 select `round(minimum + (maximum - minimum) * roll / 31)`.
 The interpolated base rounds halfway up before local modifiers, separately from the final item rounding.
 Raw wire value 32 sets the native special flag and uses minimum bases; it is not a maximum roll.
+The flag hides tooltip defences (`0x1416d8c67`, `ItemViewDefencesNotShown`) but does not prevent Sacred Orb use.
 It survives wire/save round trips but is never generated for ordinary new items.
 Values above 32 are refused by the server model instead of silently aliasing another roll.
 The native derived byte at Armour `+0x29` is a display percentile, not an independent saved roll.
@@ -72,7 +73,8 @@ Reader/writer: `0x1424affc0` / `0x1424aff60`; base getters: `0x1424af890`, `0x14
 Fresh armour items from `ItemCatalog.Create` sample a uniform ordinary roll once.
 This is the local server's generation policy; the official server's distribution has not been measured.
 Drops, rewards, vendor stock and development items share that factory.
-Saving, loading, moving, socketing, ordinary currency and affix changes preserve the existing roll.
+Saving, loading, moving, socketing and affix changes preserve the existing roll.
+Sacred Orbs deliberately reroll it through the normal currency path described below.
 Legacy saved items missing the field keep their original zero/minimum base; loading never draws a fresh base roll.
 `/base_defence [0 to 31]` shows or sets the held armour item's roll for development checks.
 `EquippedBaseDefences` counts active body armour, helmets, gloves, boots and the active offhand shield.
@@ -92,10 +94,28 @@ Effective quality is the saved Quality byte plus `local_item_quality_+`.
 Global item/passive/aura modifiers and Iron Reflexes continue through the shared character-pool calculation afterward.
 Equipment changes and quality currency on worn items refresh those pools and send the resulting panel stats.
 ES uses that same final half-up rounding instead of truncating between local increases and quality.
+`ItemDefences.Calculate` supplies the shared local item values to equipment.
 `local_no_energy_shield` and `local_unique_tabula_rasa_no_requirement_or_energy_shield` force this item's ES to zero,
 overriding its base, flat/increased mods and quality without removing armour, evasion or another item's ES.
+The native ES getter `0x1424af430` tests these flags before the base, flat modifiers, increases or quality.
 Supported equipment ES-to-Life conversion and conditional ES increases are described in §2c.
 Sacred Orbs reroll the saved shared base roll through the currency handler (see "Sacred Orb" in §4).
+
+**Shield-specific character increases:** retain the active shield's final local AR/EV/ES as separate inputs.
+`shield_armour_+%` (24) increases all three shield defences despite its name.
+Typed shield increases are `shield_physical_damage_reduction_rating_+%` (495),
+`shield_evasion_rating_+%` (496) and `shield_maximum_energy_shield_+%` (492).
+These add to the applicable global increase bucket on the shield contribution only, before global more multipliers.
+They do not change item tooltips, other equipment, independent flat defences or ES converted into Life.
+`combined_shield_defences_+%` (9865) is a derived stat, not a second additive source for stat 24.
+The native combined calculators are `0x142724c50`, `0x14272f680`, `0x142727dd0` and `0x14252f6a0`.
+Iron Reflexes applies both typed shield armour/evasion increases to converted shield evasion, counting stat 24 once.
+`minions_get_shield_stats_instead_of_you` and `gain_no_defences_from_equipped_shield` remove the shield's local
+contribution from player pools as well as ES-to-Life conversion.
+Full minion redirection of other shield modifiers and Devotion-dependent shield scaling remain separate mechanics.
+Fractional contributions survive slot scaling and Iron Reflexes until one final half-up round for each rating.
+Native final rounding is at `0x142732ee7` (AR), `0x14272a59b` (EV) and `0x14252c6e7` (ES).
+The ES path calls signed rounding helper `0x142513810`; it no longer truncates an ordinary final pool.
 
 Variable-base native checks verified Plate Vest rolls 0, 8, 16 and 31 as 19, 21, 23 and 27 armour.
 Raw 32 arrived as stored roll zero with special flag one and minimum armour 19, including after relog.
@@ -632,6 +652,40 @@ explicit affixes, is refused and nothing is spent.
 Quality component's u8) to an item with an Armour component, any rarity, up to 20%; the client shows the raised
 defences from the quality. On this server the Orb of Scouring also sets an armour piece's quality back to 0 (and so
 accepts a normal armour piece with quality). Other items, or 20%, are refused and nothing is spent.
+
+### Sacred Orb
+
+`CurrencyRerollDefences` (`reroll_variable_defences` in CurrencyItems.dat) uses the same 0x71 / Shift 0x72 handler.
+`CurrencyEffects.Sacred` changes only the saved shared `DefenceBaseRoll` to an ordinary value from 0 through 31.
+The local server samples uniformly, as it does for newly created armour; the official distribution is unmeasured.
+One orb is spent even when the new roll equals the old roll.
+Mods, quality, rarity, identification, sockets, gems, links, names and fractured state stay unchanged.
+The existing atomic inventory/stash mutation saves the stack and target together and sends their 0xbf replacements.
+Rerolling worn equipment refreshes the character's shared defence pools and panel.
+
+The native target validator `0x141f83050` requires Armour and Mods components and rejects mirrored items.
+The ordinary crafting protection also refuses corrupted targets.
+At least one native base-defence range must vary; otherwise it returns `0x1762`,
+`ItemErrorFailedRerollVariableDefence`: "Target item has no modifiable base defence."
+The comparisons include armour, evasion, ES, Ward and the fifth unnamed native range.
+`ItemCatalog.BaseDefences.HasAdditionalVariableRange` records the Ward/fifth-range eligibility without adding their
+mechanics to the server's character pools.
+The current extracted fifth range (`__col10` / `__col11`) is zero in every row.
+Fixed bases such as Kaom's Plate and Kaom's Greaves, and all-zero bases such as Golden Wreath, are refused.
+Ward-only Runic equipment has a variable range and remains eligible.
+The validator has no rarity, identification or current-roll restriction.
+Raw 32 is eligible: a successful reroll replaces it with an ordinary roll and clears the native hidden-defences flag.
+
+Native application verified raw 32 to 26 and a worn Plate Vest from 16 to 12, with tooltip and panel armour both 40.
+Shift 0x72 rerolled worn gloves from 16 to 23.
+A worn robe changed from 16 to 20, then 20 to 28 using currency from the stash.
+Every inventory/stash source/target pairing passed, including a same-value stash reroll from 9 to 9 consuming one orb.
+Corrupted, mirrored, ring and fixed-base boots targets were refused without spending an orb.
+The native validator refused fixed Kaom's Plate and zero-defence Golden Wreath, while accepting Ward-only Runic Helm.
+UI application changed the helm's roll from 16 to 25 and its Ward tooltip from 44 to 46.
+Shield and unique-rarity targets also rerolled successfully.
+After a Gateway restart, both characters' inventories and the stash retained every roll and currency count.
+The reloaded stash vest kept roll 9, quality 20 and its 50% local increase, displaying 54 armour and 54 evasion.
 
 ### Blacksmith's Whetstone (2026-10-21, verified live)
 

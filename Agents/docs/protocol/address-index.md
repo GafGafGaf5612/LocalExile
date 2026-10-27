@@ -244,7 +244,21 @@ G = global / static data.
 | `0x1424afc90` | Fn | Armour roll setter: ordinary 0..31 at +0x28; special flag at +0x2a |
 | `0x1424af890`, `0x1424af910`, `0x1424af990` | Fn | Base armour/evasion/ES: interpolate over 31, then round |
 | `0x1424af310`, `0x1424af1a0`, `0x1424af430` | Fn | Final armour/evasion/ES: rounded base, locals, quality, round |
+| `0x1424afb10`, `0x1424afb90`, `0x1424afc10` | Fn | Local increased ES/evasion/armour helpers |
+| `0x142523ab0` | Fn | ES-to-Life: full flag wins; truncate final local ES per active armour slot |
+| `0x1428b4e30` | Fn | Effective shield ES: suppressed for ES-to-Life conversion or shield transfer/prohibition |
+| `0x142724c50` | Fn | Combined shield defence increase: generic stat 24 plus the Devotion-dependent term |
+| `0x14272f680` | Fn | Shield armour increase: global armour plus shield-only armour and combined shield defences |
+| `0x142727dd0` | Fn | Shield evasion increase: global evasion plus shield-only evasion and combined shield defences |
+| `0x14252f6a0` | Fn | Shield ES increase: global ES plus shield-only ES and combined shield defences |
+| `0x142731bfc` | Code | IR shield evasion uses shield armour-only plus shield evasion/shared increases once |
+| `0x142732ee7` / `0x14272a59b` | Code | Final AR/EV: truncate after adding 0.5 to the summed positive contributions |
+| `0x14252c6e7` / `0x142513810` | Code / Fn | Final ES calls signed half-away rounding after summing sources |
+| `0x14252c730` / `0x14252d478` / `0x14252d533` | Fn / Code | Flat ES getter reads key 135 and adds global flat ES |
 | `0x1405bdd70` / `0x140664f10` | Fn | Linear interpolation / half-up rounding used by item defences |
+| `0x140e1a230` | Fn | Item's Armour component getter |
+| `0x140030c10` / `0x14345c550` | Fn/Cls | Register Sacred Orb action / validator vtable |
+| `0x141f83050` | Fn | Sacred Orb target gate: Armour, Mods, no mirror, at least one variable native range |
 | `0x1402f36c0` | Fn | item's AttributeRequirements component getter |
 | `0x141e1dce0` | Fn | InteractionAction type parser (`interaction_distance_override` → +0x1bb) |
 

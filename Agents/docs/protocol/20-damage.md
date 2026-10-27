@@ -458,6 +458,39 @@ and absorbs its non-chaos self-damage through ES before life. Special keystones 
 not included (CI, Eldritch Battery, Zealot's Oath, Wicked Ward, leech and related substitutions).
 The native rolled base rounds before local modifiers; the final item ES rounds after local increases and quality.
 This avoids the former intermediate truncation: Simple Robe roll 16, 50% local ES and 20 quality yields 31 ES.
+Character-wide ES retains the local shield as a separate contribution so shield-only increases add to its global
+increase bucket without multiplying increases or scaling independent flat ES.
+The body slot retains the same source identity. `maximum_energy_shield_from_body_armour_+%` adds to its global
+ES increase bucket only (native `0x1425304f9..0x142530506`); it does not scale other gear, auras or converted Life.
+`damage_reduction_rating_from_body_armour_doubled` doubles the body Armour contribution and, under Iron Reflexes,
+the body's converted Evasion (`0x142731a7b..0x142731aff`). `gain_no_armour_from_body_armour` suppresses both of
+those Armour sources and wins over doubling, while ordinary unconverted body Evasion and ES remain available.
+`shield_armour_+%` increases all shield defences; `shield_maximum_energy_shield_+%` adds only to shield ES.
+The completed fractional total rounds halfway up, matching native `0x14252c6e7` and helper `0x142513810`.
+Armour and evasion use the same final rounding rule, including one final armour round after Iron Reflexes.
+Their aura/flask more factors retain the exact decimal product until that final round.
+Determination's 73% more with Basalt's 20% more therefore uses 2.076 rather than a rounded 2.08 factor.
+The two shield-defence exclusion flags remove shield bases from the pools; other equipment and flat sources remain.
+The shared `ItemDefences.Calculate` applies the Tabula hidden override and explicit no-ES flag before this calculation.
+Both flags zero only that item's ES, leaving its armour/evasion and other items' ES intact.
+Full or percentage ES-to-Life conversion then consumes each active armour slot's final local ES as a Life source.
+The percentage calculation truncates separately per item; the full-conversion flag takes precedence when both exist.
+All converted item ES is removed from the character's ES inputs, including with a fractional conversion percentage.
+Global ES increases and Intelligence do not scale the converted Life; global Life increases apply afterward.
+Independent flat global ES continues to supply ES, and shield exclusions also exclude that shield's converted Life.
+Discipline supplies another global flat ES source after equipment conversion, including with no ES equipment worn.
+Its 60/217 flat ES at gem levels 1/20 receives Intelligence and global ES increases, without shield-only modifiers.
+Aura effect scales and truncates its integer ES/recharge stats first, following pinned PoB's ordinary aura rule.
+Gem quality changes area of effect, not those two stats.
+The existing 30% recharge increase is counted once through the raw aura stats and the shared recharge calculator.
+Toggling the aura updates capacity without healing current ES; removing it clamps current ES to the new maximum.
+See [11](11-skills.md) §13 for source ordering, reference scope and lifecycle checks.
+The item's tooltip ES is retained even though its character contribution changes to Life.
+The hit-recovery ES guard uses the final pool and published ES values rather than raw equipment bases.
+`local_maximum_energy_shield_+%_if_item_corrupted` is a global ES increase gated by its source item's corruption.
+It affects character ES, including independent global ES, without scaling tooltip ES or converted Life.
+Native application and reload checks passed for the supported conversions, no-ES overrides and corrupted-item
+scaling; see [13](13-items.md) §2 for the verified scope and remaining mechanics.
 
 Character.ot supplies 2000% of maximum per minute: base recharge is one third per second, after a two-second delay.
 Faster start divides the delay by `1 + energy_shield_delay_-%/100`; recharge/regen recovery increases scale their rates.
