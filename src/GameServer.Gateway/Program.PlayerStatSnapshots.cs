@@ -11,7 +11,7 @@ partial class Program
             lock (conn.Monsters)
             {
                 if (conn.Closed || conn.LeavingArea) return null;
-                return packet();
+                return WithOwnAuraChanges(conn, packet);
             }
         });
 }

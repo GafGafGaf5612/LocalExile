@@ -143,6 +143,7 @@ partial class Program
                 if (conn.PlayerLife == 0) { if (session.Value.Uncapped > 0) session.Clear(); }
                 session.Read(conn.Clock.Elapsed.TotalSeconds);
                 if (session.PresentedRevision == session.Revision) return null;
+                ReconcileOwnAuras(conn);
                 conn.Pools = PoolsFor(conn, conn.Pools.Level);
                 var value = session.Read(conn.Clock.Elapsed.TotalSeconds);
                 var packets = new List<byte[]>();
@@ -159,7 +160,7 @@ partial class Program
                 packets.Add(InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)));
                 packets.Add(InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []));
                 session.PresentedRevision = session.Revision;
-                return packets.SelectMany(p => p).ToArray();
+                return WithOwnAuraChanges(conn, () => packets.SelectMany(p => p).ToArray());
             }
         });
 }

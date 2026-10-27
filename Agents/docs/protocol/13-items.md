@@ -60,9 +60,11 @@ Minimal item the server sends: flags 0, Base with only the visual identity, Mods
 
 **Base defences:** an `ArmourTypes.dat` row is keyed by `BaseItemTypesKey` (the BaseItemTypes row) and gives
 `ArmourMin`/`ArmourMax` and `EvasionMin`/`EvasionMax`. The client interpolates between them with the item's base
-percentile; our items send the Armour component's default `0`, so the server uses the minimum for the character's
-armour and evasion. Only the base body armour, helmet, gloves and boots are counted for now; mods, quality, local
-defence rolls and shields are not.
+percentile; our items send the Armour component's default `0`, so the server uses the minimum. The equipped body
+armour, helmet, gloves, boots and shield count, and each piece adds its own local flat/increased defence mods and item
+quality (`ItemDefences`: `local_base_physical_damage_reduction_rating`, `local_base_evasion_rating`,
+`local_energy_shield`, `local_evasion_rating_and_energy_shield`, their `+%` forms and the combined ones; +1% per
+quality on armour, evasion and energy shield).
 
 ## 2a. Mods: rarity and mod lists
 
@@ -176,12 +178,16 @@ passives' stats (`CharacterStatSources`), so it reaches the pools (`PassiveBonus
 attributes, resistances, block, suppression, speeds, crit, accuracy …) and the stats the client shows (0x1b3), the same
 way a passive's would. They are sent again when equipment changes (`SendEquipment`).
 
-Local mods on the main hand (row 2, else 14) change the weapon profile: `local_critical_strike_chance_+%` scales the
-WeaponTypes base critical chance, `local_attack_speed_+%` multiplies the attack rate (like a more, before the global
-increases) and `local_accuracy_rating` adds flat accuracy. Weapon damage, armour, evasion and energy shield of items are
-not modelled yet, so their local mods change nothing. Verified live 2026-10-20: +20 maximum Life, +30% fire resistance
-and +25 strength on a ring, a local attack speed mod on the wand, and spell damage on the wand raising Fireball's
-damage (11-skills.md §9).
+Local mods on the main hand (row 2, else 14) change the weapon profile (`ItemWeapons`): `local_physical_damage_+%`,
+`local_minimum/maximum_added_physical_damage` and item quality on the weapon's physical damage (quality is a separate
+× (1 + quality/100) multiplier after the local increases, the post-3.25 rule; it does not touch the elemental/chaos
+added damage), `local_attack_speed_+%` on the attack rate (like a more, before the global increases),
+`local_critical_strike_chance_+%` on the WeaponTypes base critical chance, `local_accuracy_rating` as flat accuracy,
+and the local added elemental/chaos damage (`local_minimum/maximum_added_fire/cold/lightning/chaos_damage`, the
+elemental ones raised by `local_elemental_damage_+%` and `local_attacks_with_this_weapon_elemental_damage_+%`) in every
+hit the weapon makes. The armour, evasion and energy shield side is in "Base defences" above. Verified live 2026-10-20:
++20 maximum Life, +30% fire resistance and +25 strength on a ring, a local attack speed mod on the wand, and spell
+damage on the wand raising Fireball's damage (11-skills.md §9).
 
 ## 2d. Requirements and inactive items
 
@@ -226,6 +232,30 @@ red, the wand still in hand). Moving the item out of its row is the only way to 
 
 **Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).
+
+## 2e. Unique items and Mageblood
+
+The client data has a unique's name (`Words` wordlist 6) and its artwork (`ItemVisualIdentity`, linked to the word by
+`UniqueStashLayout`), but **no table maps a unique name to its mods**: unique mods are ordinary Mods.dat rows with
+GenerationType 3 and an empty Name. The server therefore curates each unique's mod list (`UniqueCatalog`): base type,
+the mod rows and their value ranges, from the game's data (poedb for 3.29). `/item <unique name>` creates it with the
+name words and artwork, unique rarity and the fixed explicit mods; the base type's implicits are rolled as usual (for
+Mageblood the Heavy Belt's +25-35 Strength). Checked live 2026-10-26: the client shows the Mageblood name, unique art
+and full tooltip. Only Mageblood is defined so far; unique drops, chancing and the other uniques remain open (#60).
+
+**Mageblood's mechanic** (`Program.Mageblood`): while the belt is worn (and its requirements met), the leftmost N (2-4,
+from `num_magic_utility_flasks_always_apply`) magic utility flasks in the flask bar constantly apply their effects. The
+stats are added where a running utility flask's stats are added (pools, the client's stats, phasing), scaled like a use
+(the flask's own mods and the character's flask effect/duration), with no charges, timer or buff packets. Magic utility
+flasks cannot be used while it is worn: the client enforces the item mod and the server refuses the use as a backstop.
+The character's stats are re-sent when the flask bar changes while it is worn (`PlaceItem`, `HeldOntoItem`, `PickUpItem`)
+and on equipment changes. Live 2026-10-26: placed flasks applied at once, and a flask key did nothing.
+The running effects and the permanent ones are combined before the strongest-per-(effect, stat) pass: a flask that was
+already used when the belt went on counts once, not twice, while different effects still stack; the running effects keep
+their own duration and stay after the belt is removed.
+
+Not modelled yet: the flask buff icons/permanent durations, the "Magic Utility Flask Effects cannot be removed" backstop
+(the client enforces it), the Foulborn rightmost variant, and Enkindling/instilling.
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 
@@ -847,6 +877,10 @@ bar for 4 s; a pause of 9 s during Quicksilver: it ended only after the resume, 
 Quicksilver at once and a use while dead was refused; `/goto 1_1_town` during Ruby: 13% again in town; picking Basalt up
 off the bar ended its effect at once. Not seen live: the client actually walking faster or phasing through monsters (the
 bridge cannot make it walk), the tooltip's duration with quality.
+
+**Mageblood:** while the unique belt is worn, the leftmost magic utility flasks apply their effects permanently without
+charges or a duration (`Program.Mageblood`, §2e); using them is refused, and the character's stats are re-sent when the
+bar changes.
 
 ## 8b. Flask charges
 

@@ -42,36 +42,43 @@ partial class Program
 
     static async Task SendWornCosmetics(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
     {
-        var worn = WornCosmetics(conn);
-        var skills = SkillSlots(conn);
-        await Send(remote, stream, ciphers, InstanceMicrotransactions.Purchased([], worn, skills),
-            $"0x01f3 worn cosmetics ({why}): {(worn.Count == 0 ? "none" : string.Join(", ", worn.Select(w => $"slot {w.Slot} = record {w.Id}")))}; " +
-            $"{skills.Count} skill slot(s){string.Concat(skills.Where(s => s.RecordId != 0).Select(s => $", key {s.Key} = record {s.RecordId}"))}");
+        await Send(remote, stream, ciphers, [], null, atGate: () =>
+        {
+            var worn = WornCosmetics(conn);
+            var skills = SkillSlots(conn);
+            Console.WriteLine($"[gateway] {remote} => 0x01f3 worn cosmetics ({why}): " +
+                $"{string.Join(", ", worn.Select(w => $"slot {w.Slot} = record {w.Id}"))}; " +
+                $"skills: {string.Join(", ", skills.Select(s => $"key {s.Key} gem 0x{s.GemHash:x8} inventory {s.Inventory} socket {s.Socket} type {s.SlotType} record {s.RecordId}"))}");
+            return InstanceMicrotransactions.Purchased([], worn, skills);
+        });
     }
 
     // The Cosmetics tab's skill slots: one per active gem type socketed in the equipment (a gem that grants a skill) and
     // effect slot type it takes (SkillGems MtxSlotTypes: the skill's effect, a totem skin), naming the first socket that
-    // holds it (the panel finds the gem item there), keyed from 50 up (past the 49 MicrotransactionSlot rows), each with
-    // what its gem type wears there. The keys are remembered on the connection for the pick (0x1fa names the key).
+    // holds it (the panel finds the gem item there). Keys start at 50, past the fixed slots, and identify target lifetimes,
+    // not positions in this list. Refresh only at the send gate: queued work must not publish an obsolete binding.
+    static List<(byte Row, byte Socket, uint Gem, byte SlotType)> SkillCosmeticPlaces(ClientState conn) =>
+        PlayerInventories.For(CharacterName(conn), Items).SocketedGemPlaces()
+            .Where(g => Items.GemEffects(g.Gem).Any()).DistinctBy(g => g.Gem.TypeHash)
+            .SelectMany(g => (Items.ByHash(g.Gem.TypeHash) is { } t && Items.Gem(t) is { MtxSlotTypes.Count: > 0 } gem ? gem.MtxSlotTypes : [0])
+                .Select(slotType => (g.Row, (byte)g.Socket, Gem: g.Gem.TypeHash, SlotType: (byte)slotType)))
+            .Take(byte.MaxValue).ToList();
+
     static List<InstanceMicrotransactions.SkillSlot> SkillSlots(ClientState conn)
     {
         string character = CharacterName(conn);
-        var places = PlayerInventories.For(character, Items).SocketedGemPlaces()
-            .Where(g => Items.GemEffects(g.Gem).Any()).DistinctBy(g => g.Gem.TypeHash)
-            .SelectMany(g => (Items.ByHash(g.Gem.TypeHash) is { } t && Items.Gem(t) is { MtxSlotTypes.Count: > 0 } gem ? gem.MtxSlotTypes : [0])
-                .Select(slotType => (g.Row, g.Socket, Gem: g.Gem.TypeHash, SlotType: (byte)slotType)))
-            .Take(byte.MaxValue).ToList();
+        var places = SkillCosmeticPlaces(conn);
         var worn = CharacterSaves.SkillCosmetics(character);
         var slots = new List<InstanceMicrotransactions.SkillSlot>();
-        conn.SkillSlots = [];
-        foreach (var (place, i) in places.Select((p, i) => (p, i)))
+        var previous = conn.SkillSlots.Values.ToDictionary(s => (s.Inventory, s.Socket, s.GemHash, s.SlotType), s => s.Key);
+        foreach (var place in places)
         {
-            uint key = (uint)(InstanceMicrotransactions.SlotCount + i);
-            conn.SkillSlots[key] = (place.Gem, place.SlotType);
-            var slot = new InstanceMicrotransactions.SkillSlot(key, place.Gem, place.Row, (byte)place.Socket, place.SlotType);
+            uint key = previous.TryGetValue(place, out uint existing) ? existing : checked(conn.NextSkillCosmeticKey++);
+            var slot = new InstanceMicrotransactions.SkillSlot(key, place.Gem, place.Row, place.Socket, place.SlotType);
             slots.Add(worn.TryGetValue(CharacterSaves.SkillCosmeticKey(place.Gem, place.SlotType), out var w) && Mtx.Find(w.Record) is { } record
                 ? slot with { RecordId = record.Id, MtxTypeHash = record.MtxTypeHash } : slot);
         }
+        conn.SkillSlots = slots.ToDictionary(s => s.Key);
         return slots;
     }
 
@@ -82,19 +89,22 @@ partial class Program
     static async Task PickSkillCosmetic(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (uint Key, uint RecordId) pick)
     {
         var record = pick.RecordId == 0 ? null : Mtx.Find(pick.RecordId);
-        if (!conn.SkillSlots.TryGetValue(pick.Key, out var slot) || (pick.RecordId != 0 && record is null))
+        if (!conn.SkillSlots.TryGetValue(pick.Key, out var slot)
+            || !SkillCosmeticPlaces(conn).Contains((slot.Inventory, slot.Socket, slot.GemHash, slot.SlotType))
+            || (pick.RecordId != 0 && (record is null || Items.ByHash(slot.GemHash) is not { } gem
+                || !MtxEffects.FitsSkill(record.MtxTypeHash, gem, slot.SlotType))))
         {
-            Console.WriteLine($"[gateway] {remote} <= 0x01fa skill cosmetic pick: key {pick.Key}, record {pick.RecordId}: not a skill slot or not a record, ignored");
+            Console.WriteLine($"[gateway] {remote} <= 0x01fa skill cosmetic pick: key {pick.Key}, record {pick.RecordId}: stale target or incompatible record, ignored");
             return;
         }
-        Console.WriteLine($"[gateway] {remote} <= 0x01fa skill cosmetic pick: key {pick.Key} (gem 0x{slot.Gem:x8}, slot type {slot.SlotType}), " +
+        Console.WriteLine($"[gateway] {remote} <= 0x01fa skill cosmetic pick: key {pick.Key} (gem 0x{slot.GemHash:x8}, slot type {slot.SlotType}), " +
             $"record {pick.RecordId} (hash 0x{record?.MtxTypeHash ?? 0:x8}, stats {string.Join(", ", (record is null ? null : MtxEffects.Of(record.MtxTypeHash))?.Stats.Select(st => $"{Stats.Name(st.Stat)} {st.Value}") ?? [])})");
-        CharacterSaves.SetSkillCosmetic(CharacterName(conn), slot.Gem, slot.SlotType, record is null ? null : new CharacterSaves.SavedCosmetic(record.Id, 0));
+        CharacterSaves.SetSkillCosmetic(CharacterName(conn), slot.GemHash, slot.SlotType, record is null ? null : new CharacterSaves.SavedCosmetic(record.Id, 0));
         await SendWornCosmetics(remote, stream, ciphers, conn, "after the skill pick");
         await SendSkills(remote, stream, ciphers, conn);
         // A Righteous Fire already burning from this gem takes the new art at once: casting again while it burns does
         // nothing, so it is lit again with the new ring and buff visuals.
-        await RelightRighteousFire(remote, stream, ciphers, conn, "restyled by the skill pick", slot.Gem);
+        await RelightRighteousFire(remote, stream, ciphers, conn, "restyled by the skill pick", slot.GemHash);
     }
 
     // Ends a burning Righteous Fire and lights it again from its gem (only from the gem of type `gem`, when given), so a

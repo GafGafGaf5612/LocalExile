@@ -52,6 +52,9 @@ public static class InstanceMicrotransactions
     /// fits (0x1424ac1e0) when its ItemisedVisualEffect row's EffectSlotType is <paramref name="SlotType"/> (a
     /// MicrotransactionSkillGemEffectSlotTypes row, one of the gem's SkillGems MtxSlotTypes) and its BaseItemTypes and
     /// ItemClasses lists hold the gem's (or are empty).
+    /// The key is an opaque identity returned by 0x1fa, not a byte-sized list index. The Gateway keeps it only for an
+    /// unchanged target lifetime and never rebinds a retired key on that connection (issue #306).
+    /// Saved effects remain keyed by gem type and effect slot type independently of this transient wire identity.
     /// </summary>
     public sealed record SkillSlot(uint Key, uint GemHash, byte Inventory, byte Socket, byte SlotType = 0, uint RecordId = 0, uint MtxTypeHash = 0);
 

@@ -6,8 +6,10 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 
 ## 1. Quality of life
 
-Aura intent persistence, town suppression and death reset are implemented;
-validate town/combat/character-switch round trips in the real client (protocol/11-skills.md).
+Aura intent persistence, town suppression, own-aura restriction (#304) and death reset are implemented.
+Own-aura restriction has native paired-buff, bonus, reservation, relog and death controls.
+Validate native grey-icon prediction and broader town/combat/character-switch round trips.
+The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-skills.md sections 10c and 13.
 
 ## 3. Gameplay
 
@@ -71,6 +73,11 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Purity of Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste are implemented with their buff
   visuals and `/auras`, awaiting live verification ([11](../docs/protocol/11-skills.md) 13,
   [Status](../status/skills-and-combat.md)).
+  Own-aura admission and suspension have source/dispatch/send-gate/lifecycle coverage, including Rage refreshes.
+  Fifteen native controls verify installed pairs, actual bonuses/Mana, refusal, restoration, relog and death.
+  Native grey-icon prediction and persistent restricting equipment remain separate verification.
+  Duplicate-instance support context and queued ordinary acknowledgements have separate regression controls.
+  Complete Lone Messenger, party auras and unsupported curse/enemy/banner/Vaal executors remain separate.
 - **Start:** the auras' 3D effects (BuffVisuals EPKs of the `IsSkillBuff` rows do not render, unlike Righteous
   Fire's); the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
   Determination/Grace/Discipline's armour/evasion/ES effects.
@@ -105,7 +112,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Whisperer's 150% spell-increase transfer has shared attack regression coverage and native hit/panel checks.
   Remaining conditional modifier sources are separate; see [20](../docs/protocol/20-damage.md) §2c.
   Steel Willed's attack increase from complete groups of final armour has shared regression and native coverage.
-  Its recent-hit armour doubling and the other Behemoth nodes remain separate work.
+  Boolean chaos-hit armour has native raw-source Life-loss controls and shared incoming-hit regressions.
+  Mixed monster packets and ES/block/suppression/Fortification have automated coverage; recheck them natively.
+  See Status and protocol/20-damage.md section 2e.
+  Recent-hit armour doubling/history, partial armour percentages and whole-class Incorruptible remain separate.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.

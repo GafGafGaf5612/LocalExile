@@ -51,11 +51,13 @@ partial class Program
     // Restoring an already enabled aura is not a fresh cast: transient mana availability must not discard its saved intent.
     static IReadOnlyList<AuraCatalog.Aura> RestoreRememberedAuras(ClientState conn, IEnumerable<string> saved)
     {
+        if (conn.Closed || conn.LeavingArea || InTown(conn) || OwnAuraRestrictionValue(conn) != 0) return [];
         var wanted = saved.ToHashSet(StringComparer.Ordinal);
         var candidates = new List<AuraCatalog.Aura>();
         foreach (var gem in GemSkillEffects(conn.Character))
             if (Skills.EffectId(gem.Effect) is { } effect && wanted.Contains(effect) && AuraCatalog.Supported(effect)
                 && !conn.Auras.Values.Any(a => a.EffectId == effect)
+                && GemSkillInstanceDisabled(conn, gem.Effect, gem.Id) is null
                 && SupportedReservation(conn, gem.Id) is { } reservation)
                 candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
                     reservation.Flat, reservation.Percent, SupportedSkill(conn, gem.Id).Level, SupportedSkill(conn, gem.Id).Quality, SourceBuff: conn.NextBuff++));
@@ -63,8 +65,11 @@ partial class Program
         foreach (var aura in restored) conn.Auras[aura.SkillId] = aura;
         if (restored.Count > 0)
         {
+            conn.AuraStatsDirty = true;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
+            conn.PlayerMana = Math.Min(conn.PlayerMana,
+                (uint)AuraCatalog.UnreservedMana(conn.Pools, conn.Auras.Values));
             Console.WriteLine($"[gateway] {CharacterName(conn)}: restored saved auras: {string.Join(", ", restored.Select(a => a.EffectId))}");
         }
         return restored;
@@ -82,12 +87,11 @@ partial class Program
         {
             ended = [.. conn.Auras.Values];
             conn.Auras.Clear();
+            conn.AuraStatsDirty = ended.Count > 0 || conn.AuraStatsDirty;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
         }
-        foreach (var aura in ended)
-            foreach (var packet in AuraCatalog.EndPackets(aura, PlayerId))
-                await Send(remote, stream, ciphers, packet, $"aura {aura.EffectId} ends on death");
+        await SendOwnAuraChanges(remote, stream, ciphers, conn);
         if (ended.Count > 0)
         {
             await SendCharacterStats(remote, stream, ciphers, conn, "auras cleared on death");
@@ -110,7 +114,11 @@ partial class Program
 
     static int ReservedMana(ClientState conn)
     {
-        lock (conn.Monsters) return AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
+        lock (conn.Monsters)
+        {
+            EnsureOwnAuraPools(conn);
+            return AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
+        }
     }
 
     static int UnreservedMana(ClientState conn) => Math.Max(0, (int)conn.Pools.Mana - ReservedMana(conn));
@@ -123,7 +131,15 @@ partial class Program
         {
             // Sample both values together after earlier sends, including a queued pool/reservation rebuild.
             lock (conn.Monsters)
-                return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool);
+            {
+                // Preserve already-paid cost publication on the existing retired-action path.
+                // Aura restoration/presentation is forbidden on that old connection.
+                if (conn.Closed || conn.LeavingArea)
+                    return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana,
+                        (uint)ReservedMana(conn), pool: ManaPool);
+                return WithOwnAuraChanges(conn, () => InstanceProtocol.LifeUpdate(PlayerId,
+                    conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool));
+            }
         });
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
@@ -727,23 +743,27 @@ partial class Program
         }
         foreach (var (label, bytes) in messages)
             if (label == creationLabel)
-                await SendPlayerStatSnapshot(remote, stream, ciphers, conn, () =>
+                await Send(remote, stream, ciphers, [], label, atGate: () =>
                 {
-                    var current = PlayerForCreation(conn);
-                    conn.PeerTemplate = current;
-                    conn.ClientSkillIds = [.. current.Skills!.Select(s => s.Id)];
-                    return InstanceEntities.CreateObject(PlayerId, type, current.Blob());
-                }, label);
+                    lock (conn.Monsters)
+                    {
+                        if (conn.Closed || conn.LeavingArea) return null;
+                        ReconcileOwnAuras(conn, validateSkills: true);
+                        var player = PlayerForCreation(conn);
+                        conn.PeerTemplate = player;
+                        conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
+                        conn.PresentedAuras.Clear(); // A new object has no installed buff instances.
+                        conn.AuraStatsDirty = false; // Initial pools and stats already include reconciliation.
+                        conn.PlayerObjectCreated = true;
+                        return InstanceEntities.CreateObject(PlayerId, conn.PeerType, player.Blob());
+                    }
+                });
             else if (label == "0x01b3 class attributes")
                 await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
                     () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), label);
             else await Send(remote, stream, ciphers, bytes, label);
         // An area change creates a new player object, so the running auras' buffs must be put on it again.
-        List<AuraCatalog.Aura> auras;
-        lock (conn.Monsters) auras = [.. conn.Auras.Values];
-        foreach (var aura in auras)
-            foreach (var packet in AuraBuffs(aura))
-                await Send(remote, stream, ciphers, packet,
-                    $"0x01c1 player aura {aura.Name} restored after the area change");
+        await SendOwnAuraChanges(remote, stream, ciphers, conn, replay: true);
     }
+
 }

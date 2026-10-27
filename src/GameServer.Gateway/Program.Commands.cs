@@ -35,16 +35,22 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.MovementVelocityPct, totalPct)]),
                 $"0x01b3 stats: movement_velocity_+% (key {StatKeys.MovementVelocityPct}) = {totalPct} ({conn.Pools.MovementVelocityPct} passive + {percent - 100} dev)");
         })
-        .Add("set_stat", "/set_stat <stat name or client key> <value> (e.g. attack_speed_+% 100)", async args =>
+        .Add("set_stat", "/set_stat <stat name or client key> <value|off> (off removes the dev replacement)", async args =>
         {
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
-            int value = int.Parse(args[1]);
+            bool off = args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
+            int value = off ? 0 : int.Parse(args[1]);
             bool rebuildMana = stat == Stats.Key(StrengthMana.PerFourStrength);
-            lock (conn.Monsters) conn.PlayerStats[stat] = value;
-            // Raw critical, overcap and Strength-derived mana inputs rebuild pools, including zero replacements.
+            lock (conn.Monsters)
+            {
+                if (off) conn.PlayerStats.Remove(stat);
+                else conn.PlayerStats[stat] = value;
+            }
+            // Keep each supported raw consumer and source restoration when another mechanic changes this gate.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
                 || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
-                || rebuildMana)
+                || rebuildMana
+                || Stats.Name(stat) == PlayerHitMitigation.ArmourAppliesToChaos)
             {
                 while (true)
                 {
@@ -64,10 +70,14 @@ partial class Program
             // The client's requirement checks (gear and gems) read virtual_strength/dexterity/intelligence_for_requirements,
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
-                lock (conn.Monsters) conn.PlayerStats[requirement] = value;
+                lock (conn.Monsters)
+                {
+                    if (off) conn.PlayerStats.Remove(requirement);
+                    else conn.PlayerStats[requirement] = value;
+                }
             await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
             () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
-                $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
+                $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {(off ? "the character's own" : value)}, and the attack's final stats");
             // Skills compute with their own stats (the attack and the character panel read those), so send them again.
             await SendSkills(remote, stream, ciphers, conn);
             // Reservation can change with maximum mana even when recovery leaves current mana unchanged.
@@ -110,7 +120,7 @@ partial class Program
             var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
             await SpawnMonster(remote, stream, ciphers, conn, variety, level, rarity, x, y, name, friendly);
         })
-        .Add("item", "/item <BaseItemTypes row, Id or name> [count] [magic|rare] (into the inventory, e.g. /item Small Life Flask 2, /item Iron Ring rare)", async args =>
+        .Add("item", "/item <BaseItemTypes row, Id, name or unique> [count] [magic|rare] (into the inventory, e.g. /item Small Life Flask 2, /item Iron Ring rare, /item Mageblood)", async args =>
         {
             if (args.Length == 0) throw new ArgumentException("which item?");
             ItemRarity rolled = ItemRarity.Normal;
@@ -118,7 +128,27 @@ partial class Program
             int count = 1, requested = 1;
             if (args.Length > 1 && int.TryParse(args[^1], out int n)) { requested = n; count = Math.Clamp(n, 1, 60); args = args[..^1]; }
             if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
-            if (Items.Find(string.Join(' ', args)) is not { } type) { await conn.Commands!.Reply($"No item type \"{string.Join(' ', args)}\""); return; }
+            string query = string.Join(' ', args);
+            if (Uniques.Find(query) is { } unique)
+            {
+                var uniqueItems = ItemsOf(conn);
+                var uniqueAdded = new List<InventoryItem>();
+                for (int i = 0; i < count; i++)
+                {
+                    if (Uniques.Create(unique.Name, Random.Shared) is not { } createdUnique
+                        || Items.ByHash(createdUnique.TypeHash) is not { } uniqueType
+                        || uniqueItems.FreeCell(PlayerInventories.MainInventory, uniqueType.Width, uniqueType.Height, ShapeOf) is not { } uniqueCell) break;
+                    uniqueAdded.Add(uniqueItems.Put(PlayerInventories.MainInventory,
+                        new InventoryItem(uniqueItems.NewItemId(), uniqueCell.X, uniqueCell.Y, createdUnique)));
+                }
+                if (uniqueAdded.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
+                await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                    uniqueItems.NextRevision(PlayerInventories.MainInventory), [], uniqueAdded),
+                    $"0x00bf inventory 1: /item {unique.Name} x {uniqueAdded.Count}");
+                await conn.Commands!.Reply($"Added {unique.Name}");
+                return;
+            }
+            if (Items.Find(query) is not { } type) { await conn.Commands!.Reply($"No item type \"{query}\""); return; }
             if (!type.Supported)
             {
                 await conn.Commands!.Reply($"{type} has components the server cannot write yet: {string.Join(", ", type.Components.Where(c => !Item.Supported.Contains(c)))}");

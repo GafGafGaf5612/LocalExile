@@ -17,9 +17,9 @@ partial class Program
 
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
-    // The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
-    // row is used (its minimum roll, matching the item's default base percentile); local/global mods and quality are not
-    // modelled. Shields are excluded for now. Inactive items (requirements not met) give none.
+    // The local armour, evasion and energy shield of the equipped body armour, helmet, gloves, boots and shield: the base
+    // type's ArmourTypes roll (its minimum, matching the item's zero base percentile) plus the item's local flat/increased
+    // defence mods and quality (ItemDefences). Inactive items (requirements not met) give none.
     static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
     {
         var items = ItemsOf(conn);
@@ -28,16 +28,10 @@ partial class Program
             if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
                 && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
             {
-                armour += d.ArmourMin;
-                evasion += d.EvasionMin;
-                var local = ItemModStats.Local(equipped.Item, Items.Mods);
-                int flat = d.EnergyShieldMin + local.GetValueOrDefault("local_energy_shield")
-                    + local.GetValueOrDefault("local_evasion_rating_and_energy_shield");
-                int increase = local.GetValueOrDefault("local_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_energy_shield_+%")
-                    + local.GetValueOrDefault("local_evasion_and_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_evasion_and_energy_shield_+%");
-                // Armour quality is a separate multiplier since 3.25. Item's base percentile is currently zero (minimum).
-                if (local.GetValueOrDefault("local_no_energy_shield") == 0)
-                    energyShield += (int)(EnergyShield.Max(flat, increase) * (100L + equipped.Item.Quality) / 100);
+                var (a, e, s) = ItemDefences.Of(d, ItemModStats.Local(equipped.Item, Items.Mods), equipped.Item.Quality);
+                armour += a;
+                evasion += e;
+                energyShield += s;
             }
         return (armour, evasion, energyShield);
     }
@@ -56,9 +50,9 @@ partial class Program
         ItemsOf(conn).Items(row).Where(i => !IsInactive(conn, i.Id))
             .Select(i => ((Item, ItemCatalog.BaseType?)?)(i.Item, Items.ByHash(i.Item.TypeHash))).FirstOrDefault();
 
-    // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, its
-    // physical damage with the weapon's own local mods (local_physical_damage_+%, local_minimum / maximum_added_physical_damage)
-    // and its attack time with local_attack_speed_+%; no weapon, the class's unarmed attack.
+    // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, with the
+    // item's local stats (ItemWeapons: physical damage and quality, attack speed, local added elemental/chaos damage); no
+    // weapon, the class's unarmed attack.
     static SkillCatalog.Unarmed WeaponFor(ClientState conn) => WeaponOf(conn, ActiveMainHand(conn));
 
     static SkillCatalog.Unarmed WeaponOf(ClientState conn, (Item Item, ItemCatalog.BaseType? Type)? mainHand) =>
@@ -69,12 +63,7 @@ partial class Program
     {
         var unarmed = Skills.UnarmedFor(conn.ClassRow);
         if (hand is not var (item, type) || type is null || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return null;
-        var local = ItemModStats.Local(item, Items.Mods);
-        double scale = 1 + local.GetValueOrDefault("local_physical_damage_+%") / 100.0;
-        int lo = (int)((min + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
-        int hi = (int)((max + local.GetValueOrDefault("local_maximum_added_physical_damage")) * scale);
-        int attackMs = (int)Math.Round(ms / (1 + local.GetValueOrDefault("local_attack_speed_+%") / 100.0));
-        return new SkillCatalog.Unarmed(Math.Max(1, attackMs), Math.Max(0, lo), Math.Max(lo, hi), Math.Max(range, unarmed.Range));
+        return ItemWeapons.Of(ms, min, max, Math.Max(range, unarmed.Range), ItemModStats.Local(item, Items.Mods), item.Quality);
     }
 
     // The off-hand weapon of a dual-wielded attack (the active set's Offhand1), with the same values WeaponIn gives the main
