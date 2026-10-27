@@ -128,7 +128,9 @@ partial class Program
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons);
         var gear = EquippedBaseDefences(conn);
-        var shield = EquippedArmourDefences(conn).FirstOrDefault(d => d.Row == PlayerInventories.Offhand1).Defence;
+        var slots = EquippedArmourDefences(conn).ToArray();
+        var shield = slots.FirstOrDefault(d => d.Row == PlayerInventories.Offhand1).Defence;
+        var body = slots.FirstOrDefault(d => d.Row == PlayerInventories.BodyArmour).Defence;
         int EquipmentStat(string name) => Stats.Key(name) is uint key ? sources.GetValueOrDefault(key) : 0;
         var converted = ConvertEquipmentEnergyShield(conn, EquipmentStat, gear.EnergyShield);
         bonus = bonus with
@@ -140,6 +142,8 @@ partial class Program
             ShieldArmour = shield.Armour, ShieldEvasion = shield.Evasion,
             // ES-to-Life consumes the local item source before any shield/global increases can act on it.
             ShieldEnergyShield = converted.EnergyShield == 0 ? 0 : shield.EnergyShield,
+            BodyArmour = body.Armour, BodyEvasion = body.Evasion,
+            BodyEnergyShield = converted.EnergyShield == 0 ? 0 : body.EnergyShield,
         };
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
@@ -390,6 +394,9 @@ partial class Program
             SharedShieldDefencesPct: Get("shield_armour_+%"),
             NoShieldDefences: Get("minions_get_shield_stats_instead_of_you") != 0
                 || Get("gain_no_defences_from_equipped_shield") != 0,
+            BodyEnergyShieldPct: Get("maximum_energy_shield_from_body_armour_+%"),
+            DoubleBodyArmour: Get("damage_reduction_rating_from_body_armour_doubled") != 0,
+            NoBodyArmour: Get("gain_no_armour_from_body_armour") != 0,
             MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
             FireResistance: allRes + Get("base_fire_damage_resistance_%"),
             ColdResistance: allRes + Get("base_cold_damage_resistance_%") + pairRes,
