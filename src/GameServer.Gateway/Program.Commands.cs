@@ -42,10 +42,12 @@ partial class Program
             int value = off ? 0 : int.Parse(args[1]);
             bool rawAttribute = AttributeModifiers.IsInput(Stats.Name(stat));
             string sourceName = Stats.Name(stat) ?? args[0];
-            bool rebuildLife = LifeManaPoolSources.IsLifeInput(sourceName);
-            bool rebuildMana = LifeManaPoolSources.IsManaInput(sourceName) || stat == Stats.Key(StrengthMana.PerFourStrength);
-            bool rebuildDefences = AttributeDefenceSources.IsInput(sourceName);
-            bool rebuildEnergyShield = sourceName == AttributeDefenceSources.EnergyShieldPerTenStrength;
+            bool rebuildLife = LifeManaPoolSources.IsLifeInput(sourceName) || InherentAttributeBonuses.IsLifeInput(sourceName);
+            bool rebuildMana = LifeManaPoolSources.IsManaInput(sourceName) || stat == Stats.Key(StrengthMana.PerFourStrength)
+                || InherentAttributeBonuses.IsManaInput(sourceName);
+            bool rebuildDefences = AttributeDefenceSources.IsInput(sourceName) || InherentAttributeBonuses.IsInput(sourceName);
+            bool rebuildEnergyShield = sourceName == AttributeDefenceSources.EnergyShieldPerTenStrength
+                || InherentAttributeBonuses.IsEnergyShieldInput(sourceName);
             bool lifeClamped = false, manaClamped = false;
             lock (conn.Monsters)
             {

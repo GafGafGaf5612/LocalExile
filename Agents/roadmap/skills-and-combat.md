@@ -102,7 +102,11 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   The ordinary inherent ES term now follows native help text and pinned PoB: 1% per ten final Intelligence.
   Focused 216 and full Gateway 3939 pass without skips, including eleven new baseline cases.
   Verify dependent recharge/full-ES conditions and queued-send scheduling natively; preserve prior captures as historical.
-  Exact official fractional/group arithmetic and attribute-bonus prohibitions remain separate work.
+  Five native prohibition inputs now suppress only the inherent attribute grants, retaining attributes, requirements
+  and item group terms. Eighty new automated cases and fresh Gateway 4019/Core 648/Data 37 pass without skips.
+  Verify those flag inputs and reload natively; the earlier fourteen controls do not certify the new operators.
+  Exact official fractional/group arithmetic, remaining prohibitions/conversions and all-source immediate Life
+  publication remain separate work; ordinary equipment Life still follows the recovery tick.
   Full-ES suppression chance now follows the effective resource state and shares the panel/combat consumer.
   Ordinary typed/all-attribute increases now share one whole-source calculation for pools, equipment and gems.
   Automated real-source/removal, zero, derived-pool and active-set checks pass in both modes. Thirty-four native

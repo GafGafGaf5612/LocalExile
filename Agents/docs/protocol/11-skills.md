@@ -243,6 +243,33 @@ in Standard and Ruthless, including removal/return, no-refill, clamping and fres
 updates to the actual equipment actions; they do not certify every attribute operator or the rendered Defence rows.
 See [20](20-damage.md#player-energy-shield-2026-10-25) for the exact states and remaining recovery scope.
 
+Five native source flags now suppress only the named inherent attribute grants, after final attributes resolve:
+
+| Native source | Removed inherent contribution |
+|---|---|
+| `gain_no_maximum_life_from_strength` (7964) | Strength Life |
+| `gain_no_maximum_mana_from_intelligence` (7965) | Intelligence Mana |
+| `gain_no_inherent_bonus_from_strength` (15532) | Strength Life and melee physical increase |
+| `gain_no_inherent_bonus_from_dexterity` (18387) | Dexterity accuracy, including the mastery replacement, and Evasion increase |
+| `gain_no_inherent_bonus_from_intelligence` (18388) | Intelligence Mana and ES increase |
+
+Narrow and broad flags suppress their shared contribution once. Actual attributes and requirement fields stay intact;
+independent item Life/Mana/ES/Evasion per attribute still reads those final values. The guards follow pinned PoB
+`CalcPerform.lua` 516–543 after attribute resolution; `ModStore.lua` 501/525 retains the separate completed item groups.
+The complete raw flag sum is replaced from one developer snapshot before boolean interpretation, including explicit
+zero. Actual `/set_stat` commands rebuild the affected pools and skill stats, clamp current Life/Mana/ES as applicable,
+retain Mana reservation and leave capacity increases unfilled. Ordinary equipment Life clamping still follows the
+existing recovery tick; these command tests do not establish immediate Life publication for every source-change path.
+
+All 16 native modifier vectors, including the companion +60/80/90/120 attributes on weapon-tree rows, have automated
+both-mode catalogue/range/hash and saved-item round-trip checks. They are supplied-source controls, not acquisition or
+weapon-tree admission. The 80 new cases (64 pure/native-source and 16 Gateway) pass; fresh full Gateway 4019, Core 648
+and Data 37 all pass without skips. The diagnostic hook retains six actual disposed-stream `MonsterKilled`→`Send`
+task faults separately from 386 first-chance records; no new flag path appears in those unobserved stacks, with no
+diagnostic error/truncation/cap hit. Passing suites do not establish fault-free background execution.
+Native-client flag publication/reload remains pending. Key18620 has no direct modifier/passive source in the checked
+tables and is not an Iron Reflexes alias; global/other attribute-prohibition or conversion operators remain separate.
+
 Life and Mana also collect six signed raw pool coefficients from passives and active equipment.
 `LifeManaPoolSources` adds these terms to the flat buckets after resolving actual character level (1–100) and the
 completed nonnegative attributes, before the pool's increased percentage:

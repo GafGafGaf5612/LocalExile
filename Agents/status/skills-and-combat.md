@@ -496,6 +496,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Full Gateway 3939 covers all updated tests, including the percentage-attribute and tick cases omitted by that filter.
   Unchanged prior Core 648/Data 37 remain applicable; no tests skipped.
   Retained diagnostic faults and native/persistence limits are qualified in the defence reference below.
+  Five native prohibitions now remove only inherent Strength Life/melee, Dexterity accuracy/EV and Intelligence Mana/ES;
+  the narrow Life/Mana flags overlap once with their broad counterpart. Final attributes, requirements and item group
+  terms remain active. One whole raw developer snapshot supports zero replacements and affected resource publication.
+  All 16 full native vectors retain their companion attributes and saved payloads in both-mode automated controls.
+  Eighty new cases pass (64 pure/native-source, 16 Gateway); fresh full Gateway 4019/Core 648/Data 37 pass with no skips.
+  Its hook records six actual disposed-stream `MonsterKilled`→`Send` task faults and 386 separate first-chance records;
+  no new flag path or diagnostic error/truncation/cap hit is captured. This is not a fault-free-run claim.
+  Native flag publication/reload and all-source immediate Life publication remain unverified; ordinary equipment Life
+  still clamps on the existing recovery tick. Key18620 has no checked direct source and is not an IR alias.
   Code: `CharacterStats.cs`, `ItemModStats.cs`, Gateway (`CharacterStatSources`, `PassiveBonus`, `ClassAttributes`).
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2d,
   [attribute-scaled defences](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).

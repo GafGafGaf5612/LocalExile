@@ -661,7 +661,15 @@ Complete groups follow the accepted pinned model; exact official fractional/grou
 At Intelligence 132, the native-source recipe's zero/one/two Strength coefficients now give ES 113/124/135.
 The corresponding EV 18/22/26, local item ES and converted Life remain unchanged.
 
-Fourteen fresh native controls at actual level 100 (A0–A6 in Standard and Ruthless) bind this source/build to the
+`gain_no_inherent_bonus_from_intelligence` suppresses the inherent Intelligence ES increase; it leaves final
+Intelligence, item Evasion per ten Intelligence and item ES per ten Strength intact. The broad Dexterity flag removes
+only inherent Dexterity Evasion and accuracy; IR already excludes that inherent Evasion term while retaining the item
+and shared/slot terms. The broad Strength flag removes inherent Life/melee grants without removing item ES or Mana per Strength.
+The narrow Life/Mana flags and the broad flags compose as described in [11](11-skills.md) section 4. Eighty new
+automated cases cover exact native vectors, overlaps, whole-source zero overrides, command resource changes and retained
+item/slot/IR terms; all 4704 fresh full-suite cases pass. Native checks of these new flag inputs remain pending.
+
+Fourteen native controls at actual level 100 (A0–A6 in Standard and Ruthless) bind source `810d98b` to the
 current owned Player and its ordinary resources. The fixed state sequence is ES 103/104/124/135/124/113/135,
 EV 15/16/22/26/22/18/26, and current ES 103/102/103/123/124/113/135 in both modes.
 The fixture supplies a native 100 flat-ES vector, native 1/2 attribute coefficients and an in-range +100 qualifier;
@@ -688,6 +696,7 @@ Evidence: `artifacts/issue75-completion/attribute-defence3-native/final-fourteen
 assessment, independent review, preservation and cleanup receipts. These are bounded supplied-source controls:
 no legal acquisition, Defence formatter/row binding, rendered zero, official fractional arithmetic, complete issue row,
 native queued-send scheduling, or newly corrected recharge/full-ES-condition certification is implied.
+These controls precede the five prohibition operators and do not establish their native-client behaviour.
 
 Discipline supplies another global flat ES source after equipment conversion, including with no ES equipment worn.
 Its 60/217 flat ES at gem levels 1/20 receives Intelligence and global ES increases, without shield-only modifiers.

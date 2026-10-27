@@ -96,7 +96,9 @@ static class CharacterStats
         int LifePerLevel = 0, int ManaPerLevel = 0,
         int LifePerTenDexterity = 0, int LifePerTenIntelligence = 0,
         int LifePerFourDexterity = 0, int LifePerTwoIntelligence = 0,
-        int EnergyShieldPctPerTenStrength = 0, int EvasionPctPerTenIntelligence = 0)
+        int EnergyShieldPctPerTenStrength = 0, int EvasionPctPerTenIntelligence = 0,
+        bool NoLifeFromStrength = false, bool NoManaFromIntelligence = false,
+        bool NoStrengthBonuses = false, bool NoDexterityBonuses = false, bool NoIntelligenceBonuses = false)
     {
         public static readonly Bonus None = new();
     }
@@ -150,12 +152,16 @@ static class CharacterStats
         };
         var (str, dex, intel) = attributes.Apply((long)c.Strength + b.Strength,
             (long)c.Dexterity + b.Dexterity, (long)c.Intelligence + b.Intelligence);
+        // These prohibitions remove only inherent grants. Final attributes still supply item group terms and
+        // requirements; narrow and broad flags suppress their shared contribution once.
+        int strengthLife = b.NoLifeFromStrength || b.NoStrengthBonuses ? 0 : str / 2;
+        int intelligenceMana = b.NoManaFromIntelligence || b.NoIntelligenceBonuses ? 0 : intel / 2;
         // Complete attribute groups and signed per-level additions join the flat bucket after final attributes.
         // Preserve the existing floor projection; pinned PoB's final pool round is a separate parity question.
         // Equipment ES-to-Life conversion can supply a large flat value. Keep the signed panel stat representable.
-        decimal flatLife = c.BaseMaxLife + 12m * level + str / 2 + b.Life
+        decimal flatLife = c.BaseMaxLife + 12m * level + strengthLife + b.Life
             + LifeManaPoolSources.AdditionalLife(level, dex, intel, b);
-        long flatMana = c.BaseMaxMana + 6L * level + intel / 2 + b.Mana
+        long flatMana = c.BaseMaxMana + 6L * level + intelligenceMana + b.Mana
             + LifeManaPoolSources.AdditionalMana(level, b);
         uint life = b.ChaosInoculation ? 1 : (uint)Math.Clamp(decimal.Floor(flatLife
             * (100m + b.LifePct) / 100m), 1m, int.MaxValue);
@@ -166,8 +172,8 @@ static class CharacterStats
         // PoB CalcOffence: accuracy = floor(base * (1 + increased / 100)) with no more multiplier modelled. The
         // Accuracy Mastery can replace the 2 per level and 2 per dexterity, and add Accuracy equal to Intelligence.
         long accuracyPerLevel = 2L + b.AccuracyPerLevel;
-        int accuracyPerDex = b.DexterityAccuracyTriple ? 3 : 2;
-        long accuracyBase = Math.Max(0, (long)accuracyPerLevel * level + (long)accuracyPerDex * dex + b.Accuracy
+        int accuracyPerDex = b.NoDexterityBonuses ? 0 : b.DexterityAccuracyTriple ? 3 : 2;
+        long accuracyBase = Math.Max(0, accuracyPerLevel * level + (long)accuracyPerDex * dex + b.Accuracy
             + (b.AccuracyEqualsIntelligence ? intel : 0));
         int accuracy = (int)Math.Clamp(Math.Floor(accuracyBase * (1 + b.AccuracyPct / 100.0)), 0, int.MaxValue);
         // PoB CalcDefence: armour and evasion are flat defences raised by their increased modifiers. Evasion keeps the
@@ -199,7 +205,7 @@ static class CharacterStats
         // before slot increases/MORE; Iron Reflexes retains this item term while excluding inherent Dexterity.
         long ordinaryEvasionPct = (long)b.EvasionPct + b.ColdOvercapEvasionPct
             + (long)b.EvasionPctPerTenIntelligence * (intel / 10);
-        long totalEvasionPct = dex / 5L + ordinaryEvasionPct;
+        long totalEvasionPct = (b.NoDexterityBonuses ? 0L : dex / 5L) + ordinaryEvasionPct;
         int evasionPct = (int)Math.Clamp(totalEvasionPct, int.MinValue, int.MaxValue);
         long evasionBase = BaseEvasion + (long)b.Evasion;
         decimal evasionValue = More(Increased(evasionBase, b.ShieldEvasion, b.BodyEvasion, totalEvasionPct,
@@ -220,7 +226,7 @@ static class CharacterStats
         int armour = Rating(armourValue), evasion = Rating(evasionValue);
         // Native ClientStrings IntelligenceDescription: 10 Intelligence grants 1% increased ES.
         // Pinned PoB CalcPerform applies complete groups after resolving final attributes.
-        long totalEnergyShieldPct = intel / 10L + b.EnergyShieldPct
+        long totalEnergyShieldPct = (b.NoIntelligenceBonuses ? 0L : intel / 10L) + b.EnergyShieldPct
             + (long)b.EnergyShieldPctPerTenStrength * (str / 10);
         int energyShieldPct = (int)Math.Clamp(totalEnergyShieldPct, int.MinValue, int.MaxValue);
         uint energyShield = (uint)Rating(Increased(b.EnergyShield, b.ShieldEnergyShield, b.BodyEnergyShield,
@@ -242,9 +248,10 @@ static class CharacterStats
             MidpointRounding.AwayFromZero);
         attackSpeedPct = Math.Max(-99, attackSpeedPct);
         return new(level, life, mana, accuracy, ExperienceFor(level, folder),
-            Armour: armour, ArmourPct: armourPct, Evasion: evasion, EvasionPct: AttributeModifiers.Signed(evasionPct),
-            EnergyShieldPct: AttributeModifiers.Signed(energyShieldPct), EnergyShield: energyShield,
-            MeleePhysicalDamagePct: AttributeModifiers.Signed((long)str / 5 + b.MeleePhysicalDamagePct),
+            Armour: armour, ArmourPct: armourPct, Evasion: evasion, EvasionPct: evasionPct,
+            EnergyShieldPct: energyShieldPct, EnergyShield: energyShield,
+            MeleePhysicalDamagePct: (int)Math.Clamp((b.NoStrengthBonuses ? 0L : str / 5L)
+                + b.MeleePhysicalDamagePct, int.MinValue, int.MaxValue),
             Strength: str, Dexterity: dex, Intelligence: intel,
             FireResistance: BaseResistance + b.FireResistance, ColdResistance: BaseResistance + b.ColdResistance,
             LightningResistance: BaseResistance + b.LightningResistance, ChaosResistance: BaseResistance + b.ChaosResistance,

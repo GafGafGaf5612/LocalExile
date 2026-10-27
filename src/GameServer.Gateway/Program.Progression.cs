@@ -201,6 +201,17 @@ partial class Program
                 bonus.EnergyShieldPctPerTenStrength),
             EvasionPctPerTenIntelligence = PoolSource(AttributeDefenceSources.EvasionPerTenIntelligence,
                 bonus.EvasionPctPerTenIntelligence),
+            // Replace the complete raw flag sum before interpreting it, including an explicit developer zero.
+            NoLifeFromStrength = PoolSource(InherentAttributeBonuses.NoLifeFromStrength,
+                EquipmentStat(InherentAttributeBonuses.NoLifeFromStrength)) != 0,
+            NoManaFromIntelligence = PoolSource(InherentAttributeBonuses.NoManaFromIntelligence,
+                EquipmentStat(InherentAttributeBonuses.NoManaFromIntelligence)) != 0,
+            NoStrengthBonuses = PoolSource(InherentAttributeBonuses.NoStrengthBonuses,
+                EquipmentStat(InherentAttributeBonuses.NoStrengthBonuses)) != 0,
+            NoDexterityBonuses = PoolSource(InherentAttributeBonuses.NoDexterityBonuses,
+                EquipmentStat(InherentAttributeBonuses.NoDexterityBonuses)) != 0,
+            NoIntelligenceBonuses = PoolSource(InherentAttributeBonuses.NoIntelligenceBonuses,
+                EquipmentStat(InherentAttributeBonuses.NoIntelligenceBonuses)) != 0,
         };
         if (Stats.Key(StrengthMana.PerFourStrength) is uint manaPerStrength
             && devStats.TryGetValue(manaPerStrength, out int perFourStrength))
@@ -439,6 +450,11 @@ partial class Program
             LifePerTenIntelligence: Get(LifeManaPoolSources.LifePerTenIntelligence),
             LifePerFourDexterity: Get(LifeManaPoolSources.LifePerFourDexterity),
             LifePerTwoIntelligence: Get(LifeManaPoolSources.LifePerTwoIntelligence),
+            NoLifeFromStrength: Get(InherentAttributeBonuses.NoLifeFromStrength) != 0,
+            NoManaFromIntelligence: Get(InherentAttributeBonuses.NoManaFromIntelligence) != 0,
+            NoStrengthBonuses: Get(InherentAttributeBonuses.NoStrengthBonuses) != 0,
+            NoDexterityBonuses: Get(InherentAttributeBonuses.NoDexterityBonuses) != 0,
+            NoIntelligenceBonuses: Get(InherentAttributeBonuses.NoIntelligenceBonuses) != 0,
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             EvasionPctPerTenIntelligence: Get(AttributeDefenceSources.EvasionPerTenIntelligence),
