@@ -113,6 +113,25 @@ static class ItemMoves
         return new(changed, payments);
     });
 
+    public sealed record HarvestResult(InventoryItem Changed, IReadOnlyList<Price> Payments);
+
+    /// <summary>The item in the Horticrafting Station slot and every lifeforce cost commit together.</summary>
+    public static HarvestResult? HarvestAtStation(PlayerInventories items, AccountStash stash, HarvestCrafting harvest,
+        ushort recipe, Random random) => Saves.Atomically<HarvestResult?>(() =>
+    {
+        var targets = items.Items(PlayerInventories.HarvestCrafting);
+        if (targets.Count != 1 || harvest.Apply(recipe, targets[0].Item, random) is not { } craft) return null;
+        foreach (var (currency, amount) in craft.Costs)
+            if (amount < 0 || (long)items.Count(Main, currency) + stash.CountOf(currency) < amount) return null;
+        var payments = new List<Price>();
+        foreach (var (currency, amount) in craft.Costs)
+            if (amount > 0) payments.Add(Pay(items, stash, currency, amount)
+                ?? throw new InvalidOperationException("Harvest payment changed after validation"));
+        var changed = items.Change(PlayerInventories.HarvestCrafting, targets[0].Id, _ => craft.Item)
+            ?? throw new InvalidOperationException("Harvest item disappeared after payment");
+        return new(changed, payments);
+    });
+
     /// <summary>
     /// Pays <paramref name="amount"/> of a currency type: from the main inventory's stacks first, the rest from the stash's
     /// (any tab), as a vendor takes it. Null (nothing changes) when the two together hold fewer. Call it inside a

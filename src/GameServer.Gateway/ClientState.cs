@@ -414,6 +414,8 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public (int X, int Y) HorticraftingAt;
     public uint CraftingBenchObject;
     public bool BenchOpen;
+    /// <summary>The Horticrafting Station's recipe browser is the open window; its craft requests are served only then.</summary>
+    public bool HarvestOpen;
     public bool BenchBalanceSent;
     public uint BenchBalanceRevision;
     public IReadOnlyList<InventoryItem> BenchBalanceItems = [];
