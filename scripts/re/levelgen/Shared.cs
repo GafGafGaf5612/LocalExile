@@ -51,12 +51,14 @@ static class Shared
 
     /// <summary>The LCG draws that object scripts make when a doodad is created: 0x142063a60 (call site 0x142063b9c), an
     /// animated entity's random start time (rand() bits × length / 256); RandomElement in the Animated object actions
-    /// 0x1420aa460 (0x1420aa41b) and 0x1420d6780 (0x1420d67eb); 0x142bc8ee0's bits (0x142be7a0b). They read only the
+    /// 0x1420aa460 (0x1420aa41b), 0x1420d6780 (0x1420d67eb) and 0x1420d7050 (0x1420d70db, KalguuranSettlersLeague); 0x142bc8ee0's bits (0x142be7a0b). They read only the
     /// LCG, which 0x142046a70 reseeds from the MT before each pick, so they move nothing in the generation. Also
     /// 0x141dc4d50 (0x141dc4e2b): an object whose .ao has an AOSet takes a uniform child by the same LCG (the Heist areas
     /// cards and props), a visual variant only; the LCG also moves with rand() calls the trace does not see, so the port
-    /// cannot draw it.</summary>
-    static readonly HashSet<string> ObjectScriptDraws = ["0x142063b9c", "0x1420aa41b", "0x1420d67eb", "0x142be7a0b", "0x141dc4e2b"];
+    /// cannot draw it. And 0x140e3b3f0 (0x140e3b43f), the rand() ranges the vtable callers 0x1420e0d00 / 0x1420e2e10 /
+    /// 0x1420e42b0 draw after the seams (the Aqueducts, KalguuranSettlersLeague): LCG only, no MT draw between them, and
+    /// the tiles and doodads after them match.</summary>
+    static readonly HashSet<string> ObjectScriptDraws = ["0x142063b9c", "0x1420aa41b", "0x1420d67eb", "0x142be7a0b", "0x141dc4e2b", "0x140e3b43f", "0x1420d70db"];
 
     /// <summary>The trace's 'n' / 'u' / 'l' draws, without <see cref="ObjectScriptDraws"/>.</summary>
     public static List<(char Kind, string Caller, uint Arg, uint Result)> TraceDraws(JsonElement t) =>

@@ -223,7 +223,7 @@ repairs: the grid is final after 181 logical draws, all equal to the trace's. Th
 doodads). The Aqueducts (`1_4_1`, `2_9_1`) draw, after the seams and before that mesh variation, 87–90 `rand()`
 ranges of 14 bits (`0x140e3b3f0`, from `0x140e3b43f`; values up to ~16 300); the callers that reach
 `0x140e3b3f0` through vtables (`0x1420e0d00`, `0x1420e2e10`, `0x1420e42b0`: float ranges × 1000, tile positions ×
-250 / 23) were not told apart. Their tiles and doodads match.
+250 / 23) were not told apart. Their tiles and doodads match; the gate leaves them out of the draw comparison, with the object action 0x1420d7050 (KalguuranSettlersLeague).
 
 ## 3c2. Dungeon layouts: several nodes (`DungeonLayout.cs`, `DungeonRoomSet.cs`)
 
