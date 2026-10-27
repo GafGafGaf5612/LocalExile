@@ -548,8 +548,10 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    (`0x14201db80`) over the subgraph's view (`0x141ffb6c0`): the layout inside the outer buffer, not the buffer. Its
    tile is the first fill tile of the ground's name in the FillTiles, or of "default" when the FillTiles do not name
    it (`0x141feffb0` → `0x141fefeb0`; `1_4_5_1`, 2026-10-25).
-   Vertices with flag 1 get flag 2. When param_3 is 0 (`0x142044f30` passes its context's +8: a tile graph, whose
-   outer ground never fixes heights), the outer ground's .gt has flag 1, or master +0x161, every spot on the tile's grid
+   Vertices with flag 1 get flag 2. When param_3 is 0 (`0x142044f30` passes generator +8, which `0x14203c900` ORs from
+   its record's map view +0x20 after the dungeon tiler: `0x141ffb870` sets it for a tile placed at a nonzero height; so
+   a tile graph, and a dungeon whose tiling placed every tile at height 0, never fix heights: MapSideArea2_6,
+   MapWorldsElder_Refinery, Menagerie_Mammals), the outer ground's .gt has flag 1, or master +0x161, every spot on the tile's grid
    where it fits takes its first fill tile at orientation 0 (`0x14201e4f0`: its (w + 1) × (h + 1) vertices take the
    plain height, master +0x153, and flag 2), no draw (`1_4_4_1`, `1_4_4_3`: 3 × 3
    `lava_thick_magma` outside the layout, before the outer buffer; `DungeonTiler.OuterGroundStart`). Otherwise the heights are fixed: row by row an empty entry

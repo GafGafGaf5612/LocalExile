@@ -55,9 +55,13 @@ public sealed class TileGrid(int width, int height)
     /// <summary><c>0x141d833e0</c>: writes every entry the tile covers under its orientation, then every vertex's
     /// ground (<see cref="SetGround"/>, or <see cref="ForceGround"/> when <paramref name="force"/>) and, where the
     /// vertex ground has no ground or one with flag 1, the vertex height plus the height offset.</summary>
+    /// <summary>The tiles placed at a height so far (a map view's +0x20 is set by such a place, <c>0x141ffb870</c>).</summary>
+    public int RaisedPlacements { get; private set; }
+
     public void Place(TileDef tile, int orientation, int x, int y, short heightOffset, bool force = false)
     {
         HasHeights |= heightOffset != 0;
+        if (heightOffset != 0) RaisedPlacements++;
         // 0x141ffb870, before the map's place (0x141d833e0): such a tile goes in at its orientation & 3.
         if (Unmirrored(tile)) orientation &= 3;
         for (int v = 0; v < tile.Height; v++)

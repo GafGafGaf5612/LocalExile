@@ -331,6 +331,10 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
 
     /// <summary>The subgraph records so far (generator +0x30), for <see cref="FeatureWeight"/>.</summary>
     List<Subgraph> _records = [];
+    /// <summary>Generator +8: a dungeon record's tiling placed a tile at a height (its map view's +0x20, set by
+    /// <c>0x141ffb870</c>; <c>0x14203c900</c> ORs it in). The outer ground fixes heights only then (<c>0x142044f30</c> passes it
+    /// to <c>0x14201db80</c>): MapSideArea2_6, MapWorldsElder_Refinery and Menagerie_Mammals place none.</summary>
+    System.Runtime.CompilerServices.StrongBox<bool> _fixHeights = new();
     /// <summary>The area's TSI override, which the walk applies to every graph (<c>0x14203c190</c> given the first record).</summary>
     string? _areaMaster;
 
@@ -386,7 +390,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             }
             else
             {
-                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout, Labyrinth = Labyrinth, Town = Town, _records = records, _areaMaster = _areaMaster };
+                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout, Labyrinth = Labyrinth, Town = Town, _records = records, _areaMaster = _areaMaster, _fixHeights = _fixHeights };
                 t.Tilise(r, grid, records, i);
                 store = t._store;
                 roomsOf.Add(t._placed);
@@ -470,6 +474,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         _store = new TileStore(files, master.TryGetValue("TileSet", out var tst) ? files.TileList(TerrainText.Resolve(masterPath, tst)) : []);
         _fills = master.TryGetValue("FillTiles", out var gft) ? files.FillTiles(TerrainText.Resolve(masterPath, gft)) : [];
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
+        int raised = grid.RaisedPlacements;
         var map = Layout(r.Path, r.Orientation, masterPath, master, unit, index == 0, r.Parent <= 0);
         // Room k starts at the view's corner plus (unit − overlap) × its cell.
         int step = unit - map.Overlap;
@@ -541,6 +546,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         placed.AddRange(overlayRooms);
         placed.AddRange(_fillRooms);
         placed.AddRange(_injectedRooms);
+        if (grid.RaisedPlacements != raised) _fixHeights.Value = true;
         foreach (var p in map.Rooms)
             if (p.Room is null && p.Descriptions.Count != 0)
                 records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index, records));
@@ -1259,7 +1265,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         // The view is the subgraph's rectangle (0x141ffb6c0): the layout inside the outer buffer, which 0x14201ffa0 fills.
         var (x0, y0, x1, y1) = _view;
         var tile = OuterTile(files, _fills, ground);
-        if (OuterGroundStart(_grid, tile, _view, fixHeights: (ground.Flags & 1) == 0) is not { } a) return;
+        if (OuterGroundStart(_grid, tile, _view, fixHeights: _fixHeights.Value && (ground.Flags & 1) == 0) is not { } a) return;
         int tw = tile.Width, th = tile.Height, vw = x1 - x0, vh = y1 - y0;
         bool Fits(int x, int y) => OuterFits(_grid, tile, _view, a, x, y);
         // 0x14201e930: the written heights at the four corners of the tile covering the entry (1 × 1 when empty).
