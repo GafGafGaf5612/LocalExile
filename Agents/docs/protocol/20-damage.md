@@ -103,6 +103,18 @@ stats apply; `DamageStats` reads the Stats.dat names:
 frozen enemies", ...) are not read yet. Skill conversion takes precedence when skill and global conversion together
 exceed 100%, matching PoB's `buildConversionTable`.
 
+`DamageConversion.Trace` provides a separate raw-history view for player modifier resolution. Each immutable
+`DamageConversionPath` carries its final type, fractional range and the set of original/intermediate/final types
+it visited. Equal final types with different histories stay separate; only equal histories merge. The forward
+five-type graph bounds the result to 31 nonempty histories. Conversion and gain use the same existing normalized
+coefficients, including skill priority, while gain keeps its source and can convert onward.
+The quantity-only `Apply` path retains its original arithmetic and accumulation order for existing consumers;
+it is not implemented by collapsing `Trace`. Collapsing separate histories can regroup floating sums.
+Twenty-one new Core cases and twelve existing packet cases pass. This Core seam alone does not integrate Gateway
+modifiers, supports, monster damage, ailments or DoT. It preserves the existing whole-percent normalization boundary
+where separately rounded 50.5/49.5 becomes 51/50; official endpoint/normalization parity is not established here.
+Reference: pinned PoB `16de4b82`, `CalcOffence.lua` 35-140 and 1938-1982, via the PoE Reference Library.
+
 ## 2a. Equipped weapon-local damage
 
 `ItemWeaponStats` constructs one typed item packet from the active, requirement-enabled weapon before character,

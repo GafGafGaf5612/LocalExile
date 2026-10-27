@@ -423,6 +423,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   matches 36-70 physical damage and 1.80 attacks per second. Source/DLL hashes and inventories held.
   Authoritative offhand alternation, alternative quality and local base-critical modifiers remain separate.
   Supported-contact composition retains automated coverage and needs its own native check.
+  A Core raw conversion-history seam is available with 21 new path cases and 12 existing packet controls passing.
+  It retains visited types separately from the unchanged quantity-only converter; Gateway modifier integration
+  and its native verification remain separate work.
   Code: `ItemWeaponStats.cs`, `DamageStats.cs`, `SkillCatalog.cs`, `SupportedAttackDamage.cs`.
   Docs: [20](../docs/protocol/20-damage.md) §2a.
 
