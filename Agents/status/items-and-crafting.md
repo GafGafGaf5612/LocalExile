@@ -35,7 +35,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Each use snapshots level/stat inputs before its charge send; a virtual display replacement does not change the
   actual duration. Item-local and global utility-duration factors multiply, followed by quality and local more.
   Recovery periods use the same global factor independently for Life/Mana; only over-time amount scales with it.
-  The integrated panel/duration batch passes 55 new plus 80 existing focused checks and Gateway 3657/3657;
+  Runtime global effect also resolves raw flat plus actual-player-level inputs once, without replacing raw published
+  keys 1784/20244. Local and applicable magic-utility increases add to it; duration, quality, recovery rates, instant/
+  low-life stages, flags and independent Onslaught stay separate. Existing active effects keep captured values.
+  All 39 new pure/real-handler cases pass within the combined 53/53 focused batch, followed by full Gateway
+  3710/3710 with no skips. Prior unchanged Core 648/Data 37 remain applicable (4395 total, not all newly rerun).
+  Five actual disposed-stream task faults remain in the full-run diagnostics, with no new-calculation reference.
+  No new native proof is claimed. Wide effect arithmetic, individual buff integer saturation and signed strongest
+  comparison do not harden every downstream aggregate.
+  The preceding panel/duration batch passed 55 new plus 80 existing focused checks and Gateway 3657/3657;
   unchanged prior Core 648/Data 37 runs remain applicable (4342 total). Combined native results cover 40 completed
   controls: 22 complete PASS (12 positive source, six utility and four Life), with 18 complete zero controls UNPROVED;
   panel-field verdicts total 138 VERIFIED/42 UNPROVED. Standard utility durations match 13.8/3/3.9 seconds and
@@ -43,14 +51,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   Life gains are Standard160/34 and Ruthless161/34 at levels10/100 against fixed161/35, within the original
   one-integer publication boundary; this does not prove official rounding. Final recovery3 cleanup is clean,
   all769 frozen inputs held, canonical inventories/original saves were preserved and normal storage was restored.
-  Earlier failed observations and all UNPROVED fields remain recorded. Full Nevalius per-level effect,
-  nonpositive-duration policy and official fractional rounding remain open.
+  Earlier failed observations and all UNPROVED fields remain recorded. They do not validate the new effect resolver.
+  Whole-unique native acquisition/tooltip and conditional operators, nonpositive-duration policy and official
+  fractional rounding remain open.
   Earlier twenty-eight automated controls cover real handlers and both modes. Twenty-four native controls verify
   installed buffs, separate hybrid expiry, full/end/queue/death, actual recovery, charge gains and overrides.
   Ruthless spent charges persist in town; ordinary Nessa interaction refills them before further controls.
   Original saves and inventories held, apart from flask charges and native move IDs. Conditional acquisition
   and queued native timer/predictor presentation remain separate work.
-  Code: `FlaskCharges.cs`, `FlaskRecovery.cs`, `Flasks.cs`, Gateway (`UseFlask`, `CharacterPlayerStatsCore`).
+  Code: `FlaskCharges.cs`, `FlaskRecovery.cs`, `FlaskEffectScaling.cs`, `Flasks.cs`, `UtilityFlasks.cs`,
+  Gateway (`UseFlask`, `UseUtilityFlask`, `CharacterPlayerStatsCore`).
   Docs: [13](../docs/protocol/13-items.md) §8.
 
 - Utility flasks: every utility flask spends its charges, shows its buff and the timer bar under it, and gives its

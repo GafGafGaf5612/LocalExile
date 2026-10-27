@@ -174,9 +174,8 @@ static class UtilityFlasks
         double seconds = u.Seconds * (100.0 + Get("local_flask_duration_+%")) / 100.0
             * (100.0 + durationInc) / 100.0 * (100.0 + flask.Quality) / 100.0
             * (100.0 + Get("local_flask_duration_+%_final")) / 100.0;
-        int increasedEffect = Get("local_flask_effect_+%") + character("flask_effect_+%")
-            + (flask.Rarity == ItemRarity.Magic ? character("magic_utility_flask_effect_+%") : 0);
-        double effect = Math.Max(0, 100 + increasedEffect) / 100.0;
+        double effect = FlaskEffectScaling.Multiplier(character, playerLevel, Get("local_flask_effect_+%"),
+            flask.Rarity == ItemRarity.Magic ? character("magic_utility_flask_effect_+%") : 0);
         bool Applies(string stat) => SupportOf(stat) != Support.Unsupported;
         List<Source> stats = [.. u.Stats.Where(s => Applies(s.Stat))
             .Select(s => new Source($"buff {u.BuffRow}", s.Stat, s.Stat == "phase_through_objects" ? s.Value
@@ -195,7 +194,8 @@ static class UtilityFlasks
 
     /// <summary>A value scaled by increased effect as the game rounds it (poewiki: "always rounded down"; Path of Building
     /// ModStore.ScaleAddMod: rounded to two decimals, then the fraction dropped).</summary>
-    public static int Scale(int value, double effect) => (int)Math.Truncate(Math.Round(value * effect, 2));
+    public static int Scale(int value, double effect) =>
+        (int)Math.Clamp(Math.Truncate(Math.Round(value * effect, 2)), int.MinValue, int.MaxValue);
 
     /// <summary>One stat an effect applies: the effect it belongs to (its buff, "buff 121", or a flask mod's stat), the
     /// stat and its value.</summary>
@@ -299,8 +299,7 @@ static class UtilityFlasks
     /// (effect, stat) the value with the largest size wins, a bonus over an equal penalty.</summary>
     public static IReadOnlyList<(string Stat, int Value)> Strongest(IEnumerable<Source> sources) =>
         [.. sources.GroupBy(s => (s.Effect, s.Stat))
-            .Select(g => (g.Key.Stat, g.OrderByDescending(s => ActorScale.IsInput(s.Stat)
-                ? Math.Abs((long)s.Value) : Math.Abs(s.Value)).ThenByDescending(s => s.Value).First().Value))];
+            .Select(g => (g.Key.Stat, g.OrderByDescending(s => Math.Abs((long)s.Value)).ThenByDescending(s => s.Value).First().Value))];
 
     /// <summary>The character's pool bonuses with the running flasks' stats: resistances and their maxima, armour and
     /// evasion (flat, and the Basalt / Stibnite more multipliers on top of any others), movement and attack speed,

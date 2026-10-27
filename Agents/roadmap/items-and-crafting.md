@@ -54,15 +54,22 @@ features.
   recovery and charge awards, including Ruthless utility prevention and ordinary vendor refill.
   Flat and per-player-level duration now share one raw resolver for the panel and actual uses; level and inputs are
   captured before the charge send. Utility local/global duration factors multiply rather than add, with quality and
-  local more kept separate. The integrated panel/duration batch passes 55 new plus 80 existing focused cases,
+  local more kept separate. Runtime global effect now shares one raw flat-plus-actual-level resolver for recovery
+  and utility, with local/applicable magic effect additive and raw publication unchanged. Its 39 new pure/handler
+  cases pass in the combined 53 focused cases and full Gateway 3710/3710; prior unchanged Core 648/Data 37 remain
+  applicable (4395 total, not all newly rerun). Five actual disposed-stream task faults remain recorded without
+  new-calculation references; native verification is outstanding. Per-use snapshots, instant/low-life/rate order,
+  flags and independent Onslaught remain separate. Wide projection guards do not cover every downstream aggregate.
+  The preceding panel/duration batch passed 55 new plus 80 existing focused cases,
   full Gateway 3657/3657 and applicable prior Core 648/Data 37 checks. Of 40 completed native controls, 22 complete
   controls pass (12 positive source, six utility and four Life); 18 complete zero controls remain UNPROVED, with
   138 VERIFIED/42 UNPROVED panel-field verdicts. Utility durations match Standard13.8/3/3.9 and Ruthless4.6/2/2.6
   seconds for level-10 white, level-100 white and level-100 local uses. Life observed Standard160/34 and Ruthless161/34
   against fixed161/35 at levels10/100 under the original one-integer boundary. Clean recovery3 cleanup,769 held
   hashes and preserved saves/canonical inventories do not turn the unproved zeros into passes.
-  Conditional gain sources, per-level Flask Effect/full Nevalius, nonpositive-duration policy, official fractional
-  rounding and queued native timer/predictor presentation remain open. See protocol 13 §8 and the items status.
+  These historical native results do not validate the new effect resolver. Conditional gain/effect operators,
+  whole-unique native acquisition/tooltip behavior, nonpositive-duration policy, official fractional rounding and
+  queued native timer/predictor presentation remain open. See protocol 13 §8 and the items status.
 
 ## 5. Project
 

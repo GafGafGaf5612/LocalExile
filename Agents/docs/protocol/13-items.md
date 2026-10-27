@@ -928,10 +928,33 @@ They use the actual character level, not a gem level or an arbitrary `level` sta
 `virtual_flask_duration_+%` seed or developer replacement does not feed back into recovery or utility duration.
 The panel's signed coefficient uses the same raw sum; its source rules are in
 [11-skills.md](11-skills.md#14-character-panel-sums). Existing nonpositive-duration policy is unchanged and unproved;
-these controls cover positive runtime factors. The separate `flask_effect_+%_per_level` source is not implemented by
-this duration change, so the complete Nevalius unique is not claimed.
+the earlier controls cover positive runtime factors.
 
-The integrated panel/duration batch passes 55 new and 80 existing focused cases and full Gateway 3657/3657.
+Actual recovery and utility uses now resolve global effect separately through `FlaskEffectScaling`:
+`E = flask_effect_+% + actual player level * flask_effect_+%_per_level`. Captured level is clamped to 1–100; the two
+raw inputs are read once with wide intermediates. Local effect and applicable magic-utility effect join this additive
+bucket. The existing multiplier is `max(0, 100 + E + local + applicable magic) / 100`; no upper balance cap is added.
+Recovery flasks ignore the magic-utility-only source, and normal utility flasks ignore it too. The raw character
+keys 1784/20244 remain raw; the resolved amount is not written back into publication or mistaken for a new panel row.
+
+Native Nevalius source rows 4969/36939 provide -60 plus +1 per player level, without Hardmode overrides: the global
+coefficient is -50/-40/+40 at levels 10/20/100. The next use consumes the new level/source snapshot; an active utility
+keeps its captured stats. Recovery quality, amount, rate, instant fraction and low-life more stages keep their
+existing order. Duration remains separate. Utility flags and independent Onslaught values are not effect-scaled.
+Individual utility stat projection keeps round-to-two-decimals then truncate and saturates only the native integer
+representation; strongest-effect magnitude comparison uses a wide signed value. This does not harden every
+later stat/pool sum against arbitrary extreme developer inputs. Existing fractional-duration conventions, including
+unrounded local-duration intermediates, are not an official rounding claim.
+
+All 39 new pure/real-handler cases pass, including native source removal, raw zero overrides, instant/partial/
+low-life recovery and local/magic composition in both modes. Combined with self-duration tests, the focused batch
+passes 53/53 and full Gateway 3710/3710 with no skips. Prior unchanged Core 648/Data 37 runs remain applicable
+(4395 applicable cases, not all newly rerun). Full-run diagnostics retain five actual unobserved disposed-stream
+task faults: four `MonsterKilled` and one `NotifyMonsterHit` → `AreaSkillHit` → `LaunchProjectile`; none mentions the
+new calculation paths. Test passes are not a fault-free background-execution claim. No new native coverage is claimed
+for this resolver, legal named-unique acquisition or native item-tooltip treatment of per-level effect.
+
+The preceding integrated panel/duration batch passed 55 new and 80 existing focused cases and full Gateway 3657/3657.
 Prior Core 648/Data 37 runs remain applicable because those sources are unchanged (4342 applicable cases).
 The combined native assessment has 40 completed controls: 22 complete PASS (12 positive source cases, six utility
 uses and four Life uses), while 18 complete zero controls remain UNPROVED. The six panel fields total 138 VERIFIED
@@ -1046,10 +1069,11 @@ seconds times the item-local duration factor, the character global duration fact
 For example, a 6-second base with 30% local and 20% global duration lasts `6 * 1.3 * 1.2 = 9.36` seconds before
 quality or local more modifiers. Quicksilver with only 20% quality remains 7.2 seconds in ordinary mode.
 The raw global sum includes the per-player-level source once and ignores the virtual display seed.
-Effect remains the sum of local and character `flask_effect_+%`, plus `magic_utility_flask_effect_+%` on a magic flask;
-Onslaught keeps its own separate effect stat. Values use the existing PoB `ScaleAddMod` rounding projection.
-Global duration, local duration and effect are distinct operations; this change does not resolve the separate
-per-level Flask Effect operator or establish official fractional duration rounding.
+Effect uses §8's raw flat-plus-player-level resolver, adding local effect and `magic_utility_flask_effect_+%` only
+on a magic utility flask. Onslaught keeps its own separate effect stat. Values use the existing PoB `ScaleAddMod`
+rounding projection with final integer saturation; that representational guard is not an upper balance cap.
+Global duration, local duration and effect are distinct operations. The new per-level effect source does not establish
+all unique acquisition/conditional mechanics, native tooltip behavior or official fractional duration rounding.
 
 The "during effect" suffixes (`UtilityFlasks.DuringEffect`) count while the flask runs, scaled by its effect: increased
 armour (`local_flask_armour_+%_while_healing` â†’ `physical_damage_reduction_rating_+%`), increased evasion, movement
@@ -1152,8 +1176,9 @@ hit and every 3 seconds (tests only).
 
 - Flasks: fewer kill charges in acts 6 to 10 and maps (the amount is not in the tables), single monsters' own flask
   charge stats, partial charges across connections (not saved), queued native timer/predictor presentation,
-  the effects across an area change (they end), the "during any flask effect" passives, per-level Flask Effect and
-  nonpositive-duration policy. Hybrid Life/Mana buffs and independent lifetimes are implemented; see §8.
+  the effects across an area change (they end), the "during any flask effect" passives, remaining conditional effect
+  operators and nonpositive-duration policy. Flat/per-level global effect is implemented but awaits new native validation;
+  whole-unique native acquisition/tooltip parity remains unproved. Hybrid Life/Mana buffs are implemented; see §8.
   Utility flasks: Ward (Iron Flask, the Ward suffix) until PR #206 is in; ailments, stun and curses on the player
   (Aquamarine's freeze effect, Corundum, the ailment suffixes: panel only); Aquamarine's chilled ground; the smoke
   cloud's art; which objects phasing lets the player through besides monsters; how long the grounds last; whether taking
