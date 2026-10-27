@@ -26,7 +26,7 @@ The Hardcore Ruthless exception follows GGG's
 Carried equipment, inventory, gems and character progress stay with an ordinary migrated character.
 The source account stash and gold stay in the source league; the destination has its own stash and gold.
 A permanently dead Ruthless character and its save remain stored, rather than silently deleting its items.
-The native character list shows Void with a desaturated character and disabled Play button.
+The native character list places it in Void and carries the terminal-character marker (`B49 = 1`).
 Auth also refuses a forced Play request with login result 0x0f/code26 before any Gateway entry.
 No client error-popup wording is assumed from that result code.
 
@@ -212,8 +212,17 @@ SSF tests combine shared peer publication with private dropped items, expiry and
 Queued-notification regressions cover terminal Hardcore background mutations.
 Automated validation uses isolated extracted data and temporary test saves.
 The existing league selection and default families are unchanged.
-Native-client validation is reported separately from automated checks; earlier fork observations do not establish
-the behavior of a later integration without repeating the affected checks.
+Native checks against the integrated build used one copied 3.29.3b client and disposable saves:
+
+- Standard and SSF characters entered and returned to selection; Standard received its ordinary full life.
+- Ruthless retained saved life through selection, reconnect and area transfer. Damage in the destination survived
+  another reconnect, and a native vendor interaction refilled life.
+- Hardcore SSF death returned the character under SSF Standard; the migrated character entered again with full life.
+- Hardcore SSF Ruthless death returned a Void entry with the native terminal-character marker.
+
+These checks used the existing native control bridge and Gateway/Auth logs, rather than visual HUD assertions.
+Overlapping sessions, queued work after death and shared SSF peer publication are covered by the deterministic
+regressions above; simultaneous clients were not used for native verification.
 Complete retail endgame and reward parity remain limited by the server's incomplete gameplay systems.
 
 From the repository root, use local build output so real-data tests can locate `data/tables` and running servers

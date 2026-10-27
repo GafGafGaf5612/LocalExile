@@ -180,7 +180,7 @@ like the official ones; `Game_LEAGUES` sets the base leagues. Any league name wo
 
 Play resolves the selected character's full league and passes authoritative Hardcore, SSF and Ruthless flags to
 the Gateway together with its stable character ID.
-Permanently dead Hardcore Ruthless characters remain listed in Void with Play disabled; Auth also rejects a forced
+Permanently dead Hardcore Ruthless characters remain listed in Void with `B49 = 1`; Auth also rejects a forced
 Play request, and stale tickets cannot reactivate a character in its former Hardcore league.
 See [league modes](../game/league-modes.md) for death persistence, migration and mode isolation.
 

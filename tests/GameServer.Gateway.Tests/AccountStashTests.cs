@@ -240,15 +240,15 @@ public class AccountStashTests : IDisposable
         var legacy = AccountStash.ForGuild(_account, catalog);
         legacy.Place(0, 0, 0, new InventoryItem(7, 0, 0, Wand()), Shape, out _);
         var standard = AccountStash.ForGuild(_account, catalog, "Standard");
-        var evry = AccountStash.ForGuild(_account, catalog, "Allflame");
+        var allflame = AccountStash.ForGuild(_account, catalog, "Allflame");
         var hardcore = AccountStash.ForGuild(_account, catalog, "Hardcore Allflame");
         var ruthless = AccountStash.ForGuild(_account, catalog, "Ruthless Allflame");
         Assert.Same(legacy, standard);
         Assert.Single(standard.Inventory(0).Items);
-        Assert.Empty(evry.Inventory(0).Items);
+        Assert.Empty(allflame.Inventory(0).Items);
         Assert.Empty(hardcore.Inventory(0).Items);
         Assert.Empty(ruthless.Inventory(0).Items);
-        evry.Place(0, 0, 0, new InventoryItem(8, 0, 0, Wand()), Shape, out _);
+        allflame.Place(0, 0, 0, new InventoryItem(8, 0, 0, Wand()), Shape, out _);
         AccountStash.Forget("guild:" + AccountStash.Key(_account, "Allflame"));
         Assert.Single(AccountStash.ForGuild(_account, catalog, "Allflame").Inventory(0).Items);
         Assert.Empty(hardcore.Inventory(0).Items);

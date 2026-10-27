@@ -53,9 +53,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Ruthless applies a configurable compounding XP multiplier from level 68 by default.
   The numeric rate is LocalExile tuning because the retail server formula is not public.
   Native Ruthless passive stat/point alternatives are selected for each Ruthless connection.
-  Live editing from a 0.9 to 0.5 XP factor changed 100-XP awards from 90 to 50 without a Gateway restart.
-  Invalid -1 retained the last valid 50-XP result.
-  Native passive alternatives and the compounding level formula are also covered by automated checks.
+  Automated configuration tests cover valid live edits and retaining the last valid snapshot after invalid input.
+  Native passive alternatives and the compounding level formula have automated coverage.
   See [league modes](../docs/game/league-modes.md).
 
 ## Not working yet
