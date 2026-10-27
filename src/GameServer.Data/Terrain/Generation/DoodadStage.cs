@@ -330,6 +330,16 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
     /// (<c>HangingSlave</c>, <c>BellyGrassClusterTrigger</c>, the <c>FlowBlocking</c> objects) are created without
     /// collision, as the captured grids show. Size: the Positioned <c>object_size</c> (0 without one) of a type whose
     /// Positioned has <c>blocking = true</c>, null otherwise (see <see cref="Blocked"/>).</summary>
+    /// <summary>The facing filter's side for a line's object type: true (far side only) for TileUpperDoodad,
+    /// TileUpperDoodadNoOverlap and DoodadNoScrollNoJostle_extend_tallwall, false for AntiTallWallDoodad, else null.</summary>
+    static bool? Facing(string type) => type.Replace('\\', '/').ToLowerInvariant() switch
+    {
+        "metadata/miscellaneousobjects/tileupperdoodad" or "metadata/miscellaneousobjects/tileupperdoodadnooverlap"
+            or "metadata/terrain/gallows/act2/2_town/objects/doodadnoscrollnojostle_extend_tallwall" => true,
+        "metadata/miscellaneousobjects/antitallwalldoodad" => false,
+        _ => null,
+    };
+
     (bool Created, bool Static, int? Size) ClientType(string type)
     {
         if (_clientTypes.TryGetValue(type, out var known)) return known;
@@ -427,6 +437,17 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
                     var (cx, cy) = Orientation.Map(e.Orientation, cellX, cellY, tile.Width * 23, tile.Height * 23);
                     bool mirrors = e.Orientation is >= 4 and < 8;
                     float angle = TilePlacement.Angle(e.Orientation, lineAngle) + def.Angle;
+                    // 0x1420415e0's facing filter (0x142030080 / 0x14202fe70, MiscObjects rows by ObjectHASH32): an
+                    // AntiTallWallDoodad goes in only when its angle − 0.7604, wrapped, is under 3.1916; a TileUpperDoodad,
+                    // TileUpperDoodadNoOverlap or DoodadNoScrollNoJostleExtendTallwall only when it is not (the
+                    // Dreadnought's cart wheels: of each wheel pair, the one facing away).
+                    if (Facing(o.Type) is { } wantFar)
+                    {
+                        float f = angle - 0.7603982f;
+                        while (f < 0) f += 6.2831855f;
+                        while (f >= 6.2831855f) f -= 6.2831855f;
+                        if ((f >= 3.1915927f) != wantFar) return;
+                    }
                     Create(new PlacedDoodad(def.Model, x * 23 + cx + def.Dx, y * 23 + cy + def.Dy, angle, def.Scale, mirrors ^ lineMirror ^ def.Mirrored), isStatic);
                 }
 

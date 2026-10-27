@@ -1308,9 +1308,12 @@ y, +0x18 height, +0x1b orientation code). Order:
    plus the slot's (u, v) × 250, then cells = floor(× 0.092f) (`0x1402c2390`); the angle is turned by the code
    (2π − a for 4–7, + (code & 3)·π/2, wrapped), codes 4–7 xor the mirror and map the orientation mask through
    `0x143646180`; height −= step × tile +0x177 × 7.8125. The entry then takes the callback like the others.
-   Ported (`DoodadStage.SubTileDoodads`; heights and the mask are not carried) but not checked: the 19 such tiles
-   (`levelgen subtiles`; 10 with objects: the `MapUberChambers` terrace overlaps, `MapNocturne`'s `fence_cv`, the
-   Dreadnought hideout) are in no capture. Then `0x142041d40` again. These lines draw nothing without AOSet.
+   Ported (`DoodadStage.SubTileDoodads`; heights and the mask are not carried) and checked on the Dreadnought hideout
+   (2026-10-27; its 1364 doodads match). `0x1420415e0` also has a **facing filter** (`0x142030080` / `0x14202fe70`,
+   the type's MiscObjects row by ObjectHASH32): an AntiTallWallDoodad (0x5a1cf63) goes in only when its angle −
+   0.7604, wrapped to [0, 2π), is under 3.1916; a TileUpperDoodad (0x684156a1), TileUpperDoodadNoOverlap (0xdfa74a63) or
+   DoodadNoScrollNoJostleExtendTallwall (0xf660e284) only when it is not (each Dreadnought cart lists a wheel at angle
+   0 and its reverse at π in the same cell; the one facing away stays). Then `0x142041d40` again. These lines draw nothing without AOSet.
 
 Each doodad is created by `0x142042360` (nothing outside the map) and added to the world, which stamps its `.ao`
 `Hull` on both grids (§6b, `Walkability.Stamp`: walk grid walk shapes then projectile shapes, projectile grid
