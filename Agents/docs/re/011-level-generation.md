@@ -182,7 +182,7 @@ For a one-node graph (towns, hideouts):
    follows, each bit a group of fields the file gives itself: bit 0 its mesh (u32) and vertex data, bit 3 its tag and
    key (u32 tag then the 0x2e key bytes, as a plain tile's from offset 8), bit 4 its size and hull, bit 5 its
    orientation restriction, bit 1 fields the generator does not read (its own `.tmd` is in the string table), bit 2
-   one more string (setter +0x50, not read by the generator). The port reads bits 1 to 5 (4 only with the base's size;
+   one more string (setter +0x50, not read by the generator). The port reads bits 0 to 5 (bit 0: the mesh string right after the flags byte, the vertex blocks after the u16 flags word, the block ending the file with no strings after it, HallsOfTheDead's coral walls) (4 only with the base's size;
    bit 5's restriction byte follows the tag/key block and the bit 1 / bit 2 strings: Breach tower and Lake tiles,
    2026-10-27). A master without a RoomSet (MapOba's top master.tsi) has no rooms. The u16 flags word follows those groups (bit 3: after
    the key; bit 4 alone: after a 2-byte size), then the walk data as a plain tile's (the restriction byte only with
@@ -712,7 +712,7 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    TileSet, the row to the pool, `0x141d8d1a0`, and its linked row) and +0xa stays set, so each later graph without
    groups adds it again; its room `vaal_side_area.arm` (3 × 3) waits for a mission room (§3c2) like any pool row
    (2026-10-26: `2_8_13`, `2_9_10_1` × 2, MapAtlasTropicalIsland). Every other grouped node gets exist 0 and its
-   descriptions cleared (`0x142037f50`). **Exist rolls** (`0x142031390`): every node, then every edge: a node with exist 1..99 rolls
+   descriptions cleared (`0x142037f50`). **Node offsets** (`0x14203a600`, ported 2026-10-27): a node with an offset rectangle moves by x1 + `0x141ff97f0`(0, x2 − x1) and y1 + `0x141ff97f0`(0, y2 − y1) (an inclusive `Uniform`, no draw for an empty range; MapWorldsTheatreOfLies). **Exist rolls** (`0x142031390`): every node, then every edge: a node with exist 1..99 rolls
    `Next(100) < exist` to stay (0 = always removed, 100 = no draw); an edge with exist ≠ 0 always draws `Next(100)`
    and stays below exist. Failed edges are removed (`0x141f4f130`), then failed nodes (`0x142036640`): a node between
    two edges of the same type whose far ends share its height is merged away (`0x1420371a0`: the first edge takes the

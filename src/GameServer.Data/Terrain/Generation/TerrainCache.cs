@@ -349,10 +349,24 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         if (Str(0) is { } basePath)
         {
             byte own = h[4];
-            if ((own & ~0x3e) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
-            int at = 5 + ((own & 8) != 0 ? 50 : 0) + ((own & 2) != 0 ? 4 : 0) + ((own & 4) != 0 ? 4 : 0);
+            if ((own & ~0x3f) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
+            // Bit 0: its mesh (u32) first, and later its own vertex blocks; then bit 3's tag and key (or bit 4's 2-byte size),
+            // then the u16 vertex-flags word, then (bit 5) the restriction byte.
+            int keyAt = 5 + ((own & 1) != 0 ? 4 : 0);
+            int flagsAt = keyAt + ((own & 8) != 0 ? 50 : (own & 0x10) != 0 ? 2 : 0);
+            int at = flagsAt + 2;
             var baseTile = Tile(basePath) ?? throw new FileNotFoundException(basePath);
-            var (ownTag, ownKey, ownRaw) = (own & 8) != 0 ? TagAndKey(5) : (baseTile.Tag, baseTile.Key, baseTile.KeyGrounds);
+            var (ownTag, ownKey, ownRaw) = (own & 8) != 0 ? TagAndKey(keyAt) : (baseTile.Tag, baseTile.Key, baseTile.KeyGrounds);
+            string?[] ownGrounds = baseTile.VertexGrounds;
+            sbyte[] ownHeights = baseTile.VertexHeights;
+            if ((own & 1) != 0 && flagsAt + 2 <= h.Length)
+            {
+                ushort vf = BinaryPrimitives.ReadUInt16LittleEndian(h.AsSpan(flagsAt));
+                var (vg, vh) = (vf & 2) != 0 ? VertexBlock(h, table.Length, ownKey.Width, ownKey.Height, (vf & 1) != 0, (own & 8) != 0 ? keyAt : 8, overBase: true)
+                    : (vf & 1) != 0 ? (null, HeightBlock(h, table.Length, ownKey)) : (null, null);
+                ownGrounds = vg is null ? [] : [.. vg.Select(o => o == uint.MaxValue ? null : TableString(table, o))];
+                ownHeights = vh ?? [];
+            }
             if (ownKey.Width != baseTile.Width || ownKey.Height != baseTile.Height)
                 throw new NotSupportedException($"{path}: a tile over a base tile of another size is not ported");
             return baseTile with
@@ -361,6 +375,9 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
                 Tag = ownTag,
                 Key = ownKey,
                 RawGrounds = ownRaw,
+                Mesh = (own & 1) != 0 ? Str(5) : baseTile.Mesh,
+                VertexGrounds = ownGrounds,
+                VertexHeights = ownHeights,
                 Restriction = (own & 0x20) != 0 && at < h.Length ? h[at] : baseTile.Restriction,
                 ObjectsFile = table.Split('\0').FirstOrDefault(x => x.EndsWith(".tmd", StringComparison.OrdinalIgnoreCase)) ?? baseTile.ObjectsFile,
             };
@@ -399,13 +416,16 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
     /// last place where every value is a string offset and the four corners are the key's corner grounds (the header's,
     /// grounds left out of keys included), followed by two string offsets (after the heights when
     /// <paramref name="hasHeights"/>).</summary>
-    static (uint[]? Grounds, sbyte[]? Heights) VertexBlock(byte[] h, int tableLength, int w, int ht, bool hasHeights)
+    static (uint[]? Grounds, sbyte[]? Heights) VertexBlock(byte[] h, int tableLength, int w, int ht, bool hasHeights, int keyAt = 8,
+        bool overBase = false)
     {
         int n = (w + 1) * (ht + 1);
         uint U(int at) => BinaryPrimitives.ReadUInt32LittleEndian(h.AsSpan(at));
         bool Valid(uint o) => o == uint.MaxValue || o < tableLength;
-        uint c0 = U(30), c1 = U(34), c2 = U(38), c3 = U(42);
-        for (int p = h.Length - 4 * n - 8; p >= 58; p--)
+        int g = keyAt + 22;
+        uint c0 = U(g), c1 = U(g + 4), c2 = U(g + 8), c3 = U(g + 12);
+        // A tile over a base tile ends with its block (no two strings after it).
+        for (int p = h.Length - 4 * n - (hasHeights ? n : 0) - (overBase ? 0 : 8); p >= 58; p--)
         {
             if (U(p) != c0 || U(p + 4 * w) != c1 || U(p + 4 * (n - 1)) != c2 || U(p + 4 * (n - 1 - w)) != c3) continue;
             bool ok = true;
@@ -414,7 +434,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             var grounds = new uint[n];
             for (int i = 0; i < n; i++) grounds[i] = U(p + 4 * i);
             int after = p + 4 * n, tail = after + (hasHeights ? n : 0);
-            if (tail + 8 > h.Length || !Valid(U(tail)) || !Valid(U(tail + 4))) continue;
+            if (overBase ? tail != h.Length : tail + 8 > h.Length || !Valid(U(tail)) || !Valid(U(tail + 4))) continue;
             return (grounds, hasHeights ? [.. h.AsSpan(after, n).ToArray().Select(b => (sbyte)b)] : null);
         }
         return (null, null);

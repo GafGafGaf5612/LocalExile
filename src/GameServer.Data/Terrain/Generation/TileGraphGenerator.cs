@@ -416,9 +416,15 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     {
         foreach (var n in graph.Nodes)
         {
-            // 0x14203a600: a random offset inside the node's rectangle.
+            // 0x14203a600: a random offset inside the node's rectangle (x1..x2, y1..y2), each axis drawn inclusively
+            // (0x141ff97f0) when its range is not empty (MapWorldsTheatreOfLies, 2026-10-27).
             if (n.OffsetX1 != n.OffsetX2 || n.OffsetY1 != n.OffsetY2 || n.OffsetX1 != 0 || n.OffsetY1 != 0)
-                throw new NotSupportedException("node random offsets (0x14203a600) are not ported");
+            {
+                int dx = n.OffsetX1 < n.OffsetX2 ? n.OffsetX1 + rng.Range(0, n.OffsetX2 - n.OffsetX1) : n.OffsetX1;
+                int dy = n.OffsetY1 < n.OffsetY2 ? n.OffsetY1 + rng.Range(0, n.OffsetY2 - n.OffsetY1) : n.OffsetY1;
+                n.X += dx;
+                n.Y += dy;
+            }
             // 0x14203a180 → 0x142036490: a node whose "league=" names another league than the instance's (world
             // +0xd0) is dropped; the port has no instance league. "shuffle…" and "unique…" are read after the exist
             // rolls (ShuffleGroups, UniqueGroups), "subarea=…" when the record is added (LevelGenerator.SubAreas).
@@ -524,7 +530,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
                 string rest = d[6..];
                 char letter = char.ToUpperInvariant(rest[0]);
                 if (letter is >= 'A' and <= 'Z') rest = rest[1..];
-                else letter = ' ';
+                else letter = '\0';
                 int hash = rest.IndexOf('#');
                 if (hash >= 0)
                 {
@@ -533,7 +539,7 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
                 }
                 if (LeadingInt(rest) is not { } v || v < 0) continue;
                 g = v;
-                if (letter != ' ')
+                if (letter != '\0')
                 {
                     int li = lettered.FindIndex(l => l.Letter == letter);
                     if (li < 0) { lettered.Add((letter, 0, [])); li = lettered.Count - 1; }

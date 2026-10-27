@@ -84,6 +84,16 @@ public sealed class LevelRandom
 
     /// <summary><c>0x141f5d130</c>, MSVC <c>_Rng_from_urng&lt;uint, mt19937&gt;(n)</c>: one 32-bit draw, rejected while it
     /// falls in the last, incomplete bucket. Shuffles call it directly (no <see cref="Disabled"/> check).</summary>
+    /// <summary><c>0x141ff97f0</c>: a value in [lo, hi] (hi below lo counts as lo), <see cref="Uniform"/> over the
+    /// range; lo while the area disables randomness.</summary>
+    public int Range(int lo, int hi)
+    {
+        if (Disabled) return lo;
+        if (hi < lo) hi = lo;
+        uint span = (uint)(hi - lo);
+        return lo + (int)(span == uint.MaxValue ? NextRaw() : Uniform(span + 1));
+    }
+
     public uint Uniform(uint n)
     {
         uint result = 0;
