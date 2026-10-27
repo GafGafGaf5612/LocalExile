@@ -28,8 +28,19 @@ Nothing yet.
   Live: rare monsters dropped normal skill and support gems. The first attempt used the data's ShopTag gems, which
   include the item-granted/legacy rows, so the pool was narrowed to the quest/starting/exceptional sets.
 
-- **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).** The currency/flask/jewellery vendors
-  that also sell gems give seven tabs of level-1 gems, priced by their level-1 requirement tier (1–7 Scroll of Wisdom,
+- **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).**
+  In this local checkout Nessa additionally has the complete creatable gem assortment, independent of quests/class,
+  with alternative variants, colour/kind tabs and numbered overflow pages; White Skills combines both white kinds.
+  A separate Skills tab preserves quest/class-restricted ordinary stock as the future gameplay shop.
+  Skills lists active gems before supports, grouped red/green/blue/white; supports begin on a new row.
+  Colour tabs remain complete development tools regardless of progression; NpcShops.cs documents the distinction
+  without adding development messages to the player's chat when the shop opens.
+  Every Nessa gem is unlimited stock on every tab: paid copies get fresh IDs and the original offer remains available.
+  Network purchase tests cover repeats, variant/quality persistence, insufficient funds and save rollback.
+  Other vendors retain progression.
+  Automated full-stock, variant persistence and pagination checks cover the override; updated native display is pending.
+  See [19](../docs/protocol/19-gems.md) §5, "Local Nessa shop".
+  The currency/flask/jewellery vendors that also sell gems give seven tabs of level-1 gems, priced by their level-1 requirement tier (1–7 Scroll of Wisdom,
   8–15 Orb of Transmutation, 16–27 Orb of Alteration, 28–37 Orb of Chance, 38+ Orb of Alchemy). The stock
   is the gems of every
   completed quest offer (reward shown or taken), filtered to the character's class and to the client's shop list;
