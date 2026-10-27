@@ -484,6 +484,10 @@ sealed class SkillCatalog(string folder = "data")
     {
         public static readonly Unarmed Witch = new(833, 2, 5, 8);
 
+        /// <summary>The weapon's own added elemental/chaos damage (its local added damage mods, ItemWeapons), added to
+        /// every hit it makes; empty for unarmed and for weapons without such mods.</summary>
+        public DamagePacket LocalAdded { get; init; } = DamagePacket.Empty;
+
         /// <summary>Unarmed attacks alternate hands, i.e. count as dual wielding, and the client adds dual wielding's 10%
         /// attack speed to the skill's main_hand_attack_speed_+% (live 2026-10-17: the skill read 10 that the server never
         /// sent, and the swings came every ~757 ms = 833 / 1.1).</summary>
@@ -546,8 +550,9 @@ sealed class SkillCatalog(string folder = "data")
         public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player)
         {
             double increased = IncreasedDamage(player) + DamageStats.SpellAttackIncrease(player);
-            return DamagePacket.Of(DamageType.Physical,
+            var hit = DamagePacket.Of(DamageType.Physical,
                 DamageStats.IncreaseAttackRange(new(MinDamage, MaxDamage), increased));
+            return hit.Add(LocalAdded);
         }
 
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,
