@@ -266,6 +266,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// offset).</summary>
     Subgraph Record(string graphPath, int x, int y, int orientation, int parent, List<Subgraph>? records = null)
     {
+        // The game's file lookup takes backslashes too (the Escher hideout's graph nodes name "Metadata\Terrain\...").
+        graphPath = graphPath.Replace('\\', '/');
         var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
         // 0x14203c190: the area's TSI override, else the graph's master. A MasterFile that is no .tsi / .tgr / .dgr names
         // a group of the first record's FileGroups (master +0x268): its masters that no record uses yet (0x142050a80),
@@ -1206,6 +1208,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     void OuterGround(Dictionary<string, string> master, string masterPath)
     {
         if (!master.TryGetValue("OuterGroundType", out var gt)) return;
+        // A master without FillTiles has no outer ground tiles (VampireManor's master_container.tsi).
+        if (_fills.Count == 0) return;
         var ground = files.Ground(TerrainText.Resolve(masterPath, gt)) ?? throw new FileNotFoundException(gt);
         // The view is the subgraph's rectangle (0x141ffb6c0): the layout inside the outer buffer, which 0x14201ffa0 fills.
         var (x0, y0, x1, y1) = _view;

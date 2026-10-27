@@ -1014,7 +1014,7 @@ are the doodads, `0x142042fae`).
    (`0x141ffb870`) when that was 1 × 1 without (non-wildcard) edges, else is emptied and filled. That keeps the
    columns and statues at the temple door overlays' `f` corners (`1_3_8_1`, `2_8_12_1`, `2_8_7_1_`; 2026-10-25).
 5. **Fill** (`Fill.cs`, `0x141fef070`): map +0x10 off; every empty entry, row by row, gets a fill for the ground of its
-   top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"; a name given twice adds its lines to
+   top-left vertex (`0x141feb970`; FillTiles per ground name, none → "default"; a header without lines makes no group (its ground takes "default": the Gardens hideout's "BlackInsideWall"), and the outer buffer's first fill tile falls back to "default" too (SanctumLycia2); a master without FillTiles lays no outer ground (VampireManor's container); graph paths may use backslashes (the Escher hideout); a name given twice adds its lines to
    the first group, Vinktar Square's "BlackInsideWall"; a failed choice takes out only the list's first entry of the
    same tile and orientation, `2_8_3`; a line may end with an orientation,
    I, R90 … FR270, which the choice keeps (`0x141fecd00` then draws nothing; 8 without one): Act 4's

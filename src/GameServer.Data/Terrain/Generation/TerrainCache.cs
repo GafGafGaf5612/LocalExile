@@ -500,6 +500,9 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             else if (t.Count == 2 && t[0].Quoted && t[1].IsNumber) current = null;
             else if (t.Count >= 2 && t[0].IsNumber && t[1].Quoted && current is not null) current.Add((t[0].Int, TerrainText.Resolve(path, t[1].Text), t.Count > 2 ? Orientation.Parse(t[2].Text) : 8));
         }
+        // A header without lines makes no group: its ground takes the default ones (the Gardens hideout's empty
+        // "BlackInsideWall", 2026-10-27).
+        foreach (var name in groups.Where(g => g.Value.Count == 0).Select(g => g.Key).ToList()) groups.Remove(name);
         return groups;
     }) ?? [];
 

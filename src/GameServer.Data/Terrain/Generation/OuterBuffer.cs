@@ -133,7 +133,9 @@ sealed class OuterBuffer(TerrainCache files, LevelRandom rng, OuterBuffer.View g
     TileDef FirstFill(string? ground)
     {
         string name = ground is null ? "default" : files.Ground(ground)?.Name ?? "default";
-        if (!fills.TryGetValue(name, out var list) || list.Count == 0) throw new InvalidOperationException($"No fill tiles found for {name}");
+        // 0x141fefeb0: a ground without a group of its own takes the default ones (SanctumLycia2's LyciaAbyss).
+        if ((!fills.TryGetValue(name, out var list) || list.Count == 0) && (!fills.TryGetValue("default", out list) || list.Count == 0))
+            throw new InvalidOperationException($"No fill tiles found for {name}");
         var path = list[0].Path;
         if (path.EndsWith(".arm", StringComparison.OrdinalIgnoreCase)) throw new NotSupportedException($"outer buffer fill with a room first ({name}) is not ported");
         return files.Tile(path) ?? throw new FileNotFoundException(path);
