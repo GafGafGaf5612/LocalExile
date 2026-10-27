@@ -1623,9 +1623,14 @@ sealed class DungeonLayout(TerrainCache files, LevelRandom rng, List<string> not
         }
         else candidates = variants.Where(v => Holds(v.Exits, wanted)).ToList();
         if (candidates.Count == 0)
+        {
             // 0x141d8b750: the generator's extra room pool (+0x40, filled per graph by 0x14204bfa0 / 0x141d8bba0;
-            // the Labyrinth's "secret" rooms), every orientation at weight 1.
+            // the Labyrinth's "secret" rooms), every orientation at weight 1. With nothing in it the client gives up
+            // (the Delve cells' "north", the Sanctum floors' "land", AbyssLeague's "entrance").
+            if (pool is null || pool.Rows.Count == 0 && pool.Injected.Count == 0)
+                throw new InvalidOperationException($"No possible rooms found for room at ({x}, {y}) with type \"{n.Tag}\".");
             throw new NotSupportedException($"{n}: no room of tag '{n.Tag}' holds the node's exits; the extra room pool (0x141d8b750) is not ported");
+        }
         int nx = x, ny = y;
         var fits = new List<(DungeonRoom Room, int Orientation, int W, int H, int X, int Y, bool Mismatch)>();
         foreach (var (r, o, w, h, _) in candidates)

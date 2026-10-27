@@ -1468,9 +1468,11 @@ three arena gates the port places.
   "Terrain generation failed: …" or "Critical Terrain Generation Error in …" line after its "Generating level" line,
   `Shared.LoggedFailures`) at its level: it matches when the port fails with the same first three words and only
   cells the client names (`Shared.SameFailure`; the client words grounds and edges by name and adds a tile position).
-  Of 115 logged failures 65 match; 46 stop where the port stops (the Delve cells, the Sanctum floors, AbyssLeague: the
-  extra room pool `0x141d8b750`), 3 are Incursion temples (the server's room hash), and `2_6_12` seed 1 fails earlier
-  in the port, at (16, 51), than in the client, at (22, 57).
+  Of 115 logged failures 107 match (the Delve cells, AbyssLeague and BetrayalTest give up as the client does when no room
+  of a node's tag fits and the extra room pool is empty: "No possible rooms found for room at …"). Open: the Sanctum
+  floors (3; the client fails later, at an "explore_1_1" node), the Incursion temples (3; the server's room hash),
+  BetrayalMastermindFight (a mission tile) and `2_6_12` seed 1, which fails earlier in the port, at (16, 51), than in
+  the client, at (22, 57).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client-*-archive.txt`, older log parts kept aside, then `Client/logs/Client.txt`) and reports match /
   mismatch / where the port stops, with a summary. **Only loads of the local client's version count** (since
