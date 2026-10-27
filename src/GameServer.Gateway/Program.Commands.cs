@@ -41,7 +41,10 @@ partial class Program
             bool off = args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
             int value = off ? 0 : int.Parse(args[1]);
             bool rawAttribute = AttributeModifiers.IsInput(Stats.Name(stat));
-            bool rebuildMana = stat == Stats.Key(StrengthMana.PerFourStrength);
+            string sourceName = Stats.Name(stat) ?? args[0];
+            bool rebuildLife = LifeManaPoolSources.IsLifeInput(sourceName);
+            bool rebuildMana = LifeManaPoolSources.IsManaInput(sourceName) || stat == Stats.Key(StrengthMana.PerFourStrength);
+            bool lifeClamped = false, manaClamped = false;
             lock (conn.Monsters)
             {
                 if (off) conn.PlayerStats.Remove(stat);
@@ -50,7 +53,7 @@ partial class Program
             // Keep each supported raw consumer and source restoration when another mechanic changes this gate.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
                 || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
-                || rebuildMana || rawAttribute
+                || rebuildLife || rebuildMana || rawAttribute
                 || Stats.Name(stat) == PlayerHitMitigation.ArmourAppliesToChaos)
             {
                 while (true)
@@ -63,12 +66,14 @@ partial class Program
                         // A concurrent level/aura rebuild wins; retry against its current inputs and level.
                         if (!ReferenceEquals(conn.Pools, before)) continue;
                         conn.Pools = pools;
-                        if (rawAttribute)
+                        if (rawAttribute || rebuildLife || rebuildMana)
                         {
+                            uint lifeBefore = conn.PlayerLife, manaBefore = conn.PlayerMana;
                             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
                             conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+                            lifeClamped = conn.PlayerLife != lifeBefore;
+                            manaClamped = conn.PlayerMana != manaBefore;
                         }
-                        else if (rebuildMana) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
                         break;
                     }
                 }
@@ -100,7 +105,13 @@ partial class Program
                     () => InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife), "raw attribute current life");
                 await SendPlayerMana(remote, stream, ciphers, conn, "raw attribute mana reservation");
             }
-            else if (rebuildMana)
+            if (!rawAttribute && (rebuildLife || lifeClamped))
+                await Send(remote, stream, ciphers, [], "0x01b1 life after raw source rebuild", atGate: () =>
+                {
+                    lock (conn.Monsters) return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife);
+                });
+            // Reservation can change with maximum mana even when recovery leaves current mana unchanged.
+            if (!rawAttribute && (rebuildMana || manaClamped))
                 await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
         })
         .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>

@@ -92,7 +92,10 @@ static class CharacterStats
         bool DoubleBodyArmour = false, bool NoBodyArmour = false,
         int SpellSuppressionWhileFullEnergyShield = 0,
         bool ArmourAppliesToChaosDamage = false, AttributeModifiers Attributes = default,
-        int StrengthPct = 0, int DexterityPct = 0, int IntelligencePct = 0, int AllAttributesPct = 0)
+        int StrengthPct = 0, int DexterityPct = 0, int IntelligencePct = 0, int AllAttributesPct = 0,
+        int LifePerLevel = 0, int ManaPerLevel = 0,
+        int LifePerTenDexterity = 0, int LifePerTenIntelligence = 0,
+        int LifePerFourDexterity = 0, int LifePerTwoIntelligence = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -146,14 +149,19 @@ static class CharacterStats
         };
         var (str, dex, intel) = attributes.Apply((long)c.Strength + b.Strength,
             (long)c.Dexterity + b.Dexterity, (long)c.Intelligence + b.Intelligence);
+        // Complete attribute groups and signed per-level additions join the flat bucket after final attributes.
+        // Preserve the existing floor projection; pinned PoB's final pool round is a separate parity question.
         // Equipment ES-to-Life conversion can supply a large flat value. Keep the signed panel stat representable.
-        uint life = b.ChaosInoculation ? 1 : (uint)Math.Clamp(decimal.Floor((c.BaseMaxLife + 12m * level + str / 2 + b.Life)
+        decimal flatLife = c.BaseMaxLife + 12m * level + str / 2 + b.Life
+            + LifeManaPoolSources.AdditionalLife(level, dex, intel, b);
+        long flatMana = c.BaseMaxMana + 6L * level + intel / 2 + b.Mana
+            + LifeManaPoolSources.AdditionalMana(level, b);
+        uint life = b.ChaosInoculation ? 1 : (uint)Math.Clamp(decimal.Floor(flatLife
             * (100m + b.LifePct) / 100m), 1m, int.MaxValue);
         uint mana = b.ManaPerFourStrength == 0
-            ? (uint)Math.Clamp((c.BaseMaxMana + 6m * level + intel / 2 + b.Mana)
-                * (100m + b.ManaPct) / 100m, 0, int.MaxValue)
-            : StrengthMana.Maximum(c.BaseMaxMana + 6L * level + intel / 2 + b.Mana,
-                str, b.ManaPerFourStrength, b.ManaPct);
+            ? (uint)Math.Clamp(decimal.Floor(flatMana
+                * (100m + b.ManaPct) / 100m), 0m, int.MaxValue)
+            : StrengthMana.Maximum(flatMana, str, b.ManaPerFourStrength, b.ManaPct);
         // PoB CalcOffence: accuracy = floor(base * (1 + increased / 100)) with no more multiplier modelled. The
         // Accuracy Mastery can replace the 2 per level and 2 per dexterity, and add Accuracy equal to Intelligence.
         long accuracyPerLevel = 2L + b.AccuracyPerLevel;

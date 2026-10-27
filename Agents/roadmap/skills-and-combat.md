@@ -101,6 +101,19 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   without disabling its qualified host. Supplied-source controls do not certify unique acquisition.
   Pinned-PoB fractional rounding remains a labelled projection. Signed equipment cycles, attribute conversions,
   conditional/more operators and mercenary gates remain open.
+  Six missing ordinary Life/Mana coefficients now join flat pools before increases: signed per-level Life/Mana,
+  Life per ten final Dexterity/Intelligence, per four Dexterity and per two Intelligence.
+  Actual level and completed attribute groups apply once; native -12/-6/-3 Life-per-level reductions retain their sign.
+  Whole-coefficient developer zero/replacements, pool rebuilding and resource publication preserve the existing
+  Strength-based Mana and reservation paths. All 71 new cases (45 pure/native-source and 26 Gateway) plus 82 existing
+  regressions pass: 153 focused with no skips. Full Gateway passes 3874/3874 without skips; earlier unchanged
+  Core 648/Data 37 from this session remain applicable (4559 applicable; only Gateway rerun after these changes).
+  The current hook records seven actual unobserved disposed-NetworkStream faults: six `MonsterKilled` → `Send`
+  and one `NotifyMonsterHit` through the projectile-hit path; 390 first-chance records are separate.
+  No diagnostic errors/truncation/cap hit or new pool-source path is captured; new native checks remain pending.
+  The retained final pool floor differs from pinned PoB's final round, so official fractional parity remains open.
+  Isolated source fixtures do not prove acquisition/event-passive admission or full conversion nodes, and this subset
+  does not complete either Life/Mana panel row or its conditional/more/conversion operators.
   Frenzy attack/cast speed coefficients include the combined per-charge modifier, with signed/zero,
   source-removal and held-count agreement covered in both modes (17 selected tests, 15 new).
   Eight native supplied-source controls verify values, positive formatting, clearing and relog; native unique-gear

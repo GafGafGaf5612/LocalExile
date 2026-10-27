@@ -161,7 +161,7 @@ come from `Metadata/Characters/Character.ot` (`life_per_level` 12, `mana_per_lev
 `accuracy_rating_per_level` 2, `base_evasion_rating` 15; it has no `evasion_rating_per_level`, so evasion does not grow
 with level), the bases and attributes from Characters.dat:
 
-| Stat | Value |
+| Stat | Base value before optional sources |
 |---|---|
 | `maximum_life` | BaseMaxLife (38) + 12 × level + strength / 2 |
 | `maximum_mana` | BaseMaxMana (34) + 6 × level + intelligence / 2 |
@@ -235,6 +235,45 @@ Inactive-weapon, cascading-equipment, passive-refund and active-aura composition
 Historical LocalExile controls also cover 34 Standard/Ruthless supplied-source states, including Fireball
 qualification at Intelligence 68/62/68 against its 67 requirement, source recovery and weapon-set relog.
 Those controls do not enable private game modes in this branch or prove official fractional parity.
+
+Life and Mana also collect six signed raw pool coefficients from passives and active equipment.
+`LifeManaPoolSources` adds these terms to the flat buckets after resolving actual character level (1–100) and the
+completed nonnegative attributes, before the pool's increased percentage:
+
+| Raw coefficient | Flat contribution |
+|---|---|
+| `life_per_level` | coefficient × character level, added to inherent 12 per level |
+| `mana_per_level` | coefficient × character level, added to inherent 6 per level |
+| `maximum_life_per_10_dexterity` | coefficient × floor(final Dexterity / 10) |
+| `maximum_life_per_10_intelligence` | coefficient × floor(final Intelligence / 10) |
+| `X_life_per_4_dexterity` | coefficient × floor(final Dexterity / 4) |
+| `x_to_maximum_life_per_2_intelligence` | coefficient × floor(final Intelligence / 2) |
+
+Native item fixtures use +2 Life/Mana per level, +2 Life per ten Dexterity/Intelligence, +1 per four Dexterity and
++1 per two Intelligence; distinct +2 Mana-per-level modifiers also compose to +4 before multiplying by level.
+Negative native `life_per_level` values -12/-6/-3 subtract from the inherent growth; they are not discarded.
+Mode-specific source-vector cases read The Apostate (graph 56940), Crimson Power (20931) and Sanguine Power (24063)
+through `PassiveTree.Stats`, `PassiveBonus` and the pool calculation; they do not allocate a Gateway character's tree.
+Each attribute term counts complete groups once from the final whole-source attributes, after typed/all increases;
+display-only final attribute overrides do not feed these pool inputs. Flat Life from existing equipment ES conversion
+and the ordinary Strength/Intelligence halves remain in their existing buckets. Mana retains its Strength-based
+branch below. Wide signed intermediates preserve cancellation before final pool scaling and bounds.
+`PassiveBonus` uses one developer snapshot: an explicit coefficient replacement, including zero, replaces its whole
+passive/item coefficient. `/set_stat` on any of these six inputs rebuilds pools and clamps current Life/Mana;
+the relevant resource update is sampled at the send gate, with reservation retained for Mana.
+The ordering follows pinned PoB `16de4b8` CalcSetup 597, ModParser 1354/1471 and ModStore 501; CalcPerform 517 supplies
+the ordinary attribute bonuses. The existing final Life/Mana floor is retained, whereas pinned CalcPerform 88
+rounds final pools. Exact official fractional parity remains unverified; this change does not adopt PoB's final round.
+Native modifier and isolated conversion-passive fixtures do not establish legal acquisition, event-passive admission
+or complete conversion-node behavior. The 71 new cases (45 pure/native-source and 26 Gateway) pass with 82 existing
+regressions: 153/153 focused, without skips. Full Gateway passes 3874/3874 with no skips; earlier unchanged
+Core 648/Data 37 from this session remain applicable, for 4559 applicable cases. Only Gateway was rerun after these
+six-source changes. The current hook records seven actual unobserved disposed-NetworkStream faults: six
+`MonsterKilled` → `Send`, and one `NotifyMonsterHit` → `HitMonster` → `AreaSkillHit` → `LaunchProjectile` →
+`CastGemSkill` → `Send`. Its 390 first-chance records are separate from those seven faults.
+There are no diagnostic errors, truncation or cap hits, and no captured new pool-source path; passing tests do not
+establish fault-free background execution. New native checks remain pending; this bounded source addition does not
+complete the Life or Mana panel rows, their more/conditional operators or other conversion engines.
 
 Maximum mana also includes the ordinary flat and increased mana sources from passives and active equipment.
 `X_mana_per_4_strength` (Stats row 4992, client key 4993) contributes

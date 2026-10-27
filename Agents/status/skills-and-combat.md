@@ -456,6 +456,22 @@ Part of [Status](../Status.md); what to build next in this area is in
   Supplied-source controls do not certify unique acquisition. Half-up fractional rounding follows pinned PoB; official-server rounding,
   signed equipment cycles, attribute conversions, conditional/more operators and mercenary gates remain open.
   Wide final evaluation does not claim arbitrary raw int-source aggregation is overflow-proof.
+  Six ordinary pool coefficients use those completed attributes and actual level in the flat Life/Mana buckets,
+  before final pool increases: signed `life_per_level`/`mana_per_level`, Life per ten Dexterity/Intelligence,
+  per four Dexterity and per two Intelligence.
+  Native -12/-6/-3 Life-per-level penalties subtract from inherent growth; attribute sources count
+  complete groups once. Existing Strength-based Mana, ordinary halves and equipment ES-to-Life flats retain their order.
+  One developer snapshot replaces whole coefficients, including zero; commands rebuild/clamp pools and publish the
+  affected resource at the send gate, retaining Mana reservation.
+  All 71 new cases (45 pure/native-source and 26 Gateway) plus 82 existing regressions pass: 153 focused, no skips.
+  Full Gateway passes 3874/3874 with no skips; earlier unchanged Core 648/Data 37 from this session remain applicable
+  (4559 applicable cases; only Gateway rerun after these changes). The current hook records seven actual unobserved
+  disposed-NetworkStream faults: six `MonsterKilled` → `Send` and one `NotifyMonsterHit` through the projectile-hit
+  path to `Send`. Its 390 first-chance records are separate; no diagnostic errors/truncation/cap hit or new pool-source
+  path appears. Passing tests do not imply fault-free background execution; new native checks remain pending.
+  The existing final pool floor differs from pinned PoB's final rounding; official fractional parity is unverified.
+  Real modifier/isolated passive fixtures do not prove acquisition, event-passive admission or full conversion nodes,
+  and these six inputs do not complete the Life/Mana rows or conditional/more pool operators.
   Code: `CharacterStats.cs`, `ItemModStats.cs`, Gateway (`CharacterStatSources`, `PassiveBonus`, `ClassAttributes`).
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2d.
 
@@ -627,7 +643,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   the two target-conditional effects at the roll), and the final rating value is
   sent as `main_hand_accuracy_rating` / `off_hand_accuracy_rating` for the Offence panel;
   armour and evasion also take their flat/increased passives and the base equipped armour pieces (body, helmet,
-  gloves, boots); life and mana take their existing flat/increased passive and active item sources.
+  gloves, boots); Life/Mana also take signed per-level and complete final-attribute-group sources before their
+  existing flat/increased projection. Its final floor remains a documented local choice; current automated results
+  are in the attribute entry above, with new native checks pending.
   See [11](../docs/protocol/11-skills.md) §4.
 - **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack
   speed is summed into the client's `main_hand_attack_speed_+%`;

@@ -185,7 +185,19 @@ partial class Program
         // Read raw replacements once, preserving independent mana and incoming-hit consumers.
         Dictionary<uint, int> devStats;
         lock (conn.Monsters) devStats = new(conn.PlayerStats);
-        // Final native Strength remains a presentation override; use the production attribute calculation here.
+        // Raw pool-source overrides replace their whole coefficient, including explicit zero. Final native
+        // attributes remain presentation overrides; group terms consume the production-calculated attributes.
+        int PoolSource(string name, int sourced) => Stats.Key(name) is uint key && devStats.TryGetValue(key, out int value)
+            ? value : sourced;
+        bonus = bonus with
+        {
+            LifePerLevel = PoolSource(LifeManaPoolSources.LifePerLevel, bonus.LifePerLevel),
+            ManaPerLevel = PoolSource(LifeManaPoolSources.ManaPerLevel, bonus.ManaPerLevel),
+            LifePerTenDexterity = PoolSource(LifeManaPoolSources.LifePerTenDexterity, bonus.LifePerTenDexterity),
+            LifePerTenIntelligence = PoolSource(LifeManaPoolSources.LifePerTenIntelligence, bonus.LifePerTenIntelligence),
+            LifePerFourDexterity = PoolSource(LifeManaPoolSources.LifePerFourDexterity, bonus.LifePerFourDexterity),
+            LifePerTwoIntelligence = PoolSource(LifeManaPoolSources.LifePerTwoIntelligence, bonus.LifePerTwoIntelligence),
+        };
         if (Stats.Key(StrengthMana.PerFourStrength) is uint manaPerStrength
             && devStats.TryGetValue(manaPerStrength, out int perFourStrength))
             bonus = bonus with { ManaPerFourStrength = perFourStrength };
@@ -418,6 +430,11 @@ partial class Program
             Attributes: attributes,
             Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
             ManaPerFourStrength: Get(StrengthMana.PerFourStrength),
+            LifePerLevel: Get(LifeManaPoolSources.LifePerLevel), ManaPerLevel: Get(LifeManaPoolSources.ManaPerLevel),
+            LifePerTenDexterity: Get(LifeManaPoolSources.LifePerTenDexterity),
+            LifePerTenIntelligence: Get(LifeManaPoolSources.LifePerTenIntelligence),
+            LifePerFourDexterity: Get(LifeManaPoolSources.LifePerFourDexterity),
+            LifePerTwoIntelligence: Get(LifeManaPoolSources.LifePerTwoIntelligence),
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
