@@ -184,7 +184,7 @@ Path of Building pinned 16de4b82 maps "per N armour" to a PerStat Armour/div tag
 [ModParser](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82/src/Modules/ModParser.lua#L1472).
 [ModStore](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82/src/Classes/ModStore.lua#L460)
 floors the groups before multiplying the modifier.
-The separate chance to double armour against a hit does not change this rating and remains unimplemented here.
+The separate chance to double armour against a hit does not change this rating; see section 2f.
 
 The shared increased-attack stat feeds supported attacks and added damage, including maximum-mana lightning.
 Weapon physical damage now consumes that same generic attack stat, with signed sums kept wide before cancellation.
@@ -252,8 +252,22 @@ These controls establish actual player Life loss for the development hit route.
 Mixed monster packets, suppression, block, ES, Fortification and DoT separation retain automated coverage.
 The raw-source controls do not select Incorruptible or establish whole-class gameplay.
 The test records the exact embedded Git versions, DLL hash and process working directory.
-Recent-hit armour doubling/history, partial armour percentages, other class mechanics and local item defences
-remain separate work.
+Recent-hit armour composition is covered below; partial armour percentages, other class mechanics and local item
+defences remain separate work.
+
+## 2f. Steel Willed: temporary incoming-hit armour
+
+`RecentEnemyHits` implements the bounded double-armour consumer, independently of the outgoing bonus in section 2d.
+The prior four seconds of accepted enemy contacts supply key 4534.
+Key 20680 scales that count with a 30% contribution cap, then generic chance key 8404 adds before a 0..100 clamp.
+The result is published as virtual key 12268.
+One lazy decision per unblocked relevant hit supplies physical and enabled chaos mitigation without changing pools.
+The current contact records after resolution, including blocked/zero-damage contacts, under the same combat lock.
+Death, shutdown, area entry and delayed-swing epochs use the explicit connection lifecycle.
+The existing stat send gate and player tick publish current counts, including idle expiry.
+See [Steel Willed armour](../game/steel-willed-armour.md) for primary addresses, model v1, dev-input semantics,
+current-main regressions and the eighteen historical raw-input native checks from original head `777b292`.
+The rebased head and exact batch composition await fresh native verification.
 
 ## 3. Damage over time and ailments
 

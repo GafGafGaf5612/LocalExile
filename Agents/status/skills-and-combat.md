@@ -56,8 +56,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Eleven native controls verify actual player Life loss, source toggles, resistance ordering and relog.
   Extra physical/elemental reductions stay with their own types; the native final Armour rating is unchanged.
   Mixed monster packets, block, suppression, ES, Fortification and DoT separation have automated coverage.
-  Native controls use a raw source on an unascended Marauder; Incorruptible selection, recent-hit doubling
-  and partial armour percentages remain separate.
+  Native controls use a raw source on an unascended Marauder; Incorruptible selection and partial armour
+  percentages remain separate.
+  Recent-hit doubling composes in automated tests below; the rebased combination awaits native verification.
   See [20](../docs/protocol/20-damage.md) section 2e.
 
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
@@ -98,9 +99,28 @@ Part of [Status](../Status.md); what to build next in this area is in
   The contribution joins raw attack increases once and feeds weapon physical, added damage and supported attacks.
   Native fixed-hit checks verify thresholds, additive 204/214, modifier removal and maximum-mana lightning.
   Weapon physical panel checks show 2â€“5 becoming 6â€“15; relog clears the development inputs.
-  Native checks use raw stats on an unascended character; selection and recent-hit armour doubling remain separate.
+  Native checks use raw stats on an unascended character; selection remains separate.
+  Recent-hit armour defence is implemented below; current-main composition awaits native verification.
   Code: `ArmourAttackDamage`, Gateway (`CharacterPlayerStats`), `SkillCatalog.Unarmed.IncreasedDamage`.
   Docs: [20](../docs/protocol/20-damage.md) Â§2d.
+- Steel Willed incoming-hit armour: prior accepted enemy contacts supply a four-second authoritative counter.
+  The per-hit contribution caps at 30%, then the real generic double-armour chance adds before a 0..100 clamp.
+  One decision supplies physical and enabled chaos mitigation; blocked and zero contacts count without armour RNG.
+  Permanent armour and the outgoing attack bonus remain unchanged.
+  Parsed development routes, mixed monster packets, idle expiry, pause and stale swings pass tests.
+  Connection lifecycle, AI collection epochs and queued full/partial stat sends also have automated coverage.
+  Rage, own-aura and Mageblood full writers acknowledge their exact encoded pair after gated construction.
+  Return-to-previous-pair, queued expiry and rejected-send regressions cover these remaining full writers.
+  Dirty aura prefixes and Fortification tails build in wire order across expiry, with decoded-pair/idle checks.
+  Eighteen historical native checks at original head `777b292` verified 50/33 Life loss and a real Zombie hit.
+  They covered unchanged 500 armour/outgoing 102, the 30% cap, additive 50%, pause/expiry and full-refresh counters.
+  Death, resurrection, area change and relog clear history under explicit LocalExile model v1.
+  Current-main mixed physical/chaos, charges/resists/Fortification/ES and parsed suppression regressions pass.
+  Queued hits sample changed sources and final defences at contact, including lazy own-aura suspension.
+  The rebased head and exact batch still require native verification.
+  Class admission and suppression-to-armour chance integration remain separate work.
+  See [Steel Willed armour](../docs/game/steel-willed-armour.md).
+
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
   Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses
   send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` /

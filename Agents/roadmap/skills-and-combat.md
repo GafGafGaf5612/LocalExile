@@ -115,7 +115,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Boolean chaos-hit armour has native raw-source Life-loss controls and shared incoming-hit regressions.
   Mixed monster packets and ES/block/suppression/Fortification have automated coverage; recheck them natively.
   See Status and protocol/20-damage.md section 2e.
-  Recent-hit armour doubling/history, partial armour percentages and whole-class Incorruptible remain separate.
+  Recent-hit armour defence now composes with physical/chaos mitigation in actual and queued contact regressions.
+  Full stat writers, including Rage, own auras and Mageblood, have expiry and encoded-pair acknowledgment regressions.
+  Dirty aura/Fortification composition also checks decoded wire order, independent expiry and idle correction.
+  Its eighteen original-head native checks remain historical; rerun the rebased head and exact batch natively.
+  See [the model](../docs/game/steel-willed-armour.md) for event policies and evidence boundaries.
+  Partial armour percentages, other Behemoth nodes, class admission and suppression transfer remain separate.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.

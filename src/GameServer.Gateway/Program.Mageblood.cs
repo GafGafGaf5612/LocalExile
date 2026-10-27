@@ -77,7 +77,8 @@ partial class Program
     {
         if (MagebloodBelt(conn) is null) return;
         lock (conn.Monsters) RecomputePoolsAndSpeed(conn);
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)),
             "0x01b3 player stats (Mageblood flasks)");
     }
 }

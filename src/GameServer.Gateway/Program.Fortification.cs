@@ -145,22 +145,26 @@ partial class Program
                 if (session.PresentedRevision == session.Revision) return null;
                 ReconcileOwnAuras(conn);
                 conn.Pools = PoolsFor(conn, conn.Pools.Level);
-                var value = session.Read(conn.Clock.Elapsed.TotalSeconds);
-                var packets = new List<byte[]>();
-                if (session.Buff != 0) packets.Add(InstanceEntities.RemoveBuff(PlayerId, session.Buff));
-                session.Buff = 0;
-                if (value.Current > 0)
+                return WithOwnAuraChanges(conn, () =>
                 {
-                    session.Buff = conn.NextBuff++;
-                    packets.Add(InstanceEntities.AddBuff(PlayerId, session.Buff, 1943, PlayerId,
-                        u68: BitConverter.SingleToUInt32Bits((float)Math.Max(0,
-                            value.NextExpiry!.Value - now)),
-                        stacks: (ushort)Math.Min(ushort.MaxValue, value.Current)));
-                }
-                packets.Add(InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)));
-                packets.Add(InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []));
-                session.PresentedRevision = session.Revision;
-                return WithOwnAuraChanges(conn, () => packets.SelectMany(p => p).ToArray());
+                    // Build and acknowledge the tail AFTER any aura prefix, in the same order as its wire packets.
+                    var value = session.Read(conn.Clock.Elapsed.TotalSeconds);
+                    var packets = new List<byte[]>();
+                    if (session.Buff != 0) packets.Add(InstanceEntities.RemoveBuff(PlayerId, session.Buff));
+                    session.Buff = 0;
+                    if (value.Current > 0)
+                    {
+                        session.Buff = conn.NextBuff++;
+                        packets.Add(InstanceEntities.AddBuff(PlayerId, session.Buff, 1943, PlayerId,
+                            u68: BitConverter.SingleToUInt32Bits((float)Math.Max(0,
+                                value.NextExpiry!.Value - now)),
+                            stacks: (ushort)Math.Min(ushort.MaxValue, value.Current)));
+                    }
+                    packets.Add(PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)));
+                    packets.Add(InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []));
+                    session.PresentedRevision = session.Revision;
+                    return packets.SelectMany(p => p).ToArray();
+                });
             }
         });
 }
