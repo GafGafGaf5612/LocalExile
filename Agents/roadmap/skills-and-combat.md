@@ -188,18 +188,16 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Measure official capped-attempt refresh behavior and area-loading timer parity before replacing policy v1.
   See [26-rage.md](../docs/protocol/26-rage.md); Vaal costs and whole-class selection remain separate mechanics.
 
-### Vaal souls and execution (#308)
+### Vaal execution and remaining soul checks
 
-- Collection, bounded shared budgets and the proved Actor payloads are implemented with automated coverage.
+- Collection, bounded shared budgets and the proved Actor payloads (#308) pass automated and bounded native checks.
   Source checks on base `939b44fe` cover attribute/mana composition, supports, payment and current publication.
   The proved missing skill-record bit1 is implemented from raw Vaal metadata, with parsed and socketed regressions.
-  No native Vaal feature checks have passed; the parent's R18 probe diagnostic does not change that scope.
-  R21 readiness reached 1/1 but failed strict identity without recording the member; keep that guard unchanged.
-  Native acceptance remains: inspect actual manager balances and consumers from the exact rebuilt artifacts.
-  Keep READY pending that new native window with the corrected flag and final artifact identities.
-  Verify caps, duplicates, source/cost changes, removal/readd, cooldown refresh, zero cost and lifecycle.
-  Include held death notifications and Vaal Haste/Grace aura-cost selection in native acceptance.
-  Include incoming death/resurrection interleavings and attribute gear removal before inventory notifications.
+  Forty-two pinned 3.29.3b checks cover real-kill charging, the cap, cost changes, zero cost and prevention.
+  They also cover nonlethal/friendly controls and unsupported input without action echo or resource loss.
+  Remaining native acceptance covers duplicates, removal/readd, cooldown refresh and transient lifecycle.
+  Verify held death notifications, Vaal Haste/Grace aura costs, death/resurrection and slow destination loading.
+  Include attribute gear removal before inventory notifications; current automated coverage is not native proof.
   See [27-vaal-souls.md](../docs/protocol/27-vaal-souls.md) and Status for the explicit LocalExile policies.
   Vaal executors, payment, official distribution/capacity parity and the SGP countdown require separate work.
   Unsupported Vaal casts remain refused; Behemoth and whole-class enablement remain separate.

@@ -1,10 +1,10 @@
 # Vaal soul collection and native budgets (3.29.3b)
 
 Issue #308 implements collection, bounded connection state and the native Actor budget payloads.
-The source is rebased onto main `939b44fec76ba46df762fcd9cdf616fa3d2f8739` as one private feature commit.
-Automated wire/dispatcher tests pass; no native Vaal feature checks have passed.
-Acceptance with the real client is **pending**.
-Unsupported Vaal casts remain refused even with a full budget.
+Implementation source `66571d55d5d5bd70f9e7b631849f77fbe862ddbe` is based on main `939b44fe`.
+Automated wire/dispatcher tests and 42 bounded real-client collection/counter checks pass.
+This establishes the collection/counter scope, not full Vaal execution or lifecycle parity.
+Unsupported Vaal casts are refused before action echoes, including full budgets and effective zero cost.
 There is no Vaal executor, Rage payment, invented soul-gain-prevention timer or Phrecia gate change.
 
 ## Primary evidence
@@ -150,21 +150,51 @@ The shared skill preflight refuses raw Vaal instances before movement, action ec
 This also applies when soul-cost modifiers or the no-souls flag reduce their effective requirement to zero.
 The execution backstop remains in place; ordinary partner skills retain their normal admission and mana payment.
 
-## Acceptance still required
+## Verification and remaining scope
 
 Source validation covers the solution build and Core, Data and Gateway suites on base `939b44fe`.
+At implementation `66571d55`, all 531 Core, 18 Data and 3404 Gateway tests pass, with no skips.
+The solution build has zero warnings and errors.
+Exact composition with PR #294 head `911f06a7` passes 531 Core, 18 Data and 3436 Gateway tests at `0615fc3f`.
+That private integration preserves both mechanics; PR #294 is not imported into this feature branch.
 Combined regressions cover wide attribute requirements, mana, support removal, ordinary mana payment and soul payloads.
 Parsed Core creation 0x40 and update 0x20 regressions check flag 0x02 and immediate support layout.
 No parent fields are present.
 The literal primary constructor model shows old flags zeroing soul inputs and flag 0x02 retaining base 30/uses 1.
 Real catalog/socketed dispatcher tests cover Vaal Fireball, Vaal Haste, ordinary partners, supports and inactive hosts.
 They retain bit1 across no-souls zero/removal and zero budgets, and check reacquisition without restoring balance.
-These source checks do not establish native manager or UI acceptance.
-The parent's R18 controller-status diagnostic validates the probe adapter only, not the Vaal mechanic.
-At original `b9be515`, R21 prebind readiness changed Vaal/Fireball 0/0 to 1/1 before strict `vaal_identity` failed.
-The actual member was not recorded, so this result proves no native Vaal feature check.
-Passed native Vaal feature checks remain **0**; READY remains pending native acceptance with the corrected flag.
-The parent must rebuild and verify actual native manager entries and skill UI consumers with the real client.
-Check collection, caps, duplicates, removal/readd, cooldown refresh, zero cost, death, relog and slow area transfer.
-The exact rebuilt artifacts must be identified during that verification.
+Twenty-four admission regressions cover targeted, ground, self, approach, attack-move and instant inputs.
+Full, no-souls and reduced-to-zero costs cannot confirm actions, move, reserve cooldowns or spend resources.
+The same gem's ordinary partner retains normal admission.
+
+Client 3.29.3b completed one unchanged 42-check scenario with a new synthetic character in the Strand, seed 1.
+The native required-soul getter and Actor manager consumer reported current, capacity and cost together.
+An eligible Vaal Fireball started at 0/30; real hostile kills charged it to 30/30 and another kill stayed capped.
+Nonlethal damage and a killed friendly monster awarded no souls.
+Cost changes clamped to 15/15, raised capacity to 60 with current 15, then restored capacity 30 without refilling.
+The no-souls flag produced zero cost/capacity/balance; clearing it restored capacity 30 with zero balance.
+Soul-gain prevention rejected an actual kill, and clearing it allowed the next kill to award one soul.
+Finally an unsupported Vaal input preserved mana, target Life and the one-soul balance, with no action echo.
+Natural gem level-ups retained the instance identities and native budget observations.
+Owned-character logout, observer detach and temporary Host cleanup completed without errors.
+The ordinary server was restored without rebuilding or extracting game data.
+
+Native implementation revision: `66571d55d5d5bd70f9e7b631849f77fbe862ddbe`.
+Gateway SHA256: `ce82eb040afcb4fb6e8502570cb422a3e257f79ee740936daec48e4404412d3a`.
+Core SHA256: `5eca39052d7ef34d41e2c585c1cd4a0283fd689594577ca5cd2ccb7c8aabdb3f`.
+Host SHA256: `51dfc0f077fd9a3edf8f7dc3e64dc59942ee664c9290ad99437fa6b7adb629ab`.
+All embedded informational versions matched that implementation revision; the listener path and cwd were checked.
+The subsequent verification-documentation commit changes no production source or tests.
+Ignored evidence is retained as `vaal308-level-r25/run-20261028-001117` in the parent's local logs.
+Earlier partial/failed runs are excluded from the accepted count.
+
+To reproduce, start through `scripts/dev/live.ps1` and socket a usable level-1 Vaal Fireball on a new test character.
+Use its ordinary Fireball partner for real nearby kills and inspect the native consumers mapped above.
+Repeat with `virtual_non_aura_vaal_skill_soul_requirement_multipler` at -50, 100 and its original value.
+Toggle `virtual_vaal_skill_require_no_souls_per_use` and `has_soul_gain_prevention` through `/set_stat`.
+Check native Life, mana, manager balances and action logs, rather than treating command replies as proof.
+
+Duplicates, last-source removal, cooldown refresh, death/relog/transfer and held notifications have automated coverage.
+Their native lifecycle acceptance, Vaal Haste/Grace aura-cost composition and held-equipment interleavings remain open.
+No HUD animation, SGP countdown, native death/transfer session or complete Vaal parity is claimed by these 42 checks.
 Official distribution, all Vaal modifiers, SGP countdown ownership, refunds and executors remain separate work.

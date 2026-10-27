@@ -314,8 +314,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   Source checks on base `939b44fe` preserve wide raw attributes, mana, pool flags and supported skill payment.
   Skill-record bit1 (0x02) now retains native Vaal soul inputs using catalog raw stored uses in both lookup paths.
   Parsed creation/update and real socketed tests cover zero cost/balance, ordinary partners and inactive hosts.
-  Distribution and capacity are documented LocalExile policies; no native Vaal feature checks have passed.
-  Native acceptance and READY remain pending; R21 readiness ended at strict identity failure without a recorded member.
+  A pinned 3.29.3b session passes 42 collection/counter checks: real kills, cap, cost, zero capacity and prevention.
+  Native required-soul and manager consumers agree, including natural gem level-ups and unsupported-input refusal.
+  The build and all three suites pass; exact private composition with PR #294 also passes.
+  Distribution and capacity are documented LocalExile policies, not a claim of official algorithm parity.
+  Native duplicate/removal, death/relog/transfer, aura costs and held-notification composition remain unverified.
   Unsupported Vaal casts are refused before action echoes or cooldown reservation, including effective zero cost.
   No executor, Rage payment or SGP countdown is added.
   See [27-vaal-souls.md](../docs/protocol/27-vaal-souls.md).
