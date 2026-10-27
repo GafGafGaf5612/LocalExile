@@ -725,8 +725,9 @@ Strand seed 1: the first 83 draws match the trace, including all 21 cell-area to
    `0x142035c70`): a node's first description starting "unique" reads `unique[letter][N][#count]` (none = group 0,
    count 1). Per group in order, keeping the largest count: with more nodes than the count, `Next(size)` picks one to
    keep, count times; the rest are removed as failed nodes (`0x142035f10`, a copy of `0x142036640`). With a letter,
-   the letter's count picks which of its N groups stay (`Next(count)`, then `0x142037ea0`), shared across the level's
-   records; not ported. These were the early `0x142030de5` differences of `1_4_2` and `2_8_5`. Nodes are then stably sorted by priority
+   the letter's count picks which of its N groups stay, once for the level (the first record with the letter: the
+   group indices, `Next(size)`, a partial shuffle of count steps `0x142037ea0`, cut to count); every record then
+   removes the other groups' nodes (ported 2026-10-27, `1_3_17_2`'s recipe entrances). These were the early `0x142030de5` differences of `1_4_2` and `2_8_5`. Nodes are then stably sorted by priority
    (`0x142003bc0`).
 3. **Voronoi** (`0x141f230e0`): sites are the node positions then every edge's internal points. The diagram is
    Steven Fortune's sweep2 in 32-bit integers (`0x141f27200`; lines `dx·x − (−dy)·y = c` unnormalised, integer square

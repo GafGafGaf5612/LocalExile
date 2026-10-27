@@ -27,6 +27,10 @@ public sealed class LevelRandom
 
     public uint Seed { get; }
 
+    /// <summary>The level's lettered unique groups (<c>0x142030790</c>'s map, generator-wide): per letter, the indices of
+    /// its numbered groups that stay, drawn once for every record.</summary>
+    public Dictionary<char, List<int>> UniqueLetters { get; } = [];
+
     /// <summary>The area turns random draws off (<see cref="Next(uint)"/> returns 0); raw draws still advance.</summary>
     public bool Disabled { get; }
 

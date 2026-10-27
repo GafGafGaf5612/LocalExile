@@ -52,8 +52,11 @@ static class Shared
     /// <summary>The LCG draws that object scripts make when a doodad is created: 0x142063a60 (call site 0x142063b9c), an
     /// animated entity's random start time (rand() bits × length / 256); RandomElement in the Animated object actions
     /// 0x1420aa460 (0x1420aa41b) and 0x1420d6780 (0x1420d67eb); 0x142bc8ee0's bits (0x142be7a0b). They read only the
-    /// LCG, which 0x142046a70 reseeds from the MT before each pick, so they move nothing in the generation.</summary>
-    static readonly HashSet<string> ObjectScriptDraws = ["0x142063b9c", "0x1420aa41b", "0x1420d67eb", "0x142be7a0b"];
+    /// LCG, which 0x142046a70 reseeds from the MT before each pick, so they move nothing in the generation. Also
+    /// 0x141dc4d50 (0x141dc4e2b): an object whose .ao has an AOSet takes a uniform child by the same LCG (the Heist areas
+    /// cards and props), a visual variant only; the LCG also moves with rand() calls the trace does not see, so the port
+    /// cannot draw it.</summary>
+    static readonly HashSet<string> ObjectScriptDraws = ["0x142063b9c", "0x1420aa41b", "0x1420d67eb", "0x142be7a0b", "0x141dc4e2b"];
 
     /// <summary>The trace's 'n' / 'u' / 'l' draws, without <see cref="ObjectScriptDraws"/>.</summary>
     public static List<(char Kind, string Caller, uint Arg, uint Result)> TraceDraws(JsonElement t) =>

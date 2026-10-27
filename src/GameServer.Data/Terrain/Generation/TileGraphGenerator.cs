@@ -506,11 +506,14 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
     /// description starting "unique" reads "unique[letter][N][#count]" (none = group 0, count 1; N not a number: no
     /// group; a count that is not a number: 1). Per group in order of N, keeping the largest count: with more nodes than
     /// the count, <c>Next(size)</c> takes one to keep, count times, and the nodes left are removed
-    /// (<c>0x142035f10</c>, as a failed node). Lettered groups (keep count of the letter's N groups, shared across the
-    /// level's records) are not ported.</summary>
+    /// (<c>0x142035f10</c>, as a failed node). Then the lettered groups ("uniqueA1#2", the letter upper-cased), in order of
+    /// first appearance: the first record with the letter draws which of its numbered groups stay (their indices,
+    /// <c>Next(count)</c>, a partial shuffle of count steps, <c>0x142037ea0</c>, then cut to count); a group not among them
+    /// loses its nodes, in every record of the level (1_3_17_2's recipe entrances, 2026-10-27).</summary>
     static void UniqueGroups(TileGraph graph, LevelRandom rng)
     {
         var groups = new List<(int Count, List<GraphNode> Nodes)>();
+        var lettered = new List<(char Letter, int Count, List<List<GraphNode>> Groups)>();
         foreach (var n in graph.Nodes)
         {
             var d = n.Descriptions.FirstOrDefault(d => d.StartsWith("unique", StringComparison.Ordinal));
@@ -519,7 +522,9 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             if (d.Length > 6)
             {
                 string rest = d[6..];
-                if (char.IsAsciiLetter(rest[0])) throw new NotSupportedException($"{n}: lettered unique groups ('{d}', 0x142030790) are not ported");
+                char letter = char.ToUpperInvariant(rest[0]);
+                if (letter is >= 'A' and <= 'Z') rest = rest[1..];
+                else letter = ' ';
                 int hash = rest.IndexOf('#');
                 if (hash >= 0)
                 {
@@ -528,6 +533,16 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
                 }
                 if (LeadingInt(rest) is not { } v || v < 0) continue;
                 g = v;
+                if (letter != ' ')
+                {
+                    int li = lettered.FindIndex(l => l.Letter == letter);
+                    if (li < 0) { lettered.Add((letter, 0, [])); li = lettered.Count - 1; }
+                    var (lt, lc, lg) = lettered[li];
+                    while (lg.Count <= g) lg.Add([]);
+                    lg[g].Add(n);
+                    lettered[li] = (lt, Math.Max(lc, count), lg);
+                    continue;
+                }
             }
             while (groups.Count <= g) groups.Add((0, []));
             groups[g] = (Math.Max(groups[g].Count, count), groups[g].Nodes);
@@ -538,6 +553,23 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             if (count >= nodes.Count) continue;
             for (int k = 0; k < count; k++) nodes.RemoveAt((int)rng.Next((uint)nodes.Count));
             foreach (var n in nodes) graph.RemoveNode(n);
+        }
+        foreach (var (letter, count, letterGroups) in lettered)
+        {
+            if (!rng.UniqueLetters.TryGetValue(letter, out var keep))
+            {
+                rng.UniqueLetters[letter] = keep = [];
+                if (count != 0)
+                {
+                    keep.AddRange(Enumerable.Range(0, letterGroups.Count));
+                    rng.Next((uint)keep.Count);
+                    rng.Shuffle(keep, count);
+                    if (count < keep.Count) keep.RemoveRange(count, keep.Count - count);
+                }
+            }
+            for (int i = 0; i < letterGroups.Count; i++)
+                if (!keep.Contains(i))
+                    foreach (var n in letterGroups[i]) graph.RemoveNode(n);
         }
     }
 
