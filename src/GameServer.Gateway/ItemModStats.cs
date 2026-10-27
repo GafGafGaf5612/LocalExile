@@ -31,9 +31,16 @@ static class ItemModStats
     /// <summary>The character's stats from these equipped items, by client stat key (Stats.dat row + 1).</summary>
     public static Dictionary<uint, int> Global(IEnumerable<Item> equipped, ModCatalog mods, StatCatalog stats)
     {
+        var items = equipped.ToArray();
         var result = new Dictionary<uint, int>();
-        foreach (var (id, value) in Sum(equipped, mods))
+        foreach (var (id, value) in Sum(items, mods))
             if (stats.Key(id) is uint key) result[key] = result.GetValueOrDefault(key) + value;
+        // PoB Item.lua leaves ItemCondition-tagged increases in the character mod list, outside calcLocal.
+        // This stat is marked IsLocal in Stats.dat, but affects global ES only while its source item is corrupted.
+        int conditionalES = Sum(items.Where(i => i.Corrupted), mods, local: true)
+            .GetValueOrDefault("local_maximum_energy_shield_+%_if_item_corrupted");
+        if (conditionalES != 0 && stats.Key("maximum_energy_shield_+%") is uint esKey)
+            result[esKey] = (int)Math.Clamp((long)result.GetValueOrDefault(esKey) + conditionalES, int.MinValue, int.MaxValue);
         return result;
     }
 
