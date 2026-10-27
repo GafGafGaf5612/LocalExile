@@ -135,6 +135,7 @@ partial class Program
             .Concat(PanelStats.FromPools(Get, conn.Pools))
             .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana))
             .Concat(new[] { ("energy_shield_recovery_per_minute", (int)Math.Round(EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield, Get, conn.EnergyShield.Recharging))),
+                ("total_energy_shield_recovery_per_minute_from_regeneration", (int)Math.Round(EnergyShield.RegenPerMinute(conn.Pools.EnergyShield, Get))),
                 ("energy_shield_recharge_rate_per_minute", (int)Math.Round(EnergyShield.RechargePerMinute(conn.Pools.EnergyShield, Get))),
                 ("energy_shield_recharge_active", 0) })
             .Concat(ChargePanelStats.Compute(Get)))
