@@ -51,6 +51,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Phrecia admission, Rampage and the separate native melee-range flag9807 remain separate work.
   See [04](../docs/protocol/04-player-entity.md#41a-player-actor-scale-299) for formula and evidence limits.
 
+- Armour against chaos hits (#288): the boolean `base_armour_applies_to_chaos_damage` enables the existing armour
+  model after chaos resistance, with the ordinary 90% limit.
+  Eleven native controls verify actual player Life loss, source toggles, resistance ordering and relog.
+  Extra physical/elemental reductions stay with their own types; the native final Armour rating is unchanged.
+  Mixed monster packets, block, suppression, ES, Fortification and DoT separation have automated coverage.
+  Native controls use a raw source on an unascended Marauder; Incorruptible selection, recent-hit doubling
+  and partial armour percentages remain separate.
+  See [20](../docs/protocol/20-damage.md) section 2e.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks

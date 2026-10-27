@@ -134,14 +134,16 @@ partial class Program
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
         // Match CharacterPlayerStats: a dev value replaces the complete raw passive/equipment/aura input.
-        // Read the dev inputs from one snapshot, without rebuilding the whole passive bonus.
+        // Read raw replacements once, preserving independent mana and incoming-hit consumers.
         Dictionary<uint, int> devStats;
         lock (conn.Monsters) devStats = new(conn.PlayerStats);
-        // Only this raw mana source is replaced here. Final native strength remains a presentation override;
-        // CharacterStats.For consumes its existing final Strength from the production attribute calculation.
+        // Final native Strength remains a presentation override; use the production attribute calculation here.
         if (Stats.Key(StrengthMana.PerFourStrength) is uint manaPerStrength
             && devStats.TryGetValue(manaPerStrength, out int perFourStrength))
             bonus = bonus with { ManaPerFourStrength = perFourStrength };
+        if (Stats.Key(PlayerHitMitigation.ArmourAppliesToChaos) is uint chaosArmour
+            && devStats.TryGetValue(chaosArmour, out int chaosArmourOverride))
+            bonus = bonus with { ArmourAppliesToChaosDamage = chaosArmourOverride != 0 };
         long RawCriticalSum(string name)
         {
             if (Stats.Key(name) is not uint key) return 0;
@@ -371,6 +373,7 @@ partial class Program
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
             ChaosInoculation: Get("keystone_chaos_inoculation") != 0,
+            ArmourAppliesToChaosDamage: Get(PlayerHitMitigation.ArmourAppliesToChaos) != 0,
             EnergyShield: Get("base_maximum_energy_shield"),
             EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
