@@ -1002,6 +1002,19 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   per-type integer-roll expectation, cooldown/downtime and special skill mechanics are excluded.
   Hitless spells do not borrow weapon hits or turn flat added spell damage into a hit; their hit ranges and
   inherited weapon DPS/per-use fields are explicitly zeroed. This does not implement a beam or DoT damage panel.
+  After linked supports finish their damage/type restrictions, the final supported spell packet replaces both
+  `spell_minimum/maximum_*_damage` and inherited main-hand display fields. Zeroes clear a type removed by a support.
+  The average and DPS use this final packet and the supported cast time, retaining the pre-critical convention above.
+  Eight real-pipeline tests cover Controlled Destruction, Lesser Multiple Projectiles, Added Cold, Empower,
+  combined supports, Brutality, unlink/relink/removal and a hitless Righteous Fire control with an equipped weapon.
+  Native selected-panel checks cover twelve stages and fourteen captures on the isolated Standard fixture.
+  Eleven positive captures bind the formatter's natural getter receiver to the current local player's live skill
+  and freshly parsed primary stats; one removal capture proves Fireball's ID and previous instance are absent.
+  Baseline, individual/combined supports, unlink/relink/removal and relog agree with the fixed native-table inputs.
+  Brutality and hitless Righteous Fire publish explicit zero hit fields and show no damage rows. Their hidden
+  zero rows have no independent formatter binding; Righteous Fire has no selected formatter receiver observation.
+  Link changes use a held host and re-equipping it, so native in-place link mutation remains unmeasured.
+  These checks establish this local pre-critical publication, not official critical-weighted DPS or DoT behavior.
 - **Damage effectiveness** (2026-10-24). An attack gem's hit is the weapon's damage × its `DamageEffectiveness` (the
   GESSPL row, permyriad: Flicker Strike 7730 at level 1, 30890 at 20, 69600 at 40 — the gem's "Deals 77.3% of base
   Attack Damage"), through `SkillCatalog.DamageEffectiveness` and `SpellDamage.WithEffectiveness`. A row of 0 (the

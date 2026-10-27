@@ -91,6 +91,10 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Flask charge-gain source resolution and separate hybrid Life/Mana rate/buff lifetimes have automated coverage
   and 24 native controls across both modes. Conditional flask sources and queued timer/predictor presentation
   remain open; see the items-and-crafting status.
+  Final supported-spell ranges and pre-critical average/DPS now follow linked support changes and clear removed
+  types. Native Standard checks bind eleven positive formatter captures to fresh owned skill stats, verify removal
+  and relog, and retain partial zero-row evidence for Brutality/Righteous Fire. Native in-place link mutation,
+  official critical weighting, DoT and special skill mechanics remain open.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.

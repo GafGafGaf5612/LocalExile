@@ -382,6 +382,18 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Selected supported-spell panel: final linked-support damage replaces both spell and inherited hand ranges,
+  clearing removed types and updating pre-critical average/DPS from the supported cast time.
+  Eight pipeline controls cover damage, projectiles, added damage, gem level, type prohibition, link lifecycle
+  and a hitless spell with an equipped weapon. Fourteen native captures cover twelve Standard-fixture stages:
+  eleven positive formatter/owned-skill checks and one skill-removal check pass strict identity checks.
+  Brutality and Righteous Fire have explicit zero hit fields and visually suppressed rows; their zero-row
+  formatter evidence remains partial. Unlink/relink uses host removal and re-equipping, not in-place mutation.
+  Relog restores the baseline and exact item contents; original copied saves and stashes remain unchanged.
+  Official critical-weighted DPS, damage over time and special skill mechanics remain separate.
+  Code: Gateway (`PlayerSkills`), `SpellPanelStats.cs`; tests: `SupportedSpellPanelTests.cs`.
+  Docs: [11](../docs/protocol/11-skills.md) §9.
+
 - Weapon-local damage and timing: active weapons supply a typed packet with multiplicative physical quality,
   local flat/increased damage, no-physical/quality-prohibition flags and local attack speed applied once.
   Ordinary melee/ranged and supported attacks share the actual context; final per-type rows clear removed types.

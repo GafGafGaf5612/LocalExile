@@ -386,7 +386,7 @@ partial class Program
                 var finalPlan = SkillHitPlan.ForSkill(Skills, effect, supported.Level, supported.Quality);
                 var ranges = Skills.IsAttack(effect)
                     ? AttackPanelStats.Compute(finalPlan, supportedHit, (int)Math.Round(100 / seconds))
-                    : SpellPanelStats.Compute(finalPlan, supportedHit, Get("hundred_times_casts_per_second"),
+                    : SpellPanelStats.Compute(finalPlan, supportedHit, (int)Math.Round(100 / seconds),
                         includeMainHand: true);
                 foreach (var (key, value) in ranges)
                     if (Stats.Key(key) is uint statKey) stats[statKey] = value;
