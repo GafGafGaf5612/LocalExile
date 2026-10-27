@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GameServer.Core.Accounts;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Saves;
 using GameServer.Core.World;
@@ -51,7 +52,7 @@ static class CharacterSaves
         Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null,
         OpeningTutorial? Tutorial = null, AscendancyProgress? MainAscendancy = null,
         Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null,
-        uint? Life = null, uint? Mana = null)
+        uint? Life = null, uint? Mana = null, VitalsSession? VitalsOwner = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -93,9 +94,46 @@ static class CharacterSaves
 
     public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
 
-    /// <summary>Ruthless carries resource pools through town, area changes and reconnects instead of refilling them.</summary>
-    public static void SaveVitals(string character, uint life, uint mana) =>
-        Update(character, s => s with { Life = life, Mana = mana });
+    /// <summary>A Ruthless resource writer. Retired transfer owners retain their token so only that exact failed
+    /// transfer can resume; a newer area's token can never be reclaimed by the old connection.</summary>
+    public sealed record VitalsSession(Guid CharacterId, Guid SessionId, bool Retired = false);
+
+    public static (uint Life, uint Mana) BeginVitalsSession(string character, Guid characterId, Guid sessionId,
+        string? league, Func<Save?, (uint Life, uint Mana)> initialize) => Saves.Atomically(() =>
+    {
+        if (!VitalsCharacterMatches(character, characterId, league))
+            throw new InvalidOperationException("The resource owner is no longer the admitted character");
+        var save = Load(character);
+        // A reused name must not inherit a prior identity's pools, even if an older server retained that save.
+        var initial = initialize(save?.VitalsOwner is { } owner && owner.CharacterId != characterId ? null : save);
+        Write(character, (save ?? new Save([])) with
+        {
+            Life = initial.Life, Mana = initial.Mana, VitalsOwner = new(characterId, sessionId),
+        });
+        return initial;
+    });
+
+    /// <summary>Only the currently admitted UUID/session may save pools, including its ordinary logout save.</summary>
+    public static bool SaveVitals(string character, Guid characterId, Guid sessionId, string? league,
+        uint life, uint mana, bool retire = false) => ChangeVitalsSession(character, characterId, sessionId, league,
+            life, mana, wasRetired: false, retired: retire);
+
+    public static bool ResumeVitalsSession(string character, Guid characterId, Guid sessionId, string? league,
+        uint life, uint mana) => ChangeVitalsSession(character, characterId, sessionId, league,
+            life, mana, wasRetired: true, retired: false);
+
+    static bool ChangeVitalsSession(string character, Guid characterId, Guid sessionId, string? league,
+        uint life, uint mana, bool wasRetired, bool retired) => Saves.Atomically(() =>
+    {
+        if (!VitalsCharacterMatches(character, characterId, league) || Load(character) is not { } save
+            || save.VitalsOwner != new VitalsSession(characterId, sessionId, wasRetired)) return false;
+        Write(character, save with { Life = life, Mana = mana, VitalsOwner = new(characterId, sessionId, retired) });
+        return true;
+    });
+
+    static bool VitalsCharacterMatches(string character, Guid characterId, string? league) =>
+        new SqliteAccountStore(Saves.Db).FindCharacter(character) is { } current
+        && HardcoreDeathRules.TicketMatches(current, characterId, league);
 
     public static void ClearActiveAuras(string character) => Update(character, save => save with { ActiveAuras = [] });
 

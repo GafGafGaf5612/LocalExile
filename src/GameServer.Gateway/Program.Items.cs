@@ -273,7 +273,13 @@ partial class Program
         // a1q4: a glyph is not needed once the glyphs are placed (a copy left in another instance): it goes, unpicked.
         if (GlyphIndex(ground.Item) is not null && ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs))
         {
-            if (conn.Instance.Ground.Take(id) is not null)
+            bool removed;
+            lock (conn.Monsters)
+            {
+                if (HardcoreProgressBlocked(conn)) return;
+                removed = conn.Instance.Ground.Take(id) is not null;
+            }
+            if (removed)
                 await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove glyph 0x{id:x}: the glyphs are placed");
             return;
         }
@@ -301,18 +307,28 @@ partial class Program
         {
             // A stack goes onto the inventory's stacks of its type first, then into free cells; all of it or nothing. Nothing
             // awaits between the check, the take and the add, and only this connection changes the character's items.
-            if (!items.Fits(PlayerInventories.MainInventory, ground.Item, ShapeOf))
+            PlayerInventories.Stacking stacked;
+            WorldItemObject? rest = null;
+            uint restId = 0;
+            lock (conn.Monsters)
             {
-                Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: no room in the inventory for {ground.Item.StackSize}");
-                return;
+                if (HardcoreProgressBlocked(conn)) return;
+                if (!items.Fits(PlayerInventories.MainInventory, ground.Item, ShapeOf))
+                {
+                    Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: no room in the inventory for {ground.Item.StackSize}");
+                    return;
+                }
+                if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+                stacked = KeepOnGroundIfNotSaved(conn, ground, () => items.AddStacked(PlayerInventories.MainInventory, ground.Item, ShapeOf));
+                if (stacked.Left > 0)
+                {
+                    // Fits said yes, so this is not expected; the rest goes back on the ground rather than vanish.
+                    rest = new WorldItemObject(ground.GridX, ground.GridY, ground.Item with { StackSize = (ushort)stacked.Left });
+                    restId = conn.Instance.Ground.Add(rest);
+                }
             }
-            if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
-            var stacked = KeepOnGroundIfNotSaved(conn, ground, () => items.AddStacked(PlayerInventories.MainInventory, ground.Item, ShapeOf));
-            if (stacked.Left > 0)
+            if (rest is not null)
             {
-                // Fits said yes, so this is not expected; the rest goes back on the ground rather than vanish.
-                var rest = new WorldItemObject(ground.GridX, ground.GridY, ground.Item with { StackSize = (ushort)stacked.Left });
-                uint restId = conn.Instance.Ground.Add(rest);
                 Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: {stacked.Left} didn't fit, back on the ground as 0x{restId:x}");
                 await Send(remote, stream, ciphers, InstanceEntities.CreateObject(restId, InstanceEntities.ObjectTypeHash(WorldItemObject.MetadataPath), rest.Blob()),
                     $"0x02b9 create world item 0x{restId:x} (the rest of 0x{id:x})");
@@ -322,32 +338,38 @@ partial class Program
                 $"0x00bf inventory 1: {ground.Item.StackSize} picked up ({stacked.Changed.Count} stack(s) grown, {stacked.Added.Count} new)");
             return;
         }
+        InventoryItem? placed;
+        int? glyph;
         (byte X, byte Y) cell = (0, 0);
-        if (!toCursor)
+        lock (conn.Monsters)
         {
-            if (items.FreeCell(PlayerInventories.MainInventory, shape.Width, shape.Height, ShapeOf) is not { } free)
+            if (HardcoreProgressBlocked(conn)) return;
+            if (!toCursor)
             {
-                Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: no room in the inventory");
-                return;
+                if (items.FreeCell(PlayerInventories.MainInventory, shape.Width, shape.Height, ShapeOf) is not { } free)
+                {
+                    Console.WriteLine($"[gateway] {remote} world item 0x{id:x}: no room in the inventory");
+                    return;
+                }
+                cell = free;
             }
-            cell = free;
-        }
-        if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
-        // The start weapon stops waiting; the Put below saves both changes at once.
-        if (conn.Instance.IsStartWeapon(CharacterName(conn), id) && items.ClaimStartWeapon())
-            Console.WriteLine($"[gateway] {remote} start weapon picked up");
+            if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+            // The start weapon stops waiting; the Put below saves both changes at once.
+            if (conn.Instance.IsStartWeapon(CharacterName(conn), id) && items.ClaimStartWeapon())
+                Console.WriteLine($"[gateway] {remote} start weapon picked up");
 
-        // A glyph (a1q4) sets its quest flags with the pickup, in the same save.
-        int? glyph = GlyphIndex(ground.Item);
-        var placed = KeepOnGroundIfNotSaved(conn, ground, () =>
-        {
-            InventoryItem Put() => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
-            if (CharacterSaves.Load(CharacterName(conn))?.Tutorial is { } tutorial)
-                foreach (bool support in new[] { false, true })
-                    if (conn.Instance.IsStartWeapon(TutorialObjects.DropKey(CharacterName(conn), tutorial, support), id))
-                        return TutorialObjects.Claim(CharacterName(conn), support, ground.Item, Put);
-            return glyph is int g ? GlyphQuest.Claim(CharacterName(conn), g, Put) : Put();
-        }, id);
+            // A glyph (a1q4) sets its quest flags with the pickup, in the same save.
+            glyph = GlyphIndex(ground.Item);
+            placed = KeepOnGroundIfNotSaved(conn, ground, () =>
+            {
+                InventoryItem Put() => items.Put(row, new InventoryItem(items.NewItemId(), cell.X, cell.Y, ground.Item));
+                if (CharacterSaves.Load(CharacterName(conn))?.Tutorial is { } tutorial)
+                    foreach (bool support in new[] { false, true })
+                        if (conn.Instance.IsStartWeapon(TutorialObjects.DropKey(CharacterName(conn), tutorial, support), id))
+                            return TutorialObjects.Claim(CharacterName(conn), support, ground.Item, Put);
+                return glyph is int g ? GlyphQuest.Claim(CharacterName(conn), g, Put) : Put();
+            }, id);
+        }
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (picked up from ({stop.X}, {stop.Y}))");
         if (placed is null) return;
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row), items.NextRevision(row), [], [placed]),
@@ -360,8 +382,14 @@ partial class Program
     // Gold goes to the stash's gold of the character's league (S→C 0x2a9), not into the inventory.
     static async Task PickUpGold(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, WorldItemObject ground, string how)
     {
-        if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
-        uint total = PersonalStashOf(conn).AddGold(ground.Item.StackSize);
+        uint total;
+        lock (conn.Monsters)
+        {
+            // A tick can resume from an earlier notification after the lethal contact committed migration.
+            if (HardcoreProgressBlocked(conn)) return;
+            if (conn.Instance.Ground.Take(id) is null) return;   // already picked up
+            total = PersonalStashOf(conn).AddGold(ground.Item.StackSize);
+        }
         await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove world item 0x{id:x} (gold {how})");
         await Send(remote, stream, ciphers, InstanceEntities.Gold(total), $"0x02a9 gold: {total} (+{ground.Item.StackSize} {how})");
     }

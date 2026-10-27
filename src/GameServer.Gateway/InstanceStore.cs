@@ -20,7 +20,14 @@ sealed class InstanceStore(TimeProvider clock, TimeSpan lifetime)
                 _instances.Remove(key);
             // SSF towns may share their social instance, but never their dropped items or other mutable world state.
             var instanceKey = (id, created, soloOwner?.ToUpperInvariant());
-            if (!_instances.TryGetValue(instanceKey, out var state)) _instances[instanceKey] = state = new InstanceState();
+            if (!_instances.TryGetValue(instanceKey, out var state))
+            {
+                // Auth assigns distinct instance IDs to private non-town areas. A shared ID/creation pair is the
+                // social boundary; only player presence crosses the per-character world-state boundary in towns.
+                var presence = _instances.Where(e => e.Key.Id == id && e.Key.Created == created)
+                    .Select(e => e.Value.Presence).FirstOrDefault();
+                _instances[instanceKey] = state = new InstanceState(presence);
+            }
             state.Connections++;
             state.EmptySince = null;
             return state;

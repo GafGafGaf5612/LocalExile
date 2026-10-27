@@ -55,7 +55,7 @@ partial class Program
                 conn.PlayerMana = (uint)UnreservedMana(conn);
             }
             await GainFlaskCharges(remote, stream, ciphers, conn, int.MaxValue, "Ruthless flask vendor refill");
-            CharacterSaves.SaveVitals(CharacterName(conn), conn.PlayerLife, conn.PlayerMana);
+            PersistRuthlessVitals(conn);
             await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife), "Ruthless vendor restores life");
             await SendPlayerMana(remote, stream, ciphers, conn, "Ruthless vendor restores mana");
         }

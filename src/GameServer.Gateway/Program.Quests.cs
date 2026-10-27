@@ -24,11 +24,15 @@ partial class Program
         var had = wanted.ToDictionary(f => f, f => Quests.ClientHas(f, ownBefore, clientBefore));
         var changed = new List<string>();
         lock (conn.Monsters)
+        {
+            // A queued QuestGate/background update must commit before death or leave the migrated save untouched.
+            if (HardcoreProgressBlocked(conn)) return;
             foreach (string flag in wanted)
                 if (on ? conn.QuestFlags.Add(flag) : conn.QuestFlags.Remove(flag)) changed.Add(flag);
+            if (changed.Count > 0) CharacterSaves.ChangeQuestFlags(CharacterName(conn), changed, on);
+        }
         if (changed.Count == 0) return;
         // Only the changed flags: a flag another connection of the character set meanwhile stays in the save.
-        CharacterSaves.ChangeQuestFlags(CharacterName(conn), changed, on);
         foreach (string flag in changed) Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: quest flag {flag} {(on ? "set" : "cleared")}");
         if (!conn.PlayerSent) return;
         var all = PlayerQuestFlags(conn);
@@ -40,10 +44,15 @@ partial class Program
             while (true)
             {
                 CharacterStats.Pools before;
-                lock (conn.Monsters) before = conn.Pools;
+                lock (conn.Monsters)
+                {
+                    if (HardcoreProgressBlocked(conn)) return;
+                    before = conn.Pools;
+                }
                 var pools = PoolsFor(conn, before.Level);
                 lock (conn.Monsters)
                 {
+                    if (HardcoreProgressBlocked(conn)) return;
                     if (!ReferenceEquals(conn.Pools, before)) continue;
                     conn.Pools = pools;
                     conn.ApplyMovementSpeed();
@@ -73,6 +82,7 @@ partial class Program
         List<uint> gone;
         lock (conn.Monsters)
         {
+            if (HardcoreProgressBlocked(conn)) return;
             gone = [.. conn.QuestRoomObjects.Where(o => effective.Contains(o.Value.Flag) && Has(o.Value.Flag)).Select(o => o.Key)];
             foreach (uint id in gone) conn.QuestRoomObjects.Remove(id);
             conn.UpdateBarrier();
@@ -356,8 +366,11 @@ partial class Program
     // the flag). Cleared (dev): the other way.
     static async Task ChangeSubmergedPassage(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool open)
     {
-        if (conn.Glyphs is null) return;
-        SetPassageBlockers(conn, !open);
+        lock (conn.Monsters)
+        {
+            if (HardcoreProgressBlocked(conn) || conn.Glyphs is null) return;
+            SetPassageBlockers(conn, !open);
+        }
         byte state = open ? GlyphQuest.Transitioned : GlyphQuest.Untransitioned;
         foreach (var (id, what) in new[] { (conn.GlyphWallId, "Glyph Wall"), (conn.GlyphWaterId, "waterfall") })
             if (id != 0)
@@ -392,7 +405,12 @@ partial class Program
         if (carried.Count == 0 || !ClientHasQuestFlag(conn, GlyphQuest.PlacedGlyphs)) return;
         foreach (var row in carried.GroupBy(c => c.Row))
         {
-            var gone = row.Where(c => items.Remove(row.Key, c.Item.Id) is not null).Select(c => c.Item.Id).ToList();
+            List<uint> gone;
+            lock (conn.Monsters)
+            {
+                if (HardcoreProgressBlocked(conn)) return;
+                gone = row.Where(c => items.Remove(row.Key, c.Item.Id) is not null).Select(c => c.Item.Id).ToList();
+            }
             if (gone.Count > 0)
                 await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key), gone, []),
                     $"0x00bf inventory {PlayerInventories.InventoryId(row.Key)}: glyphs {string.Join(", ", gone)} removed, the glyphs are placed");
@@ -479,7 +497,12 @@ partial class Program
     static async Task PlaceGlyphs(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         var items = ItemsOf(conn);
-        var removed = GlyphQuest.Place(CharacterName(conn), items, GlyphIndex);
+        List<(byte Row, InventoryItem Item)>? removed;
+        lock (conn.Monsters)
+        {
+            if (HardcoreProgressBlocked(conn)) return;
+            removed = GlyphQuest.Place(CharacterName(conn), items, GlyphIndex);
+        }
         if (removed is null)
         {
             Console.WriteLine($"[gateway] {remote} Glyph Wall: needs all three glyphs");

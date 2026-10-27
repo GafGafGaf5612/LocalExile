@@ -101,7 +101,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Ruthless uses native mod/flask alternatives, reduced tunable drops and vendor returns, and refuses bench crafting.
   Entering town or a hideout does not refill its pools/flasks; supported vendors refill them instead.
   Active utility flasks cannot gain charges, and native Ruthless durations/Onslaught values apply.
-  Live Ruthless town login and re-entry retained 13/57 life and empty flasks; Nessa restored all pools and charges.
+  Automated pool-restoration and session-ownership checks cover area changes, reconnects and vendor refill persistence.
   Drop, recipe, bench and flask-rule calculations have automated coverage; full retail balance remains partial.
   See [league modes](../docs/game/league-modes.md).
 - Essence crafting (2026-10-25, automated verification; real-client use pending): all 105 craftable essences resolve

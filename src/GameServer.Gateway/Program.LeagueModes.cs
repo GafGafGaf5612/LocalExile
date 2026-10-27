@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 partial class Program
 {
     internal static readonly RuthlessRulesFile RuthlessSettings = new(
@@ -20,17 +22,107 @@ partial class Program
     internal static HarvestCrafting HarvestFor(ClientState conn) => conn.Ruthless ? RuthlessHarvest.Value : Harvest;
     internal static ItemDrops DropsFor(ClientState conn) => conn.Ruthless ? RuthlessDrops.Value : Drops;
 
+    sealed class VitalsAdmission
+    {
+        public readonly Lock Gate = new();
+        public Guid Latest;
+    }
+
+    // Registration precedes expensive progress preparation. An older preparation cannot claim resources after a
+    // newer connection was admitted. Entries are removed when their latest connection finishes, including refusals.
+    static readonly ConcurrentDictionary<(string Database, Guid Character), VitalsAdmission> VitalsAdmissions = new();
+    static (string, Guid)? VitalsAdmissionKey(ClientState conn) => conn.CharacterId is { } id
+        ? (Path.GetFullPath(Saves.Db.Path).ToUpperInvariant(), id) : null;
+
+    internal static void RegisterRuthlessVitalsAdmission(ClientState conn)
+    {
+        if (!conn.Ruthless) return;
+        lock (conn.Monsters)
+        {
+            var key = VitalsAdmissionKey(conn)
+                ?? throw new InvalidOperationException("Ruthless resources require an admitted character identity");
+            while (true)
+            {
+                var admission = VitalsAdmissions.GetOrAdd(key, _ => new());
+                lock (admission.Gate)
+                {
+                    if (!VitalsAdmissions.TryGetValue(key, out var current) || !ReferenceEquals(current, admission)) continue;
+                    admission.Latest = conn.RuthlessVitalsSessionId;
+                    break;
+                }
+            }
+        }
+    }
+
+    internal static void InitializeCharacterVitals(ClientState conn)
+    {
+        lock (conn.Monsters)
+        {
+            uint maxLife = conn.PlayerMaxLife, maxMana = (uint)UnreservedMana(conn);
+            (uint Life, uint Mana) initial;
+            if (!conn.Ruthless) initial = InitialVitals(false, null, maxLife, maxMana);
+            else
+            {
+                var key = VitalsAdmissionKey(conn);
+                if (key is null || !VitalsAdmissions.TryGetValue(key.Value, out var admission))
+                    throw new InvalidOperationException("Ruthless resource admission was not registered");
+                lock (admission.Gate)
+                {
+                    if (admission.Latest != conn.RuthlessVitalsSessionId)
+                        throw new InvalidOperationException("A newer connection superseded this resource admission");
+                    initial = CharacterSaves.BeginVitalsSession(CharacterName(conn), key.Value.Item2,
+                        conn.RuthlessVitalsSessionId, conn.League, save => InitialVitals(true, save, maxLife, maxMana));
+                }
+            }
+            conn.PlayerLife = initial.Life;
+            conn.PlayerMana = initial.Mana;
+            conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
+            conn.AuraDeathHandled = false;
+        }
+    }
+
+    internal static void ForgetRuthlessVitalsAdmission(ClientState conn)
+    {
+        if (!conn.Ruthless || VitalsAdmissionKey(conn) is not { } key
+            || !VitalsAdmissions.TryGetValue(key, out var admission)) return;
+        lock (admission.Gate)
+            if (admission.Latest == conn.RuthlessVitalsSessionId)
+                VitalsAdmissions.TryRemove(new KeyValuePair<(string, Guid), VitalsAdmission>(key, admission));
+    }
+
     internal static void PersistRuthlessVitals(ClientState conn, bool bestEffort = false)
     {
         if (!conn.Ruthless) return;
         try
         {
-            lock (conn.Monsters) CharacterSaves.SaveVitals(CharacterName(conn), conn.PlayerLife, conn.PlayerMana);
+            lock (conn.Monsters)
+                if (!conn.LeavingArea && conn.CharacterId is { } id)
+                    CharacterSaves.SaveVitals(CharacterName(conn), id, conn.RuthlessVitalsSessionId, conn.League,
+                        conn.PlayerLife, conn.PlayerMana);
         }
         catch (Exception e) when (bestEffort)
         {
             Console.WriteLine($"[ruthless] {CharacterName(conn)}: resource pools not saved; will retry: {e.Message}");
         }
+    }
+
+    // Save and retire before Auth can issue the destination ticket. Neither periodic nor disconnect saves from the
+    // source may follow that handoff. An Auth refusal can resume only this same retired token, never a newer owner.
+    internal static bool RetireRuthlessVitalsForTransfer(ClientState conn)
+    {
+        if (!conn.Ruthless) return true;
+        if (conn.CharacterId is not { } id) return false;
+        lock (conn.Monsters)
+            return CharacterSaves.SaveVitals(CharacterName(conn), id, conn.RuthlessVitalsSessionId, conn.League,
+                conn.PlayerLife, conn.PlayerMana, retire: true);
+    }
+
+    internal static void ResumeRuthlessVitalsAfterFailedTransfer(ClientState conn)
+    {
+        if (!conn.Ruthless || conn.CharacterId is not { } id) return;
+        lock (conn.Monsters)
+            CharacterSaves.ResumeVitalsSession(CharacterName(conn), id, conn.RuthlessVitalsSessionId, conn.League,
+                conn.PlayerLife, conn.PlayerMana);
     }
 
     internal static (uint Life, uint Mana) InitialVitals(bool ruthless, CharacterSaves.Save? saved, uint maxLife, uint maxMana)

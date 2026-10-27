@@ -307,7 +307,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Ruthless resolves native skill/gem, passive and mod alternatives per connection, including zero-valued overrides.
   Ordinary characters in the same Gateway keep ordinary catalogs.
   Hardcore death is terminal for the old connection; a queued level-up cannot revive it.
-  Hardcore migration and permanent Ruthless death were checked in the real client.
+  Hardcore migration and permanent Ruthless death have automated lifecycle coverage.
+  Earlier native checks were against the original fork; native checks on the current integration are recorded separately.
   Native skill/passive/mod alternatives and late-action guards have automated coverage.
   See [league modes](../docs/game/league-modes.md).
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool

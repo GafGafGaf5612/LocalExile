@@ -16,7 +16,7 @@ Nothing yet.
   Drops, vendor stock and runtime use enforce those exclusions; Quickstep remains permitted.
   An alternate Frostblink hardmode row does not make that unavailable gem playable.
   Automated mode catalog, acquisition and runtime checks pass.
-  The real Ruthless Nessa window contained no gem stock; Siosa and unavailable-gem cases have automated coverage.
+  Ruthless Nessa, Siosa and unavailable-gem cases have automated coverage.
   See [league modes](../docs/game/league-modes.md).
 - **Gem quest rewards (verified live 2026-10-26).** Every `QuestRewardOffers` row whose items the server can build is
   offered by the NPC's QuestReward dialogue row, with the `Characters` class filter and the offer's taken flag;

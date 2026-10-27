@@ -114,16 +114,13 @@ partial class Program
                 // Anything after the opening was already encrypted by the client.
                 var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CharacterId = resolved.CharacterId, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, Ssf = resolved.Ssf, Ruthless = resolved.Ruthless, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created, resolved.Ssf ? resolved.CharacterId?.ToString("N") : null), InstanceNumber = instanceId, LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
                 left = conn;
+                RegisterRuthlessVitalsAdmission(conn);
                 conn.Commands = Commands(remote, stream, ciphers, conn);
                 conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _) || HideoutCatalog.ByArea(layout.Hash) is not null;
                 conn.ArriveAt = SpotArrivals.TryRemove(ticket, out var spot) ? spot : null;
                 int level = PrepareCharacterForArea(remote, conn, resolved.Level);
                 // Restore mode vitals before any admitted-area send can fail and enter save cleanup.
-                var initialVitals = InitialVitals(conn.Ruthless, CharacterSaves.Load(CharacterName(conn)), conn.PlayerMaxLife, (uint)UnreservedMana(conn));
-                conn.PlayerLife = initialVitals.Life;
-                conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
-                conn.AuraDeathHandled = false;
-                conn.PlayerMana = initialVitals.Mana;
+                InitializeCharacterVitals(conn);
                 prepared = true;
                 var area = new AreaInstance(InstanceId: (uint)instanceId, AreaHash: areaHash, Seed: seed, Level: 0,
                     Text: resolved.League ?? "", LeagueStats: LeagueStatsFor(conn.MainAscendancy));
@@ -190,6 +187,7 @@ partial class Program
             {
                 Console.WriteLine($"[gateway] {remote} unsaved progress not saved at disconnect (kept for the next save): {e.GetType().Name}: {e.Message}");
             }
+            ForgetRuthlessVitalsAdmission(left);
             // The instance keeps its monsters as they are now, for the next connection (#12).
             if (left.MonstersPlaced)
                 lock (left.Monsters) left.Instance.Monsters = SavedMonster.Save(left.Monsters.Values, left.Clock.Elapsed.TotalSeconds, MonsterEmerge.Unrisen(left));

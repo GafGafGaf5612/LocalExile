@@ -359,13 +359,21 @@ partial class Program
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. SuppressionChanceKeys.Select(k => (k, chance))]),
                     $"0x01b3 player Spell Suppression chance {chance}%");
             }
+            lock (conn.Monsters)
+                if (HardcoreProgressBlocked(conn)) continue;
             if (conn.Layout.Waypoint is { } waypoint
                 && Dist(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds), (waypoint.GridX, waypoint.GridY)) <= WaypointActivationRange)
                 await ActivateWaypoint(remote, stream, ciphers, conn, "the player came near");
             // Gold within GoldAutoLootRange is picked up without a click.
             var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
             foreach (var (id, gold) in conn.Instance.Ground.Within(at.X, at.Y, GoldAutoLootRange, IsGold))
+            {
                 await PickUpGold(remote, stream, ciphers, conn, id, gold, "auto-looted");
+                lock (conn.Monsters)
+                    if (HardcoreProgressBlocked(conn)) break;
+            }
+            lock (conn.Monsters)
+                if (HardcoreProgressBlocked(conn)) continue;
             // Quests that start when the player comes near a monster (a1q1: Hillock, "Kill Hillock").
             if (Quests.Watched(conn.Layout.Id) is { Count: > 0 } watched)
             {

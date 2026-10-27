@@ -141,6 +141,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint Seed => seed;
     public string? Character { get; init; }
     public Guid? CharacterId { get; init; }
+    public readonly Guid RuthlessVitalsSessionId = Guid.NewGuid();
     /// <summary>The account the character belongs to (Auth's resolve): its stash (AccountStash) is shared by all of them.</summary>
     public string? Account { get; init; }
     public string? League { get; init; }

@@ -40,6 +40,8 @@ The Gateway checks again before creating world state; deleting and reusing a nam
 The dev JSON server also refreshes the canonical character and rejects permanently dead or stale league entries.
 
 The old connection offers only Exit and refuses resurrection packets and post-death gameplay requests.
+Gold, item pickup, waypoint activation and quest progress check the terminal owner at their mutation boundary.
+An already queued background notification cannot admit another world or progress mutation after death commits.
 A late level-up cannot restore its life.
 If a storage write temporarily fails, its transaction rolls back and a pending death is retried by the save timer.
 Reconnect retries that pending death before allowing entry, so a client disconnect cannot clear it.
@@ -57,6 +59,7 @@ Non-town SSF instances additionally belong to the character's stable ID.
 Another character cannot join them through an instance list or a forged instance-number request.
 The Gateway also separates SSF ground items and other mutable instance state by stable character ID, including towns.
 Town players can remain visible without giving each other dropped equipment.
+Peer presence is shared within the same Auth instance and creation generation, independently of private world state.
 Old instances cannot pass their items to a newly created character that reuses a deleted name.
 
 Personal stash and gold remain shared between one account's characters in the same full SSF league.
@@ -118,6 +121,9 @@ An unsupported sale conversion is refused while retaining the offered items.
 
 Entering town, a hideout or another area does not automatically fill Ruthless flasks or living characters' life/mana.
 Saved pools restore across area changes and reconnects; new characters and softcore resurrection receive valid pools.
+Only the current admitted connection may save those pools.
+Successful transfers retire the source writer, so delayed recovery ticks or disconnect cleanup cannot overwrite
+the destination's newer resources.
 Talk to a supported flask vendor, Helena in the hideout or Niko to refill.
 Active utility flasks do not gain charges until their effect ends.
 
@@ -134,10 +140,9 @@ These are server settings, separate from the private client's graphics and input
 GGG does not publish the exact server drop and XP formulas, so these defaults are LocalExile approximations.
 They are not claimed to reproduce retail probabilities.
 
-Open PowerShell and enter:
+Run these commands in PowerShell from the repository root (the folder containing `AGENTS.md`):
 
 ```powershell
-Set-Location F:\evry\evryPath\evryPath
 if (!(Test-Path .\config\ruthless.json)) { Copy-Item .\config\ruthless.example.json .\config\ruthless.json }
 notepad .\config\ruthless.json
 ```
@@ -199,13 +204,16 @@ At startup with no valid file yet, the built-in defaults above remain active.
 Automated tests cover mode resolution, normal/SSF migration, Hardcore Ruthless permanent death, restart persistence,
 atomic rollback, pending-write retry, stale updates and tickets, deleted-name reuse, isolation and guild access.
 Ruthless coverage checks native catalogs, shops/rewards, gameplay and valid/invalid live configuration edits.
-The evryPath transfer is based on upstream `939b44f` and preserves its newer gameplay implementations.
-It also applies per-connection Ruthless catalogs to upstream's curated unique generation, Mageblood effects and Harvest.
+Per-connection Ruthless catalogs also cover curated unique generation, Mageblood effects and Harvest.
 Regression tests cover explicit zero-valued unique mods and the native Standard/Ruthless Onslaught difference.
 The newer development hit path commits Hardcore deaths before notification, alongside the monster contact path.
-The transfer's automated validation uses isolated extracted data and temporary test saves.
-This branch keeps the existing league selection and default families; it adds server mode behavior.
-Native-client verification of this transfer remains open.
+Overlapping-connection regressions cover resource ownership through transfer and logout.
+SSF tests combine shared peer publication with private dropped items, expiry and reused instance IDs.
+Queued-notification regressions cover terminal Hardcore background mutations.
+Automated validation uses isolated extracted data and temporary test saves.
+The existing league selection and default families are unchanged.
+Native-client validation is reported separately from automated checks; earlier fork observations do not establish
+the behavior of a later integration without repeating the affected checks.
 Complete retail endgame and reward parity remain limited by the server's incomplete gameplay systems.
 
 From the repository root, use local build output so real-data tests can locate `data/tables` and running servers

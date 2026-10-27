@@ -45,8 +45,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Ordinary vendors offer no gems or jewellery; unlocked Siosa exchanges Uncarved Gemstones for eligible active gems.
   Support gems are excluded from deterministic rewards and the opening support chest.
   Supported flask vendors, Helena and Niko refill Ruthless pools and flasks.
-  Live Nessa used native NPCShop row 49 with 18 Goods items, no gem/jewellery stock and no debug maps.
-  Talking to Nessa refilled all pools and flasks.
+  Automated checks cover native Ruthless shop rows, restricted stock and vendor resource/flask refills.
   Other vendor, quest-reward and pricing cases are covered by automated checks.
   See [league modes](../docs/game/league-modes.md).
 - Quest rewards open the native reward inventory for every `QuestRewardOffers` row whose items the server can build,
