@@ -37,7 +37,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Mana per complete group of final Strength now has native raw-source/gear controls and automated pool coverage.
   Raw-source reservation refresh and clamping have decrypted wire coverage; recheck active auras natively.
   See [Status](../status/skills-and-combat.md) and [11](../docs/protocol/11-skills.md) section 4.
-  Mental Conditioning's other flags, mana-to-armour conversion and Phrecia selection remain separate work.
+  Mental Conditioning now combines mana per Strength with mana-to-armour conversion in current-main tests.
+  Historical joint native conversion controls passed at `c9cd1864`; Phrecia selection stays separate.
   Ordinary one-use cooldown recovery now shares the native base/rate and a server base-time budget, with atomic
   preflight before action side effects.
   Initial Dash recovery, early raw rejection, pause and native mid-cooldown rate changes pass live alongside
@@ -73,7 +74,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Remaining native composition includes own-item percentage retention, cascading equipment, passive refunds and swaps.
   The fractional algorithm remains a documented PoB server model; official-server parity is not established.
   See [Status](../status/skills-and-combat.md) and [the calculation model](../docs/protocol/11-skills.md) section 4.
-  Mana-to-armour conversion and Phrecia play compatibility remain separate prerequisites.
+  Phrecia play compatibility remains a separate prerequisite.
+  Power of Purpose has historical original-head raw-source, armour/mana, actual attack-consumer and relog controls.
+  Native idle reservation, Iron Reflexes and MORE compositions remain; their model and automated tests are in
+  [the calculation notes](../docs/game/power-of-purpose.md).
+  Combined increased attributes, mana-per-Strength and conversion have regressions on base `939b44fe`.
+  Joint native controls at `c9cd1864` remain historical; the rebased candidate needs separate native acceptance.
 
 ### Auras: reservation and effects
 
