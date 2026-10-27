@@ -175,6 +175,14 @@ sealed class ItemCatalog
                 && Gem(t) is { } g && g.Colour == colour && g.IsSupport == support && !g.IsVaalOrAwakened && g.Variants is [{ Creatable: true }, ..])
             .DistinctBy(t => t.Name).OrderBy(t => t.DropLevel).ThenBy(t => t.Name)];
 
+    /// <summary>The local full gem shop: every writable, creatable variant, including transfigured and Vaal gems.
+    /// Keep the catalog's creatability checks: placeholder and unsupported awakened rows are not safe to create.</summary>
+    public IReadOnlyList<(BaseType Type, GemVariant Variant)> FullShopGems(int colour, bool support) =>
+        [.. _rows.Value.Rows.Where(t => t.Supported && t.DropLevel > 0 && !t.Name.Contains("Playtest")
+                && Gem(t) is { } g && g.Colour == colour && g.IsSupport == support)
+            .SelectMany(t => Gem(t)!.Variants.Where(v => v.Creatable).Select(v => (Type: t, Variant: v)))
+            .OrderBy(x => x.Type.DropLevel).ThenBy(x => x.Variant.Name)];
+
     /// <summary>A base type's gem (its SkillGems row), or null for items that are not gems.</summary>
     public GemType? Gem(BaseType t) => _gems.Value.GetValueOrDefault(t.Row);
 
