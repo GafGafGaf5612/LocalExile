@@ -125,6 +125,28 @@ G = global / static data.
 | `0x142f496a0` | G | static initializer table entry (Positioned) |
 | `0x1445bb240`, `0x1445bb6f0`, `0x1445bbe50`, `0x1445bbd60`, `0x1445bb760`, `0x1445bbd10`, `0x1445ba850`, `0x1445bc610` | G | component pools (Positioned, Stats, Pathfinding, Life, Animated, Player, Inventories, Actor) |
 
+### Player Actor scale ([04](04-player-entity.md#41a-player-actor-scale-299))
+
+| Address | Kind | What |
+|---|---|---|
+| `0x1421c2f40` | Fn | Creation Stats pairs reach the network setter |
+| `0x1424cfa40` | Fn | Network stat override getter; upstream fallback only when absent |
+| `0x1424cfaf0` | Fn | Insert/replace one raw pair, notifying only that key |
+| `0x1424cfd00` | Fn | Stat change notification to registered listeners |
+| `0x141fe1350` | Fn | 0x1b3 reader; world handler `0x142187480` uses the same setter |
+| `0x1400caf90` | Fn | Register final1973 evaluator `0x1427ecc30` |
+| `0x1427ecc30` | Fn | final1973 formula: raw720, capped1974, permyriad10778, optional limit1975 |
+| `0x141e9ca20` | Fn | Actor setup reads1973 at `0x141e9ccfd` and applies scale |
+| `0x141e9cf90` | Fn | Actor change observer compares key1973 at `0x141e9d031` |
+| `0x141e9ce80` | Fn | Scale applicator writes Positioned +0x2b0 at `0x141e9cf6f` |
+| `0x14013d9f0` | Fn | Monster-specific optional scale coefficient lookup |
+| `0x1415f4710` | Fn | Render typeScale * uniform * independent stretch; interpolation at +0x358 |
+| `0x1415f70a0` | Fn | Render cached scale axes at +0x380/+0x384/+0x388 |
+| `0x141e361b0` | Fn | Local-to-world transform uses the same scale axes |
+| `0x141c9ba55` | Code | Native melee range scales only when separate flag9807 is set |
+| `0x141c9bb0a` | Code | Second native melee range consumer with the same flag9807 guard |
+| `0x141e61540` | Fn | Blocking uses signed Positioned size +0x1e3, independently of uniform scale |
+
 ## Chat ([10](10-chat-and-commands.md) §1, §2)
 | Address | Kind | What |
 |---|---|---|
@@ -367,6 +389,18 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 
 | Address | Kind | What |
 |---|---|---|
+| `0x1400dd340` | Fn | registers own-aura virtual 11075 with dependencies 21148/11881 |
+| `0x14289a420` | Fn | 11075: signed-nonzero 21148 OR 11881 |
+| `0x1400e4f60` | Fn | registers aura-skill virtual 15801 |
+| `0x1428cf720` | Fn | 15801: 3004 OR (2730 AND 2532) |
+| `0x1400e4fc0` | Fn | registers skill-disabled virtual 15798 |
+| `0x1428cf770` | Fn | 15798: aura branch checks skill 15801 and caster 11075; other restrictions separate |
+| `0x1428b0750` | Fn | virtual double-armour chance 12268; [model/evidence](../game/steel-willed-armour.md) |
+| `0x1428b0854` | Code | reads Steel Willed per-recent-enemy-hit input 20680 |
+| `0x1428b08eb` | Code | reads recent enemy-hit counter 4534 |
+| `0x1428b0962` | Code | multiplies per-hit input by recent count |
+| `0x1428b0c24..0x1428b0c36` | Code | caps the per-hit contribution at 30 |
+| `0x1428b0be3` / `0x1428b0c3f` | Code | reads generic chance 8404 / adds it after the contribution cap |
 | `0x1435db980` | VT | ActiveSkillManager (Actor +0x598; skills at +0x158, sorted by instance +0x40) |
 | `0x141eea6a0` | Fn | ActiveSkillManager::SkillInstanceAdded (manager slot 7) |
 | `0x141eea440` | Fn | find/create skill cooldown record (requires virtual cooldown count) |

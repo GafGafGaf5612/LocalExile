@@ -13,6 +13,7 @@ partial class Program
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
         if (conn.Closed || !PlayerActionCurrent(conn, action) || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, conn.StationaryInteractionSize(conn.HorticraftingObject))) return;
         conn.BenchOpen = false;
+        conn.HarvestOpen = true;
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HorticraftingUi),
             "0x007b open Horticrafting Station recipe browser", still: () => PlayerActionCurrent(conn, action));
@@ -29,6 +30,7 @@ partial class Program
         if (conn.Closed || !PlayerActionCurrent(conn, action)
             || !PlayerWalk.InWalkUpRange(stop, conn.CraftingBenchAt, conn.StationaryInteractionSize(conn.CraftingBenchObject))) return;
         conn.BenchOpen = true;
+        conn.HarvestOpen = false;
         await RefreshBenchBalance(remote, stream, ciphers, conn);
         await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.CraftingBenchUi),
             "0x007b open the crafting bench window (type 0)", still: () => PlayerActionCurrent(conn, action));

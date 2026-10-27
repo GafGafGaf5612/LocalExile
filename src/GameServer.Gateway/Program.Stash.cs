@@ -87,6 +87,7 @@ partial class Program
     {
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         conn.BenchOpen = false;
+        conn.HarvestOpen = false;
         if (conn.StashObject == 0) return;
         var at = conn.StashAt;
         if (!TryBeginObjectWalk(conn, requestedAt, at.X, at.Y, ClientState.StashBlockerSize, out var objectWalk)) return;

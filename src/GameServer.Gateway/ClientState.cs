@@ -157,6 +157,20 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // A transfer invalidates flights even during the gap after PendingTransfer is consumed by Transfer.
     // Guarded by Monsters, like projectile impact commits and pause changes.
     public bool LeavingArea;
+    public readonly RecentEnemyHits RecentEnemyHits = new();
+    public Random IncomingHitRandom = Random.Shared;
+    public int IncomingHitEpoch;
+    public (int Count, int Chance)? PresentedRecentEnemyHits;
+
+    // A failed transfer retains history but cannot revive a swing from before the attempted transfer.
+    public void InvalidateIncomingHits(bool clear = true)
+    {
+        lock (Monsters)
+        {
+            IncomingHitEpoch++;
+            if (clear) RecentEnemyHits.Clear();
+        }
+    }
     public int ProjectileEpoch;
     public readonly HashSet<uint> ProjectileObjects = [];
 
@@ -185,6 +199,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
             if (Closed || PendingTransfer is not null || LeavingArea) return false;
             PendingTransfer = transfer;
             LeavingArea = true;
+            InvalidateIncomingHits(clear: false);
             ProjectileEpoch++;
             projectiles = [.. ProjectileObjects];
             ProjectileObjects.Clear();
@@ -283,9 +298,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// <summary>The worn cosmetics as 0x1f3 lists them (WornCosmetics), read from the save on first use; null after a
     /// pick, so the next use reads it again.</summary>
     public List<InstanceMicrotransactions.Equipped>? WornCosmetics;
-    /// <summary>The Cosmetics tab's skill slots last sent (SkillSlots): key (50 up, what 0x1fa names) → gem BaseItemTypes HASH32 and
-    /// effect slot type.</summary>
-    public Dictionary<uint, (uint Gem, byte SlotType)> SkillSlots = [];
+    /// <summary>The Cosmetics tab's last published skill targets, built inside the send gate with 0x1f3.
+    /// A key lives only while its full target remains present; retired keys are never reassigned on this connection.</summary>
+    public Dictionary<uint, InstanceMicrotransactions.SkillSlot> SkillSlots = [];
+    public uint NextSkillCosmeticKey = InstanceMicrotransactions.SlotCount;
     /// <summary>The worn pets by object id (SpawnPets), replaced when a Pet slot changes; RunPetFollow walks them.</summary>
     public readonly Dictionary<uint, SpawnedPet> Pets = [];
     public bool PetFollowRunning;
@@ -326,6 +342,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public RageState.Value? SentRage;
     // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
+    // Only self-owned aura instances actually sent on this connection's current player object.
+    public readonly Dictionary<ushort, AuraCatalog.Aura> PresentedAuras = [];
+    public bool AuraStatsDirty;
+    public bool PlayerObjectCreated;
     // When each skill with a cooldown (GrantedEffects row) may be used again, in Clock seconds. Guarded by the Monsters lock.
     public readonly Dictionary<int, double> SkillReadyAt = [];
     // Eligible ordinary one-use cooldowns retain remaining base-time units through recovery-rate changes.
@@ -409,6 +429,8 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public (int X, int Y) HorticraftingAt;
     public uint CraftingBenchObject;
     public bool BenchOpen;
+    /// <summary>The Horticrafting Station's recipe browser is the open window; its craft requests are served only then.</summary>
+    public bool HarvestOpen;
     public bool BenchBalanceSent;
     public uint BenchBalanceRevision;
     public IReadOnlyList<InventoryItem> BenchBalanceItems = [];

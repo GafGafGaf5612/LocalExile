@@ -53,7 +53,7 @@ static class UtilityFlasks
 
     /// <summary>How a flask effect's stat counts here.</summary>
     public static Support SupportOf(string stat) =>
-        Modelled.Contains(stat) ? Support.Modelled
+        ActorScale.IsInput(stat) || Modelled.Contains(stat) ? Support.Modelled
         : PanelOnly.Contains(stat) ? Support.PanelOnly
         : stat is "base_ward" or "ward_+%" ? Support.Ward
         : Support.Unsupported;
@@ -176,7 +176,10 @@ static class UtilityFlasks
         double effect = Math.Max(0, 100 + increasedEffect) / 100.0;
         bool Applies(string stat) => SupportOf(stat) != Support.Unsupported;
         List<Source> stats = [.. u.Stats.Where(s => Applies(s.Stat))
-            .Select(s => new Source($"buff {u.BuffRow}", s.Stat, s.Stat == "phase_through_objects" ? s.Value : Scale(s.Value, effect)))];   // a flag
+            .Select(s => new Source($"buff {u.BuffRow}", s.Stat, s.Stat == "phase_through_objects" ? s.Value
+                : ActorScale.IsInput(s.Stat)
+                    ? (int)Math.Clamp(Math.Truncate(Math.Round(s.Value * effect, 2)), int.MinValue, int.MaxValue)
+                    : Scale(s.Value, effect)))];
         // Onslaught has its own effect stat (onslaught_effect_+%), not the flask's.
         if (u.Extra is { } x) stats.AddRange(x.Stats.Where(s => Applies(s.Stat)).Select(s => new Source($"buff {x.BuffRow}", s.Stat, s.Value)));
         // The flask's "during effect" mods, scaled by increased effect too (poewiki, Quality: increased flask effect
@@ -273,6 +276,13 @@ static class UtilityFlasks
             lock (_lock) return Strongest(_active.SelectMany(a => a.Stats));
         }
 
+        /// <summary>The running effects' sources, unreduced: callers that also have other sources of the same effects
+        /// (Mageblood's permanent ones) combine them before one strongest-per-(effect, stat) pass.</summary>
+        public IReadOnlyList<Source> Sources()
+        {
+            lock (_lock) return [.. _active.SelectMany(a => a.Stats)];
+        }
+
         /// <summary>Whether any effect runs.</summary>
         public bool Any
         {
@@ -286,7 +296,8 @@ static class UtilityFlasks
     /// (effect, stat) the value with the largest size wins, a bonus over an equal penalty.</summary>
     public static IReadOnlyList<(string Stat, int Value)> Strongest(IEnumerable<Source> sources) =>
         [.. sources.GroupBy(s => (s.Effect, s.Stat))
-            .Select(g => (g.Key.Stat, g.OrderByDescending(s => Math.Abs(s.Value)).ThenByDescending(s => s.Value).First().Value))];
+            .Select(g => (g.Key.Stat, g.OrderByDescending(s => ActorScale.IsInput(s.Stat)
+                ? Math.Abs((long)s.Value) : Math.Abs(s.Value)).ThenByDescending(s => s.Value).First().Value))];
 
     /// <summary>The character's pool bonuses with the running flasks' stats: resistances and their maxima, armour and
     /// evasion (flat, and the Basalt / Stibnite more multipliers on top of any others), movement and attack speed,
@@ -344,10 +355,11 @@ static class UtilityFlasks
                 // Quartz: the client's Pathfinding reads virtual_phase_through_objects (0x141e9cd68: +0x52e "Phase Through
                 // Objects", which picks its blocker filter, 0x141e7b77c).
                 "phase_through_objects" => "virtual_phase_through_objects",
-                _ when PanelOnly.Contains(stat) => stat,
+                _ when ActorScale.IsInput(stat) || PanelOnly.Contains(stat) => stat,
                 _ => null,
             };
-            if (name is not null && catalog.Key(name) is uint key) result[key] = result.GetValueOrDefault(key) + value;
+            if (name is not null && catalog.Key(name) is uint key)
+                result[key] = ActorScale.Add(key, result.GetValueOrDefault(key), value);
         }
         return result.Select(kv => (kv.Key, kv.Value));
     }
@@ -365,7 +377,7 @@ static class UtilityFlasks
     /// <summary>Adds the running flasks' <see cref="RawStats"/> to the character's stats (Program.CharacterPlayerStats).</summary>
     public static void AddRawStats(Dictionary<uint, int> stats, IEnumerable<(string Stat, int Value)> running, StatCatalog catalog)
     {
-        foreach (var (k, v) in RawStats(running, catalog)) stats[k] = stats.GetValueOrDefault(k) + v;
+        foreach (var (k, v) in RawStats(running, catalog)) stats[k] = ActorScale.Add(k, stats.GetValueOrDefault(k), v);
     }
 
     /// <summary>Why a use is refused, or null: dead, this flask's own effect still runs (<paramref name="running"/>),

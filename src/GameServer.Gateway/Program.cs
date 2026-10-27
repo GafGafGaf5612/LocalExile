@@ -213,8 +213,11 @@ sealed partial class Program
     // What dying monsters drop (ItemDrops.cs).
     // Magic and rare items (ItemRolls.cs).
     internal static readonly ItemRolls Rolls = new(Items);
+    // Unique items the server can create (names/art from the client data, mods curated: UniqueCatalog).
+    internal static readonly UniqueCatalog Uniques = new(Items);
     internal static readonly EssenceCrafting Essences = new(Items, Rolls);
     internal static readonly BenchCrafting Bench = new(Items, Rolls);
+    internal static readonly HarvestCrafting Harvest = new(Items, Rolls);
     internal static readonly ItemDrops Drops = new(Items, Rolls);
     // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
     // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
@@ -249,6 +252,9 @@ sealed partial class Program
     internal const string RighteousFireRingAo = "Metadata/Effects/Spells/ri_fire/rifire.ao";
     // The projectiles' explosion (Fireball's, MiscAnimatedArtVariations fireball_standard variant 0).
     internal const string DefaultProjectileImpactAo = "Metadata/Effects/Spells/fireball/explode_new2.ao";
+    // Kinetic Blast's area explosion where its wand projectile lands (spells/cluster_burst/big.ao; the skill's own effect
+    // is ClusterBurst, and 3.29 names no Projectiles row for it, see SkillCatalog.ProjectileFallbacks).
+    internal const string KineticBlastImpactAo = "Metadata/Effects/Spells/cluster_burst/big.ao";
     // The player's own tick (RunPlayerTick): regeneration and damage over time.
     internal const int PlayerTickMs = 250;
     // How often Righteous Fire's ring is moved to the player (RunRingFollow), and how far ahead it aims (our own number).

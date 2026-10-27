@@ -77,6 +77,7 @@ sealed class CosmeticEffects(string folder = "data")
     /// row + 1, value) and, for a pet, its <c>Pet.dat</c> row + 1 (0 otherwise).</summary>
     public sealed record Effect(ushort Visual, ushort WeaponEffect, IReadOnlyList<(uint Stat, int Value)> Stats, int Pet = 0)
     {
+        public SkillRestriction? Skill { get; init; }
         /// <summary>The pet's object type (its Pet.dat Id, e.g. Metadata/Pet/Kiwi/Basic), the object the server spawns.</summary>
         public string? PetType { get; init; }
 
@@ -88,6 +89,15 @@ sealed class CosmeticEffects(string folder = "data")
         /// Player component's u16 at +0x1aa and the character list's U46.</summary>
         public ushort Portrait { get; init; }
     }
+
+    public sealed record SkillRestriction(int SlotType, IReadOnlyList<int> Gems, IReadOnlyList<int> Classes);
+
+    // The same eligibility fields the client checks in 0x1424ac1e0. In particular a record from a stale picker
+    // must not attach A's art to B merely because it is an owned record.
+    public bool FitsSkill(uint hash, ItemCatalog.BaseType gem, byte slotType) =>
+        Of(hash)?.Skill is { } skill && skill.SlotType == slotType
+        && (skill.Gems.Count == 0 || skill.Gems.Contains(gem.Row))
+        && (skill.Classes.Count == 0 || skill.Classes.Contains(gem.ClassRow));
 
     /// <summary>A Cosmetics tab slot: its name and the model slot it dresses (null: none).</summary>
     public sealed record Slot(string Name, byte? ModelSlot)
@@ -116,6 +126,8 @@ sealed class CosmeticEffects(string folder = "data")
         var identities = Hash16s(Path.Combine(dir, "ItemVisualIdentity.json"));
         var weaponEffects = Hash16s(Path.Combine(dir, "ItemVisualEffect.json"));
         if (gameSpecific is null || identities is null || weaponEffects is null) return (effects, slots);
+        var skillEffects = Rows(Path.Combine(dir, "MtxTypeGameSpecific.json"))
+            .Where(r => Ints(r, "__col4").Contains(27)).Select(r => r.GetProperty("HASH32").GetUInt32()).ToHashSet();
 
         foreach (var row in Rows(Path.Combine(dir, "ItemisedVisualEffect.json")))
         {
@@ -127,7 +139,12 @@ sealed class CosmeticEffects(string folder = "data")
                 && row.TryGetProperty("__col7", out var values) && values.ValueKind == JsonValueKind.Array)
                 foreach (var (key, value) in keys.EnumerateArray().Zip(values.EnumerateArray()))
                     if (key.TryGetInt32(out int stat) && value.TryGetInt32(out int v)) stats.Add(((uint)stat + 1, v));
-            effects.TryAdd(hash, new Effect(visual, effect, stats));
+            effects.TryAdd(hash, new Effect(visual, effect, stats)
+            {
+                Skill = skillEffects.Contains(hash) && Ints(row, "__col8").Contains(27)
+                    && Int(row, "EffectSlotType") is int slotType
+                    ? new(slotType, Ints(row, "BaseItemTypes"), Ints(row, "ItemClasses")) : null,
+            });
         }
         // Pets have no ItemisedVisualEffect row; each Pet row names its MtxTypeGameSpecific row. The server spawns the
         // pet object (PetObject); the player's pet_slot1 / pet_slot2 stat (a Pet.dat row + 1) is what the client's
@@ -180,6 +197,10 @@ sealed class CosmeticEffects(string folder = "data")
 
     static int? Int(JsonElement row, string name) =>
         row.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Number && p.TryGetInt32(out int v) ? v : null;
+
+    static List<int> Ints(JsonElement row, string name) =>
+        row.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.Array
+            ? [.. p.EnumerateArray().Select(v => v.GetInt32())] : [];
 
     static List<ushort>? Hash16s(string path) => File.Exists(path)
         ? [.. Rows(path).Select(r => Int(r, "HASH16") is int h ? (ushort)h : (ushort)0)]

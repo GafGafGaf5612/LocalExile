@@ -102,30 +102,49 @@ partial class Program
         ChargeEffects.DamageMore(name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0, spell);
 
     // The player's additional physical and elemental damage reduction (Endurance Charges, passives) for hits taken.
-    static (int Physical, int Elemental) PlayerDamageReduction(ClientState conn)
+    static (int Physical, int Elemental) PlayerDamageReduction(ClientState conn,
+        IReadOnlyDictionary<uint, int>? stats = null)
     {
-        var stats = CharacterPlayerStats(conn);
+        stats ??= CharacterPlayerStats(conn);
         return ChargeEffects.Reduction(name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0);
     }
 
     // A hit's damage taken after the player's mitigation (the dev /hit commands, MonsterSwing's rules): physical through
-    // armour plus the additional physical damage reduction, the other types through resistance, and the elemental ones
-    // through the additional elemental damage reduction after it.
+    // armour plus additional physical reduction; the other types take resistance before the shared hit-only pass.
     static int MitigateTaken(ClientState conn, DamageType type, int amount, int resistance, int maxResistance)
     {
-        var reduction = PlayerDamageReduction(conn);
-        if (type == DamageType.Physical) return FortificationDamageTaken(conn, DamageModel.MitigatePhysical(amount, conn.Pools.Armour, reduction.Physical));
-        int resisted = DamageModel.Mitigate(amount, resistance, maxResistance);
-        return FortificationDamageTaken(conn, DamageTypes.IsElemental(type) ? DamageModel.Reduce(resisted, reduction.Elemental) : resisted);
+        lock (conn.Monsters)
+        {
+            int priorContacts = conn.RecentEnemyHits.Count(conn.Clock.Elapsed.TotalSeconds);
+            var stats = CharacterPlayerStats(conn);
+            bool relevant = amount > 0 && (type == DamageType.Physical
+                || type == DamageType.Chaos && conn.Pools.ArmourAppliesToChaosDamage
+                    && DamageModel.Mitigate(amount, resistance, maxResistance) > 0);
+            var armour = IncomingArmourLocked(conn, relevant, priorContacts, stats);
+            return MitigateTakenWithArmour(conn, type, amount, resistance, maxResistance, armour.EffectiveArmour, stats);
+        }
+    }
+
+    static int MitigateTakenWithArmour(ClientState conn, DamageType type, int amount, int resistance, int maxResistance,
+        int effectiveArmour, IReadOnlyDictionary<uint, int> stats)
+    {
+        var reduction = PlayerDamageReduction(conn, stats);
+        int resisted = type == DamageType.Physical ? amount : DamageModel.Mitigate(amount, resistance, maxResistance);
+        return FortificationDamageTaken(conn, PlayerHitMitigation.AfterResistance(conn.Pools, type, resisted,
+            reduction.Physical, reduction.Elemental, effectiveArmour));
     }
 
     // What MitigateTaken applied, for the dev commands' replies: armour or resistance, and the additional reduction.
-    static string MitigationLabel(ClientState conn, DamageType type, int amount, int resistance, int maxResistance)
+    static string MitigationLabel(ClientState conn, DamageType type, int amount, int resistance, int maxResistance,
+        int effectiveArmour, IReadOnlyDictionary<uint, int> stats)
     {
-        var (physical, elemental) = PlayerDamageReduction(conn);
+        var (physical, elemental) = PlayerDamageReduction(conn, stats);
         if (type == DamageType.Physical)
-            return $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour" + (physical > 0 ? $" + {physical}% physical damage reduction" : "");
+            return $"{DamageModel.ArmourReduction(effectiveArmour, amount)}% armour" + (physical > 0 ? $" + {physical}% physical damage reduction" : "");
         return $"{DamageModel.Capped(resistance, maxResistance)}% resistance" +
+            (type == DamageType.Chaos && conn.Pools.ArmourAppliesToChaosDamage
+                ? $" + {DamageModel.ArmourReduction(effectiveArmour, DamageModel.Mitigate(amount, resistance, maxResistance))}% armour"
+                : "") +
             (DamageTypes.IsElemental(type) && elemental > 0 ? $" + {elemental}% elemental damage reduction" : "");
     }
 
@@ -254,7 +273,7 @@ partial class Program
             return;
         }
         await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats (charges {why})");
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)), $"0x01b3 player stats (charges {why})");
         await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
             () => InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []),
             $"0x02ba player Actor: {skills.Count} skill(s), charge stats");

@@ -226,12 +226,16 @@ passives' stats (`CharacterStatSources`), so it reaches the pools (`PassiveBonus
 attributes, resistances, block, suppression, speeds, crit, accuracy …) and the stats the client shows (0x1b3), the same
 way a passive's would. They are sent again when equipment changes (`SendEquipment`).
 
-Local mods on the main hand (row 2, else 14) change the weapon profile: `local_critical_strike_chance_+%` scales the
-WeaponTypes base critical chance, `local_attack_speed_+%` multiplies the attack rate (like a more, before the global
-increases) and `local_accuracy_rating` adds flat accuracy. Weapon damage, armour, evasion and energy shield of items are
-not modelled yet, so their local mods change nothing. Verified live 2026-10-20: +20 maximum Life, +30% fire resistance
-and +25 strength on a ring, a local attack speed mod on the wand, and spell damage on the wand raising Fireball's
-damage (11-skills.md §9).
+Local mods on the main hand (row 2, else 14) change the weapon profile (`ItemWeapons`): `local_physical_damage_+%`,
+`local_minimum/maximum_added_physical_damage` and item quality on the weapon's physical damage (quality is a separate
+× (1 + quality/100) multiplier after the local increases, the post-3.25 rule; it does not touch the elemental/chaos
+added damage), `local_attack_speed_+%` on the attack rate (like a more, before the global increases),
+`local_critical_strike_chance_+%` on the WeaponTypes base critical chance, `local_accuracy_rating` as flat accuracy,
+and the local added elemental/chaos damage (`local_minimum/maximum_added_fire/cold/lightning/chaos_damage`, the
+elemental ones raised by `local_elemental_damage_+%` and `local_attacks_with_this_weapon_elemental_damage_+%`) in every
+hit the weapon makes. The armour, evasion and energy shield side is in "Base defences" above. Verified live 2026-10-20:
++20 maximum Life, +30% fire resistance and +25 strength on a ring, a local attack speed mod on the wand, and spell
+damage on the wand raising Fireball's damage (11-skills.md §9).
 
 ## 2d. Requirements and inactive items
 
@@ -259,6 +263,19 @@ off, a lower level) stays on but does nothing: no mod stats, no local weapon mod
 kept). After each change, items that fall short are switched off one at a time, counting the attributes of every
 active item including their own, until all active items are satisfied; an inactive item comes back when the character
 and the other active items meet its requirement without its own attributes.
+Requirements use the complete class/passive/active-equipment flat bucket scaled by the generic attribute increases.
+An inactive item's own flat and increased attributes are excluded when testing whether it can return.
+An active item may retain its own flat and increased attributes under the existing staged client policy.
+Each activation/removal step recomputes final attributes through `AttributeModifiers`;
+no final value becomes a raw source.
+Weapon swaps count only the hands' current rows, and raw attribute development overrides replace their own source key.
+Calculated zero attributes remain zero in the panel and requirement stats, including after pool record clones.
+Automated activation, retention, cascading removal, source clearing and swap checks pass.
+Historical controls at `60044ad` reduce and restore a Marauder's attributes while a Plate Vest remains equipped.
+Its 19 Armour disappears below the raw 12-Strength requirement and returns when the requirement is met again.
+Native all-zero requirement values, source clearing and relog are also verified.
+Own-item percentage retention, cascading equipment and weapon-set combinations retain automated coverage.
+See [attribute calculation and rounding model](11-skills.md#4-the-default-attack).
 
 A gem socketed in a worn item whose level or attribute requirement the character no longer meets makes that item
 inactive as well (`CharacterStatSources`: the gem's requirements are checked per socket with `GemRequirementsUnmet`),
@@ -276,6 +293,30 @@ red, the wand still in hand). Moving the item out of its row is the only way to 
 
 **Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).
+
+## 2e. Unique items and Mageblood
+
+The client data has a unique's name (`Words` wordlist 6) and its artwork (`ItemVisualIdentity`, linked to the word by
+`UniqueStashLayout`), but **no table maps a unique name to its mods**: unique mods are ordinary Mods.dat rows with
+GenerationType 3 and an empty Name. The server therefore curates each unique's mod list (`UniqueCatalog`): base type,
+the mod rows and their value ranges, from the game's data (poedb for 3.29). `/item <unique name>` creates it with the
+name words and artwork, unique rarity and the fixed explicit mods; the base type's implicits are rolled as usual (for
+Mageblood the Heavy Belt's +25-35 Strength). Checked live 2026-10-26: the client shows the Mageblood name, unique art
+and full tooltip. Only Mageblood is defined so far; unique drops, chancing and the other uniques remain open (#60).
+
+**Mageblood's mechanic** (`Program.Mageblood`): while the belt is worn (and its requirements met), the leftmost N (2-4,
+from `num_magic_utility_flasks_always_apply`) magic utility flasks in the flask bar constantly apply their effects. The
+stats are added where a running utility flask's stats are added (pools, the client's stats, phasing), scaled like a use
+(the flask's own mods and the character's flask effect/duration), with no charges, timer or buff packets. Magic utility
+flasks cannot be used while it is worn: the client enforces the item mod and the server refuses the use as a backstop.
+The character's stats are re-sent when the flask bar changes while it is worn (`PlaceItem`, `HeldOntoItem`, `PickUpItem`)
+and on equipment changes. Live 2026-10-26: placed flasks applied at once, and a flask key did nothing.
+The running effects and the permanent ones are combined before the strongest-per-(effect, stat) pass: a flask that was
+already used when the belt went on counts once, not twice, while different effects still stack; the running effects keep
+their own duration and stay after the belt is removed.
+
+Not modelled yet: the flask buff icons/permanent durations, the "Magic Utility Flask Effects cannot be removed" backstop
+(the client enforces it), the Foulborn rightmost variant, and Enkindling/instilling.
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 
@@ -718,6 +759,9 @@ Letters R, G, B, W are linked within a word and unlinked between words: `/socket
 a 3-link and a single (dashes are ignored, so `R-R-G-B` works too); without colours it shows the layout.
 It allows up to the base's `CurrencyEffects.SocketCapacity`, whatever the item level; rings, amulets and other classes
 without one are refused.
+`Game_SOCKET_CAPACITY=1..6` (dev, read by `/sockets`) replaces that capacity for socketable bases, ignoring class and
+dimensions: a 6-link wand (a wand's own capacity is 3) is possible with the flag, and a base without a Sockets
+component is still refused.
 Socketed gems stay in their sockets and take the new colour; a layout that would remove a socket holding a gem is
 refused.
 The cursor item is replaced through 0xbf like `/mod`.
@@ -894,6 +938,10 @@ bar for 4 s; a pause of 9 s during Quicksilver: it ended only after the resume, 
 Quicksilver at once and a use while dead was refused; `/goto 1_1_town` during Ruby: 13% again in town; picking Basalt up
 off the bar ended its effect at once. Not seen live: the client actually walking faster or phasing through monsters (the
 bridge cannot make it walk), the tooltip's duration with quality.
+
+**Mageblood:** while the unique belt is worn, the leftmost magic utility flasks apply their effects permanently without
+charges or a duration (`Program.Mageblood`, §2e); using them is refused, and the character's stats are re-sent when the
+bar changes.
 
 ## 8b. Flask charges
 

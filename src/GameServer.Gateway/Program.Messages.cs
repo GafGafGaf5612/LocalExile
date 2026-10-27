@@ -31,7 +31,8 @@ partial class Program
                 var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
                 // A disabled gem's skill is not confirmed: the client animates the cast and sends the use anyway (it only reds
                 // the gem), so without the 0x1ab the action does not run. No projectile, mana or cooldown either.
-                if (cast && gem.Name is not null && GemDisabled(conn, gem.Effect) is { } disabled)
+                if (cast && gem.Name is not null
+                    && GemSkillInstanceDisabled(conn, gem.Effect, use.SkillId) is { } disabled)
                 {
                     Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name}: {disabled} (disabled, action not started)");
                     // The client paid the cast before the server heard of it: the pool again gives the cost back.
@@ -69,7 +70,8 @@ partial class Program
                     if (!MonsterAtAim(conn, gem, use.X, use.Y, at) || Dist(here, (use.X, use.Y)) > WeaponFor(conn).Range)
                     {
                         int walkAction = 0;
-                        if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+                        if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
+                            CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
                             () => { walkAction = Interlocked.Increment(ref conn.ActionCount); conn.Walk.Order(use.X, use.Y, at); conn.ChannelSkill = 0; },
                             out var approachTicket, reserve: false, requestedAt: at)) continue;
                         await Send(remote, stream, ciphers,
@@ -104,7 +106,8 @@ partial class Program
                 }
                 if (cast && gem.Name is not null)
                 {
-                    if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
+                    if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
+                        CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
                         false, StartAction, out cooldownUse, requestedAt: at)) continue;
                 }
                 else
@@ -115,10 +118,13 @@ partial class Program
                         StartAction();
                     }
                 }
+                bool acknowledged = false;
                 await Send(remote, stream, ciphers,
                     InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                     $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})",
-                    still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, action));
+                    still: () => acknowledged = OwnAuraAcknowledgementAllowed(conn, gem.Effect, use.SkillId,
+                        () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, action)));
+                if (!acknowledged) continue;
                 if (cooldownUse?.Current(conn) == false) continue;
                 if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y), sequence: use.Slot,
                     actionToken: cooldownUse?.ActionToken ?? action, cooldownUse: cooldownUse);
@@ -296,7 +302,11 @@ partial class Program
                 // Esc → "Exit to Character Selection" or the hardcore death screen's Exit. Closing the instance connection
                 // is the answer: the client keeps its login connection and goes back to the character list (09 §6).
                 Console.WriteLine($"[gateway] {remote} <= 0x0153 exit to character selection: closing the instance connection");
-                conn.Closed = true;
+                lock (conn.Monsters)
+                {
+                    conn.Closed = true;
+                    conn.InvalidateIncomingHits();
+                }
                 return;
             }
             else if (id == InstanceProtocol.ResurrectId)
@@ -443,6 +453,8 @@ partial class Program
                 await SelectHideout(remote, stream, ciphers, conn, InstanceHideouts.ReadSelect(bytes));
             else if (id == InstanceBench.CraftId)
                 await CraftBench(remote, stream, ciphers, conn, InstanceBench.ReadCraft(bytes));
+            else if (id == InstanceHarvest.CraftId)
+                await CraftHarvest(remote, stream, ciphers, conn, InstanceHarvest.ReadCraft(bytes));
             else if (id == InstanceChat.ChatId)
             {
                 var chat = InstanceChat.ReadChat(bytes);

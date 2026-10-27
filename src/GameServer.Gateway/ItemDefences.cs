@@ -4,13 +4,20 @@ using GameServer.Core.Protocol.Instance;
 static class ItemDefences
 {
     public static (int Armour, int Evasion, int EnergyShield) Calculate(Item item, ItemCatalog.BaseDefences defences,
-        ModCatalog mods, byte? baseRoll = null)
+        ModCatalog mods, byte? baseRoll = null) =>
+        CalculateLocal(defences.AtRoll(baseRoll ?? item.DefenceBaseRoll), ItemModStats.Local(item, mods), item.Quality);
+
+    /// <summary>Local defences from an already resolved modifier map, using the minimum base roll.</summary>
+    public static (int Armour, int Evasion, int EnergyShield) Of(
+        ItemCatalog.BaseDefences baseDefences, IReadOnlyDictionary<string, int> local, int quality) =>
+        CalculateLocal(baseDefences.AtRoll(0), local, quality);
+
+    static (int Armour, int Evasion, int EnergyShield) CalculateLocal(
+        (int Armour, int Evasion, int EnergyShield) basis, IReadOnlyDictionary<string, int> local, int itemQuality)
     {
-        var local = ItemModStats.Local(item, mods);
-        var basis = defences.AtRoll(baseRoll ?? item.DefenceBaseRoll);
         long Get(string name) => local.GetValueOrDefault(name);
         long quality = Get("local_quality_does_not_increase_defences") != 0 ? 0
-            : Math.Max(0L, item.Quality + Get("local_item_quality_+"));
+            : Math.Max(0L, (long)itemQuality + Get("local_item_quality_+"));
         int Rating(int basis, long added, long increased)
         {
             decimal value = Math.Max(0L, basis + added) * Math.Max(0m, 1 + increased / 100m)

@@ -92,6 +92,8 @@ local development client; it has no official-service support.
 
 Checks: `node --check scripts/dev/client-control.js` and
 `.venv/Scripts/python.exe -m unittest discover -s scripts/dev -p test_client_control.py`.
+Mocked RPC tests exercise the production login/status waits for success 0 before authenticated state 3,
+immediate rejection 6, and the existing timeouts for pending or incomplete success; no new native verification is claimed.
 `powershell -NoProfile -File scripts/dev/test_live_client_only.ps1` checks closed/existing client startup,
 local gateway selection, and failed preflights with mocked processes and no GGPK writes.
 

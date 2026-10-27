@@ -18,14 +18,30 @@ static class ItemModStats
     public static Dictionary<string, int> Sum(IEnumerable<Item> items, ModCatalog mods, bool local = false)
     {
         var sum = new Dictionary<string, int>();
-        foreach (var mod in items.SelectMany(i => i.Mods))
-        {
-            if (mods.ByHash(mod.Hash) is not { } row) continue;
-            for (int s = 0; s < row.Stats.Count && s < mod.Values.Count; s++)
-                if (row.Stats[s].Local == local)
-                    sum[row.Stats[s].Id] = sum.GetValueOrDefault(row.Stats[s].Id) + mod.Values[s];
-        }
+        var attributes = new Dictionary<string, long>();
+        foreach (var (id, value) in Values(items, mods, local))
+            if (AttributeModifiers.IsInput(id)) attributes[id] = attributes.GetValueOrDefault(id) + value;
+            else sum[id] = ActorScale.Add(id, sum.GetValueOrDefault(id), value);
+        // This int API is a bounded view for existing stat consumers, not an attribute calculation source.
+        foreach (var (id, value) in attributes) sum[id] = AttributeModifiers.Signed(value);
         return sum;
+    }
+
+    static IEnumerable<(string Id, int Value)> Values(IEnumerable<Item> items, ModCatalog mods, bool local = false)
+    {
+        foreach (var mod in items.SelectMany(i => i.Mods))
+            if (mods.ByHash(mod.Hash) is { } row)
+                for (int s = 0; s < row.Stats.Count && s < mod.Values.Count; s++)
+                    if (row.Stats[s].Local == local) yield return (row.Stats[s].Id, mod.Values[s]);
+    }
+
+    /// <summary>Wide per-key attribute totals: retain them until complete raw-key replacement and bucket scaling.</summary>
+    public static Dictionary<string, long> RawAttributes(IEnumerable<Item> items, ModCatalog mods)
+    {
+        var raw = new Dictionary<string, long>();
+        foreach (var (id, value) in Values(items, mods))
+            if (AttributeModifiers.IsInput(id)) raw[id] = raw.GetValueOrDefault(id) + value;
+        return raw;
     }
 
     /// <summary>The character's stats from these equipped items, by client stat key (Stats.dat row + 1).</summary>
@@ -67,17 +83,28 @@ static class ItemModStats
     public static (HashSet<uint> Inactive, IReadOnlyList<Item> Active) ResolveEquipment(
         IReadOnlyList<Worn> worn, (int Str, int Dex, int Int) baseAttributes, int level, ModCatalog mods,
         IReadOnlySet<uint>? previous = null)
+        => ResolveEquipment(worn, level, active =>
+        {
+            var raw = RawAttributes(active.Select(w => w.Item), mods);
+            return AttributeModifiers.FromWide(name => raw.GetValueOrDefault(name))
+                .Apply(baseAttributes.Str, baseAttributes.Dex, baseAttributes.Int);
+        }, previous, mods);
+
+    /// <summary>Resolve the same staged policy with final attributes recalculated from the active raw sources.</summary>
+    public static (HashSet<uint> Inactive, IReadOnlyList<Item> Active) ResolveEquipment(
+        IReadOnlyList<Worn> worn, int level, Func<IReadOnlyList<Worn>, (int Str, int Dex, int Int)> finalAttributes,
+        IReadOnlySet<uint>? previous = null, ModCatalog? mods = null)
     {
         // The Tabula/Skin/Apostate hidden modifier also suppresses native attribute requirements.
         // Keep the level requirement: removing attributes does not make a high-level item wearable at level one.
-        worn = worn.Select(w =>
+        if (mods is not null) worn = worn.Select(w =>
         {
             var local = Local(w.Item, mods);
             return local.GetValueOrDefault("local_no_attribute_requirements") != 0
                 || local.GetValueOrDefault("local_unique_tabula_rasa_no_requirement_or_energy_shield") != 0
                 ? w with { Strength = 0, Dexterity = 0, Intelligence = 0 } : w;
         }).ToArray();
-        var inactive = Inactive(worn, baseAttributes, level, item => Attributes(item, mods), previous);
+        var inactive = Inactive(worn, level, finalAttributes, previous);
         return (inactive, worn.Where(w => !inactive.Contains(w.Id)).Select(w => w.Item).ToArray());
     }
 
@@ -85,10 +112,18 @@ static class ItemModStats
         Func<Item, (int Str, int Dex, int Int)> attributesOf, IReadOnlySet<uint>? previous = null)
     {
         var own = worn.ToDictionary(w => w.Id, w => attributesOf(w.Item));
+        return Inactive(worn, level, active => new AttributeModifiers(
+            active.Sum(w => (long)own[w.Id].Str),
+            active.Sum(w => (long)own[w.Id].Dex),
+            active.Sum(w => (long)own[w.Id].Int))
+                .Apply(baseAttributes.Str, baseAttributes.Dex, baseAttributes.Int), previous);
+    }
+
+    public static HashSet<uint> Inactive(IReadOnlyList<Worn> worn, int level,
+        Func<IReadOnlyList<Worn>, (int Str, int Dex, int Int)> finalAttributes, IReadOnlySet<uint>? previous = null)
+    {
         var inactive = worn.Where(w => previous?.Contains(w.Id) == true).Select(w => w.Id).ToHashSet();
-        (int, int, int) Totals() => (baseAttributes.Str + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Str),
-            baseAttributes.Dex + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Dex),
-            baseAttributes.Int + worn.Where(w => !inactive.Contains(w.Id)).Sum(w => own[w.Id].Int));
+        (int, int, int) Totals() => finalAttributes(worn.Where(w => !inactive.Contains(w.Id)).ToArray());
         bool Meets(Worn w, (int Str, int Dex, int Int) t) => level >= w.Level && t.Str >= w.Strength && t.Dex >= w.Dexterity && t.Int >= w.Intelligence;
         // 1. Back on: met by the others (an inactive item is not in the totals).
         for (bool changed = true; changed;)
@@ -109,8 +144,8 @@ static class ItemModStats
     /// <summary>The attributes an item's global mods give (additional_strength, all attributes, the pairs …).</summary>
     public static (int Str, int Dex, int Int) Attributes(Item item, ModCatalog mods)
     {
-        var stats = Sum([item], mods);
-        return CharacterStats.Attributes(name => stats.GetValueOrDefault(name));
+        var raw = RawAttributes([item], mods);
+        return AttributeModifiers.FromWide(name => raw.GetValueOrDefault(name)).Flat;
     }
 
     /// <summary>
@@ -131,7 +166,7 @@ static class ItemModStats
     public static Dictionary<uint, int> Plus(Dictionary<uint, int> a, Dictionary<uint, int> b)
     {
         var sum = new Dictionary<uint, int>(a);
-        foreach (var (k, v) in b) sum[k] = sum.GetValueOrDefault(k) + v;
+        foreach (var (k, v) in b) sum[k] = ActorScale.Add(k, sum.GetValueOrDefault(k), v);
         return sum;
     }
 }

@@ -142,9 +142,10 @@ partial class Program
                 catch (OperationCanceledException) when (reading.IsCancellationRequested) { }
                 finally
                 {
-                    conn.Closed = true;
                     lock (conn.Monsters)
                     {
+                        conn.Closed = true;
+                        conn.InvalidateIncomingHits();
                         FortificationOf(conn).Clear();
                         conn.Rage.Clear();
                     }
@@ -232,9 +233,10 @@ partial class Program
         {
             Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
         }
-        conn.Closed = true;
         lock (conn.Monsters)
         {
+            conn.Closed = true;
+            conn.InvalidateIncomingHits();
             FortificationOf(conn).Clear();
             conn.Rage.Clear();
         }

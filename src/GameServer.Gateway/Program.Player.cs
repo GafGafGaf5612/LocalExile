@@ -51,11 +51,13 @@ partial class Program
     // Restoring an already enabled aura is not a fresh cast: transient mana availability must not discard its saved intent.
     static IReadOnlyList<AuraCatalog.Aura> RestoreRememberedAuras(ClientState conn, IEnumerable<string> saved)
     {
+        if (conn.Closed || conn.LeavingArea || InTown(conn) || OwnAuraRestrictionValue(conn) != 0) return [];
         var wanted = saved.ToHashSet(StringComparer.Ordinal);
         var candidates = new List<AuraCatalog.Aura>();
         foreach (var gem in GemSkillEffects(conn.Character))
             if (Skills.EffectId(gem.Effect) is { } effect && wanted.Contains(effect) && AuraCatalog.Supported(effect)
                 && !conn.Auras.Values.Any(a => a.EffectId == effect)
+                && GemSkillInstanceDisabled(conn, gem.Effect, gem.Id) is null
                 && SupportedReservation(conn, gem.Id) is { } reservation)
                 candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
                     reservation.Flat, reservation.Percent, SupportedSkill(conn, gem.Id).Level, SupportedSkill(conn, gem.Id).Quality, SourceBuff: conn.NextBuff++));
@@ -63,8 +65,11 @@ partial class Program
         foreach (var aura in restored) conn.Auras[aura.SkillId] = aura;
         if (restored.Count > 0)
         {
+            conn.AuraStatsDirty = true;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
+            conn.PlayerMana = Math.Min(conn.PlayerMana,
+                (uint)AuraCatalog.UnreservedMana(conn.Pools, conn.Auras.Values));
             Console.WriteLine($"[gateway] {CharacterName(conn)}: restored saved auras: {string.Join(", ", restored.Select(a => a.EffectId))}");
         }
         return restored;
@@ -82,12 +87,11 @@ partial class Program
         {
             ended = [.. conn.Auras.Values];
             conn.Auras.Clear();
+            conn.AuraStatsDirty = ended.Count > 0 || conn.AuraStatsDirty;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
         }
-        foreach (var aura in ended)
-            foreach (var packet in AuraCatalog.EndPackets(aura, PlayerId))
-                await Send(remote, stream, ciphers, packet, $"aura {aura.EffectId} ends on death");
+        await SendOwnAuraChanges(remote, stream, ciphers, conn);
         if (ended.Count > 0)
         {
             await SendCharacterStats(remote, stream, ciphers, conn, "auras cleared on death");
@@ -99,6 +103,8 @@ partial class Program
     {
         lock (conn.Monsters)
         {
+            if (conn.PlayerLife != 0) return; // An older notification cannot clear a resurrected owner's new contacts.
+            conn.InvalidateIncomingHits();
             FortificationOf(conn).Clear();
             ClearRageOnDeath(conn);
         }
@@ -110,7 +116,11 @@ partial class Program
 
     static int ReservedMana(ClientState conn)
     {
-        lock (conn.Monsters) return AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
+        lock (conn.Monsters)
+        {
+            EnsureOwnAuraPools(conn);
+            return AuraCatalog.ReservedMana(conn.Pools, conn.Auras.Values);
+        }
     }
 
     static int UnreservedMana(ClientState conn) => Math.Max(0, (int)conn.Pools.Mana - ReservedMana(conn));
@@ -123,7 +133,15 @@ partial class Program
         {
             // Sample both values together after earlier sends, including a queued pool/reservation rebuild.
             lock (conn.Monsters)
-                return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool);
+            {
+                // Preserve already-paid cost publication on the existing retired-action path.
+                // Aura restoration/presentation is forbidden on that old connection.
+                if (conn.Closed || conn.LeavingArea)
+                    return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana,
+                        (uint)ReservedMana(conn), pool: ManaPool);
+                return WithOwnAuraChanges(conn, () => InstanceProtocol.LifeUpdate(PlayerId,
+                    conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool));
+            }
         });
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
@@ -319,6 +337,7 @@ partial class Program
                 criticalContext = currentCritical;
                 await SendCharacterStats(remote, stream, ciphers, conn, "critical strike conditions changed");
             }
+            await SendRecentEnemyHits(remote, stream, ciphers, conn);
             await PushOutOfCollision(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             if (conn.PlayerLife == 0)
@@ -461,7 +480,8 @@ partial class Program
         if (Stats.Key("delirium_aura_damage_over_time_+%_final") is uint moreDot)
             perSecond *= Math.Max(0, 1 + playerStats.GetValueOrDefault(moreDot) / 100.0);
         perSecond *= ChargeDamageMore(playerStats);
-        var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
+        var damageOverTime = new SkillDamageContext(SkillHitKind.Spell, playerStats)
+            .OverTime(new DamageOverTime(DamageType.Fire, perSecond, seconds));
         var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
         var stages = new List<(uint Id, SpawnedMonster M)>();
         var entered = new List<(uint Id, ushort Buff)>();
@@ -600,6 +620,7 @@ partial class Program
         lock (conn.Monsters)
         {
             if (conn.PlayerLife > 0) return;
+            conn.InvalidateIncomingHits();
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
             conn.HitRecovery.Clear();
@@ -639,10 +660,8 @@ partial class Program
 
     // The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
     // (AOFile), class byte (IntegerId), attributes and unarmed attack; the name is the character's.
-    static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    static PlayerObject PlayerForCreation(ClientState conn)
     {
-        RestoreFortification(conn);
-        PrepareHideoutWaypoint(conn);
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
         // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
@@ -653,7 +672,7 @@ partial class Program
         // before, every area started with the class's unarmed attack, so a weapon's added damage and attack speed showed only
         // after taking it off and putting it back. After the stats, which mark the inactive items WeaponFor skips.
         var weapon = WeaponFor(conn);
-        foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
+        foreach (var (k, v) in CosmeticStats(conn).Where(s => !ActorScale.IsInput(s.Stat))) stats.TryAdd(k, v);
         var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
         var weaponStats = WeaponStats(conn, weapon, stats);
         // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
@@ -667,16 +686,24 @@ partial class Program
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));
-        conn.PeerTemplate = player;
-        conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
+        return player;
+    }
+
+    static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        RestoreFortification(conn);
+        PrepareHideoutWaypoint(conn);
+        var (layout, name, classRow) = (conn.Layout, conn.Character, conn.ClassRow);
+        var cls = Skills.ClassFor(classRow);
         uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
         conn.PeerType = type;
+        const string creationLabel = "0x02b9 create current player";
         var messages = new List<(string Name, byte[] Bytes)>
         {
             ("0x01f6 campaign hideout unlocks", InstanceMicrotransactions.HideoutUnlocks(
                 HideoutCatalog.OwnedRows.Where(row => row < 128).Select(row => (int)row))),
             ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
-            ($"0x02b9 create {player} ({cls.ObjectType}) type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, player.Blob())),
+            (creationLabel, []),
         };
         // The player's inventories (id = row + 1), needed by UI built on entering (flask bar → row 11), with the character's items.
         var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items);
@@ -722,20 +749,31 @@ partial class Program
             if (layout.Waypoint is not null) messages.Add(($"0x01a9 waypoint 0x{WaypointCatalog.ObjectId:x} enters wake zone", InstanceProtocol.EnterWakeZone(WaypointCatalog.ObjectId)));
             // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
             // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
-            messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. statList])));
+            messages.Add(("0x01b3 class attributes", []));
         }
         foreach (var (label, bytes) in messages)
-            if (label == "0x01b3 class attributes")
+            if (label == creationLabel)
+                await Send(remote, stream, ciphers, [], label, atGate: () =>
+                {
+                    lock (conn.Monsters)
+                    {
+                        if (conn.Closed || conn.LeavingArea) return null;
+                        ReconcileOwnAuras(conn, validateSkills: true);
+                        var player = PlayerForCreation(conn);
+                        conn.PeerTemplate = player;
+                        conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
+                        conn.PresentedAuras.Clear(); // A new object has no installed buff instances.
+                        conn.AuraStatsDirty = false; // Initial pools and stats already include reconciliation.
+                        conn.PlayerObjectCreated = true;
+                        return InstanceEntities.CreateObject(PlayerId, conn.PeerType, player.Blob());
+                    }
+                });
+            else if (label == "0x01b3 class attributes")
                 await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-                    () => InstanceEntities.StatsUpdate(PlayerId,
-                        CharacterPlayerStats(conn).Select(kv => (kv.Key, kv.Value)).ToList()), label);
+                    () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)), label);
             else await Send(remote, stream, ciphers, bytes, label);
         // An area change creates a new player object, so the running auras' buffs must be put on it again.
-        List<AuraCatalog.Aura> auras;
-        lock (conn.Monsters) auras = [.. conn.Auras.Values];
-        foreach (var aura in auras)
-            foreach (var packet in AuraBuffs(aura))
-                await Send(remote, stream, ciphers, packet,
-                    $"0x01c1 player aura {aura.Name} restored after the area change");
+        await SendOwnAuraChanges(remote, stream, ciphers, conn, replay: true);
     }
+
 }

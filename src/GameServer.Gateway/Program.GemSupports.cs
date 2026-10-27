@@ -4,7 +4,7 @@ partial class Program
 {
     internal static readonly GemSupports Supports = new();
     sealed record SupportedGem(int Effect, int Level, int Quality, IReadOnlyList<GemSupports.Applied> Supports,
-        Dictionary<uint, int> Stats);
+        Dictionary<uint, int> Stats, Item? SourceGem = null);
 
     static SupportedGem SupportedSkill(ClientState conn, ushort skillId)
     {
@@ -60,7 +60,10 @@ partial class Program
                     foreach (string kind in new[] { "attack", "spell" })
                         if (Stats.Key($"{kind}_{bound}_added_{type}_damage") is uint target)
                             own[target] = own.GetValueOrDefault(target) + damage;
-        return new(selected.Effect, level, quality, supports, own);
+        if (Skills.IsAura(selected.Effect, supports.Select(s => s.Effect.Row)))
+            own[OwnAuraRestriction.BaseAura] = 1;
+        own[OwnAuraRestriction.Aura] = OwnAuraRestriction.IsAura(own) ? 1 : 0;
+        return new(selected.Effect, level, quality, supports, own, selected.Place.Gem);
     }
 
     static Dictionary<uint, int> SupportedStats(ClientState conn, ushort skillId)
@@ -102,7 +105,8 @@ partial class Program
     static GameServer.Core.World.DamagePacket SupportedHit(ClientState conn, ushort skillId)
     {
         var gem = SupportedSkill(conn, skillId);
-        var stats = MergeSkillStats(FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2), gem.Stats);
+        var caster = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
+        var stats = MergeSkillStats(caster, gem.Stats);
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
         bool attack = Skills.IsAttack(gem.Effect);
         var types = Supports.Of(gem.Effect)?.Types.ToHashSet() ?? [];
@@ -115,7 +119,8 @@ partial class Program
         hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: false);
         hit = hit.Convert(DamageStats.Conversion(stats, Stats, attack));
         hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
-        return attack ? RageStats.ApplyAttack(hit, Get) : hit;
+        if (attack) hit = RageStats.ApplyAttack(hit, Get);
+        return new SkillDamageContext(plan.Kind, caster).Hit(hit);
     }
 
     static int SupportedCriticalChance(ClientState conn, ushort skillId)

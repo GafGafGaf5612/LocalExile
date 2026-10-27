@@ -10,6 +10,7 @@ partial class Program
 
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
+    // Active local item defences retain their base roll, local conversions and final native rounding.
     static IEnumerable<(byte Row, (int Armour, int Evasion, int EnergyShield) Defence)> EquippedArmourDefences(ClientState conn)
     {
         var items = ItemsOf(conn);
@@ -63,9 +64,9 @@ partial class Program
         ItemsOf(conn).Items(row).Where(i => !IsInactive(conn, i.Id))
             .Select(i => ((Item, ItemCatalog.BaseType?)?)(i.Item, Items.ByHash(i.Item.TypeHash))).FirstOrDefault();
 
-    // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, its
-    // physical damage with the weapon's own local mods (local_physical_damage_+%, local_minimum / maximum_added_physical_damage)
-    // and its attack time with local_attack_speed_+%; no weapon, the class's unarmed attack.
+    // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, with the
+    // item's local stats (ItemWeapons: physical damage and quality, attack speed, local added elemental/chaos damage); no
+    // weapon, the class's unarmed attack.
     static SkillCatalog.Unarmed WeaponFor(ClientState conn) => WeaponOf(conn, ActiveMainHand(conn));
 
     static SkillCatalog.Unarmed WeaponOf(ClientState conn, (Item Item, ItemCatalog.BaseType? Type)? mainHand) =>
@@ -76,12 +77,7 @@ partial class Program
     {
         var unarmed = Skills.UnarmedFor(conn.ClassRow);
         if (hand is not var (item, type) || type is null || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return null;
-        var local = ItemModStats.Local(item, Items.Mods);
-        double scale = 1 + local.GetValueOrDefault("local_physical_damage_+%") / 100.0;
-        int lo = (int)((min + local.GetValueOrDefault("local_minimum_added_physical_damage")) * scale);
-        int hi = (int)((max + local.GetValueOrDefault("local_maximum_added_physical_damage")) * scale);
-        int attackMs = (int)Math.Round(ms / (1 + local.GetValueOrDefault("local_attack_speed_+%") / 100.0));
-        return new SkillCatalog.Unarmed(Math.Max(1, attackMs), Math.Max(0, lo), Math.Max(lo, hi), Math.Max(range, unarmed.Range));
+        return ItemWeapons.Of(ms, min, max, Math.Max(range, unarmed.Range), ItemModStats.Local(item, Items.Mods), item.Quality);
     }
 
     // The off-hand weapon of a dual-wielded attack (the active set's Offhand1), with the same values WeaponIn gives the main
@@ -219,7 +215,11 @@ partial class Program
     static IEnumerable<(uint Stat, int Value)> CosmeticStats(ClientState conn) =>
         WornCosmetics(conn).Where(w => w.Slot != 49).SelectMany(w => MtxEffects.Of(w.MtxTypeHash) is not { } fx ? [] :
                 fx.Pet != 0 && Stats.Key(w.Slot == 19 ? "pet_slot2" : "pet_slot1") is uint pet ? [.. fx.Stats, (pet, fx.Pet)] : fx.Stats)
-            .GroupBy(s => s.Stat, s => s.Value).Select(g => (g.Key, g.Sum()));
+            .GroupBy(s => s.Stat, s => s.Value).Select(g => (g.Key,
+                ActorScale.IsInput(g.Key) ? ActorScale.Saturate(g.Sum(v => (long)v)) : g.Sum()));
+
+    static IEnumerable<(uint Stat, int Value)> CosmeticScaleSources(ClientState conn) =>
+        CosmeticStats(conn).Where(s => ActorScale.IsInput(s.Stat));
 
     // What the player wears changed (an item went into or out of a visible equipment row): 0x2ba Inventories for the model,
     // then the Actor skill list again, since the gems socketed in the equipment grant skills.
@@ -234,7 +234,7 @@ partial class Program
         lock (conn.Monsters) { RecomputePoolsAndSpeed(conn); conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn)); }
         await SendSkills(remote, stream, ciphers, conn);
         await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)),
             "0x01b3 player stats (equipment)");
         await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (equipment)");
     }

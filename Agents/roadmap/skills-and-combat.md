@@ -6,8 +6,10 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 
 ## 1. Quality of life
 
-Aura intent persistence, town suppression and death reset are implemented;
-validate town/combat/character-switch round trips in the real client (protocol/11-skills.md).
+Aura intent persistence, town suppression, own-aura restriction (#304) and death reset are implemented.
+Own-aura restriction has native paired-buff, bonus, reservation, relog and death controls.
+Validate native grey-icon prediction and broader town/combat/character-switch round trips.
+The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-skills.md sections 10c and 13.
 
 ## 3. Gameplay
 
@@ -71,6 +73,14 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.
+  Generic increased attributes have historical native raw-source, derived-pool and requirement controls at `60044ad`.
+  Current-main mana-per-Strength, requirement and inactive-weapon composition has automated coverage.
+  Eleven rebased native controls verify final Strength mana groups, increased mana once and ordinary gear requirements.
+  Ordered joint native controls at `c9cd1864` verify conversion after final Strength and odd Intelligence.
+  Remaining native composition includes own-item percentage retention, cascading equipment, passive refunds and swaps.
+  The fractional algorithm remains a documented PoB server model; official-server parity is not established.
+  See [Status](../status/skills-and-combat.md) and [the calculation model](../docs/protocol/11-skills.md) section 4.
+  Mana-to-armour conversion and Phrecia play compatibility remain separate prerequisites.
 
 ### Auras: reservation and effects
 
@@ -78,6 +88,11 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Purity of Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste are implemented with their buff
   visuals and `/auras`, awaiting live verification ([11](../docs/protocol/11-skills.md) 13,
   [Status](../status/skills-and-combat.md)).
+  Own-aura admission and suspension have source/dispatch/send-gate/lifecycle coverage, including Rage refreshes.
+  Fifteen native controls verify installed pairs, actual bonuses/Mana, refusal, restoration, relog and death.
+  Native grey-icon prediction and persistent restricting equipment remain separate verification.
+  Duplicate-instance support context and queued ordinary acknowledgements have separate regression controls.
+  Complete Lone Messenger, party auras and unsupported curse/enemy/banner/Vaal executors remain separate.
 - **Start:** the auras' 3D effects (BuffVisuals EPKs of the `IsSkillBuff` rows do not render, unlike Righteous
   Fire's); the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
   Determination/Grace/Discipline's armour/evasion/ES effects.
@@ -112,7 +127,20 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Whisperer's 150% spell-increase transfer has shared attack regression coverage and native hit/panel checks.
   Remaining conditional modifier sources are separate; see [20](../docs/protocol/20-damage.md) §2c.
   Steel Willed's attack increase from complete groups of final armour has shared regression and native coverage.
-  Its recent-hit armour doubling and the other Behemoth nodes remain separate work.
+  Boolean chaos-hit armour has native raw-source Life-loss controls and shared incoming-hit regressions.
+  Mixed monster packets and ES/block/suppression/Fortification have automated coverage; recheck them natively.
+  See Status and protocol/20-damage.md section 2e.
+  Rampager's raw spell restriction has hit/panel and RF regressions; eleven native controls are historical (#293).
+  See [status](../status/skills-and-combat.md) for the verified consumer scope.
+  Fresh ordered joint hit controls pass at `c9cd1864`; original RF, Ice Nova and relog checks remain historical.
+  Rampager's other mechanics and class admission remain separate work.
+  Recent-hit armour defence now composes with physical/chaos mitigation in actual and queued contact regressions.
+  Full stat writers, including Rage, own auras and Mageblood, have expiry and encoded-pair acknowledgment regressions.
+  Dirty aura/Fortification composition also checks decoded wire order, independent expiry and idle correction.
+  Its eighteen original-head controls remain historical; fresh ordered joint controls pass at `c9cd1864`.
+  Native cap/order uses one raw40 contact; four-contact timing and forced full-writer races remain automated coverage.
+  See [the model](../docs/game/steel-willed-armour.md) for event policies and evidence boundaries.
+  Partial armour percentages, other Behemoth nodes, class admission and suppression transfer remain separate.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
@@ -153,6 +181,8 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Focus/curse lifecycles and statistical RNG validation remain separate from the deterministic policy tests.
   Added-base and other conditional/more crit remain separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
+  When owned-actor execution is implemented, supply actual-caster stats to `SkillDamageContext` explicitly.
+  Do not inherit an owner's spell-damage restriction onto independent minions or daemons without a skill rule.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
 ### Rage extensions

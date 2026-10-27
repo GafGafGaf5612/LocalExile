@@ -35,16 +35,23 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.MovementVelocityPct, totalPct)]),
                 $"0x01b3 stats: movement_velocity_+% (key {StatKeys.MovementVelocityPct}) = {totalPct} ({conn.Pools.MovementVelocityPct} passive + {percent - 100} dev)");
         })
-        .Add("set_stat", "/set_stat <stat name or client key> <value> (e.g. attack_speed_+% 100)", async args =>
+        .Add("set_stat", "/set_stat <stat name or client key> <value|off> (off removes the dev replacement)", async args =>
         {
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
-            int value = int.Parse(args[1]);
+            bool off = args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
+            int value = off ? 0 : int.Parse(args[1]);
+            bool rawAttribute = AttributeModifiers.IsInput(Stats.Name(stat));
             bool rebuildMana = stat == Stats.Key(StrengthMana.PerFourStrength);
-            lock (conn.Monsters) conn.PlayerStats[stat] = value;
-            // Raw critical, overcap and Strength-derived mana inputs rebuild pools, including zero replacements.
+            lock (conn.Monsters)
+            {
+                if (off) conn.PlayerStats.Remove(stat);
+                else conn.PlayerStats[stat] = value;
+            }
+            // Keep each supported raw consumer and source restoration when another mechanic changes this gate.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
                 || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
-                || rebuildMana)
+                || rebuildMana || rawAttribute
+                || Stats.Name(stat) == PlayerHitMitigation.ArmourAppliesToChaos)
             {
                 while (true)
                 {
@@ -56,7 +63,12 @@ partial class Program
                         // A concurrent level/aura rebuild wins; retry against its current inputs and level.
                         if (!ReferenceEquals(conn.Pools, before)) continue;
                         conn.Pools = pools;
-                        if (rebuildMana) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+                        if (rawAttribute)
+                        {
+                            conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
+                            conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+                        }
+                        else if (rebuildMana) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
                         break;
                     }
                 }
@@ -64,14 +76,32 @@ partial class Program
             // The client's requirement checks (gear and gems) read virtual_strength/dexterity/intelligence_for_requirements,
             // not the attributes themselves (13-items.md §2d), so an attribute set here sets its requirement value too.
             if (Stats.Key($"virtual_{args[0]}_for_requirements") is uint requirement && requirement != stat)
-                lock (conn.Monsters) conn.PlayerStats[requirement] = value;
+                lock (conn.Monsters)
+                {
+                    if (off) conn.PlayerStats.Remove(requirement);
+                    else conn.PlayerStats[requirement] = value;
+                }
             await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
-                $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)),
+                $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {(off ? "the character's own" : value)}, and the attack's final stats");
             // Skills compute with their own stats (the attack and the character panel read those), so send them again.
             await SendSkills(remote, stream, ciphers, conn);
-            // Reservation can change with maximum mana even when recovery leaves current mana unchanged.
-            if (rebuildMana) await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
+            if (rawAttribute)
+            {
+                // Skill refresh can restore an aura or update its reservation; use those completed caps too.
+                lock (conn.Monsters)
+                {
+                    conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
+                    conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+                }
+                // A raw pool change can alter reservation while current mana stays idle. Sample resources only after
+                // earlier queued sends, and never refill or resurrect a character when a maximum grows.
+                await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+                    () => InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife), "raw attribute current life");
+                await SendPlayerMana(remote, stream, ciphers, conn, "raw attribute mana reservation");
+            }
+            else if (rebuildMana)
+                await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
         })
         .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
         {
@@ -110,7 +140,7 @@ partial class Program
             var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
             await SpawnMonster(remote, stream, ciphers, conn, variety, level, rarity, x, y, name, friendly);
         })
-        .Add("item", "/item <BaseItemTypes row, Id or name> [count] [magic|rare] (into the inventory, e.g. /item Small Life Flask 2, /item Iron Ring rare)", async args =>
+        .Add("item", "/item <BaseItemTypes row, Id, name or unique> [count] [magic|rare] (into the inventory, e.g. /item Small Life Flask 2, /item Iron Ring rare, /item Mageblood)", async args =>
         {
             if (args.Length == 0) throw new ArgumentException("which item?");
             ItemRarity rolled = ItemRarity.Normal;
@@ -118,7 +148,27 @@ partial class Program
             int count = 1, requested = 1;
             if (args.Length > 1 && int.TryParse(args[^1], out int n)) { requested = n; count = Math.Clamp(n, 1, 60); args = args[..^1]; }
             if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
-            if (Items.Find(string.Join(' ', args)) is not { } type) { await conn.Commands!.Reply($"No item type \"{string.Join(' ', args)}\""); return; }
+            string query = string.Join(' ', args);
+            if (Uniques.Find(query) is { } unique)
+            {
+                var uniqueItems = ItemsOf(conn);
+                var uniqueAdded = new List<InventoryItem>();
+                for (int i = 0; i < count; i++)
+                {
+                    if (Uniques.Create(unique.Name, Random.Shared) is not { } createdUnique
+                        || Items.ByHash(createdUnique.TypeHash) is not { } uniqueType
+                        || uniqueItems.FreeCell(PlayerInventories.MainInventory, uniqueType.Width, uniqueType.Height, ShapeOf) is not { } uniqueCell) break;
+                    uniqueAdded.Add(uniqueItems.Put(PlayerInventories.MainInventory,
+                        new InventoryItem(uniqueItems.NewItemId(), uniqueCell.X, uniqueCell.Y, createdUnique)));
+                }
+                if (uniqueAdded.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
+                await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                    uniqueItems.NextRevision(PlayerInventories.MainInventory), [], uniqueAdded),
+                    $"0x00bf inventory 1: /item {unique.Name} x {uniqueAdded.Count}");
+                await conn.Commands!.Reply($"Added {unique.Name}");
+                return;
+            }
+            if (Items.Find(query) is not { } type) { await conn.Commands!.Reply($"No item type \"{query}\""); return; }
             if (!type.Supported)
             {
                 await conn.Commands!.Reply($"{type} has components the server cannot write yet: {string.Join(", ", type.Components.Where(c => !Item.Supported.Contains(c)))}");
@@ -341,14 +391,15 @@ partial class Program
             await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Rarity = rarity, Identified = identified },
                 $"{rarity}{(identified ? "" : ", unidentified")}");
         })
-        .Add("sockets", "/sockets [colours] (the held item's sockets: R G B W, linked within a word, e.g. /sockets RRGBBB a 6-link, /sockets RRG B a 3-link and a single; without colours, shows them)", async args =>
+        .Add("sockets", "/sockets [colours] (the held item's sockets: R G B W, linked within a word, e.g. /sockets RRGBBB a 6-link, /sockets RRG B a 3-link and a single; without colours, shows them; Game_SOCKET_CAPACITY=1..6 lets any socketable base take that many, e.g. a 6-link wand)", async args =>
         {
             if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
             if (args.Length == 0) { await conn.Commands!.Reply($"sockets: {SocketLayout.Describe(held.Item)}"); return; }
             if (Items.ByHash(held.Item.TypeHash) is not { } type) { await conn.Commands!.Reply("Unknown item type"); return; }
             if (SocketLayout.Parse(args, out string? error) is not var (colours, links)) throw new ArgumentException(error);
-            if (SocketLayout.Apply(held.Item, type, colours, links, out error) is not { } result) { await conn.Commands!.Reply(error!); return; }
-            await ChangeHeldItem(remote, stream, ciphers, conn, i => SocketLayout.Apply(i, type, colours, links, out _) ?? i,
+            int capacity = SocketLayout.CapacityOverride;
+            if (SocketLayout.Apply(held.Item, type, colours, links, out error, capacity) is not { } result) { await conn.Commands!.Reply(error!); return; }
+            await ChangeHeldItem(remote, stream, ciphers, conn, i => SocketLayout.Apply(i, type, colours, links, out _, capacity) ?? i,
                 $"sockets: {SocketLayout.Describe(result)}", "Sockets");
         })
         .Add("set_level", "/set_level <1 to 100> (saved to the account; the level's experience and stats are sent at once)", async args =>
@@ -506,35 +557,17 @@ partial class Program
                 $"Lightning {lightning}% (passives {p.LightningResistance}%, max {p.LightningMaxResistance}%, capped {DamageModel.Capped(lightning, p.LightningMaxResistance)}%), " +
                 $"Chaos {chaos}% (passives {p.ChaosResistance}%, max {p.ChaosMaxResistance}%, capped {DamageModel.Capped(chaos, p.ChaosMaxResistance)}%).");
         })
-        .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: damage yourself through resistances or armour)", async args =>
+        .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: incoming enemy test contact through resistances or armour)", async args =>
         {
             if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
             if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
             if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
-            int resistance = Resistance(conn, type);
-            int maxResistance = MaxResistance(conn, type);
-            bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
-            string mitigation = immune
-                ? "immunity"
-                : MitigationLabel(conn, type, amount, resistance, maxResistance);
-            uint life;
-            bool wasDead;
-            lock (conn.Monsters)
+            if (!TryDevEnemyHit(conn, type, amount, false, false, false, out var hit))
             {
-                wasDead = conn.PlayerLife == 0;
-                if (!wasDead)
-                {
-                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds));
-                    life = conn.PlayerLife;
-                }
-                else life = 0;
-            }
-            if (wasDead)
-            {
-                await conn.Commands!.Reply("You are already dead.");
+                await conn.Commands!.Reply(conn.PlayerLife == 0 ? "You are already dead." : "Enemy test hit rejected while paused or leaving.");
                 return;
             }
+            int dealt = hit.Damage; string mitigation = hit.Mitigation; uint life = hit.Life;
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -630,32 +663,14 @@ partial class Program
             if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
             if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
             if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
-            int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
-            bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
-            string mitigation = immune
-                ? "immunity"
-                : MitigationLabel(conn, type, amount, resistance, maxResistance);
-            var (chance, effect, lucky, unlucky) = Suppression(conn);
-            bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100), lucky, unlucky);
-            if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
-            uint life;
-            bool wasDead;
-            lock (conn.Monsters)
+            if (!TryDevEnemyHit(conn, type, amount, false, true, true, out var hit))
             {
-                wasDead = conn.PlayerLife == 0;
-                if (!wasDead)
-                {
-                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds));
-                    life = conn.PlayerLife;
-                }
-                else life = 0;
-            }
-            if (wasDead)
-            {
-                await conn.Commands!.Reply("You are already dead.");
+                await conn.Commands!.Reply(conn.PlayerLife == 0 ? "You are already dead." : "Enemy test hit rejected while paused or leaving.");
                 return;
             }
+            int dealt = hit.Damage; string mitigation = hit.Mitigation; uint life = hit.Life;
+            bool suppressed = hit.Suppressed;
+            var (chance, effect, lucky, unlucky) = hit.Suppression;
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -706,39 +721,14 @@ partial class Program
             if (!spell && !args[0].Equals("attack", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("attack or spell");
             if (ParseDamageType(args[1]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
             if (!int.TryParse(args[2], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
-            int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
-            int chance = spell ? conn.Pools.SpellBlockChance : conn.Pools.BlockChance;
-            bool lucky = spell ? conn.Pools.SpellBlockLucky : conn.Pools.AttackBlockLucky;
-            bool blocked = DamageModel.Blocks(chance, Random.Shared.NextDouble() * 100, lucky);
-            bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune || blocked ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
-            ChargesWhenHit(conn, blocked, spell);
-            string mitigation = immune
-                ? "immunity"
-                : MitigationLabel(conn, type, amount, resistance, maxResistance);
-            uint life, mana, manaBefore;
-            bool wasDead;
-            lock (conn.Monsters)
+            if (!TryDevEnemyHit(conn, type, amount, true, spell, false, out var hit))
             {
-                wasDead = conn.PlayerLife == 0;
-                manaBefore = conn.PlayerMana;
-                if (!wasDead)
-                {
-                    int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
-                    int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
-                    conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife,
-                        Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds) + gainedLife));
-                    conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
-                    life = conn.PlayerLife;
-                    mana = conn.PlayerMana;
-                }
-                else { life = 0; mana = conn.PlayerMana; }
-            }
-            if (wasDead)
-            {
-                await conn.Commands!.Reply("You are already dead.");
+                await conn.Commands!.Reply(conn.PlayerLife == 0 ? "You are already dead." : "Enemy test hit rejected while paused or leaving.");
                 return;
             }
+            int dealt = hit.Damage; string mitigation = hit.Mitigation; uint life = hit.Life;
+            uint mana = hit.Mana, manaBefore = hit.ManaBefore;
+            bool blocked = hit.Blocked; int chance = hit.BlockChance;
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -768,7 +758,7 @@ partial class Program
             int value = off ? 0 : int.Parse(args[0]);
             lock (conn.Monsters) { if (off) conn.PlayerStats.Remove(stat); else conn.PlayerStats[stat] = value; }
             await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)),
                 $"0x01b3 stats: base_skill_area_of_effect_+% = {(off ? "the character's own" : value)}");
             await SendSkills(remote, stream, ciphers, conn);
             bool relit = await RelightRighteousFire(remote, stream, ciphers, conn, "/set_aoe");

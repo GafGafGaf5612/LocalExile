@@ -4,6 +4,8 @@ sealed class ProjectileFlight
 {
     public readonly record struct Target(uint Id, (int X, int Y) Position, object? Motion = null);
     public readonly record struct Step((double X, double Y) Position, double At, bool Finished, uint TargetId = 0, bool Wall = false);
+    /// <summary>A target entered by a piercing sweep, at the time and projectile position of the entry.</summary>
+    public readonly record struct Pierced(uint Id, double At, (double X, double Y) Position);
     readonly (int X, int Y) start, end;
     readonly double launched, duration, radius;
     readonly bool wall;
@@ -31,8 +33,23 @@ sealed class ProjectileFlight
 
     // An optional attack accuracy check may reject contact without terminating flight. Each rejected object is tested
     // only once for this straight flight; accepted contact retains the ordinary terminal result. Spells omit it.
-    public Step Advance(double now, IReadOnlyList<Target> targets, Func<uint, bool>? accept = null)
+    public Step Advance(double now, IReadOnlyList<Target> targets, Func<uint, bool>? accept = null) =>
+        AdvanceCore(now, targets, accept, multi: false, ignore: null, out _);
+
+    // A piercing sweep does not stop at the first contact: every target entered during the swept interval is reported in
+    // contact order (the caller applies them and spends its pierce budget). Targets in `hit` are skipped, so a target
+    // already pierced never blocks the observation of later ones, and a target that leaves the route is never hit.
+    public (Step Step, IReadOnlyList<Pierced> Contacts) AdvancePiercing(double now, IReadOnlyList<Target> targets,
+        ISet<uint>? hit = null)
     {
+        var step = AdvanceCore(now, targets, accept: null, multi: true, ignore: hit, out var contacts);
+        return (step, contacts);
+    }
+
+    Step AdvanceCore(double now, IReadOnlyList<Target> targets, Func<uint, bool>? accept, bool multi, ISet<uint>? ignore,
+        out IReadOnlyList<Pierced> contacts)
+    {
+        contacts = [];
         if (step.Finished || now <= sampledAt) return step; // A stopped game clock cannot hit or expire anything.
         if (duration == 0 && wall) return step = new(end, launched, true, Wall: true);
         double until = Math.Min(now, launched + duration);
@@ -41,10 +58,10 @@ sealed class ProjectileFlight
         double fraction = 1;
         uint hit = 0;
         bool atEnd = until >= launched + duration;
-        List<(double Fraction, uint Id)>? contacts = accept is null ? null : [];
+        List<(double Fraction, uint Id)>? entered = accept is not null || multi ? [] : null;
         foreach (var target in targets)
         {
-            if (rejected.Contains(target.Id)) continue;
+            if (rejected.Contains(target.Id) || ignore?.Contains(target.Id) == true) continue;
             double? contact;
             if (previous.TryGetValue(target.Id, out var observed) && ReferenceEquals(observed.Motion, target.Motion))
             {
@@ -64,23 +81,39 @@ sealed class ProjectileFlight
             }
             if (contact is double c && !(wall && atEnd && c == 1))
             {
-                if (contacts is not null) contacts.Add((c, target.Id));
+                if (entered is not null) entered.Add((c, target.Id));
                 else if (c <= fraction && (c < fraction || hit == 0 || target.Id < hit))
                     (fraction, hit) = (c, target.Id);
             }
         }
-        if (contacts is not null)
+        if (entered is not null)
         {
             // Evaluate in swept contact order, not dictionary order; an evaded nearer monster must not hide a later
             // contact within the very same scheduler interval. Stable ids break coincident-contact ties.
-            foreach (var candidate in contacts.OrderBy(c => c.Fraction).ThenBy(c => c.Id))
-            {
-                if (accept!(candidate.Id)) { (fraction, hit) = candidate; break; }
-                rejected.Add(candidate.Id);
-            }
+            var ordered = entered.OrderBy(c => c.Fraction).ThenBy(c => c.Id);
+            if (multi)
+                contacts = [.. ordered.Select(c =>
+                {
+                    double at = sampledAt + (until - sampledAt) * c.Fraction;
+                    return new Pierced(c.Id, at, Position(at));
+                })];
+            else
+                foreach (var candidate in ordered)
+                {
+                    if (accept!(candidate.Id)) { (fraction, hit) = candidate; break; }
+                    rejected.Add(candidate.Id);
+                }
         }
-        double at = sampledAt + (until - sampledAt) * fraction;
-        step = new(Position(at), at, hit != 0 || atEnd, hit, hit == 0 && atEnd && wall);
+        if (multi)
+        {
+            // A penetrated target does not stop the projectile: it keeps flying to its range or a wall.
+            step = new(Position(until), until, atEnd, 0, atEnd && wall);
+        }
+        else
+        {
+            double at = sampledAt + (until - sampledAt) * fraction;
+            step = new(Position(at), at, hit != 0 || atEnd, hit, hit == 0 && atEnd && wall);
+        }
         sampledAt = until;
         previous = targets.ToDictionary(t => t.Id);
         return step;

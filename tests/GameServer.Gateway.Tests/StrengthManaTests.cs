@@ -56,11 +56,11 @@ public class StrengthManaTests
     [InlineData(33, 0, 0, 56u)]
     [InlineData(33, 0, 25, 70u)]
     [InlineData(33, -56, 0, 0u)]
-    [InlineData(-33, 0, 0, 24u)]
+    [InlineData(-33, 0, 0, 40u)] // Final attributes are now nonnegative before the unchanged Intelligence / 2.
     [InlineData(-1, 0, 50, 60u)]
     [InlineData(1, -41, -200, 1u)]
     [InlineData(33, -100, -150, 22u)]
-    public void An_absent_or_zero_source_preserves_ordinary_pool_values_and_native_bytes(
+    public void An_absent_or_zero_source_preserves_ordinary_mana_rounding_and_native_bytes(
         int intelligence, int flat, int increase, uint expected)
     {
         var c = SkillCatalog.ClassInfo.Witch with { Intelligence = intelligence };

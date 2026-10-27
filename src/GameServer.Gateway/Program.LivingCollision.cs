@@ -28,43 +28,67 @@ partial class Program
 
     static void PublishPlayerPose(ClientState conn)
     {
-        if (conn.PeerTemplate is not { } template || !conn.PlayerSent || conn.Closed) return;
+        lock (conn.Monsters)
+        {
+            if (conn.Closed || conn.LeavingArea) { conn.Instance.RemovePlayer(conn.PeerId); return; }
+            if (conn.PeerTemplate is null || !conn.PlayerSent) return;
+            RefreshPeerScale(conn, CharacterPlayerStats(conn)[ActorScale.Final]);
+        }
+    }
+
+    // Called under the owner's lock. Replace only final scale in an immutable template, retaining creation stats,
+    // equipment and skills. Observers read published snapshots and never lock another connection's simulation.
+    static void RefreshPeerScale(ClientState conn, int scale)
+    {
+        if (conn.PeerTemplate is not { } template) return;
+        if ((template.Stats ?? []).SingleOrDefault(s => s.Key == ActorScale.Final).Value != scale)
+            conn.PeerTemplate = template = template with
+            { Stats = [.. (template.Stats ?? []).Where(s => s.Key != ActorScale.Final), (ActorScale.Final, scale)] };
+        if (!conn.PlayerSent || conn.Closed || conn.LeavingArea || conn.Instance is null) return;
         var p = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
-        conn.Instance.PublishPlayer(new(conn.PeerId, conn.PeerType, template, p.X, p.Y, conn.PlayerLife));
+        conn.Instance.PublishPlayer(new(conn.PeerId, conn.PeerType, template, p.X, p.Y, conn.PlayerLife, conn));
     }
 
     static async Task SyncInstancePlayers(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        var peers = conn.Instance.PlayersExcept(conn.PeerId);
-        var present = peers.Select(p => p.Id).ToHashSet();
-        foreach (uint id in conn.SeenPlayers.Keys.Where(id => !present.Contains(id)).ToArray())
-        {
-            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"player 0x{id:x} left instance");
-            conn.SeenPlayers.Remove(id);
-        }
-        foreach (var peer in peers)
-        {
-            bool exists = conn.SeenPlayers.TryGetValue(peer.Id, out var previous);
-            if (!exists || previous!.Life == 0 && peer.Life > 0)
+        var ids = conn.Instance.PlayersExcept(conn.PeerId).Select(p => p.Id)
+            .Concat(conn.SeenPlayers.Keys).Distinct().ToArray();
+        foreach (uint id in ids)
+            await Send(remote, stream, ciphers, [], null, atGate: () =>
             {
-                if (exists) await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(peer.Id), null);
-                var player = peer.Template with { GridX = peer.X, GridY = peer.Y, Life = peer.Life, Skills = [], QuestFlags = [], LeagueQuestFlags = [] };
-                await Send(remote, stream, ciphers, InstanceEntities.CreateObject(peer.Id, peer.Type, player.Blob()),
-                    $"create instance player {player.Name} 0x{peer.Id:x} at ({peer.X},{peer.Y})");
-                await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(peer.Id), null);
-            }
-            else
-            {
-                if ((previous!.X, previous.Y) != (peer.X, peer.Y))
-                    await Send(remote, stream, ciphers,
-                        Math.Max(Math.Abs(previous.X - peer.X), Math.Abs(previous.Y - peer.Y)) > 20
+                if (conn.Closed || conn.LeavingArea) return null;
+                var packets = new List<byte[]>();
+                // Read after waiting: queued creation/change must not restore an older scale or departed owner.
+                if (conn.Instance.Player(id) is not { } peer)
+                {
+                    if (conn.SeenPlayers.Remove(id)) packets.Add(InstanceProtocol.RemoveObject(id));
+                    return packets.SelectMany(p => p).ToArray();
+                }
+                bool exists = conn.SeenPlayers.TryGetValue(peer.Id, out var previous);
+                if (!exists || previous!.Life == 0 && peer.Life > 0)
+                {
+                    if (exists) packets.Add(InstanceProtocol.RemoveObject(peer.Id));
+                    var player = peer.Template with { GridX = peer.X, GridY = peer.Y, Life = peer.Life,
+                        Skills = [], QuestFlags = [], LeagueQuestFlags = [] };
+                    packets.Add(InstanceEntities.CreateObject(peer.Id, peer.Type, player.Blob()));
+                    packets.Add(InstanceProtocol.EnterWakeZone(peer.Id));
+                }
+                else
+                {
+                    if ((previous!.X, previous.Y) != (peer.X, peer.Y))
+                        packets.Add(Math.Max(Math.Abs(previous.X - peer.X), Math.Abs(previous.Y - peer.Y)) > 20
                             ? InstanceProtocol.Teleport(peer.Id, peer.X, peer.Y, 0x7fffffff)
-                            : InstanceProtocol.MoveTo(peer.Id, peer.X, peer.Y, .1f, 0x7fffffff), null);
-                if (previous.Life != peer.Life)
-                    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(peer.Id, peer.Life), null);
-            }
-            conn.SeenPlayers[peer.Id] = peer;
-        }
+                            : InstanceProtocol.MoveTo(peer.Id, peer.X, peer.Y, .1f, 0x7fffffff));
+                    if (previous.Life != peer.Life)
+                        packets.Add(InstanceProtocol.LifeUpdate(peer.Id, peer.Life));
+                    int scale = (peer.Template.Stats ?? []).SingleOrDefault(s => s.Key == ActorScale.Final).Value;
+                    int before = (previous.Template.Stats ?? []).SingleOrDefault(s => s.Key == ActorScale.Final).Value;
+                    if (scale != before)
+                        packets.Add(InstanceEntities.StatsUpdate(peer.Id, [(ActorScale.Final, scale)]));
+                }
+                conn.SeenPlayers[peer.Id] = peer;
+                return packets.SelectMany(p => p).ToArray();
+            });
     }
 
     static async Task CorrectMonsterCollisions(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)

@@ -59,20 +59,24 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Item mods: rarity (normal, magic, rare, unique), identified, and the implicit, explicit, enchant, scourge and hidden
   mod lists in the Mods component; new items roll their BaseItemTypes implicits (Driftwood Wand 8-12% increased Spell
   Damage); magic names come from the affixes; rarity and mods are saved with the item (characters and stash);
-  `/mod`, `/mods`, `/rarity`, `/sockets` (colours and links, e.g. `/sockets RRGBBB`) on the held item.
+  `/mod`, `/mods`, `/rarity`, `/sockets` (colours and links, e.g. `/sockets RRGBBB`) on the held item;
+  `Game_SOCKET_CAPACITY=1..6` (dev) lets `/sockets` give any socketable base that many, e.g. a 6-link wand (its own
+  capacity is 3).
   Magic and rare items: affixes rolled from Mods.dat by domain, item level, the item's tags and families, rare names
   from Words.dat; equipment drops magic / rare and unidentified; a Scroll of Wisdom identifies (C→S 0x71);
   `/item <type> magic|rare`, `/roll`.
   Equipped items' mods count on the character: global stats like a passive's (life, resistances, attributes, spell
-  damage …), the main hand's local crit, attack speed and accuracy on the weapon.
-  Armour/evasion local flat, increased and hybrid mods and quality feed the shared character pools and panel.
+  damage …), the main hand's local crit, attack speed and accuracy, its local physical damage and quality,
+  and its local added elemental/chaos damage (`ItemWeapons`).
+  Armour/evasion/ES local flat, increased and hybrid mods and multiplicative quality feed the shared pools and panel
+  (`ItemDefences`, [13](../docs/protocol/13-items.md) §2c).
   Armour, evasion and ES share a saved variable base roll, sent in the native Armour component.
   Fresh armour gets an ordinary roll once; legacy items keep their minimum, and ordinary crafting preserves the roll.
   Native checks verified ordinary/special rolls, quality composition, equipment refresh and relog preservation.
-  The active hand's local physical damage modifiers also feed its attack packet.
-  Other local weapon damage variants, uniques and special mods still depend on their individual mechanics (#60).
+  Other uniques and special mods still depend on their individual mechanics (#60).
+  Mageblood's supported subset is below.
   Code: `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`,
-  `ItemCatalog.cs`, `CharacterSaves.cs`).
+  `ItemWeapons.cs`, `ItemDefences.cs`, `ItemCatalog.cs`, `CharacterSaves.cs`).
   Docs: [13](../docs/protocol/13-items.md) §2a-§2c.
 - Gold: shared by the account's characters of one league (S→C 0x2a9), saved with that league's stash, sent on area
   entry; every league has its own stash and gold, Standard keeps the account's stash from before (`AccountStash.Key`);
@@ -87,6 +91,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [15](../docs/protocol/15-progression.md) §3.
 
 ## Partly working
+
+- **Unique items and Mageblood (verified live 2026-10-26).** The client data links a unique's name (`Words` wordlist 6)
+  and artwork (`UniqueStashLayout` → `ItemVisualIdentity`), but not its mods, so `UniqueCatalog` curates each definition.
+  `/item Mageblood` creates the Heavy Belt unique with its name, artwork and fixed mods (the Strength is the base
+  implicit); the client shows the unique tooltip.
+  While Mageblood is worn, the leftmost 2–4 magic utility flasks in the flask bar apply their effects permanently without
+  charges or a timer, and using them is refused (client mod, server backstop); the stats refresh when the belt or the
+  flask bar changes.
+  Not yet: other uniques, unique drops/chancing, the permanent flask buff icons, the "effects cannot be removed"
+  backstop, the Foulborn rightmost variant and Enkindling (`UniqueCatalog`, `Program.Mageblood`;
+  [13](../docs/protocol/13-items.md) §2e, §8a).
 
 - Essence crafting (2026-10-25, automated verification; real-client use pending): all 105 craftable essences resolve
   their exact class-specific guaranteed mod from Essences.dat, including tier-8 and Desolation.
@@ -167,7 +182,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- Uniques and special mods (#60), items' base damage and defences;
+- Most uniques and special mods (#60), and unique drops/chancing; only Mageblood has a definition so far;
   currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb,
   Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb,
   Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble,

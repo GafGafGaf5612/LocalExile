@@ -78,7 +78,7 @@ static class PanelStats
         new("fire_damage_immunity", ["base_fire_immunity", "elemental_damage_immunity"], Flag: true),
         new("cold_damage_immunity", ["base_cold_immunity", "elemental_damage_immunity"], Flag: true),
         new("lightning_damage_immunity", ["base_lightning_immunity", "elemental_damage_immunity"], Flag: true),
-        new("chaos_damage_immunity", ["chaos_immunity"], Flag: true),
+        new("chaos_damage_immunity", ["chaos_immunity", "keystone_chaos_inoculation"], Flag: true),
         new("physical_immunity", [], Flag: true),
         // Main hand and off hand: the global stats and that weapon's own
         .. Hands(h => new($"{h}_chance_to_blind_on_hit_%", ["global_chance_to_blind_on_hit_%", "attacks_chance_to_blind_on_hit_%"],

@@ -21,6 +21,13 @@ All agent and contributor documentation is in [Agents/](Agents/). Read these fir
   Gateway tests use the shared `tests/GameServer.Gateway.Tests/TestEnvironment.cs` module initializer.
   Do not change the process working directory in individual tests; fix the shared test setup if it fails.
 - **Write all commit messages and pull request titles and descriptions in English.**
+- **Verify the current integration base before declaring a PR ready.** Fetch the latest `main` and update the
+  branch using the requested repository workflow; resolve shared code by preserving both mechanics.
+  Re-run the solution build and all three required test suites, including regressions for the combined behavior.
+  A PR merging into an old base, or GitHub reporting it mergeable alone, is not evidence for a proposed merge block.
+  If related PRs share code or behavior, test their exact heads and intended order in a disposable integration checkout.
+  Keep unrelated PRs out of the published feature branch; report any remaining integration conflict or untested order.
+  Record the tested base/head revisions and repeat affected checks when those inputs change.
 - **Do not add automatic client-archive writes to standard startup.** Feature-specific client data changes need
   separate maintainer review; keep read-only extraction separate from any explicit client maintenance tool.
 - **Never commit game files or third-party programs:** `Client/`, `data/` (except `data/schema/`), Ghidra, the JDK,

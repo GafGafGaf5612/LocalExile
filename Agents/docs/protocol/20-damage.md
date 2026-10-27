@@ -184,7 +184,7 @@ Path of Building pinned 16de4b82 maps "per N armour" to a PerStat Armour/div tag
 [ModParser](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82/src/Modules/ModParser.lua#L1472).
 [ModStore](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82/src/Classes/ModStore.lua#L460)
 floors the groups before multiplying the modifier.
-The separate chance to double armour against a hit does not change this rating and remains unimplemented here.
+The separate chance to double armour against a hit does not change this rating; see section 2f.
 
 The shared increased-attack stat feeds supported attacks and added damage, including maximum-mana lightning.
 Weapon physical damage now consumes that same generic attack stat, with signed sums kept wide before cancellation.
@@ -200,6 +200,147 @@ Negative armour and modifier removal restore 100; maximum-mana lightning compose
 Two additional panel-only checks show weapon physical 2â€“5 becoming 6â€“15 at 45000 armour.
 Relog clears the development effect.
 Phrecia node admission and the rest of Behemoth remain separate work; this consumer does not enable a new chooser.
+
+## 2e. Armour against incoming chaos hits
+
+`base_armour_applies_to_chaos_damage` (client key 12064) is a boolean source.
+The current `PassiveSkills` node 29437, Incorruptible, grants value 1.
+`PassiveBonus` carries it through `CharacterStats.Bonus` into `Pools.ArmourAppliesToChaosDamage`.
+It never changes `Pools.Armour`, the native final rating or Steel Willed's offensive input.
+
+Incoming chaos hits first take the ordinary capped chaos resistance, including the Kitava penalty.
+`PlayerHitMitigation.AfterResistance` then uses the existing rounded armour model against that remaining damage.
+For example, 1000 chaos against 50% resistance and 1000 armour leaves 500 before armour.
+The armour reduction is 29%, so 355 remains; using the raw 1000 in the denominator would incorrectly leave 415.
+The existing 90% armour mitigation limit applies, with no additional physical reduction contributed to chaos.
+Physical and elemental reduction retain their existing rules and per-type rounding.
+Immunity zeroes the component before this pass.
+Fortification follows mitigation; suppression and block keep their existing command/contact ordering.
+Energy Shield then absorbs non-chaos damage, while the mitigated chaos share still bypasses it.
+Mixed monster hits mitigate each type before computing that bypass share and the existing Fortification floors.
+
+The calculation order comes from Path of Building commit `16de4b82d57f1c0de6eb40f37143c32d4da36a02`.
+Its [CalcDefence.lua][pob-chaos-armour], `applyDmgTakenConversion` lines 97-116, uses resistance-adjusted damage
+in the armour denominator and keeps additional reduction separate per damage type.
+LocalExile retains main's existing integer rounding instead of changing the global physical model.
+
+[pob-chaos-armour]:
+  https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82/src/Modules/CalcDefence.lua#L97-L116
+
+`MonsterSwing`, `/hit`, `/spellhit` and `/blockhit` share the hit-only mitigation pass.
+DoT uses its resistance-only path and never enters this helper.
+`/set_stat base_armour_applies_to_chaos_damage 1` enables the raw development source.
+Value 0 replaces a passive source with false; `off` removes the replacement and rebuilds from current sources.
+Development values are connection-local and do not survive relog.
+Raw-node tests inject 29437 only as a stat fixture and do not establish Phrecia allocation or class selection.
+
+Automated checks cover resistance ordering/caps, flag-off identity, immunity, zero/extreme armour,
+physical-reduction isolation, final rating/offence, source replacement/removal and fresh connection reload.
+Framed chat dispatch and real monster swing tests cover suppression, mixed damage, block, ES and Fortification.
+Current-main integration preserves Strength-derived Mana and Chaos Inoculation in the same pool calculation.
+Regression controls cover complete Strength groups, independent raw-source removal and current-Mana clamping.
+The parsed Mana refresh retains its send-gate snapshot; restoring a source does not refill current Mana.
+Eleven native controls use a new unascended Marauder, raw key 12064 and a level-one Plate Vest fixture.
+With 969 Armour, a raw 20-chaos hit removes 20 Life while disabled and two while enabled.
+At 50% chaos resistance it removes one Life with the enabled armour pass.
+Physical and fire controls preserve their ordinary behavior.
+At 50 Armour and 50% chaos resistance, the same chaos hit removes five Life even with 80% additional physical
+and elemental reductions active; controls confirm those reductions still affect their own types.
+The native Armour rating stays unchanged when the flag toggles.
+Explicit zero, removing the development replacement, source restoration and relog are verified.
+These controls establish actual player Life loss for the development hit route.
+Mixed monster packets, suppression, block, ES, Fortification and DoT separation retain automated coverage.
+The raw-source controls do not select Incorruptible or establish whole-class gameplay.
+The test records the exact embedded Git versions, DLL hash and process working directory.
+Recent-hit armour composition is covered below; partial armour percentages, other class mechanics and local item
+defences remain separate work.
+
+## 2f. Steel Willed: temporary incoming-hit armour
+
+`RecentEnemyHits` implements the bounded double-armour consumer, independently of the outgoing bonus in section 2d.
+The prior four seconds of accepted enemy contacts supply key 4534.
+Key 20680 scales that count with a 30% contribution cap, then generic chance key 8404 adds before a 0..100 clamp.
+The result is published as virtual key 12268.
+One lazy decision per unblocked relevant hit supplies physical and enabled chaos mitigation without changing pools.
+The current contact records after resolution, including blocked/zero-damage contacts, under the same combat lock.
+Death, shutdown, area entry and delayed-swing epochs use the explicit connection lifecycle.
+The existing stat send gate and player tick publish current counts, including idle expiry.
+See [Steel Willed armour](../game/steel-willed-armour.md) for primary addresses, model v1, dev-input semantics,
+current-main regressions and the eighteen historical raw-input native checks from original head `777b292`.
+The rebased head and exact batch composition await fresh native verification.
+
+## 2f. Spell skills deal no damage (#293)
+
+The extracted 3.29.3b `Stats.dat` row 5340 is `spell_skills_deal_no_damage`, client key 5341.
+`PassiveSkills.dat` node 49937, Rampager, supplies value 1.
+This consumer reads the raw stat already carried by the caster's character-stat dictionary.
+It adds no pool field or pool rebuild, class admission, passive allocation exception or graph bypass.
+
+`SkillDamageContext` takes an explicit skill kind and the actual caster's stats, with no implicit owner lookup.
+A nonzero flag suppresses the entire outgoing Spell packet, including physical, elemental and chaos components.
+Attack classification takes precedence for mixed Attack/Spell skills, matching `SkillHitPlan`.
+Default melee/bow attacks and attack gems keep their damage, including bonuses granted by Spell-tagged auras.
+Aura activation, reservation and buffs remain available.
+The rule does not prohibit skill use: casting, mana costs, action timing, cooldowns and visuals retain their paths.
+
+`SupportedHit` suppresses the final supported packet after added damage, conversion and support multipliers.
+Existing projectile and area execution consumes that packet before rolling damage and applying target mitigation.
+The standalone `SpellHit.Resolve` seam applies the same rule with its separate caster dictionary.
+The final `GemSkills` record publishes the supported packet's spell and main-hand ranges, per-use damage and DPS.
+Explicit zeros replace inherited weapon ranges, so server Life loss and native panel inputs agree.
+Removing or zeroing the source restores the next packet without rebuilding pools.
+
+Gem projectiles retain main's impact-time stat resolution, including flag addition or removal during flight.
+Area hits resolve at their existing hit time; ordinary bows retain their existing release snapshots.
+No projectile snapshot, Fireball impact art/shape (#262) or broader projectile execution (#258) is added here.
+Their future spell impact paths can reuse the same explicit context.
+
+RF enemy burn passes its outgoing `DamageOverTime` through the context on every existing monster tick.
+Suppression sets the rate to zero, preserving fractional carry and enemy aura membership.
+The resource-recovery loop's RF self-burn remains an independent self-damage cost, including ES absorption.
+Restoring the source's damage resumes enemy burn without restarting RF.
+This change does not implement a separate RF or other DoT panel; existing hitless-spell hit rows remain zero.
+
+Zero-damage hit policy is preserved deliberately.
+Supported hits still roll block/critical state, accept the hit, update the existing hit timestamp and run callbacks.
+On-hit/noncritical charge events and existing notifications therefore still occur on an accepted zero-damage hit.
+Main's generic on-hit Rage gain also remains eligible on accepted spell contacts, including suppressed hits.
+Attack/melee Rage gains and Fortification still require their own attack/melee eligibility.
+No primary evidence in this slice establishes a different callback rule; no damage-based hit-admission gate is added.
+RF remains a DoT tick and does not create hit callbacks.
+
+Main has no full owned-actor executor.
+Independent minions or daemons must supply their own actual-caster stats to this seam when that executor is built.
+An owner's suppression is not inherited merely because it owns the actor.
+Future owner-derived integration needs explicit per-skill ownership rules and separate production-route coverage.
+No archived actor executor, Rampage, Vaal or new resource cost is imported.
+
+Automated checks cover actual supported spell constructors, selected native records and encrypted dispatch to Life.
+They include physical/elemental/chaos hits, source default/on/off/removal, supported added chaos and charge callbacks.
+Released Fireball tests witness the glide before adding or removing the source, then check impact Life.
+Default melee/bow, attack gems, Anger/Wrath/Hatred attacks and RF enemy/self ticks are covered.
+Current-main regressions compose local weapon quality, supported additions, charges, conversion and Rage.
+Parsed source replacements preserve Strength-derived Mana, chaos-hit armour and Mageblood flask deduplication.
+Maximum-Mana added lightning remains attack-only, and restoring a source does not refill current Mana.
+Unpaid casts keep main's action-intent ordering without releasing damage or granting hit resources.
+Utility reservation/cooldowns, cosmetic target identity and RF fractional carry retain combined regression coverage.
+Historical native checks at original head `e80a81c` used an unascended Witch and raw development inputs.
+The eleven controls used a synthetic level-one Plate Vest; they do not verify the rebased candidate.
+Fireball dealt a fixed 200 chaos and Ice Nova 130 to actual native target Life; the flag reduced both to zero.
+Native Fireball mouse actions exposed matching selected ranges and DPS, including explicit zeros with the flag.
+Paid casts still corrected native Mana, signed nonzero flags suppressed damage, and removing the flag restored it.
+A default attack still dealt 100 with the spell flag active.
+With RF installed, enemy Life stayed at 4516 while actual player Life fell from 259 to 209.
+Removing the flag resumed enemy burn to 4455; reapplying it stopped that existing burn without restarting RF.
+Relog cleared the development source.
+In-flight source changes, conversion/gain, supported additions and aura attack bonuses have automated coverage.
+The ordered #290 / #294 / #296 / #300 integration at `c9cd1864` passes 28 fresh native controls.
+On its new level-one unascended Marauder, a level-one Fireball deals fixed 200 chaos, then zero with the flag.
+An attack still removes 100 native target Life while flagged; removing the flag restores Fireball's 200.
+The same owner retains converted mana 29 and Armour 251; two existing synthetic accuracy mods ensure a 100% attack roll.
+The real native Life reads and accepted-hit logs agree, with Gateway/Core/Storage/Host revisions and hashes pinned.
+RF, Ice Nova, relog and selected-panel controls above remain attributed to the original head.
+No native allocation of Rampager, owned-actor execution or whole-class acceptance is claimed.
 
 ## 3. Damage over time and ailments
 
@@ -230,8 +371,8 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
 - Fireball builds its packet from `spell_minimum/maximum_base_<type>_damage` (`SkillCatalog.HitDamage`), applies the
   spell's increased-damage stats per type (`SpellDamage.Packet`), then the player's and the skill's conversion stats,
   rolls it and sends the life change.
-- Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands, applies each
-  type's resistance and then armour to the physical part.
+- Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands.
+  Each type takes resistance, then shared incoming hit mitigation, including enabled chaos armour (section 2e).
 - Player hits on monsters (default attack, gem projectile and area hits) roll each type once and reduce it by the
   monster's base resistance: `MonsterTypes.Resistances` → `MonsterResistances`, the level's
   `DefaultMonsterStats.Difficulty` (1/2/3) picking the Normal/Cruel/Merciless columns (`MonsterResistanceCatalog`,
@@ -267,9 +408,9 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   Earlier native evidence remains attributed to its original heads; a stale #225 DLL did not test #226.
   Rebuild after the final checkout and verify embedded Git versions, hashes and the running DLL before `-NoBuild`.
   See [native build provenance](../dev/client-control.md#build-provenance-for-native-verification).
-- `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
-  `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
-  `MitigatePhysical`.
+- `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance.
+  Incoming hit commands and monster swings share `PlayerHitMitigation` after resistance.
+  Righteous Fire keeps the single-value resistance-only DoT path.
 - `/hit` and `/spellhit` still use a single type; conversion is not applied to those debug commands.
 
 ## 5. Continuous resource updates (2026-10-24)

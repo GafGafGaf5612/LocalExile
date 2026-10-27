@@ -173,14 +173,74 @@ with level), the bases and attributes from Characters.dat:
 | `maximum_energy_shield_+%` | intelligence / 5 |
 | `melee_physical_damage_+%` | strength / 5 |
 
+`AttributeModifiers` combines class attributes and every flat passive/active-equipment source before scaling once.
+It supports the existing single, pair and all-attribute flat stats, plus `strength_+%`, `dexterity_+%`,
+`intelligence_+%` and `all_attributes_+%`.
+For each attribute, its own increase and the all-attribute increase add in the same increased bucket.
+Raw attribute totals stay wide through per-key aggregation, overrides, bucket cancellation and scaling.
+The result is `floor(flat * (100 + increased) / 100 + 0.5)`, clamped to 0 through `int.MaxValue`.
+Only the final attributes and native integer views are bounded; clipped display values never feed the raw calculation.
+Derived evasion, Iron Reflexes, energy shield and melee bounds also clamp before integer conversion.
+Life and mana stop at `int.MaxValue`, matching their native publication and reservation consumers.
+Raw attribute rebuilds clamp current resources to the new caps without refilling or resurrecting the owner.
+They publish fresh mana reservation even when current mana does not change.
+The shared mana sender samples both values under the combat lock after acquiring the send gate.
+Idle-aura and blocked-send reservation behavior has decrypted command-wire coverage.
+
+This rounding model follows PoB commit `16de4b82d57f1c0de6eb40f37143c32d4da36a02`:
+[stats](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Modules/CalcPerform.lua#L401-L408),
+[buckets](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Modules/CalcTools.lua#L14-L35) and
+[rounding](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Modules/Common.lua#L680-L688).
+Those functions do not separately floor the signed flat bucket or increased scale factor at zero.
+Artificial raw input of -10 flat and -150% increased therefore gives +5; the nonnegative clamp follows rounding.
+It is a pinned server model; receiving its computed fractional boundaries does not prove official-server parity.
+The extracted Behemoth small nodes (4561, 9053, 22167 and the other `AscendancyCustomBerserker` small nodes)
+supply 3% increased Strength and 10% increased Armour through ordinary raw stats.
+That source evidence does not enable Phrecia selection or establish native class gameplay.
+
+The final attributes feed life/melee damage, accuracy/evasion and mana/energy shield respectively.
+Existing derived-pool divisions stay unchanged, including odd attributes and this server's Intelligence / 5 ES increase.
+An explicit `AttributesResolved` pool marker distinguishes calculated zero attributes from legacy uninitialized pools.
+Record clones retain the marker; three saturated attributes cannot overflow a sum-based fallback check.
+`ClassAttributes` sends the same final values as both panel attributes and `virtual_*_for_requirements`.
+Equipment requirements recalculate these values from active raw sources at each existing activation stage
+([items](13-items.md#2d-requirements-and-inactive-items)).
+Raw attribute `/set_stat` inputs replace their own passive/item key, including zero, and rebuild pools immediately.
+Final `/set_stat strength`, `dexterity` or `intelligence` keeps its development display/requirement override semantics.
+Those final overrides never become flat sources or change the derived pools.
+Clearing a raw source, refunding a passive or swapping weapons rebuilds from raw inputs without compounding increases.
+Automated boundary, production-pool, command and equipment regressions pass.
+Historical evidence at `60044ad` covers thirteen native controls on an unascended Marauder with raw inputs.
+They verify 32 Strength becoming 33 at 3%, 40 at 25%, and 48 when another 25% all-attribute increase is added.
+The same all-attribute input sends 18 Dexterity and Intelligence from their flat 14 midpoint.
+Life, mana and native requirement stats follow the final values.
+A Plate Vest supplies 19 Armour when its 12-Strength requirement is met, stops contributing below it,
+and resumes after the final Strength rises again.
+Calculated all-zero attributes stay zero; removing the sources and relog restore the expected base pools.
+These controls verify delivery and shared consumers, not the official server's fractional attribute algorithm.
+Eleven native controls at rebased source `00b246f2` on main `79cc0337` verify the Strength-mana composition.
+On a new level-one Marauder, eight mana per four Strength changes maximum mana from 47 to 111.
+Strength 40 gives 127 mana; Strength 48 and Intelligence 18 give 145.
+A temporary active-vest 100% mana modifier raises that result to 290 once; removing it restores 145.
+Reduced attributes disable the ordinary vest at Strength 8 with 58 mana and restore it at Strength 16 with 75 mana.
+Clearing the inputs restores Strength 32, mana 47 and Armour 19.
+Every control reads the actual native final and requirement stats; Gateway/Core/Storage/Host revisions were pinned.
+The check uses raw development inputs and ordinary equipment, without enabling a Phrecia class.
+The ordered #290 / #294 / #296 / #300 integration at `c9cd1864` passes 28 fresh native controls.
+Eight conversion controls preserve final Strength groups and the half mana from odd final Intelligence.
+At final Strength 16 and Intelligence 7, conversion uses B=75.5 and publishes 15 mana and 140 Armour with the vest.
+Combined regressions cross the rounded four-Strength boundary, then verify mana increases and truncation once.
+Equipment, inactive/current weapon snapshots, zero/off raw replacements and idle aura reservation share that result.
+Inactive-weapon, cascading-equipment, passive-refund and active-aura composition still need native coverage.
+
 Maximum mana also includes the ordinary flat and increased mana sources from passives and active equipment.
 `X_mana_per_4_strength` (Stats row 4992, client key 4993) contributes
 `floor(max(0, final Strength) / 4) * signed raw value` to that same flat mana bucket.
-`CharacterStats.For` uses its existing final `str`; the existing intelligence `/ 2` and final truncation are unchanged.
+`CharacterStats.For` uses rounded final Strength; Intelligence `/ 2` and final mana truncation are unchanged.
 Mana increases apply once to the combined flat total.
 The active consumer uses wide signed arithmetic, clamps nonpositive totals or multipliers to zero, and saturates at
 `int.MaxValue` for the native maximum and existing reservation/damage consumers.
-A missing or zero source keeps the original mana calculation byte-for-byte, including its signed edge behavior.
+A missing or zero source keeps ordinary mana rounding and signed flat-mana/multiplier behavior.
 `PassiveBonus` reads the generic source; `/set_stat X_mana_per_4_strength <value>` replaces it and rebuilds pools.
 The rebuild clamps current mana to the new unreserved cap without filling it when maximum mana increases.
 It explicitly sends the mana pool's `0x1b1`, including reservation, even when current mana is unchanged.
@@ -190,7 +250,7 @@ An explicit zero suppresses the source; repeated builds cannot compound it, and 
 Final native `strength` overrides remain presentation/requirement inputs and do not change this pool calculation.
 Reservation, native `maximum_mana` and maximum-mana attack lightning all read the resulting pool.
 Mental Conditioning (graph node 38080) supplies raw value 8, but its keys 9548 and 21159 are separate, unimplemented
-mechanics; this consumer does not enable Phrecia selection or claim the full node/class.
+mechanics; mana-to-armour conversion and Phrecia selection remain separate work.
 Automated arithmetic, production-source and actual command/reload checks pass.
 Thirteen native checks use a fresh unascended Witch, raw key 4993 and synthetic Plate Vest modifiers.
 Fourteen and fifteen Strength grant three groups: maximum mana rises from 56 to 80 at raw value 8.
@@ -249,6 +309,10 @@ the same hit-chance formula as accuracy, so the chance to evade is `100 - Accura
 (`DamageModel.EvadeChance`). Monster melee rolls the same formula against `DefaultMonsterStats.Accuracy` at the
 monster's level and evades before damage; physical monster hits then go through armour and block. `/defences` prints
 both against a reference monster of the character's level. Life and mana still ignore passives and items.
+**Chaos Inoculation** (`keystone_chaos_inoculation`) applies to that life: maximum life becomes 1 after the life
+modifiers (the character's energy shield stays the real pool), and the player is immune to chaos damage through the
+same damage-immunity table as the panel's `chaos_damage_immunity` row. The pre-CI maximum life that the game uses for
+stun and ailment thresholds is not modelled.
 
 The default attack's damage (`Unarmed.HitDamage`) is a physical `DamagePacket`: MinDamage..MaxDamage × (1 +
 (`damage_+%` + `physical_damage_+%` + `melee_damage_+%` + `melee_physical_damage_+%`) / 100). The packet goes through
@@ -922,11 +986,12 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `double_holy_strike_animated_weapons_limit`: 0x1400c37d1 registers 0x14279ee30), and the Templar rig's missing
   mace/sceptre stances (`Art/Models/CHARACTERS/Templar/rig.amd`).
 - **Damage** (`SpellHit.cs`, `SpellDamage.cs`). Projectile hits, area hits and the selected spell's panel
-  share the same typed packet: the catalog base hit, flat added spell damage scaled by damage effectiveness,
-  applicable generic/spell/elemental/type/projectile increases, supported aura more multipliers, then conversion
-  and gain-as-extra. The skill's own level/quality modifiers replace a player's value on the same key, preserving
-  the existing combat rule. Conversion uses separate character inputs: player keys win, and level-only skill inputs
-  fill missing keys. Quality conversion is still excluded, as it was before this panel change.
+  share `SupportedHit`'s final typed packet: catalog base damage, effective added damage, applicable increases,
+  aura/support multipliers, conversion and gain-as-extra, then the actual caster's spell-damage restriction.
+  Selected spell and inherited main-hand ranges now use this same supported packet, including explicit zeros.
+  Its existing player/skill stat merge and support conversion order are unchanged.
+  `SpellHit.Resolve` retains its standalone separate-input contract for callers of that seam.
+  See [20](20-damage.md) section 2f for key 5341, zero-hit callbacks, RF and native verification boundaries.
   Damage ranges are floored only for display/rolls; the packet keeps fractions through conversion.
   The displayed per-use average and DPS retain the unrounded packet average, before critical strikes and target
   mitigation. DPS uses the skill's emitted casts-per-second value, not the weapon's attacks per second.
@@ -977,7 +1042,30 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   path; the type register knows it from the table). `Metadata/Projectiles/Projectile` deserializes Positioned,
   Animated, BaseEvents and Projectile, so the blob is Positioned, one Animated byte and the tasks byte
   (`ProjectileObject`; the Animated component is index 1), then 0x1a9 (wake zone). The real link between a skill and
-  its projectile is unknown; the Gateway matches the Id.
+  its projectile is unknown; the Gateway matches the Id. Multiple projectiles are one object each, spread around the
+  aim (`ProjectileSpread`: `number_of_additional_projectiles`, `projectile_spread_radius` or 10°,
+  `Game_PROJECTILE_SPREAD`): the client fires none of its own. Kinetic Blast's effect is ClusterBurst, which names no
+  Projectiles row, so it falls back to the wand attack's `Metadata/Projectiles/WandProjectile` (3260) and plays
+  `Metadata/Effects/Spells/cluster_burst/big.ao` where it lands; a landing on bare ground runs one area hit of the
+  skill's radius (its secondary explosions are not modelled).
+- **Pierce.** Pierce Support's `projectile_base_number_of_targets_to_pierce` (2 at level 1, 4 at level 20) and the other
+  pierce stats give a hit budget of 1 + pierce: the projectile passes through that many monsters, each hit landing as
+  the glide reaches its cell; the support's more Projectile Damage is part of `SupportedHit`. `always_pierce` is
+  unlimited. The return leg uses the same budget; Returning Projectiles Support's `returning_projectiles_always_pierce`
+  hits all targets. Contacts are observed during the flight, not selected along the launch line: a target that
+  leaves the line before contact is missed, one that walks into it is hit, and the budget is spent only at real
+  contacts. The return leg is swept the same way as the projectile flies back.
+- **Returning projectiles.** A projectile whose stats allow it (`projectiles_return`, `attack_projectiles_return`,
+  `projectile_return_%_chance`; `skill_projectiles_cannot_return` forbids; `Game_PROJECTILE_RETURN` forces) returns
+  from a target/terrain collision or from maximum distance (Freezing Pulse only from a collision), flies back to the
+  caster and 15 m (150 cells) past them, and is then removed (`Game_PROJECTILE_RETURN_DISTANCE` in cells,
+  `returned_projectile_speed_+%`). Only one return per projectile; Spark and the other self-moving/rain/tornado
+  secondary projectiles cannot return; Fireball explodes after the return. The return leg damages every monster along
+  it except the one it returned from, with Returning Projectiles Support's less Damage
+  (`support_return_returning_projectiles_damage_+%_final`), and `returning_projectiles_always_pierce` lets it hit all
+  of them (otherwise the first only). A simultaneous volley is shotgun-limited to one hit per target, out and back.
+  The return's hits land as the returning projectile reaches each cell, not when the turn happens; ailments and
+  pierce/fork/chain priority are not modelled.
 - **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
   cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
   (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets
@@ -1240,6 +1328,80 @@ Relog cleared the transient developer flag.
 These controls verify the shared restriction, not Rampager allocation or complete Enduring Cry behavior.
 Future composition with outgoing Spell or incoming armour changes must retain this caster-only admission check.
 
+## 10c. Actor restriction: own aura skills disabled (#304)
+
+Static inspection of the pinned 3.29.3b client establishes these virtuals (wire keys, not JSON row indices):
+
+- `your_auras_are_disabled` (11075) is `base_your_auras_are_disabled` (21148) OR
+  `keystone_herald_of_doom` (11881), with either signed nonzero input counting as true.
+  Registration `0x1400dd340` selects callback `0x14289a420`.
+  Rampager node 49937 supplies 21148; its spell, warcry, scale and Rampage effects are independent.
+- `skill_is_aura_skill` (15801), callback `0x1428cf720`, is `base_skill_is_aura_skill` (3004) OR
+  (`curse_apply_as_aura` (2730) AND `skill_is_curse` (2532)).
+  Registration is `0x1400e4f60`.
+  `skill_disabled_by_stat` (15798), callback `0x1428cf770`, tests 15801 and then caster 11075 in its aura branch.
+  Registration is `0x1400e4fc0`; other branches remain independent restrictions.
+
+Classification follows GrantedEffects.ActiveSkill to ActiveSkills.ActiveSkillTypes and ActiveSkillType.Id.
+Aura type row 38 has FlagStat row 3003, giving wire key 3004.
+All 17 supported ordinary self auras are typed Aura, as are unsupported Pride, Flesh and Stone, Vaal Haste and banners.
+Reservation alone is insufficient: Heralds, Arctic Armour, Tempest Shield, Petrified Blood and Blood and Sand
+are not Aura.
+RF is not Aura even though one of its buffs is named `righteous_fire_aura`.
+Neither BuffDefinitions.IsSkillBuff nor a buff's name or duration identifies an aura.
+Accepted linked Blasphemy adds Aura and supplies 2730 to an AppliesCurse skill (flag 2532).
+The metadata and native skill flags are published without adding a curse-aura executor.
+Admission, preflight, cast and acknowledgement checks carry the actual skill ID and its accepted supports.
+Two copies of Enfeeble can classify differently: the linked copy is an aura; an unlinked copy is not.
+Remembered restoration checks the candidate gem's own requirements rather than another copy of the same effect.
+
+The Gateway resolves the restriction from current caster passive/equipment sources before any skill overlay.
+Developer values replace each complete raw input; an explicit final 11075 replacement also wins, including zero.
+Actor 11075 and skill 3004/15801 are published coherently; an own-aura restriction sets skill 15798 to 1.
+Publication preserves an independently supplied 15798 reason and never clears all skill flags.
+Ground, object/self, eligible instant-object and the shared pre-cost/cooldown gate reuse the warcry admission seams.
+The locked activation boundary rechecks the restriction; the unsupported instant-ground aura alias stays unsupported.
+The skills and bindings stay granted while their uses are prohibited.
+Ordinary ground/self/object acknowledgement gates recheck the current own-aura restriction under the state lock
+before committing native use or cooldown publication; a refused acknowledgement cannot continue into a cast.
+The original action/connection ownership predicates and independent accepted Warcry/RF behavior remain in force.
+
+**LocalExile lifecycle policy:** a temporary restriction suspends active self-owned auras
+and retains ActiveAuras intent.
+Both source and received buff instances end once, reservation and bonuses cease, and current mana gains no refill.
+Lifting the restriction restores available remembered ordinary self auras once, using fresh instances and a mana clamp.
+Restoration is not a manual activation and does not recheck transient cast affordability.
+Death still clears saved intent, including while runtime effects are suspended.
+The inspected native admission virtuals do not prove this official-server lifecycle or automatic restoration policy.
+
+Pool/raw-stat reads detach restricted self auras without recursing through CharacterPlayerStats or aura restoration.
+At the send gate, reconciliation precedes player, Actor, mana and initial object snapshots.
+Rage and Fortification full snapshots share this batch; unchanged Rage still publishes pending aura changes.
+Presentation diffs against the instances actually sent on this connection, so queued adds cannot resurrect old buffs.
+Loading may restore runtime intent before a player object exists; dirty/presented state remains pending until creation.
+Initial 0x2b9 contains reconciled stats/pools, then entry replays each pair once on that object.
+Closed/leaving connections cannot restore or publish aura pairs.
+RF, flasks, Fortification, other temporary effects and foreign received buff instances are outside this owned list.
+
+Metadata, real-dispatch, source, decrypted loopback, creation-ordering and queued/lifecycle regressions are automated.
+Fifteen native controls on source `01e458d` used a fresh unascended Witch and level-one Clarity, Haste and Fireball.
+Actual Buffs vectors contained both owned instances for each active aura.
+At 700 maximum Mana, Clarity reserved 34 and Clarity plus Haste reserved 384; their regeneration/movement bonuses rose.
+The positive restriction removed both pairs, bonuses and reservation, retaining 316 current Mana without a refill.
+Ground, self/object and instant-object retries started no action; ordinary Fireball still dealt 200 actual damage.
+The installed Fortification buff and count remained present.
+Clearing the source restored fresh pairs once and clamped current Mana; repeated snapshots kept the same instances.
+Signed negative inputs, the Herald input and explicit final zero/negative replacements passed independent controls.
+Relog cleared the transient developer source and replayed the saved Haste pair in the combat area.
+Its Mana reservation was sampled after a zero Strength-mana source rebuild, after observing the entry pair.
+Death while suspended cleared intent, and resurrection did not restore a phantom aura.
+Initial attempts exposed observer gaps for null-GEPL basic actions and creation-only Mana, not gameplay failures.
+Evidence is in local `logs/phrecia-completion/own-aura304-20261027-111846` with exact artifact versions and hashes.
+Native grey-icon prediction, persistent restricting equipment and another client's party effects remain unverified.
+11881 is consumed only by this restriction; complete Lone Messenger, Rampager, Phrecia admission, party/minion auras,
+general reservations, banners, enemy auras and Vaal systems remain separate work.
+A foreign-source packet non-removal control establishes no party aura executor or gameplay behavior.
+
 ## 11. The skill bar
 
 - **C→S 0x4e** (5 bytes, class `0x1435bfc58`): `u8 slot, u16 skill id` (big-endian). Slot 2 is the right mouse button.
@@ -1443,13 +1605,14 @@ base without it, as the server's `SkillArea.Radius` adds it to its own base.
 ## 13. Auras and reservation
 
 **Persistent toggles (2026-10-25).** CharacterSaves.ActiveAuras stores stable GrantedEffects Ids,
-updated transactionally on every successful toggle and cleared for an active aura when its gem leaves.
+updated transactionally on every successful manual toggle; a missing gem suspends runtime effects and retains intent.
 On login/area connection, LoadProgress restores progress and evaluates usable gems first, then resolves
-saved aura ids to fresh skill and source/recipient buff ids. It checks total reservation against current
-mana, recalculates pools with the restored bonuses and initializes current mana to the unreserved amount.
+saved aura ids to fresh skill and source/recipient buff ids when town and caster restrictions allow them.
+It recalculates pools with the restored bonuses and initializes the fresh connection's mana to the unreserved amount.
 SendPlayer restores both buff records, so ground art, top-left icons and skill-bar indicators return.
-An absent/unusable gem or insufficient reservation skips that aura without discarding saved intent;
-it can return on a later login after requirements are met. Old saves without ActiveAuras start empty.
+An absent/unusable gem skips that aura without discarding saved intent; it can return after requirements are met.
+Remembered restoration clamps reservation/current mana rather than rejecting saved intent for transient affordability.
+Old saves without ActiveAuras start empty.
 
 **Expanded activation (2026-10-25).** Determination (buff 142), Grace (143), Discipline (148),
 Anger (149), Hatred (150), Wrath (151), Zealotry (1272), Malevolence (1274) and Envy (828)
