@@ -987,7 +987,9 @@ are the doodads, `0x142042fae`).
    descriptions (0x10), rooms with a tag (4 shrunk by RoomOverlap, 8: room data +0x20, the length of the tag at +0x10;
    the Azmeri arena's untagged maze rooms take overlays, `AzmeriLeagueBoss`, 2026-10-27), tagged tiles (2), the extra room pool's placed rooms
    (0x20: the unique rooms and shrines placed so far, pool +0x60, `0x141d8abb0`) and placed overlays (1); a cell takes an overlay only if the group's flags have every bit set there. Per group (FileOrder),
-   every view position (every third when a key edge has size 3) where it fits (`0x141ffef60`: no excluded bits, the
+   every view position (every third when a key edge has size 3, only for a tile graph: the graph record's +0x90 bit 0
+   marks a .dgr, MapWorldsSteppes; a dungeon's view is its whole record, margins included, ExpeditionCemetery; a room's
+   limit counts across the groups its orientations went to, the Expedition sulphite overlays; 2026-10-27) where it fits (`0x141ffef60`: no excluded bits, the
    area holds tiles lying inside it (`0x141d850b0`); `0x141ffa7b0`: the four corner grounds match (`0x141ffa470`), the
    heights agree, each side inside the map matches the edges across it (`0x141ffa390` / `0x141ff9cb0` /
    `0x141ff9ee0`)) is a spot of the group's weight. `0x141fffb70` draws spots (`Next(total)`), a group that still fits
