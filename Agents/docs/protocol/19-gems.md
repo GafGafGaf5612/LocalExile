@@ -89,9 +89,9 @@ The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0
   for is drawn red, "Requires level 70", and the item it is socketed in with it (checked live 2026-10-23: a level 20
   Fireball in an equipped wand, then `/set_level 10`). It still sends uses of the skill, though — it plays the cast
   animation and takes the mana off its bar before the server hears of it — so the server is the one that refuses. The
-  server treats the item as inactive, as it does a worn item the character is too low for (`CharacterStatSources`,
-  `InactiveItems`): its mods and its gems do nothing and its skills leave the Actor skill list, so the client has
-  nothing to cast (`GemSkillEffects`); a use that arrives anyway is refused before the action is started — no 0x1ab so
+  server checks a worn item's own requirements separately (`CharacterStatSources`, `InactiveItems`). An inactive
+  host contributes no mods or gem skills. An individual gem's unmet requirement leaves its qualified host active;
+  its Actor entry can remain while use is refused before the action starts (`GemDisabled`) — no 0x1ab so
   the cast does not run, and the mana pool goes out again so the cost comes back (`GemDisabled`, logged "(disabled,
   action not started)"). Socketing a gem the character is too low for is refused (0x30, `GemRequirementsUnmet`), and a
   gem's level stalls at the first one the character cannot meet by stopping its experience (`SkillCatalog.MaxLevelAt`, §1).
@@ -114,10 +114,16 @@ The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0
   (Haste, Fireball, Arc, Wrath, Grace, Discipline, Determination, Clarity, Anger, Hatred, Enfeeble, Flammability, the
   transforms' 60/40 and 33/33/34 splits, and five supports) with no mismatch: 100% at 70 is 155, 75% 119, 60%/40%
   98/68, a support at 70 is 111 and at 8 is 18, and low-level gems fall under 14 and show none. The server checks the
-  same values at socketing and for worn items (`GemAttributeRequirements`, `GemRequirementsUnmet`), against
+  same values at socketing and skill use (`GemAttributeRequirements`, `GemRequirementsUnmet`), against
   `virtual_strength/dexterity/intelligence_for_requirements` as the client does. Checked live 2026-10-23: a level 20
-  Fireball socketed at `/set_stat intelligence 200`, then 130 — at 130 the client reds the gem, the wand's mods stop
-  counting, and a use is refused.
+  Fireball socketed at `/set_stat intelligence 200`, then 130 — at 130 the client reds the gem and a use is refused.
+  The historical host-deactivation behavior is superseded: current per-gem admission retains a qualified host's mods.
+  Ordinary percentage attributes feed the final pool and requirement fields used here. Automated source-removal
+  controls verify Fireball 9's 67-Intelligence threshold while its Plate Vest remains active. Native controls in both
+  Standard and Ruthless independently confirm ordinary Q input starts Fireball at Intelligence 68, is explicitly
+  refused at 62, and starts again after recovery. The qualified Plate Vest retains 19 Armour in all three states.
+  The acceptance cases include the normal action, Mana cost and projectile; the refusal includes the requirement
+  diagnostic and no accepted action/projectile. Separate aura transitions still need their own lifecycle evidence.
 - **Supports:** GrantedEffects holds what a support applies to (`AllowedActiveSkillTypes`, `ExcludedActiveSkillTypes`,
   `AddedActiveSkillTypes`, `SupportsGemsOnly`) and its skill-bar letter (`SupportGemLetter`); a skill's types come from
   its ActiveSkills row.

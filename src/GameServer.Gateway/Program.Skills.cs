@@ -549,7 +549,7 @@ partial class Program
 
     // Why a gem skill may not be used: an actor restriction or an unmet level/attribute requirement.
     // The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
-    // Null when the actor restriction and requirements allow the effect.
+    // Null when the actor restriction and requirements allow the effect; a qualified host remains active.
     static string? GemDisabled(ClientState conn, int effect)
     {
         if (ActorSkillDisabled(conn, effect) is { } restriction) return restriction;
@@ -577,8 +577,8 @@ partial class Program
     // name, the gem's own level (from its experience; the experience stalls at the character's level requirement instead,
     // GainGemExperience) and quality. A transfigured or Trarthan gem grants its variant's skill, a Vaal gem its Vaal skill and
     // its base skill (ItemCatalog.GemEffects). Each skill keeps its id while its gem stays socketed (GemSkillIds): the client
-    // binds skill bar keys by skill id. A gem whose requirements the character does not meet makes its item inactive
-    // (CharacterStatSources), so it grants nothing here; a use that still arrives is refused (GemDisabled).
+    // binds skill bar keys by skill id. An item failing its own requirements grants nothing here. A gem
+    // failing its own requirement leaves its qualified host active and is enforced at use by GemDisabled.
     static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)> GemSkillEffects(string? character)
     {
         string name = string.IsNullOrEmpty(character) ? "Exile" : character;

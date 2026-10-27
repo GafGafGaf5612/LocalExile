@@ -90,6 +90,13 @@ static class ItemModStats
                 .Apply(baseAttributes.Str, baseAttributes.Dex, baseAttributes.Int);
         }, previous, mods);
 
+    /// <summary>Recalculate from active items using the same staged requirement policy.</summary>
+    public static (HashSet<uint> Inactive, IReadOnlyList<Item> Active) ResolveEquipment(
+        IReadOnlyList<Worn> worn, int level, ModCatalog mods,
+        Func<IReadOnlyList<Item>, (int Str, int Dex, int Int)> totalsOfActive,
+        IReadOnlySet<uint>? previous = null) => ResolveEquipment(worn, level,
+            active => totalsOfActive(active.Select(w => w.Item).ToArray()), previous, mods);
+
     /// <summary>Resolve the same staged policy with final attributes recalculated from the active raw sources.</summary>
     public static (HashSet<uint> Inactive, IReadOnlyList<Item> Active) ResolveEquipment(
         IReadOnlyList<Worn> worn, int level, Func<IReadOnlyList<Worn>, (int Str, int Dex, int Int)> finalAttributes,

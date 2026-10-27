@@ -322,19 +322,26 @@ Native all-zero requirement values, source clearing and relog are also verified.
 Own-item percentage retention, cascading equipment and weapon-set combinations retain automated coverage.
 See [attribute calculation and rounding model](11-skills.md#4-the-default-attack).
 
-A gem socketed in a worn item whose level or attribute requirement the character no longer meets makes that item
-inactive as well (`CharacterStatSources`: the gem's requirements are checked per socket with `GemRequirementsUnmet`),
-so the item counts for nothing and the Actor skill list leaves its gems out: with no skill, there is nothing for the
-client to cast ([19](19-gems.md) Â§2 "Requirements"). An inactive main-hand weapon is not there for the attack or for
-the weapon shape either: the default attack falls back to the class's unarmed hit (`WeaponFor`) and the shape passives
-read as unarmed (`WeaponProfileFor`).
+Each recount resolves the whole class/passive/active-item flat bucket with the matching typed and all-attribute
+percentage increases. Pools and equipment qualification call the same `CharacterStats.ResolveAttributes`; rounding
+an individual item's contribution first would change activation thresholds. The old tuple-based solver overload
+remains available, while production uses a pure whole-active-set callback. The existing bounded reactivation then
+one-at-a-time deactivation phases are retained. Signed circular dependencies can oscillate between evaluations;
+their official policy remains unverified, and no fixed-point or stabilization rule is invented here.
+
+A socketed gem's own unmet requirement disables that gem through `GemRequirementsUnmet`/`GemDisabled`; it does not
+deactivate a qualified host or unrelated socketed gems. Gem admission reads the completed pool attributes and explicit
+`virtual_*_for_requirements` overrides. A host failing its own requirements contributes no mods or usable gem skills.
+An inactive main-hand weapon is absent for attacks and weapon-shape conditions: the default attack uses the class's
+unarmed hit (`WeaponFor`) and the shape passives read as unarmed (`WeaponProfileFor`).
 
 Open: the client still draws an inactive item on the character (a red wand stays in hand), and the server leaves it
-where it is. The state is reachable in the real game â€” a ring's +intelligence makes a gem's requirement met, the gem
-goes in, the ring comes off â€” the server now reproduces it (attributes included, checked live 2026-10-23 with
-`/set_stat intelligence` above and below a gem's requirement: the client reds the gem and the wand's mods stop
-counting, [19](19-gems.md) Â§2 "Requirements"). What the official client draws then is still to check there (the gem
-red, the wand still in hand). Moving the item out of its row is the only way to take its visual away (Roadmap "Gems 1").
+where it is. Historical gem-requirement checks also disabled the host; that behavior is superseded by the individual
+gem gate. Seventeen isolated controls in each of Standard and Ruthless verify percentage-driven item activation,
+deactivation/recovery and active weapon-set persistence after relog. Normal Fireball input succeeds at Intelligence
+68, is refused at 62 against its 67 requirement, and succeeds after recovery, while the qualified Plate Vest retains
+19 Armour. These controls use actual native mod identities on isolated supplied items; unique acquisition and
+signed circular-dependency policy remain unverified. See [19](19-gems.md), Requirements.
 
 **Stale stats:** Sâ†’C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).

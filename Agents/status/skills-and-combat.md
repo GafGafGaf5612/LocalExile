@@ -399,6 +399,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: Gateway (`PlayerSkills`), `SpellPanelStats.cs`; tests: `SupportedSpellPanelTests.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §9.
 
+- Ordinary percentage attributes: typed and all-attribute increases act once on the complete class/passive/active-item
+  flat bucket. Pools, equipment qualification and gem requirements share the resulting final attributes.
+  Calculated zero attributes publish zero; inactive items contribute nothing, and a gem's own failure retains its
+  qualified host. Forty-seven new automated cases and 63 selected checks cover both modes, real Utmost sources,
+  signed/zero modifiers, dependent pools, source removal/recovery, final developer overrides and weapon swaps.
+  Thirty-four native controls (17 per mode) verify final values, explicit zeroes, derived pools, item activation,
+  source removal/recovery and active weapon-set persistence after relog. Ordinary Fireball input succeeds at INT 68,
+  is refused at 62 against its 67 requirement, and succeeds after recovery; the qualified host retains its Armour.
+  Source/runtime hashes and original saves hold; isolated item contents/cells return to their canonical state.
+  Supplied-source controls do not certify unique acquisition. Half-up fractional rounding follows pinned PoB; official-server rounding,
+  signed equipment cycles, attribute conversions, conditional/more operators and mercenary gates remain open.
+  Wide final evaluation does not claim arbitrary raw int-source aggregation is overflow-proof.
+  Code: `CharacterStats.cs`, `ItemModStats.cs`, Gateway (`CharacterStatSources`, `PassiveBonus`, `ClassAttributes`).
+  Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2d.
+
 - Weapon-local damage and timing: active weapons supply a typed packet with multiplicative physical quality,
   local flat/increased damage, no-physical/quality-prohibition flags and local attack speed applied once.
   Ordinary melee/ranged and supported attacks share the actual context; final per-type rows clear removed types.

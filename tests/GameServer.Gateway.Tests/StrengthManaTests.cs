@@ -67,6 +67,8 @@ public class StrengthManaTests
         var bonus = new CharacterStats.Bonus(Mana: flat, ManaPct: increase);
         var absent = CharacterStats.For(c, 1, bonus);
         var zero = CharacterStats.For(c, 1, bonus with { ManaPerFourStrength = 0 });
+        // The shared attribute calculation now clamps even a synthetic negative class base before deriving mana.
+        Assert.Equal(Math.Max(0, intelligence), absent.Intelligence);
         Assert.Equal(expected, absent.Mana);
         Assert.Equal(absent, zero);
         Assert.Equal(NativeBytes(absent), NativeBytes(zero));

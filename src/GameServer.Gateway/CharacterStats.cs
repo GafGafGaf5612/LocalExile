@@ -91,7 +91,8 @@ static class CharacterStats
         int BodyArmour = 0, int BodyEvasion = 0, int BodyEnergyShield = 0, int BodyEnergyShieldPct = 0,
         bool DoubleBodyArmour = false, bool NoBodyArmour = false,
         int SpellSuppressionWhileFullEnergyShield = 0,
-        bool ArmourAppliesToChaosDamage = false, AttributeModifiers Attributes = default)
+        bool ArmourAppliesToChaosDamage = false, AttributeModifiers Attributes = default,
+        int StrengthPct = 0, int DexterityPct = 0, int IntelligencePct = 0, int AllAttributesPct = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -108,6 +109,20 @@ static class CharacterStats
     public static (int Strength, int Dexterity, int Intelligence) Attributes(Func<string, int> get)
         => AttributeModifiers.From(get).Flat;
 
+    /// <summary>
+    /// Resolve ordinary attributes from the whole class/flat bucket and additive typed/all increases. Pools and
+    /// equipment qualification use this same calculation. The half-up projection is pinned PoB Common.lua round;
+    /// the final native integer cannot independently establish the official server's fractional rounding.
+    /// Attribute conversions, more multipliers and conditional replacements are separate operators.
+    /// </summary>
+    public static (int Str, int Dex, int Int) ResolveAttributes((int Str, int Dex, int Int) baseAttributes,
+        (int Str, int Dex, int Int) flat, (int Str, int Dex, int Int) increases, int allIncrease = 0)
+    {
+        return new AttributeModifiers(flat.Str, flat.Dex, flat.Int,
+            (long)increases.Str + allIncrease, (long)increases.Dex + allIncrease,
+            (long)increases.Int + allIncrease).Apply(baseAttributes.Str, baseAttributes.Dex, baseAttributes.Int);
+    }
+
     /// <summary>Spell Suppression chance with the conditional passives whose condition holds now (on full life, moving,
     /// hit an enemy recently, on full energy shield), bounded to 0..100% after every active source is added.</summary>
     public static int SuppressionChance(Pools p, bool fullLife, bool moving, bool hitRecently,
@@ -123,7 +138,13 @@ static class CharacterStats
     {
         var b = bonus ?? Bonus.None;
         level = Math.Clamp(level, 1, Progression.MaxLevel);
-        var (str, dex, intel) = b.Attributes.Apply((long)c.Strength + b.Strength,
+        var attributes = b.Attributes with
+        {
+            StrengthPct = b.Attributes.StrengthPct + b.StrengthPct + (long)b.AllAttributesPct,
+            DexterityPct = b.Attributes.DexterityPct + b.DexterityPct + (long)b.AllAttributesPct,
+            IntelligencePct = b.Attributes.IntelligencePct + b.IntelligencePct + (long)b.AllAttributesPct,
+        };
+        var (str, dex, intel) = attributes.Apply((long)c.Strength + b.Strength,
             (long)c.Dexterity + b.Dexterity, (long)c.Intelligence + b.Intelligence);
         // Equipment ES-to-Life conversion can supply a large flat value. Keep the signed panel stat representable.
         uint life = b.ChaosInoculation ? 1 : (uint)Math.Clamp(decimal.Floor((c.BaseMaxLife + 12m * level + str / 2 + b.Life)
@@ -135,7 +156,7 @@ static class CharacterStats
                 str, b.ManaPerFourStrength, b.ManaPct);
         // PoB CalcOffence: accuracy = floor(base * (1 + increased / 100)) with no more multiplier modelled. The
         // Accuracy Mastery can replace the 2 per level and 2 per dexterity, and add Accuracy equal to Intelligence.
-        int accuracyPerLevel = 2 + b.AccuracyPerLevel;
+        long accuracyPerLevel = 2L + b.AccuracyPerLevel;
         int accuracyPerDex = b.DexterityAccuracyTriple ? 3 : 2;
         long accuracyBase = Math.Max(0, (long)accuracyPerLevel * level + (long)accuracyPerDex * dex + b.Accuracy
             + (b.AccuracyEqualsIntelligence ? intel : 0));

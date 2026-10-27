@@ -232,6 +232,9 @@ At final Strength 16 and Intelligence 7, conversion uses B=75.5 and publishes 15
 Combined regressions cross the rounded four-Strength boundary, then verify mana increases and truncation once.
 Equipment, inactive/current weapon snapshots, zero/off raw replacements and idle aura reservation share that result.
 Inactive-weapon, cascading-equipment, passive-refund and active-aura composition still need native coverage.
+Historical LocalExile controls also cover 34 Standard/Ruthless supplied-source states, including Fireball
+qualification at Intelligence 68/62/68 against its 67 requirement, source recovery and weapon-set relog.
+Those controls do not enable private game modes in this branch or prove official fractional parity.
 
 Maximum mana also includes the ordinary flat and increased mana sources from passives and active equipment.
 `X_mana_per_4_strength` (Stats row 4992, client key 4993) contributes
@@ -241,6 +244,9 @@ Mana increases apply once to the combined flat total.
 The active consumer uses wide signed arithmetic, clamps nonpositive totals or multipliers to zero, and saturates at
 `int.MaxValue` for the native maximum and existing reservation/damage consumers.
 A missing or zero source keeps ordinary mana rounding and signed flat-mana/multiplier behavior.
+A missing or zero source uses the ordinary mana formula after resolving nonnegative final attributes.
+Both routes retain complete Intelligence halves. Wide intermediates prevent a saturated final attribute from
+wrapping ordinary mana or Accuracy; existing inherent ratios and Accuracy's final projection are unchanged.
 `PassiveBonus` reads the generic source; `/set_stat X_mana_per_4_strength <value>` replaces it and rebuilds pools.
 The rebuild clamps current mana to the new unreserved cap without filling it when maximum mana increases.
 It explicitly sends the mana pool's `0x1b1`, including reservation, even when current mana is unchanged.
