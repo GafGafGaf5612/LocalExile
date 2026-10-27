@@ -61,6 +61,15 @@ static class ItemModStats
         IReadOnlyList<Worn> worn, (int Str, int Dex, int Int) baseAttributes, int level, ModCatalog mods,
         IReadOnlySet<uint>? previous = null)
     {
+        // The Tabula/Skin/Apostate hidden modifier also suppresses native attribute requirements.
+        // Keep the level requirement: removing attributes does not make a high-level item wearable at level one.
+        worn = worn.Select(w =>
+        {
+            var local = Local(w.Item, mods);
+            return local.GetValueOrDefault("local_no_attribute_requirements") != 0
+                || local.GetValueOrDefault("local_unique_tabula_rasa_no_requirement_or_energy_shield") != 0
+                ? w with { Strength = 0, Dexterity = 0, Intelligence = 0 } : w;
+        }).ToArray();
         var inactive = Inactive(worn, baseAttributes, level, item => Attributes(item, mods), previous);
         return (inactive, worn.Where(w => !inactive.Contains(w.Id)).Select(w => w.Item).ToArray());
     }

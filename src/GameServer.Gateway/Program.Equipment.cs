@@ -4,53 +4,32 @@ using GameServer.Core.Protocol.Login;
 
 partial class Program
 {
-    // Until the ES pool integration owns stun avoidance, exclude any known source, including raw aura/item ES and
-    // active armour/shield bases which the standalone server does not yet fold into maximum_energy_shield.
-    static bool PlayerHasEnergyShieldForRecovery(ClientState conn, Func<string, int> get)
-    {
-        if (PlayerHitRecovery.EnergyShieldPresent(get)) return true;
-        return ItemModStats.EquipmentRows.SelectMany(ItemsOf(conn).Items)
-            .Where(i => !IsInactive(conn, i.Id)).Any(i =>
-                Items.ByHash(i.Item.TypeHash) is { } type && Items.Defences(type) is { EnergyShieldMin: > 0 }
-                || ItemModStats.Local(i.Item, Items.Mods).GetValueOrDefault("local_energy_shield") > 0);
-    }
+    // Pools and published stats already include effective item ES. Raw bases would count suppressed/converted ES.
+    static bool PlayerHasEnergyShieldForRecovery(ClientState conn, Func<string, int> get) =>
+        conn.Pools.EnergyShield > 0 || PlayerHitRecovery.EnergyShieldPresent(get);
 
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
-    // Each active armour piece/shield's local defences become flat inputs to the character-wide pool calculation.
-    // The saved Armour component roll selects the native base before item-local modifiers and quality.
-    static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
+    static IEnumerable<(byte Row, (int Armour, int Evasion, int EnergyShield) Defence)> EquippedArmourDefences(ClientState conn)
     {
         var items = ItemsOf(conn);
-        long armour = 0, evasion = 0, energyShield = 0;
+        var catalog = Items;
         foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots, PlayerInventories.Offhand1 })
             if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
-                && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
-            {
-                var local = ItemModStats.Local(equipped.Item, Items.Mods);
-                var basis = d.AtRoll(equipped.Item.DefenceBaseRoll);
-                long Get(string name) => local.GetValueOrDefault(name);
-                long quality = Get("local_quality_does_not_increase_defences") != 0 ? 0
-                    : Math.Max(0L, equipped.Item.Quality + Get("local_item_quality_+"));
-                // PoB 16de4b82, src/Classes/Item.lua:2389-2391 and src/Modules/Common.lua:709-716:
-                // local flat -> summed local increases -> multiplicative quality -> one final half-up round.
-                // Round each item before summing; global increases and Iron Reflexes are applied by CharacterStats.
-                int Rating(int basis, long added, long increased)
-                {
-                    decimal value = Math.Max(0L, basis + added) * Math.Max(0m, 1 + increased / 100m)
-                        * (1 + quality / 100m);
-                    return (int)Math.Min(int.MaxValue, Math.Round(value, 0, MidpointRounding.AwayFromZero));
-                }
-                long shared = Get("local_armour_and_evasion_+%") + Get("local_armour_and_evasion_and_energy_shield_+%");
-                armour += Rating(basis.Armour, Get("local_base_physical_damage_reduction_rating"),
-                    Get("local_physical_damage_reduction_rating_+%") + Get("local_armour_and_energy_shield_+%") + shared);
-                evasion += Rating(basis.Evasion, Get("local_base_evasion_rating") + Get("local_evasion_rating_and_energy_shield"),
-                    Get("local_evasion_rating_+%") + Get("local_evasion_and_energy_shield_+%") + shared);
-                if (Get("local_no_energy_shield") == 0)
-                    energyShield += Rating(basis.EnergyShield, Get("local_energy_shield") + Get("local_evasion_rating_and_energy_shield"),
-                        Get("local_energy_shield_+%") + Get("local_armour_and_energy_shield_+%")
-                        + Get("local_evasion_and_energy_shield_+%") + Get("local_armour_and_evasion_and_energy_shield_+%"));
-            }
+                && catalog.ByHash(equipped.Item.TypeHash) is { } type && catalog.Defences(type) is { } defences)
+                yield return (row, ItemDefences.Calculate(equipped.Item, defences, catalog.Mods));
+    }
+
+    // Active item-tooltip values become flat inputs to the character-wide pool calculation.
+    static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
+    {
+        long armour = 0, evasion = 0, energyShield = 0;
+        foreach (var (_, defence) in EquippedArmourDefences(conn))
+        {
+            armour += defence.Armour;
+            evasion += defence.Evasion;
+            energyShield += defence.EnergyShield;
+        }
         return ((int)Math.Min(int.MaxValue, armour), (int)Math.Min(int.MaxValue, evasion), (int)Math.Min(int.MaxValue, energyShield));
     }
 
