@@ -344,11 +344,15 @@ sealed class SkillCatalog(string folder = "data")
 
     public bool IsSpell(int effectRow) => _spellEffects.Value.Contains(effectRow);
 
+    /// <summary>Whether a GrantedEffects row's ActiveSkill has the Warcry type.</summary>
+    public bool IsWarcry(int effectRow) => _warcryEffects.Value.Contains(effectRow);
+
     private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
     private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
     private readonly Lazy<HashSet<int>> _attackEffects = new(() => EffectsOfType(folder, "Attack"));
     private readonly Lazy<HashSet<int>> _meleeEffects = new(() => EffectsOfType(folder, "Melee"));
     private readonly Lazy<HashSet<int>> _spellEffects = new(() => EffectsOfType(folder, "Spell"));
+    private readonly Lazy<HashSet<int>> _warcryEffects = new(() => EffectsOfType(folder, "Warcry"));
 
     /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>
     static HashSet<int> EffectsOfType(string folder, string typeId)

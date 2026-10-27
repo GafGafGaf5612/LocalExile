@@ -1100,6 +1100,45 @@ That first field is the equipment record's first u8 (13-items.md "What the model
 for every item: every skill with a weapon restriction was greyed out (Ground Slam with a two-handed axe, live
 2026-10-23, found with a Frida trace of `FUN_142199200`). The Gateway now sends ClassRow + 1 (`VisibleItem.Type`).
 
+## 10b. Actor restriction: warcry skills disabled
+
+`your_warcry_skills_are_disabled` is Stats row 5408, wire key 5409 in 3.29.3b.
+Rampager, PassiveSkills graph node 49937, supplies value 1.
+`SkillCatalog.IsWarcry` follows GrantedEffects.ActiveSkill and ActiveSkills.ActiveSkillTypes to the Warcry type.
+The extracted ActiveSkillType row is 62; classification resolves its Id instead of hardcoding names or spell status.
+Enduring Cry is a Warcry and is not a Spell in these tables.
+
+`ActorSkillDisabled` reads the actual caster through `CharacterPlayerStats`, before any skill stat overlay.
+Passive and active equipment sources use the existing raw stat assembly; a raw dev value replaces their total.
+Any signed nonzero value disables new warcry uses.
+Explicit zero or source removal restores admission on the same connection without rebuilding resource pools.
+The restriction leaves the Actor skill list and ordinary attacks, spells and auras available.
+The caster stat builder does not call `GemDisabled` or build `PlayerSkills`, avoiding recursive admission checks.
+
+`GemDisabled` shares the restriction with ground 0x25 and the `CastGemSkill` backstop.
+`TryBeginCooldownUse` also checks it before creating or spending cooldown state or invoking action side effects.
+This covers monster/self object 0x24 and eligible instant paths before a new action echo, cost or effect.
+Instant aliases retain their existing supported subset; this does not add instant warcry executors.
+
+The existing `CastGemSkill` check remains the cast admission boundary.
+A queued action echo can pass preflight and then fail that check before payment.
+After cast admission, a source change behind a queued paid mana packet does not add a late cancellation or refund.
+An accepted Enduring Cry still schedules its existing non-cancellable charge release in `UseChargeSkill`.
+Later source or action changes do not cancel that release.
+Enduring Cry remains partial: this change adds no healing engine or other warcry mechanics.
+
+Automated coverage checks parsed 0x24/0x25 requests, payment, cooldown retry, source precedence and queued sends.
+It also checks unsupported instant aliases and admitted instant Righteous Fire with the restriction present.
+Seven native checks used a fresh unascended Witch, the real level-one gems and five normal nearby enemies.
+Ground and self/object requests with positive or negative flags emitted no new action or cry effect and spent no Mana.
+Clearing the source admitted a 13-Mana Enduring Cry, granting one actual native Endurance Charge from five power.
+Reapplying the flag after payment did not cancel that accepted release; an ordinary Fireball still dealt 200 damage.
+A refused request after the original eight-second cooldown spent no use; clearing the source allowed a paid retry.
+The retry granted a second charge; an explicit warcry speed input kept it clear of the first charge's expiry.
+Relog cleared the transient developer flag.
+These controls verify the shared restriction, not Rampager allocation or complete Enduring Cry behavior.
+Future composition with outgoing Spell or incoming armour changes must retain this caster-only admission check.
+
 ## 11. The skill bar
 
 - **C→S 0x4e** (5 bytes, class `0x1435bfc58`): `u8 slot, u16 skill id` (big-endian). Slot 2 is the right mouse button.

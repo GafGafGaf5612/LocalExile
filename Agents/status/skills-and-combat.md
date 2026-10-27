@@ -161,6 +161,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   ms; server-side mana (cost, regeneration); `/god` (also 200% increased area of effect), `/set_aoe`.
   Code: Gateway (`ActivateRighteousFire`, `RunPlayerTick`), `SkillArea.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §12.
+- Warcry admission restriction (#297): any signed nonzero `your_warcry_skills_are_disabled` blocks new typed warcries.
+  Actual caster passive/equipment/raw dev sources are read before skill overlays, action echoes, costs and cooldowns.
+  Explicit zero and source removal restore admission without rebuilding pools or removing Actor skills.
+  Parsed ground/object, paid Enduring Cry, source, instant safety and queued-send regressions pass.
+  Accepted non-cancellable cry releases retain their existing behavior; Enduring Cry's charge executor stays partial.
+  Seven native checks verify refusal without Mana loss or release, source clearing and paid 13-Mana retries.
+  Native Endurance Charges confirm accepted releases; Fireball remains usable and relog clears the developer flag.
+  Phrecia play stays gated; source precedence, aliases and queued boundaries have additional automated coverage.
+  See [11](../docs/protocol/11-skills.md) section 10b.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
   every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.

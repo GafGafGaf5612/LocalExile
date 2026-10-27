@@ -470,11 +470,18 @@ partial class Program
             return Stats.Key($"virtual_{attribute}_for_requirements") is uint key && conn.PlayerStats.TryGetValue(key, out int set) ? set : value;
     }
 
-    // Why a gem skill may not be used: the character's level or an attribute is below the gem's requirement of its own level.
+    // Actor restrictions use the actual caster's current sources, never a skill overlay (which may replace a key).
+    // CharacterPlayerStats does not build PlayerSkills or call GemDisabled, so this cannot recurse through admission.
+    static string? ActorSkillDisabled(ClientState conn, int effect) =>
+        Skills.IsWarcry(effect) && Stats.Key("your_warcry_skills_are_disabled") is uint key
+            && CharacterPlayerStats(conn).GetValueOrDefault(key) != 0 ? "warcry skills are disabled" : null;
+
+    // Why a gem skill may not be used: an actor restriction or an unmet level/attribute requirement.
     // The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
-    // Null when no gem granting the effect is below its requirement.
+    // Null when the actor restriction and requirements allow the effect.
     static string? GemDisabled(ClientState conn, int effect)
     {
+        if (ActorSkillDisabled(conn, effect) is { } restriction) return restriction;
         foreach (var place in PlayerInventories.For(CharacterName(conn), Items).SocketedGemPlaces())
             if (Items.GemEffects(place.Gem).Contains(effect) && GemRequirementsUnmet(conn, place.Gem) is { } missing)
                 return missing;

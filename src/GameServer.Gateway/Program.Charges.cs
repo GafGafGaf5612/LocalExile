@@ -140,7 +140,8 @@ partial class Program
         int Own(string name) => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
         int per = Own("endurance_charge_granted_per_X_monster_power_during_endurance_warcry");
         // The warcry cannot be cancelled before its contact point (cannot_cancel_skill_before_contact_point), so a later
-        // action does not stop it. Warcry speed is the player's and the gem's.
+        // action does not stop it. Admission checks the actor restriction before this accepted release is scheduled;
+        // changing its source later does not cancel this continuation. Warcry speed is the player's and the gem's.
         var player = AreaPlayerStats(conn);
         int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
         double castSeconds = Skills.CastTimeMs(effect) / 1000.0 / Math.Max(0.01, 1 + (Player("warcry_speed_+%") + Own("warcry_speed_+%")) / 100.0);
