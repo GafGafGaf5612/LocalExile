@@ -21,7 +21,9 @@ The split preserves the previous behavior; it does not establish official visual
 ## Extension contract
 
 - `ProjectileSkillDefinition` supplies metadata, profile resolution, optional terrain admission,
-  optional release specialization and optional presentation selection.
+  optional windup cancellation, release specialization and presentation selection.
+  Paid attacks normally survive Move; a recipe with release-time resources can require the original action.
+  Spells, cooldown tickets, death, recovery and epoch restrictions retain their common admission checks.
 - The common release captures position, damage, stats, critical inputs and speed, then invokes
   specialization once inside the existing simulation commit. Specialization can supply frozen
   per-initial-projectile payloads. Continuation children inherit those snapshots.

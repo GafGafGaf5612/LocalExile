@@ -24,6 +24,7 @@ public class ProjectileReturnTests
     [Fact]
     public void The_support_less_damage_and_the_returning_finals_multiply()
     {
+        Assert.Equal(.3, ProjectileReturn.DamageMore(Stats(("support_return_damage_+%_final_from_returning_projectile", -70))), 6);
         Assert.Equal(.3, ProjectileReturn.DamageMore(Stats(("support_return_returning_projectiles_damage_+%_final", -70))), 6);
         Assert.Equal(.9, ProjectileReturn.DamageMore(Stats(
             ("support_return_returning_projectiles_damage_+%_final", -70),

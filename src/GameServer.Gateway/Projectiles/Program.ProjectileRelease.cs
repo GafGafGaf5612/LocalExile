@@ -42,6 +42,7 @@ partial class Program
         var session = ProjectilesFor(remote, stream, ciphers, conn);
         session.Advance();
         bool attack = Skills.IsAttack(gem.Effect);
+        bool cancelOnNewAction = !attack || ResolveProjectileDefinition(gem.Effect)?.CancelWindupOnNewAction == true;
         int? cast = attack ? 0 : CastMs(conn, gem.Effect, skillId);
         if (cast is null) return Task.CompletedTask;
         double acceptedAt = conn.Clock.Elapsed.TotalSeconds;
@@ -49,11 +50,12 @@ partial class Program
             : cast.Value / 1000d * Animations.SpellRelease(Skills.ClassFor(conn.ClassRow).AnimatedObject);
         int epoch = conn.ProjectileEpoch;
         session.Schedule(ProjectileRuntime.Time(acceptedAt + delay),
-            // A paid attack survives subsequent Move input; spells and cooldown tickets retain action cancellation.
+            // Paid attacks survive Move unless their recipe opts into cancellable windup (e.g. release-time costs).
+            // Spells and cooldown tickets retain action cancellation.
             // Epoch, death and hit recovery still cancel unreleased attacks.
-            () => conn.ProjectileActive(epoch) && (ticket?.Current(conn) ?? (attack
-                ? conn.PlayerLife > 0 && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds)
-                : PlayerActionCurrent(conn, action)))
+            () => conn.ProjectileActive(epoch) && (ticket?.Current(conn) ?? (cancelOnNewAction
+                ? PlayerActionCurrent(conn, action)
+                : conn.PlayerLife > 0 && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds)))
                 && GemSkillInstanceDisabled(conn, gem.Effect, skillId) is null,
             () => CaptureGemProjectile(conn, session, skillId, gem, aim));
         return Task.CompletedTask;

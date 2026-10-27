@@ -8,6 +8,7 @@ static class ProjectileReturn
         double more = 1;
         foreach (string name in new[]
                  {
+                     "support_return_damage_+%_final_from_returning_projectile",
                      "support_return_returning_projectiles_damage_+%_final",
                      "active_skill_returning_projectile_damage_+%_final",
                      "damage_+%_final_from_returning_projectile",

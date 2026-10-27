@@ -7,6 +7,7 @@ partial class Program
         Func<Func<string, int>, double, ProjectileProfile> Resolve)
     {
         public bool RequiresTerrain { get; init; }
+        public bool CancelWindupOnNewAction { get; init; }
         public Func<ClientState, string?>? Unavailable { get; init; }
         public Func<ProjectileReleaseContext, ProjectileUse, ProjectileUse>? SpecializeRelease { get; init; }
         public Func<ProjectileEntity, ProjectilePresentation>? Presentation { get; init; }
