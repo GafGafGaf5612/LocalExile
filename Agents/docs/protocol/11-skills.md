@@ -989,7 +989,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   unlimited. The return leg uses the same budget; Returning Projectiles Support's `returning_projectiles_always_pierce`
   hits all targets. Contacts are observed during the flight, not selected along the launch line: a target that
   leaves the line before contact is missed, one that walks into it is hit, and the budget is spent only at real
-  contacts. The return leg still snapshots its line when the return starts.
+  contacts. The return leg is swept the same way as the projectile flies back.
 - **Returning projectiles.** A projectile whose stats allow it (`projectiles_return`, `attack_projectiles_return`,
   `projectile_return_%_chance`; `skill_projectiles_cannot_return` forbids; `Game_PROJECTILE_RETURN` forces) returns
   from a target/terrain collision or from maximum distance (Freezing Pulse only from a collision), flies back to the
@@ -999,7 +999,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   it except the one it returned from, with Returning Projectiles Support's less Damage
   (`support_return_returning_projectiles_damage_+%_final`), and `returning_projectiles_always_pierce` lets it hit all
   of them (otherwise the first only). A simultaneous volley is shotgun-limited to one hit per target, out and back.
-  Damage timing along the return is applied when the return starts; ailments are not modelled.
+  The return's hits land as the returning projectile reaches each cell, not when the turn happens; ailments and
+  pierce/fork/chain priority are not modelled.
 - **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
   cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
   (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets

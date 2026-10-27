@@ -252,8 +252,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Damage already in `SupportedHit`. `always_pierce` (Freezing Pulse) is unlimited. The return leg uses the same
   budget, while Returning Projectiles Support's `returning_projectiles_always_pierce` hits every target. Contacts are
   observed during the flight (the server's walk estimates), not selected at launch: a target that leaves the line
-  before contact is missed, one that walks into it is hit, and the budget is spent only at real contacts. (The return
-  leg still snapshots its line when the return starts.) Kinetic Blast's explosions are created on every collision,
+  before contact is missed, one that walks into it is hit, and the budget is spent only at real contacts. The return
+  leg is swept the same way as the projectile flies back. Kinetic Blast's explosions are created on every collision,
   including a pierced one (wiki), but the
   collision's target is excluded from its own explosions; the projectile's direct hit now lands on it instead.
   Not modelled: pierce chance, per-skill pierce overrides other than `always_pierce`, forked/chained
@@ -271,8 +271,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   the monsters along it (not the one it returned from): Returning Projectiles Support's
   `support_return_returning_projectiles_damage_+%_final` (-70..-66% less, i.e. ×0.3..×0.34) and the game's returning
   finals multiply the hit, `returning_projectiles_always_pierce` hits every target (without it only the first), and a
-  simultaneous volley's hits are shotgun-limited on the way out and on the way back. Not modelled: damage timing along
-  the return is applied when the return starts, ailments, pierce/fork/chain priority and repeat returns.
+  simultaneous volley's hits are shotgun-limited on the way out and on the way back, and the return's hits land as the
+  returning projectile reaches each cell, not when the turn happens. Not modelled: ailments, pierce/fork/chain priority
+  and repeat returns.
   Code: `ProjectileReturn.cs`, Gateway (`LaunchProjectile`, `FlyProjectile`, `AreaSkillHit`).
   Docs: [11](../docs/protocol/11-skills.md) §10.
 - **Kinetic Blast projectile display (2026-10-26, awaiting live check).** The gem's effect is ClusterBurst, and 3.29

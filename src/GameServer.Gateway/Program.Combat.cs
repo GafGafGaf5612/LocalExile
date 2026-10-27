@@ -726,8 +726,7 @@ partial class Program
             ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, melee: false);
             if (resistance is not null) Console.WriteLine($"[gateway] {remote} {gem.Name} resistance: {resistance}");
             return (damage, critical);
-        }, epoch: epoch, acceptedHit: (_, critical) =>
-            RageOnHitLocked(conn, attack, melee: false, critical, SupportedSkill(conn, skillId).Stats));
+        };
         Func<(int X, int Y), uint, Task>? explosion = kineticBlast ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
             immediate: true, melee: false, excludeMonster: exclude) : null;
         string? impactObject = kineticBlast ? KineticBlastImpactAo : null;
@@ -781,7 +780,9 @@ partial class Program
         await Task.WhenAll(angles.Select(angle => FlyProjectile(remote, stream, ciphers, conn, (projectile.Id, speed), from,
             ProjectileSpread.Rotate(from, to, angle), impact: impact,
             actionToken: cooldownUse is null || cooldownUse.Instant ? null : action, damageTo: damageTo,
-            epoch: epoch, onImpact: explosion, impactObjectAo: impactObject, keepThroughActions: attack, returning: returning,
+            epoch: epoch, acceptedHit: (_, critical) =>
+                RageOnHitLocked(conn, attack, melee: false, critical, SupportedSkill(conn, skillId).Stats),
+            onImpact: explosion, impactObjectAo: impactObject, keepThroughActions: attack, returning: returning,
             impactObjectSeconds: kineticBlast ? 0.35 : 1.5,
             returnSpeedPercent: SumStat("returned_projectile_speed_+%"),
             returnOnLanding: !ProjectileReturn.CannotReturnFromDistance(effectId),
@@ -1040,6 +1041,7 @@ partial class Program
                     if (monster.Dead || monster.Life == 0) return;
                     (hitDamage, hitCritical) = damageTo(monster);
                     struck = HitUnlessBlockedLocked(conn, monster, hitDamage);
+                    if (struck is not null) acceptedHit?.Invoke(monster, hitCritical);
                     shotgunned?.TryAdd(mid, 0);
                 }
                 if (struck is { } applied)
@@ -1057,6 +1059,7 @@ partial class Program
                     if (monster.Dead || monster.Life == 0) return;
                     (hitDamage, hitCritical) = returnDamageTo(monster);
                     struck = HitUnlessBlockedLocked(conn, monster, hitDamage);
+                    if (struck is not null) acceptedHit?.Invoke(monster, hitCritical);
                     returnShotgunned?.TryAdd(mid, 0);
                 }
                 if (struck is { } applied)
@@ -1271,44 +1274,68 @@ partial class Program
                 returnX = (int)Math.Round(hitX + rdx / back * past);
                 returnY = (int)Math.Round(hitY + rdy / back * past);
                 double backSpeed = Math.Max(1, cellsPerSecond * (1 + returnSpeedPercent / 100));
-                // Damage while returning: the monsters along the return line, except the one the projectile returned
-                // from. Returning Projectiles Support's "pierce all targets while returning" keeps them all, otherwise
-                // the first stops the volley's damage (the flight itself still comes back; the wiki's stop is visual).
-                if (returnDamageTo is not null || returnExplosion is not null)
-                {
-                    List<(uint Id, SpawnedMonster Monster, (int X, int Y) At)> along = [];
-                    double now = conn.Clock.Elapsed.TotalSeconds;
-                    lock (conn.Monsters)
-                        foreach (var (mid, monster) in conn.Monsters)
-                        {
-                            if (monster.Dead || monster.Life == 0 || mid == returnedFrom) continue;
-                            if (returnShotgunned?.ContainsKey(mid) == true) continue;
-                            var at = monster.Walk.Position(now);
-                            if (ProjectileReturn.DistanceToSegment(at, (hitX, hitY), (returnX, returnY)) <= hitRadius)
-                                along.Add((mid, monster, at));
-                        }
-                    along.Sort((a, b) => Dist((hitX, hitY), a.At).CompareTo(Dist((hitX, hitY), b.At)));
-                    int returnBudget = returnPierce ? int.MaxValue : pierceHits;
-                    if (along.Count > returnBudget) along.RemoveRange(returnBudget, along.Count - returnBudget);
-                    // General pierce applies on the way back too: the support's "pierce all while returning" wins,
-                    // otherwise the pierce budget (one hit without pierce).
-                    foreach (var (mid, monster, at) in along)
-                    {
-                        if (!Active()) return;
-                        await ApplyReturnDirect(mid, monster);
-                        if (returnExplosion is not null) await returnExplosion(at, mid);
-                    }
-                }
                 // Two legs, as the wiki describes: the projectile travels to the caster, then continues 15 m past them.
                 // One combined glide made the client stop the returning object in the player's model (live 2026-10-26).
                 double toCaster = Math.Max(0.05, back / backSpeed);
                 double pastCaster = Math.Max(0.05, pastDistance / backSpeed);
                 if (!await SendVisual(height.MoveTo(id, player.X, player.Y, (float)toCaster),
                     $"0x01ba projectile 0x{id:x} returns to the caster ({player.X}, {player.Y})")) return;
-                if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + toCaster, epoch)) return;
+                // The return line is swept per poll, only over the segment the projectile has actually covered: a target
+                // is hit when the returning projectile reaches it, not when the turn happens. The client's two legs
+                // (to the caster, then past them) share this one segment.
+                double returnStart = conn.Clock.Elapsed.TotalSeconds;
+                ProjectileFlight? returnFlight = null;
+                int returnBudget = returnPierce ? int.MaxValue : pierceHits;
+                HashSet<uint> returnHit = [returnedFrom];
+                if (returnShotgunned is not null)
+                    foreach (var mid in returnShotgunned.Keys) returnHit.Add(mid);
+                List<ProjectileFlight.Target> ReturnTargets(double at) => [.. conn.Monsters
+                    .Where(m => !m.Value.Dead && m.Value.Life > 0)
+                    .Select(m => new ProjectileFlight.Target(m.Key, m.Value.Walk.Position(at), m.Value.Walk))];
+                if (returnDamageTo is not null || returnExplosion is not null)
+                    lock (conn.Monsters)
+                        returnFlight = new ProjectileFlight((hitX, hitY), (returnX, returnY), backSpeed, returnStart,
+                            hitRadius, wall: false, ReturnTargets(returnStart));
+                async Task<bool> SweepReturn(double until)
+                {
+                    while (true)
+                    {
+                        if (!Active()) return false;
+                        double now = conn.Clock.Elapsed.TotalSeconds;
+                        if (now >= until) return true;
+                        await Task.Delay(16);
+                        if (!Active()) return false;
+                        IReadOnlyList<ProjectileFlight.Pierced> contacts = [];
+                        lock (conn.Monsters)
+                        {
+                            if (!Active()) return false;
+                            if (conn.Paused) continue;
+                            now = conn.Clock.Elapsed.TotalSeconds;
+                            if (returnFlight is not null && returnBudget > 0)
+                                (_, contacts) = returnFlight.AdvancePiercing(now, ReturnTargets(now), returnHit);
+                            else
+                                returnFlight?.Advance(now, []);
+                        }
+                        foreach (var entry in contacts)
+                        {
+                            if (returnBudget <= 0) break;
+                            if (!Active()) return false;
+                            if (returnShotgunned?.ContainsKey(entry.Id) == true || returnHit.Contains(entry.Id)) continue;
+                            if (!conn.Monsters.TryGetValue(entry.Id, out var monster) || monster.Dead || monster.Life == 0)
+                                continue;
+                            returnHit.Add(entry.Id);
+                            returnBudget--;
+                            await ApplyReturnDirect(entry.Id, monster);
+                            if (returnExplosion is not null)
+                                await returnExplosion(
+                                    ((int)Math.Round(entry.Position.X), (int)Math.Round(entry.Position.Y)), entry.Id);
+                        }
+                    }
+                }
+                if (!await SweepReturn(returnStart + toCaster)) return;
                 if (!await SendVisual(height.MoveTo(id, returnX, returnY, (float)pastCaster),
                     $"0x01ba projectile 0x{id:x} continues past the caster to ({returnX}, {returnY})")) return;
-                if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + pastCaster + 0.1, epoch)) return;
+                if (!await SweepReturn(returnStart + toCaster + pastCaster + 0.1)) return;
             }
             // Fireball (and the other skills that explode only when they cannot move further) bursts after the return,
             // not at the first collision: the wiki's 3.21 return rule.
