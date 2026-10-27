@@ -61,6 +61,13 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Warcry restriction (#297):** shared actor admission has regression and seven real-client controls in Status.
   Blocked input, source clearing, paid retries and an accepted cry's release are verified.
   See [11](../docs/protocol/11-skills.md) section 10b; broader warcry engines and Phrecia enablement remain separate.
+- **Character panel (#75):** the Energy Shield regeneration row now shares the implemented recovery calculation,
+  with native checks for modifiers, clearing and separation from recharge.
+  Armour/evasion now include ordinary item-local flat/increased modifiers and quality, with native tooltip/panel,
+  crafting refresh, unequip and active-shield checks.
+  Saved variable bases now feed all three defences before local modifiers; legacy saves retain minimum bases.
+  Continue auditing the remaining rows against the current implementation before adding formulas.
+  Ward, leech limits and unsupported conditional mechanics still need their own systems and evidence.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.

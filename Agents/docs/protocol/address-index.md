@@ -218,6 +218,11 @@ G = global / static data.
 | `0x1421e03d0` | Fn | an item's level requirement → Mods +0x2bc (type level, mod level × 4 / 5, override, +); not run for network items, which keep the sent byte ([13](13-items.md) §2d) |
 | `0x1421eca50` | Fn | can the player use this item: level (Mods +0x2bc vs Player +0x1ac), gem levels, attributes |
 | `0x141e80340`, `0x141e802d0` | Fn | Player caches: requirement attributes; UI attributes |
+| `0x1424affc0` / `0x1424aff60` | Fn | Armour component raw base-roll byte reader / writer; 32 is a minimum flag |
+| `0x1424afc90` | Fn | Armour roll setter: ordinary 0..31 at +0x28; special flag at +0x2a |
+| `0x1424af890`, `0x1424af910`, `0x1424af990` | Fn | Base armour/evasion/ES: interpolate over 31, then round |
+| `0x1424af310`, `0x1424af1a0`, `0x1424af430` | Fn | Final armour/evasion/ES: rounded base, locals, quality, round |
+| `0x1405bdd70` / `0x140664f10` | Fn | Linear interpolation / half-up rounding used by item defences |
 | `0x1402f36c0` | Fn | item's AttributeRequirements component getter |
 | `0x141e1dce0` | Fn | InteractionAction type parser (`interaction_distance_override` → +0x1bb) |
 

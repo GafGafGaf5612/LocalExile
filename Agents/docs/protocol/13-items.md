@@ -53,16 +53,66 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
 | SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: one level over the cap), u32 +0x3c the variant, u8 +0x10 flags (bit 2: level locked), u16 +0x40 |
 | Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue, 4 white (all seen live 2026-10-26) |
-| Armour | `0x14363ad40` | `0x1424affc0` | u8 0..0x20 (stored at +0x28; 0x20 also sets +0x2a) |
+| Armour | `0x14363ad40` | `0x1424affc0` | u8 shared roll 0..31; 32 is a special minimum-base flag |
 | LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
 
 Minimal item the server sends: flags 0, Base with only the visual identity, Mods identified and normal with no mods.
 
 **Base defences:** an `ArmourTypes.dat` row is keyed by `BaseItemTypesKey` (the BaseItemTypes row) and gives
-`ArmourMin`/`ArmourMax` and `EvasionMin`/`EvasionMax`. The client interpolates between them with the item's base
-percentile; our items send the Armour component's default `0`, so the server uses the minimum for the character's
-armour and evasion. Only the base body armour, helmet, gloves and boots are counted for now; mods, quality, local
-defence rolls and shields are not.
+`ArmourMin`/`ArmourMax`, `EvasionMin`/`EvasionMax` and `EnergyShieldMin`/`EnergyShieldMax`.
+`Item.DefenceBaseRoll` stores the Armour component's raw byte, shared by all three defences.
+Ordinary values 0 through 31 select `round(minimum + (maximum - minimum) * roll / 31)`.
+The interpolated base rounds halfway up before local modifiers, separately from the final item rounding.
+Raw wire value 32 sets the native special flag and uses minimum bases; it is not a maximum roll.
+It survives wire/save round trips but is never generated for ordinary new items.
+Values above 32 are refused by the server model instead of silently aliasing another roll.
+The native derived byte at Armour `+0x29` is a display percentile, not an independent saved roll.
+Reader/writer: `0x1424affc0` / `0x1424aff60`; base getters: `0x1424af890`, `0x1424af910`, `0x1424af990`.
+
+Fresh armour items from `ItemCatalog.Create` sample a uniform ordinary roll once.
+This is the local server's generation policy; the official server's distribution has not been measured.
+Drops, rewards, vendor stock and development items share that factory.
+Saving, loading, moving, socketing, ordinary currency and affix changes preserve the existing roll.
+Legacy saved items missing the field keep their original zero/minimum base; loading never draws a fresh base roll.
+`/base_defence [0 to 31]` shows or sets the held armour item's roll for development checks.
+`EquippedBaseDefences` counts active body armour, helmets, gloves, boots and the active offhand shield.
+An item disabled by requirements contributes nothing; the inactive weapon set and backpack contribute nothing.
+
+For armour, evasion and ES, each item contributes
+`round((rolled base + local flat) * (1 + local increases / 100) * (1 + effective quality / 100))`.
+The final item value rounds halfway up once, before summing equipment or applying character-wide increases.
+The reference is Path of Building commit `16de4b82d57f1c0de6eb40f37143c32d4da36a02`,
+[Item.lua](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Classes/Item.lua#L2345)
+and [Common.lua](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b8/src/Modules/Common.lua#L709).
+Flat local stats are `local_base_physical_damage_reduction_rating` and `local_base_evasion_rating`.
+Evasion also counts `local_evasion_rating_and_energy_shield`.
+Typed local increases add to the applicable armour/evasion, armour/ES, evasion/ES and triple-defence increases once.
+Effective quality is the saved Quality byte plus `local_item_quality_+`.
+`local_quality_does_not_increase_defences` suppresses this multiplier; maximum-quality modifiers do not add quality.
+Global item/passive/aura modifiers and Iron Reflexes continue through the shared character-pool calculation afterward.
+Equipment changes and quality currency on worn items refresh those pools and send the resulting panel stats.
+ES now uses that same final half-up rounding instead of truncating between local increases and quality.
+Its local flat/increased stats, the hybrid stats and `local_no_energy_shield` retain their existing roles.
+Special item-local conversions and Sacred Orb base rerolls remain separate work.
+
+Variable-base native checks verified Plate Vest rolls 0, 8, 16 and 31 as 19, 21, 23 and 27 armour.
+Raw 32 arrived as stored roll zero with special flag one and minimum armour 19, including after relog.
+Changing back to an ordinary roll cleared that native flag; ordinary roll 31 also survived relog unchanged.
+With roll 16, 50% local increase and 20 quality, native tooltips showed Plate Vest armour 41,
+Rawhide Gloves evasion 29 and Simple Robe ES 31.
+The character received those contributions through the same pools, including after quality crafting and relog.
+Newly created items had different ordinary rolls, while moving and crafting retained their saved rolls.
+
+Native checks used an isolated level-20 Duelist with 23 Dexterity and no other equipment or passives.
+A Scale Vest with +10 local armour/evasion and 26% local increased armour/evasion showed 47/47 before quality.
+Twenty Armourer's Scraps on the worn vest raised its saved quality to 20 and its native tooltip to 56/56.
+The Defence panel and server pools updated to 56 armour and 73 evasion, including the character's base and Dexterity.
+Adding `local_item_quality_+` 10 kept the saved byte at 20 and showed 30% quality and 61/61 in the native tooltip.
+The alternate-quality prohibition removed only quality's defence multiplier; removing mods and unequipping cleared
+their respective contributions.
+A modified shield contributed 18 armour only in the active set; the native weapon-swap key restored it from zero.
+With 56 armour, a 100-point physical test hit dealt 90 damage after the existing 10% armour reduction.
+Automated tests also cover global modifiers, disabled equipment, Iron Reflexes, per-item rounding and large totals.
 
 ## 2a. Mods: rarity and mod lists
 

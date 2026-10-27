@@ -96,7 +96,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `CharacterStats.cs`, `TargetAccuracy.cs`, `DamageModel.cs`, `MonsterCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4–5.
 - Armour and Evasion: flat armour/evasion from the passive tree (`base_physical_damage_reduction_rating`,
-  `base_evasion_rating`) and the base body armour/helmet/gloves/boots (the `ArmourTypes.dat` minimum), with
+  `base_evasion_rating`) and body armour/helmet/gloves/boots/active shield (the rolled `ArmourTypes.dat` bases), with
   `physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%` (Cloth
   and Chain), `global_defences_+%` and the combined increase;
   the character panel gets the final `physical_damage_reduction_rating` / `evasion_rating`;
@@ -104,7 +104,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   entropy counter before damage, and `/defences` shows armour, physical reduction and the chance to evade a reference
   monster.
   Iron Reflexes converts all evasion to armour and drops dexterity's evasion bonus.
-  Not yet: item mods/quality, shields or auras.
+  Item-local flat and increased defence mods, applicable hybrid mods and multiplicative quality are included per item.
+  Additional local quality and the alternate-quality defence prohibition are respected.
+  Each item's result rounds halfway up once before global increases; inactive items contribute nothing.
+  Native checks matched the crafted vest's 56/56 tooltip to 56 armour / 73 evasion on the Defence panel.
+  Quality currency refreshed worn-item pools, local additional quality showed 30% once, and unequipping cleared stats.
+  Active/inactive shield checks, native weapon swap and physical-hit mitigation also passed.
+  The saved shared base roll selects each defence's rounded native base before local modifiers and quality.
+  New armour items get ordinary rolls; legacy saves retain their previous minimum bases.
+  Native base-roll landmarks, raw-32 flag handling, local/quality composition and relog preservation passed.
+  Special local conversions and Sacred Orb base rerolls remain open.
   Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
 - Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
@@ -177,8 +186,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   four damage immunities and physical immunity, from their base forms);
   the main hand / off hand rows add that weapon's local stats;
   projectile block and chaos resistance against damage over time combine the pools with their stat;
-  the Defence tab's Life / Mana Regeneration per Second rows are the tick's own per-minute rates
+  the Defence tab's Life / Mana / Energy Shield Regeneration per Second rows are the tick's own per-minute rates
   (`total_*_recovery_per_minute_from_regeneration`).
+  Energy Shield's row excludes recharge and clears when its sources are removed or regeneration is prohibited.
+  Native checks verified the row at 2 per second, modifier totals, zero clearing and relog.
+  During recharge its total stayed at 60 per minute while native recovery prediction changed from 60 to 340.
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
@@ -515,6 +527,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   A damage-type immunity (`*_immunity`, `elemental_damage_immunity`) zeroes that type on the player's hits, from the
   same sources the panel's Immune rows use (`DamageImmunities.cs`).
   Ordinary player energy shield derives from equipment, intelligence and passives.
+  Equipment ES uses the saved variable base roll and native rounding before and after local modifiers and quality.
   It absorbs non-chaos hits before life and recovers through regeneration and delayed, damage-interrupted recharge.
   The existing 16 ms elapsed-time loop supplies the client's native ES recovery prediction.
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.

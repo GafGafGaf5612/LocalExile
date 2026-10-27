@@ -309,15 +309,21 @@ increased/more, and `AddGain`/`Convert` for conversion, without touching the lif
 ## Player energy shield (2026-10-25)
 
 `EnergyShield.cs` owns the ordinary ES pool, fractional recovery, damage interruption, and recharge phase. Equipment
-reads ArmourTypes ES bounds (the same minimum-base percentile currently serialized on items), local flat/increased ES,
+reads ArmourTypes ES bounds with the item's saved shared base roll, local flat/increased ES,
 quality, intelligence, passive ES and global defence increases. Offhand shields count. Non-chaos damage after mitigation
 spends ES before life; chaos bypasses it. A positive damaging hit interrupts recharge; a zero/blocked hit does not.
 Death empties ES; existing heal/resurrection/entry refills include it. Righteous Fire uses its life and ES burn inputs
 and absorbs its non-chaos self-damage through ES before life. Special keystones and conditional mastery effects are
 not included (CI, Eldritch Battery, Zealot's Oath, Wicked Ward, leech and related substitutions).
+The native rolled base rounds before local modifiers; the final item ES rounds after local increases and quality.
+This avoids the former intermediate truncation: Simple Robe roll 16, 50% local ES and 20 quality yields 31 ES.
 
 Character.ot supplies 2000% of maximum per minute: base recharge is one third per second, after a two-second delay.
 Faster start divides the delay by `1 + energy_shield_delay_-%/100`; recharge/regen recovery increases scale their rates.
+The Defence tab's Energy Shield Regeneration per Second row receives
+`total_energy_shield_recovery_per_minute_from_regeneration` from that same regeneration calculation.
+The per-minute value is rounded once for transmission and divided by 60 by the native panel.
+Recharge never contributes to this row; zero rates are published to clear removed or disabled regeneration.
 Elapsed game time integrates only the part of a tick after the delay boundary, retaining fractions. Base constants
 also match [Path of Building's data](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Modules/Data.lua)
 and [defence calculation](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/dev/src/Modules/CalcDefence.lua).

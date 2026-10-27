@@ -237,8 +237,12 @@ so Iron Reflexes' converted evasion keeps it, and monster attacks roll against t
 **Iron Reflexes**
 (`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
 passive/item flat evasion, to armour and removes dexterity's 1% per 5 evasion; the converted part keeps the armour,
-evasion and shared defence increases once each. Item mods, quality, local defence rolls, shields and auras are not counted
-yet; the base value is the armour row's minimum, which is the client's default when the item's Armour component is zero.
+evasion and shared defence increases once each.
+Equipped armour and the active shield now include local flat and increased modifiers plus multiplicative quality,
+rounded per item before the character-wide modifiers and conversion.
+The saved Armour component roll selects a rounded base from the item's native minimum/maximum range before local mods.
+All three defences share that roll; legacy items without it retain minimum bases.
+See [13](13-items.md), Base defences, for the formula and stat sources.
 The final `physical_damage_reduction_rating` and `evasion_rating` (with their `_+%`) go to the client. Armour uses
 PoB's `armour / (armour + damage × 5) × 100`, rounded and capped at 90% (`DamageModel.ArmourReduction`); evasion uses
 the same hit-chance formula as accuracy, so the chance to evade is `100 - AccuracyHitChance(evasion, attacker accuracy)`
@@ -1554,6 +1558,20 @@ it:
 | `extra_damage_taken_from_crit_+%` | − `base_self_critical_strike_multiplier_-%` |
 | `impale_on_hit_%_chance` | `attacks_impale_on_hit_%_chance` (the attack reads this row's name) |
 | `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
+
+**Energy Shield Regeneration per Second** (`CharacterPlayerStats`, issue #75) reads
+`total_energy_shield_recovery_per_minute_from_regeneration` (client key 1058, `0x422`).
+The native `ESRegen` row divides this per-minute total by 60.
+The Gateway sends `EnergyShield.RegenPerMinute`, the same calculation the recovery loop applies, rounded to an integer.
+It combines flat and maximum-ES percentage regeneration, then increased regeneration and increased recovery.
+The total excludes recharge, including while the native prediction input combines both recovery sources.
+Removing the source or prohibiting regeneration sends zero; an explicit `/set_stat` display override keeps precedence.
+Native checks at 14 maximum ES received 120/minute from flat regeneration, 137 with 120%/minute added,
+and 246 with 50% increased regeneration and 20% increased recovery.
+The Defence panel rendered the flat input as 2 per second and removed the row when regeneration was prohibited.
+During recharge a separate 60/minute control stayed at 60 while the prediction input changed from 60 to 340.
+Clearing the sources and relog both restored zero.
+See [20-damage.md](20-damage.md#player-energy-shield-2026-10-25) for supported ES mechanics and prediction limits.
 
 **Main hand / off hand rows** (`main_hand_…` / `off_hand_…`, `virtual_total_main_hand_…`) add the global stats and that
 hand's item's own local stats (`HandLocalStats`: the active item in the first weapon set, else the second):

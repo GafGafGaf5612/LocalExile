@@ -65,7 +65,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   `/item <type> magic|rare`, `/roll`.
   Equipped items' mods count on the character: global stats like a passive's (life, resistances, attributes, spell
   damage …), the main hand's local crit, attack speed and accuracy on the weapon.
-  Not yet: local weapon damage and defence mods, uniques and special mods (#60).
+  Armour/evasion local flat, increased and hybrid mods and quality feed the shared character pools and panel.
+  Armour, evasion and ES share a saved variable base roll, sent in the native Armour component.
+  Fresh armour gets an ordinary roll once; legacy items keep their minimum, and ordinary crafting preserves the roll.
+  Native checks verified ordinary/special rolls, quality composition, equipment refresh and relog preservation.
+  The active hand's local physical damage modifiers also feed its attack packet.
+  Other local weapon damage variants, uniques and special mods still depend on their individual mechanics (#60).
   Code: `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`,
   `ItemCatalog.cs`, `CharacterSaves.cs`).
   Docs: [13](../docs/protocol/13-items.md) §2a-§2c.
