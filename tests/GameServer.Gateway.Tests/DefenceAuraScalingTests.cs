@@ -6,7 +6,7 @@ namespace GameServer.Gateway.Tests;
 public sealed class DefenceAuraScalingTests : IDisposable
 {
     readonly string _name = "DefenceAuras" + Guid.NewGuid().ToString("N");
-    static readonly Lazy<SkillCatalog> RuthlessSkills = new(() => new SkillCatalog(Data(), ruthless: true));
+    static readonly Lazy<SkillCatalog> NativeSkills = new(() => new SkillCatalog(Data()));
 
     public DefenceAuraScalingTests() => TestSaves.Ensure();
 
@@ -24,8 +24,8 @@ public sealed class DefenceAuraScalingTests : IDisposable
 
     static AuraCatalog.Aura Aura(string family, int level, int quality = 0, bool ruthless = false)
     {
-        var skills = ruthless ? RuthlessSkills.Value : Program.Skills;
-        int effect = skills.EffectRow(family);
+        var skills = ruthless ? NativeSkills.Value : Program.Skills;
+        int effect = skills.EffectRow(ruthless ? family + "HardMode" : family);
         string id = skills.EffectId(effect)!;
         return new(family == "Determination" ? (ushort)0x103 : (ushort)0x104, effect, id, family,
             family == "Determination" ? (ushort)1 : (ushort)3, AuraCatalog.BuffRow(id), 0, 5000,
@@ -62,7 +62,7 @@ public sealed class DefenceAuraScalingTests : IDisposable
     public void Native_levels_quality_and_mode_supply_their_own_flat_and_more_values(
         string family, bool ruthless, int level, int quality, int flat, int more)
     {
-        var skills = ruthless ? RuthlessSkills.Value : Program.Skills;
+        var skills = ruthless ? NativeSkills.Value : Program.Skills;
         var aura = Aura(family, level, quality, ruthless);
         var bonus = AuraCatalog.Bonus([aura], 0, skills, Program.Stats);
 
@@ -72,7 +72,7 @@ public sealed class DefenceAuraScalingTests : IDisposable
         Assert.Equal(0, bonus.EnergyShield);
         var own = skills.EffectStats(aura.Effect, level, quality).ToDictionary(s => s.Item1, s => s.Item2);
         Assert.Equal(quality * 2, own.GetValueOrDefault(Program.Stats.Key("base_skill_area_of_effect_+%")!.Value));
-        Assert.Equal((0, 5000), skills.Reservation(family, level));
+        Assert.Equal((0, 5000), skills.Reservation(aura.Effect, level));
     }
 
     [Theory]
@@ -83,7 +83,7 @@ public sealed class DefenceAuraScalingTests : IDisposable
     public void Aura_effect_truncates_flat_and_more_stats_before_character_calculation(
         string family, bool ruthless, int flat, int more)
     {
-        var skills = ruthless ? RuthlessSkills.Value : Program.Skills;
+        var skills = ruthless ? NativeSkills.Value : Program.Skills;
         var bonus = AuraCatalog.Bonus([Aura(family, 20, 20, ruthless)], 50, skills, Program.Stats);
 
         Assert.Equal(flat, family == "Determination" ? bonus.Armour : bonus.Evasion);
