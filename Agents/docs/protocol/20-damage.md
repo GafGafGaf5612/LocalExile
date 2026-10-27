@@ -659,6 +659,13 @@ native `energy_shield_recovery_per_minute` input (key 0x590), retaining the sepa
 recharge-active stat stays zero to avoid double prediction. This is a compatibility bridge; the native server event
 that starts the client's distinct recharge phase has not been identified.
 
+`SendPlayerEnergyShield` samples current ES, recharge state and prediction after acquiring the connection's send gate.
+The combat lock covers that snapshot, duplicate suppression, sent caches and construction of the resource/prediction
+packets; both packets share one send, so a queued capacity clamp cannot publish an earlier current value or rate.
+An unchanged state suppresses packets only at the gate, allowing changes made while waiting to publish normally.
+Held-gate encrypted-wire tests cover a clamped pool, prediction clearing, death and duplicate suppression.
+These publication regressions are automated; the earlier live checks below do not validate this new queued-send case.
+
 Live OfflineWitch had 185 ES: `/hit physical 100` left life at 3250 and ES at 85, then recovered to 185. Chaos reduced
 life while leaving ES intact. With the prediction bridge, client values advance between pool packets during recharge.
 Measurements used the local client Life component, not orb pixels or an official server trace. ES uses upstream RunResourceRecovery with its 16 ms target and elapsed time/fractional carries; foreground verification saw at most 2-point positive ES updates

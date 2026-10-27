@@ -214,6 +214,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
+  Current ES/prediction publication now samples at the send gate with encrypted-wire regressions;
+  verify queued capacity changes and predictor clearing in the native client.
   Added damage has its first stat: the attack's added lightning gets
   `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
   (Whisperer "we know all", [20](../docs/protocol/20-damage.md) Ã‚Â§2b).

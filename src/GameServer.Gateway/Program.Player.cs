@@ -146,25 +146,33 @@ partial class Program
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
 
-    static async Task SendPlayerEnergyShield(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
-    {
-        uint current; bool active, rateChanged;
-        var stats = CharacterPlayerStats(conn);
-        int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
-        int rate = conn.PlayerLife == 0 ? 0 : (int)Math.Round(EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield,Get,conn.EnergyShield.Recharging));
-        lock (conn.Monsters)
+    static Task SendPlayerEnergyShield(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn) =>
+        Send(remote, stream, ciphers, [], "0x01b1 player energy shield", atGate: () =>
         {
-            if (conn.PlayerLife == 0) conn.EnergyShield.Empty();
-            current = conn.EnergyShield.Current; active = conn.EnergyShield.Recharging;
-            if (conn.SentEnergyShield == current && conn.SentRechargeActive == active && conn.SentEsRecoveryRate == rate) return;
-            conn.SentEnergyShield = current; conn.SentRechargeActive = active;
-            rateChanged = conn.SentEsRecoveryRate != rate;
-            conn.SentEsRecoveryRate = rate;
-        }
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, current, pool: 2), $"0x01b1 player energy shield {current}/{conn.Pools.EnergyShield}");
-        if (rateChanged && Stats.Key("energy_shield_recovery_per_minute") is uint key)
-            await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(key, rate)]), null);
-    }
+            // Sample and deduplicate after earlier sends: a queued pool change can clamp ES or end recharge.
+            // Publish the current resource and its predictor together, from the same locked state.
+            lock (conn.Monsters)
+            {
+                var stats = CharacterPlayerStats(conn);
+                int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+                if (conn.PlayerLife == 0) conn.EnergyShield.Empty();
+                uint current = conn.EnergyShield.Current;
+                bool active = conn.EnergyShield.Recharging;
+                int rate = conn.PlayerLife == 0 ? 0 : (int)Math.Round(
+                    EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield, Get, active));
+                if (conn.SentEnergyShield == current && conn.SentRechargeActive == active && conn.SentEsRecoveryRate == rate)
+                    return null;
+                bool rateChanged = conn.SentEsRecoveryRate != rate;
+                var resource = InstanceProtocol.LifeUpdate(PlayerId, current, pool: 2);
+                byte[] packet = rateChanged && Stats.Key("energy_shield_recovery_per_minute") is uint key
+                    ? [.. resource, .. InstanceEntities.StatsUpdate(PlayerId, [(key, rate)])]
+                    : resource;
+                conn.SentEnergyShield = current;
+                conn.SentRechargeActive = active;
+                conn.SentEsRecoveryRate = rate;
+                return packet;
+            }
+        });
 
     // A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
     // the mana.

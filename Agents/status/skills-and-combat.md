@@ -892,6 +892,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Equipment ES uses the saved variable base roll and native rounding before and after local modifiers and quality.
   It absorbs non-chaos hits before life and recovers through regeneration and delayed, damage-interrupted recharge.
   The existing 16 ms elapsed-time loop supplies the client's native ES recovery prediction.
+  Current ES and its prediction are sampled together at the network send gate, including duplicate suppression.
+  Encrypted-wire held-gate tests cover a queued clamp, cleared prediction, death and unchanged-state suppression;
+  native checks of this queued-send case remain pending.
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
