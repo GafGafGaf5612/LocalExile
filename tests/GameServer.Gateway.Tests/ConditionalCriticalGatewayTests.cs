@@ -237,12 +237,36 @@ public class ConditionalCriticalGatewayTests
         f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
         f.Conn.PlayerLife = 51;
         uint firstObject = f.Conn.NextObjectId;
-        var use = f.Use();
-        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-            while (f.Conn.NextObjectId == firstObject) await Task.Delay(5, timeout.Token);
-        Assert.Equal(0, random.Calls);
-        f.Conn.PlayerLife = 50;
-        f.Set("global_cannot_crit", cannotCrit ? 1 : 0);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await f.SendGate.WaitAsync(timeout.Token);
+        bool held = true;
+        Task use;
+        try
+        {
+            use = f.Use();
+            while (true)
+            {
+                lock (f.Conn.Monsters)
+                    if (f.Conn.ProjectileObjects.Contains(firstObject)) break;
+                // Let one queued packet through, then reclaim the gate before another can commit. Once creation
+                // releases the projectile, the next packet (and therefore flight/impact) waits for this test.
+                await Task.Delay(5, timeout.Token);
+                var reclaim = f.SendGate.WaitAsync(timeout.Token);
+                f.SendGate.Release();
+                held = false;
+                await reclaim;
+                held = true;
+            }
+            Assert.NotEqual(firstObject, f.Conn.NextObjectId);
+            Assert.Equal(f.Target.MaxLife, f.Target.Life);
+            Assert.Equal(0, random.Calls);
+            lock (f.Conn.Monsters)
+            {
+                f.Conn.PlayerLife = 50;
+                f.Set("global_cannot_crit", cannotCrit ? 1 : 0);
+            }
+        }
+        finally { if (held) f.SendGate.Release(); }
         await use;
         await f.HitLands();
         Assert.Equal(cannotCrit ? 0 : 2, random.Calls);
