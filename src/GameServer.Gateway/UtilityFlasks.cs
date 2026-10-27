@@ -298,7 +298,8 @@ static class UtilityFlasks
         if (s.Count == 0) return b;
         int Get(string name) => s.GetValueOrDefault(name);
         int all = Get("base_resist_all_elements_%");
-        static int More(int a, int c) => (int)Math.Round((100 + a) * (100 + c) / 100.0 - 100);
+        // Preserve the complete product until the final defence rating is rounded.
+        static decimal More(decimal a, int c) => (100m + a) * (100m + c) / 100m - 100m;
         return b with
         {
             FireResistance = b.FireResistance + all + Get("base_fire_damage_resistance_%"),

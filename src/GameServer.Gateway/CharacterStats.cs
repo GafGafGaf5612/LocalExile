@@ -73,7 +73,7 @@ static class CharacterStats
         bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false,
         int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
-        int AuraEffectPct = 0, int AuraAreaPct = 0, int ArmourMorePct = 0, int EvasionMorePct = 0, int EnergyShield = 0,
+        int AuraEffectPct = 0, int AuraAreaPct = 0, decimal ArmourMorePct = 0, decimal EvasionMorePct = 0, int EnergyShield = 0,
         // The overcapped-resistance flags' derived increases (ResistanceOvercap), computed once in PoolsFor from the
         // final raw resistances and maxima: +1% per 1% of cold overcap on evasion, lightning overcap on crit chance.
         int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0,
@@ -147,7 +147,7 @@ static class CharacterStats
             return Math.Max(0m, total - fromShield) * Math.Max(0m, 100m + increase) / 100m
                 + (b.NoShieldDefences ? 0m : fromShield * Math.Max(0m, 100m + increase + shieldIncrease) / 100m);
         }
-        decimal More(decimal value, int increase)
+        decimal More(decimal value, decimal increase)
         {
             decimal factor = Math.Max(0m, 100m + increase) / 100m;
             return factor > 1m && value > decimal.MaxValue / factor ? decimal.MaxValue : value * factor;
