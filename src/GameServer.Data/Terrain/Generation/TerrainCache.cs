@@ -379,7 +379,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             var (ownTag, ownKey, ownRaw) = (own & 8) != 0 ? TagAndKey(keyAt) : (baseTile.Tag, baseTile.Key, baseTile.KeyGrounds);
             string?[] ownGrounds = baseTile.VertexGrounds;
             sbyte[] ownHeights = baseTile.VertexHeights;
-            if ((own & 1) != 0 && flagsAt + 2 <= h.Length)
+            if ((own & 9) != 0 && flagsAt + 2 <= h.Length)
             {
                 ushort vf = BinaryPrimitives.ReadUInt16LittleEndian(h.AsSpan(flagsAt));
                 var (vg, vh) = (vf & 2) != 0 ? VertexBlock(h, table.Length, ownKey.Width, ownKey.Height, (vf & 1) != 0, (own & 8) != 0 ? keyAt : 8, overBase: true)

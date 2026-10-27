@@ -1547,7 +1547,7 @@
   "capture MapWorldsTemple": {"Hash":"match","Draws":19225,"TraceDraws":19225,"Walk":0,"Projectile":0,"Placed":5245,"Matched":5245,"Captured":5245,"Heights":0,"Objects":-1},
   "capture MapWorldsTempleUnique": {"Hash":"match","Draws":13782,"TraceDraws":46344,"FirstDiff":"0x14152e730 (port stopped)","Walk":0,"Projectile":0,"Placed":1107,"Matched":1107,"Captured":1107,"Heights":0,"Objects":-1},
   "capture MapWorldsTerrace": {"Hash":"match","Draws":75100,"TraceDraws":93476,"FirstDiff":"0x1415307bb (port stopped)","Walk":0,"Projectile":0,"Placed":2875,"Matched":2875,"Captured":2875,"Heights":0,"Objects":0},
-  "capture MapWorldsTheatreOfLies": {"Hash":"match","Draws":5341,"TraceDraws":8301,"FirstDiff":"0x142043869","Walk":0,"Projectile":0,"Placed":1148,"Matched":1148,"Captured":1148,"Heights":0,"Objects":0},
+  "capture MapWorldsTheatreOfLies": {"Hash":"match","Draws":8301,"TraceDraws":8301,"Walk":0,"Projectile":0,"Placed":1148,"Matched":1148,"Captured":1148,"Heights":0,"Objects":0},
   "capture MapWorldsThicket": {"Hash":"match","Draws":5538,"TraceDraws":8450,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":0,"Placed":61,"Matched":61,"Captured":61,"Heights":0,"Objects":0},
   "capture MapWorldsTortureChamber": {"Hash":"match","Draws":14359,"TraceDraws":35384,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":0,"Placed":1154,"Matched":1154,"Captured":1154,"Heights":0,"Objects":0},
   "capture MapWorldsTortureChamberUnique": {"Hash":"match","Draws":25329,"TraceDraws":25329,"Walk":0,"Projectile":0,"Placed":349,"Matched":349,"Captured":349,"Heights":0,"Objects":0},
