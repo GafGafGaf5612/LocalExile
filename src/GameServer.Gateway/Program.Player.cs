@@ -621,6 +621,9 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMaxLife),
             $"0x01b1 player revived with {conn.PlayerMaxLife} life");
         await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}");
+        // Death may have published false full-pool conditions while the player ticker kept its pre-death chance.
+        // Publish the restored life/ES conditions explicitly even when that cached chance is unchanged.
+        await SendCharacterStats(remote, stream, ciphers, conn, "resurrected");
         // The checkpoint: the area's waypoint once activated, else where the player entered the area, as in the real game
         // before any checkpoint is activated. Checkpoint objects and boss arenas (revive at the arena's door) are not done.
         bool activated;
