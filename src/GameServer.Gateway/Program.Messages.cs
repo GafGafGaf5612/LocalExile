@@ -39,20 +39,20 @@ partial class Program
                     await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (disabled skill, cost back)");
                     continue;
                 }
-                // The ordinary attack on a ranged weapon: clicking the ground with the attack skill bound swings at the point
-                // and the client draws an arrow to it, instead of walking there (live 2026-10-25: the arrow stayed in the
-                // hand, because every non-gem ground click was movement).
-                if (use.SkillId == SkillCatalog.FirstSkillId && WeaponProfileFor(conn, activeSet: true).Bow)
+                // The ordinary ranged attack fires at the ground point; it is neither a melee hit nor a Move action.
+                // Both bows and wands create their native Projectiles.dat object at the weapon's attack contact.
+                string? ordinaryProjectile = OrdinaryRangedAttack.ProjectileId(WeaponProfileFor(conn, activeSet: true));
+                if (use.SkillId == SkillCatalog.FirstSkillId && ordinaryProjectile is not null)
                 {
                     double duration = WeaponFor(conn).AttackSeconds(CharacterPlayerStats(conn));
-                    if (!TryBeginBowAttack(conn, at, duration, use.SkillId, use.Slot, out var bow)) continue;
+                    if (!TryBeginRangedAttack(conn, at, duration, use.SkillId, use.Slot, out var shot)) continue;
                     int projectileEpoch;
                     lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
                     // Release work must not block serial input dispatch: resume/move can invalidate a queued echo.
-                    _ = ConfirmAndLaunchOrdinaryBow(remote, stream, ciphers, conn,
-                        InstanceProtocol.ActionStarted(PlayerId, bow.X, bow.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
-                        $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bow.X}, {bow.Y}) (t={at:0.000})",
-                        (bow.X, bow.Y), (use.X, use.Y), duration, bow.Action, projectileEpoch);
+                    _ = ConfirmAndLaunchOrdinaryRanged(remote, stream, ciphers, conn,
+                        InstanceProtocol.ActionStarted(PlayerId, shot.X, shot.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
+                        $"0x01ab ranged attack ({ordinaryProjectile}) at ({use.X}, {use.Y}) from ({shot.X}, {shot.Y}) (t={at:0.000})",
+                        (shot.X, shot.Y), (use.X, use.Y), duration, shot.Action, projectileEpoch, ordinaryProjectile, use.Slot);
                     continue;
                 }
                 // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an

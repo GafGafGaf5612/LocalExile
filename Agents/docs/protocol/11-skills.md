@@ -1,5 +1,8 @@
 # 11 — Skills: how the client gets them, the default attack
 
+The standalone bow/wand and monster-action port is documented in [the port record](../dev/ranged-monster-actions-port.md).
+Its fresh automated results are separate from historical LocalExile native evidence quoted below.
+
 Status (live, 2026-10-17): the player has the default attack. It shows in the skill picker, can be put on the left mouse
 button, walks into range, swings at the Witch's attack speed (757 ms, or faster with `/set_stat attack_speed_+%`), and
 the server lowers the monster's life 2–5 per hit at the swing's contact point until it dies. Code: `GrantedSkill`, `PlayerObject` (`InstanceEntities.cs`), `SkillCatalog.cs` and `Attack` in the
@@ -357,15 +360,19 @@ No generator output changes are needed: the multiplier is already extracted.
 3. At the swing's contact point it rolls the accuracy check and, on a hit, lowers the monster's life with 0x1b1. The
    contact point is the active weapon's `attack1_<weapon>` clip contact keyframe (`AnimationContacts.AttackContact`:
    its shield or dual-wield variant, then any attack1 of that weapon, else 0.4) as a fraction of the attack time, since
-   the client stretches the clip to it, plus 150 ms for the client's walk into range lagging the server's estimate
-   (`Game_HIT_OFFSET_MS`). It never lands later than the next held attack may start (a quarter early, less 50 ms:
+   the client stretches the clip to it.
+   Only an actual timed walk from the original cell to a different stop cell adds the walk-in compensation
+   (`Game_HIT_OFFSET_MS`, default 150 ms); stationary attacks use the native keyframe without that extra delay.
+   `DefaultAttackContactDelay` receives the original cells and departure/arrival times from the production attack.
+   It never lands later than the next held attack may start (a quarter early, less 50 ms:
    `AttackTiming.ContactDelay`), because that attack cancels a hit still waiting. The chance is PoB's `calcs.hitChance`: `accuracy / (accuracy + (evasion / 5)^0.9) × 125`,
    rounded and clamped to 5..100, with the monster's `DefaultMonsterStats.Evasion` at its level. The player's accuracy
    for this roll is the pools' rating raised by the Accuracy Mastery's target conditions under
    `TargetAccuracy.AgainstTarget` at the target's own rarity and position at that moment (§4); the gateway logs the
    value whenever a condition changes it. A miss is logged and
    sends no life update; spells do not roll accuracy and always hit.
-4. Any later player action (0x25 move, another 0x24) cancels steps 2 and 3 (`ClientState.ActionCount`).
+4. Any later player action (0x25 move, another 0x24) cancels pending contact/release (`ClientState.ActionCount`).
+   A ranged projectile already created keeps its own area lifetime and can still collide after the player moves.
 5. Pacing: one swing per attack time. While the button is held the client sends one 0x24 per swing; a swing may
    arrive up to a quarter of an attack early (jitter) and the schedule stays on the client's cadence. When the server
    thought the swing took 833 ms instead of 757 ms it fell behind and dropped every third or fourth swing, which then
@@ -571,9 +578,28 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   which drops a server-driven monster's queued attack in the same frame (traced: created, queued, both checks passed,
   then neither current nor queued). The server walks the monster itself, so the skill is non-pathing. Only on the
   skill: on the monster's Stats component it also stops its Move action from pathing (the monsters stood still).
-- **AI** (`RunMonsterAi`, 500 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
-  0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
-  the player is still within reach + 2: 0x1b1 on the player.
+- **AI** (`RunMonsterAi`, `MonsterAiCadence`): decisions run at 50 ms intervals of elapsed game time.
+  A late wake runs one decision and schedules the next from the current time; it never replays missed steps.
+  Pause freezes game time, and disabled AI or a dead player does not accumulate work to replay afterward.
+  Chase repaths have a separate 100 ms minimum interval and require at least three cells of Manhattan target change.
+  This retains the current walk when the target moves slightly instead of repeatedly restarting its path.
+  A hostile monster within reach stops and swings: 0x1ab with its skill, flags 0x0408 | 0x80, target the player,
+  sequence 0xffff.
+  Its busy period covers the full attack duration from the actual action send; contact still occurs halfway through.
+  A pending swing reserves its generation through contact, so a blocked send gate cannot reserve duplicate attacks.
+  Contact checks the original monster, action generation, life, range, pause and area lifetime at the send gate.
+  Boss stages and emergence retain their own timing; the next ordinary action waits for stage completion's final
+  transition, life refill and ActionEnded to pass through the gate together.
+  Cadence, repath, attack duration, interruption and queued-stage guards have automated coverage.
+  A native Hillock smoke check reached 1/311 life, completed the stage and refill to 311, then resumed ordinary attacks.
+  Evidence: `artifacts/wand-ai-validation/ai-native-boss-stage.json` and `ai-after-gateway.log`.
+  Three native AI-enable controls issued one chase each after 43, 38 and 50 ms.
+  Four deliberate player turns produced four chase orders at 249 ms intervals, without repeated orders between turns.
+  A Drowned with a 2.4 s attack started three attacks 2432 and 2428 ms apart; faster decisions did not shorten attacks.
+  Actual Escape-menu pause held all 30 enemy samples at (589,368) with no actions.
+  After resume, 61 samples advanced to (594,368) along the existing path without another chase order.
+  Evidence: `artifacts/wand-ai-validation/ai-native-response-{1,2,3}.json`, `ai-native-turns.json`,
+  `ai-native-attack-pacing.json` and `ai-native-menu-{paused,resumed}.json`.
 - **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level (raised by its mods); the server
   rolls the player's
   evasion with the same `AccuracyHitChance` formula and sends no life update on a miss. The roll uses PoE's shared
@@ -751,25 +777,37 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   the walking evidence is manual native RE.
   Departure/arrival damage, chilled ground, nearby-enemy cooldown recovery, shared Blink cooldown groups,
   other location instant skills and complete movement restriction/terrain searches remain unimplemented.
-- **Hit reaction (live 2026-10-25).** A monster that takes a hit plays its rig's **TakeHit** clip with S→C **0x1b2**
-  (`InstanceProtocol.AnimationUpdate`, kind 0): object header, u8 kind, u32 clip index (+0x24), u32 float bits (speed,
-  +0x28). The index is 0-based into the actor's animation list, which is the rig `.amd`'s animations in file order
-  (Sanctum zombie: `flinch_unarmed` = 156 of 249 in `Art/Models/MONSTERS/skeleton/rig.amd`; `flinch_pitchfork` = 151,
-  both played the flinch *with its SoundEvent* live). The handler (`0x141e58ef0`) calls `0x141dba530`, which ignores an
-  index past the actor's animation count — a wrong index costs nothing. `0x1b1` alone only stores the pool and runs the
-  death/revive slots, so a hit without 0x1b2 is silent and still. A killing blow gets no flinch (the client's death
-  runs instead). The reaction is gated like a stun: the hit must take at least a tenth of the monster's max life, and a
-  monster does not flinch again until its clip has played (its `.amd` length at speed 1, at least 0.4 s) — otherwise a
-  fast attack or a volley restarts the clip and its sound and keeps cutting the monster's own attack and walk animations
-  while the server still moves it. The flinch is checked again inside the connection's send gate, so a hit that kills
-  the monster meanwhile (marked Dead before its own 0x1b1 goes out) drops it rather than playing it over the death.
+- **Hit reaction.** A surviving monster receives S→C **0x1d1**, `ActorAnimation` type 5 (`TakeHit`), for recovery.
+  The local eligibility policy requires a positive hit of at least one tenth of maximum life, a known TakeHit profile,
+  no stun immunity and expiry of its previous recovery.
+  A killing blow gets no flinch because the client's death runs instead.
+  The duration policy randomly chooses one extracted clip's length, with a 0.4 s minimum; this is a recovery profile,
+  not a forced native rig variant or a complete official stun formula.
+  An accepted flinch now stops the server walk at its current game-time cell, clears the chase target and advances
+  the monster's action generation, permanently invalidating queued old movement, swing echoes and contact damage.
+  AI waits until the same recovery ends; a cancelled ordinary swing releases its old busy period, while boss-stage
+  and emergence timing remain intact.
+  The connection's send gate commits native `ActorAnimation` (0x1d1), type 5 (`TakeHit`), with the same requested
+  recovery duration as `FlinchUntil`. The actor's ACT selects the actual presentation variant; the extracted clip
+  profile supplies the duration policy rather than forcing a rig index. Neither rig-only 0x1b2 nor 0x1ac followed
+  by 0x1b2 stops native movement: an initial moving-Drowned probe kept sliding despite its accepted hurt clip.
+  Do not append 0x1b2 after 0x1d1, which would replace the native recovery animation's completion lifecycle.
+  Native type-5 TakeHit fits its non-looping clip to the requested duration. Verification on 2026-10-26 stopped a
+  Drowned at (582,367): all 46 samples from 40 to 950 ms after the hit retained that cell and a zero movement step;
+  enabling AI afterward started a new walk. Evidence: `artifacts/combat-validation/enemy-moving-flinch-final.json`
+  and `enemy-movement-resume-final.json`.
+  Monster identity, death, removal, area transfer, disconnection and pause are checked at that actual send point.
+  Ordinary monster swing contact also commits under its original action generation at the send gate and waits on
+  game time, so pause cannot consume its remaining windup and recovery expiry cannot revive an interrupted hit.
   `data/monster-takehit.json` (`python -I scripts/re/monster_takehit.py`) holds each MonsterVarieties
   row's index(es) and clip lengths: its `.act` maps `TakeHit` to a clip, and the `.ao`'s `AnimationController` names
   the rig. A rig whose parsed animations do not add up to the `.amd`'s count line is skipped (a missed entry would shift
   every later index to a wrong but in-range clip). 26 `.act`
   files map a pool — `flinch_01, flinch_02, flinch_03`, or `flinch_small:max_duration=0.45, flinch_large:min_duration=0.45`
-  (the condition picks by the hit's stun duration, which the server does not model) — and the server picks one at random
-  per hit; every other variety has a single clip. An `@Name` alias is expanded to the whole list it names, and every
+  (the native condition selects by the requested recovery duration).
+  The server randomly chooses a duration profile; the actor's native ACT chooses the actual presented variant.
+  Every other variety has a single clip.
+  An `@Name` alias is expanded to the whole list it names, and every
   `extends` parent is followed (not just the first), with "nothing" ending the chain. The client also has the directional
   types TakeHitForward/Backward/Left/Right, but the `.act` files that set them alias them all to `@TakeHit`, so they add
   no variants. 0x262 (a Life "changed by" event with a signed delta) reaches the Life listeners but plays no flinch,
@@ -1213,7 +1251,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   distance / speed it flies at ~1000 units/s. The fireball now starts `Game_PROJECTILE_AHEAD` cells (1.5) in front of
   the caster and flies on to `Game_PROJECTILE_RANGE` cells (120, clamped to the area), stopped by the first
   monster or wall contact described above. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
-- **Ordinary bow attacks (#203).** Ground and object uses share `LaunchOrdinaryBow`:
+- **Ordinary bow attacks (#203).** Ground and object uses share `LaunchOrdinaryRanged`:
   the action is confirmed, then the game clock waits for `attack1_bow` contact without the melee walk-in offset.
   The original action, life and area epoch must still be valid at creation. An already-paused use is rejected before
   changing action, walk or attack pacing; an accepted echo/creation queued behind a later pause waits for resume.
@@ -1266,7 +1304,48 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   release-snapshot-kill,released-native-frostblink,pending-bow-framed-frostblink}.json`.
   Recovery evidence: `logs/ordinary-bow-hit-recovery-{bow,flight}.json` in the same checkout.
   Automated sweep, release snapshot, actual send-gate lifecycle and paused-input dispatch checks also pass.
-  Surface/platform height, wands, supports, pierce, fork and chain are outside this change.
+  Surface/platform height, supports, pierce, fork and chain are outside this change.
+- **Ordinary wand attacks.** Ground and object default attacks use the shared ordinary ranged pipeline
+  (`OrdinaryRangedAttack`, `OrdinaryRangedShot`, `Program.RangedAttacks.cs`).
+  Wands create `Metadata/Projectiles/WandProjectile` (Projectiles row 62, speed 3260 world units/second) at the
+  contact fraction of the actual ACT-selected main-hand attack clip, scaled to the native attack duration.
+  Ranged release never takes the melee walk-in offset, and an object attack no longer also deals direct melee damage.
+  The release snapshot and actual first swept collision determine accuracy and weapon damage, preserving bow behavior.
+  At a collision the bolt stops, receives Animated kind-zero clip 0 (`impact`), remains for 500 ms of game time,
+  then is removed; the native clip owns WandTrailImpact sound and wand_impact particles.
+  `anim_contacts.py` reads all seven `Characters.ACTFile` assets and their AO/AMD rigs into
+  `data/animation-contacts.json`; extraction manifest version 2 regenerates this expanded output automatically.
+  The `defaultWand` pools preserve ACT order and resolve nested `WandShield`/`WandWand` Melee overrides or inheritance.
+  Templar's dual-wand main hand inherits `attack1_wand`; its `attack1_wand_wand_right` assignment is OffMelee.
+  Current ordinary main-hand pools are unconditional group-zero, weight-one entries with no exclusion.
+  Aliases, modifiers or conditions in these pools fail extraction instead of guessing eligibility.
+  The Witch's single-wand pool is attack1/2/3/4 with contacts 300/233/200/366 ms, each in a 600 ms rig clip.
+  `AnimationContacts.TryDefaultWandContact` freezes the selected stance and contact from the accepted input sequence.
+  Missing old metadata uses the existing contact fallback with an explicit approximation warning.
+  Native action start `0x141e8e92b..0x141e8e932` copies action `+0x11a` to Actor seed `+0x21c`.
+  Request builder `0x141ba3104..0x141ba3115` zero-extends that u16 sequence and adds action `+0x2d0`, wrapping as u32.
+  The latter is intrinsic `attack_repeat_count` (stat 0x4eb), set by Melee constructor `0x141b6eb70` and decremented
+  at completion `0x1419e3960`; it is zero for this ordinary attack, rather than a counter of held-button attacks.
+  Fresh held-input actions receive a new sequence (`0x141e8d3d0`); repeated packets need no invented seed offset.
+  Seed 0xffff is the zero-extended 65535.
+  Duration selector `0x141e991e0` uses the request seed, or Actor seed when the request seed is zero.
+  Initializer `0x140e0bec0`, next-word function `0x140484fe0` and bounded draw `0x140484fa0` implement the native RNG.
+  `AnimationVariantSelector` mirrors its literal uint32 operations, including the right-shift state transition,
+  eight warm-up steps and rejection sampling; this differs from the usual published TinyMT32 transition.
+  Selection walks eligible entries in ACT order, accumulating weight and replacing the choice when the bounded draw
+  is less than the current entry's weight; bound one returns zero without advancing the RNG.
+  Sixteen actual ground RMB inputs, sequences 4097 through 4112, matched the native selected clip in every case,
+  covering Witch rig clips 31/36/39/42 and all four contact times.
+  At projectile creation, native clip elapsed time exceeded the selected contact by 6.1 to 31.4 ms in 15 samples;
+  the first cold sample was 55.6 ms late, so deterministic clip selection does not imply zero scheduling latency.
+  An actual object-targeted RMB input, sequence 4113, selected clip 39 in both client and server.
+  Evidence: `artifacts/wand-ai-validation/wand-native-summary.json`, `wand-after-ground-*.json`
+  and `wand-after-object.json` in that directory.
+  Full off-hand selection/timing/damage and nonzero intrinsic attack repeats remain outside this main-hand model.
+  Automated release, collision, cancellation, packet-order and paused/invalidated impact-tail checks accompany native
+  verification in `artifacts/combat-validation/`. A real RMB default wand attack created type `0x8648b085`, hit
+  a normal Drowned for 9, played native clip 0 with a 500 ms length, and removed the object 514 ms after impact.
+  These observations establish projectile and impact behavior; the later captures above verify variant selection.
 - **Still wrong.** Without a surface-height model the projectile uses the captured terrain height; on a platform or
   doodad (which the terrain grid does not include) it spawns below the player (issue #182). The direction floats of
   Positioned's f1 0x04 block are not used; sending (dx, dy, 0, 0) put the fireball under the ground, so the Gateway no
@@ -1895,7 +1974,8 @@ Automated parsed-dispatch coverage does not constitute native verification.
 ## Open
 
 - Monster attacks still land at half the attack time (the player's use the contact keyframe); "more" multipliers; energy shield (Righteous Fire's ES parts are ignored).
-- A 30 Hz server loop: `TickRate` only bounds the attack time; hits use timers and the monster AI runs every 500 ms.
+- A shared simulation loop remains open: `TickRate` bounds attack time, while hits use timers.
+  Monster decisions use 50 ms of game time.
 - Monsters use only their first granted effect; no ranged or spell skills, no monster skill choice.
 - A damage model: armour, evasion, resistances, crits; the player's real life from level and stats.
 - The death screen's bit4 and trailing fields (Sanctum and other modes); exit to character selection (0x153).

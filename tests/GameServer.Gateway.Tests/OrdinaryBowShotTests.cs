@@ -2,7 +2,7 @@ using GameServer.Core.World;
 
 namespace GameServer.Gateway.Tests;
 
-public class OrdinaryBowShotTests
+public class OrdinaryRangedShotTests
 {
     [Fact]
     public void Capture_keeps_existing_weapon_added_conversion_precedence_and_freezes_the_inputs()
@@ -20,7 +20,7 @@ public class OrdinaryBowShotTests
             var raw = new Dictionary<uint, int> { [1] = 3, [2] = 7, [3] = 50, [4] = 25, [5] = 20, [6] = 1, [7] = 7,
                 [StatKeys.MeleePhysicalDamagePct] = 20 };
             var weapon = new SkillCatalog.Unarmed(714, 5, 13, 120);
-            var shot = OrdinaryBowShot.Capture(weapon, raw, [(3, 100), (5, 10), (7, 3)], catalog, 321, 1234, 175);
+            var shot = OrdinaryRangedShot.Capture(weapon, raw, [(3, 100), (5, 10), (7, 3)], catalog, 321, 1234, 175);
             // Retain the existing ordinary attack's melee-physical treatment, and the player's conversion wins
             // a colliding default-skill key. Added fire is added before conversion, exactly once.
             Assert.Equal(new DamageRange(3, 7.8), shot.Hit[DamageType.Physical]);
@@ -40,7 +40,7 @@ public class OrdinaryBowShotTests
     public void Contact_mitigation_uses_one_rolled_packet_and_preserves_the_critical_draw_order()
     {
         var packet = DamagePacket.Of(DamageType.Fire, 1, 50).Add(DamageType.Cold, new(1, 50));
-        var shot = new OrdinaryBowShot(packet, 100, 10000, 150, 0);
+        var shot = new OrdinaryRangedShot(packet, 100, 10000, 150, 0);
         var random = new Random(731);
         var reference = new Random(731);
         var expectedRoll = packet.Roll(reference);
@@ -68,7 +68,7 @@ public class OrdinaryBowShotTests
     [Fact]
     public void Accuracy_uses_the_contact_targets_evasion_without_mutating_its_impales()
     {
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 20), 100, 0, 150, 100);
+        var shot = new OrdinaryRangedShot(DamagePacket.Of(DamageType.Physical, 10, 20), 100, 0, 150, 100);
         var impale = new ImpaleState();
         impale.Apply(100);
         Assert.True(shot.Hits(0, new Rolls(99)));
@@ -80,7 +80,7 @@ public class OrdinaryBowShotTests
     [Fact]
     public void Existing_impales_are_added_before_the_roll_and_crit_and_a_new_stack_keeps_five_hits()
     {
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 20), 100, 10_000, 200, 100);
+        var shot = new OrdinaryRangedShot(DamagePacket.Of(DamageType.Physical, 10, 20), 100, 10_000, 200, 100);
         var impale = new ImpaleState();
         impale.Apply(100);
         var result = shot.Roll(impale, new Rolls(0, 0, 0));
@@ -94,7 +94,7 @@ public class OrdinaryBowShotTests
     public void Converted_damage_does_not_invent_physical_impales_and_added_types_roll_separately()
     {
         var hit = DamagePacket.Of(DamageType.Fire, 18, 36).Add(DamageType.Cold, new(5, 5));
-        var shot = new OrdinaryBowShot(hit, 100, 0, 150, 100);
+        var shot = new OrdinaryRangedShot(hit, 100, 0, 150, 100);
         var impale = new ImpaleState();
         Assert.Equal((23, false), shot.Roll(impale, new Rolls(0, 0, 0)));
         Assert.Equal(0, impale.Stacks);
@@ -104,7 +104,7 @@ public class OrdinaryBowShotTests
     [Fact]
     public void Each_actual_target_uses_its_own_stacks_and_a_shot_keeps_its_release_inputs()
     {
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 10), 400, 0, 150, 0);
+        var shot = new OrdinaryRangedShot(DamagePacket.Of(DamageType.Physical, 10, 10), 400, 0, 150, 0);
         var first = new ImpaleState(); first.Apply(100);
         var second = new ImpaleState(); second.Apply(200);
         Assert.Equal((20, false), shot.Roll(first, new Rolls(0)));

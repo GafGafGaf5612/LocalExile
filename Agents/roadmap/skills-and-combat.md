@@ -112,6 +112,10 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
   Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
   Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
+  Enemy TakeHit recovery uses native Actor type 5, stops movement and invalidates old swing generations.
+  Historical LocalExile controls cover the 50 ms planner, bounded repaths, pacing and menu pause.
+  Fresh native validation of this standalone port remains pending.
+  Automated regressions retain the full attack duration and guard pending swings and boss-stage completion.
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
   Added damage has its first stat: the attack's added lightning gets
@@ -196,7 +200,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### Skill projectiles
 
-- **Known:** Fireball and a bow's `DefaultArrow`/attack-gem projectiles are server-made objects
+- **Known:** Fireball, ordinary wand bolts and a bow's `DefaultArrow`/attack-gem projectiles are server-made objects
   ([11](../docs/protocol/11-skills.md) §9–10); attack gems use the `attack1_bow` contact and the weapon's
   damage; on natural ground the spawn height is the captured terrain height + 5 steps.
   Ordinary player and skill projectile-speed bonuses affect flight and predicted arrival together; baseline/+100%/-50%
@@ -206,6 +210,11 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   share delayed release and collision damage, with release snapshots and original-action guards through creation
   (#203, automated and native ground/object, wall/interceptor, cancellation and pause checks pass).
   The separate object-use melee contact hit is removed.
+  Ordinary wand ground/object attacks now share that pipeline, the native main-hand contact and impact animation.
+  Ordinary wand main-hand variation now follows each class ACT pool and the native input-seeded selector.
+  Sixteen actual ground inputs covered all four Witch clips with matching selection; an object input also matched.
+  Extraction manifest version 2 supplies ordered stance pools and exact rig contacts for all seven classes.
+  Complete off-hand timing/damage and nonzero intrinsic attack repeats remain open.
   Accuracy misses continue past the evading object under a current-wiki-supported bounded policy; official-server
   continuation and snapshot parity still need evidence. Combined-only Frostblink controls preserve a released
   arrow and resample the origin after a framed pre-release blink; they do not add standalone Frostblink support.

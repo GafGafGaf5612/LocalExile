@@ -250,10 +250,12 @@ public partial class RecentEnemyHitGatewayTests
         await Task.Delay(120);
         Assert.False(swing.IsCompleted);
         Assert.Equal(1, f.Count); Assert.Equal(10000u, f.Conn.PlayerLife);
-        Assert.Equal(InstanceProtocol.ActionStarted(42, 34, 32, 32, 32, monster.Attack!.SkillId,
-            0xffff, 0x0408, targetObjectId: Program.PlayerId), await f.Read());
+        Assert.Empty(await f.Read()); // The action state machine holds the echo as well as contact through pause.
         lock (f.Conn.Monsters) f.Conn.Clock.Start();
         await swing.WaitAsync(TimeSpan.FromSeconds(5));
+        var expected = InstanceProtocol.ActionStarted(42, 34, 32, 32, 32, monster.Attack!.SkillId,
+            0xffff, 0x0408, targetObjectId: Program.PlayerId);
+        Assert.Equal(expected, (await f.Read()).Take(expected.Length));
         Assert.Equal(2, f.Count);
     }
 

@@ -64,7 +64,7 @@ public class RageGatewayTests
         Assert.Equal(expected, character[Program.Stats.Key("main_hand_maximum_chaos_damage")!.Value]);
         var weapon = (SkillCatalog.Unarmed)Call("WeaponFor", f.Conn);
         var ordinary = Program.AttackHit(weapon, character, melee: false);
-        var bow = OrdinaryBowShot.Capture(weapon, character, [], Program.Stats, f.Conn.Pools.Accuracy, 0, 150).Hit;
+        var bow = OrdinaryRangedShot.Capture(weapon, character, [], Program.Stats, f.Conn.Pools.Accuracy, 0, 150).Hit;
         foreach (var hit in new[] { ordinary, bow })
         {
             Assert.Equal(new DamageRange(expected, expected), hit[DamageType.Chaos]);
@@ -383,7 +383,7 @@ public class RageGatewayTests
         var nativeAfter = ((IEnumerable<(uint, int)>)Call("FinalPlayerStats", f.Conn)).ToDictionary(v => v.Item1, v => v.Item2);
         Assert.Equal((int)Math.Floor(nativeBefore[StatKeys.MainHandMaxPhysical] * 1.3),
             nativeAfter[StatKeys.MainHandMaxPhysical]);
-        var arrow = OrdinaryBowShot.Capture(weapon, stats, [], Program.Stats, int.MaxValue, 0, 150);
+        var arrow = OrdinaryRangedShot.Capture(weapon, stats, [], Program.Stats, int.MaxValue, 0, 150);
         Assert.Equal(ordinary.MaxTotal * 1.3, arrow.Hit.MaxTotal, 8);
         var spellPlan = SkillHitPlan.ForSkill(Program.Skills, Program.Skills.EffectRow("Fireball"), 1);
         var spell = SpellDamage.Packet(spellPlan.SpellBase, name => stats.GetValueOrDefault(Program.Stats.Key(name) ?? 0), 1);
@@ -497,7 +497,7 @@ public class RageGatewayTests
         f.Conn.EvasionEntropy = evaded ? 0 : 99;
         f.Conn.Monsters[43] = attacker;
         await (Task)Call("MonsterSwing", "rage-incoming-test", f.Stream, f.Ciphers, f.Conn,
-            43u, attacker, (105, 100), (100, 100), f.Conn.IncomingHitEpoch);
+            43u, attacker, attacker.ActionGeneration);
         Assert.Equal(expected, Current(f.Conn));
         Assert.Equal(evaded ? 1000u : 999u, f.Conn.PlayerLife);
     }

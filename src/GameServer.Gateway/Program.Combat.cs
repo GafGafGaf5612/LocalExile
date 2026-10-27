@@ -23,15 +23,15 @@ partial class Program
             conn.Pools.AccuracyMoreInCloseRangePct, unique, close), unique, close);
     }
 
-    // A ground bow shot reserves pacing, its action token and stationary walk together with the input-time gate.
-    internal static bool TryBeginBowAttack(ClientState conn, double requestedAt, double duration,
+    // A ground ranged shot reserves pacing, its action token and stationary walk together with the input-time gate.
+    internal static bool TryBeginRangedAttack(ClientState conn, double requestedAt, double duration,
         ushort skill, ushort sequence, out (int Action, int X, int Y) started)
     {
         started = default;
         lock (conn.Monsters)
         {
             double now = conn.Clock.Elapsed.TotalSeconds;
-            if (conn.Closed || conn.Paused || conn.PlayerLife == 0 || conn.HitRecovery.BlocksInput(requestedAt, now)
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.Paused || conn.PlayerLife == 0 || conn.HitRecovery.BlocksInput(requestedAt, now)
                 || !AttackTiming.Ready(now, conn.NextAttackAt, duration)) return false;
             conn.NextAttackAt = AttackTiming.After(now, conn.NextAttackAt, duration);
             int action = Interlocked.Increment(ref conn.ActionCount);
@@ -84,6 +84,11 @@ partial class Program
         return AttackTiming.ContactDelay(attackSeconds, contact, approach ? HitContactOffsetSeconds() : 0);
     }
 
+    // Derive compensation from the actual approach result, rather than adding walk-in latency to a stationary swing.
+    internal static double DefaultAttackContactDelay(ClientState conn, double attackSeconds,
+        (int X, int Y) from, (int X, int Y) stop, double departedAt, double arrivedAt) =>
+        AttackContactDelay(conn, attackSeconds, approach: arrivedAt > departedAt && stop != from);
+
     // The player uses a skill on a monster (C→S 0x24, e.g. the default attack on a left click). The client walks into range
     // first, so the server walks its estimate too (WalkEstimator.Approach, reach = the weapon's MaxAttackDistance in cells,
     // centre to centre) and only then starts the swing: it echoes the action aimed at the monster (0x1ab, flags | 0x80 +
@@ -98,13 +103,14 @@ partial class Program
         int projectileEpoch;
         lock (conn.Monsters) projectileEpoch = conn.ProjectileEpoch;
         var weapon = WeaponFor(conn);
-        bool bow = WeaponProfileFor(conn, activeSet: true).Bow;
+        string? ordinaryProjectile = OrdinaryRangedAttack.ProjectileId(WeaponProfileFor(conn, activeSet: true));
+        bool ranged = ordinaryProjectile is not null;
         double now = conn.Clock.Elapsed.TotalSeconds, duration;
         lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn));
         // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
         // full attack time, so accept it up to a quarter of an attack early.
         lock (conn.Monsters)
-            if ((bow && conn.Paused) || !AttackTiming.Ready(now, conn.NextAttackAt, duration))
+            if ((ranged && conn.Paused) || !AttackTiming.Ready(now, conn.NextAttackAt, duration))
             {
                 Console.WriteLine($"[gateway] {remote} <= 0x0024 skill 0x{use.SkillId:x4} seq 0x{use.Sequence:x4} ignored: {conn.NextAttackAt - now:0.000} s before the next attack");
                 return;
@@ -112,6 +118,7 @@ partial class Program
         int action;
         (int X, int Y) target, here, stop;
         double arrive;
+        double departedAt = now;
         lock (conn.Monsters)
         {
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0
@@ -124,10 +131,10 @@ partial class Program
             $"monster ({target.X}, {target.Y}), distance {Dist(here, target):0.0}; swing from ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now)
         {
-            if (bow) { if (!await WaitProjectileTime(conn, arrive, projectileEpoch)) return; }
+            if (ranged) { if (!await WaitProjectileTime(conn, arrive, projectileEpoch)) return; }
             else await Task.Delay(TimeSpan.FromSeconds(arrive - now));
         }
-        if (conn.ActionCount != action || (bow && !OrdinaryBowReleaseCurrent(conn, action, projectileEpoch))) { Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled before the swing"); return; }
+        if (conn.ActionCount != action || (ranged && !OrdinaryRangedReleaseCurrent(conn, action, projectileEpoch))) { Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled before the swing"); return; }
         now = conn.Clock.Elapsed.TotalSeconds;
         lock (conn.Monsters)
         {
@@ -141,21 +148,21 @@ partial class Program
         }
         var actionBytes = InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId);
         string actionLog = $"0x01ab player skill 0x{use.SkillId:x4} on monster 0x{use.TargetId:x} ({m.Label}, life {m.Life}/{m.MaxLife}), attack time {duration:0.000} s";
-        if (bow)
+        if (ranged)
         {
-            if (!await SendOrdinaryBowAction(remote, stream, ciphers, conn, actionBytes, actionLog, action, projectileEpoch)) return;
+            if (!await SendOrdinaryRangedAction(remote, stream, ciphers, conn, actionBytes, actionLog, action, projectileEpoch)) return;
         }
         else await Send(remote, stream, ciphers, actionBytes, actionLog, still: () => PlayerActionCurrent(conn, action));
         if (m.Life == 0) return;
-        // A bow's target is an aim, not a reserved hit: its released arrow owns collision and damage.
-        if (bow)
+        // A ranged target is an aim, not a reserved hit: the released arrow/bolt owns collision and damage.
+        if (ordinaryProjectile is not null)
         {
-            await LaunchOrdinaryBow(remote, stream, ciphers, conn, stop, target, duration, action, projectileEpoch);
+            await LaunchOrdinaryRanged(remote, stream, ciphers, conn, stop, target, duration, action, projectileEpoch, ordinaryProjectile, use.Sequence);
             return;
         }
         // The hit lands at the attack animation's contact keyframe (data/animation-contacts.json), not a fixed half: the
         // client stretches the clip to the attack time, so the blood and the weapon impact sound line up with the swing.
-        await Task.Delay(TimeSpan.FromSeconds(AttackContactDelay(conn, duration, approach: true)));
+        await Task.Delay(TimeSpan.FromSeconds(DefaultAttackContactDelay(conn, duration, here, stop, departedAt, arrive)));
         await WhilePaused(conn);
         uint life;
         bool stageStarts = false;
@@ -927,7 +934,7 @@ partial class Program
     // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
     internal static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo,
-        int epoch, bool log = true, string? impact = null, int? actionToken = null, OrdinaryBowShot? ordinaryShot = null,
+        int epoch, bool log = true, string? impact = null, int? actionToken = null, OrdinaryRangedShot? ordinaryShot = null,
         Action<SpawnedMonster, bool>? acceptedHit = null,
         Func<(int X, int Y), uint, Task>? onImpact = null, string? impactObjectAo = null, bool keepThroughActions = false,
         bool returning = false, double impactObjectSeconds = 0.35, double returnSpeedPercent = 0, bool returnOnLanding = true,
@@ -938,7 +945,7 @@ partial class Program
     {
         uint id;
         lock (conn.Monsters) id = conn.NextObjectId++;
-        bool Active() => conn.ProjectileActive(epoch);
+        bool Active() => conn.ProjectileActive(epoch) && !conn.RageRetired;
         if (!Active()) return;
         async Task<bool> SendVisual(byte[] bytes, string? line, Action? commit = null)
         {
@@ -1010,14 +1017,14 @@ partial class Program
         {
             while (!released && Active())
             {
-                if (!keepThroughActions && actionToken is int original && !OrdinaryBowReleaseCurrent(conn, original, epoch)) break;
+                if (!keepThroughActions && actionToken is int original && !OrdinaryRangedReleaseCurrent(conn, original, epoch)) break;
                 await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, type, obj.Blob(), headerU32: 0xffffffff), !log ? null :
                     $"0x02b9 create projectile 0x{id:x} {projectile.Id} type=0x{type:x8} at ({from.X}, {from.Y})", still: () =>
                     {
                         lock (conn.Monsters)
                         {
                             if (!Active() || conn.Paused) return false;
-                            if (!keepThroughActions && actionToken is int token && !OrdinaryBowReleaseCurrent(conn, token, epoch)) return false;
+                            if (!keepThroughActions && actionToken is int token && !OrdinaryRangedReleaseCurrent(conn, token, epoch)) return false;
                             conn.ProjectileObjects.Add(id);
                             released = true;
                             return true;
@@ -1178,7 +1185,7 @@ partial class Program
                             }
                             committed = true;
                             int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
-                            if (log) Console.WriteLine($"[gateway] {remote} => arrow 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})");
+                            if (log) Console.WriteLine($"[gateway] {remote} => {projectile.Id} 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})");
                             return height.StopAt(id, x, y);
                         }
                     });
@@ -1246,6 +1253,14 @@ partial class Program
             uint effectId = 0;
             if (contact || (onImpact is not null && impactOnLanding))
             {
+                if (ordinaryShot is not null && projectile.Id == OrdinaryRangedAttack.Wand)
+                {
+                    // StopAt above ends the flight glide. The bolt's native impact clip owns its particle and sound
+                    // events; retain the object for that one-shot clip on the same pause/transfer-aware game clock.
+                    if (!await SendVisual(InstanceProtocol.AnimationUpdate(id, 0, OrdinaryRangedAttack.WandImpactAnimation, 1f),
+                        $"0x01b2 wand projectile 0x{id:x} impact (animation {OrdinaryRangedAttack.WandImpactAnimation})")) return;
+                    if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + OrdinaryRangedAttack.WandImpactSeconds, epoch)) return;
+                }
                 impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
                 if (!delayedImpact && impact != "none" && impactObjectAo is null)
                 {
@@ -1399,7 +1414,7 @@ partial class Program
         {
             lock (conn.Monsters)
             {
-                if (!conn.ProjectileActive(epoch)) return false;
+                if (!conn.ProjectileActive(epoch) || conn.RageRetired) return false;
                 if (!conn.Paused && conn.Clock.Elapsed.TotalSeconds >= until) return true;
             }
             await Task.Delay(16);
@@ -1497,16 +1512,8 @@ partial class Program
     // The gates (HitReaction) keep it a stun-like reaction rather than a loop; see that class. The monster is checked again
     // inside the send gate: a hit that kills it meanwhile marks it Dead before it sends its own 0x1b1, so the flinch either
     // goes out before the death or not at all.
-    static async Task SendFlinch(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
-        SpawnedMonster m, int damage, bool log)
-    {
-        HitAnimation? clip;
-        lock (conn.Monsters) clip = HitReaction.TryFlinch(m, damage, conn.Clock.Elapsed.TotalSeconds, Random.Shared);
-        if (clip is not { } flinch) return;
-        await Send(remote, stream, ciphers, InstanceProtocol.AnimationUpdate(id, 0, (uint)flinch.Index, 1f),
-            !log ? null : $"0x01b2 monster 0x{id:x} flinch (animation {flinch.Index}, {flinch.Seconds:0.00} s)",
-            still: () => { lock (conn.Monsters) return m.Life > 0 && !m.Dead; });
-    }
+    static Task SendFlinch(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
+        SpawnedMonster m, int damage, bool log) => SendMonsterFlinch(remote, stream, ciphers, conn, id, m, damage, log);
 
     // Native TakeHit owns the client's predictive cancellation and recovery lockout. Commit the matching server state
     // inside the send gate, so death or another recovery while this packet waits cannot send an obsolete flinch.
@@ -1553,12 +1560,17 @@ partial class Program
 
     // A hit's damage off a monster's life (under the Monsters lock): the new life, and whether the hit starts its boss stage
     // (BossFights; the stage is then taken, so it runs once).
-    static (uint Life, bool StageStarts) TakeDamageLocked(SpawnedMonster m, int damage)
+    internal static (uint Life, bool StageStarts) TakeDamageLocked(SpawnedMonster m, int damage)
     {
         // While the stage runs the boss cannot die: its life fills up at the end anyway.
         if (m.StageRunning) return ((uint)Math.Max(1, (long)m.Life - damage), false);
         var (life, starts) = BossFights.Damage(m.Life, m.MaxLife, damage, m.StageTaken ? null : m.Stage);
-        if (starts) m.StageTaken = m.StageRunning = true;
+        if (starts)
+        {
+            m.StageTaken = m.StageRunning = true;
+            m.SwingGeneration = null;
+            m.ActionGeneration++;   // no queued ordinary order may revive after this stage finishes
+        }
         return (life, starts);
     }
 
@@ -1580,20 +1592,7 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, at.X, at.Y, at.X, at.Y, StageSkillId, 0xffff, 0x0408),
             $"0x01ab monster 0x{id:x} ({m.Label}) starts its stage at {m.Life}/{m.MaxLife} life: skill 0x{StageSkillId:x4} (GrantedEffects {stage.SkillEffect}), {stage.CastSeconds:0.#} s");
         await Task.Delay(TimeSpan.FromSeconds(stage.CastSeconds));
-        await WhilePaused(conn);
-        uint life;
-        lock (conn.Monsters)
-        {
-            m.StageRunning = false;
-            if (m.Dead || conn.Closed) return;
-            m.Life = life = m.MaxLife;
-        }
-        if (m.Variety?.ComponentsOrBase.ToList().IndexOf("Transitionable") is int t and >= 0)
-            await Send(remote, stream, ciphers, InstanceEntities.TransitionableUpdate(id, (byte)t, stage.TransitionTo),
-                $"0x02ba monster 0x{id:x} ({m.Label}) Transitionable → {stage.TransitionTo}");
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life), $"0x01b1 monster 0x{id:x} ({m.Label}) life refilled to {life}");
-        // The stage's action is over: 0x1ac ends it, so the client never keeps the boss in it.
-        await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(id), $"0x01ac monster 0x{id:x} ({m.Label}) stage action ended");
+        await CompleteMonsterStage(remote, stream, ciphers, conn, id, m);
     }
 
     // A boss whose variety has the big life bar (MonsterVarieties BossHealthBar) shows it at the top of the screen once it

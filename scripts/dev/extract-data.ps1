@@ -35,8 +35,8 @@ $manifest = @(
        Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'hideouts'); Version = 3; Needs = @('tables', 'object-types')
        UsedBy = 'hideouts and their decorations (21-hideouts.md)' }
     @{ Name = 'animation-contacts'; Outputs = @('data\animation-contacts.json'); Runner = 'python'
-       Args = @('scripts/re/anim_contacts.py'); Version = 1; Needs = @('tables')
-       UsedBy = 'spell release timing per class (11-skills.md)' }
+       Args = @('scripts/re/anim_contacts.py'); Version = 2; Needs = @('tables')
+       UsedBy = 'class spell contacts and ACT-selected ordinary wand release timing (11-skills.md)' }
     # monster-takehit also gives each variety's Emerge clip and its length: how long an emerge monster takes to rise.
     @{ Name = 'monster-takehit'; Outputs = @('data\monster-takehit.json'); Runner = 'python'
        Args = @('scripts/re/monster_takehit.py'); Version = 3; Needs = @('tables')

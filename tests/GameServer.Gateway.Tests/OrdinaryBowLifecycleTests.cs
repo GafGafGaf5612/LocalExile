@@ -27,7 +27,7 @@ public class OrdinaryBowLifecycleTests
     static ClientState Connection() => new(new AreaLayout(1, "test", 300, 300, 10, 10, null, []), 1, 1)
         { PlayerLife = 100, ActionCount = 7 };
 
-    static Task Flight(Wire wire, ClientState conn, OrdinaryBowShot? shot = null) => Program.FlyProjectile("bow-test", wire.Writer.GetStream(), wire.Ciphers,
+    static Task Flight(Wire wire, ClientState conn, OrdinaryRangedShot? shot = null) => Program.FlyProjectile("bow-test", wire.Writer.GetStream(), wire.Ciphers,
             conn, ("Metadata/Projectiles/DefaultArrow", 100), (10, 10), (110, 10), null,
             conn.ProjectileEpoch, log: false, impact: "none", actionToken: 7, ordinaryShot: shot);
 
@@ -78,7 +78,7 @@ public class OrdinaryBowLifecycleTests
         var conn = Connection();
         await wire.Gate.WaitAsync();
         byte[] plain = [0x01, 0xab, 0x12, 0x34];
-        var sending = Program.SendOrdinaryBowAction("bow-test", wire.Writer.GetStream(), wire.Ciphers,
+        var sending = Program.SendOrdinaryRangedAction("bow-test", wire.Writer.GetStream(), wire.Ciphers,
             conn, plain.ToArray(), null, 7, conn.ProjectileEpoch);
         conn.Clock.Stop();
         wire.Gate.Release();
@@ -106,7 +106,7 @@ public class OrdinaryBowLifecycleTests
         var conn = Connection();
         var target = new SpawnedMonster("target", new(50, 10, 10, width: 300, height: 300), 0, 2, 100);
         conn.Monsters.Add(42, target);
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 10), int.MaxValue, 0, 150, 100);
+        var shot = new OrdinaryRangedShot(DamagePacket.Of(DamageType.Physical, 10, 10), int.MaxValue, 0, 150, 100);
         await wire.Gate.WaitAsync();
         var flight = Flight(wire, conn, shot: shot);
         conn.Clock.Stop();
@@ -129,16 +129,18 @@ public class OrdinaryBowLifecycleTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Ground_dispatch_can_process_resume_after_a_paused_or_queued_bow_use(bool queued)
+    [InlineData(false, "Crude Bow")]
+    [InlineData(true, "Crude Bow")]
+    [InlineData(false, "Driftwood Wand")]
+    [InlineData(true, "Driftwood Wand")]
+    public async Task Ground_dispatch_can_process_resume_after_a_paused_or_queued_ranged_use(bool queued, string weaponName)
     {
         TestSaves.Ensure();
         string character = $"Bow{Guid.NewGuid():N}";
         var conn = new ClientState(new AreaLayout(1, "test", 300, 300, 10, 10, null, []), 1, 1)
             { Character = character, PlayerLife = 100, ActionCount = 7 };
         var items = PlayerInventories.For(character, Program.Items);
-        var bow = Assert.IsType<ItemCatalog.BaseType>(Program.Items.Find("Crude Bow"));
+        var bow = Assert.IsType<ItemCatalog.BaseType>(Program.Items.Find(weaponName));
         items.Add(PlayerInventories.Weapon1, 0, 0, new(bow.Hash, bow.Components, bow.VisualIdentity));
         using var wire = new Wire();
         var ground = (InstanceProtocol.UseSkillAtLocationId, Convert.FromHexString("0025000000640000000a010200000001"));
@@ -192,7 +194,7 @@ public class OrdinaryBowLifecycleTests
         var target = new SpawnedMonster("target", new(100, 10, 10, width: 300, height: 300), 0, 2, 100);
         target.Impale.Apply(100);
         conn.Monsters.Add(42, target);
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 10), int.MaxValue, 0, 150, 100);
+        var shot = new OrdinaryRangedShot(DamagePacket.Of(DamageType.Physical, 10, 10), int.MaxValue, 0, 150, 100);
         var flight = Flight(wire, conn, shot);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await ReadLaunch(wire, timeout.Token);

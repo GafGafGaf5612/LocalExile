@@ -32,15 +32,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   lurking Tide Striders on Tidal Island).
   Code: `MonsterEmerge.cs`, `Program.Emerge.cs`, Gateway.
   Docs: [10](../docs/protocol/10-chat-and-commands.md) §5.
-- Monster hit reaction: a hit that leaves a monster alive and takes at least a tenth of its max life plays one of its
-  rig's TakeHit clips with the clip's own sound (S→C 0x1b2 kind 0;
-  a pool picks one at random), and not again until that clip has played (at least 0.4 s);
-  a killing blow gets no flinch.
-  Verified live 2026-10-25 on the Sanctum zombie and the Goatman (melee and Holy Strike);
-  the damage and clip-length gates are not yet checked live.
+- Monster hit reaction: a positive hit that leaves a monster alive and takes at least a tenth of its maximum life
+  requests native Actor TakeHit recovery (S→C 0x1d1, animation type 5).
+  Stun immunity, an absent TakeHit profile or an existing recovery prevents it; a killing blow gets no flinch.
+  A randomly chosen extracted clip length supplies the duration profile, with a 0.4 s minimum.
+  The actor's native ACT selects and fits the presented clip; the server does not force a rig index.
+  Recovery stops server and client movement, holds AI and invalidates old ordinary swing echoes and contacts.
+  Historical LocalExile moving-Drowned samples held one cell through recovery, then resumed a fresh AI walk.
+  This standalone port has fresh automated coverage; native integration remains pending in the
+  [port record](../docs/dev/ranged-monster-actions-port.md).
+  Rig-only 0x1b2 did not stop locomotion; it is no longer used as the enemy's recovery packet.
+  Thresholds and duration profiles remain a bounded local policy rather than a complete official stun formula.
   The weapon impact sound and the target's blood come from S→C 0x1af "action hit", sent on melee and attack-gem hits
   and on monster hits on the player (2026-10-25; not yet checked live after the timing cap).
-  Code: `HitReaction.cs`, `MonsterCatalog.TakeHit`, Gateway (`SendFlinch`), `scripts/re/monster_takehit.py` →
+  Code: `HitReaction.cs`, `MonsterCatalog.TakeHit`, Gateway (`SendMonsterFlinch`), `scripts/re/monster_takehit.py` →
   `data/monster-takehit.json`.
   Docs: [11](../docs/protocol/11-skills.md).
 - Magic and rare monsters roll their mods from Mods.dat (monster domain, spawn weights by the monster's tags, level,
@@ -55,6 +60,19 @@ Part of [Status](../Status.md); what to build next in this area is in
   §5.
   Code: `MonsterMods.cs`, `Program.MonsterMods.cs`, `MagicProperties.cs`.
   Docs: [14](../docs/protocol/14-monster-packs.md) §5.
+- Monster decisions use 50 ms of elapsed game time, with no catch-up burst after pauses or slow steps.
+  Chase repaths use a separate 100 ms budget and require at least three cells of Manhattan target change.
+  Attack busy time covers the full attack duration; pending swing and stage generations prevent duplicate work.
+  Three native AI-enable controls issued one chase each after 43, 38 and 50 ms.
+  Four deliberate turns produced four chase orders at 249 ms intervals without duplicate orders between turns.
+  Drowned attack starts remained 2432 and 2428 ms apart for a 2.4 s attack.
+  Actual Escape-menu pause held 30 samples at one cell without actions; resume continued the existing path.
+  Automated cadence, pause, interruption and stage-completion checks pass; quoted native controls are historical
+  LocalExile evidence, not a fresh run of this standalone port.
+  Code: `MonsterAiCadence.cs`, `Program.Monsters.cs`.
+  Evidence: `artifacts/wand-ai-validation/ai-native-response-*.json`, `ai-native-turns.json`,
+  `ai-native-attack-pacing.json` and `ai-native-menu-{paused,resumed}.json`.
+  Docs: [11](../docs/protocol/11-skills.md) §6.
 - Monsters fight back: their first granted effect as a non-pathing skill with MonsterVarieties attack time, reach and
   level damage; they swing (animated) when in reach and the player's life goes down after evasion, armour and block;
   only monsters with a critical strike chance from their data or mods crit (none from their data yet; of Deadliness);

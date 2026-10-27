@@ -104,7 +104,7 @@ public class WhispererSpellAttackTests
     public void Ordinary_bows_keep_the_release_time_damage_when_the_flag_is_removed_later()
     {
         var stats = Stats((Flag, 1), ("spell_damage_+%", 20));
-        var released = OrdinaryBowShot.Capture(Weapon, stats, [], Catalog, 1000, 0, 150);
+        var released = OrdinaryRangedShot.Capture(Weapon, stats, [], Catalog, 1000, 0, 150);
         stats.Remove(Catalog.Key(Flag)!.Value);
 
         Assert.Equal(130, released.Hit[DamageType.Physical].Min, 7);

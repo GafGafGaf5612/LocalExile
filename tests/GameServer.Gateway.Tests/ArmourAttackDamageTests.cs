@@ -161,9 +161,9 @@ public class ArmourAttackDamageTests
     public void Ordinary_bow_release_captures_the_derived_increase_without_following_later_armour_changes()
     {
         using var character = new Character(450);
-        var shot = OrdinaryBowShot.Capture(Weapon, character.Stats(), [], Catalog, 100, 0, 150);
+        var shot = OrdinaryRangedShot.Capture(Weapon, character.Stats(), [], Catalog, 100, 0, 150);
         character.State.Pools = character.State.Pools with { Armour = 900 };
-        var next = OrdinaryBowShot.Capture(Weapon, character.Stats(), [], Catalog, 100, 0, 150);
+        var next = OrdinaryRangedShot.Capture(Weapon, character.Stats(), [], Catalog, 100, 0, 150);
         Assert.Equal(102, shot.Hit.MinTotal);
         Assert.Equal(104, next.Hit.MinTotal);
     }

@@ -147,17 +147,17 @@ public class PlayerHitRecoveryTests
         conn.Clock.Start(); // This control isolates recovery input, so the connection must be running.
         var before = conn.Walk.Position(0);
         conn.HitRecovery.Begin(began, .5f);
-        Assert.False(global::Program.TryBeginBowAttack(conn, requestedAt, 1, 0x102, 7, out _));
+        Assert.False(global::Program.TryBeginRangedAttack(conn, requestedAt, 1, 0x102, 7, out _));
         Assert.Equal(4, conn.ActionCount);
         Assert.Equal(0, conn.NextAttackAt);
         Assert.Equal((ushort)123, conn.ChannelSkill);
         Assert.Equal(before, conn.Walk.Position(1));
         conn.HitRecovery.Clear();
-        Assert.True(global::Program.TryBeginBowAttack(conn, 0, 1, 0x102, 7, out var bow));
+        Assert.True(global::Program.TryBeginRangedAttack(conn, 0, 1, 0x102, 7, out var bow));
         Assert.Equal(5, bow.Action);
         Assert.Equal((ushort)0x102, conn.ChannelSkill);
         Assert.True(conn.NextAttackAt > 0);
-        Assert.False(global::Program.TryBeginBowAttack(conn, 0, 1, 0x102, 8, out _));
+        Assert.False(global::Program.TryBeginRangedAttack(conn, 0, 1, 0x102, 8, out _));
         Assert.Equal(5, conn.ActionCount);
     }
 }

@@ -85,6 +85,26 @@ Part of [Status](../Status.md); what to build next in this area is in
   the dead monster's life bar hides.
   Code: `GrantedSkill`, `SkillCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md).
+- Local combat package: stationary default melee attacks no longer take the 150 ms walk-in offset.
+  Native evidence in this entry belongs to LocalExile; the standalone destination port has automated validation
+  and still needs a native rerun, as recorded in the [port record](../docs/dev/ranged-monster-actions-port.md).
+  An in-range unarmed attack had no approach and its authoritative hit arrived 312 ms after the action echo
+  (757 ms attack, attack1 contact baseline); positive walk-ins retain compensation.
+  Ordinary ground/object wand attacks create native WandProjectile bolts, apply damage at the first actual collision,
+  and play the native 500 ms impact clip before removal.
+  Class ACT pools and the native action-seeded selector choose the correct main-hand clip and release contact.
+  Sixteen ground RMB inputs matched native Witch clips 31/36/39/42; object sequence 4113 matched clip 39.
+  Release was 6.1 to 31.4 ms after the selected contact in 15 ground samples; the first cold sample was 55.6 ms late.
+  Enemy flinches now cancel movement and ordinary pending swings, hold AI for the requested native TakeHit recovery,
+  and invalidate old queued contacts permanently. Moving-Drowned native samples held one cell through recovery;
+  AI movement resumed afterward. The original rig-only hurt animation did not stop locomotion.
+  The faster monster planner issued its first chase after 38 to 50 ms in native controls, without duplicate orders.
+  Turn tracking, full 2.4 s Drowned attack pacing and actual Escape-menu pause/resume were also verified.
+  Full off-hand timing/damage and nonzero intrinsic attack repeats are not implemented.
+  Code: `Program.Combat.cs`, `Program.RangedAttacks.cs`, `AnimationContacts.cs`, `AnimationVariantSelector.cs`,
+  `Program.Monsters.cs`, `HitReaction.cs`.
+  Evidence: `artifacts/combat-validation/`, `artifacts/wand-ai-validation/wand-native-summary.json`
+  and `wand-after-object.json`; docs: [11](../docs/protocol/11-skills.md).
 - Impale: a physical hit that rolls `impale_on_hit_%_chance` stores 10% of the hit's physical damage on the monster
   (five stacks, five hits each), and every later physical hit on it takes the stored damage again as extra physical
   before the roll; five stacks add half the impaling hit's damage — the mechanic behind the panel's Chance to Impale
@@ -602,7 +622,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   The development speed override retains priority.
   Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline, 0.606 at +100% and 2.425 at -50%.
   Conditional/more/less speed and support-gem application remain open.
-  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `OrdinaryBowShot.cs`, `Program.Bows.cs`,
+  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `OrdinaryRangedShot.cs`, `Program.RangedAttacks.cs`,
   `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
   `InstanceProtocol.Teleport`.
   Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
@@ -623,8 +643,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   ES builds, substituted thresholds and unsupported conditional stun defences are skipped conservatively.
   See [11](../docs/protocol/11-skills.md), player hit recovery, for scope and protocol evidence.
   The player's life comes from the class/level/passive pools.
-  The server has no simulation loop: hits use timers, attacks are bounded by a 30/s tick (`TickRate`), the AI runs
-  every 500 ms.
+  The server has no shared simulation loop: hits use timers and attack time is bounded by a 30/s tick (`TickRate`).
+  Monster decisions use 50 ms game-time steps, a separate 100 ms repath budget and a three-cell target threshold.
+  Full attack duration, pending-swing generations and stage completion guard the faster planner against duplicate work.
+  Native controls verified initial response, deliberate turns, full attack pacing and actual menu pause/resume.
+  Core, Data and Gateway suites pass, including cadence, pending-swing and stage-completion regressions.
   Item mods count through the global item stats;
   346 varieties with NPC / ControlZone / ... components are refused.
 - **Critical-strike elemental resistance rules (Inevitable Judgement).** The hit's

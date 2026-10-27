@@ -21,7 +21,7 @@ static class GameDataFiles
         ("data/area-transitions.json", "area transitions of fixed layouts"),
         ("data/room-points.json", "unique bosses, The Twilight Strand's encounters and support-gem chest"),
         ("data/hideouts.json", "hideouts and native stationary model collision radii"),
-        ("data/animation-contacts.json", "class spell timing (the Witch's is used)"),
+        ("data/animation-contacts.json", "class spell contacts and ACT-selected ordinary wand release timing"),
         ("data/monster-takehit.json", "monster hit reactions (the TakeHit flinch and its sound)"),
         ("data/passive-skill-graphs.json", "ordinary and Phrecia passive graph membership and connections"),
         ("data/phrecia-passive-skillgraph.psg", "merged passive graph analysis artifact (not installed)"),
