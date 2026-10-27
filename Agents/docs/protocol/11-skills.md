@@ -837,7 +837,7 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   Object walk-ups reserve movement and the original token under the same recovery check.
   Their delayed continuations and queued action/teleport echoes recheck that token.
   Recovery does not restart while active; flasks and instant skills keep their existing paths.
-  This does not implement block recovery, ES stun avoidance, CI/mana/ES threshold substitutions, conditional defences,
+  This does not implement block-recovery animation/timing, ES stun avoidance, CI/mana/ES threshold substitutions, conditional defences,
   attacker-specific stun modifiers or monster spell/ranged stuns.
   Effective maximum ES or published base ES disables this slice until ES avoidance exists.
   Suppressed or converted raw equipment ES does not disable it by itself.
@@ -1780,12 +1780,39 @@ it:
 | `life/mana_leech_from_*_damage_permyriad` | the elemental leech for fire, cold, lightning; life also `horrible_ugly_life_leech_from_*_damage_perhundredthousand` ÷ 10 |
 | `virtual_life/mana/energy_shield_leech_speed_+%` | `life_mana_es_leech_speed_+%` |
 | `virtual_endurance/frenzy/power_charge_duration_+%` | `charge_duration_+%`, `base_charge_duration_+%` |
+| `virtual_block_recovery_+%` | `block_recovery_+%`, `base_stun_recovery_+%`, raw `stun_recovery_+%` |
+| `life/mana/energy_shield_gained_on_enemy_death` | the matching `base_` amount and `*_gained_on_enemy_death_per_level` times actual player level |
+| `virtual_flask_duration_+%` | `flask_duration_+%` and `flask_duration_+%_per_level` times actual player level |
 | `display_skill_increased_item_rarity/quantity_+%` | `base_item_found_rarity/quantity_+%` |
 | `virtual_trap/mine_throwing_speed_+%` | `trap_and_mine_throwing_speed_+%` (mine: `mine_laying_speed_+%`) |
 | `minimum/maximum_*_damage_to_return_to_melee_attacker` | `*_damage_to_return_to_melee_attacker` (both ends) |
 | `extra_damage_taken_from_crit_+%` | − `base_self_critical_strike_multiplier_-%` |
 | `impale_on_hit_%_chance` | `attacks_impale_on_hit_%_chance` (the attack reads this row's name) |
 | `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
+
+`PanelStats.Compute` receives the actual character level from `Pools.Level`, clamped to 1–100, not a gem level or
+an arbitrary `level` stat. Per-level sources multiply before integer division using wide intermediates; only the final
+published sum saturates to the native integer range. All aliases read the same raw snapshot before any result is
+written back. In particular, Block Recovery adds the raw direct and base Stun Recovery once; it does not add the
+newly derived Stun Recovery total a second time. Stun Recovery already expanded from held charges counts once too.
+The on-kill rows add their direct/base amounts and per-player-level amounts; this does not implement on-kill resource
+recovery, maximum-pool percentage sources, prohibitions or other conditional operators. The signed flask-duration
+sum is a display coefficient; actual flask use and local/global factor composition are documented in
+[13-items.md](13-items.md#8-life-and-mana-flasks).
+
+Thirty new panel/source regressions cover actual level changes, real modifier identities, source qualification,
+removal, explicit overrides, signed values and repeated builds in both modes. Integrated panel/flask validation has
+55 new and 80 existing focused cases passing, full Gateway 3657/3657, and the unchanged Core 648/Data 37 prior runs
+remain applicable (4342 total applicable cases). These are regression results, not completion of all 387 rows.
+The combined native assessment contains 40 completed controls: 22 complete PASS and 18 complete zero controls
+UNPROVED. The passes comprise 12 positive flat/level-source cases at actual levels 10, 20 and 100 in Standard and
+Ruthless, six utility-duration uses and four Life-recovery uses. All positive source cases match the six fixed fields:
+combined Block/Stun Recovery, the three on-kill amounts and the flask-duration coefficient. Across the six panel
+fields, including clearing/restoration/relog transitions and retained observations, 138 verdicts are VERIFIED and
+42 UNPROVED. Both Defence zero fields remain UNPROVED in all 18 zero controls; several Misc zeros remain UNPROVED
+too. Missing callbacks or hidden rows never establish rendered zero. Actual duration/recovery values and the original
+one-integer Life publication boundary are recorded in protocol 13 §8. Earlier failed readiness/vendor observations
+remain preserved; these controls do not establish complete on-kill or block-animation mechanics.
 
 Life/Mana Regeneration per Second and the corresponding native recovery inputs share `PanelStats`' calculation.
 Flat plus maximum-pool percentage sources receive separate regeneration and recovery increases.
@@ -1883,7 +1910,8 @@ Automated packet, conversion, hitless, creation/refresh and table-format checks 
 `chaos_damage_over_time_resistance_%` (and its uncapped form) = chaos resistance +
 `additional_chaos_resistance_against_damage_over_time_%`, capped at the chaos maximum. Each is sent only when its stat is set.
 
-Conditional stats (while, if, per charge, against …) are not counted. Flags (`cannot_be_frozen`, `immune_to_ignite`
+`PanelStats` does not independently evaluate conditional stats (while, if, per charge, against …); the explicit
+player-level sources above and already resolved charge contributions use their supplied values. Flags (`cannot_be_frozen`, `immune_to_ignite`
 …) are 1 when any source is set; "Immune to Ignite and Shock" sets both. Only non-zero values are sent; a sum that drops
 to zero is cleared with the other stale stats (`PlayerStatsWithCleared`). A stat set with `/set_stat` keeps its value.
 `cast_speed_+%` is now the total, so `CastSpeedPct` reads only it. Which combined stats count is from the game's

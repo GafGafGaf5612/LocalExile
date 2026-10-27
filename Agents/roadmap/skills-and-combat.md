@@ -88,6 +88,14 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   source-removal and held-count agreement covered in both modes (17 selected tests, 15 new).
   Eight native supplied-source controls verify values, positive formatting, clearing and relog; native unique-gear
   acquisition and zero-row formatter evidence remain outside those controls.
+  Combined Block/Stun Recovery and flat per-player-level on-kill/flask-duration aliases now use one raw snapshot
+  and actual character level. Twelve positive source controls at levels 10/20/100 match all six fixed fields in
+  Standard/Ruthless. Combined with six utility and four Life controls, 22 of 40 completed native controls pass;
+  the 18 complete zero controls remain UNPROVED. Six-field verdicts total 138 VERIFIED/42 UNPROVED across source,
+  retained and clearing/restoration/relog evidence; hidden-zero rendering is not established.
+  Full on-kill recovery/percentage/prohibition rules and block-animation timing remain separate work.
+  The integrated panel/flask batch passes 55 new plus 80 existing focused checks and Gateway 3657/3657;
+  prior unchanged Core 648/Data 37 results still apply. Runtime details and the original Life boundary are in protocol 13 §8.
   Continue auditing the remaining rows against the current implementation before adding formulas.
   Leech limits now have native display, modifier, prohibition, pool-conversion, reservation and relog controls.
   Active leech recovery and unsupported conditional sources remain open; official fractional endpoint rounding is unmeasured.

@@ -15,8 +15,8 @@ using GameServer.Core.World;
 static class PanelStats
 {
     /// <summary>A source stat, scaled: × <paramref name="Mul"/> ÷ <paramref name="Div"/> (a "-%" stat counts negative;
-    /// a 1/100 000 leech counts ÷ 10 as permyriad).</summary>
-    public readonly record struct Src(string Name, int Mul = 1, int Div = 1)
+    /// a 1/100 000 leech counts ÷ 10 as permyriad). Player-level sources multiply before integer division.</summary>
+    public readonly record struct Src(string Name, int Mul = 1, int Div = 1, bool PerPlayerLevel = false)
     {
         public static implicit operator Src(string name) => new(name);
     }
@@ -35,6 +35,9 @@ static class PanelStats
     const string LeechSpeed = "life_mana_es_leech_speed_+%";
     const string ElementalPenetration = "reduce_enemy_elemental_resistance_%", PenetrateElemental = "base_penetrate_elemental_resistances_%";
     const string IgniteChance = "base_chance_to_ignite_%", FreezeShockIgniteChance = "chance_to_freeze_shock_ignite_%";
+
+    static readonly Src[] GlobalFlaskDurationSources =
+        ["flask_duration_+%", new("flask_duration_+%_per_level", PerPlayerLevel: true)];
 
     public static readonly Sum[] Sums =
     [
@@ -113,7 +116,7 @@ static class PanelStats
             Local: ["local_mana_leech_from_physical_damage_permyriad"])),
         // Defence
         new("virtual_energy_shield_delay_-%", ["energy_shield_delay_-%"]),
-        new("virtual_block_recovery_+%", ["block_recovery_+%"]),
+        new("virtual_block_recovery_+%", ["block_recovery_+%", "base_stun_recovery_+%", "stun_recovery_+%"]),
         new("stun_recovery_+%", ["base_stun_recovery_+%"]),
         new("avoid_stun_%", ["base_avoid_stun_%"]),
         new("cannot_be_stunned", ["base_cannot_be_stunned"], Flag: true),
@@ -137,16 +140,19 @@ static class PanelStats
         new("ascendance", ["base_ascendance"]),
         new("skill_area_of_effect_+%", ["base_skill_area_of_effect_+%"]),
         new("virtual_curse_effect_+%", ["curse_effect_+%"]),
-        new("virtual_flask_duration_+%", ["flask_duration_+%"]),
+        new("virtual_flask_duration_+%", GlobalFlaskDurationSources),
         .. Leech("life"), .. Leech("mana"),
         .. new[] { "spell", "fire", "cold", "lightning" }.Select(type => new Sum(
             $"virtual_energy_shield_leech_from_{type}_damage_permyriad", [$"base_energy_shield_leech_from_{type}_damage_permyriad"])),
         new("virtual_energy_shield_leech_speed_+%", ["energy_shield_leech_speed_+%", LeechSpeed]),
         new("life_gained_on_spell_hit", ["base_life_gained_on_spell_hit"]),
         new("virtual_energy_shield_gain_per_target", ["energy_shield_gain_per_target"]),
-        new("life_gained_on_enemy_death", ["base_life_gained_on_enemy_death"]),
-        new("mana_gained_on_enemy_death", ["base_mana_gained_on_enemy_death"]),
-        new("energy_shield_gained_on_enemy_death", ["base_energy_shield_gained_on_enemy_death"]),
+        new("life_gained_on_enemy_death", ["base_life_gained_on_enemy_death",
+            new("life_gained_on_enemy_death_per_level", PerPlayerLevel: true)]),
+        new("mana_gained_on_enemy_death", ["base_mana_gained_on_enemy_death",
+            new("mana_gained_on_enemy_death_per_level", PerPlayerLevel: true)]),
+        new("energy_shield_gained_on_enemy_death", ["base_energy_shield_gained_on_enemy_death",
+            new("energy_shield_gained_on_enemy_death_per_level", PerPlayerLevel: true)]),
         new("virtual_minion_damage_+%", ["minion_damage_+%"]),
         new("projectile_speed_+%", ["base_projectile_speed_+%"]),
         new("display_skill_increased_item_rarity_+%", ["base_item_found_rarity_+%", "item_found_rarity_+%"]),
@@ -195,20 +201,24 @@ static class PanelStats
     /// <summary>Every display stat with a non-zero value, from the stats as the server holds them (<paramref name="get"/>:
     /// by Stats.dat Id, 0 when absent) and each hand's local weapon stats.</summary>
     public static List<(string Stat, int Value)> Compute(Func<string, int> get,
-        Func<string, int>? mainHand = null, Func<string, int>? offHand = null)
+        Func<string, int>? mainHand = null, Func<string, int>? offHand = null, int playerLevel = 1)
     {
-        static long Total(IEnumerable<Src>? sources, Func<string, int>? get) =>
-            get is null || sources is null ? 0 : sources.Sum(s => (long)get(s.Name) * s.Mul / s.Div);
+        playerLevel = Math.Clamp(playerLevel, 1, Progression.MaxLevel);
         var result = new List<(string, int)>();
         foreach (var sum in Sums)
         {
             var local = sum.Hand switch { Hand.Main => mainHand, Hand.Off => offHand, _ => null };
-            long value = get(sum.Display) + Total(sum.Sources, get) + Total(sum.Local, local);
+            long value = get(sum.Display) + Total(sum.Sources, get, playerLevel) + Total(sum.Local, local, playerLevel);
             if (sum.Flag) value = value > 0 ? 1 : 0;
             if (value != 0) result.Add((sum.Display, (int)Math.Clamp(value, int.MinValue, int.MaxValue)));
         }
         return result;
     }
+
+    // Sum one raw snapshot. The level is the player level supplied by the caller, never a native stat/gem level.
+    static long Total(IEnumerable<Src>? sources, Func<string, int>? get, int playerLevel) =>
+        get is null || sources is null ? 0 : sources.Sum(s =>
+            (long)get(s.Name) * s.Mul * (s.PerPlayerLevel ? playerLevel : 1) / s.Div);
 
     /// <summary>
     /// The Offence tab's per-hand damage rows (issue #75): the hit the server actually swings with, per damage type and

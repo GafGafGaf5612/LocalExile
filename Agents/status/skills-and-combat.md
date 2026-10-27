@@ -285,7 +285,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Character panel sums: about 150 panel stats that sum base forms are computed from passives, items and auras with
   their unconditional combined stats: stun, ailment avoidance, durations and effects (ignite, chill, freeze, shock,
   scorch, brittle, sap), ailment chances, penetration, leech, life/mana/ES on kill, rarity and quantity, cooldown,
-  projectile speed, area, curse and flask effect, reflect, charge durations, cannot-be/immune flags (including the
+  projectile speed, area, curse effect and flask duration, reflect, charge durations, cannot-be/immune flags (including the
   four damage immunities and physical immunity, from their base forms);
   the main hand / off hand rows add that weapon's local stats;
   projectile block and chaos resistance against damage over time combine the pools with their stat;
@@ -299,6 +299,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   (15 new) cover source removal and explicit zero in both modes. Eight native supplied-source controls agree,
   including +4%/+6%/attack-only +5% formatting, zero publication, charge clearing and relog.
   Zero rows are visually suppressed; missing formatter callbacks do not prove zero rendering or gear acquisition.
+  Block Recovery now adds base and raw direct Stun Recovery once from the same snapshot, including already expanded
+  per-charge recovery. Life/Mana/ES on-kill amounts and the flask-duration coefficient include their real per-player-level
+  inputs, using the actual character level and wide arithmetic. Thirty new panel/source cases cover both modes.
+  The integrated panel/flask batch passes 55 new plus 80 existing focused cases and Gateway 3657/3657;
+  unchanged prior Core 648/Data 37 results remain applicable (4342 total). The combined native assessment has
+  40 completed controls: 22 complete PASS (12 positive source cases, six utility uses and four Life uses), with
+  18 complete zero controls UNPROVED. Positive source cases at actual levels 10/20/100 match all six fields in both
+  modes. The six panel fields have 138 VERIFIED/42 UNPROVED verdicts including retained and transition evidence;
+  neither Defence zero field is proved in any zero control, and some Misc zeros also remain UNPROVED.
+  No hidden row is counted as a rendered zero. Full on-kill recovery/percentage/prohibition operators and block
+  animation timing remain open; exact runtime values and the original one-integer Life boundary are in protocol 13 §8.
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
