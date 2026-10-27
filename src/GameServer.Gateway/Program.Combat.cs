@@ -289,7 +289,8 @@ partial class Program
             int action = 0;
             (int X, int Y) target = default, here = default, stop = default;
             double arrive = now;
-            if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+            if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
+                CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
                 () =>
                 {
                     action = Interlocked.Increment(ref conn.ActionCount);
@@ -311,12 +312,16 @@ partial class Program
                 Console.WriteLine($"[gateway] {remote} skill 0x{use.SkillId:x4} {gem.Name} on 0x{use.TargetId:x} out of reach: {Dist(stop, target):0.0} > {weapon.Range}");
                 return;
             }
-            if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+            if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
+                CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
                 () => { }, out var cooldownUse, actionToken: action)) return;
+            bool acknowledged = false;
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, stop.X, stop.Y, target.X, target.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
                 $"0x01ab player skill 0x{use.SkillId:x4} {gem.Name} on monster 0x{use.TargetId:x} ({m.Label}) from ({stop.X}, {stop.Y}) to ({target.X}, {target.Y}), flags 0x{use.Flags:x4} (t={conn.Clock.Elapsed.TotalSeconds:0.000})",
-                still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, action));
+                still: () => acknowledged = OwnAuraAcknowledgementAllowed(conn, gem.Effect, use.SkillId,
+                    () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, action)));
+            if (!acknowledged) return;
             _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stop, target, use.TargetId, sequence: use.Sequence,
                 actionToken: action, cooldownUse: cooldownUse);
             return;
@@ -324,7 +329,8 @@ partial class Program
         double castAt = conn.Clock.Elapsed.TotalSeconds;
         int castAction = 0;
         (int X, int Y) aim = default, stand = default;
-        if (!TryBeginCooldownUse(conn, gem.Effect, gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
+        if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
+            gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
             () =>
             {
                 castAction = Interlocked.Increment(ref conn.ActionCount);
@@ -332,10 +338,13 @@ partial class Program
                 stand = conn.Walk.Position(castAt);
                 conn.Walk.Order(stand.X, stand.Y, castAt);
             }, out var spellUse, requestedAt: requestedAt)) return;
+        bool spellAcknowledged = false;
         await Send(remote, stream, ciphers,
             InstanceProtocol.ActionStarted(PlayerId, stand.X, stand.Y, aim.X, aim.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: use.TargetId),
             $"0x01ab player skill 0x{use.SkillId:x4} cast on monster 0x{use.TargetId:x} ({m.Label}) from ({stand.X}, {stand.Y}) to ({aim.X}, {aim.Y}), flags 0x{use.Flags:x4}",
-            still: () => spellUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, castAction));
+            still: () => spellAcknowledged = OwnAuraAcknowledgementAllowed(conn, gem.Effect, use.SkillId,
+                () => spellUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, castAction)));
+        if (!spellAcknowledged) return;
         _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, stand, aim, use.TargetId, sequence: use.Sequence,
             actionToken: spellUse?.ActionToken ?? castAction, cooldownUse: spellUse);
     }
@@ -362,7 +371,7 @@ partial class Program
             return false;
         }
         // Shared backstop for actor restrictions and gem requirements, before cooldown/payment/effect admission.
-        if (gem.Name is not null && GemDisabled(conn, gem.Effect) is { } disabled)
+        if (gem.Name is not null && GemSkillInstanceDisabled(conn, gem.Effect, skillId) is { } disabled)
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {disabled} (disabled)");
             await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (disabled skill, cost back)");
@@ -428,8 +437,8 @@ partial class Program
         if (gem.Name is not null && SupportedReservation(conn, skillId) is { } reservation)
         {
             if (!Current()) return false;
-            await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation, SupportedSkill(conn, skillId).Level, SupportedSkill(conn, skillId).Quality);
-            return true;
+            return await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation,
+                SupportedSkill(conn, skillId).Level, SupportedSkill(conn, skillId).Quality);
         }
         if (gem.Name is not null)
         {
@@ -493,14 +502,20 @@ partial class Program
             epoch = conn.ProjectileEpoch;
             if (!conn.ProjectileActive(epoch) || conn.Paused || !conn.PlayerSent || conn.PendingTransfer is not null) return;
         }
-        if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
+        if (!TryBeginSkillCooldownUse(conn, skillId, gem.Effect,
+            CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
             true, () => { }, out var cooldownUse)) return;
         if (await CastGemSkill(remote, stream, ciphers, conn, skillId, at, at, targetId, cooldownUse: cooldownUse))
         {
             await Send(remote, stream, ciphers, InstanceProtocol.InstantAction(PlayerId, skillId, at.X, at.Y, targetId),
                 $"0x01ce player skill 0x{skillId:x4}: instant action (its use and cooldown)",
-                still: () => conn.ProjectileActive(epoch) && conn.PlayerLife > 0 && !conn.Paused
-                    && (cooldownUse?.CommitNativeUse(conn, skillId) ?? true));
+                still: () =>
+                {
+                    lock (conn.Monsters)
+                        return conn.ProjectileActive(epoch) && conn.PlayerLife > 0 && !conn.Paused
+                            && ActorSkillInstanceDisabled(conn, gem.Effect, skillId) is null
+                            && (cooldownUse?.CommitNativeUse(conn, skillId) ?? true);
+                });
             await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
         }
     }
@@ -529,7 +544,8 @@ partial class Program
             }
             else if (!InstantLocationSkill.TryResolve(conn, epoch, aim, InTown(conn), CurrentStats(), out from, out to)) return;
         }
-        if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
+        if (!TryBeginSkillCooldownUse(conn, skillId, gem.Effect,
+            CooldownFor(conn, gem.Effect, gem.Level, gem.Quality),
             true, () => { }, out var cooldownUse)) return;
         if (!await CastGemSkill(remote, stream, ciphers, conn, skillId, from, to, cooldownUse: cooldownUse, locationInstant: true)) return;
         bool accepted = false;
@@ -541,7 +557,7 @@ partial class Program
                 lock (conn.Monsters)
                 {
                     var current = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
-                    if (current != gem || GemDisabled(conn, gem.Effect) is not null) return null;
+                    if (current != gem || GemSkillInstanceDisabled(conn, gem.Effect, skillId) is not null) return null;
                     (int X, int Y) rawAim;
                     if (targetObjectId is uint target)
                     {
@@ -567,26 +583,29 @@ partial class Program
 
     // Aura skills toggle: the first cast reserves their mana and puts their buff on the player, the next cast turns them
     // off. The reserved mana is sent in the Life pool and in every later 0x1b1 mana update; the client does not derive it.
-    static async Task ToggleAura(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+    static async Task<bool> ToggleAura(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, int effect, string name, (int Flat, int Percent) reservation, int level, int quality)
     {
         string? effectId = Skills.EffectId(effect);
         if (effectId is null || !AuraCatalog.Supported(effectId))
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {name}: reservation is known but this aura's effect is not implemented yet");
-            return;
+            return false;
         }
         AuraCatalog.Aura? ended = null;
         AuraCatalog.Aura? started = null;
         lock (conn.Monsters)
         {
+            // Locked commit backstop: a source may have changed after dispatch/cooldown preflight.
+            if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0 || InTown(conn)
+                || OwnAuraRestrictionValue(conn) != 0) return false;
             if (conn.Auras.Remove(skillId, out var old))
                 ended = old;
             else if (conn.Auras.Values.FirstOrDefault(a => a.EffectId == effectId) is { } same)
             {
                 // One aura of a kind at a time: a second gem of the same aura can't start it.
                 Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {name}: refused, {same.Name} already runs (skill 0x{same.SkillId:x4})");
-                return;
+                return false;
             }
             else
             {
@@ -599,31 +618,22 @@ partial class Program
                     conn.Auras.Remove(skillId);
                     Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {name}: needs {reserved} mana reserved, " +
                         $"maximum is {conn.Pools.Mana}");
-                    return;
+                    return false;
                 }
                 started = aura;
                 conn.PlayerMana = (uint)Math.Min(conn.PlayerMana, (uint)(conn.Pools.Mana - reserved));
             }
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
+            conn.AuraStatsDirty = true;
+            CharacterSaves.SetAuraActive(CharacterName(conn), effectId, started is not null);
         }
 
-        CharacterSaves.SetAuraActive(CharacterName(conn), effectId, started is not null);
-        if (ended is not null)
-        {
-            foreach (var packet in AuraCatalog.EndPackets(ended, PlayerId))
-                await Send(remote, stream, ciphers, packet,
-                    $"0x01c2 player aura {ended.Name} ends");
-        }
-        if (started is not null)
-        {
-            foreach (var packet in AuraBuffs(started))
-                await Send(remote, stream, ciphers, packet,
-                    $"0x01c1 player aura {started.Name} (BuffDefinitions row {started.BuffRow})");
-        }
+        await SendOwnAuraChanges(remote, stream, ciphers, conn);
         await SendCharacterStats(remote, stream, ciphers, conn, started is not null ? $"aura {name} on" : $"aura {ended!.Name} off");
         await SendPlayerMana(remote, stream, ciphers, conn,
             $"0x01b1 player mana {conn.PlayerMana}/{conn.Pools.Mana}, {ReservedMana(conn)} reserved");
+        return true;
     }
 
     static IEnumerable<byte[]> AuraBuffs(AuraCatalog.Aura aura) =>

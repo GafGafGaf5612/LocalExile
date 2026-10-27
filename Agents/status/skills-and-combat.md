@@ -226,6 +226,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native Endurance Charges confirm accepted releases; Fireball remains usable and relog clears the developer flag.
   Phrecia play stays gated; source precedence, aliases and queued boundaries have additional automated coverage.
   See [11](../docs/protocol/11-skills.md) section 10b.
+- Own-aura restriction (#304) consumes signed 21148 OR 11881, with explicit final 11075 developer precedence.
+  Typed Aura and accepted Blasphemy metadata drive admission and native skill flags.
+  Admission and queued acknowledgements use the requested skill ID; duplicate gems keep separate support context.
+  Remembered candidates check their own requirements, so an unusable copy cannot suppress another available gem.
+  Local policy suspends self-owned pairs, bonuses and reservation while retaining intent, without a mana refill.
+  Lifting the restriction restores available remembered ordinary self auras once with fresh buff IDs and a mana clamp.
+  RF, flasks, Fortification and received effects remain outside this owned lifecycle; no party aura executor is claimed.
+  Source, real-dispatch, loopback, queued snapshot/add, initial creation and entry replay regressions pass.
+  Rage refreshes reconcile paired removals and reservation before their snapshots, even when Rage is unchanged.
+  Fifteen native controls verify Clarity/Haste pairs, real bonuses/Mana, three refused routes and ordinary Fireball.
+  Relog restores remembered Haste after the transient source clears; death while suspended clears saved intent.
+  Native grey-icon prediction and persistent restricting equipment remain unverified.
+  The suspend/restore lifecycle is explicit LocalExile policy, not proven GGG behavior; Phrecia play stays gated.
+  See [11](../docs/protocol/11-skills.md) section 10c.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
   every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
@@ -243,7 +257,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Exit/relogin/character return restores available remembered auras without rechecking cast affordability;
   manual activation still validates mana.
   Death clears saved/runtime auras; skill refresh resumes temporarily unavailable effects.
-  Automated lifecycle coverage; live verification pending.
+  The shared own-aura restriction has separate native controls above; broader town/character round trips remain partial.
   See protocol/11-skills.md.
 - Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art.
   A live check found that source-only buffs hid the top-left icons;
