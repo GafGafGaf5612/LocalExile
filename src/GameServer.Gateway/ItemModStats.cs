@@ -23,7 +23,8 @@ static class ItemModStats
             if (mods.ByHash(mod.Hash) is not { } row) continue;
             for (int s = 0; s < row.Stats.Count && s < mod.Values.Count; s++)
                 if (row.Stats[s].Local == local)
-                    sum[row.Stats[s].Id] = sum.GetValueOrDefault(row.Stats[s].Id) + mod.Values[s];
+                    sum[row.Stats[s].Id] = ActorScale.Add(row.Stats[s].Id,
+                        sum.GetValueOrDefault(row.Stats[s].Id), mod.Values[s]);
         }
         return sum;
     }
@@ -115,7 +116,7 @@ static class ItemModStats
     public static Dictionary<uint, int> Plus(Dictionary<uint, int> a, Dictionary<uint, int> b)
     {
         var sum = new Dictionary<uint, int>(a);
-        foreach (var (k, v) in b) sum[k] = sum.GetValueOrDefault(k) + v;
+        foreach (var (k, v) in b) sum[k] = ActorScale.Add(k, sum.GetValueOrDefault(k), v);
         return sum;
     }
 }

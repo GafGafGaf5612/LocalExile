@@ -125,6 +125,28 @@ G = global / static data.
 | `0x142f496a0` | G | static initializer table entry (Positioned) |
 | `0x1445bb240`, `0x1445bb6f0`, `0x1445bbe50`, `0x1445bbd60`, `0x1445bb760`, `0x1445bbd10`, `0x1445ba850`, `0x1445bc610` | G | component pools (Positioned, Stats, Pathfinding, Life, Animated, Player, Inventories, Actor) |
 
+### Player Actor scale ([04](04-player-entity.md#41a-player-actor-scale-299))
+
+| Address | Kind | What |
+|---|---|---|
+| `0x1421c2f40` | Fn | Creation Stats pairs reach the network setter |
+| `0x1424cfa40` | Fn | Network stat override getter; upstream fallback only when absent |
+| `0x1424cfaf0` | Fn | Insert/replace one raw pair, notifying only that key |
+| `0x1424cfd00` | Fn | Stat change notification to registered listeners |
+| `0x141fe1350` | Fn | 0x1b3 reader; world handler `0x142187480` uses the same setter |
+| `0x1400caf90` | Fn | Register final1973 evaluator `0x1427ecc30` |
+| `0x1427ecc30` | Fn | final1973 formula: raw720, capped1974, permyriad10778, optional limit1975 |
+| `0x141e9ca20` | Fn | Actor setup reads1973 at `0x141e9ccfd` and applies scale |
+| `0x141e9cf90` | Fn | Actor change observer compares key1973 at `0x141e9d031` |
+| `0x141e9ce80` | Fn | Scale applicator writes Positioned +0x2b0 at `0x141e9cf6f` |
+| `0x14013d9f0` | Fn | Monster-specific optional scale coefficient lookup |
+| `0x1415f4710` | Fn | Render typeScale * uniform * independent stretch; interpolation at +0x358 |
+| `0x1415f70a0` | Fn | Render cached scale axes at +0x380/+0x384/+0x388 |
+| `0x141e361b0` | Fn | Local-to-world transform uses the same scale axes |
+| `0x141c9ba55` | Code | Native melee range scales only when separate flag9807 is set |
+| `0x141c9bb0a` | Code | Second native melee range consumer with the same flag9807 guard |
+| `0x141e61540` | Fn | Blocking uses signed Positioned size +0x1e3, independently of uniform scale |
+
 ## Chat ([10](10-chat-and-commands.md) §1, §2)
 | Address | Kind | What |
 |---|---|---|

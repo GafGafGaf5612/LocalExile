@@ -634,10 +634,8 @@ partial class Program
 
     // The player in its class: the Characters.dat row's object type (Metadata/Characters/StrInt/StrInt for the Templar), model
     // (AOFile), class byte (IntegerId), attributes and unarmed attack; the name is the character's.
-    static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    static PlayerObject PlayerForCreation(ClientState conn)
     {
-        RestoreFortification(conn);
-        PrepareHideoutWaypoint(conn);
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
         // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
@@ -648,7 +646,7 @@ partial class Program
         // before, every area started with the class's unarmed attack, so a weapon's added damage and attack speed showed only
         // after taking it off and putting it back. After the stats, which mark the inactive items WeaponFor skips.
         var weapon = WeaponFor(conn);
-        foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
+        foreach (var (k, v) in CosmeticStats(conn).Where(s => !ActorScale.IsInput(s.Stat))) stats.TryAdd(k, v);
         var statList = stats.Select(kv => (kv.Key, kv.Value)).ToList();
         var weaponStats = WeaponStats(conn, weapon, stats);
         // The new player object starts with exactly these (PlayerStatsWithCleared clears from here).
@@ -662,16 +660,24 @@ partial class Program
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));
-        conn.PeerTemplate = player;
-        conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
+        return player;
+    }
+
+    static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        RestoreFortification(conn);
+        PrepareHideoutWaypoint(conn);
+        var (layout, name, classRow) = (conn.Layout, conn.Character, conn.ClassRow);
+        var cls = Skills.ClassFor(classRow);
         uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
         conn.PeerType = type;
+        const string creationLabel = "0x02b9 create current player";
         var messages = new List<(string Name, byte[] Bytes)>
         {
             ("0x01f6 campaign hideout unlocks", InstanceMicrotransactions.HideoutUnlocks(
                 HideoutCatalog.OwnedRows.Where(row => row < 128).Select(row => (int)row))),
             ("0x0022 local player 0x1000", InstanceEntities.SetLocalPlayer(PlayerId)),
-            ($"0x02b9 create {player} ({cls.ObjectType}) type=0x{type:x8}", InstanceEntities.CreateObject(PlayerId, type, player.Blob())),
+            (creationLabel, []),
         };
         // The player's inventories (id = row + 1), needed by UI built on entering (flask bar → row 11), with the character's items.
         var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items);
@@ -717,13 +723,20 @@ partial class Program
             if (layout.Waypoint is not null) messages.Add(($"0x01a9 waypoint 0x{WaypointCatalog.ObjectId:x} enters wake zone", InstanceProtocol.EnterWakeZone(WaypointCatalog.ObjectId)));
             // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
             // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.
-            messages.Add(("0x01b3 class attributes", InstanceEntities.StatsUpdate(PlayerId, [.. statList])));
+            messages.Add(("0x01b3 class attributes", []));
         }
         foreach (var (label, bytes) in messages)
-            if (label == "0x01b3 class attributes")
+            if (label == creationLabel)
+                await SendPlayerStatSnapshot(remote, stream, ciphers, conn, () =>
+                {
+                    var current = PlayerForCreation(conn);
+                    conn.PeerTemplate = current;
+                    conn.ClientSkillIds = [.. current.Skills!.Select(s => s.Id)];
+                    return InstanceEntities.CreateObject(PlayerId, type, current.Blob());
+                }, label);
+            else if (label == "0x01b3 class attributes")
                 await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-                    () => InstanceEntities.StatsUpdate(PlayerId,
-                        CharacterPlayerStats(conn).Select(kv => (kv.Key, kv.Value)).ToList()), label);
+                    () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), label);
             else await Send(remote, stream, ciphers, bytes, label);
         // An area change creates a new player object, so the running auras' buffs must be put on it again.
         List<AuraCatalog.Aura> auras;

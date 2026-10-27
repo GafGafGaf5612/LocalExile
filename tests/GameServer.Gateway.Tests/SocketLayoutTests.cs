@@ -58,6 +58,41 @@ public class SocketLayoutTests
     }
 
     [Fact]
+    public void Dev_capacity_allows_a_six_socket_wand_but_never_a_socketless_base()
+    {
+        var (six, sixLinks) = SocketLayout.Parse(["BBBBBB"], out _)!.Value;
+        Assert.Null(SocketLayout.Apply(Armour(), Base("Wand", 1, 3), six, sixLinks, out var error));
+        Assert.NotNull(error);
+        var after = SocketLayout.Apply(Armour(), Base("Wand", 1, 3), six, sixLinks, out error, capacityOverride: 6)!;
+        Assert.Null(error);
+        Assert.Equal(6, after.Sockets.Count);
+        Assert.Equal([6], after.Links!.Select(n => (int)n));
+        Assert.Null(SocketLayout.Apply(Armour(), Base("Ring", 1, 1), six, sixLinks, out error, capacityOverride: 6));
+        Assert.NotNull(error);
+    }
+
+    [Fact]
+    public void Dev_capacity_comes_from_the_environment_and_is_clamped()
+    {
+        string? old = Environment.GetEnvironmentVariable("Game_SOCKET_CAPACITY");
+        try
+        {
+            Environment.SetEnvironmentVariable("Game_SOCKET_CAPACITY", "6");
+            Assert.Equal(6, SocketLayout.CapacityOverride);
+            Environment.SetEnvironmentVariable("Game_SOCKET_CAPACITY", "9");
+            Assert.Equal(6, SocketLayout.CapacityOverride);
+            Environment.SetEnvironmentVariable("Game_SOCKET_CAPACITY", "0");
+            Assert.Equal(0, SocketLayout.CapacityOverride);
+            Environment.SetEnvironmentVariable("Game_SOCKET_CAPACITY", "no");
+            Assert.Equal(0, SocketLayout.CapacityOverride);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("Game_SOCKET_CAPACITY", old);
+        }
+    }
+
+    [Fact]
     public void Describe_shows_unlinked_sockets_and_none()
     {
         Assert.Equal("none", SocketLayout.Describe(Armour()));

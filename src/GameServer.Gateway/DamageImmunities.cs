@@ -18,6 +18,7 @@ static class DamageImmunities
         ("base_lightning_immunity", [DamageType.Lightning]),
         ("chaos_damage_immunity", [DamageType.Chaos]),
         ("chaos_immunity", [DamageType.Chaos]),
+        ("keystone_chaos_inoculation", [DamageType.Chaos]),
         ("physical_immunity", [DamageType.Physical]),
         ("elemental_damage_immunity", [DamageType.Fire, DamageType.Cold, DamageType.Lightning]),
     ];

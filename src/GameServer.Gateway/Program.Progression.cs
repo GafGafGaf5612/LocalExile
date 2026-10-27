@@ -367,6 +367,7 @@ partial class Program
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
+            ChaosInoculation: Get("keystone_chaos_inoculation") != 0,
             EnergyShield: Get("base_maximum_energy_shield"),
             EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
