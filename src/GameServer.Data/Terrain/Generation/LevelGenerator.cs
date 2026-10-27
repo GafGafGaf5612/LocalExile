@@ -419,6 +419,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         _oy = r.Y + r.Margins.Top;
         // The tiler's view (0x1420f3480 +8, which its fill keeps): the subgraph's rectangle inside its margins.
         _view = (_ox, _oy, r.X + r.W - r.Margins.Right, r.Y + r.H - r.Margins.Bottom);
+        _record = (r.X, r.Y, r.X + r.W, r.Y + r.H);
         if (_ox < 0 || _oy < 0 || _ox + step * map.Width + map.Overlap > grid.Width || _oy + step * map.Height + map.Overlap > grid.Height)
             throw new InvalidOperationException($"Subgraph {r.Path} extends outside the TileMap!");
         _overlap = map.Overlap;
@@ -978,6 +979,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     }
 
     readonly List<(int X, int Y, string? Ground, short Height, bool Accessible)> _fillRecords = [];
+    (int X0, int Y0, int X1, int Y1) _record;
     // Tiler +0x40 (0x1420f8df0): placed tiles with an edge type of the FillTiles object's +0x140 list.
     readonly List<(int X, int Y, int Index)> _edgeRecords = [];
     List<EdgePoint> _edgePoints = [];
@@ -1378,11 +1380,13 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         bool check = _grid.CheckGrounds;
         _grid.CheckGrounds = false;
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
-        var tiler = new RoomTiler(rng, _grid, vx, vy, _store) { TilePlaced = Listen };
-        var overlays = passes.Count == 0 ? null : new Overlays(files, rng, notes, _grid, vx, vy, vx1 - vx, vy1 - vy, tiler,
-            [.. layoutRooms, .. _fillRooms], int.Parse(master.GetValueOrDefault("RoomOverlap", "1")), pool.Placed);
+        var tiler = new RoomTiler(rng, _grid, _record.X0, _record.Y0, _store) { TilePlaced = (tile, o, x, y) => Listen(tile, o, x + _record.X0 - vx, y + _record.Y0 - vy) };
+        // The overlays' view is the whole record, its margins included (0x1420f3480 +8 → 0x141ffe240; ExpeditionCemetery's
+        // GraveWater overlay reaches into the outer buffer's margin).
+        var overlays = passes.Count == 0 ? null : new Overlays(files, rng, notes, _grid, _record.X0, _record.Y0, _record.X1 - _record.X0, _record.Y1 - _record.Y0, tiler,
+            [.. layoutRooms, .. _fillRooms], int.Parse(master.GetValueOrDefault("RoomOverlap", "1")), pool.Placed, dungeon: true);
         // Both dungeon passes save the tiles under a room (0x141fff1a0 param 3).
-        if (overlays is not null) overlays.FillEntry = (x, y, g, open) => fill.FillEntry(x, y, g, open);
+        if (overlays is not null) overlays.FillEntry = (x, y, g, open) => fill.FillEntry(x + _record.X0 - vx, y + _record.Y0 - vy, g, open);
         foreach (var pass in passes.Where(p => (p.Passes & 1) != 0)) overlays!.Run(pass, saveTiles: true);
         foreach (var (x, y, ground, height, accessible) in _fillRecords.OrderBy(r => r.X).ThenBy(r => r.Y))
         {

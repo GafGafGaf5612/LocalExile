@@ -34,11 +34,16 @@ sealed class Overlays
     readonly int _offsetX, _offsetY, _width, _height;
     readonly RoomTiler _tiler;
     readonly byte[] _excluded;
-    readonly Dictionary<OverlayRoom, int> _placed = [];
+    // The graph record's +0x90 bit 0 (a .dgr): every position is a spot, not only every third.
+    readonly bool _dungeon;
+    // The rooms placed so far, per room (.arm) across the groups its orientations went to (0x1420041b0).
+    readonly Dictionary<RoomDef, int> _placed = [];
 
     public Overlays(TerrainCache files, LevelRandom rng, List<string> notes, TileGrid grid, int offsetX, int offsetY, int width, int height,
-        RoomTiler tiler, IReadOnlyList<PlacedRoom> rooms, int roomOverlap, IEnumerable<(int X0, int Y0, int X1, int Y1)>? extraFeatures = null)
+        RoomTiler tiler, IReadOnlyList<PlacedRoom> rooms, int roomOverlap, IEnumerable<(int X0, int Y0, int X1, int Y1)>? extraFeatures = null,
+        bool dungeon = false)
     {
+        _dungeon = dungeon;
         (_files, _rng, _notes, _grid, _offsetX, _offsetY, _width, _height, _tiler) = (files, rng, notes, grid, offsetX, offsetY, width, height, tiler);
         // 0x141ffe240: rooms of nodes with descriptions 0x10; rooms 4 (shrunk by the master's RoomOverlap when the room's
         // own overlap, room data +1, is the same) and 8; tiles with a tag 2; the pool's placed rooms (unique rooms and
@@ -208,7 +213,7 @@ sealed class Overlays
         public readonly List<OverlayGroup> Groups = [];
     }
 
-    /// <summary><c>0x141fff5f0</c>: every view position (every third one, both ways, when the master's +0x90 bit 1 is off
+    /// <summary><c>0x141fff5f0</c>: every view position (every third one, both ways, when the graph record's +0x90 bit 0, a .dgr, is off
     /// and an edge of the key has size 3) where the group fits, sorted by (x, y) (<c>0x141fff840</c>).</summary>
     void Spots(OverlayGroup g, List<Spot> spots)
     {
@@ -222,7 +227,7 @@ sealed class Overlays
             spot.Weight += g.Weight;
             spot.Groups.Add(g);
         }
-        if (g.Key.Edges.Any(e => e is not null && _files.Edge(e)?.Size == 3))
+        if (!_dungeon && g.Key.Edges.Any(e => e is not null && _files.Edge(e)?.Size == 3))
         {
             for (int y = 0; y <= _height - 3; y += 3)
                 for (int x = 0; x <= _width - 3; x += 3) Add(x, y);
@@ -256,7 +261,7 @@ sealed class Overlays
             var rooms = new List<OverlayRoom?>();
             foreach (var room in group.Rooms)
             {
-                if (room.Limit != 0 && _placed.GetValueOrDefault(room) >= room.Limit) continue;
+                if (room.Limit != 0 && _placed.GetValueOrDefault(room.Room) >= room.Limit) continue;
                 if (room.Requires.Count != 0 && !HasTags(room.Requires, spot.X, spot.Y, kw, kh)) continue;
                 if ((group.Flags & 0x40) != 0) throw new NotSupportedException("MatchAllTileKeys overlays (0x142000f60) are not ported");
                 if (room.Weight != 0) rooms.Add(room);
@@ -301,7 +306,7 @@ sealed class Overlays
             _tiler.Tilise(chosen.Room, spot.X, spot.Y, o, fillGrounds: true, [], offset);
             Mark(spot.X + _offsetX, spot.Y + _offsetY, spot.X + _offsetX + kw, spot.Y + _offsetY + kh, 1);
             if (saveTiles) Restore([.. saved.OrderBy(s => s.X * 0x10000 + s.Y)]);
-            _placed[chosen] = _placed.GetValueOrDefault(chosen) + 1;
+            _placed[chosen.Room] = _placed.GetValueOrDefault(chosen.Room) + 1;
             _notes.Add($"overlay {Path.GetFileName(chosen.Room.Path)} o{o} at ({spot.X + _offsetX}, {spot.Y + _offsetY})");
         }
     }
