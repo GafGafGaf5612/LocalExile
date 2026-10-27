@@ -951,8 +951,46 @@ low-life recovery and local/magic composition in both modes. Combined with self-
 passes 53/53 and full Gateway 3710/3710 with no skips. Prior unchanged Core 648/Data 37 runs remain applicable
 (4395 applicable cases, not all newly rerun). Full-run diagnostics retain five actual unobserved disposed-stream
 task faults: four `MonsterKilled` and one `NotifyMonsterHit` → `AreaSkillHit` → `LaunchProjectile`; none mentions the
-new calculation paths. Test passes are not a fault-free background-execution claim. No new native coverage is claimed
-for this resolver, legal named-unique acquisition or native item-tooltip treatment of per-level effect.
+new calculation paths. Test passes are not a fault-free background-execution claim. That automated checkpoint did not
+establish native coverage, legal named-unique acquisition or native item-tooltip treatment of per-level effect.
+
+Subsequent live controls (2026-10-27, source `6bbae87`) verify eight positive per-level-effect uses at actual levels
+10/100 in Standard/Ruthless. Fresh owned Default Attack records and natural DPS getter frames bind raw keys
+1784 = -60 and 20244 = 1, attributes 114/114/132, and Life/Mana maxima 215/160 or 1295/700 before each use.
+The native modifier vectors use controlled carriers; the new qualifier is an in-range +100 all-attributes vector.
+This does not establish legal acquisition of the named uniques or validate the preserved historical +200 qualifier.
+
+| Mode | Level | Small Life: rate per minute / seconds | Observed Life gain / fixed amount | White utility: final stat / seconds |
+|---|---|---|---|---|
+| Standard | 10 | 700 / 3 | 34 / 35 | movement speed +20% / 6 |
+| Standard | 100 | 1960 / 3 | 97 / 98 | armour +2100 / 6 |
+| Ruthless | 10 | 700 / 3 | 34 / 35 | movement speed +20% / 2 |
+| Ruthless | 100 | 1960 / 3 | 97 / 98 | armour +2100 / 4 |
+
+Each Life use spends 7 of 21 charges; each utility use spends 30 of 60. Life endpoints remain uncapped and satisfy
+the original one-integer publication boundary; they do not establish official fractional rounding. Recovery strength
+is present in the installed recovery-buff vector. Non-recovery utilities instead publish strength through final
+character stats: movement key 245 or armour key 243. Their decoded buff vector `[0]` accompanies the timer and is
+not strength evidence. Same-owned, explicit-present character samples show 0 -> the fixed strength -> 0, with no
+contradictory value or positive recurrence. Native install/removal, row, slot and exact float32 duration are checked
+separately; relative clocks from different observer scripts are not compared.
+
+The first launch incorrectly used `Game_PLAYER_ATTACK=0`, which selects an invalid default effect rather than
+disabling attacks; it was restored and retained as unproved. The fresh run selects `PlayerMelee`. Original verifier
+failures are also retained: the stage acknowledgment has two documented advisory fields absent from its captured
+identity, and the original utility expectation used the recovery-value channel. Separately reviewed verifier
+revisions bind every canonical stage field/journal acknowledgment and check the proper final-stat channel without
+changing the fixed strengths. The utility channel correction was declared after the Standard captures and before
+the Ruthless uses; verifier code/review was completed after capture. Earlier 18 whole-zero controls remain UNPROVED.
+All test stock, cells and charges were restored, representative level100 relogs passed in both modes, and the
+post-run audit preserved all eight identities, both original probes, both stash banks/40 tabs and untouched level20
+saves. Only normal participant last-played timestamps changed. Source/build/input hashes held, observers detached,
+the client closed, and the normal `data/saves.db` services were restored. Source removal/zero next-use controls,
+active-use source changes, local/magic composition, named-unique acquisition and tooltip parity remain separate.
+Local receipts are under `artifacts/issue75-completion/flask-effect2-native/` (captures, operation journal, verdicts
+and cleanup), `flask-effect2-native-assessment/` (frozen policy and reviewed verifier revisions), and
+`flask-effect2-native-preservation/post-run-audit.json` (the independent preservation audit). These are separate
+from the earlier native panel/duration batch below.
 
 The preceding integrated panel/duration batch passed 55 new and 80 existing focused cases and full Gateway 3657/3657.
 Prior Core 648/Data 37 runs remain applicable because those sources are unchanged (4342 applicable cases).
@@ -1177,8 +1215,9 @@ hit and every 3 seconds (tests only).
 - Flasks: fewer kill charges in acts 6 to 10 and maps (the amount is not in the tables), single monsters' own flask
   charge stats, partial charges across connections (not saved), queued native timer/predictor presentation,
   the effects across an area change (they end), the "during any flask effect" passives, remaining conditional effect
-  operators and nonpositive-duration policy. Flat/per-level global effect is implemented but awaits new native validation;
-  whole-unique native acquisition/tooltip parity remains unproved. Hybrid Life/Mana buffs are implemented; see §8.
+  operators and nonpositive-duration policy. Flat/per-level global effect has eight positive runtime controls (§8);
+  source-removal/zero next-use behavior and whole-unique native acquisition/tooltip parity remain unproved.
+  Hybrid Life/Mana buffs are implemented; see §8.
   Utility flasks: Ward (Iron Flask, the Ward suffix) until PR #206 is in; ailments, stun and curses on the player
   (Aquamarine's freeze effect, Corundum, the ailment suffixes: panel only); Aquamarine's chilled ground; the smoke
   cloud's art; which objects phasing lets the player through besides monsters; how long the grounds last; whether taking

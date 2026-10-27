@@ -132,7 +132,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Full on-kill recovery/percentage/prohibition rules and block-animation timing remain separate work.
   The preceding panel/flask batch passed 55 new plus 80 existing focused checks and Gateway 3657/3657;
   prior unchanged Core 648/Data 37 results still apply. These historical native/test results do not validate the new
-  self-duration/flask-effect operators. Runtime details and the original Life boundary are in protocol 13 §8.
+  self-duration/flask-effect operators. A subsequent eight-control positive flask-effect batch at actual levels10/100
+  in both modes verifies recovery rate/amount and final utility movement/armour strength, charge costs, native timer
+  duration/removal, canonical restoration and representative relog. The utility verifier checks explicit final stats
+  rather than the unused recovery-value channel; after-capture revisions remain disclosed. Self-duration native
+  evidence, source-removal/zero next-use and active-source changes, local/magic composition, unique acquisition and
+  tooltip parity remain separate. The old18 whole-zero controls remain UNPROVED. Details are in protocol13 §8.
   Continue auditing the remaining rows against the current implementation before adding formulas.
   Leech limits now have native display, modifier, prohibition, pool-conversion, reservation and relog controls.
   Active leech recovery and unsupported conditional sources remain open; official fractional endpoint rounding is unmeasured.

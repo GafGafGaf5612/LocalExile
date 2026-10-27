@@ -343,7 +343,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   neither Defence zero field is proved in any zero control, and some Misc zeros also remain UNPROVED.
   No hidden row is counted as a rendered zero. Full on-kill recovery/percentage/prohibition operators and block
   animation timing remain open; exact runtime values and the original one-integer Life boundary are in protocol 13 §8.
-  Those historical native checks do not validate the new self-duration or flask-effect operators.
+  Those historical native checks predate the new self-duration and flask-effect operators. A subsequent eight-control
+  live batch verifies positive per-level flask effect at actual levels 10/100 in both modes: Life rates 700/1960 for
+  three seconds, and utility movement +20% / armour +2100 with native Standard/Ruthless durations. Utility strength
+  is verified on explicit final character stats, separately from its timer buff. All stock/charges and original data
+  were preserved, both-mode representative relogs passed, and normal services were restored. The retained verifier
+  revisions and one-integer Life boundary are documented in protocol 13 §8. These controls do not promote the old
+  18 whole-zero cases or establish source-removal/zero next-use behavior, whole-unique acquisition/tooltip parity,
+  new self-duration native coverage, or completion of an issue 75 row.
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, `PanelStatDefaults.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
