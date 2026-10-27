@@ -383,8 +383,10 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
                 ushort vf = BinaryPrimitives.ReadUInt16LittleEndian(h.AsSpan(flagsAt));
                 var (vg, vh) = (vf & 2) != 0 ? VertexBlock(h, table.Length, ownKey.Width, ownKey.Height, (vf & 1) != 0, (own & 8) != 0 ? keyAt : 8, overBase: true)
                     : (vf & 1) != 0 ? (null, HeightBlock(h, table.Length, ownKey)) : (null, null);
-                ownGrounds = vg is null ? [] : [.. vg.Select(o => o == uint.MaxValue ? null : TableString(table, o))];
-                ownHeights = vh ?? [];
+                // Blocks the word leaves out stay the base tile's (the Theatre's BackStageThickWall_St_05, its own mesh
+                // over St_01 with the word 0, keeps St_01's black_inside_wall vertices).
+                if (vg is not null) ownGrounds = [.. vg.Select(o => o == uint.MaxValue ? null : TableString(table, o))];
+                if (vh is not null) ownHeights = vh;
             }
             if (ownKey.Width != baseTile.Width || ownKey.Height != baseTile.Height)
                 throw new NotSupportedException($"{path}: a tile over a base tile of another size is not ported");

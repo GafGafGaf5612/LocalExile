@@ -187,7 +187,7 @@ For a one-node graph (towns, hideouts):
    follows, each bit a group of fields the file gives itself: bit 0 its mesh (u32) and vertex data, bit 3 its tag and
    key (u32 tag then the 0x2e key bytes, as a plain tile's from offset 8), bit 4 its size and hull, bit 5 its
    orientation restriction, bit 1 fields the generator does not read (its own `.tmd` is in the string table), bit 2
-   one more string (setter +0x50, not read by the generator). The port reads bits 0 to 5 (bit 0: the mesh string right after the flags byte, the vertex blocks after the u16 flags word, the block ending the file with no strings after it, HallsOfTheDead's coral walls) (4 only with the base's size;
+   one more string (setter +0x50, not read by the generator). The port reads bits 0 to 5 (bit 0: the mesh string right after the flags byte, the vertex blocks the u16 flags word names after it, a block it leaves out staying the base tile's (the Theatre's BackStageThickWall_St_05 keeps St_01's grounds), the block ending the file with no strings after it, HallsOfTheDead's coral walls) (4 only with the base's size;
    bit 5's restriction byte follows the tag/key block and the bit 1 / bit 2 strings: Breach tower and Lake tiles,
    2026-10-27). A master without a RoomSet (MapOba's top master.tsi) or a TileSet (CombinedArena's, the pvp arenas) has
    none of them. A subgraph whose MasterFile is no .tsi / .tgr / .dgr names a group of the first record's FileGroups
