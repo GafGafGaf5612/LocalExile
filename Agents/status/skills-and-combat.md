@@ -176,7 +176,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Chaos Inoculation sets maximum life to 1 after life modifiers and grants chaos immunity in the damage model
   and the panel's Immune row; energy shield remains the pool.
   The pre-CI life used for stun/ailment thresholds and the low-life condition are not modelled.
-  Special local conversions and Sacred Orb base rerolls remain open.
+  Sacred Orb rerolls, local zero-ES rules, equipment ES-to-Life conversion and corrupted-item global ES increases
+  are implemented with automated coverage and historical native controls described in Items and crafting.
+  Fresh real-client checks of the merged branch remain open.
+  See Items and crafting for their scope; other unique/conditional mechanics and Ward calculations remain open.
   Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, `ItemDefences.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
 - Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via

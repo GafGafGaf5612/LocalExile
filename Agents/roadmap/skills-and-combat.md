@@ -68,6 +68,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Armour/evasion now include ordinary item-local flat/increased modifiers and quality, with native tooltip/panel,
   crafting refresh, unequip and active-shield checks.
   Saved variable bases now feed all three defences before local modifiers; legacy saves retain minimum bases.
+  Sacred Orb rerolls and supported special ES rules are implemented; see Items and crafting for scope and validation.
   Continue auditing the remaining rows against the current implementation before adding formulas.
   Ward, leech limits and unsupported conditional mechanics still need their own systems and evidence.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation

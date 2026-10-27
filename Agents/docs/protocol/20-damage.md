@@ -252,8 +252,8 @@ These controls establish actual player Life loss for the development hit route.
 Mixed monster packets, suppression, block, ES, Fortification and DoT separation retain automated coverage.
 The raw-source controls do not select Incorruptible or establish whole-class gameplay.
 The test records the exact embedded Git versions, DLL hash and process working directory.
-Recent-hit armour composition is covered below; partial armour percentages, other class mechanics and local item
-defences remain separate work.
+Recent-hit armour composition is covered below; partial armour percentages and other class mechanics remain separate.
+Implemented local item defences feed the shared armour pool (see [13](13-items.md) §2 and §2c).
 
 ## 2f. Steel Willed: temporary incoming-hit armour
 

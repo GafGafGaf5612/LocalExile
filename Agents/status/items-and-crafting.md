@@ -72,7 +72,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   (`ItemDefences`, [13](../docs/protocol/13-items.md) §2c).
   Armour, evasion and ES share a saved variable base roll, sent in the native Armour component.
   Fresh armour gets an ordinary roll once; legacy items keep their minimum, and ordinary crafting preserves the roll.
-  Native checks verified ordinary/special rolls, quality composition, equipment refresh and relog preservation.
+  Native checks verified ordinary/special base-roll states, quality composition, equipment refresh and relog.
+  Sacred Orb rerolls and supported special ES rules are implemented with automated coverage (see Partly working).
   Other uniques and special mods still depend on their individual mechanics (#60).
   Mageblood's supported subset is below.
   Code: `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`,
@@ -92,6 +93,26 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Sacred Orb rerolls: ordinary and Shift-repeat currency routes replace only the shared defence base roll (0..31).
+  Requires Armour/Mods components and a known variable native range.
+  Corrupted, mirrored and fixed-range targets are refused.
+  The same roll can recur and still costs one orb; affixes, quality, sockets, gems and other properties stay intact.
+  Automated coverage checks eligibility, persistence, save rollback and worn-item pool refresh.
+  Fourteen native captures recorded at `63c1039` verify ordinary/repeat use, refusals, inventory/stash combinations,
+  unchanged outcomes and restart persistence; fresh checks of the merged branch remain open.
+  Ward ranges count for eligibility, but Ward character calculations and recovery remain unimplemented.
+  Code: `CurrencyEffects.Sacred`, Gateway (`Program.Items.cs`).
+  Docs: [13](../docs/protocol/13-items.md), "Sacred Orb".
+- Special defence rules: local zero-ES modifiers override this item's base, mods and quality only for ES.
+  Supported equipment ES-to-Life conversion truncates each item's contribution, removes all equipment ES and adds
+  base Life before Life increases; independent global/aura ES remains ES and excluded shields grant no converted Life.
+  The corrupted-item conditional ES increase enters the global ES bucket, leaving tooltips and converted Life alone.
+  Hidden no-attribute-requirement modifiers retain the level gate.
+  Automated coverage passes; historical native conversion and corrupted-item ES controls are recorded at `0bae37a`
+  and `c9060e4` (see the protocol reference for values).
+  Fresh real-client checks of the merged branch and other unique/conditional mechanics remain open.
+  Code: `ItemDefences.cs`, `ItemModStats.cs`, Gateway (`Program.Equipment.cs`).
+  Docs: [13](../docs/protocol/13-items.md) §2-§2d.
 - **Unique items and Mageblood (verified live 2026-10-26).** The client data links a unique's name (`Words` wordlist 6)
   and artwork (`UniqueStashLayout` → `ItemVisualIdentity`), but not its mods, so `UniqueCatalog` curates each definition.
   `/item Mageblood` creates the Heavy Belt unique with its name, artwork and fixed mods (the Strength is the base
@@ -186,5 +207,5 @@ Part of [Status](../Status.md); what to build next in this area is in
   currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb,
   Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb,
   Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble,
-  Fracturing Orb, Mirror of Kalandra, Gemcutter's Prism and Orb of Regret;
+  Fracturing Orb, Mirror of Kalandra, Gemcutter's Prism, Sacred Orb and Orb of Regret;
   support gems and links ([13](../docs/protocol/13-items.md) "Open").

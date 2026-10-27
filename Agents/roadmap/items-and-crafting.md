@@ -29,11 +29,15 @@ features.
   The Mud Flats glyphs are quest items (`Metadata/Items/QuestItems/Glyphs/Glyph1..3`,
   [12](../docs/protocol/12-quests.md)).
 - **Start:** other currency through C→S 0x71 (13 §4: Orb of Transmutation, Alteration, Augmentation, Regal, Alchemy,
-  Chaos, Scouring can reuse `ItemRolls`); Sacred Orb base rerolls and special item-local conversions (13 §2c);
+  Chaos, Scouring can reuse `ItemRolls`);
   the other uniques and special mods (#60, 13 §2e: `UniqueCatalog` defines Mageblood; each remaining unique needs
   its base type, mod rows and ranges curated), unique drops/chancing, and Mageblood's follow-ups (buff icons,
   the "effects cannot be removed" backstop, the Foulborn rightmost variant, Enkindling).
-  Saved variable defence bases, ordinary local mods and quality now feed the pools; extend special mechanics separately.
+  Saved variable defence bases, local mods and quality now feed the pools.
+  Sacred Orb rerolls, local zero-ES rules, equipment ES-to-Life conversion and corrupted-item global ES increases
+  are implemented with automated coverage and historical native controls (13 §2c, §4; Status).
+  Remaining: fresh real-client checks of the merged branch, Ward calculations and unsupported unique/conditional
+  defence mechanics.
 - **Socket colours (3.29):** the 3.29 rules are in (white by default with an item-level colour chance, the
   Chromatic and non-white bench crafts, white sockets from Jeweller's/bench socket adds, Vaal colouring one white
   socket; [13](../docs/protocol/13-items.md), "Socket colours (3.29)", Status).

@@ -91,9 +91,11 @@ Effective quality is the saved Quality byte plus `local_item_quality_+`.
 `local_quality_does_not_increase_defences` suppresses this multiplier; maximum-quality modifiers do not add quality.
 Global item/passive/aura modifiers and Iron Reflexes continue through the shared character-pool calculation afterward.
 Equipment changes and quality currency on worn items refresh those pools and send the resulting panel stats.
-ES now uses that same final half-up rounding instead of truncating between local increases and quality.
-Its local flat/increased stats, the hybrid stats and `local_no_energy_shield` retain their existing roles.
-Special item-local conversions and Sacred Orb base rerolls remain separate work.
+ES uses that same final half-up rounding instead of truncating between local increases and quality.
+`local_no_energy_shield` and `local_unique_tabula_rasa_no_requirement_or_energy_shield` force this item's ES to zero,
+overriding its base, flat/increased mods and quality without removing armour, evasion or another item's ES.
+Supported equipment ES-to-Life conversion and conditional ES increases are described in §2c.
+Sacred Orbs reroll the saved shared base roll through the currency handler (see "Sacred Orb" in §4).
 
 Variable-base native checks verified Plate Vest rolls 0, 8, 16 and 31 as 19, 21, 23 and 27 armour.
 Raw 32 arrived as stored roll zero with special flag one and minimum armour 19, including after relog.
@@ -236,6 +238,29 @@ elemental ones raised by `local_elemental_damage_+%` and `local_attacks_with_thi
 hit the weapon makes. The armour, evasion and energy shield side is in "Base defences" above. Verified live 2026-10-20:
 +20 maximum Life, +30% fire resistance and +25 strength on a ring, a local attack speed mod on the wand, and spell
 damage on the wand raising Fireball's damage (11-skills.md §9).
+
+**Supported special defence rules:** `Program.Equipment.ConvertEquipmentEnergyShield` converts active armour items'
+final local ES into base Life before character-wide Life increases.
+`gain_maximum_life_instead_of_maximum_es_from_armour` selects 100% and takes precedence over
+`gain_maximum_life_instead_of_maximum_es_from_armour_at_x%_of_the_value`.
+Each item's percentage contribution truncates separately before summing (native consumer `0x142523ab0`).
+Conversion removes all equipment ES even when the Life gained is only a percentage of its value.
+Independent global and aura ES remains ES; global ES increases do not scale the converted Life.
+Shields excluded from the player's defences also contribute no converted Life.
+Inactive equipment and backpack items contribute neither ES nor converted Life.
+
+`local_maximum_energy_shield_+%_if_item_corrupted` adds to the character-wide ES increase bucket only while its active
+source item is corrupted (`ItemModStats.Global`, matching PoB's item-condition modifier handling).
+It does not change the local tooltip value or increase converted Life.
+The hidden zero-ES modifier above also removes attribute requirements during equipment activation, as does
+`local_no_attribute_requirements`; both retain the level requirement (§2d).
+Automated tests cover these rules, source clearing, active shields and inactive equipment.
+Historical native controls recorded at `0bae37a` verified 49 + 13 + 7 local ES becoming 69 base Life at 100% and 33
+at 50%, together with independent ES, global Life scaling and shield swaps.
+Controls recorded at `c9060e4` kept the corrupted robe's tooltip at 49 ES and converted Life at 1,314 while independent
+ES increased from 206 to 216.
+These are historical feature checks; the merged branch still needs fresh real-client validation.
+Other unique and conditional defence mechanics remain separate work (#60).
 
 ## 2d. Requirements and inactive items
 
@@ -539,6 +564,24 @@ mods is refused.
 tier, as the Divine Orb does for explicits; explicit, enchant and other mods, rarity and name stay. An item without an
 implicit mod is refused (nothing spent), and like every currency here but the Scroll of Wisdom it does nothing to a
 corrupted or mirrored item.
+
+### Sacred Orb
+
+`CurrencyRerollDefences` uses the ordinary 0x71 and repeat 0x72 currency routes (`CurrencyEffects.Sacred`).
+The target must have Armour and Mods components, a known variable native defence range, and be neither corrupted
+nor mirrored; rarity does not prevent an otherwise eligible reroll.
+One orb selects a shared ordinary base roll from 0 through 31, replacing raw special state 32 when present.
+This uses the local uniform roll policy; the official server's distribution has not been measured.
+A successful reroll may repeat the old value and still spends one orb; it need not improve the defences.
+Affixes, fractures, quality, sockets, gems and other item properties stay unchanged.
+Inventory/stash saves and currency consumption commit together; a failed save rolls both back.
+Worn-item changes feed the shared pools and the next character-panel update.
+Native range eligibility includes Ward, but Ward character calculations and recovery remain unimplemented.
+`SacredOrbTests` covers eligibility, endpoints, preservation, persistence, rollback and pool refresh.
+Fourteen historical native captures recorded at `63c1039` cover ordinary/repeat use, defence updates, refusals,
+raw-32 replacement, Ward-only targets and inventory/stash pairings.
+A native 9-to-9 reroll consumed one orb, and a Gateway restart preserved the rolls and currency counts.
+Fresh real-client checks of the merged branch remain open.
 
 ### Orb of Scouring (2026-10-21, verified live)
 
@@ -996,12 +1039,14 @@ hit and every 3 seconds (tests only).
   cloud's art; which objects phasing lets the player through besides monsters; how long the grounds last; whether taking
   a flask off the bar ends its effect (it does here, `UtilityFlasks.EndsWhenFlaskLeavesItsCell`); leech suffixes.
 - Gem levels and experience, support gems and links.
-- The game's own affix counts, rarity chances and drop rates; other currency on items (0x71); local weapon damage and
-  armour / evasion / energy shield mods (items have no base defences or damage on the server yet), unique / corrupted / crafted / influenced items (#60), ObjectMagicProperties +0x7a and bit 9; quality
-  effects; the meaning of Base +0xc0 / +0xc6 / +0xc7.
+- The game's own affix counts, rarity chances and drop rates; unsupported currency and individual local/unique /
+  corrupted / crafted / influenced item mechanics (#60), beyond the implemented weapon and defence rules in §2;
+  unexplained ObjectMagicProperties +0x7a and bit 9, unsupported quality effects and remaining meanings of
+  Base +0xc0 / +0xc6 / +0xc7.
 - C→S 0x2d and 0x12 (5 bytes, seen once); 0x4a's flag bit 1, its u16 and its other callers (`0x140b34140`,
   `0x14031c0a0`: probably currency use on an item).
-- Currency use other than the Orb of Regret. Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
+- Unsupported currencies beyond those implemented in §4.
+  Ctrl + click of a stack between inventories; a ground stack that only partly fits stays
   on the ground whole (the real game takes what fits).
 - Another connection in the same instance sees items dropped meanwhile only when it re-enters (no broadcast; the
   Gateway shows each client only its own player).
