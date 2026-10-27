@@ -128,13 +128,18 @@ partial class Program
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons);
         var gear = EquippedBaseDefences(conn);
+        var shield = EquippedArmourDefences(conn).FirstOrDefault(d => d.Row == PlayerInventories.Offhand1).Defence;
         int EquipmentStat(string name) => Stats.Key(name) is uint key ? sources.GetValueOrDefault(key) : 0;
         var converted = ConvertEquipmentEnergyShield(conn, EquipmentStat, gear.EnergyShield);
         bonus = bonus with
         {
-            Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion,
+            Armour = (int)Math.Min(int.MaxValue, (long)bonus.Armour + gear.Armour),
+            Evasion = (int)Math.Min(int.MaxValue, (long)bonus.Evasion + gear.Evasion),
             Life = (int)Math.Min(int.MaxValue, (long)bonus.Life + converted.Life),
             EnergyShield = (int)Math.Min(int.MaxValue, (long)bonus.EnergyShield + converted.EnergyShield),
+            ShieldArmour = shield.Armour, ShieldEvasion = shield.Evasion,
+            // ES-to-Life consumes the local item source before any shield/global increases can act on it.
+            ShieldEnergyShield = converted.EnergyShield == 0 ? 0 : shield.EnergyShield,
         };
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
@@ -375,6 +380,14 @@ partial class Program
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
             EnergyShield: Get("base_maximum_energy_shield"),
             EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
+            ShieldArmourPct: Get("shield_physical_damage_reduction_rating_+%"),
+            ShieldEvasionPct: Get("shield_evasion_rating_+%"),
+            ShieldEnergyShieldPct: Get("shield_maximum_energy_shield_+%"),
+            // Despite its name, shield_armour_+% increases all shield defences (native 0x142724c50).
+            // combined_shield_defences_+% is the native derived value, not a second additive source.
+            SharedShieldDefencesPct: Get("shield_armour_+%"),
+            NoShieldDefences: Get("minions_get_shield_stats_instead_of_you") != 0
+                || Get("gain_no_defences_from_equipped_shield") != 0,
             MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),
             FireResistance: allRes + Get("base_fire_damage_resistance_%"),
             ColdResistance: allRes + Get("base_cold_damage_resistance_%") + pairRes,
