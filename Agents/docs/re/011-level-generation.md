@@ -987,7 +987,7 @@ are the doodads, `0x142042fae`).
    (`0x141ffca30`): a pass line (up to three "0"/"1" for the passes, `SizeOrder` / `FileOrder` / `Random`, ±flags of
    `OverlayTileOverlays OverlayFeatureTiles OverlayFeatureRooms OverlayFeatureRoomOverlap OverlayDescriptionNodes
    OverlayExtraFeatures MatchAllTileKeys`, default 0x18), then "weight path [args]" rooms (`limit=`, `required=`,
-   orientation names, `!tag`: a tile tag the room needs under it, room +0x10; the same tag twice needs two tiles,
+   orientation names (SizeOrder: the groups stably sorted by key area, width, height, largest first, then run group by group, `0x142016290`), `!tag`: a tile tag the room needs under it, room +0x10; the same tag twice needs two tiles,
    `0x142000c50` counting tile origins in the spot, checked after the limit; Act 3 / 8 temple door overlays use
    `!door`, `!carpet`). Each room in each allowed orientation adds its key to the group with that key and
    flags; the same room again only ORs in the orientation bit. An exclusion grid marks rooms of nodes with

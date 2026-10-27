@@ -169,7 +169,9 @@ sealed class Overlays
                 else group.Rooms.Add(new OverlayRoom(room, limit, (byte)(1 << o), weight, requires));
             }
         }
-        if (order == 2) throw new NotSupportedException("overlay SizeOrder is not ported");
+        // SizeOrder (0x141ffca30 → 0x142016290): the groups stably sorted by key area, then width, then height, the
+        // largest first; then group by group as with FileOrder (the Beacon of Salvation hideout, Shipwreck Reef).
+        if (order == 2) groups = [.. groups.OrderByDescending(g => g.Key.Width * g.Key.Height).ThenByDescending(g => g.Key.Width).ThenByDescending(g => g.Key.Height)];
         return new OverlayPass(passes, order, groups);
     }
 

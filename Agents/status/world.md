@@ -83,8 +83,12 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Level generator port.** `GameServer.Data/Terrain/Generation` reproduces the client's level generator: the tile
   grid, the walkability and projectile grids, the doodads, every cell's ground height (`CellHeights.cs`) and the area
   transitions and waypoints (`AreaObjects.cs`).
-  1648 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
-  and 2771 of the 2789 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`).
+  1650 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
+  and 2797 of the 2813 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`).
+  An unattended tour of every WorldAreas row with a topology (2026-10-27, `scripts/re/levelgen/tourloop.py`, which
+  restarts and logs in the client by itself) left 198 of the 1932 rows with no client-side level to match: 17 without a
+  topology, 171 that need data from the server (Incursion temples, Delve biomes, Heist contracts, Synthesis memories),
+  and 10 the client cannot generate at any seed tried (the list is written to data/areas-unavailable.txt).
   A tour of 3 random seeds per matching area: 518 of 519 match; one is open (re/011 §8).
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
   All 30 loads with a height capture match cell for cell; 182 of the 186 with a transitions capture match exactly.

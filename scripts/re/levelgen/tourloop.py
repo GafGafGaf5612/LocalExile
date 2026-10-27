@@ -107,7 +107,7 @@ def drop_current(reason):
     log(f"dropped {current}: {reason}")
 
 
-def start(account, password, character, tour_file):
+def start(account, password, character, tour_file, first):
     stop_all()
     r = ps("& scripts/dev/live.ps1 -Walkmaps -NoBuild -NoExtract", timeout=300)
     if r.returncode != 0:
@@ -135,7 +135,8 @@ def start(account, password, character, tour_file):
     if not r.get("ok") and state() is None:
         log(f"play failed: {str(r.get('error'))[:200]}")
         return False
-    if state() is None:
+    # Only the first start begins the tour: a later one finding no saved tour means it just ended.
+    if first and state() is None:
         r = control("command", f"/tour {tour_file}", timeout=60)
         log(f"tour started: {r.get('replies')}")
     else:
@@ -163,7 +164,7 @@ def main():
                 stop_all()
                 drop_current("client, recorder or Gateway gone")
             log(f"(re)starting: {s}")
-            if not start(a.account, password, a.character, a.tour):
+            if not start(a.account, password, a.character, a.tour, not started_once):
                 failures += 1
                 if failures > 20:
                     log("too many failed starts; giving up")
