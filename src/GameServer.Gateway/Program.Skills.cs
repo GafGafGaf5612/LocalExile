@@ -216,7 +216,7 @@ partial class Program
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         foreach (var (k, v) in AuraCatalog.RawStats(auras, conn.Pools.AuraEffectPct, Skills, Stats))
-            extra[k] = extra.GetValueOrDefault(k) + v;
+            extra[k] = (int)Math.Clamp((long)extra.GetValueOrDefault(k) + v, int.MinValue, int.MaxValue);
         foreach (var (k, v) in extra) if (seen.Add(k)) yield return (k, v);
     }
 

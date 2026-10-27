@@ -303,6 +303,19 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Assert.Equal(76u, conn.Pools.EnergyShield);
     }
 
+    [Fact]
+    public void Adding_aura_ES_to_a_large_independent_source_saturates_instead_of_wrapping()
+    {
+        var conn = Character();
+        Inventory.Add(6, 0, 0, Ring((FlatES, int.MaxValue)));
+        Activate(conn);
+        Refresh(conn);
+
+        Assert.Equal((uint)int.MaxValue, conn.Pools.EnergyShield);
+        Assert.Equal(int.MaxValue, Program.CharacterPlayerStats(conn)[Key(FlatES)]);
+        Assert.Equal(int.MaxValue, Published(conn)[Key("maximum_energy_shield")]);
+    }
+
     public void Dispose()
     {
         PlayerInventories.Forget(_name);
