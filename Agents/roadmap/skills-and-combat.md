@@ -110,7 +110,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Weapon-local typed damage and multiplicative physical quality now feed ordinary and supported attacks,
   with correct melee/projectile context and active-hand sources. Pool/charge/timing/block conditions use active gear.
   Twenty-four native publication controls pass in Standard/Ruthless, with an independent local-mod/quality tooltip.
-  Alternative quality, local critical modifiers, supported-contact native composition and offhand alternation remain open.
+  Alternative quality, supported-contact native composition and offhand alternation remain open.
+  Local flat-before-increased critical chance is implemented with automated source/order cases; native validation
+  remains outstanding and is not supplied by the earlier weapon-local checks.
   Damage conversion now retains visited-type modifier history for destination/intermediate increases and inherited
   typed more factors. The Core seam has 21 new path cases, 12 existing packet controls and all 648 Core cases passing.
   The shared player resolver also supplies previously omitted charge more on ranged/attack-gem hits.
@@ -235,7 +237,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Continue native spell/projectile checks and the resolved critical-hit/Fortification composition on `effb797`.
   Verify successful paid Final Blow refunds once Phrecia play has an agreed client-compatible graph.
   Focus/curse lifecycles and statistical RNG validation remain separate from the deterministic policy tests.
-  Added-base and other conditional/more crit remain separate work.
+  Ordinary generic/typed added BASE now follows intrinsic-base replacement and precedes increased chance, including
+  native weapon-local flat-before-increase ordering and linked Increased Critical Strikes once.
+  Mode-specific passive/item, source-removal, zero, prohibition and hitless controls have automated cases;
+  current combined validation and new native checks remain pending. Isolated modifiers do not prove acquisition,
+  the local-flat fixture does not certify its no-extra-critical-damage consumer, and exact official rounding is unproved.
+  Other conditional/more crit remains separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
   When owned-actor execution is implemented, supply actual-caster stats to `SkillDamageContext` explicitly.
   Do not inherit an owner's spell-damage restriction onto independent minions or daemons without a skill rule.

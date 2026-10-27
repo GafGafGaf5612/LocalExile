@@ -390,8 +390,9 @@ No generator output changes are needed: the multiplier is already extracted.
    thought the swing took 833 ms instead of 757 ms it fell behind and dropped every third or fourth swing, which then
    animated without damage.
 
-**Critical strikes.** The server rolls a hit's critical chance after the damage roll: `base chance × (1 + increased
-critical strike chance / 100)`, capped at 100%, then multiplies the damage by the final multiplier (150% plus
+**Critical strikes.** The server rolls a hit's critical chance after the damage roll: `(intrinsic base + added base)
+× (1 + increased critical strike chance / 100)`, capped at 100%, then multiplies damage by the final multiplier
+(150% plus
 `base_critical_strike_multiplier_+`), as PoB's `CalcOffence` does. PoB's `unarmedWeaponData[class].CritChance = 0`
 and `base_critical_strike_multiplier = 150` are the defaults used here. The base is the equipped main hand's
 `WeaponTypes.dat` `Critical` permyriad (830 = 8.30%); unarmed is 0. Two pure base stats replace that base before the
@@ -410,6 +411,17 @@ context keeps the weapon override out, and `SpellCriticalStrike`'s spell route r
 The active weapon set determines the attack base and weapon-specific increases; an inactive weapon grants neither.
 `global_cannot_crit`, `virtual_global_cannot_crit` and `cannot_critical_strike_with_attacks` suppress attack crits.
 The pool builds the base once in `AttackBaseCriticalStrike`.
+`AddedBaseCriticalStrike` adds raw `additional_base_critical_strike_chance` and the applicable
+`attack_additional_critical_strike_chance_permyriad` or `spell_additional_critical_strike_chance_permyriad` after the
+intrinsic base or its replacement, before increased chance. Actor and selected skill/support sources enter once;
+published final chance is never an input. Weapon-local `local_critical_strike_chance` adds to the native weapon base
+before `local_critical_strike_chance_+%`; that rounded permyriad becomes the intrinsic weapon input.
+Signed BASE and increased sums remain wide through the completed expression, then round halfway up and cap.
+Linked Increased Critical Strikes contributes its own BASE and increased chance once through the shared calculation.
+Real native item modifiers, mode-specific Ascendant Assassin sources, local ordering, source removal, explicit zero
+and selected supports have automated cases; current combined validation and new native checks remain pending.
+The local-flat fixture retains its real no-extra-critical-damage flag; its chance checks do not certify multiplier
+behavior. The formulas follow pinned PoB `16de4b8` as a labelled 3.29.x fallback, without exact official rounding proof.
 `/set_stat` replaces its source value and rebuilds the pools for critical-chance inputs and prohibitions.
 The panel's final `main_hand_critical_strike_chance` and the rolls share that result.
 Generic and spell increases use the same effective raw inputs as `CharacterPlayerStats`: a development value,
@@ -506,7 +518,8 @@ The Gateway runs from its checkout root with repository-relative catalogs during
 These checks validate the generic stat consumers; ascendancy allocation remains in its separate lifecycle change.
 Spells use their own level's `GrantedEffectStatSetsPerLevel.SpellCritChance`:
 Fireball 500 (5.00%), Freezing Pulse and Ice Nova 750, Arc 600, Scorching Ray 0.
-`SkillCatalog.SpellCritChance` returns null for missing/invalid data, distinct from a known zero; both fail closed.
+`SkillCatalog.SpellCritChance` returns null for missing/invalid data, distinct from a known zero.
+Missing/negative intrinsic data fails closed; a known zero can receive ordinary added BASE.
 The unconditional passive stats are summed into `CharacterStats.Pools`: generic `critical_strike_chance_+%` and
 `base_critical_strike_multiplier_+` for both attacks and spells, the attack/melee/weapon-shape chance and multiplier
 stats for attacks, and `spell_critical_strike_chance_+%` / `base_spell_critical_strike_multiplier_+` for spells. The final
@@ -522,7 +535,8 @@ Pool construction still reads passives/items and adds `AuraCatalog.Bonus` once; 
 The result rounds to integer permyriad, halves away from zero, then caps at 0–10000, matching
 [PoB CalcOffence](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Modules/CalcOffence.lua#L3022-L3027).
 `global_cannot_crit` and `virtual_global_cannot_crit` disable the supported spell roll.
-Ordinary increased chance cannot make a known zero-base spell crit.
+Ordinary increased chance alone cannot make a known zero-base spell crit.
+`SkillHitPlan.CanHit` still rejects hitless or missing selected skills before added BASE is evaluated.
 The selected skill's spell rows also require `casting_spell = 1` (CharacterPanelStats `Spell_CritChance`);
 the main-hand rows exclude that flag.
 `EffectStats` supplies it only for an actual ActiveSkillType Spell without Attack, and sends zero otherwise.
@@ -549,7 +563,7 @@ Evidence: validation `logs/spell-crit-{after-default,after-generic100,after-comb
 final-arc-ice,final-scorching-ray}.json`, `spell-critical-live-summary.json` and `live-gateway.log`.
 Native probes reported no errors.
 Catalog, raw-source, aura, flag, rounding, hit routing and roll-boundary checks are also automated.
-Timed, charge, enemy-state, lucky/more and added-base critical mechanics remain outside this slice.
+Timed, charge, enemy-state and other conditional/more critical mechanics remain outside this slice.
 `/crit` prints the attack values and the legacy pooled 5%-base spell reference, not the selected gem's chance.
 
 **Impale.** A hit that rolls `impale_on_hit_%_chance` stores 10% of the swing's physical damage on the monster as a

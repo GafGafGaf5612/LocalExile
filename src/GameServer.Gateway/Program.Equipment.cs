@@ -137,7 +137,8 @@ partial class Program
             Wand: all.Any(t => t.Class == "Wand"),
             // The main hand's local critical chance and accuracy feed its character calculations. Local attack speed
             // is item metadata here; ItemWeaponStats already includes it in that hand's duration.
-            Critical: (main1 ?? main2) is { } main ? Items.WeaponCritical(main) * (100 + local.GetValueOrDefault("local_critical_strike_chance_+%")) / 100 : 0,
+            Critical: (main1 ?? main2) is { } main ? AddedBaseCriticalStrike.LocalWeaponChance(Items.WeaponCritical(main),
+                local.GetValueOrDefault("local_critical_strike_chance"), local.GetValueOrDefault("local_critical_strike_chance_+%")) : 0,
             LocalAttackSpeedPct: local.GetValueOrDefault("local_attack_speed_+%"),
             LocalAccuracy: local.GetValueOrDefault("local_accuracy_rating"));
     }

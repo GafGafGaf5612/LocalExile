@@ -127,23 +127,22 @@ partial class Program
     static int SupportedCriticalChance(ClientState conn, ushort skillId)
     {
         var gem = SupportedSkill(conn, skillId);
+        var hitPlan = SkillHitPlan.ForSkill(SkillsFor(conn), gem.Effect, gem.Level, gem.Quality);
+        if (!hitPlan.CanHit) return 0;
         var player = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
         int Own(string name) => Stats.Key(name) is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
         if (Skills.IsAttack(gem.Effect))
         {
             int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
-            if (new[] { "global_cannot_crit", "virtual_global_cannot_crit", "cannot_critical_strike_with_attacks" }
-                .Any(name => Player(name) != 0 || Own(name) != 0)) return 0;
             var weapon = WeaponProfileFor(conn, activeSet: true);
-            int basis = weapon.Unarmed && (!Skills.IsMelee(gem.Effect) || Skills.IsSpell(gem.Effect)) ? 0
+            int basis = weapon.Unarmed && (!SkillsFor(conn).IsMelee(gem.Effect) || SkillsFor(conn).IsSpell(gem.Effect)) ? 0
                 : AttackBaseCriticalStrike.OfMainHand(!weapon.Unarmed, weapon.Critical, Player);
-            int totalBase = (int)Math.Clamp((long)basis + Own("additional_base_critical_strike_chance"), int.MinValue, int.MaxValue);
             long increased = conn.Pools.CriticalStrikeChancePct
                 + AttackBaseCriticalStrike.IncreasedSum(weapon, name => Own(name));
-            return GameServer.Core.World.DamageModel.CriticalStrikeChancePerMyriad(totalBase, increased);
+            return AttackBaseCriticalStrike.ChanceOfBase(basis, increased, Player, Own);
         }
-        return SpellCriticalStrike.Chance((Skills.SpellCritChance(gem.Effect, gem.Level) ?? 0)
-            + Own("additional_base_critical_strike_chance"), Stats, player, gem.Stats, conn.Pools.SpellCriticalStrikeChancePct);
+        return SpellCriticalStrike.Chance(Skills.SpellCritChance(gem.Effect, gem.Level),
+            Stats, player, gem.Stats, conn.Pools.SpellCriticalStrikeChancePct);
     }
 
     static (int Flat, int Percent)? SupportedReservation(ClientState conn, ushort skillId)

@@ -441,7 +441,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Pool/charge/timing conditions and shield base block also exclude inactive or disabled equipment.
   Twenty-four native publication controls pass in Standard/Ruthless; the independent local-mod/quality tooltip
   matches 36-70 physical damage and 1.80 attacks per second. Source/DLL hashes and inventories held.
-  Authoritative offhand alternation, alternative quality and local base-critical modifiers remain separate.
+  Authoritative offhand alternation and alternative quality remain separate.
+  Local critical flat-before-increase ordering has automated coverage in the critical-strike implementation below;
+  the preceding native weapon checks do not validate that change.
   Supported-contact composition retains automated coverage and needs its own native check.
   A Core raw conversion-history seam is available with 21 new path cases and 12 existing packet controls passing.
   The full Core suite passes 648 tests. `PlayerHitDamage` now resolves one visited-type increased bucket, inherited
@@ -668,6 +670,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Each is a base, not a fixed final chance: generic increased crit still applies on top;
   the weapon override stays out of unarmed and spell rolls, and the unarmed base stays out of a weapon hand.
   Only the active weapon set supplies the attack base and its weapon-specific increases.
+  Ordinary added BASE now combines generic and attack/spell-specific raw actor and selected skill/support sources
+  after the intrinsic base or its override and before increased chance, with signed wide sums and final half-up cap.
+  Native weapon-local flat critical chance precedes local increased chance and its permyriad rounding.
+  Linked Increased Critical Strikes supplies its own BASE and increase once; known zero intrinsic chance may receive
+  added BASE, while missing/negative data, hitless skills and cannot-crit gates still fail closed.
+  Native modifier identities, mode-specific Ascendant Assassin sources, active-set isolation, removal, zero and
+  support composition have automated cases; current combined validation and new native checks remain pending.
+  Isolated carriers do not establish legal unique acquisition, and the local-flat chance fixture retains its real
+  no-extra-critical-damage flag without certifying multiplier behavior. Pinned PoB 3.29.x is a labelled fallback.
   `/set_stat` replaces the input and rebuilds the pools, so the panel and the rolls agree.
   Generic/spell development increases replace the same complete raw input used by spell rolls, including aura sources.
   Attack/spell increased percentages and the pooled spell reference now follow those effective inputs.
@@ -689,7 +700,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Combined generic/spell bonuses add once; the no-crit flag clears the native chance and hides its row.
   A hitless Scorching Ray cast dealt no weapon damage, while the same connection's Fireball dealt a critical hit.
   Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
-  Focus skill and curse lifecycles, other enemy-state/more and added-base crit mechanics remain separate work.
+  Focus skill and curse lifecycles and other enemy-state/more crit mechanics remain separate work.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
 - **Overcapped-resistance modifiers.** While the flag stat is set, the uncapped resistance above its maximum is a
   generic increased modifier, exactly PoB's `ResistOverCap` (the maximum capped at 90): +1% increased evasion per 1%
