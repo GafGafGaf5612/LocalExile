@@ -95,6 +95,7 @@ partial class Program
 
     static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond)
     {
+        EnsureOwnAuraPools(conn);
         Dictionary<uint, int> stats;
         lock (conn.Monsters) stats = new(conn.PlayerStats);
         foreach (var (k, v) in BaseStats(conn)) stats.TryAdd(k, v);
@@ -112,8 +113,10 @@ partial class Program
             foreach (uint key in StatKeys.AttackSpeedInputs)
                 devAttackSpeed += conn.PlayerStats.GetValueOrDefault(key);
         stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
-        // The running utility flasks' plain stats (UtilityFlasks.RawStats: maximum resistances, crit, damage, cast speed).
-        UtilityFlasks.AddRawStats(stats, conn.UtilityFlaskEffects.Stats().Concat(conn.FlaskGrounds.PlayerStats()), Stats);
+        // The utility flasks' plain stats (UtilityFlasks.RawStats: maximum resistances, crit, damage, cast speed), with
+        // Mageblood's permanent flasks deduplicated against the running ones, plus the flask grounds.
+        int FlaskGet(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        UtilityFlasks.AddRawStats(stats, UtilityStats(conn, FlaskGet).Concat(conn.FlaskGrounds.PlayerStats()), Stats);
         WithRage(conn, stats);
         // The character panel's sums of base forms (PanelStats); a stat /set_stat set keeps its value.
         Dictionary<uint, int> dev;
@@ -164,6 +167,7 @@ partial class Program
             stats[lowLife] = CriticalOnLowLife(conn, stats) ? 1 : 0;
         if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
             stats[rolls] = CriticalExtraRollsFor(conn, stats);
+        stats[OwnAuraRestriction.Disabled] = OwnAuraRestrictionValue(conn);
         return stats;
     }
 
@@ -399,6 +403,8 @@ partial class Program
                 if (Stats.Key(Skills.IsAttack(effect) ? "main_hand_critical_strike_multiplier" : "spell_critical_strike_multiplier") is uint cm)
                     stats[cm] = SupportedCriticalMultiplier(conn, id);
             }
+            stats[OwnAuraRestriction.BaseAura] = own.GetValueOrDefault(OwnAuraRestriction.BaseAura);
+            OwnAuraRestriction.PublishSkill(stats, OwnAuraRestrictionValue(conn));
             if (Skills.FindByRow(id, effect, supported.Level, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
             {
                 Console.WriteLine($"[gateway] gem skill 0x{skill.Id:x4} {name} level {level} quality {quality} (effect {effect}): GEPL {skill.EffectsPerLevelRow}, " +
@@ -518,9 +524,32 @@ partial class Program
 
     // Actor restrictions use the actual caster's current sources, never a skill overlay (which may replace a key).
     // CharacterPlayerStats does not build PlayerSkills or call GemDisabled, so this cannot recurse through admission.
-    static string? ActorSkillDisabled(ClientState conn, int effect) =>
-        Skills.IsWarcry(effect) && Stats.Key("your_warcry_skills_are_disabled") is uint key
+    static string? ActorSkillDisabled(ClientState conn, int effect)
+    {
+        // Legacy effect-only callers can use support metadata only when the instance is unambiguous.
+        // Production admission always supplies the requested skill ID through ActorSkillInstanceDisabled.
+        var copies = GemSkillEffects(conn.Character).Where(g => g.Effect == effect).Take(2).ToArray();
+        return ActorSkillDisabledCore(conn, effect, copies.Length == 1 ? copies[0].Id : null);
+    }
+
+    static string? ActorSkillInstanceDisabled(ClientState conn, int effect, ushort skillId) =>
+        ActorSkillDisabledCore(conn, effect, skillId);
+
+    static bool OwnAuraSkillRestricted(ClientState conn, int effect, ushort? skillId)
+    {
+        if (OwnAuraRestrictionValue(conn) == 0) return false;
+        if (Skills.IsAura(effect)) return true;
+        if (skillId is not ushort id) return false;
+        var gem = SupportedSkill(conn, id);
+        return gem.Effect == effect && OwnAuraRestriction.IsAura(gem.Stats);
+    }
+
+    static string? ActorSkillDisabledCore(ClientState conn, int effect, ushort? skillId)
+    {
+        if (OwnAuraSkillRestricted(conn, effect, skillId)) return "own aura skills are disabled";
+        return Skills.IsWarcry(effect) && Stats.Key("your_warcry_skills_are_disabled") is uint key
             && CharacterPlayerStats(conn).GetValueOrDefault(key) != 0 ? "warcry skills are disabled" : null;
+    }
 
     // Why a gem skill may not be used: an actor restriction, unmet gem requirements or provider equipment restrictions.
     // The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
@@ -534,6 +563,17 @@ partial class Program
         if (Skills.EffectId(effect) is { } effectId
             && ProjectileDefinition(effectId)?.Unavailable?.Invoke(conn) is { } unavailable) return unavailable;
         return null;
+    }
+
+    // Keep source-gem requirements and accepted supports local to the actual requested instance.
+    // A second gem with the same GrantedEffects row may have a different level or link group.
+    static string? GemSkillInstanceDisabled(ClientState conn, int effect, ushort skillId)
+    {
+        var gem = SupportedSkill(conn, skillId);
+        if (gem.Effect != effect || gem.SourceGem is null) return "skill is unavailable";
+        if ((ActorSkillInstanceDisabled(conn, effect, skillId) ?? GemRequirementsUnmet(conn, gem.SourceGem)) is { } disabled)
+            return disabled;
+        return Skills.EffectId(effect) is { } effectId ? ProjectileDefinition(effectId)?.Unavailable?.Invoke(conn) : null;
     }
 
     // A worn item whose requirements are not met (CharacterStatSources): its mods and gems do nothing.
@@ -684,16 +724,24 @@ partial class Program
         {
             if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
             RefreshSingleUseCooldowns(conn);
+            EnsureOwnAuraPools(conn);
             foreach (var id in conn.Auras.Keys.ToList())
             {
                 var gem = SupportedSkill(conn, id);
                 if (gem.Effect < 0 || SupportedReservation(conn, id) is not { } reservation) continue;
-                conn.Auras[id] = conn.Auras[id] with
+                var before = conn.Auras[id];
+                conn.Auras[id] = before with
                 {
-                    ManaFlat = reservation.Flat, ManaPercent = reservation.Percent, Level = gem.Level, Quality = gem.Quality
+                    ManaFlat = reservation.Flat, ManaPercent = reservation.Percent,
+                    Level = gem.Level, Quality = gem.Quality
                 };
+                conn.AuraStatsDirty |= before != conn.Auras[id];
             }
-            if (conn.Auras.Count > 0) conn.Pools = PoolsFor(conn, conn.Pools.Level);
+            if (conn.Auras.Count > 0)
+            {
+                conn.Pools = PoolsFor(conn, conn.Pools.Level);
+                conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+            }
         }
         List<ushort> gone = [], added = [];
         await SendPlayerStatSnapshot(remote, stream, ciphers, conn, () =>
@@ -706,18 +754,6 @@ partial class Program
         }, "0x02ba player Actor: current skill stats");
         await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
         if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
-        IReadOnlyList<AuraCatalog.Aura> resumed = [];
-        lock (conn.Monsters)
-            if (!conn.Closed && !conn.LeavingArea && !conn.RageRetired && conn.PlayerLife > 0 && !InTown(conn))
-                resumed = RestoreRememberedAuras(conn, CharacterSaves.Load(CharacterName(conn))?.ActiveAuras ?? []);
-        if (resumed.Count > 0)
-        {
-            foreach (var aura in resumed)
-                foreach (var packet in AuraBuffs(aura))
-                    await Send(remote, stream, ciphers, packet, $"aura {aura.EffectId} resumes after skill refresh");
-            await SendCharacterStats(remote, stream, ciphers, conn, "remembered auras resumed");
-            await SendPlayerMana(remote, stream, ciphers, conn, "remembered aura reservation");
-        }
 
         // The update can take a bound skill off the skill bar (live 2026-10-21: Haste's slot emptied when its aura went on,
         // and came back with the area change's 0x53), and a gem socketed again does not get its slot back by itself, so the
@@ -742,17 +778,14 @@ partial class Program
             foreach (var aura in ended) conn.Auras.Remove(aura.SkillId);
             if (ended.Count > 0)
             {
+                conn.AuraStatsDirty = true;
                 conn.Pools = PoolsFor(conn, conn.Pools.Level);
                 conn.ApplyMovementSpeed();
             }
         }
-        foreach (var aura in ended)
-        {
-            foreach (var packet in AuraCatalog.EndPackets(aura, PlayerId))
-                await Send(remote, stream, ciphers, packet, $"0x01c2 player aura {aura.Name} ends (its gem left)");
-        }
         if (ended.Count > 0)
         {
+            await SendOwnAuraChanges(remote, stream, ciphers, conn);
             await SendCharacterStats(remote, stream, ciphers, conn, $"aura {string.Join(", ", ended.Select(a => a.Name))} off (gem left)");
             await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana}/{conn.Pools.Mana}, {ReservedMana(conn)} reserved");
         }

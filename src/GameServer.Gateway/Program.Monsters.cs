@@ -250,7 +250,7 @@ partial class Program
                     $"vs evasion {conn.Pools.Evasion}, {hitChance}% chance to hit, entropy {conn.EvasionEntropy:0}");
                 return;
             }
-            // Roll each damage type separately, apply its resistance, then armour to the physical part. The attack is
+            // Roll each type, apply resistance, then the shared hit-only armour/additional reduction pass. The attack is
             // currently physical only (MonsterAttack), but the packet path keeps future monster skills correct.
             var rolled = a.Damage.Roll(Random.Shared);
             rolled = MonsterModHit(m, rolled, conn.PlayerLife, conn.PlayerMaxLife, Random.Shared, out monsterCritical,
@@ -263,10 +263,10 @@ partial class Program
             foreach (var (type, range) in mitigated.Components)
             {
                 int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
+                value = PlayerHitMitigation.AfterResistance(conn.Pools, type, value,
+                    reduction.Physical, reduction.Elemental);
                 if (type == DamageType.Chaos) chaosDamage += value;
-                damage += type == DamageType.Physical
-                    ? DamageModel.MitigatePhysical(value, conn.Pools.Armour, reduction.Physical)
-                    : GameServer.Core.World.DamageTypes.IsElemental(type) ? DamageModel.Reduce(value, reduction.Elemental) : value;
+                damage += value;
             }
             damage = FortificationDamageTaken(conn, damage);
             chaosDamage = FortificationDamageTaken(conn, chaosDamage);

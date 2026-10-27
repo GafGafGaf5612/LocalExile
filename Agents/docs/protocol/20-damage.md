@@ -201,6 +201,60 @@ Two additional panel-only checks show weapon physical 2â€“5 becoming 6â€
 Relog clears the development effect.
 Phrecia node admission and the rest of Behemoth remain separate work; this consumer does not enable a new chooser.
 
+## 2e. Armour against incoming chaos hits
+
+`base_armour_applies_to_chaos_damage` (client key 12064) is a boolean source.
+The current `PassiveSkills` node 29437, Incorruptible, grants value 1.
+`PassiveBonus` carries it through `CharacterStats.Bonus` into `Pools.ArmourAppliesToChaosDamage`.
+It never changes `Pools.Armour`, the native final rating or Steel Willed's offensive input.
+
+Incoming chaos hits first take the ordinary capped chaos resistance, including the Kitava penalty.
+`PlayerHitMitigation.AfterResistance` then uses the existing rounded armour model against that remaining damage.
+For example, 1000 chaos against 50% resistance and 1000 armour leaves 500 before armour.
+The armour reduction is 29%, so 355 remains; using the raw 1000 in the denominator would incorrectly leave 415.
+The existing 90% armour mitigation limit applies, with no additional physical reduction contributed to chaos.
+Physical and elemental reduction retain their existing rules and per-type rounding.
+Immunity zeroes the component before this pass.
+Fortification follows mitigation; suppression and block keep their existing command/contact ordering.
+Energy Shield then absorbs non-chaos damage, while the mitigated chaos share still bypasses it.
+Mixed monster hits mitigate each type before computing that bypass share and the existing Fortification floors.
+
+The calculation order comes from Path of Building commit `16de4b82d57f1c0de6eb40f37143c32d4da36a02`.
+Its [CalcDefence.lua][pob-chaos-armour], `applyDmgTakenConversion` lines 97-116, uses resistance-adjusted damage
+in the armour denominator and keeps additional reduction separate per damage type.
+LocalExile retains main's existing integer rounding instead of changing the global physical model.
+
+[pob-chaos-armour]:
+  https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82/src/Modules/CalcDefence.lua#L97-L116
+
+`MonsterSwing`, `/hit`, `/spellhit` and `/blockhit` share the hit-only mitigation pass.
+DoT uses its resistance-only path and never enters this helper.
+`/set_stat base_armour_applies_to_chaos_damage 1` enables the raw development source.
+Value 0 replaces a passive source with false; `off` removes the replacement and rebuilds from current sources.
+Development values are connection-local and do not survive relog.
+Raw-node tests inject 29437 only as a stat fixture and do not establish Phrecia allocation or class selection.
+
+Automated checks cover resistance ordering/caps, flag-off identity, immunity, zero/extreme armour,
+physical-reduction isolation, final rating/offence, source replacement/removal and fresh connection reload.
+Framed chat dispatch and real monster swing tests cover suppression, mixed damage, block, ES and Fortification.
+Current-main integration preserves Strength-derived Mana and Chaos Inoculation in the same pool calculation.
+Regression controls cover complete Strength groups, independent raw-source removal and current-Mana clamping.
+The parsed Mana refresh retains its send-gate snapshot; restoring a source does not refill current Mana.
+Eleven native controls use a new unascended Marauder, raw key 12064 and a level-one Plate Vest fixture.
+With 969 Armour, a raw 20-chaos hit removes 20 Life while disabled and two while enabled.
+At 50% chaos resistance it removes one Life with the enabled armour pass.
+Physical and fire controls preserve their ordinary behavior.
+At 50 Armour and 50% chaos resistance, the same chaos hit removes five Life even with 80% additional physical
+and elemental reductions active; controls confirm those reductions still affect their own types.
+The native Armour rating stays unchanged when the flag toggles.
+Explicit zero, removing the development replacement, source restoration and relog are verified.
+These controls establish actual player Life loss for the development hit route.
+Mixed monster packets, suppression, block, ES, Fortification and DoT separation retain automated coverage.
+The raw-source controls do not select Incorruptible or establish whole-class gameplay.
+The test records the exact embedded Git versions, DLL hash and process working directory.
+Recent-hit armour doubling/history, partial armour percentages, other class mechanics and local item defences
+remain separate work.
+
 ## 3. Damage over time and ailments
 
 DoT is one damage type, has no hit, cannot critically strike and uses that type's resistance. `DamageOverTime` carries
@@ -230,8 +284,8 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
 - Fireball builds its packet from `spell_minimum/maximum_base_<type>_damage` (`SkillCatalog.HitDamage`), applies the
   spell's increased-damage stats per type (`SpellDamage.Packet`), then the player's and the skill's conversion stats,
   rolls it and sends the life change.
-- Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands, applies each
-  type's resistance and then armour to the physical part.
+- Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands.
+  Each type takes resistance, then shared incoming hit mitigation, including enabled chaos armour (section 2e).
 - Player hits on monsters (default attack, gem projectile and area hits) roll each type once and reduce it by the
   monster's base resistance: `MonsterTypes.Resistances` → `MonsterResistances`, the level's
   `DefaultMonsterStats.Difficulty` (1/2/3) picking the Normal/Cruel/Merciless columns (`MonsterResistanceCatalog`,
@@ -267,9 +321,9 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   Earlier native evidence remains attributed to its original heads; a stale #225 DLL did not test #226.
   Rebuild after the final checkout and verify embedded Git versions, hashes and the running DLL before `-NoBuild`.
   See [native build provenance](../dev/client-control.md#build-provenance-for-native-verification).
-- `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance. The existing single-value
-  `Mitigate` overloads are used by `/hit` and Righteous Fire; physical `/hit`, `/spellhit` and `/blockhit` use
-  `MitigatePhysical`.
+- `DamageModel.Mitigate(DamagePacket, ...)` applies each type's own capped resistance.
+  Incoming hit commands and monster swings share `PlayerHitMitigation` after resistance.
+  Righteous Fire keeps the single-value resistance-only DoT path.
 - `/hit` and `/spellhit` still use a single type; conversion is not applied to those debug commands.
 
 ## 5. Continuous resource updates (2026-10-24)

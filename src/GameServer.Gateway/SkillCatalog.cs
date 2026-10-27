@@ -123,6 +123,9 @@ sealed class SkillCatalog(string folder = "data")
             Put("base_skill_is_instant", 1);
             Put("skill_is_instant", 1);
         }
+        if (IsAura(effectRow)) stats[OwnAuraRestriction.BaseAura] = 1;
+        if (_curseEffects.Value.Contains(effectRow)) stats[OwnAuraRestriction.Curse] = 1;
+        if (OwnAuraRestriction.IsAura(stats)) stats[OwnAuraRestriction.Aura] = 1;
         // CharacterPanelStats gates spell rows on this final flag and hides the weapon rows while it is set.
         // A non-attack is not necessarily a spell (warcries, for example); use the actual ActiveSkillType.
         Put("casting_spell", IsSpell(effectRow) && !IsAttack(effectRow) ? 1 : 0);
@@ -348,6 +351,11 @@ sealed class SkillCatalog(string folder = "data")
     /// <summary>Whether a GrantedEffects row's ActiveSkill has the Warcry type.</summary>
     public bool IsWarcry(int effectRow) => _warcryEffects.Value.Contains(effectRow);
 
+    /// <summary>Aura metadata, including only supports already accepted by GemSupports.Resolve.</summary>
+    public bool IsAura(int effectRow, IEnumerable<int>? acceptedSupports = null) =>
+        _auraEffects.Value.Contains(effectRow)
+        || acceptedSupports?.Any(row => _addedAuraEffects.Value.Contains(row)) == true;
+
     private readonly Lazy<HashSet<int>> _instantEffects = new(() => EffectsOfType(folder, "Instant"));
     private readonly Lazy<HashSet<int>> _movementEffects = new(() => EffectsOfType(folder, "Movement"));
     private readonly Lazy<HashSet<int>> _attackEffects = new(() => EffectsOfType(folder, "Attack"));
@@ -355,9 +363,12 @@ sealed class SkillCatalog(string folder = "data")
     private readonly Lazy<HashSet<int>> _spellEffects = new(() => EffectsOfType(folder, "Spell"));
     private readonly Lazy<HashSet<int>> _projectileEffects = new(() => EffectsOfType(folder, "Projectile"));
     private readonly Lazy<HashSet<int>> _warcryEffects = new(() => EffectsOfType(folder, "Warcry"));
+    private readonly Lazy<HashSet<int>> _auraEffects = new(() => EffectsOfType(folder, "Aura"));
+    private readonly Lazy<HashSet<int>> _curseEffects = new(() => EffectsOfType(folder, "AppliesCurse"));
+    private readonly Lazy<HashSet<int>> _addedAuraEffects = new(() => EffectsOfType(folder, "Aura", added: true));
 
     /// <summary>The GrantedEffects rows whose ActiveSkill has the ActiveSkillType of this Id.</summary>
-    static HashSet<int> EffectsOfType(string folder, string typeId)
+    static HashSet<int> EffectsOfType(string folder, string typeId, bool added = false)
     {
         string TablePath(string name) => Path.Combine(folder, "tables", name + ".json");
         if (!File.Exists(TablePath("GrantedEffects")) || !File.Exists(TablePath("ActiveSkills")) || !File.Exists(TablePath("ActiveSkillType"))) return [];
@@ -365,6 +376,14 @@ sealed class SkillCatalog(string folder = "data")
         int instant = types.RootElement.EnumerateArray().Select((r, i) => (Id: r.GetProperty("Id").GetString(), i))
             .FirstOrDefault(t => t.Id == typeId, (null, -1)).i;
         if (instant < 0) return [];
+        if (added)
+        {
+            using var granted = JsonDocument.Parse(File.ReadAllBytes(TablePath("GrantedEffects")));
+            return [.. granted.RootElement.EnumerateArray().Select((r, i) => (r, i))
+                .Where(e => e.r.TryGetProperty("AddedActiveSkillTypes", out var a) && a.ValueKind == JsonValueKind.Array
+                    && a.EnumerateArray().Any(v => v.ValueKind == JsonValueKind.Number && v.GetInt32() == instant))
+                .Select(e => e.i)];
+        }
         using var active = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkills")));
         var instantSkills = active.RootElement.EnumerateArray().Select((r, i) => (r, i))
             .Where(a => a.r.TryGetProperty("ActiveSkillTypes", out var t) && t.ValueKind == JsonValueKind.Array
@@ -486,6 +505,10 @@ sealed class SkillCatalog(string folder = "data")
     {
         public static readonly Unarmed Witch = new(833, 2, 5, 8);
 
+        /// <summary>The weapon's own added elemental/chaos damage (its local added damage mods, ItemWeapons), added to
+        /// every hit it makes; empty for unarmed and for weapons without such mods.</summary>
+        public DamagePacket LocalAdded { get; init; } = DamagePacket.Empty;
+
         /// <summary>Unarmed attacks alternate hands, i.e. count as dual wielding, and the client adds dual wielding's 10%
         /// attack speed to the skill's main_hand_attack_speed_+% (live 2026-10-17: the skill read 10 that the server never
         /// sent, and the swings came every ~757 ms = 833 / 1.1).</summary>
@@ -548,8 +571,9 @@ sealed class SkillCatalog(string folder = "data")
         public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player)
         {
             double increased = IncreasedDamage(player) + DamageStats.SpellAttackIncrease(player);
-            return DamagePacket.Of(DamageType.Physical,
+            var hit = DamagePacket.Of(DamageType.Physical,
                 DamageStats.IncreaseAttackRange(new(MinDamage, MaxDamage), increased));
+            return hit.Add(LocalAdded);
         }
 
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,

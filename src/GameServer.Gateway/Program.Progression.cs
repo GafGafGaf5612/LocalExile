@@ -124,6 +124,8 @@ partial class Program
     {
         // The stat sources first: they decide which worn items are inactive, which the weapon profile reads.
         var sources = CharacterStatSources(conn, level: level);
+        // Detach forbidden self auras before any pool bonus is sampled. No restoration here: it needs completed pools.
+        SuspendRestrictedOwnAuras(conn, new(sources));
         var weapons = WeaponProfileFor(conn);
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons);
@@ -134,14 +136,16 @@ partial class Program
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
         // Match CharacterPlayerStats: a dev value replaces the complete raw passive/equipment/aura input.
-        // Read the dev inputs from one snapshot, without rebuilding the whole passive bonus.
+        // Read raw replacements once, preserving independent mana and incoming-hit consumers.
         Dictionary<uint, int> devStats;
         lock (conn.Monsters) devStats = new(conn.PlayerStats);
-        // Only this raw mana source is replaced here. Final native strength remains a presentation override;
-        // CharacterStats.For consumes its existing final Strength from the production attribute calculation.
+        // Final native Strength remains a presentation override; use the production attribute calculation here.
         if (Stats.Key(StrengthMana.PerFourStrength) is uint manaPerStrength
             && devStats.TryGetValue(manaPerStrength, out int perFourStrength))
             bonus = bonus with { ManaPerFourStrength = perFourStrength };
+        if (Stats.Key(PlayerHitMitigation.ArmourAppliesToChaos) is uint chaosArmour
+            && devStats.TryGetValue(chaosArmour, out int chaosArmourOverride))
+            bonus = bonus with { ArmourAppliesToChaosDamage = chaosArmourOverride != 0 };
         long RawCriticalSum(string name)
         {
             if (Stats.Key(name) is not uint key) return 0;
@@ -176,7 +180,10 @@ partial class Program
             AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
             MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
         };
-        bonus = UtilityFlasks.Apply(bonus, conn.UtilityFlaskEffects.Stats());
+        // Running utility flasks and Mageblood's permanent ones combined before one strongest-per-effect pass: the same
+        // effect never counts twice.
+        int MagebloodGet(string name) => Stats.Key(name) is uint k ? sources.GetValueOrDefault(k) : 0;
+        bonus = UtilityFlasks.Apply(bonus, UtilityStats(conn, MagebloodGet));
         if (conn.God)
             bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
                 Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };
@@ -368,6 +375,7 @@ partial class Program
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
             ChaosInoculation: Get("keystone_chaos_inoculation") != 0,
+            ArmourAppliesToChaosDamage: Get(PlayerHitMitigation.ArmourAppliesToChaos) != 0,
             EnergyShield: Get("base_maximum_energy_shield"),
             EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             MeleePhysicalDamagePct: Get("melee_physical_damage_+%"),

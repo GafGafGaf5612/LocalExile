@@ -13,7 +13,9 @@ release/presentation behavior through an optional partial-class provider. Covera
 
 ## Global constraints
 
-- Baseline: `9fe3262668b339589bb334d8b9dd4218b11ab421`; upstream base: `20b02f85a9ab33f846dd937a28f1d71c30c4d9cc`.
+- Baseline: `9fe3262668b339589bb334d8b9dd4218b11ab421`; initial upstream base: `20b02f85a9ab33f846dd937a28f1d71c30c4d9cc`.
+- Integration base advanced to `79cc0337b331b69e49b3c35ea3e34c67e7d547ce` during CI handoff.
+  Merge it into framework, then merge framework into coverage and regenerate the equal-tree bridge.
 - Existing isolated worktree; no client operation, remote push, CI reset or unrelated feature import.
 - Serialize builds; dot-source the main checkout's `.env.dev.ps1` before each dotnet command.
 - Keep all current mechanics/presentation tests and uncertain-parity qualifications.
@@ -74,3 +76,7 @@ Ruling: use an equal-tree local ancestry bridge for the one-time CI transition. 
 CI already contains the old feature, so direct independent re-addition would risk avoidable add/add conflicts.
 
 Builder review found no unresolved user decision; remaining C# contract details are implementation choices.
+
+Upstream compatibility preserves instance-aware gem requirements and own-aura reconciliation while retaining
+projectile simulation time and owner-retirement guards. Coverage flask movement must refresh Mageblood state
+at its existing synchronous inventory commit and publish the refresh after the inventory batch.

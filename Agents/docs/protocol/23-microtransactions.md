@@ -145,6 +145,39 @@ Verified live 2026-10-23: skins, attachments, character effects, footprints, por
 
 - Pets, the portrait and skill effects are built as above and await live verification (skill picks: 0x1fa seen live,
   its handling not yet).
+- Issue [#306](https://github.com/Wrathen/LocalExile/issues/306): after Spark is replaced by Kinetic Blast, the icon
+  can show KB while opening Spark's picker.
+  The retained log reports Spark `0x900d0738`, record 122, a clear (record 0), then KB `0x174ecd0c` on key 50.
+  These are packet and skill-bar observations, not a capture of the picker contents.
+  The original file can be overwritten by service startup; the issue's excerpt is the retained evidence.
+  Upstream `20b02f8` demonstrably reassigns keys by enumeration index and accepts any known record for that key.
+  A delayed pick can therefore clear a removed A or save A's record on B; regression tests reproduce both defects.
+  The fix assigns keys to full target lifetimes (gem hash, inventory, socket, effect slot type), retains unchanged
+  targets, and never reuses retired keys during the connection, including A → B → A and empty → reappearance.
+  Saved choices remain per gem hash and effect slot type; removing a target does not delete its saved choice.
+  `SendWornCosmetics` samples inventory, saved effects and bindings inside the connection send gate, so queued work
+  publishes current targets and cannot send an old skill snapshot after a later inventory mutation.
+  Equipment/socket handlers send inventory changes before cosmetics, then skill stats and the skill bar.
+  `RunHandlers` serializes those requests; no production send-order race was established from the captured log.
+  A 0x1fa must name a published target still present in current equipment; nonzero records must fit group 27,
+  effect slot type, BaseItemTypes and ItemClasses restrictions before any save mutation.
+  Logs now include each key's gem, inventory, socket, slot type and record at the send gate.
+  Read-only 3.29.3b disassembly (Client/Game.exe SHA-256
+  `78a0e227189c263658a7f65a02f086428b859bfc114ae8e7ce8aab721ebd48d5`) confirms replacement/event paths:
+  `0x142150fe5`–`0x142151007` exchanges the previous skill list; `0x142151200`–`0x142151254` fills the new list.
+  `0x142151466`–`0x142151493` emits removed-key events and `0x1421514d0`–`0x142151500` emits current-target events.
+  The removed-set difference (`0x142175327`–`0x142175376`) compares only the key, not the gem or other target fields:
+  replacing A with B under the same key skips target removal even when both have record 0.
+  `0x140ce0490` forwards target updates and `0x140ce04e0` forwards removal; `0x140cde190` looks up a full u32 key.
+  A fresh key therefore exercises removal/addition instead of reusing an existing target's UI identity.
+  These are static observations from `scripts/re/dis.py`, not observed execution or a complete picker trace.
+  The REA full-program analysis was stopped before returning a decompilation; it adds no further protocol evidence.
+  The client-side reason a same-key update can leave the picker stale remains separate from these server defects.
+  Automated binding, save and queued-send tests cannot verify the native picker UI.
+  User verification is still required on 3.29.3b: with Cosmetics open and reopened, test A with an effect and after
+  clearing it, swap to B and inspect the picker, pick/clear B, then return to A and check its saved effect.
+  Repeat with removed/reinserted gems, another skill pair, and primary/totem effect slots without relogging.
+  Record both the visible picker and the new binding logs; none of this requires client file changes or a delay.
 - The pets' idle-relaxed animations (the Goblin Troupe's song) and the troupe's band members: which server message
   starts IdleRelaxed is not found yet.
 - Skill art for other skills: Righteous Fire's and the projectiles' server-made art follows the variation; skills

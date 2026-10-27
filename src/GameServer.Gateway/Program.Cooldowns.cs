@@ -27,6 +27,18 @@ partial class Program
     // An approach checks readiness without spending; arrival must reserve under its original action token.
     internal static bool TryBeginCooldownUse(ClientState conn, int effect, SingleUseCooldown? plan, bool instant,
         Action sideEffects, out CooldownUseTicket? ticket, int? actionToken = null, bool reserve = true, double? requestedAt = null)
+        => TryBeginCooldownUseCore(conn, effect, plan, instant, sideEffects, out ticket,
+            actionToken, reserve, requestedAt, null);
+
+    internal static bool TryBeginSkillCooldownUse(ClientState conn, ushort skillId, int effect,
+        SingleUseCooldown? plan, bool instant, Action sideEffects, out CooldownUseTicket? ticket,
+        int? actionToken = null, bool reserve = true, double? requestedAt = null) =>
+        TryBeginCooldownUseCore(conn, effect, plan, instant, sideEffects, out ticket,
+            actionToken, reserve, requestedAt, skillId);
+
+    static bool TryBeginCooldownUseCore(ClientState conn, int effect, SingleUseCooldown? plan, bool instant,
+        Action sideEffects, out CooldownUseTicket? ticket, int? actionToken, bool reserve, double? requestedAt,
+        ushort? skillId)
     {
         using (ProjectileMutation(conn))
         {
@@ -36,7 +48,8 @@ partial class Program
                 || requestedAt is double asked && conn.HitRecovery.BlocksInput(asked, conn.Clock.Elapsed.TotalSeconds)
                 || actionToken is int original && conn.ActionCount != original) return false;
             // Covers object/self and instant routes before creating or spending cooldown state or a new action.
-            if (ActorSkillDisabled(conn, effect) is not null) return false;
+            if ((skillId is ushort id ? ActorSkillInstanceDisabled(conn, effect, id)
+                : ActorSkillDisabled(conn, effect)) is not null) return false;
             if (plan is { } cooldown)
             {
                 double now = conn.Clock.Elapsed.TotalSeconds;

@@ -51,6 +51,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Phrecia admission, Rampage and the separate native melee-range flag9807 remain separate work.
   See [04](../docs/protocol/04-player-entity.md#41a-player-actor-scale-299) for formula and evidence limits.
 
+- Armour against chaos hits (#288): the boolean `base_armour_applies_to_chaos_damage` enables the existing armour
+  model after chaos resistance, with the ordinary 90% limit.
+  Eleven native controls verify actual player Life loss, source toggles, resistance ordering and relog.
+  Extra physical/elemental reductions stay with their own types; the native final Armour rating is unchanged.
+  Mixed monster packets, block, suppression, ES, Fortification and DoT separation have automated coverage.
+  Native controls use a raw source on an unascended Marauder; Incorruptible selection, recent-hit doubling
+  and partial armour percentages remain separate.
+  See [20](../docs/protocol/20-damage.md) section 2e.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks
@@ -118,8 +127,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Chaos Inoculation sets maximum life to 1 (after the life modifiers) and grants chaos immunity in the damage model
   and the panel's Immune row; energy shield remains the pool. The pre-CI life used for stun/ailment thresholds and the
   low-life condition are not modelled.
-  Not yet: item mods/quality, shields or auras.
-  Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway.
+  Armour and evasion items count their local flat/increased mods and quality, and a shield in the off hand adds its base
+  armour/evasion/energy shield (`ItemDefences`); auras are still only the simple set above.
+  Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, `ItemDefences.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
 - Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
   `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; a bow's ordinary attack and attack
@@ -216,6 +226,20 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native Endurance Charges confirm accepted releases; Fireball remains usable and relog clears the developer flag.
   Phrecia play stays gated; source precedence, aliases and queued boundaries have additional automated coverage.
   See [11](../docs/protocol/11-skills.md) section 10b.
+- Own-aura restriction (#304) consumes signed 21148 OR 11881, with explicit final 11075 developer precedence.
+  Typed Aura and accepted Blasphemy metadata drive admission and native skill flags.
+  Admission and queued acknowledgements use the requested skill ID; duplicate gems keep separate support context.
+  Remembered candidates check their own requirements, so an unusable copy cannot suppress another available gem.
+  Local policy suspends self-owned pairs, bonuses and reservation while retaining intent, without a mana refill.
+  Lifting the restriction restores available remembered ordinary self auras once with fresh buff IDs and a mana clamp.
+  RF, flasks, Fortification and received effects remain outside this owned lifecycle; no party aura executor is claimed.
+  Source, real-dispatch, loopback, queued snapshot/add, initial creation and entry replay regressions pass.
+  Rage refreshes reconcile paired removals and reservation before their snapshots, even when Rage is unchanged.
+  Fifteen native controls verify Clarity/Haste pairs, real bonuses/Mana, three refused routes and ordinary Fireball.
+  Relog restores remembered Haste after the transient source clears; death while suspended clears saved intent.
+  Native grey-icon prediction and persistent restricting equipment remain unverified.
+  The suspend/restore lifecycle is explicit LocalExile policy, not proven GGG behavior; Phrecia play stays gated.
+  See [11](../docs/protocol/11-skills.md) section 10c.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
   every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
@@ -238,7 +262,7 @@ Skill recipes and client presentation choices are supplied by the dependent cove
   Exit/relogin/character return restores available remembered auras without rechecking cast affordability;
   manual activation still validates mana.
   Death clears saved/runtime auras; skill refresh resumes temporarily unavailable effects.
-  Automated lifecycle coverage; live verification pending.
+  The shared own-aura restriction has separate native controls above; broader town/character round trips remain partial.
   See protocol/11-skills.md.
 - Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art.
   A live check found that source-only buffs hid the top-left icons;

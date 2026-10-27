@@ -47,7 +47,7 @@ partial class Program
         int epoch = conn.ProjectileEpoch;
         session.Schedule(ProjectileRuntime.Time(acceptedAt + delay),
             () => conn.ProjectileActive(epoch) && (ticket?.Current(conn) ?? PlayerActionCurrent(conn, action))
-                && GemDisabled(conn, gem.Effect) is null,
+                && GemSkillInstanceDisabled(conn, gem.Effect, skillId) is null,
             () => CaptureGemProjectile(conn, session, skillId, gem, aim));
         return Task.CompletedTask;
     }

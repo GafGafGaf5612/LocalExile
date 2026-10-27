@@ -90,27 +90,36 @@ partial class Program
         lock (conn.Monsters)
         {
             if (conn.Closed || conn.LeavingArea || conn.RageRetired) return null;
-            var stats = CharacterPlayerStats(conn);
-            var inputs = RageStats.Inputs(name => RageStat(stats, name));
-            var value = conn.Rage.Read(ProjectileWorldTime(conn), inputs);
-            if (conn.SentRage == value) return null;
-            var bytes = new List<byte>();
-            if (conn.RageBuff != 0) bytes.AddRange(InstanceEntities.RemoveBuff(PlayerId, conn.RageBuff));
-            conn.RageBuff = 0;
-            if (value.Current > 0)
-            {
-                conn.RageBuff = conn.NextBuff++;
-                bytes.AddRange(InstanceEntities.AddBuff(PlayerId, conn.RageBuff, 1060, PlayerId,
-                    stacks: (ushort)Math.Min(ushort.MaxValue, value.Current)));
-            }
-            bytes.AddRange(InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)));
-            var skills = PlayerSkills(conn);
-            bytes.AddRange(InstanceEntities.PlayerSkillsChange(PlayerId, skills, []));
-            conn.SentRage = value;
-            Console.WriteLine($"[gateway] {CharacterName(conn)} Rage {value.Current}/{value.Maximum}, "
-                + $"effective {value.Effective}, policy v{RageState.PolicyVersion} (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
-            return [.. bytes];
+            // Reconcile before all Rage reads/snapshots, even when the Rage value itself has not changed.
+            var bytes = WithOwnAuraChanges(conn, () => RageSnapshot(conn));
+            return bytes.Length == 0 ? null : bytes;
         }
+    }
+
+    // Called only by RagePresentation under the send gate and state lock; no send or reconciliation recursion.
+    static byte[] RageSnapshot(ClientState conn)
+    {
+        var stats = CharacterPlayerStats(conn);
+        var inputs = RageStats.Inputs(name => RageStat(stats, name));
+        var value = conn.Rage.Read(ProjectileWorldTime(conn), inputs);
+        if (conn.SentRage == value) return [];
+        var bytes = new List<byte>();
+        if (conn.RageBuff != 0) bytes.AddRange(InstanceEntities.RemoveBuff(PlayerId, conn.RageBuff));
+        conn.RageBuff = 0;
+        if (value.Current > 0)
+        {
+            conn.RageBuff = conn.NextBuff++;
+            bytes.AddRange(InstanceEntities.AddBuff(PlayerId, conn.RageBuff, 1060, PlayerId,
+                stacks: (ushort)Math.Min(ushort.MaxValue, value.Current)));
+        }
+        bytes.AddRange(InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)));
+        var skills = PlayerSkills(conn);
+        bytes.AddRange(InstanceEntities.PlayerSkillsChange(PlayerId, skills, []));
+        conn.SentRage = value;
+        Console.WriteLine($"[gateway] {CharacterName(conn)} Rage {value.Current}/{value.Maximum}, "
+            + $"effective {value.Effective}, policy v{RageState.PolicyVersion} "
+            + $"(t={conn.Clock.Elapsed.TotalSeconds:0.000})");
+        return [.. bytes];
     }
 
     internal static Task SendRage(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn) =>

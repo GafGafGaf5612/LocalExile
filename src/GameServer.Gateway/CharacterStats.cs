@@ -43,7 +43,8 @@ static class CharacterStats
         int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0,
-        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0)
+        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0,
+        bool ArmourAppliesToChaosDamage = false)
     {
         // Identifies the transient source snapshot used by this immutable pool calculation, including with-clones.
         internal long FortificationRevision { get; init; }
@@ -77,7 +78,7 @@ static class CharacterStats
         // The overcapped-resistance flags' derived increases (ResistanceOvercap), computed once in PoolsFor from the
         // final raw resistances and maxima: +1% per 1% of cold overcap on evasion, lightning overcap on crit chance.
         int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0,
-        int ManaPerFourStrength = 0)
+        int ManaPerFourStrength = 0, bool ArmourAppliesToChaosDamage = false)
     {
         public static readonly Bonus None = new();
     }
@@ -197,7 +198,8 @@ static class CharacterStats
             ManaReservationEfficiencyPct: b.ManaReservationEfficiencyPct,
             LifeReservationEfficiencyPct: b.LifeReservationEfficiencyPct,
             AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct,
-            ColdOvercapEvasionPct: b.ColdOvercapEvasionPct, LightningOvercapCritPct: b.LightningOvercapCritPct);
+            ColdOvercapEvasionPct: b.ColdOvercapEvasionPct, LightningOvercapCritPct: b.LightningOvercapCritPct,
+            ArmourAppliesToChaosDamage: b.ArmourAppliesToChaosDamage);
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));

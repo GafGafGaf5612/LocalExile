@@ -209,6 +209,8 @@ sealed partial class Program
     // What dying monsters drop (ItemDrops.cs).
     // Magic and rare items (ItemRolls.cs).
     internal static readonly ItemRolls Rolls = new(Items);
+    // Unique items the server can create (names/art from the client data, mods curated: UniqueCatalog).
+    internal static readonly UniqueCatalog Uniques = new(Items);
     internal static readonly EssenceCrafting Essences = new(Items, Rolls);
     internal static readonly BenchCrafting Bench = new(Items, Rolls);
     internal static readonly ItemDrops Drops = new(Items, Rolls);
