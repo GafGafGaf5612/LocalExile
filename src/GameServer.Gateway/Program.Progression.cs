@@ -176,7 +176,10 @@ partial class Program
             AttackSpeedPct = bonus.AttackSpeedPct + aura.AttackSpeedPct,
             MovementVelocityPct = bonus.MovementVelocityPct + aura.MovementVelocityPct
         };
-        bonus = UtilityFlasks.Apply(bonus, conn.UtilityFlaskEffects.Stats());
+        // Running utility flasks and Mageblood's permanent ones combined before one strongest-per-effect pass: the same
+        // effect never counts twice.
+        int MagebloodGet(string name) => Stats.Key(name) is uint k ? sources.GetValueOrDefault(k) : 0;
+        bonus = UtilityFlasks.Apply(bonus, UtilityStats(conn, MagebloodGet));
         if (conn.God)
             bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
                 Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };

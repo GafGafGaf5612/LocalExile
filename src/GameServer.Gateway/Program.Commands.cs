@@ -110,7 +110,7 @@ partial class Program
             var (x, y) = conn.SpawnNear(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds));
             await SpawnMonster(remote, stream, ciphers, conn, variety, level, rarity, x, y, name, friendly);
         })
-        .Add("item", "/item <BaseItemTypes row, Id or name> [count] [magic|rare] (into the inventory, e.g. /item Small Life Flask 2, /item Iron Ring rare)", async args =>
+        .Add("item", "/item <BaseItemTypes row, Id, name or unique> [count] [magic|rare] (into the inventory, e.g. /item Small Life Flask 2, /item Iron Ring rare, /item Mageblood)", async args =>
         {
             if (args.Length == 0) throw new ArgumentException("which item?");
             ItemRarity rolled = ItemRarity.Normal;
@@ -118,7 +118,27 @@ partial class Program
             int count = 1, requested = 1;
             if (args.Length > 1 && int.TryParse(args[^1], out int n)) { requested = n; count = Math.Clamp(n, 1, 60); args = args[..^1]; }
             if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
-            if (Items.Find(string.Join(' ', args)) is not { } type) { await conn.Commands!.Reply($"No item type \"{string.Join(' ', args)}\""); return; }
+            string query = string.Join(' ', args);
+            if (Uniques.Find(query) is { } unique)
+            {
+                var uniqueItems = ItemsOf(conn);
+                var uniqueAdded = new List<InventoryItem>();
+                for (int i = 0; i < count; i++)
+                {
+                    if (Uniques.Create(unique.Name, Random.Shared) is not { } createdUnique
+                        || Items.ByHash(createdUnique.TypeHash) is not { } uniqueType
+                        || uniqueItems.FreeCell(PlayerInventories.MainInventory, uniqueType.Width, uniqueType.Height, ShapeOf) is not { } uniqueCell) break;
+                    uniqueAdded.Add(uniqueItems.Put(PlayerInventories.MainInventory,
+                        new InventoryItem(uniqueItems.NewItemId(), uniqueCell.X, uniqueCell.Y, createdUnique)));
+                }
+                if (uniqueAdded.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
+                await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                    uniqueItems.NextRevision(PlayerInventories.MainInventory), [], uniqueAdded),
+                    $"0x00bf inventory 1: /item {unique.Name} x {uniqueAdded.Count}");
+                await conn.Commands!.Reply($"Added {unique.Name}");
+                return;
+            }
+            if (Items.Find(query) is not { } type) { await conn.Commands!.Reply($"No item type \"{query}\""); return; }
             if (!type.Supported)
             {
                 await conn.Commands!.Reply($"{type} has components the server cannot write yet: {string.Join(", ", type.Components.Where(c => !Item.Supported.Contains(c)))}");

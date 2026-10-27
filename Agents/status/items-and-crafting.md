@@ -87,6 +87,17 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- **Unique items and Mageblood (verified live 2026-10-26).** The client data links a unique's name (`Words` wordlist 6)
+  and artwork (`UniqueStashLayout` → `ItemVisualIdentity`), but not its mods, so `UniqueCatalog` curates each definition.
+  `/item Mageblood` creates the Heavy Belt unique with its name, artwork and fixed mods (the Strength is the base
+  implicit); the client shows the unique tooltip.
+  While Mageblood is worn, the leftmost 2–4 magic utility flasks in the flask bar apply their effects permanently without
+  charges or a timer, and using them is refused (client mod, server backstop); the stats refresh when the belt or the
+  flask bar changes.
+  Not yet: other uniques, unique drops/chancing, the permanent flask buff icons, the "effects cannot be removed"
+  backstop, the Foulborn rightmost variant and Enkindling (`UniqueCatalog`, `Program.Mageblood`;
+  [13](../docs/protocol/13-items.md) §2e, §8a).
+
 - Essence crafting (2026-10-25, automated verification; real-client use pending): all 105 craftable essences resolve
   their exact class-specific guaranteed mod from Essences.dat, including tier-8 and Desolation.
   Normal/rare eligibility, random-mod level caps, fractures, metamod refusal and repeated consumption from the Essence
@@ -166,7 +177,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- Uniques and special mods (#60), items' base damage and defences;
+- Most uniques and special mods (#60), and unique drops/chancing; only Mageblood has a definition so far;
   currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb,
   Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb,
   Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble,
