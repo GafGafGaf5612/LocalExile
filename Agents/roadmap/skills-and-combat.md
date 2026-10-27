@@ -66,6 +66,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   See [11](../docs/protocol/11-skills.md) section 10b; broader warcry engines and Phrecia enablement remain separate.
 - **Character panel (#75):** the Energy Shield regeneration row now shares the implemented recovery calculation,
   with native checks for modifiers, clearing and separation from recharge.
+  Ordinary Life/Mana regeneration now includes separate regeneration/recovery increases and matching prohibitions.
+  Native actual-recovery, clearing and relog checks pass; Fortification expiry integration uses the same factors.
+  Regeneration conversions, named conditional/more modifiers and other recovery systems remain open.
   Armour/evasion now include ordinary item-local flat/increased modifiers and quality, with native tooltip/panel,
   crafting refresh, unequip and active-shield checks.
   Saved variable bases now feed all three defences before local modifiers; legacy saves retain minimum bases.

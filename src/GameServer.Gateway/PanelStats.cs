@@ -285,24 +285,38 @@ static class PanelStats
         double life = LifePerMinute(get, maxLife);
         if (life != 0)
         {
-            result.Add(("total_life_recovery_per_minute_from_regeneration", (int)Math.Round(life)));
-            result.Add(("life_recovery_per_minute", (int)Math.Round(life)));
+            result.Add(("total_life_recovery_per_minute_from_regeneration", RecoveryValue(life)));
+            result.Add(("life_recovery_per_minute", RecoveryValue(life)));
         }
-        int mana = (int)Math.Round(ManaPerMinute(get, maxMana));
+        int mana = RecoveryValue(ManaPerMinute(get, maxMana));
         result.Add(("total_mana_recovery_per_minute_from_regeneration", mana));
         result.Add(("mana_recovery_per_minute", mana));
         return result;
     }
 
-    /// <summary><c>base_life_regeneration_rate_per_minute</c> plus <c>life_regeneration_rate_per_minute_%</c> of maximum life.</summary>
+    static int RecoveryValue(double rate) => (int)Math.Clamp(Math.Round(rate), int.MinValue, int.MaxValue);
+
+    /// <summary>Ordinary Life regeneration increases and recovery increases are distinct multiplicative buckets.
+    /// Shared with the expiry-aware Fortification recovery writer so its added source follows the same rules.</summary>
+    public static double LifeRegenerationMultiplier(Func<string, int> get) =>
+        get("no_life_regeneration") != 0 || get("cannot_recover_life") != 0 ? 0 :
+        Math.Max(0, 1 + get("life_regeneration_rate_+%") / 100.0)
+        * Math.Max(0, 1 + get("life_recovery_rate_+%") / 100.0);
+
+    /// <summary>Flat plus percentage Life regeneration, scaled by regeneration and recovery increases.
+    /// PoB 3.29.x CalcDefence's regeneration calculation; conditional/conversion operators remain separate.</summary>
     public static double LifePerMinute(Func<string, int> get, uint maxLife) =>
-        get("base_life_regeneration_rate_per_minute") + maxLife * get("life_regeneration_rate_per_minute_%") / 100.0;
+        (get("base_life_regeneration_rate_per_minute")
+            + maxLife * get("life_regeneration_rate_per_minute_%") / 100.0) * LifeRegenerationMultiplier(get);
 
     /// <summary>
     /// Character.ot's <see cref="BaseManaRegenPctPerMinute"/> plus <c>mana_regeneration_rate_per_minute_%</c> of maximum
-    /// mana and the flat <c>base_mana_regeneration_rate_per_minute</c> (Clarity), all raised by <c>mana_regeneration_rate_+%</c>.
+    /// mana and flat <c>base_mana_regeneration_rate_per_minute</c> (Clarity), raised by regeneration then recovery increases.
     /// </summary>
     public static double ManaPerMinute(Func<string, int> get, uint maxMana) =>
-        (maxMana * (BaseManaRegenPctPerMinute + get("mana_regeneration_rate_per_minute_%")) / 100.0
-         + get("base_mana_regeneration_rate_per_minute")) * (1 + get("mana_regeneration_rate_+%") / 100.0);
+        get("no_mana_regeneration") != 0 || get("cannot_leech_or_regenerate_mana") != 0 ? 0 :
+        (maxMana * (BaseManaRegenPctPerMinute + (double)get("mana_regeneration_rate_per_minute_%")) / 100.0
+            + get("base_mana_regeneration_rate_per_minute"))
+        * Math.Max(0, 1 + get("mana_regeneration_rate_+%") / 100.0)
+        * Math.Max(0, 1 + get("mana_recovery_rate_+%") / 100.0);
 }

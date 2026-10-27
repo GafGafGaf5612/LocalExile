@@ -423,8 +423,8 @@ regeneration stat does not make the visible life value advance between these upd
 Righteous Fire burn in one 16 ms loop. Each step integrates the actual elapsed `ClientState.Clock`
 time, including scheduler delays; the clock stops during pause. `RecoveryPool` retains fractional
 points, discards overflow at a full pool and negative carry at RF's one-life floor, and never revives
-dead life. Only changed whole values generate 0x1b1. The original per-minute rate formulas and
-unreserved mana cap are unchanged. Stat aggregation is refreshed at the old 250 ms cadence, with
+dead life. Only changed whole values generate 0x1b1. The unreserved mana cap is unchanged.
+Stat aggregation is refreshed at the old 250 ms cadence, with
 an additional refresh when RF changes, instead of rebuilding the panel about 60 times a second.
 
 `RunPlayerTick` keeps the 250 ms cadence for RF on monsters, suppression conditions, waypoints,
@@ -432,6 +432,31 @@ auto-loot and quests; its RF duration also uses elapsed game time. Instant damag
 healing remain immediate. No client executable or packet layout changes are needed. Live visual
 verification: enable /god, damage life with `/blockhit attack physical 10000`, then observe recovery;
 also check pause, flasks and RF. The new visual behavior awaits that real-client check.
+
+Ordinary Life/Mana regeneration uses the flat source plus its percentage of the full maximum pool, then
+multiplies regeneration increases by the separate recovery-rate increase bucket.
+Mana retains Character.ot's base 105% per minute before those modifiers; reservation changes its recovery cap,
+not the maximum used to calculate the rate.
+`no_life_regeneration` and `cannot_recover_life` stop Life regeneration.
+`no_mana_regeneration` and `cannot_leech_or_regenerate_mana` stop Mana regeneration.
+Signed nonzero prohibitions count as enabled; regeneration/recovery reductions stop at a zero multiplier.
+The panel totals and native recovery inputs use the resource writer's same calculation and clear removed sources.
+Integer publication saturates at the protocol limit rather than wrapping extreme rates.
+Signed developer base sources retain their existing linear combination with Fortification's separate contribution;
+they do not establish an official negative-regeneration mechanic.
+
+The formula follows the reference library's pinned PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02`,
+`CalcDefence.lua` regeneration section, with native 3.29.3b stat IDs and modifier rows.
+This is an accepted 3.29.x reference, not proof of exact official-server arithmetic for every conditional mechanic.
+No generic Life/Mana regeneration `+%_final` input exists in the native table; derived virtual outputs are not raw sources.
+Zealot's Oath, other regeneration conversions and named conditional/more modifiers remain separate work.
+
+Ten native controls verified flat sources, independent increase buckets, prohibition, source clearing and relog.
+The 600/minute Life control became 1080 with 50% regeneration and 20% recovery, matching actual 18 Life/second.
+A 750-Mana character with 1200 flat/minute, 40% regeneration and 20% recovery received 3339/minute,
+matching actual recovery near 55.65/second after reservation was released.
+Both rates stopped under negative-valued prohibition flags and resumed after zeroing them.
+The isolated characters' inventories stayed unchanged; this does not verify every flask/RF visual timing path.
 
 ## 6. Not modelled yet
 

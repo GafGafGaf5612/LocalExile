@@ -1755,6 +1755,13 @@ it:
 | `impale_on_hit_%_chance` | `attacks_impale_on_hit_%_chance` (the attack reads this row's name) |
 | `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
 
+Life/Mana Regeneration per Second and the corresponding native recovery inputs share `PanelStats`' calculation.
+Flat plus maximum-pool percentage sources receive separate regeneration and recovery increases.
+Ordinary prohibitions stop the matching resource; source removal clears its previously published total.
+Ten native controls matched the published totals to actual recovery, clearing and relog.
+Regeneration conversions, named conditional modifiers and specialised more factors remain separate.
+See [20-damage.md](20-damage.md#5-continuous-resource-updates-2026-10-24) for the sources and evidence boundary.
+
 **Energy Shield Regeneration per Second** (`CharacterPlayerStats`, issue #75) reads
 `total_energy_shield_recovery_per_minute_from_regeneration` (client key 1058, `0x422`).
 The native `ESRegen` row divides this per-minute total by 60.

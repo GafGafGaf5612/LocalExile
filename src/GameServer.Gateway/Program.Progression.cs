@@ -293,7 +293,7 @@ partial class Program
                     SpellBlockChance = Math.Min(pools.SpellBlockChance + 2 * overcap, pools.SpellBlockChanceMax)
                 };
         }
-        ConfigureFortificationRecovery(conn, pools.Life);
+        ConfigureFortificationRecovery(conn, pools.Life, sources);
         return pools with { FortificationRevision = FortificationOf(conn).Revision };
     }
 

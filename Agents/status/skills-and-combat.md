@@ -297,6 +297,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
+- Ordinary Life/Mana regeneration: flat and maximum-pool percentage sources receive regeneration and recovery increases.
+  The matching prohibitions stop recovery, and the panel/native prediction inputs share the actual resource writer.
+  Ten native checks verify flat sources, independent increases, prohibition, clearing and relog.
+  Controls matched 1080 Life/minute to 18/second and 3339 Mana/minute to recovery near 55.65/second.
+  Fortification's exact expiry integration uses the same factors, with automated modifier/prohibition coverage.
+  Regeneration conversions and named conditional/more modifiers remain separate work.
+  See [20](../docs/protocol/20-damage.md), "Continuous resource updates".
 - Determination and Grace truncate their scaled flat/more aura inputs before character-wide defence calculation.
   Normal and Ruthless native data and quality isolation have regression coverage.
   Basalt/Stibnite compose more factors without rounding the combined percentage before the final rating.
