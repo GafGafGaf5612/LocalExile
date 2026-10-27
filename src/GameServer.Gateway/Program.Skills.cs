@@ -146,6 +146,9 @@ partial class Program
                 ("energy_shield_recharge_active", 0) })
             .Concat(ChargePanelStats.Compute(Get)))
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
+        // Special maxima mirror completed standard maxima, including explicit final replacements.
+        foreach (var (stat, value) in ChargePanelStats.MirroredMaximums(Get))
+            if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         // Derive once from the resolved final rating, after pools and explicit stat replacements. Only this
         // temporary dictionary changes; repeated builds and removal cannot feed the bonus back into raw sources.
         if (Get(ArmourAttackDamage.Per450Armour) is int perArmour and not 0
@@ -214,6 +217,9 @@ partial class Program
         List<ushort> nodes;
         lock (conn.Monsters) nodes = [.. conn.Passives];
         var extra = CharacterStatSources(conn, nodes).Stats;
+        int RawDefault(string name) => Stats.Key(name) is uint key ? extra.GetValueOrDefault(key) : 0;
+        foreach (var (stat, value) in PanelStatDefaults.Compute(RawDefault))
+            if (Stats.Key(stat) is uint key) extra[key] = value;
         if (conn.God)
         {
             foreach (var (stat, value) in GodStats)

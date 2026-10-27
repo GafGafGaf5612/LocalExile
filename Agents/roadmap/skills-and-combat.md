@@ -69,6 +69,13 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Ordinary Life/Mana regeneration now includes separate regeneration/recovery increases and matching prohibitions.
   Native actual-recovery, clearing and relog checks pass; Fortification expiry integration uses the same factors.
   Regeneration conversions, named conditional/more modifiers and other recovery systems remain open.
+  Exact native Brand/special-charge defaults now enter actor sources once, with a native selected Brand gate.
+  Real item/passive/support composition gives actor Brand6 and selected8; explicit zero and source removal are covered
+  by automated cases in both modes, with current combined validation and new native checks pending.
+  Three sourced mirror flags publish special maxima from completed standard maxima, including final zero overrides;
+  real unequal4/5/6 source fixtures preserve each mapping. Pinned-PoB3.29.x remains a labelled fallback.
+  Brand attachment/cap enforcement, special held counts/gains/expiry, minimum conversions, special combat/recoup
+  consumers and Spirit/Abyss-jewel counting remain open; these changes do not certify entire charge rows.
   Armour/evasion now include ordinary item-local flat/increased modifiers and quality, with native tooltip/panel,
   crafting refresh, unequip and active-shield checks.
   Saved variable bases now feed all three defences before local modifiers; legacy saves retain minimum bases.

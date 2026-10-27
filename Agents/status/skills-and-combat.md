@@ -279,8 +279,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   Charges taking 12% off physical and fire hits; towns draw no charge icons.
   The maximum rows (with the maximum-charge mods) were verified on the native Charges tab at `0 / 3` before this;
   controlled native counts of 0 and 3 now agree with the held state. Enduring Cry and timed gains are not live-checked.
+  Three native mirror modifiers now publish Brutal/Affliction/Absorption maxima from completed Endurance/Frenzy/Power
+  maxima, with final standard/special zero overrides and independent source clearing. Real 4/5/6 native-modifier
+  fixtures cover both modes; current combined validation and new native checks remain pending.
+  This uses labelled pinned-PoB 3.29.x formulas and native source identities, without certifying every official getter.
+  Special held state, gain/expiry, conversions, combat effects and Spirit/Abyss-jewel counts remain separate.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
-  `Program.Charges.cs`.
+  `Program.Charges.cs`, `ChargePanelStats.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §15.
 - Character panel sums: about 150 panel stats that sum base forms are computed from passives, items and auras with
   their unconditional combined stats: stun, ailment avoidance, durations and effects (ignite, chill, freeze, shock,
@@ -291,6 +296,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   projectile block and chaos resistance against damage over time combine the pools with their stat;
   the Defence tab's Life / Mana / Energy Shield Regeneration per Second rows are the tick's own per-minute rates
   (`total_*_recovery_per_minute_from_regeneration`).
+  Six native Character.ot defaults now enter the original sources once: Brand limit 3, Brutal triple-damage/stun
+  coefficients 3/10, Affliction damage/non-damaging coefficients 8/8 and Absorption recoup coefficient 12.
+  Real Brand item +1 and Brand Equity +2 give actor 6; compatible linked Foulgrasp gives selected 8.
+  The Brand gate follows native skill type 64 only on selected Brands; explicit replacements/zero and removal retain
+  their source precedence in both modes. The special values remain coefficients; Brand attachment/cap enforcement,
+  special-charge gameplay and recoup execution are not added. Current combined validation/native checks are pending.
   Energy Shield's row excludes recharge and clears when its sources are removed or regeneration is prohibited.
   Native checks verified the row at 2 per second, modifier totals, zero clearing and relog.
   During recharge its total stayed at 60 per minute while native recovery prediction changed from 60 to 340.
@@ -320,7 +331,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   animation timing remain open; exact runtime values and the original one-integer Life boundary are in protocol 13 §8.
   Those historical native checks do not validate the new self-duration or flask-effect operators.
   The rest of the 387 rows is tracked in issue #75.
-  Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
+  Code: `PanelStats.cs`, `PanelStatDefaults.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
 - Character-panel leech limits: full maximum pools supply separate per-instance amounts and total recovery caps.
   Six absolute rows and their percent companions include supported increases/reductions and prohibition flags.

@@ -1814,6 +1814,28 @@ recovery, maximum-pool percentage sources, prohibitions or other conditional ope
 sum is a display coefficient; actual flask use and local/global factor composition are documented in
 [13-items.md](13-items.md#8-life-and-mana-flasks).
 
+`PanelStatDefaults` adds six exact native `Character.ot` values to the original actor sources before derivation:
+
+| Native stat | Inherent value |
+|---|---|
+| `base_total_number_of_sigils_allowed` | 3 |
+| `chance_to_deal_triple_damage_%_per_brutal_charge` | 3 |
+| `stun_threshold_+%_per_brutal_charge` | 10 |
+| `ailment_damage_+%_final_per_affliction_charge` | 8 |
+| `non_damaging_ailment_effect_+%_final_per_affliction_charge` | 8 |
+| `elemental_damage_taken_goes_to_energy_shield_over_4_seconds_%_per_absorption_charge` | 12 |
+
+Item/passive additions enter once, repeated snapshots start from the original sources, and explicit developer
+replacements, including zero, keep precedence. Native AdditionalBrand +1 and Brand Equity graph 64355 +2 give actor
+limit 6; a compatible linked Foulgrasp contributes its own +2 for selected limit 8.
+`SkillCatalog.EffectStats` supplies `skill_is_brand_skill` from native ActiveSkillType Brand, row 64 / FlagStat 8740,
+only for the selected Brand. Fireball/default attack do not receive an actor-wide Brand gate.
+The five special-charge values remain per-charge coefficients, independent of held counts and maxima.
+The corresponding special maximum gates are described in §15; defaults do not implement Brand attachment/cap
+enforcement or special-charge gain, expiry, combat effects or resource recoup.
+Automated cases cover native sources, both modes, real support compatibility, explicit zero and source removal;
+current combined validation and new native checks remain pending.
+
 The four elemental self-duration reduction sums also subtract the unconditional raw
 `base_all_ailment_duration_on_self_+%` source (wire key 17087). Native Harsh Lessons, PassiveSkills row 2598 / graph
 27623, gives -20 in both modes and therefore adds +20 to each reduction. Typed, elemental and all-ailment sources
@@ -1970,6 +1992,17 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   periodic stats whenever the character's stats are worked out (`ChargeSession.Observe` in `WithCharges`), and nothing
   polls them. "% chance that if you would gain … Charges, you instead gain up to maximum" is
   rolled on every gain. Time is the connection's game clock, which stops while the game is paused.
+- **Special maximum publication.** The three native Domain 1 mirror modifiers, Mods rows 26064–26066, publish
+  Brutal from completed Endurance maximum, Affliction from completed Frenzy maximum and Absorption from completed
+  Power maximum only while their corresponding `maximum_*_charges_is_equal_to_maximum_*_charges` flag is present.
+  They run after standard maximum derivation, so explicit final standard replacements, including zero, are visible;
+  explicit final special replacements also keep precedence. Removing a flag publishes a zero special maximum and
+  clears the removed raw flag without retaining a stale native gate. Real modifier fixtures resolve unequal standard
+  maxima 4/5/6 and cover independent removal/recovery and zero overrides in both modes.
+  The formulas follow pinned PoB `16de4b8` `CalcPerform` with exact native source identities, as a labelled 3.29.x
+  fallback; every official virtual getter has not been independently traced. Current combined validation and new
+  native checks remain pending. This bounded publication leaves standard held state/gains unchanged and does not
+  implement special current counts, gain/expiry, minimum conversions, Spirit/Abyss-jewel counting or combat effects.
 - **Death and area changes.** Death takes every gained charge at once (`PlayerDied`; BuffDefinitions `CancelOnDeath`
   on the three rows), so a pause or Resurrect in Town cannot keep them; the minimum stays. An area change (`Transfer`)
   hands the charges to the destination ticket with the time they had left;
@@ -2035,13 +2068,14 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
 - **`/charges`** shows each type's count, maximum, minimum, duration and time left; `/charges <type> <n>` sets a count,
   `/charges add <type> [n]` gains as a skill would (refresh, maximum chance) and `/charges clear` empties them. A stat
   set with `/set_stat` counts in the charge effects and limits too.
-- **Not modelled.** The other charge types (Spirit, Siphoning, Blitz, Challenger, Brutal, Affliction, Absorption, Blood,
-  Brine and the rest) and the stats that turn standard charges into them; skills and effects that consume or remove
+- **Not modelled.** Held state, gain/expiry and conversions for other charge types (Spirit, Siphoning, Blitz,
+  Challenger, Brutal, Affliction, Absorption, Blood, Brine and the rest), beyond the three bounded maxima above;
+  skills and effects that consume or remove
   charges (Discharge, Flicker Strike's cooldown bypass, Immortal Call, "lose all … when", expiry triggers); gains that
   need stun, freeze, bleed, poison, curses, traps, mines, totems, Vaal souls, other warcries, allies, flask use (the
   utility flask PR #233) or support gems (Power Charge On Critical, Endurance Charge on Melee Stun); Power Siphon's "or
   soon after the hit"; Blood Rage (no self-buff skills); conditional maxima and minima (while affected by an aura, on
-  low life, devotion, "count as having maximum", a maximum equal to another type's); per-charge stats whose target the
+  low life, devotion, "count as having maximum", other maximum-equality operators); per-charge stats whose target the
   server does not calculate (ailments, leech, damage taken, damage over time increases, wand-only or attack-only damage,
   mana cost, buff duration, Frenzy's and Flicker Strike's own per-charge attack speed and damage).
 
