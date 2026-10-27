@@ -493,26 +493,29 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         if (master.TryGetValue("EdgeCombination", out var ecf))
             _combiner = EdgeCombiner.Parse(files.Text(TerrainText.Resolve(masterPath, ecf)) ?? "", masterPath);
         if (master.TryGetValue("FillTiles", out var edgeGft)) _edgePoints = files.FillEdgeTypes(TerrainText.Resolve(masterPath, edgeGft));
+        // Without RoomOverlap, a master's DoorEdgeType (+0x250) gives the door tiles (0x1420edd50 / 0x1420f4d90).
+        string? doorEdge = _overlap == 0 && _doorTiles && master.TryGetValue("DoorEdgeType", out var det) ? TerrainText.Resolve(masterPath, det) : null;
+        _doorSides.Clear();
         // 0x1420f3480: 0x1420ef310 per room.
         foreach (var p in map.Rooms)
         {
             if (p.Room?.Def is not { } def) continue;
             if (_doorTiles && _overlap != 0) MarkDoorways(p, _ox + step * p.X, _oy + step * p.Y);
+            else if (doorEdge is not null) MarkDoorSides(p, _ox + step * p.X, _oy + step * p.Y);
             TiliseRoom(def, p.Orientation, _ox + step * p.X, _oy + step * p.Y, p.Level, (p.Flags & 1) != 0, p.Descriptions);
         }
         notes.Add($"dungeon tilising: {_borders.Count} shared border slots");
         TiliseBorders();
-        // With RoomOverlap (and master +0x167 clear, taken to be so) the door tiles; without, 0x1420f4d90 only for a
-        // master with a DoorEdgeType (+0x250, the setter after OuterEdgeType's +0x248), not ported: none of the
-        // dungeon masters without RoomOverlap has one. 0x1420f7960 (OuterEdgeType) is not ported either. Then
-        // 0x141ffbd70 per room: its inner vertex grounds, turned like a tile's.
+        // With RoomOverlap (and master +0x167 clear, taken to be so) the door tiles; without, 0x1420f4d90 for a master
+        // with a DoorEdgeType (+0x250, the setter after OuterEdgeType's +0x248; the dreadnought hideout and the Lake
+        // masters). 0x1420f7960 (OuterEdgeType) is not ported. Then 0x141ffbd70 per room: its inner vertex grounds,
+        // turned like a tile's.
         if (_overlap != 0 && _doorTiles)
         {
             DoorTiles();
             BigDoorTiles();
         }
-        else if (_doorTiles && master.ContainsKey("DoorEdgeType") && map.Rooms.Any(p => p.Room is not null))
-            throw new NotSupportedException("door tiles without RoomOverlap (DoorEdgeType, 0x1420edd50, 0x1420f4d90) are not ported");
+        else if (doorEdge is not null) DoorEdgeTiles(doorEdge);
         var roomVertices = new HashSet<(int X, int Y)>();
         foreach (var p in map.Rooms)
             if (p.Room?.Def is { VertexGrounds.Length: > 0 } def)
@@ -934,6 +937,120 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             else
                 for (int k = 0; k < down; k++) Mark(x0, y0 + k + step * (2 * (h + w) - i - 1) - down / 2 + _unit / 2, 8);
         }
+    }
+
+    /// <summary><c>0x1420edd50</c> (no RoomOverlap, a DoorEdgeType): each exit of a placed room with a door type marks
+    /// one entry on the room's outer row or column, at the middle of its unit (unit / 2 in), with the side it faces
+    /// (0 top, 1 right, 2 bottom, 3 left); a later room's mark replaces an earlier one at the same entry. A set sorted
+    /// by x · 0x10000 + y (tiler +0x78).</summary>
+    void MarkDoorSides(DungeonPlacement p, int x0, int y0)
+    {
+        int step = _unit - _overlap, w = p.Width, h = p.Height;
+        int tw = step * w + _overlap, th = step * h + _overlap;
+        for (int i = 0; i < p.Exits.Length; i++)
+        {
+            if (p.Exits[i].Type is null) continue;
+            if (i < w) _doorSides[((x0 + _unit / 2 + step * i) << 16) + y0] = 0;
+            else if (i - w < h) _doorSides[((x0 + tw - 1) << 16) + y0 + _unit / 2 + step * (i - w)] = 1;
+            else if (i - w - h < w) _doorSides[((x0 + tw - 1 - step * (i - w - h) - _unit / 2) << 16) + y0 + th - 1] = 2;
+            else _doorSides[(x0 << 16) + y0 + th - 1 - step * (i - 2 * w - h) - _unit / 2] = 3;
+        }
+    }
+
+    readonly SortedDictionary<int, int> _doorSides = [];
+    static readonly (int X, int Y)[] SideStep = [(0, -1), (1, 0), (0, 1), (-1, 0)];
+
+    /// <summary><c>0x1420f4d90</c>: each marked entry, in order, whose neighbour on its side is marked facing back: when
+    /// both can (<see cref="DoorEdgeTile"/> checking), the door edge goes on both, the marked one first.</summary>
+    void DoorEdgeTiles(string door)
+    {
+        foreach (var (k, side) in _doorSides.ToList())
+        {
+            var (x, y) = (k >> 16, k & 0xffff);
+            var (nx, ny) = (x + SideStep[side].X, y + SideStep[side].Y);
+            int back = (side + 2) & 3;
+            if (!_doorSides.TryGetValue((nx << 16) + ny, out int other) || other != back) continue;
+            if (DoorEdgeTile(door, x, y, back, true) && DoorEdgeTile(door, nx, ny, side, true))
+            {
+                DoorEdgeTile(door, x, y, back, false);
+                DoorEdgeTile(door, nx, ny, side, false);
+            }
+        }
+    }
+
+    /// <summary><c>0x1420f4fd0</c>: the tile at (x, y) (its key in its orientation; an empty entry with a pending fill
+    /// record: a 1 × 1 key of that ground and height, points 3, no edges) takes the door edge on the side facing away
+    /// from <paramref name="side"/> (point at the entry's middle), unless it has it already. A key without the door
+    /// edge yet first tries it on <paramref name="side"/> too, a door through the tile, going on into the tile
+    /// beyond (which must take it as well, unless the door edge can end, .et +0x48 flag 0x10). The "door" tiles with
+    /// that key: <c>Next(total)</c> picks one when not <paramref name="check"/>ing (<c>0x1420f58a0</c>: the footprint's
+    /// vertices lose their ground, then the tile goes in at the entry's height).</summary>
+    bool DoorEdgeTile(string door, int x, int y, int side, bool check)
+    {
+        int bs = (side + 2) & 3;
+        if (!_grid.Inside(x, y)) return false;
+        TileKey key;
+        int ox = x, oy = y;
+        short height = 0;
+        if (_grid[x, y] is { } e)
+        {
+            key = e.Tile.Key.Rotate(e.Orientation);
+            (ox, oy) = (x - e.OffsetX, y - e.OffsetY);
+            height = e.HeightOffset;
+        }
+        else
+        {
+            int r = _fillRecords.FindLastIndex(f => f.X == x && f.Y == y);
+            if (r < 0) return false;
+            var f = _fillRecords[r];
+            key = new TileKey { Width = 1, Height = 1 };
+            for (int i = 0; i < 4; i++) (key.Grounds[i], key.Heights[i], key.PointA[i], key.PointB[i]) = (f.Ground, (sbyte)f.Height, 3, 3);
+        }
+        bool Is(string? edge) => edge is not null && string.Equals(edge, door, StringComparison.OrdinalIgnoreCase);
+        if (Is(key.Edges[bs])) return true;
+        byte Point(int s, TileKey k) => (byte)(s switch
+        {
+            0 => 3 * (x - ox) + 1,
+            1 => 3 * (y - oy) + 1,
+            2 => 3 * (ox - x + k.Width) - 2,
+            _ => 3 * (oy - y + k.Height) - 2,
+        });
+        var one = key.Clone();
+        one.Edges[bs] = door;
+        one.PointA[bs] = Point(bs, one);
+        bool Place(List<(TileDef Tile, int Orientation, int Weight)> list)
+        {
+            if (check) return true;
+            var (tile, orientation) = Weighted(list, (int)rng.Next((uint)list.Sum(c => c.Weight)));
+            for (int v = 0; v <= key.Height; v++)
+                for (int u = 0; u <= key.Width; u++)
+                    if (_grid.InsideCorners(ox + u, oy + v))
+                    {
+                        ref var c = ref _grid.Corner(ox + u, oy + v);
+                        c.Flags &= unchecked((byte)~1);
+                        c.Ground = null;
+                    }
+            _grid.Place(tile, orientation, ox, oy, height);
+            return true;
+        }
+        if (!key.Edges.Any(Is))
+        {
+            var two = one.Clone();
+            two.Edges[side] = door;
+            two.PointA[side] = Point(side, two);
+            var list = _store.Candidates("door", two);
+            if (list.Count != 0)
+            {
+                var (nx, ny) = (x + SideStep[side].X, y + SideStep[side].Y);
+                if (side == 0) ny -= key.Height - 1;
+                else if (side == 2) ny += key.Height - 1;
+                else if (side == 3) nx -= key.Width - 1;
+                else nx += key.Width - 1;
+                if (DoorEdgeTile(door, nx, ny, side, check) || files.Edge(door)?.CanEnd == true) return Place(list);
+            }
+        }
+        var single = _store.Candidates("door", one);
+        return single.Count != 0 && Place(single);
     }
 
     /// <summary><c>0x1420edf80</c>: a 1 × 1 position joins the doorway of a neighbour (above, else below, else left,

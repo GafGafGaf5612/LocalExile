@@ -84,15 +84,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   grid, the walkability and projectile grids, the doodads, every cell's ground height (`CellHeights.cs`) and the area
   transitions and waypoints (`AreaObjects.cs`).
   1666 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
-  and 2881 of the 2886 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`); of the 118
+  and 2882 of the 2886 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`); of the 118
   loads the client itself failed to generate, the port fails 110 the same way. The 34 areas the client cannot
   generate at seed 1 (and that need no server data) were toured at random seeds the port generates: all 73 loads match.
   An unattended tour of every WorldAreas row with a topology (2026-10-27, `scripts/re/levelgen/tourloop.py`, which
   restarts and logs in the client by itself) left 234 of the 1932 rows with no client-side level to match: 17 without a
   topology, 202 that need data from the server (Incursion temples, Delve cells and biomes, Heist contracts, Synthesis
   memories, the Sanctum floors, the Deepwater biome grid), and 15 the client cannot generate at any seed tried (the
-  list is written to data/areas-unavailable.txt). Of the other rows, only MapWorldsMoonTempleUnique and
-  HideoutDreadnought have no load the port matches.
+  list is written to data/areas-unavailable.txt). Of the other rows, only MapWorldsMoonTempleUnique has no load the
+  port matches.
   A tour of 3 random seeds per matching area: 518 of 519 match; one is open (re/011 §8).
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
   All 30 loads with a height capture match cell for cell; 182 of the 186 with a transitions capture match exactly.

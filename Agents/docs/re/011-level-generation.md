@@ -514,8 +514,17 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
    Without RoomOverlap (`0x1420f3480`: master +0x167 clear and RoomOverlap 0) only a master with a DoorEdgeType
    (+0x250; the parser `0x142a06390` hands OuterGroundType, OuterEdgeType, DoorEdgeType, SwapDungeonDoorsFrom / To to
    the master's setters +0x60..+0x80, and `0x1420f7960`, at +0x248, builds the outer edge) has door tiles
-   (`0x1420edd50` marks, `0x1420f4d90` pairs facing marks, `0x1420f4fd0` places): not ported, and only the dreadnought
-   hideout and the Lake league masters set one. Every other door TileSet without RoomOverlap gets no door tiles and
+   (ported 2026-10-27; only the dreadnought hideout and the Lake league masters set one): `0x1420edd50` marks, per room
+   exit with a door type, one entry on the room's outer row or column at its unit's middle with the side it faces (a set
+   by x · 0x10000 + y, a later mark replacing an earlier one); `0x1420f4d90` takes each mark, in order, whose neighbour
+   on that side is marked facing back, and when `0x1420f4fd0` can do both (checking first), does the marked entry, then
+   the neighbour. `0x1420f4fd0`: the key of the tile there in its orientation (an empty entry: its pending fill record
+   as a 1 × 1 key, that ground and height on all corners, points 3), unless it already has the door edge on the side
+   facing away, gets it there (point at the entry's middle, 3k + 1 from the side's start); a key with no door edge at
+   all first tries it on the facing side too, a door through the tile, which needs the tile beyond to take it as well
+   (recursively; not needed when the door .et can end, flag 0x10); the "door" tiles with that key, `Next(total)`, the
+   footprint's vertices cleared of their grounds (`0x1420f58a0`), placed at the entry's height. HideoutDreadnought
+   matches. Every other door TileSet without RoomOverlap gets no door tiles and
    no draws (`1_4_1`, `2_7_11`, `2_8_8`, the Act 9 / 10 dungeons; until 2026-10-25 a stop).
 4. **Room vertex grounds** (`0x141ffbd70` per room), then the **room grounds** (`0x1420f0e10` per room, map +0x10
    off): every vertex of the room without a ground (flag 1 clear, or a null ground) takes the graph's DefaultGround
