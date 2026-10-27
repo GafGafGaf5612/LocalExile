@@ -321,6 +321,19 @@ partial class Program
                 $"{(held.Item.Identified ? "" : ", unidentified")}: " +
                 (held.Item.Mods.Count == 0 ? "no mods" : string.Join("; ", held.Item.Mods.Select(Items.Mods.Describe))));
         })
+        .Add("base_defence", "/base_defence [0 to 31] (show or set the held armour's shared defence base roll)", async args =>
+        {
+            if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..])
+            { await conn.Commands!.Reply("Hold an armour item first"); return; }
+            if (!held.Item.Components.Contains("Armour"))
+            { await conn.Commands!.Reply("The held item has no Armour component"); return; }
+            if (args.Length == 0)
+            { await conn.Commands!.Reply($"Defence base roll: {held.Item.DefenceBaseRoll} (ordinary range 0 to 31)"); return; }
+            if (args.Length != 1 || !byte.TryParse(args[0], out byte roll) || roll > Item.MaximumDefenceBaseRoll)
+                throw new ArgumentException("defence base roll 0 to 31");
+            await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { DefenceBaseRoll = roll },
+                $"defence base roll {roll} / {Item.MaximumDefenceBaseRoll}", "Armour");
+        })
         .Add("rarity", "/rarity <normal|magic|rare|unique> [unid] (the held item)", async args =>
         {
             if (args.Length == 0 || !Enum.TryParse<ItemRarity>(args[0], true, out var rarity)) throw new ArgumentException("normal, magic, rare or unique");

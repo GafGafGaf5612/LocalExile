@@ -18,7 +18,7 @@ partial class Program
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
     // Each active armour piece/shield's local defences become flat inputs to the character-wide pool calculation.
-    // Each native minimum base is combined with item-local modifiers and quality.
+    // The saved Armour component roll selects the native base before item-local modifiers and quality.
     static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
     {
         var items = ItemsOf(conn);
@@ -28,7 +28,7 @@ partial class Program
                 && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
             {
                 var local = ItemModStats.Local(equipped.Item, Items.Mods);
-                var basis = (Armour: d.ArmourMin, Evasion: d.EvasionMin, EnergyShield: d.EnergyShieldMin);
+                var basis = d.AtRoll(equipped.Item.DefenceBaseRoll);
                 long Get(string name) => local.GetValueOrDefault(name);
                 long quality = Get("local_quality_does_not_increase_defences") != 0 ? 0
                     : Math.Max(0L, equipped.Item.Quality + Get("local_item_quality_+"));

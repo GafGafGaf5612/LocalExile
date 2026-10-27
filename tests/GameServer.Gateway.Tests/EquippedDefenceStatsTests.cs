@@ -23,7 +23,7 @@ public sealed class EquippedDefenceStatsTests : IDisposable
 
     static Item Armour(string name, byte quality = 0, params (string Stat, int Value)[] mods) =>
         ItemCatalog.Create(Program.Items.Find(name)!) with
-        { Quality = quality, Mods = mods.Select(m => Mod(m.Stat, m.Value)).ToArray() };
+        { DefenceBaseRoll = 0, Quality = quality, Mods = mods.Select(m => Mod(m.Stat, m.Value)).ToArray() };
 
     static (int Armour, int Evasion, int EnergyShield) Equipped(ClientState conn) =>
         ((int, int, int))typeof(Program).GetMethod("EquippedBaseDefences",
