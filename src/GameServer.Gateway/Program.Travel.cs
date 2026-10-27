@@ -12,9 +12,9 @@ partial class Program
         bool centreRange = false)
     {
         started = default;
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
-            double now = conn.Clock.Elapsed.TotalSeconds;
+            double now = ProjectileWorldTime(conn);
             if (conn.Closed || conn.PlayerLife == 0 || conn.HitRecovery.BlocksInput(requestedAt, now)) return false;
             int action = Interlocked.Increment(ref conn.ActionCount);
             conn.ChannelSkill = 0;
@@ -179,10 +179,10 @@ partial class Program
         if (transition.TeleportTo is { } pair)
         {
             var (tx, ty) = conn.Layout.Near(pair);
-            lock (conn.Monsters)
+            using (ProjectileMutation(conn))
             {
                 if (!PlayerActionCurrent(conn, action)) return;
-                conn.Walk.Teleport(tx, ty, conn.Clock.Elapsed.TotalSeconds);
+                conn.Walk.Teleport(tx, ty, ProjectileWorldTime(conn));
             }
             await Send(remote, stream, ciphers, InstanceProtocol.Teleport(PlayerId, tx, ty),
                 $"0x01b7 player through the gate 0x{use.TargetId:x} to ({tx}, {ty}), next to its pair at ({pair.X}, {pair.Y})",

@@ -158,11 +158,12 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Guarded by Monsters, like projectile impact commits and pause changes.
     public bool LeavingArea;
     public int ProjectileEpoch;
+    public Program.ProjectileSession? ProjectileRuntime;
     public readonly HashSet<uint> ProjectileObjects = [];
 
     public bool ProjectileActive(int epoch)
     {
-        lock (Monsters) return !Closed && !LeavingArea && ProjectileEpoch == epoch;
+        lock (Monsters) return !Closed && !LeavingArea && !RageRetired && ProjectileEpoch == epoch;
     }
 
     // Called inside the send gate. A queued terminal visual must survive pause and retry after resume;
@@ -179,7 +180,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     public bool TryBeginAreaChange(PendingTransfer transfer, out uint[] projectiles)
     {
-        lock (Monsters)
+        using (Program.ProjectileMutation(this, advance: false))
         {
             projectiles = [];
             if (Closed || PendingTransfer is not null || LeavingArea) return false;
@@ -187,6 +188,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
             LeavingArea = true;
             ProjectileEpoch++;
             projectiles = [.. ProjectileObjects];
+            ProjectileRuntime?.Invalidate();
             ProjectileObjects.Clear();
             return true;
         }
@@ -198,7 +200,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public double ClockAt(long timestamp)
     {
         double now = Clock.Elapsed.TotalSeconds;
-        return timestamp == 0 || Paused ? now : Math.Max(0, now - System.Diagnostics.Stopwatch.GetElapsedTime(timestamp).TotalSeconds);
+        double at = timestamp == 0 || Paused ? now : Math.Max(0, now - System.Diagnostics.Stopwatch.GetElapsedTime(timestamp).TotalSeconds);
+        // A buffered input cannot rewrite motion in history already consumed by projectile collision.
+        return Math.Max(at, ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
     }
     // The server's copy of the client-predicted walk (reported in each 0x1ab): the client's own pathfinder and stepping.
     public PlayerWalk Walk => _walk ??= NewPlayerWalk();

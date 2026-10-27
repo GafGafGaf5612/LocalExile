@@ -443,15 +443,19 @@ partial class Program
     // button or the next empty slot. True when the bar changed (saved).
     static bool FillSkillBar(ClientState conn)
     {
-        string character = CharacterName(conn);
-        var bar = CharacterSaves.Load(character)?.SkillBar ?? [];
-        string attack = SkillEffectId(conn, SkillCatalog.FirstSkillId)!;
-        var gems = GemSkillEffects(conn.Character).Select(g => Skills.EffectId(g.Effect)).OfType<string>().ToList();
-        var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry));
-        foreach (var (slot, entry) in added) CharacterSaves.SetSkillBar(character, (byte)slot, entry);
-        if (added.Count > 0)
-            Console.WriteLine($"[gateway] {character} skill bar: {string.Join(", ", added.Select(a => $"{a.Entry} on slot {a.Slot}"))}");
-        return added.Count > 0;
+        lock (conn.Monsters)
+        {
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired) return false;
+            string character = CharacterName(conn);
+            var bar = CharacterSaves.Load(character)?.SkillBar ?? [];
+            string attack = SkillEffectId(conn, SkillCatalog.FirstSkillId)!;
+            var gems = GemSkillEffects(conn.Character).Select(g => Skills.EffectId(g.Effect)).OfType<string>().ToList();
+            var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry));
+            foreach (var (slot, entry) in added) CharacterSaves.SetSkillBar(character, (byte)slot, entry);
+            if (added.Count > 0)
+                Console.WriteLine($"[gateway] {character} skill bar: {string.Join(", ", added.Select(a => $"{a.Entry} on slot {a.Slot}"))}");
+            return added.Count > 0;
+        }
     }
 
     // The GrantedEffects Id behind a skill id of the player (the default attack or a gem skill), or null.
@@ -518,7 +522,7 @@ partial class Program
         Skills.IsWarcry(effect) && Stats.Key("your_warcry_skills_are_disabled") is uint key
             && CharacterPlayerStats(conn).GetValueOrDefault(key) != 0 ? "warcry skills are disabled" : null;
 
-    // Why a gem skill may not be used: an actor restriction or an unmet level/attribute requirement.
+    // Why a gem skill may not be used: an actor restriction, unmet gem requirements or provider equipment restrictions.
     // The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
     // Null when the actor restriction and requirements allow the effect.
     static string? GemDisabled(ClientState conn, int effect)
@@ -527,6 +531,8 @@ partial class Program
         foreach (var place in PlayerInventories.For(CharacterName(conn), Items).SocketedGemPlaces())
             if (Items.GemEffects(place.Gem).Contains(effect) && GemRequirementsUnmet(conn, place.Gem) is { } missing)
                 return missing;
+        if (Skills.EffectId(effect) is { } effectId
+            && ProjectileDefinition(effectId)?.Unavailable?.Invoke(conn) is { } unavailable) return unavailable;
         return null;
     }
 
@@ -674,17 +680,21 @@ partial class Program
     // Actor 0x20 update (PlayerSkillsChange): the 0x40 list neither removes skills nor tells the character panel.
     static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        RefreshSingleUseCooldowns(conn);
-        foreach (var id in conn.Auras.Keys.ToList())
+        lock (conn.Monsters)
         {
-            var gem = SupportedSkill(conn, id);
-            if (gem.Effect < 0 || SupportedReservation(conn, id) is not { } reservation) continue;
-            conn.Auras[id] = conn.Auras[id] with
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
+            RefreshSingleUseCooldowns(conn);
+            foreach (var id in conn.Auras.Keys.ToList())
             {
-                ManaFlat = reservation.Flat, ManaPercent = reservation.Percent, Level = gem.Level, Quality = gem.Quality
-            };
+                var gem = SupportedSkill(conn, id);
+                if (gem.Effect < 0 || SupportedReservation(conn, id) is not { } reservation) continue;
+                conn.Auras[id] = conn.Auras[id] with
+                {
+                    ManaFlat = reservation.Flat, ManaPercent = reservation.Percent, Level = gem.Level, Quality = gem.Quality
+                };
+            }
+            if (conn.Auras.Count > 0) conn.Pools = PoolsFor(conn, conn.Pools.Level);
         }
-        if (conn.Auras.Count > 0) conn.Pools = PoolsFor(conn, conn.Pools.Level);
         List<ushort> gone = [], added = [];
         await SendPlayerStatSnapshot(remote, stream, ciphers, conn, () =>
         {
@@ -698,7 +708,7 @@ partial class Program
         if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
         IReadOnlyList<AuraCatalog.Aura> resumed = [];
         lock (conn.Monsters)
-            if (conn.PlayerLife > 0 && !InTown(conn))
+            if (!conn.Closed && !conn.LeavingArea && !conn.RageRetired && conn.PlayerLife > 0 && !InTown(conn))
                 resumed = RestoreRememberedAuras(conn, CharacterSaves.Load(CharacterName(conn))?.ActiveAuras ?? []);
         if (resumed.Count > 0)
         {
@@ -727,6 +737,7 @@ partial class Program
         List<AuraCatalog.Aura> ended;
         lock (conn.Monsters)
         {
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
             ended = [.. conn.Auras.Values.Where(a => gone.Contains(a.SkillId))];
             foreach (var aura in ended) conn.Auras.Remove(aura.SkillId);
             if (ended.Count > 0)

@@ -118,14 +118,21 @@ partial class Program
         return attack ? RageStats.ApplyAttack(hit, Get) : hit;
     }
 
-    static int SupportedCriticalChance(ClientState conn, ushort skillId)
+    static int SupportedCriticalChance(ClientState conn, ushort skillId) => SupportedCriticalChanceFor(conn, skillId, false);
+
+    // A release retains the unprohibited offensive chance; the hit evaluates current owner prohibitions separately.
+    static int SupportedReleaseCriticalChance(ClientState conn, ushort skillId) => SupportedCriticalChanceFor(conn, skillId, true);
+
+    static int SupportedCriticalChanceFor(ClientState conn, ushort skillId, bool release)
     {
         var gem = SupportedSkill(conn, skillId);
         var player = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
-        int Own(string name) => Stats.Key(name) is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
+        int Own(string name) => release && IsCriticalProhibition(name) ? 0
+            : Stats.Key(name) is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
+        int Player(string name) => release && IsCriticalProhibition(name) ? 0
+            : Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
         if (Skills.IsAttack(gem.Effect))
         {
-            int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
             if (new[] { "global_cannot_crit", "virtual_global_cannot_crit", "cannot_critical_strike_with_attacks" }
                 .Any(name => Player(name) != 0 || Own(name) != 0)) return 0;
             var weapon = WeaponProfileFor(conn, activeSet: true);
@@ -137,7 +144,7 @@ partial class Program
             return GameServer.Core.World.DamageModel.CriticalStrikeChancePerMyriad(totalBase, increased);
         }
         return SpellCriticalStrike.Chance((Skills.SpellCritChance(gem.Effect, gem.Level) ?? 0)
-            + Own("additional_base_critical_strike_chance"), Stats, player, gem.Stats, conn.Pools.SpellCriticalStrikeChancePct);
+            + Own("additional_base_critical_strike_chance"), Player, Own, conn.Pools.SpellCriticalStrikeChancePct);
     }
 
     static (int Flat, int Percent)? SupportedReservation(ClientState conn, ushort skillId)

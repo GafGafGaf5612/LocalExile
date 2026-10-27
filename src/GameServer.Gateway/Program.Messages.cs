@@ -14,6 +14,14 @@ partial class Program
     {
         foreach (var (id, bytes) in messages)
         {
+            if (conn.Closed) return;
+            // Immediate transfer ingress cuts the old epoch off instead of replaying overdue old-world damage.
+            // Movement/combat handlers also advance atomically inside their mutation boundaries.
+            bool transferIngress = id is InstanceTransfer.ChooseInstanceId or InstanceTransfer.LeaveAreaAckId
+                or InstanceWaypoints.TravelId or InstanceWaypoints.VisitHideoutId or InstanceHideouts.SelectId
+                || id == InstanceProtocol.ResurrectId && InstanceProtocol.ReadResurrectInTown(bytes)
+                || id == InstanceItems.CommandId && InstanceItems.ReadCommand(bytes).Id == InstanceItems.WarpToHideoutCommand;
+            if (!transferIngress) AdvanceProjectiles(conn);
             // Native TakeHit blocks predicted action starts too. Buffered normal actions must not restart the server's
             // movement/cast timeline during that same recovery. Flasks and instant skills retain their own paths.
             if (id is InstanceProtocol.UseSkillAtLocationId or InstanceTransfer.UseSkillOnObjectId or InstanceProtocol.ChannelUpdateId)
@@ -70,7 +78,7 @@ partial class Program
                     {
                         int walkAction = 0;
                         if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
-                            () => { walkAction = Interlocked.Increment(ref conn.ActionCount); conn.Walk.Order(use.X, use.Y, at); conn.ChannelSkill = 0; },
+                            () => { at = Math.Max(at, ProjectileWorldTime(conn)); walkAction = Interlocked.Increment(ref conn.ActionCount); conn.Walk.Order(use.X, use.Y, at); conn.ChannelSkill = 0; },
                             out var approachTicket, reserve: false, requestedAt: at)) continue;
                         await Send(remote, stream, ciphers,
                             InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
@@ -92,6 +100,7 @@ partial class Program
                 CooldownUseTicket? cooldownUse = null;
                 void StartAction()
                 {
+                    at = Math.Max(at, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
                     action = Interlocked.Increment(ref conn.ActionCount);
                     (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
                     if (cast) conn.Walk.Order(px, py, at);
@@ -109,7 +118,7 @@ partial class Program
                 }
                 else
                 {
-                    lock (conn.Monsters)
+                    using (ProjectileMutation(conn))
                     {
                         if (conn.HitRecovery.BlocksInput(at, conn.Clock.Elapsed.TotalSeconds)) continue;
                         StartAction();
@@ -351,8 +360,9 @@ partial class Program
                 var (cx, cy) = InstanceProtocol.ReadChannelUpdate(bytes);
                 double t = conn.ClockAt(readAt);
                 int channelAction;
-                lock (conn.Monsters)
+                using (ProjectileMutation(conn))
                 {
+                    t = Math.Max(t, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
                     if (conn.HitRecovery.BlocksInput(t, conn.Clock.Elapsed.TotalSeconds)) continue;
                     channelAction = conn.ActionCount;
                     conn.Walk.Teleport(cx, cy, t);

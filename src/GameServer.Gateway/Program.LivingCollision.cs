@@ -94,9 +94,9 @@ partial class Program
     static async Task CorrectMonsterCollisions(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         var corrections = new List<(uint Id, int X, int Y)>();
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
-            double now = conn.Clock.Elapsed.TotalSeconds;
+            double now = ProjectileWorldTime(conn);
             foreach (var (id, m) in conn.Monsters)
             {
                 if (!LivingCollision.Blocks(m)) { m.CollisionPosition = null; continue; }

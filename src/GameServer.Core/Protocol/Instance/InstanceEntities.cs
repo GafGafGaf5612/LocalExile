@@ -645,6 +645,7 @@ public sealed record PetObject(int GridX, int GridY, uint Owner, IReadOnlyList<s
 public sealed record ProjectileObject(string TypePath, int GridX, int GridY, float Rotation = 0, ushort Team = 0,
     int? Height = null)
 {
+    public string? AnimatedObject { get; init; }
     /// <summary>Animated in the object's component order (Positioned, Animated, BaseEvents).</summary>
     public const byte AnimatedComponentIndex = 1;
 
@@ -657,7 +658,8 @@ public sealed record ProjectileObject(string TypePath, int GridX, int GridY, flo
         // made the arrow invisible (it never drew because the blob was 30 bytes and the components no longer lined up).
         w.I32(GridX).I32(GridY).F32(Rotation).U16(Team).U8((byte)(Height is null ? 0 : 0x04)).U8(0);
         if (Height is int h) w.I32(-h).F32(h * 7.8125f);           // h = z / 7.8125 (z points down): i32 -h, f32 z
-        w.U8(0x40);                                                // Animated: the projectile's own art (Projectiles.dat AOFiles)
+        if (AnimatedObject is null) w.U8(0x40);                    // Animated: Projectiles.dat AOFiles
+        else w.U8(1).WStr32(AnimatedObject);                        // Explicit art, the same Animated reader as effects.
         w.U8(0);                                                   // tasks
         return w.ToArray();
     }

@@ -223,6 +223,11 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+The generic [projectile framework](../docs/game/projectile-framework.md) supplies an optional 30 Hz host.
+Without a concrete provider it leaves upstream production skill execution active; synthetic tests exercise its lifecycle.
+Skill recipes and client presentation choices are supplied by the dependent coverage branch.
+
+
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;

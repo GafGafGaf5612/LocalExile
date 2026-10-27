@@ -19,7 +19,8 @@ partial class Program
         {
             if (conn.RageRetired || conn.PlayerLife == 0) conn.Rage.Clear();
             var inputs = RageStats.Inputs(name => RageStat(stats, name));
-            var value = conn.Rage.Read(conn.Clock.Elapsed.TotalSeconds, inputs);
+            // Stat projections must not advance Rage past an unprocessed projectile contact.
+            var value = conn.Rage.Read(ProjectileWorldTime(conn), inputs);
             foreach (var (name, amount) in RageStats.Display(value, inputs))
                 if (Stats.Key(name) is uint key) stats[key] = amount;
         }
@@ -27,7 +28,7 @@ partial class Program
 
     // Only accepted contacts call these, in the same Monsters critical section as life mutation, before any await.
     static bool RageOnHitLocked(ClientState conn, bool attack, bool melee, bool critical,
-        IReadOnlyDictionary<uint, int>? own = null)
+        IReadOnlyDictionary<uint, int>? own = null, Random? random = null)
     {
         if (conn.Character is null || conn.Closed || conn.LeavingArea || conn.RageRetired
             || conn.Paused || conn.PlayerLife == 0) return false;
@@ -35,7 +36,7 @@ partial class Program
         int Get(string name) => (int)Math.Clamp((long)RageStat(player, name)
             + (own is null ? 0 : RageStat(own, name)), int.MinValue, int.MaxValue);
         var inputs = RageStats.Inputs(Get);
-        return conn.Rage.Hit(conn.Clock.Elapsed.TotalSeconds, inputs, attack, melee, critical, Random.Shared.Next(100),
+        return conn.Rage.Hit(ProjectileWorldTime(conn), inputs, attack, melee, critical, (random ?? Random.Shared).Next(100),
             soulGainPrevention: Get("has_soul_gain_prevention") != 0);
     }
 
@@ -45,7 +46,7 @@ partial class Program
         if (conn.PlayerLife == 0) { conn.Rage.Clear(); return; }
         if (conn.Character is null) return;
         var stats = CharacterPlayerStats(conn);
-        conn.Rage.EnemyHit(conn.Clock.Elapsed.TotalSeconds, RageStats.Inputs(name => RageStat(stats, name)),
+        conn.Rage.EnemyHit(ProjectileWorldTime(conn), RageStats.Inputs(name => RageStat(stats, name)),
             Random.Shared.Next(100), soulGainPrevention: RageStat(stats, "has_soul_gain_prevention") != 0);
     }
 
@@ -91,7 +92,7 @@ partial class Program
             if (conn.Closed || conn.LeavingArea || conn.RageRetired) return null;
             var stats = CharacterPlayerStats(conn);
             var inputs = RageStats.Inputs(name => RageStat(stats, name));
-            var value = conn.Rage.Read(conn.Clock.Elapsed.TotalSeconds, inputs);
+            var value = conn.Rage.Read(ProjectileWorldTime(conn), inputs);
             if (conn.SentRage == value) return null;
             var bytes = new List<byte>();
             if (conn.RageBuff != 0) bytes.AddRange(InstanceEntities.RemoveBuff(PlayerId, conn.RageBuff));

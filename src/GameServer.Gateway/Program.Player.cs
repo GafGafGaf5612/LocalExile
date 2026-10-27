@@ -284,6 +284,7 @@ partial class Program
         List<(uint Monster, ushort Buff)> auras;
         lock (conn.Monsters)
         {
+            if (ProjectileOutputGuard.Value is { } guard && !guard()) return;
             rf = conn.RighteousFire;
             conn.RighteousFire = null;
             auras = rf is null ? [] : [.. rf.Auras.Select(kv => (kv.Key, kv.Value))];
@@ -463,11 +464,11 @@ partial class Program
         perSecond *= ChargeDamageMore(playerStats);
         var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
         var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
-        var stages = new List<(uint Id, SpawnedMonster M)>();
         var entered = new List<(uint Id, ushort Buff)>();
         var left = new List<(uint Id, ushort Buff)>();
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
+            now = ProjectileWorldTime(conn);
             var here = conn.Walk.Position(now);
             foreach (var (id, m) in conn.Monsters)
             {
@@ -485,7 +486,7 @@ partial class Program
                 m.Aggro = m.Life > 0;
                 if (m.Life == 0) { m.Dead = true; if (rf.Auras.Remove(id, out ushort b)) left.Add((id, b)); }
                 hits.Add((id, m, m.Life, damage));
-                if (stageStarts) stages.Add((id, m));
+                if (stageStarts) CommitBossStage(remote, stream, ciphers, conn, id, m, now);
             }
         }
         foreach (var (id, buff) in entered)
@@ -500,7 +501,6 @@ partial class Program
                 life == 0 ? $"0x01b1 monster 0x{id:x} ({m.Label}) burnt to death by Righteous Fire" : null);
             if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
         }
-        foreach (var (id, m) in stages) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
     }
 
     // The quest flags the permanent Kitava resistance penalty mirrors (ResistancePenalty): the Act 5 pair and the

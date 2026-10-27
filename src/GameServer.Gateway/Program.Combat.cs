@@ -28,11 +28,13 @@ partial class Program
         ushort skill, ushort sequence, out (int Action, int X, int Y) started)
     {
         started = default;
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
-            double now = conn.Clock.Elapsed.TotalSeconds;
-            if (conn.Closed || conn.Paused || conn.PlayerLife == 0 || conn.HitRecovery.BlocksInput(requestedAt, now)
+            double now = ProjectileWorldTime(conn);
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.Paused || conn.PlayerLife == 0
+                || conn.HitRecovery.BlocksInput(requestedAt, now)
                 || !AttackTiming.Ready(now, conn.NextAttackAt, duration)) return false;
+            requestedAt = Math.Max(requestedAt, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? requestedAt);
             conn.NextAttackAt = AttackTiming.After(now, conn.NextAttackAt, duration);
             int action = Interlocked.Increment(ref conn.ActionCount);
             var (x, y) = conn.Walk.Position(requestedAt);
@@ -112,10 +114,11 @@ partial class Program
         int action;
         (int X, int Y) target, here, stop;
         double arrive;
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
+            now = ProjectileWorldTime(conn);
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0
-                || conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
+                || conn.HitRecovery.BlocksInput(requestedAt, now)) return;
             action = Interlocked.Increment(ref conn.ActionCount);
             target = m.Walk.Position(now);
             (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now, tolerance: m.StopRange - 2);
@@ -199,7 +202,7 @@ partial class Program
         int impaleStacks, damage;
         bool impaled, critical;
         string? resistance;
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
             if (m.Life == 0) return;
             if (!PlayerActionCurrent(conn, action) || conn.Paused)
@@ -233,6 +236,11 @@ partial class Program
             FortificationOnHitLocked(conn, m, RawFortificationDamage(ownRolled, critical, criticalMultiplier),
                 WeaponProfileFor(conn, activeSet: true).Melee, player, ownPenetration);
             (m.Life, stageStarts) = TakeDamageLocked(m, damage);
+            if (stageStarts)
+            {
+                CommitBossStage(remote, stream, ciphers, conn, use.TargetId, m, ProjectileWorldTime(conn));
+                stageStarts = false;
+            }
             life = m.Life;
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
             if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
@@ -292,6 +300,7 @@ partial class Program
             if (!TryBeginCooldownUse(conn, gem.Effect, CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
                 () =>
                 {
+                    now = ProjectileWorldTime(conn);
                     action = Interlocked.Increment(ref conn.ActionCount);
                     target = m.Walk.Position(now);
                     (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now, tolerance: m.StopRange - 2);
@@ -327,6 +336,7 @@ partial class Program
         if (!TryBeginCooldownUse(conn, gem.Effect, gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
             () =>
             {
+                castAt = ProjectileWorldTime(conn);
                 castAction = Interlocked.Increment(ref conn.ActionCount);
                 aim = m.Walk.Position(castAt);
                 stand = conn.Walk.Position(castAt);
@@ -538,7 +548,7 @@ partial class Program
         await Send(remote, stream, ciphers, [],
             $"0x01ce player skill 0x{skillId:x4}: instant {(targetObjectId is uint id ? $"on 0x{id:x}" : $"location ({aim.X}, {aim.Y})")}, movement only", atGate: () =>
             {
-                lock (conn.Monsters)
+                using (ProjectileMutation(conn))
                 {
                     var current = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
                     if (current != gem || GemDisabled(conn, gem.Effect) is not null) return null;
@@ -629,11 +639,7 @@ partial class Program
     static IEnumerable<byte[]> AuraBuffs(AuraCatalog.Aura aura) =>
         AuraCatalog.StartPackets(aura, PlayerId, Skills.ActionHash(aura.Effect));
 
-    // Experimental: a projectile gem skill's projectile. After the cast time the server creates the Projectiles.dat object
-    // named after the effect (Fireball → Metadata/Projectiles/Fireball) just ahead of the caster, wakes it and moves it to the
-    // aimed point and on to its range with 0x1ba at the row's ProjectileSpeed (world units per second, 250/23 per grid
-    // cell), stopping at the first wall or monster on its path; a monster takes the skill's damage packet
-    // (SkillCatalog.HitDamage, after conversion). It explodes there; then the object is removed.
+    // Upstream skill routes remain active until an optional coverage provider adopts them.
     static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0,
         int? actionToken = null, CooldownUseTicket? cooldownUse = null)
@@ -866,49 +872,64 @@ partial class Program
             await WhilePaused(conn);
             if ((cooldownUse?.Instant != true && conn.ActionCount != action) || conn.Closed || !Current()) return;
         }
-        double now = conn.Clock.Elapsed.TotalSeconds;
         List<(uint Id, SpawnedMonster M)> targets;
-        lock (conn.Monsters)
-            targets = [.. conn.Monsters.Where(e => e.Key != excludeMonster && !e.Value.Dead && e.Value.Life > 0
-                && Dist(e.Value.Walk.Position(now), centre) <= radius).Select(e => (e.Key, e.Value))];
-        var player = CharacterPlayerStats(conn);
-        var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int criticalChance = SupportedCriticalChance(conn, skillId);
-        var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats);
-        var mods = HitResistMods(stats, skillStats);
-        foreach (var (k, v) in skillStats) stats[k] = v;
+        using (ProjectileMutation(conn))
+        {
+            double now = ProjectileWorldTime(conn);
+            targets = [.. conn.Monsters.Where(e => e.Key != excludeMonster && !e.Value.Dead && e.Value.Life > 0 && Dist(e.Value.Walk.Position(now), centre) <= radius)
+                .Select(e => (e.Key, e.Value))];
+        }
         bool fortificationGranted = false; // One simultaneous sweep, independent of notification latency.
-        // These contacts belong to one resolved sweep. Notification awaits may outlast the shared hit interval,
-        // but cannot create a second positive Rage gain from the same sweep. Rejected gains do not take this latch.
-        bool rageGranted = false;
+        bool rageGranted = false; // Only a positive gain takes this sweep's latch.
         foreach (var (id, m) in targets)
         {
-            if (MonsterBlocks(m, Random.Shared, spell))
+            MonsterHit? applied;
+            int damage;
+            bool critical;
+            string? resistance;
+            using (ProjectileMutation(conn))
             {
-                Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x} ({m.Label}) blocked");
-                continue;
+                // Catch up earlier projectile contacts before reading Rage or any other live offensive input.
+                if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0 || conn.Paused
+                    || !Current() || cooldownUse is null && !PlayerActionCurrent(conn, action)) return;
+                if (m.Dead || m.Life == 0) continue;
+                if (MonsterBlocks(m, Random.Shared, spell))
+                {
+                    Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x} ({m.Label}) blocked");
+                    continue;
+                }
+                var player = CharacterPlayerStats(conn);
+                var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+                var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats);
+                var mods = HitResistMods(stats, skillStats);
+                var rolled = SupportedHit(conn, skillId).Roll(Random.Shared);
+                critical = RollCriticalStrike(conn, SupportedCriticalChance(conn, skillId), skillStats, attack: !spell);
+                int multiplier = CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId));
+                (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
+                if (critical) damage = DamageModel.CriticalDamage(damage, multiplier);
+                if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
+                applied = ApplyMonsterHitLocked(conn, m, damage);
+                if (applied is { StageStarts: true } staged)
+                {
+                    CommitBossStage(remote, stream, ciphers, conn, id, m, ProjectileWorldTime(conn));
+                    applied = staged with { StageStarts = false };
+                }
+                if (applied is not null)
+                {
+                    if (!fortificationGranted)
+                        fortificationGranted = FortificationOnHitLocked(conn, m,
+                            RawFortificationDamage(rolled, critical, multiplier),
+                            !spell && Skills.IsMelee(gem.Effect), player, skillStats);
+                    if (!rageGranted) rageGranted = RageOnHitLocked(conn, attack: !spell,
+                        melee: !spell && Skills.IsMelee(gem.Effect), critical, skillStats);
+                }
             }
-            DamagePacket hit = SupportedHit(conn, skillId);
-            var rolled = hit.Roll(Random.Shared);
-            bool critical = RollCriticalStrike(conn, criticalChance, skillStats, attack: !spell);
-            int criticalMultiplier = CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId));
-            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
-            if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
-            if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
-            if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
-            if (await HitMonster(remote, stream, ciphers, conn, id, m, damage,
-                    $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
-                    melee: melee ?? !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse,
-                    accepted: () =>
-                    {
-                        if (!fortificationGranted)
-                            fortificationGranted = FortificationOnHitLocked(conn, m,
-                                RawFortificationDamage(rolled, critical, criticalMultiplier),
-                                !spell && Skills.IsMelee(gem.Effect), player, skillStats);
-                        if (!rageGranted) rageGranted = RageOnHitLocked(conn, attack: !spell,
-                            melee: !spell && Skills.IsMelee(gem.Effect), critical, skillStats);
-                    }))
-                ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
+            if (applied is not { } hit) continue;
+            if (critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
+            await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, hit, damage,
+                $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
+                melee: melee ?? !spell, sequence: sequence);
+            ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
         }
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
@@ -1403,11 +1424,16 @@ partial class Program
         CooldownUseTicket? cooldownUse = null, Action? accepted = null)
     {
         MonsterHit? hit;
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0 || conn.Paused) return false;
             if (cooldownUse is not null ? !cooldownUse.Current(conn) : actionToken is int token && !PlayerActionCurrent(conn, token)) return false;
             hit = ApplyMonsterHitLocked(conn, m, damage);
+            if (hit is { StageStarts: true } staged)
+            {
+                CommitBossStage(remote, stream, ciphers, conn, id, m, ProjectileWorldTime(conn));
+                hit = staged with { StageStarts = false };
+            }
             if (hit is not null) accepted?.Invoke();
         }
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
@@ -1498,41 +1524,41 @@ partial class Program
             still: () => { lock (conn.Monsters) return m.Life > 0 && !m.Dead; });
     }
 
-    // Native TakeHit owns the client's predictive cancellation and recovery lockout. Commit the matching server state
-    // inside the send gate, so death or another recovery while this packet waits cannot send an obsolete flinch.
-    static async Task SendPlayerHitRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        int damage)
+    internal sealed record PlayerRecoveryIntent(int Epoch, int Action, double Until, float Seconds);
+
+    // Cancellation belongs to the hit boundary; the native animation is a projection of that committed interval.
+    internal static PlayerRecoveryIntent? CommitPlayerHitRecoveryLocked(ClientState conn, int damage, double now)
     {
-        if (damage <= 0) return;
+        if (damage <= 0) return null;
         var stats = CharacterPlayerStats(conn);
-        if (stats.Any(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key)))) return;
+        if (stats.Any(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key)))) return null;
         // Skill immunity can depend on a native action's contact phase, which this server does not track yet.
         // Conservatively skip builds with any equipped skill carrying it, rather than stun an uninterruptible phase.
         if (GemSkillEffects(conn.Character).Any(g => Skills.EffectStats(g.Effect, g.Level, g.Quality)
-            .Any(s => s.Item2 != 0 && Stats.Name(s.Item1).StartsWith("skill_cannot_be_stunned", StringComparison.Ordinal)))) return;
+            .Any(s => s.Item2 != 0 && Stats.Name(s.Item1).StartsWith("skill_cannot_be_stunned", StringComparison.Ordinal)))) return null;
         int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
-        if (PlayerHasEnergyShieldForRecovery(conn, Get)) return;
+        if (PlayerHasEnergyShieldForRecovery(conn, Get)) return null;
         double chance = PlayerHitRecovery.Chance(damage, conn.PlayerMaxLife, Get);
         float seconds = PlayerHitRecovery.Duration(Get);
-        if (seconds <= 0 || Random.Shared.NextDouble() * 100 >= chance) return;
-        await Send(remote, stream, ciphers,
-            InstanceProtocol.ActorAnimation(PlayerId, seconds, PlayerHitRecovery.TakeHitAnimation),
-            $"0x01d1 player TakeHit recovery {seconds:0.000} s ({chance:0.#}% chance, {damage} physical damage)",
-            still: () =>
-            {
-                lock (conn.Monsters)
-                {
-                    if (conn.Closed || conn.PlayerLife == 0 || !conn.HitRecovery.Begin(conn.Clock.Elapsed.TotalSeconds, seconds)) return false;
-                    Interlocked.Increment(ref conn.ActionCount);
-                    conn.ChannelSkill = 0;
-                    double now = conn.Clock.Elapsed.TotalSeconds;
-                    conn.NextAttackAt = now;
-                    var at = conn.Walk.Position(now);
-                    conn.Walk.Teleport(at.X, at.Y, now);
-                    return true;
-                }
-            });
+        if (seconds <= 0 || Random.Shared.NextDouble() * 100 >= chance
+            || conn.Closed || conn.PlayerLife == 0 || !conn.HitRecovery.Begin(now, seconds)) return null;
+        int action = Interlocked.Increment(ref conn.ActionCount);
+        conn.ChannelSkill = 0; conn.NextAttackAt = now;
+        var at = conn.Walk.Position(now); conn.Walk.Teleport(at.X, at.Y, now);
+        return new(conn.ProjectileEpoch, action, conn.HitRecovery.Until, seconds);
     }
+
+    static Task SendPlayerHitRecovery(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+        PlayerRecoveryIntent recovery) => Send(remote, stream, ciphers, [], "0x01d1 player TakeHit recovery", atGate: () =>
+        {
+            lock (conn.Monsters)
+            {
+                double remaining = recovery.Until - conn.Clock.Elapsed.TotalSeconds;
+                if (!conn.ProjectileActive(recovery.Epoch) || conn.PlayerLife == 0 || conn.Paused
+                    || conn.ActionCount != recovery.Action || remaining <= 0) return null;
+                return InstanceProtocol.ActorAnimation(PlayerId, (float)Math.Min(remaining, recovery.Seconds), PlayerHitRecovery.TakeHitAnimation);
+            }
+        });
 
     static bool PlayerActionCurrent(ClientState conn, int action)
     {

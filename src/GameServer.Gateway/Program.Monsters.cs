@@ -69,7 +69,7 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 monster 0x{id:x} enters wake zone");
         if (log && mods.Affixes.Any()) Console.WriteLine($"[gateway] {remote} monster 0x{id:x} mods: {MonsterModRolls.Value.Describe(mods)}" +
             (mods.NameWords.Count > 0 ? $", named {MonsterModRolls.Value.NameOf(mods.NameWords)}" : ""));
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
             MonsterEmerge.AddLocked(conn, id, new SpawnedMonster($"{variety.Name}@{level}", conn.NewMonsterWalk(id, x, y, mods.Effects.MovementSpeed(variety.MovementSpeed), bodySize, rarity == MonsterRarity.Unique),
                 variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
             {
@@ -141,8 +141,10 @@ partial class Program
                 var bossBars = new List<(uint Id, SpawnedMonster M)>();
                 double now = conn.Clock.Elapsed.TotalSeconds;
                 var (px, py) = conn.Walk.Position(now);
-                lock (conn.Monsters)
+                using (ProjectileMutation(conn))
                 {
+                    now = ProjectileWorldTime(conn);
+                    (px, py) = conn.Walk.Position(now);
                     foreach (var (id, m) in conn.Monsters)
                     {
                         if (m.Dead) continue;
@@ -226,9 +228,11 @@ partial class Program
         uint life, mana, manaBefore;
         int rawDamage = 0, damage = 0, chaosDamage = 0;
         bool blocked, monsterCritical = false;
-        lock (conn.Monsters)
+        PlayerRecoveryIntent? recovery = null;
+        using (ProjectileMutation(conn))
         {
-            if (m.Dead || conn.PlayerLife == 0 || conn.Closed) return;
+            now = ProjectileWorldTime(conn);
+            if (m.Dead || conn.PlayerLife == 0 || conn.Closed || conn.LeavingArea || conn.RageRetired) return;
             var here = conn.Walk.Position(now);
             if (Dist(here, m.Walk.Position(now)) > a.Range + 2)
             {
@@ -275,12 +279,13 @@ partial class Program
             conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
             life = conn.PlayerLife;
             mana = conn.PlayerMana;
+            if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+                recovery = CommitPlayerHitRecoveryLocked(conn, damage, now);
             RageWhenHitLocked(conn);
         }
         ChargesWhenHit(conn, blocked);
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
-        if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
-            await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);
+        if (recovery is not null) await SendPlayerHitRecovery(remote, stream, ciphers, conn, recovery);
         // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),

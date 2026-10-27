@@ -14,10 +14,22 @@ partial class Program
         await conn.FlaskBarGate.WaitAsync();
         try
         {
-            var items = ItemsOf(conn);
-            if (change(items) is not { } done || done.Changed.Count == 0) return;
-            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
-                items.NextRevision(PlayerInventories.Flask), done.Removed, done.Changed), log(done.Changed));
+            byte[] packet;
+            string message;
+            lock (conn.Monsters)
+            {
+                var items = ItemsOf(conn);
+                if (change(items) is not { } done || done.Changed.Count == 0) return;
+                packet = InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Flask),
+                    items.NextRevision(PlayerInventories.Flask), done.Removed, done.Changed);
+                message = log(done.Changed);
+                if (conn.ProjectileRuntime is { Active: true } session)
+                {
+                    session.Packet(packet, message);
+                    return;
+                }
+            }
+            await Send(remote, stream, ciphers, packet, message);
         }
         finally
         {

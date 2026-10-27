@@ -213,11 +213,17 @@ partial class Program
                 double now = conn.Clock.Elapsed.TotalSeconds;
                 ChargeSession.StepResult step;
                 List<ChargeSession.BuffChange> buffs;
-                lock (conn.Monsters)
+                using (ProjectileMutation(conn))
                 {
+                    now = ProjectileWorldTime(conn);
                     step = session.Step(now, stats, () => weapon, alive: conn.PlayerLife > 0, moving: now < conn.Walk.ArrivesAt,
                         inTown: InTown(conn), Random.Shared);
                     buffs = session.Presentation(now, () => conn.NextBuff++);
+                    if (step.CountsChanged)
+                    {
+                        conn.Pools = PoolsFor(conn, conn.Pools.Level);
+                        conn.ApplyMovementSpeed();
+                    }
                 }
                 foreach (string line in step.Log) Console.WriteLine($"[gateway] {remote} {line} (t={now:0.000})");
                 foreach (var change in buffs)
@@ -225,11 +231,6 @@ partial class Program
                         await Send(remote, stream, ciphers, packet, label);
                 if (step.CountsChanged)
                 {
-                    lock (conn.Monsters)
-                    {
-                        conn.Pools = PoolsFor(conn, conn.Pools.Level);
-                        conn.ApplyMovementSpeed();
-                    }
                     await SendChargeStats(remote, stream, ciphers, conn,
                         string.Join(", ", Charges.Types.Select(t => $"{session.Effective(t)} {Charges.Name(t)}")));
                 }

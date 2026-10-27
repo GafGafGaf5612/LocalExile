@@ -28,11 +28,11 @@ partial class Program
     internal static bool TryBeginCooldownUse(ClientState conn, int effect, SingleUseCooldown? plan, bool instant,
         Action sideEffects, out CooldownUseTicket? ticket, int? actionToken = null, bool reserve = true, double? requestedAt = null)
     {
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
             ticket = null;
             SingleUseCooldownState? state = null;
-            if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0 || conn.Paused
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0 || conn.Paused
                 || requestedAt is double asked && conn.HitRecovery.BlocksInput(asked, conn.Clock.Elapsed.TotalSeconds)
                 || actionToken is int original && conn.ActionCount != original) return false;
             // Covers object/self and instant routes before creating or spending cooldown state or a new action.
