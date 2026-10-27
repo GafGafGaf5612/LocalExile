@@ -164,7 +164,7 @@ public class AuraTests
         Assert.Equal(20, bonus.EvasionMorePct);
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 1, bonus);
         Assert.Equal(126, pools.Armour);
-        Assert.Equal((int)((15 + 136) * 1.02 * 1.2), pools.Evasion);
+        Assert.Equal(185, pools.Evasion); // (15 base + 136 Grace) * 1.02 dexterity * 1.2 more = 184.824.
     }
 
     [Fact]

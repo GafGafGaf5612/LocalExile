@@ -22,11 +22,11 @@ public class ArmourEvasionTests
     [Fact]
     public void Evasion_keeps_its_base_flat_and_dexterity_increases()
     {
-        // Witch dexterity 14: 2% from dexterity. 15 base + 100 flat = 115, raised by 2% + 50% = 174.
+        // Witch dexterity 14: 2% from dexterity. (15 base + 100 flat) * 1.52 = 174.8, rounding to 175.
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 1,
             new CharacterStats.Bonus(Evasion: 100, EvasionPct: 50));
 
-        Assert.Equal(174, pools.Evasion);
+        Assert.Equal(175, pools.Evasion);
         Assert.Equal(52, pools.EvasionPct);
     }
 

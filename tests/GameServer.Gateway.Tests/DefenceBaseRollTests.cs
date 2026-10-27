@@ -106,7 +106,7 @@ public sealed class DefenceBaseRollTests : IDisposable
         conn.Pools = Program.PoolsFor(conn, 100);
         var maximum = Published(conn);
         Assert.Equal(69, maximum[Program.Stats.Key("physical_damage_reduction_rating")!.Value]);
-        Assert.Equal(93, maximum[Program.Stats.Key("evasion_rating")!.Value]);
+        Assert.Equal(94, maximum[Program.Stats.Key("evasion_rating")!.Value]); // (15 base + 46 local) * 1.54 = 93.94.
 
         Assert.NotNull(Inventory.Change(PlayerInventories.BodyArmour, placed.Id, i => i with { DefenceBaseRoll = 32 }));
         conn.Pools = Program.PoolsFor(conn, 100);

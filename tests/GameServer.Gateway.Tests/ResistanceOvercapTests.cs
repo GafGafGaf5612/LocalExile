@@ -226,9 +226,9 @@ public class ResistanceOvercapTests
             Sources(stats, (ResistanceOvercap.ColdEvasionFlag, 1)), new Dictionary<uint, int>(), penalty: 0, stats);
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 1, bonus);
 
-        // 115 flat × (1 + 2% dexterity + 50% increased + 45% overcap) = 226.55; a final multiplier would give 15 × 1.47 × 1.50.
+        // 115 flat × (1 + 2% dexterity + 50% increased + 45% overcap) = 226.55, rounding to 227.
         Assert.Equal(97, pools.EvasionPct);
-        Assert.Equal(226, pools.Evasion);
+        Assert.Equal(227, pools.Evasion);
     }
 
     [Fact]
@@ -239,10 +239,10 @@ public class ResistanceOvercapTests
             Sources(stats, (ResistanceOvercap.ColdEvasionFlag, 1)), new Dictionary<uint, int>(), penalty: 0, stats);
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 1, bonus with { IronReflexes = true });
 
-        // The converted 15 base evasion keeps the overcapped increase once: 15 × 1.45 = 21.75 armour, no evasion left.
+        // The converted 15 base evasion keeps the increase once: 15 × 1.45 = 21.75, rounding to 22 armour.
         Assert.Equal(0, pools.Evasion);
         Assert.Equal(45, pools.EvasionPct);
-        Assert.Equal(21, pools.Armour);
+        Assert.Equal(22, pools.Armour);
     }
 
     [Fact]

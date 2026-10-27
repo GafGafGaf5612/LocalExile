@@ -46,8 +46,8 @@ public sealed class ConditionalItemEnergyShieldTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false, 100, 127)]
-    [InlineData(true, 110, 133)]
+    [InlineData(false, 100, 128)]
+    [InlineData(true, 110, 134)]
     public void Corruption_enables_a_global_increase_without_changing_the_item_tooltip(
         bool corrupted, int expectedGlobalIncrease, uint expectedES)
     {
@@ -63,6 +63,7 @@ public sealed class ConditionalItemEnergyShieldTests : IDisposable
         Assert.Equal(expectedGlobalIncrease, global[Program.Stats.Key(GlobalIncrease)!.Value]);
         var pools = Program.PoolsFor(conn, 100);
         // The conditional increase reaches all 62 gear ES alongside 100% increased ES and Witch Intelligence's 6%.
+        // Round the final total: 62 * 2.06 = 127.72 -> 128, or 62 * 2.16 = 133.92 -> 134 when corrupted.
         Assert.Equal(expectedES, pools.EnergyShield);
     }
 

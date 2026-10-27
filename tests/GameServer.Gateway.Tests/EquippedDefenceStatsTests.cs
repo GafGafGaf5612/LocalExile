@@ -167,7 +167,7 @@ public sealed class EquippedDefenceStatsTests : IDisposable
         Assert.Contains(placed.Id, Program.InactiveItems[_name]);
         Assert.Equal((0, 0, 0), Equipped(conn));
         Assert.Equal(0, conn.Pools.Armour);
-        Assert.Equal(15, conn.Pools.Evasion);
+        Assert.Equal(16, conn.Pools.Evasion); // 15 character base * 1.04 from Duelist dexterity = 15.6.
     }
 
     [Fact]
@@ -202,13 +202,13 @@ public sealed class EquippedDefenceStatsTests : IDisposable
         conn.Pools = Program.PoolsFor(conn, 100);
         var before = Published(conn);
         Assert.Equal(72, before[Program.Stats.Key("physical_damage_reduction_rating")!.Value]);
-        Assert.Equal(71, before[Program.Stats.Key("evasion_rating")!.Value]);
+        Assert.Equal(72, before[Program.Stats.Key("evasion_rating")!.Value]); // (15 character base + 54 local) * 1.04 = 71.76.
 
         Assert.NotNull(Inventory.Remove(PlayerInventories.BodyArmour, placed.Id));
         conn.Pools = Program.PoolsFor(conn, 100);
         var after = Published(conn);
         Assert.Equal(0, after[Program.Stats.Key("physical_damage_reduction_rating")!.Value]);
-        Assert.Equal(15, after[Program.Stats.Key("evasion_rating")!.Value]);
+        Assert.Equal(16, after[Program.Stats.Key("evasion_rating")!.Value]); // The bare Duelist keeps round(15 * 1.04).
     }
 
     [Fact]

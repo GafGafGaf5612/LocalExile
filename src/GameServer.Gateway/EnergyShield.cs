@@ -24,7 +24,7 @@ sealed class EnergyShield
     }
     public void Empty() { Current = 0; fraction = 0; Recharging = false; }
     public static uint Max(int flat, int increased) =>
-        (uint)Math.Clamp((long)Math.Max(0, flat) * Math.Max(0L, 100L + increased) / 100, 0, int.MaxValue);
+        (uint)Math.Clamp(((long)Math.Max(0, flat) * Math.Max(0L, 100L + increased) + 50) / 100, 0, int.MaxValue);
     public static double Delay(Func<string, int> get) => 2 / Math.Max(0.01, 1 + get("energy_shield_delay_-%") / 100.0);
     public static double RechargePerMinute(uint max, Func<string, int> get) =>
         get("cannot_recharge_energy_shield") != 0 || get("no_energy_shield_recharge_or_regeneration") != 0 ? 0 :

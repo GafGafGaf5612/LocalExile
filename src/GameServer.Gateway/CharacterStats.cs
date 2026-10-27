@@ -134,20 +134,33 @@ static class CharacterStats
         // overcapped cold resistance's increase is one of the evasion increases (it applies before the conversion, so
         // Iron Reflexes' converted evasion keeps it, as PoB's converted branch reads the same Evasion INC bucket).
         int armourPct = b.ArmourPct;
-        int armour = Math.Max(0, (int)(b.Armour * (100m + armourPct) * (100m + b.ArmourMorePct) / 10000m));
+        // Native final ratings sum fractional sources before rounding once, including Iron Reflexes.
+        // AR 0x142732ee7, EV 0x14272a59b, ES 0x14252c6e7 (via 0x142513810).
+        decimal Increased(decimal flat, long increase) =>
+            Math.Max(0m, flat) * Math.Max(0m, 100m + increase) / 100m;
+        decimal More(decimal value, int increase)
+        {
+            decimal factor = Math.Max(0m, 100m + increase) / 100m;
+            return factor > 1m && value > decimal.MaxValue / factor ? decimal.MaxValue : value * factor;
+        }
+        int Rating(decimal value) => (int)Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), 0m, int.MaxValue);
+        decimal armourValue = More(Increased(b.Armour, armourPct), b.ArmourMorePct);
         int evasionPct = dex / 5 + b.EvasionPct + b.ColdOvercapEvasionPct;
-        int evasionBase = BaseEvasion + b.Evasion;
-        int evasion = Math.Max(0, (int)(evasionBase * (100m + evasionPct) * (100m + b.EvasionMorePct) / 10000m));
+        long evasionBase = BaseEvasion + (long)b.Evasion;
+        decimal evasionValue = More(Increased(evasionBase, evasionPct), b.EvasionMorePct);
         if (b.IronReflexes)
         {
             // Iron Reflexes converts all evasion rating to armour and removes dexterity's evasion bonus. The converted
             // evasion keeps the armour, evasion and shared defence increases (each once), but not dexterity.
-            int convertedPct = armourPct + b.EvasionPct + b.ColdOvercapEvasionPct - b.SharedDefencesPct;
-            armour = Math.Max(0, armour + (int)(evasionBase * (100m + convertedPct)
-                * (100m + b.EvasionMorePct) * (100m + b.ArmourMorePct) / 1000000m));
+            long convertedPct = (long)armourPct + b.EvasionPct + b.ColdOvercapEvasionPct - b.SharedDefencesPct;
+            decimal converted = More(More(Increased(evasionBase, convertedPct), b.EvasionMorePct), b.ArmourMorePct);
+            armourValue = armourValue > decimal.MaxValue - converted ? decimal.MaxValue : armourValue + converted;
             evasionPct = b.EvasionPct + b.ColdOvercapEvasionPct;
-            evasion = 0;
+            evasionValue = 0;
         }
+        int armour = Rating(armourValue), evasion = Rating(evasionValue);
+        int energyShieldPct = intel / 5 + b.EnergyShieldPct;
+        uint energyShield = (uint)Rating(Increased(b.EnergyShield, energyShieldPct));
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
         int maxBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxBlockChance + b.BlockChanceMax);
         int maxSpellBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxSpellBlockChance + b.SpellBlockChanceMax);
@@ -166,7 +179,7 @@ static class CharacterStats
         attackSpeedPct = Math.Max(-99, attackSpeedPct);
         return new(level, life, mana, accuracy, ExperienceFor(level, folder),
             Armour: armour, ArmourPct: armourPct, Evasion: evasion, EvasionPct: evasionPct,
-            EnergyShieldPct: intel / 5 + b.EnergyShieldPct, EnergyShield: EnergyShield.Max(b.EnergyShield, intel / 5 + b.EnergyShieldPct),
+            EnergyShieldPct: energyShieldPct, EnergyShield: energyShield,
             MeleePhysicalDamagePct: str / 5 + b.MeleePhysicalDamagePct,
             Strength: str, Dexterity: dex, Intelligence: intel,
             FireResistance: BaseResistance + b.FireResistance, ColdResistance: BaseResistance + b.ColdResistance,

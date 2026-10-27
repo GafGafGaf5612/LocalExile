@@ -28,6 +28,7 @@ public class EnergyShieldTests
     [Fact] public void IncreasedEnergyShieldAndFasterStart()
     {
         Assert.Equal(178u, EnergyShield.Max(100,78)); Assert.Equal(0u,EnergyShield.Max(100,-200));
+        Assert.Equal(2u, EnergyShield.Max(1,50)); Assert.Equal(52u, EnergyShield.Max(49,6));
         Assert.Equal(1, EnergyShield.Delay(s=>s=="energy_shield_delay_-%"?100:0));
         Assert.Equal(2000, EnergyShield.RechargePerMinute(100,Get));
     }

@@ -129,8 +129,8 @@ public sealed class SpecialLocalDefenceTests : IDisposable
         var placed = Inventory.Add(PlayerInventories.BodyArmour, 0, 0, item);
         uint key = Program.Stats.Key("maximum_energy_shield")!.Value;
         conn.Pools = Program.PoolsFor(conn, 100);
-        Assert.Equal(51u, conn.Pools.EnergyShield); // 49 item ES * 1.06 from the Witch's 32 Intelligence.
-        Assert.Equal(51, Published(conn)[key]);
+        Assert.Equal(52u, conn.Pools.EnergyShield); // 49 item ES * 1.06 from 32 Intelligence = 51.94, rounding to 52.
+        Assert.Equal(52, Published(conn)[key]);
 
         Assert.NotNull(Inventory.Change(PlayerInventories.BodyArmour, placed.Id,
             i => i with { Mods = [.. i.Mods, Mod(Tabula, 1)] }));
@@ -140,8 +140,8 @@ public sealed class SpecialLocalDefenceTests : IDisposable
 
         Assert.NotNull(Inventory.Change(PlayerInventories.BodyArmour, placed.Id, _ => item));
         conn.Pools = Program.PoolsFor(conn, 100);
-        Assert.Equal(51u, conn.Pools.EnergyShield);
-        Assert.Equal(51, Published(conn)[key]);
+        Assert.Equal(52u, conn.Pools.EnergyShield);
+        Assert.Equal(52, Published(conn)[key]);
 
         Assert.NotNull(Inventory.Remove(PlayerInventories.BodyArmour, placed.Id));
         conn.Pools = Program.PoolsFor(conn, 100);
