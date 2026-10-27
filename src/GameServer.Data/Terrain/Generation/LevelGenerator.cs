@@ -264,11 +264,21 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     /// <summary><c>0x1420457f0</c>: the record of the graph at (x, y): a .tgr's size is its graph's (+0x40 / +0x48), a
     /// .dgr's its graph's in room units. Anchoring by the orientation's corner is ported for orientation 0 only (no
     /// offset).</summary>
-    Subgraph Record(string graphPath, int x, int y, int orientation, int parent)
+    Subgraph Record(string graphPath, int x, int y, int orientation, int parent, List<Subgraph>? records = null)
     {
         var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
-        // 0x14203c190: the area's TSI override, else the graph's master.
+        // 0x14203c190: the area's TSI override, else the graph's master. A MasterFile that is no .tsi / .tgr / .dgr names
+        // a group of the first record's FileGroups (master +0x268): its masters that no record uses yet (0x142050a80),
+        // Next(count) picks one (MapWorldsShapersRealm's "BossArenas" and "Gauntlets", 2026-10-27).
         string masterPath = parent < 0 && Master is not null ? Master : TerrainText.Resolve(graphPath, graph.MasterFile);
+        if (parent >= 0 && records is { Count: > 0 } && !graph.MasterFile.EndsWith(".tsi", StringComparison.OrdinalIgnoreCase)
+            && records[0].Master.TryGetValue("FileGroups", out var fgp)
+            && FileGroups(TerrainText.Resolve(records[0].MasterPath, fgp)).GetValueOrDefault(graph.MasterFile) is { } group)
+        {
+            var left = group.Where(m => !records.Any(r => r.MasterPath == m)).ToList();
+            if (left.Count == 0) throw new InvalidOperationException("No valid master files available");
+            masterPath = left[(int)rng.Next((uint)left.Count)];
+        }
         var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1")), overlap = int.Parse(master.GetValueOrDefault("RoomOverlap", "1"));
         int w = (unit - overlap) * graph.Width + overlap, h = (unit - overlap) * graph.Height + overlap;
@@ -409,7 +419,8 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         var master = r.Master;
         string masterPath = r.MasterPath;
         _grid = grid;
-        _store = new TileStore(files, files.TileList(TerrainText.Resolve(masterPath, master["TileSet"])));
+        // A master without a TileSet (CombinedArena's, whose graph holds only subgraph nodes) has no tiles.
+        _store = new TileStore(files, master.TryGetValue("TileSet", out var tst) ? files.TileList(TerrainText.Resolve(masterPath, tst)) : []);
         _fills = master.TryGetValue("FillTiles", out var gft) ? files.FillTiles(TerrainText.Resolve(masterPath, gft)) : [];
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
         var map = Layout(r.Path, r.Orientation, masterPath, master, unit, index == 0, r.Parent <= 0);
@@ -485,7 +496,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         placed.AddRange(_injectedRooms);
         foreach (var p in map.Rooms)
             if (p.Room is null && p.Descriptions.Count != 0)
-                records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index));
+                records.Add(Record(p.Descriptions[0], _ox + step * p.X, _oy + step * p.Y, r.Orientation, index, records));
     }
 
     /// <summary><c>0x142044f30</c> for a .tgr subgraph on the shared map: its outer ground (<c>0x14201db80</c>, a tile

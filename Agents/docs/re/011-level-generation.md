@@ -184,7 +184,11 @@ For a one-node graph (towns, hideouts):
    orientation restriction, bit 1 fields the generator does not read (its own `.tmd` is in the string table), bit 2
    one more string (setter +0x50, not read by the generator). The port reads bits 0 to 5 (bit 0: the mesh string right after the flags byte, the vertex blocks after the u16 flags word, the block ending the file with no strings after it, HallsOfTheDead's coral walls) (4 only with the base's size;
    bit 5's restriction byte follows the tag/key block and the bit 1 / bit 2 strings: Breach tower and Lake tiles,
-   2026-10-27). A master without a RoomSet (MapOba's top master.tsi) has no rooms. The u16 flags word follows those groups (bit 3: after
+   2026-10-27). A master without a RoomSet (MapOba's top master.tsi) or a TileSet (CombinedArena's, the pvp arenas) has
+   none of them. A subgraph whose MasterFile is no .tsi / .tgr / .dgr names a group of the first record's FileGroups
+   (`0x14203c190`): its masters no record uses yet (`0x142050a80`), `Next(count)` picks one; MapWorldsShapersRealm's
+   "BossArenas" / "Gauntlets". The same resolution also runs earlier, in `0x14204bfa0`'s walk over the subgraph
+   nodes (its own draws), which is not ported: those areas and ZanaGauntlet stay open. The u16 flags word follows those groups (bit 3: after
    the key; bit 4 alone: after a 2-byte size), then the walk data as a plain tile's (the restriction byte only with
    bit 5) when bit 4 is set; without bit 4 the tile has the base tile's walk data (MapWorldsCourtyardOfWasting's
    walkability now matches its capture; 2026-10-26) (2026-10-25: `2_8_2_1`'s `sewerwall_thin_entrance_v02_01_nofeature.tdt`, flags 0x0a; MapWorldsCourtyardOfWasting's `stonewall_to_venice_convex_combinationfence_01.tdt`, 0x1a;
