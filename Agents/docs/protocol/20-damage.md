@@ -644,7 +644,7 @@ The ES input also publishes current ES; lowering capacity clamps it, while raisi
 Final attribute presentation overrides do not become a second production attribute source.
 Thirty-three pure and fourteen both-mode Gateway cases cover groups, slot/IR composition, qualification, active sets,
 source removal, actual command packets and unchanged serialized item payloads.
-Persisted reload is not established here.
+Fresh supplied-source native reload is verified by the separate controls below.
 Those 47 cases, seven ES publication regressions and eleven inherent-baseline cases pass in a 216-case focused batch.
 Full Gateway 3939 passes without skips; unchanged prior Core 648/Data 37 remain applicable after this Gateway-only fix.
 The latest diagnostic hook retains six actual disposed-NetworkStream task faults, all `MonsterKilled` through `Send`.
@@ -652,7 +652,7 @@ Its 386 first-chance records are a separate count; previous runs and their fault
 No new coefficient/publisher path, diagnostic errors, truncation or cap hit is captured.
 Passing tests do not establish fault-free execution.
 The native vectors and pinned PoB `16de4b8` grouping rule support these operators as a labelled 3.29.x projection.
-Native publication, complete Shaper's Touch, acquisition and full ES/Evasion rows remain unverified.
+Complete Shaper's Touch, acquisition and full ES/Evasion rows remain unverified.
 The ordinary inherent Intelligence ES term is now `floor(final Intelligence / 10)`, correcting the former `/5` term.
 Native `ClientStrings` row169, `IntelligenceDescription` (HASH32 1789395335), declares 1% ES per ten Intelligence.
 This static help text is independent of our server-fed panel and agrees with pinned PoB `CalcPerform.lua:541`.
@@ -660,6 +660,34 @@ The current extraction report associates the table with the copied 3.29.3b clien
 Complete groups follow the accepted pinned model; exact official fractional/group arithmetic remains unverified.
 At Intelligence 132, the native-source recipe's zero/one/two Strength coefficients now give ES 113/124/135.
 The corresponding EV 18/22/26, local item ES and converted Life remain unchanged.
+
+Fourteen fresh native controls at actual level 100 (A0–A6 in Standard and Ruthless) bind this source/build to the
+current owned Player and its ordinary resources. The fixed state sequence is ES 103/104/124/135/124/113/135,
+EV 15/16/22/26/22/18/26, and current ES 103/102/103/123/124/113/135 in both modes.
+The fixture supplies a native 100 flat-ES vector, native 1/2 attribute coefficients and an in-range +100 qualifier;
+the historical out-of-range +200 qualifier stays parked throughout the numeric controls.
+After a literal one-ES hit, the six source increases preserve current 102/103/123 within 487–749 ms, below the fixed
+2000 ms recharge-delay boundary. Removing sources from full 135/124 produces fresh pool 2 clamps to 124/113.
+Re-equipping both sources and completing logout/login/Play yields current/max 135 in each mode.
+Each accepted target also has a retained completed local World 0x1b3 call with an in-frame Stats setter, matching
+PID/receiver/generation/clear token, a full explicit target vector and an epoch after the effective source action.
+Later natural Life-tick bindings cannot erase or substitute for that World proof; saturated/error buffers fail.
+
+The original defence2 Standard A2 remains **UNPROVED**: its single provenance slot was overwritten, and the retained
+World samples only prove the preceding state. A subsequent prospective observer retains the two evidence channels
+separately and keeps one observer loaded across both modes; no original verdict was replaced or reassessed.
+All fourteen defence3 verdicts were independently reproduced in memory from their frozen inputs and journal prefixes.
+The parent completed with 918 input hashes held; the stopped-child audit checked its distinct 917-file set unchanged.
+Both canonical inventories, exact item/gem IDs, full charges, empty host, saved bar intent, account, probes, stash and
+metadata payloads were preserved apart from both LastPlayed values and Ruthless current Mana 750→655.
+Its native trace shows a 700→650 clamp, higher capacity without refill, then recovery through 654; the later save is 655,
+without a captured event for that final tick. Only the disposable child was used; normal `data/saves.db` was restored.
+The three live service stderr files are empty, but the Gateway stdout log retains one remote-closure IOException;
+this is not a fault-free-run claim. Earlier automated diagnostic faults above remain separate and preserved.
+Evidence: `artifacts/issue75-completion/attribute-defence3-native/final-fourteen-controls-summary.json` and the adjacent
+assessment, independent review, preservation and cleanup receipts. These are bounded supplied-source controls:
+no legal acquisition, Defence formatter/row binding, rendered zero, official fractional arithmetic, complete issue row,
+native queued-send scheduling, or newly corrected recharge/full-ES-condition certification is implied.
 
 Discipline supplies another global flat ES source after equipment conversion, including with no ES equipment worn.
 Its 60/217 flat ES at gem levels 1/20 receives Intelligence and global ES increases, without shield-only modifiers.
@@ -700,7 +728,8 @@ Held-gate encrypted-wire tests cover a clamped pool, prediction clearing, death 
 These publication regressions are automated; the earlier live checks below do not validate this new queued-send case.
 
 The earlier live ES values below predate the inherent Intelligence correction and remain historical lifecycle evidence.
-Fresh native validation of the corrected pool totals remains pending.
+The fresh controls above verify corrected supplied-source totals, no-refill, clamp and reload; dependent recharge
+prediction and full-ES-condition behaviour after the correction remain outside that batch.
 Live OfflineWitch had 185 ES: `/hit physical 100` left life at 3250 and ES at 85, then recovered to 185. Chaos reduced
 life while leaving ES intact. With the prediction bridge, client values advance between pool packets during recharge.
 Measurements used the local client Life component, not orb pixels or an official server trace. ES uses upstream RunResourceRecovery with its 16 ms target and elapsed time/fractional carries; foreground verification saw at most 2-point positive ES updates

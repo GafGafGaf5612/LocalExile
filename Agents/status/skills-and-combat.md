@@ -483,11 +483,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Item ES per ten final Strength and Evasion per ten final Intelligence now join their ordinary INC buckets once.
   Native coefficients 1/2, completed attribute groups, slot/shield exclusions, IR and signed wide cancellation have
   33 pure and 14 both-mode Gateway cases; actual commands cover whole-source zero, ES clamping and no refill.
-  Native sources give ES 113/124/135 and EV 18/22/26 in the controlled recipe, with qualification/removal checks.
-  These are automated supplied-source controls; native publication, acquisition and full Shaper's Touch remain open.
+  Fourteen fresh level-100 native controls (seven each in Standard and Ruthless) verify supplied-source publication
+  and reload: ES 103/104/124/135/124/113/135 and EV 15/16/22/26/22/18/26.
+  Six capacity increases retain damaged current ES in 487–749 ms; four removals clamp full ES to 124/113.
+  Both fresh entries restore current/max ES 135. Completed World updates bind each target to its actual source action.
+  Acquisition, full Shaper's Touch and Defence-row formatter bindings remain open.
   Inherent ES now uses complete groups of ten final Intelligence, correcting the former doubled `/5` term.
   Static native Intelligence help text agrees with pinned PoB; exact official fractional arithmetic remains unverified.
-  Earlier native ES observations predate this correction; fresh native pool/recovery validation remains pending.
+  These new controls cover the corrected totals, no-refill, clamp and reload; older native totals remain historical.
+  Corrected recharge/full-ES conditions and native queued-send scheduling still need separate validation.
   Eleven new baseline cases and selected compositions pass in 216 focused cases.
   Full Gateway 3939 covers all updated tests, including the percentage-attribute and tick cases omitted by that filter.
   Unchanged prior Core 648/Data 37 remain applicable; no tests skipped.

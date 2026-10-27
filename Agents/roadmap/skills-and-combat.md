@@ -96,11 +96,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Body-specific ES increases, doubled Armour and no-Armour operators now retain their slot scope, including IR.
   Item ES per ten final Strength and Evasion per ten final Intelligence now use ordinary global INC, including IR.
   Complete native vectors, source removal, qualification, active sets and explicit zero have automated coverage;
-  actual command packets cover ES clamping without refill. Verify native publication and persisted reload separately.
+  actual command packets cover ES clamping without refill. Fourteen fresh supplied-source native controls now verify
+  corrected ES/Evasion publication, ordinary gear swaps, capacity no-refill/clamping and persisted reload in both modes.
   Other Shaper's Touch effects and legal unique acquisition remain separate; neither defence row is complete.
   The ordinary inherent ES term now follows native help text and pinned PoB: 1% per ten final Intelligence.
   Focused 216 and full Gateway 3939 pass without skips, including eleven new baseline cases.
-  Verify corrected ES totals and dependent recovery/full-ES conditions natively; preserve prior captures as historical.
+  Verify dependent recharge/full-ES conditions and queued-send scheduling natively; preserve prior captures as historical.
   Exact official fractional/group arithmetic and attribute-bonus prohibitions remain separate work.
   Full-ES suppression chance now follows the effective resource state and shares the panel/combat consumer.
   Ordinary typed/all-attribute increases now share one whole-source calculation for pools, equipment and gems.

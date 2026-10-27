@@ -238,6 +238,10 @@ Inactive-weapon, cascading-equipment, passive-refund and active-aura composition
 Historical LocalExile controls also cover 34 Standard/Ruthless supplied-source states, including Fireball
 qualification at Intelligence 68/62/68 against its 67 requirement, source recovery and weapon-set relog.
 Those controls do not enable private game modes in this branch or prove official fractional parity.
+Fourteen subsequent supplied-source controls at actual level 100 verify the corrected ES and attribute-scaled Evasion
+in Standard and Ruthless, including removal/return, no-refill, clamping and fresh entry. They bind completed local World
+updates to the actual equipment actions; they do not certify every attribute operator or the rendered Defence rows.
+See [20](20-damage.md#player-energy-shield-2026-10-25) for the exact states and remaining recovery scope.
 
 Life and Mana also collect six signed raw pool coefficients from passives and active equipment.
 `LifeManaPoolSources` adds these terms to the flat buckets after resolving actual character level (1–100) and the
