@@ -449,6 +449,8 @@ partial class Program
                 await SelectHideout(remote, stream, ciphers, conn, InstanceHideouts.ReadSelect(bytes));
             else if (id == InstanceBench.CraftId)
                 await CraftBench(remote, stream, ciphers, conn, InstanceBench.ReadCraft(bytes));
+            else if (id == InstanceHarvest.CraftId)
+                await CraftHarvest(remote, stream, ciphers, conn, InstanceHarvest.ReadCraft(bytes));
             else if (id == InstanceChat.ChatId)
             {
                 var chat = InstanceChat.ReadChat(bytes);

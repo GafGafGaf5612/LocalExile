@@ -29,7 +29,22 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.
     /// Fractured mods stay, first, and count towards the affixes.</summary>
     public Item Roll(Item item, ItemRarity rarity, Random rng, (int Count, int MaxEach)? shape = null,
-        ModCatalog.Mod? guaranteed = null, int? maxModLevel = null, bool respectMetamods = false)
+        ModCatalog.Mod? guaranteed = null, int? maxModLevel = null, bool respectMetamods = false) =>
+        RollCore(item, rarity, rng, shape, guaranteed, maxModLevel, respectMetamods, null, null)!;
+
+    /// <summary>A Harvest reforge that must include one modifier with this Tags.dat tag (fire, life, attack �?�). Null when
+    /// the base has no room for one at this item level.</summary>
+    public Item? RollRequiredTag(Item item, ItemRarity rarity, Random rng, string tag) =>
+        rarity == ItemRarity.Rare ? RollCore(item, rarity, rng, null, null, null, false, tag, null) : null;
+
+    /// <summary>A Harvest "more/less likely to receive the same modifier types" reforge. <paramref name="percent"/> is the
+    /// client parameter (900 = ten times the chance of a tag the item already has, -90 = a tenth); a local, documented
+    /// weighting of the ordinary pool, not an official probability.</summary>
+    public Item? RollAffinity(Item item, ItemRarity rarity, Random rng, int percent) =>
+        rarity == ItemRarity.Rare ? RollCore(item, rarity, rng, null, null, null, false, null, percent) : null;
+
+    Item? RollCore(Item item, ItemRarity rarity, Random rng, (int Count, int MaxEach)? shape,
+        ModCatalog.Mod? guaranteed, int? maxModLevel, bool respectMetamods, string? requiredTag, int? affinityPercent)
     {
         var fractured = item.FracturedIndexes();
         var rules = new MetacraftRules(item, catalog.Mods);
@@ -46,11 +61,25 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         var chosen = kept.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>().ToList();
         int keptCount = chosen.Count;
         if (guaranteed is not null) chosen.Add(guaranteed);
+        bool Fits(ModCatalog.Mod mod, int max) => chosen.Count(c => c.GenerationType == mod.GenerationType) < max &&
+            !chosen.Any(c => c.Hash == mod.Hash || c.Families.Intersect(mod.Families).Any());
+        if (requiredTag is not null)
+        {
+            var required = pool.Where(p => p.Mod.Tags.Contains(requiredTag) && Fits(p.Mod, maxEach)).ToList();
+            if (required.Count == 0) return null;
+            chosen.Add(Pick(required, rng));
+        }
+        // The affinity recipes weight the rest of the pool by whether it shares a tag with the item's current affixes.
+        var affinityTags = affinityPercent is null ? null
+            : kept.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>()
+                .SelectMany(m => m.Tags).ToHashSet();
         while (chosen.Count < count)
         {
-            var allowed = pool.Where(p => chosen.Count(c => c.GenerationType == p.Mod.GenerationType) < maxEach &&
-                !chosen.Any(c => c.Hash == p.Mod.Hash || c.Families.Intersect(p.Mod.Families).Any())).ToList();
-            if (allowed.Count == 0) break;
+            var allowed = pool.Where(p => Fits(p.Mod, maxEach)).ToList();
+            if (affinityPercent is { } percent && affinityTags is { Count: > 0 })
+                allowed = [.. allowed.Select(p => (p.Mod, Weight: affinityTags.Overlaps(p.Mod.Tags)
+                    ? Math.Max(1, p.Weight * (100 + percent) / 100) : p.Weight))];
+            if (allowed.Count == 0 || allowed.All(p => p.Weight <= 0)) break;
             chosen.Add(Pick(allowed, rng));
         }
         // Prefixes first, as the tooltip lists them.
@@ -99,13 +128,20 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
 
     /// <summary>One more explicit affix, drawn by weight from the base's pool at its item level: no family already on the
     /// item and at most <paramref name="maxEach"/> prefixes / suffixes. The old mods stay; null when nothing fits.</summary>
-    public Item? AddAffix(Item item, int maxEach, Random rng, bool respectMetamods = true)
+    public Item? AddAffix(Item item, int maxEach, Random rng, bool respectMetamods = true) =>
+        AddAffixCore(item, maxEach, rng, respectMetamods, requiredTag: null);
+
+    /// <summary>A Harvest augment's added modifier: one with this Tags.dat tag, as <see cref="AddAffix"/> otherwise.</summary>
+    public Item? AddTaggedAffix(Item item, int maxEach, Random rng, string tag, bool respectMetamods = true) =>
+        AddAffixCore(item, maxEach, rng, respectMetamods, tag);
+
+    Item? AddAffixCore(Item item, int maxEach, Random rng, bool respectMetamods, string? requiredTag)
     {
         if (catalog.ByHash(item.TypeHash) is not { } t) return null;
         var have = item.Mods.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>().ToList();
         var rules = new MetacraftRules(item, catalog.Mods);
         var allowed = Pool(t, item.ItemLevel).Where(p => (!respectMetamods || rules.Allows(p.Mod)) && have.Count(h => h.GenerationType == p.Mod.GenerationType) < maxEach &&
-            !have.Any(h => h.Families.Intersect(p.Mod.Families).Any())).ToList();
+            !have.Any(h => h.Families.Intersect(p.Mod.Families).Any()) && (requiredTag is null || p.Mod.Tags.Contains(requiredTag))).ToList();
         if (allowed.Count == 0) return null;
         var added = Pick(allowed, rng);
         // Prefixes before suffixes, as Roll orders them.

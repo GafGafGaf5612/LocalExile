@@ -6,8 +6,10 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 
 ## 1. Quality of life
 
-Harvest station placement and native recipe browsing are implemented.
-Next: implement Harvest recipe execution and atomic lifeforce payment; see protocol/21-hideouts.md.
+Harvest station placement, native recipe browsing and the item-recipe execution path (targeted/affinity reforges,
+augments, modifier conversions, atomic lifeforce payment) are implemented; see Status and protocol/21-hideouts.md.
+Remaining Harvest recipes (influences, stack exchanges, divination cards, gem lenses, corrupted maps and quality
+enchants) wait for their prerequisite systems.
 
 ### Switching hideout templates
 
