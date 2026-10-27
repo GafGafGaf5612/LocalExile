@@ -197,9 +197,10 @@ partial class Program
             var random = contact.Projectile.RandomSource;
             if (!shot.Spell)
             {
+                double at = contact.At / (double)ProjectileRuntime.QuantaPerSecond;
                 int accuracy = TargetAccuracy.AgainstTarget(shot.Accuracy, shot.AccuracyMoreUnique, shot.AccuracyMoreClose,
                     target.Rarity == MonsterRarity.Unique,
-                    (Vector(Conn.Walk.Position(contact.At / (double)ProjectileRuntime.QuantaPerSecond)) - contact.Position).Length <= 20);
+                    TargetAccuracy.InCloseRange(Dist(Conn.Walk.Position(at), target.Walk.Position(at))));
                 int evasion = target.Mods.Effects.Evasion(Monsters.BaseEvasion(target.Level) ?? 0);
                 if (!DamageModel.Hits(DamageModel.AccuracyHitChance(Conn.FlaskGrounds.Evasion(contact.Target.Id, evasion), accuracy), random.Next(100)))
                     return ProjectileHitResult.Miss;

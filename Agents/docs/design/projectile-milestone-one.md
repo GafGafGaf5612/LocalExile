@@ -45,7 +45,8 @@ The extended layer retains its researched count/aim policies. Generic controls m
 partial return roll, return speed, finite/unlimited return contact budget, turnaround-target exclusion,
 wall-free return path and 150-cell overshoot; named exceptions remain in layer 2.
 Outbound piercing preserves the upstream attempt budget, subsequent endpoint travel and suppression of an extra
-terminal area after contact. KB uses independent outbound direct quotas and shared volley quota on return.
+terminal area after contact. Catalog projectiles use independent outbound direct quotas and shared volley quota on return.
+The outbound dictionary is allocated per `angles.Select` invocation in upstream, including Fireball.
 Default values preserve the current extended recipes unless a layer explicitly requests the upstream policy.
 
 This milestone establishes a migration baseline for local verification, not official-game parity. Height/surface
