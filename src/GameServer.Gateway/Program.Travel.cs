@@ -46,7 +46,7 @@ partial class Program
             var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId);
             double at = conn.Clock.Elapsed.TotalSeconds;
             (int X, int Y) self = default;
-            if (!TryBeginCooldownUse(conn, gem.Effect,
+            if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
                 gem.Name is null ? null : CooldownFor(conn, gem.Effect, gem.Level, gem.Quality), false,
                 () =>
                 {
@@ -54,10 +54,13 @@ partial class Program
                     self = conn.Walk.Position(at);
                     conn.Walk.Order(self.X, self.Y, at);
                 }, out var cooldownUse, requestedAt: requestedAt)) return;
+            bool acknowledged = false;
             await Send(remote, stream, ciphers,
                 InstanceProtocol.ActionStarted(PlayerId, self.X, self.Y, self.X, self.Y, use.SkillId, use.Sequence, use.Flags, targetObjectId: PlayerId),
                 $"0x01ab player skill 0x{use.SkillId:x4} cast on itself at ({self.X}, {self.Y})",
-                still: () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? true);
+                still: () => acknowledged = OwnAuraAcknowledgementAllowed(conn, gem.Effect, use.SkillId,
+                    () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? true));
+            if (!acknowledged) return;
             await CastGemSkill(remote, stream, ciphers, conn, use.SkillId, self, self, PlayerId, sequence: use.Sequence,
                 actionToken: cooldownUse?.ActionToken, cooldownUse: cooldownUse);
             return;

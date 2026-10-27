@@ -124,6 +124,8 @@ partial class Program
     {
         // The stat sources first: they decide which worn items are inactive, which the weapon profile reads.
         var sources = CharacterStatSources(conn, level: level);
+        // Detach forbidden self auras before any pool bonus is sampled. No restoration here: it needs completed pools.
+        SuspendRestrictedOwnAuras(conn, new(sources));
         var weapons = WeaponProfileFor(conn);
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons);

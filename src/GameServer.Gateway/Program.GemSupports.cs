@@ -4,7 +4,7 @@ partial class Program
 {
     internal static readonly GemSupports Supports = new();
     sealed record SupportedGem(int Effect, int Level, int Quality, IReadOnlyList<GemSupports.Applied> Supports,
-        Dictionary<uint, int> Stats);
+        Dictionary<uint, int> Stats, Item? SourceGem = null);
 
     static SupportedGem SupportedSkill(ClientState conn, ushort skillId)
     {
@@ -60,7 +60,10 @@ partial class Program
                     foreach (string kind in new[] { "attack", "spell" })
                         if (Stats.Key($"{kind}_{bound}_added_{type}_damage") is uint target)
                             own[target] = own.GetValueOrDefault(target) + damage;
-        return new(selected.Effect, level, quality, supports, own);
+        if (Skills.IsAura(selected.Effect, supports.Select(s => s.Effect.Row)))
+            own[OwnAuraRestriction.BaseAura] = 1;
+        own[OwnAuraRestriction.Aura] = OwnAuraRestriction.IsAura(own) ? 1 : 0;
+        return new(selected.Effect, level, quality, supports, own, selected.Place.Gem);
     }
 
     static Dictionary<uint, int> SupportedStats(ClientState conn, ushort skillId)

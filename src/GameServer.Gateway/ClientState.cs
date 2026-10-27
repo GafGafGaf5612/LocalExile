@@ -326,6 +326,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public RageState.Value? SentRage;
     // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
+    // Only self-owned aura instances actually sent on this connection's current player object.
+    public readonly Dictionary<ushort, AuraCatalog.Aura> PresentedAuras = [];
+    public bool AuraStatsDirty;
+    public bool PlayerObjectCreated;
     // When each skill with a cooldown (GrantedEffects row) may be used again, in Clock seconds. Guarded by the Monsters lock.
     public readonly Dictionary<int, double> SkillReadyAt = [];
     // Eligible ordinary one-use cooldowns retain remaining base-time units through recovery-rate changes.

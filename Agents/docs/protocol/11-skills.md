@@ -1263,6 +1263,80 @@ Relog cleared the transient developer flag.
 These controls verify the shared restriction, not Rampager allocation or complete Enduring Cry behavior.
 Future composition with outgoing Spell or incoming armour changes must retain this caster-only admission check.
 
+## 10c. Actor restriction: own aura skills disabled (#304)
+
+Static inspection of the pinned 3.29.3b client establishes these virtuals (wire keys, not JSON row indices):
+
+- `your_auras_are_disabled` (11075) is `base_your_auras_are_disabled` (21148) OR
+  `keystone_herald_of_doom` (11881), with either signed nonzero input counting as true.
+  Registration `0x1400dd340` selects callback `0x14289a420`.
+  Rampager node 49937 supplies 21148; its spell, warcry, scale and Rampage effects are independent.
+- `skill_is_aura_skill` (15801), callback `0x1428cf720`, is `base_skill_is_aura_skill` (3004) OR
+  (`curse_apply_as_aura` (2730) AND `skill_is_curse` (2532)).
+  Registration is `0x1400e4f60`.
+  `skill_disabled_by_stat` (15798), callback `0x1428cf770`, tests 15801 and then caster 11075 in its aura branch.
+  Registration is `0x1400e4fc0`; other branches remain independent restrictions.
+
+Classification follows GrantedEffects.ActiveSkill to ActiveSkills.ActiveSkillTypes and ActiveSkillType.Id.
+Aura type row 38 has FlagStat row 3003, giving wire key 3004.
+All 17 supported ordinary self auras are typed Aura, as are unsupported Pride, Flesh and Stone, Vaal Haste and banners.
+Reservation alone is insufficient: Heralds, Arctic Armour, Tempest Shield, Petrified Blood and Blood and Sand
+are not Aura.
+RF is not Aura even though one of its buffs is named `righteous_fire_aura`.
+Neither BuffDefinitions.IsSkillBuff nor a buff's name or duration identifies an aura.
+Accepted linked Blasphemy adds Aura and supplies 2730 to an AppliesCurse skill (flag 2532).
+The metadata and native skill flags are published without adding a curse-aura executor.
+Admission, preflight, cast and acknowledgement checks carry the actual skill ID and its accepted supports.
+Two copies of Enfeeble can classify differently: the linked copy is an aura; an unlinked copy is not.
+Remembered restoration checks the candidate gem's own requirements rather than another copy of the same effect.
+
+The Gateway resolves the restriction from current caster passive/equipment sources before any skill overlay.
+Developer values replace each complete raw input; an explicit final 11075 replacement also wins, including zero.
+Actor 11075 and skill 3004/15801 are published coherently; an own-aura restriction sets skill 15798 to 1.
+Publication preserves an independently supplied 15798 reason and never clears all skill flags.
+Ground, object/self, eligible instant-object and the shared pre-cost/cooldown gate reuse the warcry admission seams.
+The locked activation boundary rechecks the restriction; the unsupported instant-ground aura alias stays unsupported.
+The skills and bindings stay granted while their uses are prohibited.
+Ordinary ground/self/object acknowledgement gates recheck the current own-aura restriction under the state lock
+before committing native use or cooldown publication; a refused acknowledgement cannot continue into a cast.
+The original action/connection ownership predicates and independent accepted Warcry/RF behavior remain in force.
+
+**LocalExile lifecycle policy:** a temporary restriction suspends active self-owned auras
+and retains ActiveAuras intent.
+Both source and received buff instances end once, reservation and bonuses cease, and current mana gains no refill.
+Lifting the restriction restores available remembered ordinary self auras once, using fresh instances and a mana clamp.
+Restoration is not a manual activation and does not recheck transient cast affordability.
+Death still clears saved intent, including while runtime effects are suspended.
+The inspected native admission virtuals do not prove this official-server lifecycle or automatic restoration policy.
+
+Pool/raw-stat reads detach restricted self auras without recursing through CharacterPlayerStats or aura restoration.
+At the send gate, reconciliation precedes player, Actor, mana and initial object snapshots.
+Rage and Fortification full snapshots share this batch; unchanged Rage still publishes pending aura changes.
+Presentation diffs against the instances actually sent on this connection, so queued adds cannot resurrect old buffs.
+Loading may restore runtime intent before a player object exists; dirty/presented state remains pending until creation.
+Initial 0x2b9 contains reconciled stats/pools, then entry replays each pair once on that object.
+Closed/leaving connections cannot restore or publish aura pairs.
+RF, flasks, Fortification, other temporary effects and foreign received buff instances are outside this owned list.
+
+Metadata, real-dispatch, source, decrypted loopback, creation-ordering and queued/lifecycle regressions are automated.
+Fifteen native controls on source `01e458d` used a fresh unascended Witch and level-one Clarity, Haste and Fireball.
+Actual Buffs vectors contained both owned instances for each active aura.
+At 700 maximum Mana, Clarity reserved 34 and Clarity plus Haste reserved 384; their regeneration/movement bonuses rose.
+The positive restriction removed both pairs, bonuses and reservation, retaining 316 current Mana without a refill.
+Ground, self/object and instant-object retries started no action; ordinary Fireball still dealt 200 actual damage.
+The installed Fortification buff and count remained present.
+Clearing the source restored fresh pairs once and clamped current Mana; repeated snapshots kept the same instances.
+Signed negative inputs, the Herald input and explicit final zero/negative replacements passed independent controls.
+Relog cleared the transient developer source and replayed the saved Haste pair in the combat area.
+Its Mana reservation was sampled after a zero Strength-mana source rebuild, after observing the entry pair.
+Death while suspended cleared intent, and resurrection did not restore a phantom aura.
+Initial attempts exposed observer gaps for null-GEPL basic actions and creation-only Mana, not gameplay failures.
+Evidence is in local `logs/phrecia-completion/own-aura304-20261027-111846` with exact artifact versions and hashes.
+Native grey-icon prediction, persistent restricting equipment and another client's party effects remain unverified.
+11881 is consumed only by this restriction; complete Lone Messenger, Rampager, Phrecia admission, party/minion auras,
+general reservations, banners, enemy auras and Vaal systems remain separate work.
+A foreign-source packet non-removal control establishes no party aura executor or gameplay behavior.
+
 ## 11. The skill bar
 
 - **C→S 0x4e** (5 bytes, class `0x1435bfc58`): `u8 slot, u16 skill id` (big-endian). Slot 2 is the right mouse button.
@@ -1466,13 +1540,14 @@ base without it, as the server's `SkillArea.Radius` adds it to its own base.
 ## 13. Auras and reservation
 
 **Persistent toggles (2026-10-25).** CharacterSaves.ActiveAuras stores stable GrantedEffects Ids,
-updated transactionally on every successful toggle and cleared for an active aura when its gem leaves.
+updated transactionally on every successful manual toggle; a missing gem suspends runtime effects and retains intent.
 On login/area connection, LoadProgress restores progress and evaluates usable gems first, then resolves
-saved aura ids to fresh skill and source/recipient buff ids. It checks total reservation against current
-mana, recalculates pools with the restored bonuses and initializes current mana to the unreserved amount.
+saved aura ids to fresh skill and source/recipient buff ids when town and caster restrictions allow them.
+It recalculates pools with the restored bonuses and initializes the fresh connection's mana to the unreserved amount.
 SendPlayer restores both buff records, so ground art, top-left icons and skill-bar indicators return.
-An absent/unusable gem or insufficient reservation skips that aura without discarding saved intent;
-it can return on a later login after requirements are met. Old saves without ActiveAuras start empty.
+An absent/unusable gem skips that aura without discarding saved intent; it can return after requirements are met.
+Remembered restoration clamps reservation/current mana rather than rejecting saved intent for transient affordability.
+Old saves without ActiveAuras start empty.
 
 **Expanded activation (2026-10-25).** Determination (buff 142), Grace (143), Discipline (148),
 Anger (149), Hatred (150), Wrath (151), Zealotry (1272), Malevolence (1274) and Envy (828)
