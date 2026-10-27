@@ -123,11 +123,17 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Boolean chaos-hit armour has native raw-source Life-loss controls and shared incoming-hit regressions.
   Mixed monster packets and ES/block/suppression/Fortification have automated coverage; recheck them natively.
   See Status and protocol/20-damage.md section 2e.
-  Recent-hit armour doubling/history, partial armour percentages and whole-class Incorruptible remain separate.
   Rampager's raw spell restriction has hit/panel and RF regressions; eleven native controls are historical (#293).
   See [status](../status/skills-and-combat.md) for the verified consumer scope.
   Fresh ordered joint hit controls pass at `c9cd1864`; original RF, Ice Nova and relog checks remain historical.
   Rampager's other mechanics and class admission remain separate work.
+  Recent-hit armour defence now composes with physical/chaos mitigation in actual and queued contact regressions.
+  Full stat writers, including Rage, own auras and Mageblood, have expiry and encoded-pair acknowledgment regressions.
+  Dirty aura/Fortification composition also checks decoded wire order, independent expiry and idle correction.
+  Its eighteen original-head controls remain historical; fresh ordered joint controls pass at `c9cd1864`.
+  Native cap/order uses one raw40 contact; four-contact timing and forced full-writer races remain automated coverage.
+  See [the model](../docs/game/steel-willed-armour.md) for event policies and evidence boundaries.
+  Partial armour percentages, other Behemoth nodes, class admission and suppression transfer remain separate.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.

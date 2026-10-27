@@ -111,7 +111,7 @@ partial class Program
             bytes.AddRange(InstanceEntities.AddBuff(PlayerId, conn.RageBuff, 1060, PlayerId,
                 stacks: (ushort)Math.Min(ushort.MaxValue, value.Current)));
         }
-        bytes.AddRange(InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)));
+        bytes.AddRange(PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)));
         var skills = PlayerSkills(conn);
         bytes.AddRange(InstanceEntities.PlayerSkillsChange(PlayerId, skills, []));
         conn.SentRage = value;

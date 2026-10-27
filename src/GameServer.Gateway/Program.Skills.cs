@@ -168,6 +168,7 @@ partial class Program
         if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
             stats[rolls] = CriticalExtraRollsFor(conn, stats);
         stats[OwnAuraRestriction.Disabled] = OwnAuraRestrictionValue(conn);
+        lock (conn.Monsters) AddRecentEnemyHitStatsLocked(conn, stats);
         return stats;
     }
 
@@ -697,7 +698,7 @@ partial class Program
     static async Task SendCharacterStats(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
     {
         await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
         await SendSkills(remote, stream, ciphers, conn);
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }

@@ -82,7 +82,7 @@ partial class Program
                     else conn.PlayerStats[requirement] = value;
                 }
             await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)),
                 $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {(off ? "the character's own" : value)}, and the attack's final stats");
             // Skills compute with their own stats (the attack and the character panel read those), so send them again.
             await SendSkills(remote, stream, ciphers, conn);
@@ -544,35 +544,17 @@ partial class Program
                 $"Lightning {lightning}% (passives {p.LightningResistance}%, max {p.LightningMaxResistance}%, capped {DamageModel.Capped(lightning, p.LightningMaxResistance)}%), " +
                 $"Chaos {chaos}% (passives {p.ChaosResistance}%, max {p.ChaosMaxResistance}%, capped {DamageModel.Capped(chaos, p.ChaosMaxResistance)}%).");
         })
-        .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: damage yourself through resistances or armour)", async args =>
+        .Add("hit", "/hit <fire|cold|lightning|chaos|physical> <damage> (dev: incoming enemy test contact through resistances or armour)", async args =>
         {
             if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
             if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
             if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
-            int resistance = Resistance(conn, type);
-            int maxResistance = MaxResistance(conn, type);
-            bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
-            string mitigation = immune
-                ? "immunity"
-                : MitigationLabel(conn, type, amount, resistance, maxResistance);
-            uint life;
-            bool wasDead;
-            lock (conn.Monsters)
+            if (!TryDevEnemyHit(conn, type, amount, false, false, false, out var hit))
             {
-                wasDead = conn.PlayerLife == 0;
-                if (!wasDead)
-                {
-                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds));
-                    life = conn.PlayerLife;
-                }
-                else life = 0;
-            }
-            if (wasDead)
-            {
-                await conn.Commands!.Reply("You are already dead.");
+                await conn.Commands!.Reply(conn.PlayerLife == 0 ? "You are already dead." : "Enemy test hit rejected while paused or leaving.");
                 return;
             }
+            int dealt = hit.Damage; string mitigation = hit.Mitigation; uint life = hit.Life;
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -668,32 +650,14 @@ partial class Program
             if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
             if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
             if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
-            int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
-            bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
-            string mitigation = immune
-                ? "immunity"
-                : MitigationLabel(conn, type, amount, resistance, maxResistance);
-            var (chance, effect, lucky, unlucky) = Suppression(conn);
-            bool suppressed = DamageModel.Suppresses(chance, Random.Shared.Next(100), lucky, unlucky);
-            if (suppressed) dealt = DamageModel.Suppress(dealt, effect);
-            uint life;
-            bool wasDead;
-            lock (conn.Monsters)
+            if (!TryDevEnemyHit(conn, type, amount, false, true, true, out var hit))
             {
-                wasDead = conn.PlayerLife == 0;
-                if (!wasDead)
-                {
-                    conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds));
-                    life = conn.PlayerLife;
-                }
-                else life = 0;
-            }
-            if (wasDead)
-            {
-                await conn.Commands!.Reply("You are already dead.");
+                await conn.Commands!.Reply(conn.PlayerLife == 0 ? "You are already dead." : "Enemy test hit rejected while paused or leaving.");
                 return;
             }
+            int dealt = hit.Damage; string mitigation = hit.Mitigation; uint life = hit.Life;
+            bool suppressed = hit.Suppressed;
+            var (chance, effect, lucky, unlucky) = hit.Suppression;
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -744,39 +708,14 @@ partial class Program
             if (!spell && !args[0].Equals("attack", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("attack or spell");
             if (ParseDamageType(args[1]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
             if (!int.TryParse(args[2], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
-            int resistance = Resistance(conn, type), maxResistance = MaxResistance(conn, type);
-            int chance = spell ? conn.Pools.SpellBlockChance : conn.Pools.BlockChance;
-            bool lucky = spell ? conn.Pools.SpellBlockLucky : conn.Pools.AttackBlockLucky;
-            bool blocked = DamageModel.Blocks(chance, Random.Shared.NextDouble() * 100, lucky);
-            bool immune = PlayerImmunities(conn).Contains(type);
-            int dealt = immune || blocked ? 0 : MitigateTaken(conn, type, amount, resistance, maxResistance);
-            ChargesWhenHit(conn, blocked, spell);
-            string mitigation = immune
-                ? "immunity"
-                : MitigationLabel(conn, type, amount, resistance, maxResistance);
-            uint life, mana, manaBefore;
-            bool wasDead;
-            lock (conn.Monsters)
+            if (!TryDevEnemyHit(conn, type, amount, true, spell, false, out var hit))
             {
-                wasDead = conn.PlayerLife == 0;
-                manaBefore = conn.PlayerMana;
-                if (!wasDead)
-                {
-                    int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
-                    int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
-                    conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife,
-                        Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, conn.Clock.Elapsed.TotalSeconds) + gainedLife));
-                    conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
-                    life = conn.PlayerLife;
-                    mana = conn.PlayerMana;
-                }
-                else { life = 0; mana = conn.PlayerMana; }
-            }
-            if (wasDead)
-            {
-                await conn.Commands!.Reply("You are already dead.");
+                await conn.Commands!.Reply(conn.PlayerLife == 0 ? "You are already dead." : "Enemy test hit rejected while paused or leaving.");
                 return;
             }
+            int dealt = hit.Damage; string mitigation = hit.Mitigation; uint life = hit.Life;
+            uint mana = hit.Mana, manaBefore = hit.ManaBefore;
+            bool blocked = hit.Blocked; int chance = hit.BlockChance;
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (life == 0)
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
@@ -806,7 +745,7 @@ partial class Program
             int value = off ? 0 : int.Parse(args[0]);
             lock (conn.Monsters) { if (off) conn.PlayerStats.Remove(stat); else conn.PlayerStats[stat] = value; }
             await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)),
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)),
                 $"0x01b3 stats: base_skill_area_of_effect_+% = {(off ? "the character's own" : value)}");
             await SendSkills(remote, stream, ciphers, conn);
             bool relit = await RelightRighteousFire(remote, stream, ciphers, conn, "/set_aoe");
