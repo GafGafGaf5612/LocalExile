@@ -32,9 +32,9 @@ sealed class DungeonRoomSet
     public readonly List<DungeonRoom> All = [];
     readonly Dictionary<string, List<(int W, int H, int Weight)>> _sizes = new(StringComparer.OrdinalIgnoreCase);
 
-    public DungeonRoomSet(TerrainCache files, string path)
+    public DungeonRoomSet(TerrainCache files, string? path)
     {
-        foreach (var (weight, roomPath, mask) in files.TileList(path))
+        foreach (var (weight, roomPath, mask) in path is null ? [] : files.TileList(path))
             if (Parse(files, roomPath, weight, mask) is { } room) All.Add(room);
 
         // 0x141ff6960: rooms with these tags go to lists of their own; every other room is filed under each door type

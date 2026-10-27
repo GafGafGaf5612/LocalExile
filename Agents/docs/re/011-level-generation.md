@@ -181,8 +181,10 @@ For a one-node graph (towns, hideouts):
    `2_11_endgame_town`.) A `.tdt` with a base tile (u32 0 names one, `0x1429f31a0`) takes the base tile's data; a flags byte
    follows, each bit a group of fields the file gives itself: bit 0 its mesh (u32) and vertex data, bit 3 its tag and
    key (u32 tag then the 0x2e key bytes, as a plain tile's from offset 8), bit 4 its size and hull, bit 5 its
-   orientation restriction, bit 1 fields the generator does not read (its own `.tmd` is in the string table). The
-   port reads bits 1, 3 and 4 (4 only with the base's size). The u16 flags word follows those groups (bit 3: after
+   orientation restriction, bit 1 fields the generator does not read (its own `.tmd` is in the string table), bit 2
+   one more string (setter +0x50, not read by the generator). The port reads bits 1 to 5 (4 only with the base's size;
+   bit 5's restriction byte follows the tag/key block and the bit 1 / bit 2 strings: Breach tower and Lake tiles,
+   2026-10-27). A master without a RoomSet (MapOba's top master.tsi) has no rooms. The u16 flags word follows those groups (bit 3: after
    the key; bit 4 alone: after a 2-byte size), then the walk data as a plain tile's (the restriction byte only with
    bit 5) when bit 4 is set; without bit 4 the tile has the base tile's walk data (MapWorldsCourtyardOfWasting's
    walkability now matches its capture; 2026-10-26) (2026-10-25: `2_8_2_1`'s `sewerwall_thin_entrance_v02_01_nofeature.tdt`, flags 0x0a; MapWorldsCourtyardOfWasting's `stonewall_to_venice_convex_combinationfence_01.tdt`, 0x1a;

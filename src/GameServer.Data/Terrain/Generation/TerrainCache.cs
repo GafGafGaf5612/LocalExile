@@ -341,12 +341,16 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
             return (Str(t) ?? "", key, raw);
         }
         // 0x1429f31a0: a tile naming a base tile (u32 0) takes the base's data; a flags byte follows, each bit a group of
-        // fields the file gives itself. Bit 3: its own tag and key (as above, from byte 5); bits 1 and 4 mark fields the
-        // generator does not read (the file's own .tmd; its hull, with a size the key gives). The others are not ported.
+        // fields the file gives itself, in this order from byte 5: bit 3 its own tag and key (as above, 50 bytes), bit 1
+        // a string (the file's own .tmd), bit 2 a string (setter +0x50, not read by the generator), bit 5 its orientation
+        // restriction byte (setter +0x58, tile data +0x171; its unique-mesh data follows later). Bit 4 marks its packed
+        // sub-tiles (its hull, with a size the key gives), which the generator does not read. Bits 0 and 6 are not
+        // ported (Breach tower and Lake tiles have 0x2a / 0x1c, 2026-10-27).
         if (Str(0) is { } basePath)
         {
             byte own = h[4];
-            if ((own & ~0x1a) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
+            if ((own & ~0x3e) != 0) throw new NotSupportedException($"{path}: a tile over a base tile with fields 0x{own:x2} of its own is not ported");
+            int at = 5 + ((own & 8) != 0 ? 50 : 0) + ((own & 2) != 0 ? 4 : 0) + ((own & 4) != 0 ? 4 : 0);
             var baseTile = Tile(basePath) ?? throw new FileNotFoundException(basePath);
             var (ownTag, ownKey, ownRaw) = (own & 8) != 0 ? TagAndKey(5) : (baseTile.Tag, baseTile.Key, baseTile.KeyGrounds);
             if (ownKey.Width != baseTile.Width || ownKey.Height != baseTile.Height)
@@ -357,6 +361,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
                 Tag = ownTag,
                 Key = ownKey,
                 RawGrounds = ownRaw,
+                Restriction = (own & 0x20) != 0 && at < h.Length ? h[at] : baseTile.Restriction,
                 ObjectsFile = table.Split('\0').FirstOrDefault(x => x.EndsWith(".tmd", StringComparison.OrdinalIgnoreCase)) ?? baseTile.ObjectsFile,
             };
         }

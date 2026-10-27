@@ -528,7 +528,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
         _graphGrounds = (Ground(graph.TopGround), Ground(graph.BottomGround), Ground(graph.DefaultGround));
         notes.Add($"dungeon graph {graphPath}: {graph.Nodes.Count} nodes, {graph.Edges.Count} edges after exist rolls");
-        var roomSet = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
+        var roomSet = RoomSetOf(master, masterPath);
         var map = new DungeonMap(graph.Width, graph.Height, unit, int.Parse(master.GetValueOrDefault("RoomOverlap", "1")));
         var swap = (master.TryGetValue("SwapDungeonDoorsFrom", out var from) ? TerrainText.Resolve(masterPath, from) : null,
             master.TryGetValue("SwapDungeonDoorsTo", out var to) ? TerrainText.Resolve(masterPath, to) : null);
@@ -540,6 +540,11 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             groups is null ? null : g => groups.GetValueOrDefault(g), outerGround, pool, fillLevel).Run();
         return map;
     }
+
+    /// <summary>The master's RoomSet; a master without one (MapOba's top master.tsi, whose graph holds only subgraph
+    /// nodes) has no rooms.</summary>
+    DungeonRoomSet RoomSetOf(Dictionary<string, string> master, string masterPath) =>
+        new(files, master.TryGetValue("RoomSet", out var rs) ? TerrainText.Resolve(masterPath, rs) : null);
 
     /// <summary>A FileGroups file (.fgp, master +0x268, <c>0x141fe83e0</c>): after the version line, a quoted group name,
     /// then its files (relative to the .fgp) until the next name.</summary>
@@ -1407,7 +1412,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     void UniqueRooms(Dictionary<string, string> master, string masterPath, Fill fill, bool primary)
     {
         if (pool.Rows.Count == 0) return;
-        bool missions = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"])).All.Any(r => r.Tag == "mission");
+        bool missions = RoomSetOf(master, masterPath).All.Any(r => r.Tag == "mission");
         if (missions && !pool.Rows.Any(r => r.Oversize)) return;
         if (!primary) return;
         rng.Next((uint)_fillRecords.Count);
@@ -1499,7 +1504,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     void Shrines(Dictionary<string, string> master, string masterPath, Fill fill)
     {
         int unit = int.Parse(master.GetValueOrDefault("RoomUnitSize", "1"));
-        var rooms = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"])).All
+        var rooms = RoomSetOf(master, masterPath).All
             .Where(r => r.Tag == "shrine" && r.Unit != unit && r.Def is not null).Select(r => r.Def!).ToList();
         if (rooms.Count == 0 || pool.Shrines == 0) return;
         rng.Next((uint)_fillRecords.Count);
