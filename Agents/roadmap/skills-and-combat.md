@@ -118,7 +118,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Recent-hit armour defence now composes with physical/chaos mitigation in actual and queued contact regressions.
   Full stat writers, including Rage, own auras and Mageblood, have expiry and encoded-pair acknowledgment regressions.
   Dirty aura/Fortification composition also checks decoded wire order, independent expiry and idle correction.
-  Its eighteen original-head native checks remain historical; rerun the rebased head and exact batch natively.
+  Its eighteen original-head controls remain historical; fresh ordered joint controls pass at `c9cd1864`.
+  Native cap/order uses one raw40 contact; four-contact timing and forced full-writer races remain automated coverage.
   See [the model](../docs/game/steel-willed-armour.md) for event policies and evidence boundaries.
   Partial armour percentages, other Behemoth nodes, class admission and suppression transfer remain separate.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.

@@ -150,5 +150,15 @@ A real level-68 Zombie contact used the same temporary rating of 1000 and the ex
 Lethal damage, resurrection, area change and relog cleared the connection history as documented.
 These raw-input checks establish the implemented LocalExile model, not the official server's event sequencing.
 Mixed packets, block/zero contacts, exact roll boundaries, stale AI and queued sends have automated coverage.
-The rebased head and exact four-PR composition require fresh native verification.
-No new client/runtime check was performed during this rebase; native Behemoth allocation remains separate work.
+The ordered #290 / #294 / #296 / #300 composition at `c9cd1864` passes 28 fresh native controls.
+Final attributes and converted mana stay active on one new unascended Marauder.
+An incoming 100 physical removes 67 Life with permanent Armour 251, or 50 when doubling is guaranteed.
+The permanent native rating remains 251; history reports one then two accepted contacts and later clears.
+One accepted Fire1 with raw per-contact input 40 and generic 20 gives count 1 / chance 50: cap 30 applies first.
+A full generic stat refresh followed by idle expiry clears the counter and leaves generic chance 20.
+Four-simultaneous-contact timing is automated coverage, not fresh native evidence for this head.
+A prior trial accepted 26 controls but timed out waiting for that four-contact witness; its exact cause is unproven.
+Its bundle and result remain preserved; the narrowed cap fixture changes no game clock, deadline or production rule.
+Fortification/aura/Rage/Mageblood deadline ordering has decoded-wire regressions, not a forced native race check.
+Gateway/Core/Storage/Host hashes and Git versions, listener DLL and working directory matched before entry.
+Native Behemoth allocation remains separate work.

@@ -58,7 +58,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Mixed monster packets, block, suppression, ES, Fortification and DoT separation have automated coverage.
   Native controls use a raw source on an unascended Marauder; Incorruptible selection and partial armour
   percentages remain separate.
-  Recent-hit doubling composes in automated tests below; the rebased combination awaits native verification.
+  Recent-hit doubling composes in automated tests and fresh ordered joint native controls at `c9cd1864`.
   See [20](../docs/protocol/20-damage.md) section 2e.
 
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
@@ -117,7 +117,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Death, resurrection, area change and relog clear history under explicit LocalExile model v1.
   Current-main mixed physical/chaos, charges/resists/Fortification/ES and parsed suppression regressions pass.
   Queued hits sample changed sources and final defences at contact, including lazy own-aura suspension.
-  The rebased head and exact batch still require native verification.
+  Ordered joint validation at `c9cd1864` passes 28 native controls with final attributes and mana conversion active.
+  Permanent Armour 251 stays unchanged as a physical 100 hit removes 67 Life normally or 50 when doubling is certain.
+  A raw40 single-contact source verifies cap30 plus generic20; full refresh and idle expiry retain generic20.
+  Four-contact timing and the forced Fortification/aura/Rage/Mageblood deadline races have automated coverage.
   Class admission and suppression-to-armour chance integration remain separate work.
   See [Steel Willed armour](../docs/game/steel-willed-armour.md).
 
