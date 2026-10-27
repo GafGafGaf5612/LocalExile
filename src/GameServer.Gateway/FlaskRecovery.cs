@@ -13,7 +13,7 @@ static class FlaskRecovery
     /// "Effect is not removed when Unreserved Mana is Filled / Effect does not Queue").</summary>
     public sealed record Use(double Life, double Mana, double Seconds, double InstantLife, double InstantMana,
         double RemovesLife, double RemovesMana, double ManaAtEnd, bool LifeStaysAtFull, bool ManaStaysAtFull, double ExtraLife,
-        bool NoQueue = false);
+        bool NoQueue = false, double? LifeSeconds = null, double? ManaSeconds = null);
 
     /// <summary>The extra life's duration: "Recover an additional #% of Life over 10 seconds if used while not on Full
     /// Life" (local_flask_additional_x%_life_recovery_per_second_over_10_seconds_if_not_on_full_life).</summary>
@@ -59,15 +59,21 @@ static class FlaskRecovery
             * (100 + character(characterSpecific) + character("flask_life_and_mana_to_recover_+%")) / 100.0 * (effect + lowLifeMore - 1);
         double life0 = Amount(type.LifePerUse, "local_flask_life_to_recover_+%", "flask_life_to_recover_+%");
         double mana0 = Amount(type.ManaPerUse, "local_flask_mana_to_recover_+%", "flask_mana_to_recover_+%");
-        double rate = (100 + L("local_flask_recovery_speed_+%")) / 100.0 * (100 + character("flask_recovery_speed_+%")) / 100.0
-            * (type.LifePerUse > 0 ? (100 + character("flask_life_recovery_rate_+%")) / 100.0 : 1);
-        double seconds = instant >= 100 ? 0
-            : type.Seconds * (100 + L("local_flask_duration_+%")) / 100.0 * (100 + durationInc) / 100.0 / Math.Max(0.01, rate);
+        double commonRate = (100.0 + L("local_flask_recovery_speed_+%")) / 100.0
+            * (100.0 + character("flask_recovery_speed_+%")) / 100.0;
+        // Pinned PoB CalcPerform calculates each resource independently: generic rate × that pool's rate.
+        // A hybrid's faster Mana recovery must not accelerate its Life recovery or shorten its remaining Life effect.
+        double Seconds(string typedRate) => instant >= 100 ? 0
+            : type.Seconds * (100.0 + L("local_flask_duration_+%")) / 100.0 * (100.0 + durationInc) / 100.0
+                / Math.Max(0.01, commonRate * (100.0 + character(typedRate)) / 100.0);
+        double lifeSeconds = type.LifePerUse > 0 ? Seconds("flask_life_recovery_rate_+%") : 0;
+        double manaSeconds = type.ManaPerUse > 0 ? Seconds("flask_mana_recovery_rate_+%") : 0;
+        double seconds = Math.Max(lifeSeconds, manaSeconds);
         // Increased flask effect duration recovers for longer at the same rate: more in all (not for the instant part).
         double overTime = 1 - instant / 100.0, longer = (100 + durationInc) / 100.0;
         double lifeOverTime = life0 * overTime * longer, manaOverTime = mana0 * overTime * longer;
         double lifeTotal = lifeOverTime + life0 * instant / 100.0, manaTotal = manaOverTime + mana0 * instant / 100.0;
-        bool manaAtEnd = L("local_flask_mana_recovery_occurs_instantly_at_end_of_flask_effect") > 0 && seconds > 0;
+        bool manaAtEnd = L("local_flask_mana_recovery_occurs_instantly_at_end_of_flask_effect") > 0 && manaSeconds > 0;
         return new Use(
             Life: lifeOverTime, Mana: manaAtEnd ? 0 : manaOverTime, Seconds: seconds,
             InstantLife: life0 * instant / 100.0, InstantMana: mana0 * instant / 100.0,
@@ -82,6 +88,7 @@ static class FlaskRecovery
             // Filled / … do not Queue" on that kind of flask.
             NoQueue: L("local_flask_effect_not_removed_at_full_mana") > 0
                 || type.LifePerUse > 0 && character("life_flask_effects_are_not_removed_at_full_life") > 0
-                || type.ManaPerUse > 0 && character("mana_flask_effects_are_not_removed_at_full_mana") > 0);
+                || type.ManaPerUse > 0 && character("mana_flask_effects_are_not_removed_at_full_mana") > 0,
+            LifeSeconds: lifeSeconds, ManaSeconds: manaSeconds);
     }
 }

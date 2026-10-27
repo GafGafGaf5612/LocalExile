@@ -205,6 +205,7 @@ G = global / static data.
 | `0x141eed000` | Fn | Atlas passive tree check |
 | `0x1435ddb78` (read `0x141fdf870`), `0x1435dd918` (read `0x141fdfdd0`) | Cls | S→C 0x1c1 add buff, 0x1c2 remove buff |
 | `0x141e11720` | Fn | Buffs component: 0x1c1/0x1c2 handler (world handler cases 0x1c1, 0x1c2) |
+| `0x141e11fb0` | Fn | Removes an installed Buffs pointer and marks instance +0xd0 bit 0x10 inactive; instance ID is +0x9c. Native hybrid flask removal verified ([13](13-items.md) §8). |
 | `0x142087910` | Fn | effect script: plays a MiscAnimated as a `Metadata/Effects/*Effect` object |
 | `0x1400bac70` | Fn | registers the derived stat active_skill_area_of_effect_radius (from the base radius and area %) |
 | `0x142155bf0` | Fn | create passive slot 0/1/2 (`instance+0xc2f8`) |

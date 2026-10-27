@@ -139,6 +139,7 @@ partial class Program
             .Concat(LeechLimits.Compute(Get, conn.Pools.Life, conn.Pools.Mana, conn.Pools.EnergyShield,
                 name => Stats.Key(name) is uint key && rawOverrides.TryGetValue(key, out int value) ? value : null,
                 CriticalOnLowLife(conn, stats)))
+            .Concat(FlaskCharges.GainStats(Get))
             .Concat(new[] { ("energy_shield_recovery_per_minute", (int)Math.Round(EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield, Get, conn.EnergyShield.Recharging))),
                 ("total_energy_shield_recovery_per_minute_from_regeneration", (int)Math.Round(EnergyShield.RegenPerMinute(conn.Pools.EnergyShield, Get))),
                 ("energy_shield_recharge_rate_per_minute", (int)Math.Round(EnergyShield.RechargePerMinute(conn.Pools.EnergyShield, Get))),

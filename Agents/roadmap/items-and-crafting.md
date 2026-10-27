@@ -49,6 +49,10 @@ features.
   reward (25 reforges keeping the most non-white sockets), special item overrides, and fitting the exact colour
   probabilities from live captures (the current curve is an approximation).
 - **Done when:** items' damage and defences count, and flasks and currency can be used.
+- **Flask modifiers (#75):** character charge-gain source resolution and independent hybrid recovery components
+  have automated handler/lifecycle coverage in both modes. Twenty-four native controls verify actual buffs,
+  recovery and charge awards, including Ruthless utility prevention and ordinary vendor refill.
+  Conditional gain sources and queued native timer/predictor presentation remain open.
 
 ## 5. Project
 

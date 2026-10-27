@@ -88,6 +88,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Alternative quality, local critical modifiers, supported-contact native composition and offhand alternation remain open.
   Damage conversion also needs visited-type modifier history; destination increases and inherited elemental
   qualifiers remain incomplete.
+  Flask charge-gain source resolution and separate hybrid Life/Mana rate/buff lifetimes have automated coverage
+  and 24 native controls across both modes. Conditional flask sources and queued timer/predictor presentation
+  remain open; see the items-and-crafting status.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.

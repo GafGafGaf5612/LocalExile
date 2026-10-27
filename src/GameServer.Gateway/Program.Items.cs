@@ -203,24 +203,27 @@ partial class Program
         double now = conn.Clock.Elapsed.TotalSeconds;
         if (r.ExtraLife > 0)
             conn.FlaskEffects.Start(new Flasks.Effect((byte)slot, 0, 0, r.ExtraLife / FlaskRecovery.ExtraLifeSeconds, 0, now, now + FlaskRecovery.ExtraLifeSeconds));
-        if (r.Seconds <= 0 || r.Life + r.Mana + r.ManaAtEnd <= 0) return;
-        ushort buff;
-        lock (conn.Monsters) buff = conn.NextBuff++;
-        ushort row = use.LifePerUse > 0 ? FlaskEffectLifeBuffRow : FlaskEffectManaBuffRow;
-        var effect = new Flasks.Effect((byte)slot, buff, row, r.Life / r.Seconds, r.Mana / r.Seconds, now, now + r.Seconds,
-            r.ManaAtEnd, r.LifeStaysAtFull, r.ManaStaysAtFull, r.NoQueue);
-        conn.FlaskEffects.Start(effect);   // recovers at once or waits in its queue (Flasks.Effects)
+        List<Flasks.Effect> effects;
+        lock (conn.Monsters)
+            effects = Flasks.RecoveryEffects(r, (byte)slot, now, () => conn.NextBuff++, FlaskEffectLifeBuffRow, FlaskEffectManaBuffRow);
+        foreach (var effect in effects) conn.FlaskEffects.Start(effect);
         // Both rows are IsRecovery: 0x1c1 carries one u32 per GrantedStats entry, here base_life (or mana)
         // _recovery_per_minute_from_flask. Without it the client misread the message and showed no life change after it
         // (live 2026-10-20).
-        uint perMinute = (uint)Math.Round((use.LifePerUse > 0 ? r.Life : r.Mana) * 60 / r.Seconds);
         // The duration (+0x68, f32 seconds) and the flask-bar cell (source skill): the timer bar under the flask (Flasks.Buff).
         // Game_FLASK_BUFF_DURATION=0 sends no duration (before 2026-10-25 a u32 in milliseconds went there, which the client
         // read as a float of almost 0 s).
         bool withDuration = Environment.GetEnvironmentVariable("Game_FLASK_BUFF_DURATION") != "0";
-        if (FlaskBuffs)
-            await Send(remote, stream, ciphers, Flasks.Buff(PlayerId, buff, row, (byte)slot, withDuration ? r.Seconds : null, [perMinute]),
-                $"0x01c1 player buff {buff}: {(row == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} (BuffDefinitions row {row}), {perMinute} per minute, {(withDuration ? $"{r.Seconds:0.##} s" : "no duration")}");
+        foreach (var effect in effects)
+        {
+            uint perMinute = (uint)Math.Round((effect.LifePerSecond + effect.ManaPerSecond) * 60);
+            double duration = effect.Ends - effect.Started;
+            if (FlaskBuffs)
+                await Send(remote, stream, ciphers, Flasks.Buff(PlayerId, effect.Buff, effect.BuffRow, (byte)slot,
+                    withDuration ? duration : null, [perMinute]),
+                    $"0x01c1 player buff {effect.Buff}: {(effect.BuffRow == FlaskEffectLifeBuffRow ? "flask_effect_life" : "flask_effect_mana")} " +
+                    $"(BuffDefinitions row {effect.BuffRow}), {perMinute} per minute, {(withDuration ? $"{duration:0.##} s" : "no duration")}");
+        }
     }
 
     // Gives each life, mana and utility flask in the flask bar up to `charges` charges (int.MaxValue: full) and saves them (or, for

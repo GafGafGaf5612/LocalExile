@@ -10,7 +10,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `InstanceStore.cs`, Gateway.
   Docs: [13](../docs/protocol/13-items.md) §5.
 - Life and mana flasks: a flask key (C→S 0x70) spends the flask's charges and recovers Flasks.dat's life or mana over
-  its time in a 20 ms loop, the orb rising by +1, with the flask_effect buff.
+  its time in the shared 16 ms recovery loop, the orb rising by +1, with the flask_effect buff.
   Quality, the flask's prefixes and suffixes and the character's flask stats count (amount, rate, instant and partial
   instant, low life, other-pool costs, mana at the end, not removed at full, extra life), as Path of Building does.
   Several recovery flasks queue, the highest rate first (poewiki).
@@ -28,6 +28,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   Checked live: kill and crit charges and the hostile-area rule; charges when hit and every 3 seconds by tests.
   Code: `FlaskCharges.cs`, Gateway (`Program.FlaskCharges.cs`).
   Docs: [13](../docs/protocol/13-items.md) §8b.
+- Flask modifier composition (#75): raw character charge-gain sources resolve into the native virtual once,
+  then multiply local flask charge recovery with fractional carry. Generic and resource-specific recovery-rate
+  factors multiply; hybrid Life/Mana keep independent rates, native buff rows 5/9, queues and lifetimes.
+  Twenty-eight automated controls cover real handlers and both modes. Twenty-four native controls verify
+  installed buffs, separate hybrid expiry, full/end/queue/death, actual recovery, charge gains and overrides.
+  Ruthless spent charges persist in town; ordinary Nessa interaction refills them before further controls.
+  Original saves and inventories held, apart from flask charges and native move IDs. Conditional acquisition
+  and queued native timer/predictor presentation remain separate work.
+  Code: `FlaskCharges.cs`, `FlaskRecovery.cs`, `Flasks.cs`, Gateway (`UseFlask`, `CharacterPlayerStatsCore`).
+  Docs: [13](../docs/protocol/13-items.md) §8.
+
 - Utility flasks: every utility flask spends its charges, shows its buff and the timer bar under it, and gives its
   buff's stats for its duration, all from the tables (Flasks.dat, BuffDefinitions, ComponentCharges).
   The stats count in the pools (the walk estimate, `/defences`, `/resistances`, `/hit`) and go to the client.
