@@ -211,7 +211,7 @@ partial class Program
         foreach (var (k, v) in ClassAttributes(conn.ClassRow, conn.Pools)) if (seen.Add(k)) yield return (k, v);
         List<ushort> nodes;
         lock (conn.Monsters) nodes = [.. conn.Passives];
-        var extra = CharacterStatSources(conn, nodes);
+        var extra = CharacterStatSources(conn, nodes).Stats;
         if (conn.God)
         {
             foreach (var (stat, value) in GodStats)
@@ -291,10 +291,10 @@ partial class Program
             ("spell_critical_strike_chance", pools.SpellCriticalStrikeChance),
             ("spell_critical_strike_multiplier", pools.SpellCriticalStrikeMultiplier) })
             if (Stats.Key(stat) is uint key) yield return (key, value);
-        // The class's attributes with the passives' (CharacterStats.For); a pools record made without a class (0) falls back
-        // to the class's own.
+        // Calculated attributes include legitimate all-zero values. Legacy partial pool records without attributes
+        // still fall back to the class's own; record clones preserve the explicit resolved marker.
         var c = Skills.ClassFor(classRow);
-        var (str, dex, intel) = pools.Strength + pools.Dexterity + pools.Intelligence > 0
+        var (str, dex, intel) = pools.AttributesResolved || pools.Strength != 0 || pools.Dexterity != 0 || pools.Intelligence != 0
             ? (pools.Strength, pools.Dexterity, pools.Intelligence) : (c.Strength, c.Dexterity, c.Intelligence);
         foreach (var (stat, value) in new[] { ("strength", str), ("dexterity", dex), ("intelligence", intel),
             ("virtual_strength_for_requirements", str), ("virtual_dexterity_for_requirements", dex),

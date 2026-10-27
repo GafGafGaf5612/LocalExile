@@ -60,6 +60,23 @@ Part of [Status](../Status.md); what to build next in this area is in
   and partial armour percentages remain separate.
   See [20](../docs/protocol/20-damage.md) section 2e.
 
+- Increased attributes (#285): typed and all-attribute percentages scale the complete class/passive/active-gear
+  flat bucket once, using the documented PoB rounding model.
+  Historical evidence at `60044ad` has thirteen native controls for 3% Strength, additive increases, derived pools and
+  matching requirement values on an unascended Marauder.
+  A Plate Vest stops contributing below its requirement and resumes when the final attributes recover.
+  Calculated zero attributes stay zero; source clearing and relog restore the expected base values.
+  Own-item percentage retention, cascading activation, passive refunds and weapon swaps have automated coverage.
+  Current-main composition with mana per final Strength, inactive weapons and raw zero/off overrides has regressions.
+  Eleven current-main native controls verify final Strength groups, additive increases, mana and equipment requirements.
+  Maximum mana follows 47 to 111, then 127/145 as attributes rise; 100% mana increases it to 290 once.
+  Source removal and the ordinary vest's requirement disable/restore pass at rebased source `00b246f2`.
+  Ordered joint native validation at `c9cd1864` also verifies final attributes feeding mana-to-armour conversion.
+  Odd final Intelligence keeps its half mana until converted pools round; 16 Strength / 7 Intelligence gives 15 mana.
+  Inactive-weapon, cascading-equipment, passive-refund and active-aura composition remain automated-only.
+  The evidence does not establish official-server fractional parity or enable Phrecia class selection.
+  See [11](../docs/protocol/11-skills.md) section 4 and [13](../docs/protocol/13-items.md) section 2d.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks
