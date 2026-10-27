@@ -31,9 +31,10 @@ public sealed record TileDef(string Path, string Tag, TileKey Key)
     /// <summary>The second objects file (tile data +0x180): the .tmd the file names, the first of the two strings after the
     /// vertex block. Found as the string table's .tmd string (the table holds only the header's strings).</summary>
     public string? ObjectsFile { get; init; }
-    /// <summary>A tile over a base tile that names no .tmd of its own (flags bit 1 clear) places none of its mesh's
+    /// <summary>A tile over a base tile with neither a mesh (flags bit 0) nor a .tmd (bit 1) of its own places none of its mesh's
     /// objects, only the base's .tmd: the Lake causeway slopes (HideoutLake, LakePrototype) show no column doodad where
-    /// the base tile and the slopes naming their own .tmd do. Where the loader (<c>0x1429f31a0</c>) drops them was not found.</summary>
+    /// the base tile and the slopes naming their own .tmd do; HallsOfTheDead's walls, with a mesh of their own, place its glowing eyes.
+    /// Where the loader (<c>0x1429f31a0</c>) drops them was not found.</summary>
     public bool NoMeshObjects { get; init; }
     /// <summary>The orientations the tile may take (tile data +0x171; 0 or 0xff = no restriction).</summary>
     public byte Restriction { get; init; }
@@ -401,7 +402,7 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
                 VertexHeights = ownHeights,
                 Restriction = (own & 0x20) != 0 && at < h.Length ? h[at] : baseTile.Restriction,
                 ObjectsFile = table.Split('\0').FirstOrDefault(x => x.EndsWith(".tmd", StringComparison.OrdinalIgnoreCase)) ?? baseTile.ObjectsFile,
-                NoMeshObjects = (own & 2) == 0,
+                NoMeshObjects = (own & 3) == 0,
             };
         }
         var (tag, key, rawGrounds) = TagAndKey(8);

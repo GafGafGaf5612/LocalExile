@@ -1263,8 +1263,8 @@ y, +0x18 height, +0x1b orientation code). Order:
 3. The deferred list `0x142041d40` (groups shuffled by `Next(count)`, no two within 3 × 3): not ported.
 4. After the stage, generator vtable +0x50 (`0x142041950`, world vtable +0x28) and +0x20 = **`0x142041200`, the
    tiles' own objects**: row by row, every tile origin (+0x34 / +0x35 zero) whose tile data has +0x178 or +0x180;
-   a tile over a base tile that names no .tmd of its own (flags bit 1 clear) places only the base's .tmd, none of its
-   mesh's objects (the Lake causeway slopes of HideoutLake, HideoutLakeEvil and LakePrototype; where the loader drops
+   a tile over a base tile with neither a mesh nor a .tmd of its own (flags bits 0 and 1 clear) places only the base's .tmd, none of its
+   mesh's objects (the Lake causeway slopes of HideoutLake, HideoutLakeEvil and LakePrototype; HallsOfTheDead's walls, own mesh, keep theirs; where the loader drops
    them was not found);
    the record is the last one holding the tile (`0x141d77a90`, else the first). `0x141d7eda0`: a tile without
    sub-tiles (+0x16d bit 1 clear) → `0x141d7f700`: with the record master's `Reskin` (master +0x80), the file
