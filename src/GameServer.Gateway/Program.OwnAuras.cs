@@ -17,7 +17,7 @@ partial class Program
     {
         lock (conn.Monsters)
         {
-            sources ??= CharacterStatSources(conn);
+            sources ??= CharacterStatSources(conn).Stats;
             UtilityFlasks.AddRawStats(sources,
                 conn.UtilityFlaskEffects.Stats().Concat(conn.FlaskGrounds.PlayerStats()), Stats);
             return OwnAuraRestriction.Value(sources, conn.PlayerStats);
@@ -98,7 +98,7 @@ partial class Program
         if (conn.AuraStatsDirty)
         {
             conn.AuraStatsDirty = false;
-            packets.Add(InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)));
+            packets.Add(PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)));
             packets.Add(InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []));
             packets.Add(InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana,
                 (uint)ReservedMana(conn), pool: ManaPool));

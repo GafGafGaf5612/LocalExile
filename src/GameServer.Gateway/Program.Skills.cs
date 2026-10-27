@@ -168,6 +168,7 @@ partial class Program
         if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
             stats[rolls] = CriticalExtraRollsFor(conn, stats);
         stats[OwnAuraRestriction.Disabled] = OwnAuraRestrictionValue(conn);
+        lock (conn.Monsters) AddRecentEnemyHitStatsLocked(conn, stats);
         return stats;
     }
 
@@ -211,7 +212,7 @@ partial class Program
         foreach (var (k, v) in ClassAttributes(conn.ClassRow, conn.Pools)) if (seen.Add(k)) yield return (k, v);
         List<ushort> nodes;
         lock (conn.Monsters) nodes = [.. conn.Passives];
-        var extra = CharacterStatSources(conn, nodes);
+        var extra = CharacterStatSources(conn, nodes).Stats;
         if (conn.God)
         {
             foreach (var (stat, value) in GodStats)
@@ -291,10 +292,10 @@ partial class Program
             ("spell_critical_strike_chance", pools.SpellCriticalStrikeChance),
             ("spell_critical_strike_multiplier", pools.SpellCriticalStrikeMultiplier) })
             if (Stats.Key(stat) is uint key) yield return (key, value);
-        // The class's attributes with the passives' (CharacterStats.For); a pools record made without a class (0) falls back
-        // to the class's own.
+        // Calculated attributes include legitimate all-zero values. Legacy partial pool records without attributes
+        // still fall back to the class's own; record clones preserve the explicit resolved marker.
         var c = Skills.ClassFor(classRow);
-        var (str, dex, intel) = pools.Strength + pools.Dexterity + pools.Intelligence > 0
+        var (str, dex, intel) = pools.AttributesResolved || pools.Strength != 0 || pools.Dexterity != 0 || pools.Intelligence != 0
             ? (pools.Strength, pools.Dexterity, pools.Intelligence) : (c.Strength, c.Dexterity, c.Intelligence);
         foreach (var (stat, value) in new[] { ("strength", str), ("dexterity", dex), ("intelligence", intel),
             ("virtual_strength_for_requirements", str), ("virtual_dexterity_for_requirements", dex),
@@ -367,28 +368,22 @@ partial class Program
                 Console.WriteLine($"[gateway] Cyclone area: base {baseRadius}, radius {radius}, increased area {increased}%, radius scale {radiusPercent}%");
             }
             var hitPlan = SkillHitPlan.ForSkill(Skills, effect, level, quality);
-            if (hitPlan.Kind == SkillHitKind.Spell)
-            {
-                // Match ConversionFor: character inputs win and level-only skill inputs fill missing keys.
-                // Quality still affects the base hit and modifiers, but not conversion, as in combat today.
-                var conversion = DamageStats.Conversion(characterInputs, Skills.EffectStats(effect, level), Stats, attack: false);
-                var hit = SpellHit.Resolve(hitPlan, Stats, playerStats, own, conversion, AddedEffectiveness(effect, level));
-                foreach (var (stat, value) in SpellPanelStats.Compute(hitPlan, hit, Get("hundred_times_casts_per_second")))
-                    if (Stats.Key(stat) is uint key) stats[key] = value;
-            }
-            var attackPlan = SkillHitPlan.ForSkill(Skills, effect, level, quality);
-            if (attackPlan.Kind == SkillHitKind.Attack)
+            if (hitPlan.Kind == SkillHitKind.Attack)
             {
                 var attackHit = AttackSkillHit.Resolve(mainHand, characterInputs, Skills.EffectStats(effect, level),
                     Stats, Skills.DamageEffectiveness(effect, level));
-                foreach (var (stat, value) in AttackPanelStats.Compute(attackPlan, attackHit, Get("hundred_times_attacks_per_second")))
+                foreach (var (stat, value) in AttackPanelStats.Compute(hitPlan, attackHit, Get("hundred_times_attacks_per_second")))
                     if (Stats.Key(stat) is uint key) stats[key] = value;
             }
             if (Skills.IsAttack(effect) || Skills.IsSpell(effect))
             {
                 var supportedHit = SupportedHit(conn, id);
                 double seconds = Skills.IsAttack(effect) ? SupportedAttackSeconds(conn, id) : Math.Max(.001, (CastMs(conn, effect, id) ?? 0) / 1000.0);
-                foreach (var (key, value) in PanelStats.HandDamage(supportedHit, "main_hand"))
+                var damageRows = hitPlan.Kind == SkillHitKind.Spell
+                    ? SpellPanelStats.Compute(hitPlan, supportedHit, Get("hundred_times_casts_per_second"),
+                        includeMainHand: true)
+                    : PanelStats.HandDamage(supportedHit, "main_hand");
+                foreach (var (key, value) in damageRows)
                     if (Stats.Key(key) is uint statKey) stats[statKey] = value;
                 var display = SpellDamage.Display((supportedHit.MinTotal, supportedHit.MaxTotal), 1 / seconds);
                 stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = display.PerUse;
@@ -703,7 +698,7 @@ partial class Program
     static async Task SendCharacterStats(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
     {
         await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-            () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)), $"0x01b3 player stats ({why})");
         await SendSkills(remote, stream, ciphers, conn);
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }

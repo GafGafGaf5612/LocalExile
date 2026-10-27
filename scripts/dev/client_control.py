@@ -306,7 +306,8 @@ class ClientControl:
             self.wait(lambda s: s.get("loginState") == 2 or s.get("loginSubmitted"), "local login handshake")
             self.rpc("login")
             digest[:] = [0] * 32
-            result = self.wait(lambda s: s.get("loginState") == 3 or s.get("lastLoginResult") is not None,
+            # Success can arrive before the client commits authenticated state on its next frame.
+            result = self.wait(lambda s: s.get("loginState") == 3 or s.get("lastLoginResult") not in (None, 0),
                                "login result")
             if result.get("loginState") != 3:
                 raise RuntimeError(f"Local login rejected (result {result.get('lastLoginResult')})")

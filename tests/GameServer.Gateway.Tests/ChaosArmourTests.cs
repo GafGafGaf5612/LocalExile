@@ -331,7 +331,7 @@ public class ChaosArmourTests
             Conn.LastEvasionAt = Conn.Clock.Elapsed.TotalSeconds;
             await ((Task)typeof(Program).GetMethod("MonsterSwing", BindingFlags.Static | BindingFlags.NonPublic)!
                 .Invoke(null, ["chaos-armour-test", writer.GetStream(), ciphers, Conn, 42u, monster,
-                    (34, 32), (32, 32)])!).WaitAsync(TimeSpan.FromSeconds(5));
+                    (34, 32), (32, 32), Conn.IncomingHitEpoch])!).WaitAsync(TimeSpan.FromSeconds(5));
         }
 
         public async Task<byte[]> Received(byte[] expected)

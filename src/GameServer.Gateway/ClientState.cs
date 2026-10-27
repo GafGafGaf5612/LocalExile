@@ -157,6 +157,20 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // A transfer invalidates flights even during the gap after PendingTransfer is consumed by Transfer.
     // Guarded by Monsters, like projectile impact commits and pause changes.
     public bool LeavingArea;
+    public readonly RecentEnemyHits RecentEnemyHits = new();
+    public Random IncomingHitRandom = Random.Shared;
+    public int IncomingHitEpoch;
+    public (int Count, int Chance)? PresentedRecentEnemyHits;
+
+    // A failed transfer retains history but cannot revive a swing from before the attempted transfer.
+    public void InvalidateIncomingHits(bool clear = true)
+    {
+        lock (Monsters)
+        {
+            IncomingHitEpoch++;
+            if (clear) RecentEnemyHits.Clear();
+        }
+    }
     public int ProjectileEpoch;
     public readonly HashSet<uint> ProjectileObjects = [];
 
@@ -185,6 +199,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
             if (Closed || PendingTransfer is not null || LeavingArea) return false;
             PendingTransfer = transfer;
             LeavingArea = true;
+            InvalidateIncomingHits(clear: false);
             ProjectileEpoch++;
             projectiles = [.. ProjectileObjects];
             ProjectileObjects.Clear();
@@ -414,6 +429,8 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public (int X, int Y) HorticraftingAt;
     public uint CraftingBenchObject;
     public bool BenchOpen;
+    /// <summary>The Horticrafting Station's recipe browser is the open window; its craft requests are served only then.</summary>
+    public bool HarvestOpen;
     public bool BenchBalanceSent;
     public uint BenchBalanceRevision;
     public IReadOnlyList<InventoryItem> BenchBalanceItems = [];
