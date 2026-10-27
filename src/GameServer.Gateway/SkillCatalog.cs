@@ -450,12 +450,22 @@ sealed class SkillCatalog(string folder = "data")
     });
 
     // The highest level at or below `level` among rows with this key, else the lowest; -1 when none.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<List<(int Key, int Level)>, Dictionary<int, int[]>> RowsByKey = new();
+
     private static int PickLevel(List<(int Key, int Level)> rows, int key, int level)
     {
         int best = -1, bestLevel = int.MinValue, low = -1, lowLevel = int.MaxValue;
-        for (int i = 0; i < rows.Count; i++)
+        // The per-level tables are loaded once and never change: index their rows by key instead of scanning them all
+        // (the combat paths pick levels many times per stat calculation). Same rows, same order, same answer.
+        var index = RowsByKey.GetValue(rows, r =>
         {
-            if (rows[i].Key != key) continue;
+            var byKey = new Dictionary<int, int[]>();
+            foreach (var g in r.Select((row, i) => (row.Key, i)).GroupBy(x => x.Key)) byKey[g.Key] = [.. g.Select(x => x.i)];
+            return byKey;
+        });
+        if (!index.TryGetValue(key, out var indices)) return -1;
+        foreach (int i in indices)
+        {
             int l = rows[i].Level;
             if (l <= level && l > bestLevel) (best, bestLevel) = (i, l);
             if (l < lowLevel) (low, lowLevel) = (i, l);
