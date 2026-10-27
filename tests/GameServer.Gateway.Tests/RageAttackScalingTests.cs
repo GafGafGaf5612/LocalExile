@@ -148,10 +148,9 @@ public class RageAttackScalingTests
         var weapon = new SkillCatalog.Unarmed(1000, 100, 101, 8);
         int Get(string name) => Program.Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
         var conversion = DamageStats.Conversion(stats, Program.Stats, attack: true);
-        var baseline = DamageStats.Added(weapon.HitDamage(stats, melee, projectile: !melee), Get,
-                spell: false, melee, projectile: !melee)
-            .Scale(ChargeEffects.DamageMore(Get));
-        var converted = baseline.Convert(conversion);
+        var raw = SupportedAttackDamage.Raw(weapon, Get);
+        var baseline = PlayerHitDamage.Resolve(raw, Get, new(), spell: false, melee: melee, projectile: !melee);
+        var converted = PlayerHitDamage.Resolve(raw, Get, conversion, spell: false, melee: melee, projectile: !melee);
         var actual = Program.AttackHitConverted(weapon, stats, melee, conversion);
         var unconverted = Program.AttackHit(weapon, stats, melee);
         foreach (var type in DamageTypes.ConversionOrder)

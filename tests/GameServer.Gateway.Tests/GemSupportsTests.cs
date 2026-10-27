@@ -99,22 +99,21 @@ public class GemSupportsTests
             ("support_area_concentrate_area_damage_+%_final", 39), ("support_brutality_physical_damage_+%_final", 39),
             ("deal_no_elemental_damage", 1), ("base_deal_no_chaos_damage", 1)];
         var types = new HashSet<int> { 0, 19, 7 };
-        hit = GemSupportDamage.Scale(hit, mods, types, false);
-        hit = GemSupportDamage.Scale(hit, mods, types, true);
+        hit = PlayerHitDamage.Resolve(hit, _ => 0, new(), spell: false, melee: true, area: true,
+            supportModifiers: mods, skillTypes: types);
         Assert.Equal(100 * 1.49 * 1.39 * 1.39, hit[DamageType.Physical].Min, 8);
         Assert.True(hit[DamageType.Fire].IsZero);
         Assert.True(hit[DamageType.Chaos].IsZero);
     }
 
     [Fact]
-    public void Physical_more_applies_before_gain_as_extra_and_conditional_more_is_not_applied_to_every_hit()
+    public void Physical_more_follows_gain_history_and_conditional_more_is_not_applied_to_every_hit()
     {
         var hit = DamagePacket.Empty.Add(DamageType.Physical, new(100, 100));
         (string, int)[] mods = [("support_melee_physical_damage_+%_final", 49),
             ("support_ruthless_big_hit_damage_+%_final", 100), ("support_burning_damage_+%_final", 100)];
-        hit = GemSupportDamage.Scale(hit, mods, new HashSet<int> { 0, 19 }, false);
         var conversion = new DamageConversion(); conversion.AddGain(DamageType.Physical, DamageType.Fire, 39);
-        hit = hit.Convert(conversion);
+        hit = PlayerHitDamage.Resolve(hit, _ => 0, conversion, spell: false, melee: true, supportModifiers: mods);
         Assert.Equal(149, hit[DamageType.Physical].Min);
         Assert.Equal(149 * .39, hit[DamageType.Fire].Min, 8);
     }

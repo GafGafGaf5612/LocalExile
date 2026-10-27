@@ -7,6 +7,31 @@ namespace GameServer.Gateway.Tests;
 public sealed class SupportedSpellPanelTests
 {
     [Theory]
+    [InlineData(false, 1599, 2131, 12, 19, 0, 0)]
+    [InlineData(true, 51153, 68205, 11, 18, 397, 595)]
+    public void Previously_native_verified_no_conversion_support_projections_remain_exact(bool combined,
+        int perUse, int dps, int fireMin, int fireMax, int coldMin, int coldMax)
+    {
+        using var game = new SpellCharacter();
+        if (combined)
+            game.Socket(("SupportGemControlledDestruction", 20), ("SupportGemLesserMultipleProjectiles", 20),
+                ("SupportGemAddedColdDamage", 20));
+        else game.Socket(("SupportGemControlledDestruction", 20));
+
+        var spell = game.Read();
+
+        // Fixed before this refactor: real native normal-table supports, white sockets, zero gem quality.
+        // Preserve the existing double/Math.Round projection at CD's half-cent boundary without adding an epsilon.
+        Assert.Equal(perUse, spell.Get("display_hundred_times_damage_per_skill_use"));
+        Assert.Equal(dps, spell.Get("hundred_times_damage_per_second"));
+        Assert.Equal(fireMin, spell.Get("spell_minimum_fire_damage"));
+        Assert.Equal(fireMax, spell.Get("spell_maximum_fire_damage"));
+        Assert.Equal(coldMin, spell.Get("spell_minimum_cold_damage"));
+        Assert.Equal(coldMax, spell.Get("spell_maximum_cold_damage"));
+        AssertSpellRows(spell);
+    }
+
+    [Theory]
     [InlineData("SupportGemControlledDestruction", 20, "more")]
     [InlineData("SupportGemLesserMultipleProjectiles", 20, "less")]
     [InlineData("SupportGemAddedColdDamage", 20, "cold")]

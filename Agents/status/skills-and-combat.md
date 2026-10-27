@@ -424,8 +424,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   Authoritative offhand alternation, alternative quality and local base-critical modifiers remain separate.
   Supported-contact composition retains automated coverage and needs its own native check.
   A Core raw conversion-history seam is available with 21 new path cases and 12 existing packet controls passing.
-  It retains visited types separately from the unchanged quantity-only converter; Gateway modifier integration
-  and its native verification remain separate work.
+  The full Core suite passes 648 tests. `PlayerHitDamage` now resolves one visited-type increased bucket, inherited
+  support/aura more, final-destination prohibitions and common charge more across ordinary/supported hits.
+  It preserves explicit contexts, source precedence, no-conversion floating grouping and ranged release snapshots.
+  Forty-three new Gateway cases and 340 focused checks pass, followed by all 3602 Gateway tests and 37 Data tests.
+  Thirty-two native numeric controls pass across Standard/Ruthless: 24 original explicit-field controls and eight
+  ordinary-bow sparse-zero controls. The first sparse Standard baseline is retrospective; the next seven are
+  prospective. Actual natural getter zeros are distinct from explicit wire zeros or hidden-row rendering.
+  Four restoration/relog controls, 184 full item/socket acknowledgements, original-save preservation and 714 unchanged
+  source/runtime inputs pass. The client is closed and normal `data/saves.db` restored. Native publication does not
+  certify authoritative hit contact, critical-weighted DPS, conditional/endpoints/ailment/DoT or official rounding.
+  Existing disposed-stream cleanup faults and separate native connection closures remain recorded in the evidence.
   Code: `ItemWeaponStats.cs`, `DamageStats.cs`, `SkillCatalog.cs`, `SupportedAttackDamage.cs`.
   Docs: [20](../docs/protocol/20-damage.md) §2a.
 

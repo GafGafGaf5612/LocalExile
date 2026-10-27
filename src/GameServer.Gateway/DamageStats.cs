@@ -50,29 +50,18 @@ static class DamageStats
     public static double ManaAddedLightning(Func<string, int> get) =>
         get("maximum_mana") is > 0 and var mana ? mana * (get(MaxManaAddedLightning) / 100.0) : 0;
 
-    public static DamagePacket Added(DamagePacket hit, Func<string, int> get, bool spell, bool melee,
-        double effectiveness = 1, bool projectile = false)
+    /// <summary>Raw added damage, with effectiveness but without increased/more modifiers or conversion.</summary>
+    public static DamagePacket RawAdded(DamagePacket hit, Func<string, int> get, bool spell, double effectiveness = 1)
     {
         foreach (var type in Types)
         {
             string slug = Slug(type), prefix = spell ? "spell" : "attack";
             var range = new DamageRange(get($"{prefix}_minimum_added_{slug}_damage"), get($"{prefix}_maximum_added_{slug}_damage"));
-            if (!spell)
+            if (!spell && type == DamageType.Lightning)
             {
-                if (type == DamageType.Lightning)
-                {
-                    // PoB ModParser 16de4b82 lines 5636–5639 grants both attack LightningMin and LightningMax.
-                    double added = ManaAddedLightning(get);
-                    range = range.Add(new DamageRange(added, added));
-                }
-
-                // attack_damage_+% is a plain Attack-flag increase: every attack, no inference from the weapon or the
-                // range. melee_damage_+% is a melee-only one: a bow's or wand's attack must not take it,
-                // so the caller passes whether this swing is actually melee: the default attack and the panel's
-                // main-hand rows by their weapon profile (an inactive weapon is not there; unarmed is melee) and an
-                // attack gem by its own ActiveSkillType Melee classification.
-                double increased = AttackIncrease(get, type, melee, projectile: projectile);
-                range = IncreaseAttackRange(range, increased);
+                // PoB ModParser 16de4b82 lines 5636–5639 grants both attack LightningMin and LightningMax.
+                double added = ManaAddedLightning(get);
+                range = range.Add(new DamageRange(added, added));
             }
             hit = hit.Add(type, range.Scale(effectiveness));
         }

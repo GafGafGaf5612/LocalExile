@@ -33,7 +33,7 @@ values were not used on the wire).
 
 ```
 base skill/weapon damage by type
-  Ã¢â€ â€™ added damage (DamageStats.Added; the first added-damage stat is read, see Ã‚Â§2)
+  Ã¢â€ â€™ added damage (DamageStats.RawAdded; the first added-damage stat is read, see Ã‚Â§2)
   Ã¢â€ â€™ gain X% as extra (does not consume the source)
   Ã¢â€ â€™ conversion (source is consumed; converted damage can convert again)
   Ã¢â€ â€™ increased / more multipliers per type
@@ -110,10 +110,55 @@ five-type graph bounds the result to 31 nonempty histories. Conversion and gain 
 coefficients, including skill priority, while gain keeps its source and can convert onward.
 The quantity-only `Apply` path retains its original arithmetic and accumulation order for existing consumers;
 it is not implemented by collapsing `Trace`. Collapsing separate histories can regroup floating sums.
-Twenty-one new Core cases and twelve existing packet cases pass. This Core seam alone does not integrate Gateway
-modifiers, supports, monster damage, ailments or DoT. It preserves the existing whole-percent normalization boundary
+Twenty-one new Core cases and twelve existing packet cases pass. The full Core suite passes 648 cases.
+The seam preserves the existing whole-percent normalization boundary
 where separately rounded 50.5/49.5 becomes 51/50; official endpoint/normalization parity is not established here.
 Reference: pinned PoB `16de4b82`, `CalcOffence.lua` 35-140 and 1938-1982, via the PoE Reference Library.
+
+`PlayerHitDamage.Resolve` now uses that history for ordinary and supported player hits. Callers supply raw item/class
+or extracted spell base plus raw added damage, with attack effectiveness on the complete attack base and spell
+effectiveness only on added damage. Each path receives one combined increased/reduced bucket: generic/context
+inputs once, each visited typed increase once, and Elemental once if any elemental type was visited. Clamp only the
+completed bucket, so a negative source-type subtotal can recover through a positive destination increase.
+Each applicable support/aura more source also follows the visited-type set once. The existing three no-damage flags
+inspect final destination only; suppressing Elemental does not erase a portion that becomes Chaos.
+Merge final types after these operations, then retain the existing roll/mitigation and panel projections.
+
+All hit paths now receive the existing `ChargeEffects.DamageMore` once, including ordinary ranged and attack gems
+that previously omitted it. `WithCharges` expands increased/added sources separately; it does not replace that more
+factor. Spell-only Power factors remain spell-only, and attack Rage stays outside the resolver once.
+Keep the established spell aura/charge grouping and the ordered general/physical then elemental/chaos support
+products, qualifying both products against full history. This preserves demonstrated no-conversion floor boundaries
+117 and 27/45 without an epsilon or a new endpoint rule. Ordinary ranged packets still freeze at release.
+Forty-three new Gateway cases and 340 focused checks pass, followed by all 3602 Gateway tests; Core 648 and Data 37
+also pass. Fixed reference examples include mixed histories, negative original subtotals, gains/chains, typed more,
+real Fireball/Burning Arrow, final prohibitions, source removal and zero/one/three-charge snapshots.
+The previous native no-conversion support projections (1599/2131 and 51153/68205) have exact regression controls.
+Thirty-two native numeric controls pass, sixteen each in Standard and Ruthless: Fireball conversion/gain, added Cold,
+Void Manipulation's final elemental prohibition, ordinary bow partial/full/chained conversion, and supported Burning
+Arrow with one/three effective Frenzy charges. Positive rows bind natural formatter reads to the fresh owned selected
+skill primary. This verifies local panel publication, not a separate native authoritative-hit or official-server comparison.
+
+Twenty-four controls pass the original explicit-field gates. Eight ordinary-bow controls use a separate sparse-zero
+policy: the packet omits absent damage types, and actual natural getter returns on the exact current receiver prove
+their effective zero values. Absence alone is insufficient; these are not explicit wire zeros or rendered hidden rows.
+The first Standard ordinary baseline is a retrospective diagnostic after the preserved original presence failure;
+the other seven sparse controls use the policy frozen before their source stage. The numerical oracle did not change.
+Earlier filesystem-transport interruptions and their cleanup receipts remain preserved separately.
+
+Four further controls verify canonical item/socket restoration and a fresh login in both modes. All 184 normal item
+and socket mutations have full payload acknowledgements. The original account, two character metadata/saves, two
+stash banks and forty tabs retain exact UTF-8 payload hashes; the two fixture inventories persist with their complete
+canonical contents. All 714 frozen source/runtime/helper/oracle inputs match at session end. The supplemental sparse
+policy, verifier and normal-source wrapper have separate recorded freezes and are not included in that 714 count.
+The copied test client is closed and the normal Gateway uses `data/saves.db` again.
+
+The full test run also retained six existing `MonsterKilled` cleanup writes to disposed streams, with no targeted
+conversion fault in the filtered diagnostic capture. The native log retained four remote-host connection closures;
+this is not an exception-free-run claim. Evidence: `artifacts/issue75-completion/conversion-native/verified-matrix-independent.json`
+and `diagnostic-hook/conversion-final-diagnostic-assessment.json`.
+Monster, ailment and DoT consumers remain outside this player-hit change; conditional/minimum-/maximum-only
+operators, critical-weighted DPS, authoritative offhand alternation and official fractional parity remain open.
 
 ## 2a. Equipped weapon-local damage
 
@@ -133,17 +178,17 @@ conventions; they do not establish official-server fractional timing or a minimu
 
 Ordinary attacks, released bows/wands and supported attacks consume the typed packet with the actual
 melee/projectile context. Strength's melee physical increase therefore does not scale a bow or wand.
-The shared packet then receives conversion and Rage once, and all final per-type rows are published, including
-zeroes that clear a removed type. Active rows 2/3 supply hand-local modifiers; inactive rows 14/15 supply none.
+The shared packet then receives conversion and Rage once. A fresh ordinary-hand packet publishes its present
+types and replaces removed fields; supported attack/spell packets also publish explicit zero endpoints. Active rows 2/3 supply hand-local modifiers; inactive rows 14/15 supply none.
 Pool, timing, charge and block conditions also use the active weapon profile; an inactive dual set or shield
 cannot grant current speed, block or conditional bonuses. Shield base block requires an enabled active offhand.
 Pinned PoB `CalcSetup.lua` 840-845 excludes unselected weapon-set slots before `CalcPerform.lua` 147-153/221-227
 derives shield, unarmed and dual-wield conditions from the active item context.
 Offhand publication is covered separately from the still-unimplemented authoritative offhand attack alternation.
 Alternative quality bonuses and local base-critical modifiers remain separate work.
-The existing conversion pipeline retains only final type ranges after scaling the original type.
-It does not yet preserve visited-type qualifiers for destination increases or elemental-more effects converted
-to Chaos. This is a separate known damage-calculation gap; the local-weapon controls above do not establish it.
+The player resolver retains visited-type qualifiers for destination/intermediate increases and typed more effects
+after conversion to Chaos. The separate 32-control conversion matrix above verifies that integration's local panel
+publication; the earlier local-weapon controls below retain their original narrower scope.
 
 Helper/gateway regressions cover quality, signed/local modifiers, typed damage, suppression, timing and active-set
 scope. All 24 native publication controls passed in Standard/Ruthless, including typed ranges, swap/removal and
@@ -155,7 +200,7 @@ Evidence: `artifacts/issue75-completion/weapon-native/`, including the preserved
 ## 2b. Added damage from stats (the first stat)
 
 Added damage is not fully modelled yet, but one stat is read.
-`DamageStats.Added` adds `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` (Stats.dat row
+`DamageStats.RawAdded` adds `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` (Stats.dat row
 11881, client key 11882) to an attack's added-lightning range.
 The value is the percentage: both the added lightning minimum and maximum become that percent of `maximum_mana`
 from the same final stat dictionary, so spending mana and reserved mana never change the damage, while a pool
@@ -415,11 +460,12 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
 
 ## 4. What the server uses now
 
-- The default attack builds a physical packet from Characters.dat (`Unarmed.HitDamage`), applies the player's
-  conversion stats, rolls one number per type and applies the critical multiplier to the rolled total.
-- Fireball builds its packet from `spell_minimum/maximum_base_<type>_damage` (`SkillCatalog.HitDamage`), applies the
-  spell's increased-damage stats per type (`SpellDamage.Packet`), then the player's and the skill's conversion stats,
-  rolls it and sends the life change.
+- The default attack builds the active weapon's typed packet, or the class's Characters.dat unarmed packet, plus
+  raw added damage. The shared player resolver traces conversion/gain before inherited increases/more; the caller
+  applies attack Rage once, rolls each final type and retains the existing critical/mitigation stages.
+- Fireball builds raw `spell_minimum/maximum_base_<type>_damage` (`SkillCatalog.HitDamage`) plus effective added
+  damage. `SpellDamage.Packet` uses the same conversion-history resolver, then the hit path rolls the packet and
+  sends the life change. Final linked support changes feed both the supported panel and combat packet.
 - Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands.
   Each type takes resistance, then shared incoming hit mitigation, including enabled chaos armour (section 2e).
 - Player hits on monsters (default attack, gem projectile and area hits) roll each type once and reduce it by the

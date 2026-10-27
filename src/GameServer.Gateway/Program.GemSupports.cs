@@ -112,13 +112,14 @@ partial class Program
         var types = Supports.Of(gem.Effect)?.Types.ToHashSet() ?? [];
         var plan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
         if (!plan.CanHit) return GameServer.Core.World.DamagePacket.Empty;
-        var hit = attack
-            ? SpellDamage.WithEffectiveness(SupportedAttackDamage.Hit(WeaponFor(conn), Get, types), Skills.DamageEffectiveness(gem.Effect, gem.Level))
-            : SpellDamage.Packet(plan.SpellBase, Get, AddedEffectiveness(gem.Effect, gem.Level));
+        var raw = attack
+            ? SpellDamage.WithEffectiveness(SupportedAttackDamage.Raw(WeaponFor(conn), Get), Skills.DamageEffectiveness(gem.Effect, gem.Level))
+            : DamageStats.RawAdded(plan.SpellBase, Get, spell: true, AddedEffectiveness(gem.Effect, gem.Level));
         var modifiers = gem.Supports.SelectMany(s => s.Stats).Select(s => (Stats.Name(s.Key) ?? "", s.Value)).ToList();
-        hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: false);
-        hit = hit.Convert(DamageStats.Conversion(stats, Stats, attack));
-        hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
+        var hit = PlayerHitDamage.Resolve(raw, Get, DamageStats.Conversion(stats, Stats, attack), spell: !attack,
+            melee: attack && types.Contains(19), area: attack ? types.Contains(7) : Get("is_area_damage") != 0,
+            projectile: attack ? types.Contains(2) : Get("base_is_projectile") != 0,
+            supportModifiers: modifiers, skillTypes: types);
         if (attack) hit = RageStats.ApplyAttack(hit, Get);
         return new SkillDamageContext(plan.Kind, caster).Hit(hit);
     }

@@ -314,16 +314,23 @@ PoB's `armour / (armour + damage × 5) × 100`, rounded and capped at 90% (`Dama
 the same hit-chance formula as accuracy, so the chance to evade is `100 - AccuracyHitChance(evasion, attacker accuracy)`
 (`DamageModel.EvadeChance`). Monster melee rolls the same formula against `DefaultMonsterStats.Accuracy` at the
 monster's level and evades before damage; physical monster hits then go through armour and block. `/defences` prints
-both against a reference monster of the character's level. Life and mana still ignore passives and items.
+both against a reference monster of the character's level. Life and Mana use the resolved passive/item pools (§4).
 **Chaos Inoculation** (`keystone_chaos_inoculation`) applies to that life: maximum life becomes 1 after the life
 modifiers (the character's energy shield stays the real pool), and the player is immune to chaos damage through the
 same damage-immunity table as the panel's `chaos_damage_immunity` row. The pre-CI maximum life that the game uses for
 stun and ailment thresholds is not modelled.
 
-The default attack's damage (`Unarmed.HitDamage`) is a physical `DamagePacket`: MinDamage..MaxDamage × (1 +
-(`damage_+%` + `physical_damage_+%` + `melee_damage_+%` + `melee_physical_damage_+%`) / 100). The packet goes through
-the conversion and gain-as-extra stats, then rolls one number per damage type; the server uses the same packet for its
-hits. `/set_stat` overrides any of these. The packet, conversion order and damage-over-time model are in
+The default attack starts with the active item's typed local packet or the class's unarmed physical base, plus raw
+added attack damage. `PlayerHitDamage` traces conversion/gain before resolving the complete visited-type increase
+bucket and applicable more factors. Melee modifiers require actual melee context, so a bow does not inherit Strength's
+melee physical increase. Charge more and attack Rage apply once; the final packet feeds both panel and hit rolls.
+The separate conversion matrix verifies 32 numeric states across Standard/Ruthless, including inherited source/
+destination increases, typed support more, final prohibitions and effective Frenzy charges. Twenty-four use explicit
+fields; eight ordinary-attack states prove omitted zero endpoints with actual natural getter returns. One initial
+Standard zero baseline is retrospective and seven are prospective; hidden zero-row rendering is not claimed.
+Both modes restore complete item/socket contents and pass fresh-login controls. See [20](20-damage.md) §2 for the
+frozen input, preservation and diagnostic boundaries. These controls establish panel publication, not native hit contact.
+`/set_stat` overrides resolved inputs. The packet, conversion order and damage-over-time model are in
 [20-damage.md](20-damage.md); the panel's older `Unarmed.Damage` tuple is only the physical display range.
 
 **Changing a skill after entering:** S→C **0x2ba** on the player with component index 9 (Actor) and the slot-20 data
@@ -995,11 +1002,14 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `double_holy_strike_animated_weapons_limit`: 0x1400c37d1 registers 0x14279ee30), and the Templar rig's missing
   mace/sceptre stances (`Art/Models/CHARACTERS/Templar/rig.amd`).
 - **Damage** (`SpellHit.cs`, `SpellDamage.cs`). Projectile hits, area hits and the selected spell's panel
-  share `SupportedHit`'s final typed packet: catalog base damage, effective added damage, applicable increases,
-  aura/support multipliers, conversion and gain-as-extra, then the actual caster's spell-damage restriction.
-  Selected spell and inherited main-hand ranges now use this same supported packet, including explicit zeros.
-  Its existing player/skill stat merge and support conversion order are unchanged.
-  `SpellHit.Resolve` retains its standalone separate-input contract for callers of that seam.
+  share the same typed packet: the catalog base hit, flat added spell damage scaled by damage effectiveness,
+  conversion/gain with complete type history, then the matching generic/spell/elemental/typed/context increase bucket
+  and supported aura/support more factors. Each visited modifier applies once, including ancestors of Chaos.
+  Existing source precedence remains distinct at its established seams: interim `SpellHit` uses own-key overrides
+  and player-first level-only conversion; final `SupportedHit` merges player and supported skill inputs with
+  `MergeSkillStats`, retaining its existing base-field replacements and quality inputs. Panel and actual supported
+  combat both finish with that same final supported packet.
+  The final packet still applies the actual caster's spell-damage restriction and clears inherited hand rows.
   See [20](20-damage.md) section 2f for key 5341, zero-hit callbacks, RF and native verification boundaries.
   Damage ranges are floored only for display/rolls; the packet keeps fractions through conversion.
   The displayed per-use average and DPS retain the unrounded packet average, before critical strikes and target
@@ -1815,10 +1825,10 @@ the main hand is filled, since the server attacks with it; an empty packet adds 
 
 **Selected attack-gem hit rows (#196)** (`AttackSkillHit`, `AttackPanelStats`): main-hand total and per-type
 ranges now use the same packet constructor as projectile and area attack combat.
-The constructor preserves the current order: the actual weapon's hit with character modifiers, flat added attack
-damage from character inputs, the skill's level-aware effectiveness, then conversion and gain-as-extra.
+The constructor starts with raw local weapon and added damage, applies the skill's level-aware effectiveness,
+then resolves conversion/gain history and inherited modifiers together through `PlayerHitDamage`.
 Conversion retains `ConversionFor` precedence: player keys win and level-only skill keys fill gaps, without quality
-conversion. Skill-owned damage modifiers are not newly applied; this panel change preserves current combat rules.
+conversion. Final supported rows are then replaced from `SupportedHit`'s existing merged supported inputs.
 Burning Arrow level one uses effectiveness 18000 and 100% skill physical-to-fire conversion; Heavy Strike uses 12430.
 All twelve main-hand range fields are explicit and floored, including zeros for absent types after conversion.
 `CharacterPanelStats` reads whole-number total keys 670/671, physical 279/280, fire 267/268, cold 263/264,
@@ -1935,8 +1945,9 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   and cast speed, critical strike chance and multiplier, increased and added damage, gain as extra chaos, resistances,
   armour, evasion, block, spell suppression, movement speed, accuracy, area, projectile speed, energy shield, life and
   mana regeneration, and panel sums (stun, cooldown, life on kill). The "with no Frenzy Charges" and "while you have
-  any" stats follow the count (`Conditional`). The more damage per Frenzy Charge scales every hit (`AttackHit`,
-  `SpellDamage.More`) and Righteous Fire's burning (`ChargeDamageMore`). The physical damage reduction (with the
+  any" stats follow the count (`Conditional`). The more damage per Frenzy Charge scales player hits once through
+  `PlayerHitDamage`, including ordinary ranged and supported attacks, and Righteous Fire's burning separately
+  (`ChargeDamageMore`). The physical damage reduction (with the
   passives' `base_additional_physical_damage_reduction_%`) adds to armour's and the elemental one applies after
   resistance, both capped at 90% (Path of Building's CalcDefence; `DamageModel.MitigatePhysical`, `DamageModel.Reduce`),
   for monster hits and the dev `/hit`, `/spellhit` and `/blockhit`.

@@ -8,10 +8,9 @@ using DamagePacket = GameServer.Core.World.DamagePacket;
 partial class Program
 {
     // The player's granted skills: the default attack with the unarmed weapon's stats and every stat the server set on the
-    // player since (a skill's stats include the character's; the client reads the skill's). A gem whose requirements the
-    // character does not meet makes its item inactive (CharacterStatSources) like a worn item the character is too low for,
-    // so GemSkillEffects leaves its skill out: the client has nothing to cast. A use that arrives anyway (a stale client) is
-    // refused (GemDisabled).
+    // player since (a skill's stats include the character's; the client reads the skill's). Qualified equipment supplies
+    // its stats before individual gem validation. A gem's own unmet requirement does not disable its host; GemDisabled
+    // refuses that gem's use even when its skill ID remains in the Actor list or the client sends stale input.
     static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
     {
         var player = FinalPlayerStats(conn).ToList();
@@ -174,7 +173,7 @@ partial class Program
         return stats;
     }
 
-    // The melee context of an attack's added-damage stats — see DamageStats.Added. An attack gem classifies
+    // The melee context of an attack's damage modifiers. An attack gem classifies
     // its own ActiveSkillType Melee; the default attack and the panel swing the active weapon set's weapon where an
     // inactive weapon is not there at all (WeaponProfileFor) and unarmed swings are melee.
     internal static bool MeleeAttack(ClientState conn, int gemEffect = -1) =>
@@ -186,15 +185,13 @@ partial class Program
     internal static DamagePacket AttackHit(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats, bool melee) =>
         AttackHitConverted(weapon, stats, melee, null);
 
-    // Actual converted packets apply Rage last, after the merged main's full increased/added/charge pipeline.
-    // Keep the unconverted entry point for its existing panel/test consumers and exact zero-Rage behavior.
+    // Resolve conversion history and modifiers from raw local/added damage, then apply Rage once.
     internal static DamagePacket AttackHitConverted(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats,
         bool melee, GameServer.Core.World.DamageConversion? conversion)
     {
         int Get(string name) => RageStat(stats, name);
-        var hit = DamageStats.Added(weapon.HitDamage(stats, melee, projectile: !melee), Get,
-            spell: false, melee, projectile: !melee).Scale(ChargeDamageMore(stats));
-        if (conversion is not null) hit = hit.Convert(conversion);
+        var hit = PlayerHitDamage.Resolve(SupportedAttackDamage.Raw(weapon, Get), Get,
+            conversion ?? new(), spell: false, melee: melee, projectile: !melee);
         return RageStats.ApplyAttack(hit, Get);
     }
 

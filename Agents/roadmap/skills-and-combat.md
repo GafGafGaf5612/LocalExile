@@ -96,10 +96,14 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   with correct melee/projectile context and active-hand sources. Pool/charge/timing/block conditions use active gear.
   Twenty-four native publication controls pass in Standard/Ruthless, with an independent local-mod/quality tooltip.
   Alternative quality, local critical modifiers, supported-contact native composition and offhand alternation remain open.
-  Damage conversion also needs visited-type modifier history; destination increases and inherited elemental
-  qualifiers remain incomplete.
-  The Core raw-history seam now has 21 new path cases plus 12 existing packet controls passing; integrate it with
-  shared player modifiers and supported/ordinary hit publication before treating those qualifiers as implemented.
+  Damage conversion now retains visited-type modifier history for destination/intermediate increases and inherited
+  typed more factors. The Core seam has 21 new path cases, 12 existing packet controls and all 648 Core cases passing.
+  The shared player resolver also supplies previously omitted charge more on ranged/attack-gem hits.
+  All 43 new Gateway cases, 340 focused checks and full Gateway3602/Core648/Data37 suites pass. Thirty-two native
+  numeric controls pass across both modes: 24 original explicit-field and eight separately scoped sparse-zero
+  controls, including one retrospective diagnostic baseline. Four restoration/relog checks and all 714 frozen hashes
+  pass. These prove local panel publication; authoritative hit contacts and conditional operators,
+  endpoint-only modifiers, ailments/DoT and official fractional-rounding parity remain separate.
   Flask charge-gain source resolution and separate hybrid Life/Mana rate/buff lifetimes have automated coverage
   and 24 native controls across both modes. Conditional flask sources and queued timer/predictor presentation
   remain open; see the items-and-crafting status.
