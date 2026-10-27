@@ -293,6 +293,7 @@ partial class Program
     {
         double last = conn.Clock.Elapsed.TotalSeconds;
         int suppression = Suppression(conn).Chance;
+        var criticalContext = CriticalContext(conn);
         while (!conn.Closed)
         {
             await Task.Delay(PlayerTickMs);
@@ -301,6 +302,13 @@ partial class Program
             double seconds = tickNow - last;
             last = tickNow;
             if (conn.Paused || seconds <= 0) continue;
+            // Keep the selected skill's conditional luck virtuals current across live Life/Focus boundaries too.
+            // Combat still samples the owner at the accepted contact, independently of this panel refresh cadence.
+            if (CriticalContext(conn) is var currentCritical && currentCritical != criticalContext)
+            {
+                criticalContext = currentCritical;
+                await SendCharacterStats(remote, stream, ciphers, conn, "critical strike conditions changed");
+            }
             await PushOutOfCollision(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             if (conn.PlayerLife == 0)
