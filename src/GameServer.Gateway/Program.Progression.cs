@@ -78,7 +78,22 @@ partial class Program
     static (Dictionary<uint, int> Stats, AttributeModifiers Attributes) CharacterStatSources(ClientState conn,
         IEnumerable<ushort>? nodes = null, int? level = null)
     {
-        var items = ItemsOf(conn);
+        var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
+        var (sources, attributes, inactive, worn) = EquipmentStatSources(conn, ItemsOf(conn).EquipmentSnapshot(), nodes, level);
+        InactiveItems[CharacterName(conn)] = inactive;
+        if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
+            Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
+                string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
+                    $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+        return (WithFortification(conn, WithCharges(conn, sources)), attributes);
+    }
+
+    // Shared equipment/passive resolver. The requirement snapshot uses this without publishing caches or pools.
+    static (Dictionary<uint, int> Sources, AttributeModifiers Attributes, HashSet<uint> Inactive,
+        List<ItemModStats.Worn> Worn) EquipmentStatSources(
+        ClientState conn, IReadOnlyList<(byte Row, InventoryItem Item)> equipment,
+        IEnumerable<ushort>? nodes = null, int? level = null)
+    {
         // A level change can trim the list while /set_stat builds pools outside the combat lock.
         // Mastery dictionaries are replaced as a whole, so retaining their current reference is safe.
         IReadOnlyDictionary<ushort, ushort> masteries;
@@ -110,7 +125,7 @@ partial class Program
             return raw;
         }
         int god = conn.God ? 1000 : 0;
-        var worn = ItemModStats.EquipmentRows.SelectMany(items.Items)
+        var worn = equipment.Select(e => e.Item)
             .Select(i => (i, t: Items.ByHash(i.Item.TypeHash)))
             .Select(x => x.t is { } t
                 ? new ItemModStats.Worn(x.i.Id, x.i.Item, Items.Requirements(t).Str, Items.Requirements(t).Dex, Items.Requirements(t).Int,
@@ -120,20 +135,13 @@ partial class Program
         var (inactive, active) = ItemModStats.ResolveEquipment(worn, level ?? conn.Pools.Level,
             active => AttributeInputs(RawAttributes(active.Select(w => w.Item)), dev)
                 .Apply(c.Strength + god, c.Dexterity + god, c.Intelligence + god), before);
-        // Item activation depends on the item, not on socketed gems. Checking gems here used the previous
-        // connection's/initial pools and disabled the entire item's stats and unrelated gems before pools existed.
-        // Individual gem requirements are checked against the completed pools when socketing or casting.
-        InactiveItems[CharacterName(conn)] = inactive;
-        if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
-            Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
-                string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
-                    $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+        // Item activation depends on equipment requirements, never the gems inside it.
         var rawAttributes = RawAttributes(active);
         var sources = ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
         // Clamp only this outgoing integer view; the authoritative attribute inputs remain wide beside it.
         foreach (var (name, value) in rawAttributes)
             if (Stats.Key(name) is uint key) sources[key] = AttributeModifiers.Signed(value);
-        return (WithFortification(conn, WithCharges(conn, sources)), AttributeInputs(rawAttributes, dev));
+        return (sources, AttributeInputs(rawAttributes, dev), inactive, worn);
     }
 
     // Only raw attribute keys are inputs. A final pool/panel attribute must never feed the flat bucket on a rebuild.

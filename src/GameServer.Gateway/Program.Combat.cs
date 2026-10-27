@@ -235,7 +235,11 @@ partial class Program
             (m.Life, stageStarts) = TakeDamageLocked(m, damage);
             life = m.Life;
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
-            if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
+            if (life == 0)
+            {
+                m.Aggro = false; m.Dead = true; m.Impale.Clear();
+                CollectVaalSoulAtDeathLocked(conn, m);
+            }
             RageOnHitLocked(conn, attack: true, melee: WeaponProfileFor(conn, activeSet: true).Melee, critical);
         }
         ChargesOnHit(conn, m, critical, spell: false);
@@ -377,10 +381,10 @@ partial class Program
             await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (disabled skill, cost back)");
             return false;
         }
-        // Vaal souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill never has the souls it needs.
+        // Soul collection/display does not enable a Vaal executor or a payment path.
         if (gem.Name is not null && Skills.VaalSouls(gem.Effect, gem.Level) is int souls and > 0)
         {
-            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: needs {souls} Vaal souls, has 0");
+            Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: Vaal execution unsupported (base cost {souls} souls)");
             return false;
         }
         // Eligible uses arrive with their one original preflight reservation. Never reserve again after an await.
@@ -1462,7 +1466,11 @@ partial class Program
         if (m.Dead || m.Life == 0) return null;
         (m.Life, bool starts) = TakeDamageLocked(m, damage);
         conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
-        if (m.Life == 0) { m.Aggro = false; m.Dead = true; }
+        if (m.Life == 0)
+        {
+            m.Aggro = false; m.Dead = true;
+            CollectVaalSoulAtDeathLocked(conn, m);
+        }
         return new(m.Life, starts);
     }
 
@@ -1617,6 +1625,7 @@ partial class Program
         (int X, int Y) at, player;
         bool alive;
         lock (conn.Monsters) { at = m.Walk.Position(now); player = conn.Walk.Position(now); alive = conn.PlayerLife > 0; }
+        await SendVaalSouls(remote, stream, ciphers, conn);
         _ = Task.Delay(10_000).ContinueWith(async _ =>
         {
             bool removed;

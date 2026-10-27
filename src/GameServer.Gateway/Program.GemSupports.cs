@@ -4,20 +4,28 @@ partial class Program
 {
     internal static readonly GemSupports Supports = new();
     sealed record SupportedGem(int Effect, int Level, int Quality, IReadOnlyList<GemSupports.Applied> Supports,
-        Dictionary<uint, int> Stats, Item? SourceGem = null);
+        Dictionary<uint, int> Stats, Item? SourceGem = null, bool RequirementsMet = true);
 
     static SupportedGem SupportedSkill(ClientState conn, ushort skillId)
     {
+        lock (conn.Monsters) return SupportedSkillAt(conn, skillId, null);
+    }
+
+    static SupportedGem SupportedSkillAt(ClientState conn, ushort skillId, GemRequirementSnapshot? requirements)
+    {
         string name = CharacterName(conn);
-        var inventory = ItemsOf(conn);
-        var places = inventory.SocketedGemPlaces();
+        var equipment = requirements?.Equipment ?? ItemsOf(conn).EquipmentSnapshot();
+        var places = GemRequirementSnapshot.PlacesIn(equipment);
         var active = places.SelectMany(p => Items.GemEffects(p.Gem).Select(e => (Place: p, Effect: e))).ToList();
         var ids = GemSkillIdsOf.GetOrAdd(name, _ => new GemSkillIds()).Assign(
             [.. active.Select(g => new GemSkillIds.Gem(g.Place.ItemId, g.Place.Socket, g.Effect))], GemSkillIdPool.Value);
         int index = Enumerable.Range(0, ids.Count).FirstOrDefault(i => ids[i] == skillId, -1);
         if (index < 0) return new(-1, 1, 0, [], []);
         var selected = active[index];
-        var host = inventory.SocketHost(selected.Place.ItemId)!;
+        // Vaal source/support eligibility must not inherit an earlier equipment notification's cached pools.
+        if (requirements is null && Skills.VaalBudget(selected.Effect, Items.GemLevel(selected.Place.Gem)) is not null)
+            requirements = CurrentGemRequirements(conn, equipment);
+        var host = equipment.Single(e => e.Item.Id == selected.Place.ItemId).Item.Item;
         int group = GemSupports.LinkGroup(host, selected.Place.Socket);
         int Quality(int socket, Item gem)
         {
@@ -26,14 +34,14 @@ partial class Program
         }
         var candidates = new List<GemSupports.Candidate>();
         foreach (var p in places.Where(p => p.ItemId == selected.Place.ItemId
-            && GemSupports.LinkGroup(host, p.Socket) == group && GemRequirementsUnmet(conn, p.Gem) is null))
+            && GemSupports.LinkGroup(host, p.Socket) == group && GemRequirementsUnmetAt(conn, p.Gem, requirements) is null))
             if (Items.ByHash(p.Gem.TypeHash) is { } type && Items.Gem(type) is { IsSupport: true } gem)
             {
                 var variant = gem.Variant(p.Gem.GemVariant);
                 foreach (int effect in new[] { variant.Effect, variant.Effect2 }.Where(e => e >= 0))
                     candidates.Add(new(effect, Items.GemLevel(p.Gem), Quality(p.Socket, p.Gem), p.Socket));
             }
-        var weapon = inventory.Items(PlayerInventories.Weapon1).FirstOrDefault();
+        var weapon = equipment.Where(e => e.Row == PlayerInventories.Weapon1).Select(e => e.Item).FirstOrDefault();
         int? weaponClass = weapon is null ? null : Items.ByHash(weapon.Item.TypeHash)?.ClassRow;
         var supports = Supports.Resolve(selected.Effect, candidates, Skills, weaponClass);
         int Value(string stat) => Stats.Key(stat) is uint k ? supports.Sum(s => s.Stats.Where(v => v.Key == k).Sum(v => v.Value)) : 0;
@@ -63,7 +71,9 @@ partial class Program
         if (Skills.IsAura(selected.Effect, supports.Select(s => s.Effect.Row)))
             own[OwnAuraRestriction.BaseAura] = 1;
         own[OwnAuraRestriction.Aura] = OwnAuraRestriction.IsAura(own) ? 1 : 0;
-        return new(selected.Effect, level, quality, supports, own, selected.Place.Gem);
+        return new(selected.Effect, level, quality, supports, own, selected.Place.Gem,
+            requirements?.Inactive.Contains(selected.Place.ItemId) != true
+                && GemRequirementsUnmetAt(conn, selected.Place.Gem, requirements) is null);
     }
 
     static Dictionary<uint, int> SupportedStats(ClientState conn, ushort skillId)

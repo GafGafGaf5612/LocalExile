@@ -304,6 +304,21 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Vaal souls (#308): genuine owner kills collect into bounded shared ActiveSkills-row budgets.
+  Creation and skill updates publish the proved native Actor lists; automated wire/dispatcher checks pass.
+  Duplicates, source/cost changes, removal/readd, range, prevention, queued sends and transient lifecycle are covered.
+  Eligibility commits with lethal mutations before death notifications, including shared hits and Righteous Fire.
+  Vaal aura costs use per-instance Aura types and accepted supports, with explicit developer replacement precedence.
+  Player soul loss commits at zero Life; delayed death notices preserve actual resurrection earnings.
+  Vaal gem/support requirements use current equipment snapshots while gear notifications are held.
+  Source checks on base `939b44fe` preserve wide raw attributes, mana, pool flags and supported skill payment.
+  Skill-record bit1 (0x02) now retains native Vaal soul inputs using catalog raw stored uses in both lookup paths.
+  Parsed creation/update and real socketed tests cover zero cost/balance, ordinary partners and inactive hosts.
+  Distribution and capacity are documented LocalExile policies; no native Vaal feature checks have passed.
+  Native acceptance and READY remain pending; R21 readiness ended at strict identity failure without a recorded member.
+  Unsupported Vaal casts are refused before action echoes or cooldown reservation, including effective zero cost.
+  No executor, Rage payment or SGP countdown is added.
+  See [27-vaal-souls.md](../docs/protocol/27-vaal-souls.md).
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;

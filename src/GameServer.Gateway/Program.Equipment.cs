@@ -211,6 +211,7 @@ partial class Program
     // then the Actor skill list again, since the gems socketed in the equipment grant skills.
     static async Task SendEquipment(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PlayerInventories items)
     {
+        RefreshVaalSouls(conn);
         var equipped = Looks(conn, items);
         await Send(remote, stream, ciphers, InstanceEntities.PlayerEquipmentUpdate(PlayerId, equipped),
             $"0x02ba player equipment: {string.Join(", ", equipped.Select(e => $"slot {e.Slot} visual 0x{e.VisualIdentity:x4} stance {e.Stance}"))}");

@@ -346,6 +346,14 @@ sealed class PlayerInventories
     /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
     public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem() => [.. SocketedGemPlaces().Select(g => (g.ItemId, g.Gem))];
 
+    // Immutable item records from ONE inventory read, including attribute gear and all active socket hosts.
+    internal IReadOnlyList<(byte Row, InventoryItem Item)> EquipmentSnapshot()
+    {
+        lock (_lock)
+            return [.. ItemModStats.EquipmentRows.SelectMany(row =>
+                (_items.TryGetValue(row, out var items) ? items : []).Select(item => (row, item)))];
+    }
+
     public Item? SocketHost(uint id)
     {
         lock (_lock) return _items.Values.SelectMany(v => v).FirstOrDefault(i => i.Id == id)?.Item;

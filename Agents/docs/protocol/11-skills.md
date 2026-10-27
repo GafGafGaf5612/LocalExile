@@ -51,9 +51,8 @@ byte f0:
   a × skill record (0x1421981d0, as in the list: add or replace)
   b × u16 skill id (0x142198560: binary search of the manager's skills at +0x158 by id (+0x40), the manager's
                     vtable +0x40 runs for it, then it is erased; an unknown id is skipped)
-  u8 c, c × (u32, u32)        → manager +0x188 (ActiveSkills row → Vaal souls: FUN_141eea5b0 compares the souls a
-                                use needs with the entry's count)
-  u8 d, d × (u32, u32, u32)
+  u8 c, c × (u32 ActiveSkills row, u32 capacity)                 → soul seeds, current = 0
+  u8 d, d × (u32 ActiveSkills row, u32 current, u32 NEW capacity) → soul updates, OLD-capacity clamp
   ```
   After login the Gateway sends every skill change this way (`SendSkills`): all the player's skills as records and the
   ids that left. It remembers the ids the client has per connection (`ClientSkillIds`, from the player object and every
@@ -62,9 +61,14 @@ byte f0:
 `0x142197b10`:
 ```
 u8 n,  n × skill record (0x142196ce0, through 0x1421981d0: insert sorted by id, replacing an equal id, then slot 7)
-u8 m,  m × (u32 ActiveSkills row (0x101-byte rows), u32, u32) → manager +0x188, the Vaal souls (not used)
+u8 m,  m × (u32 ActiveSkills row (0x101-byte rows), u32 capacity, u32 current) → manager +0x188
 u32 k, k × (u16 skill id, u32 c, c × (f32 remaining base s, f32 total base s, f32 rate, u32 flags))
 ```
+
+Both soul readers preserve existing entries when their lists are empty.
+Collection, explicit removal resets, capacity seeding and the native consumers are documented in
+[27-vaal-souls.md](27-vaal-souls.md).
+The implementation has automated coverage; native acceptance is pending and unsupported Vaal casts remain refused.
 
 Skill record (`0x142196ce0`):
 ```
@@ -74,12 +78,22 @@ GEPL reference (0x1424a0dc0):
   u32  GrantedEffectsPerLevel row (0x78-byte rows)
   stat-set reference (0x1424a0990): u8 a, [u8 if a], u32 GrantedEffectStatSetsPerLevel row (0xb8-byte rows)
   one more stat-set reference per entry of the effect's additional stat sets (GrantedEffects row → its list count)
-u8   flags: bit0 → u32 parent object id ("Skill parent object did not exist" if unknown) + u16; bit1, bit2 → instance flags
+u8   flags: bit0 → u32 parent object id ("Skill parent object did not exist" if unknown) + u16
+            bit1 (0x02) → retain native Vaal soul inputs; bit2 → constructor parameter13 bit1
 u8   n supports, n × (GEPL reference, u32)
 u32, u32, u32 cooldown ms, u8                       → skill +0xc0, +0xc4, +0xc8, +0xcc (0x141ee73d0)
 compact n × (compact stat key, compact value)      the skill's own stats
 per additional stat set: the same stats list
 ```
+At `0x1421975f0..0x142197610`, clear wire bit1 and nonzero raw GEPL +0x2c stored uses set `dil = 1`.
+At `0x1421976e8..0x1421976f6`, constructor parameter13 is `(wireBit2 * 2) | dil`.
+Constructor `0x141ee7571..0x141ee75ba` zeros soul inputs +0xe8/+0xec/+0xf0 when parameter13 bit0 is set.
+Otherwise it retains GEPL +0x28 base souls, +0x2c stored uses and the selected soul multiplier.
+`GrantedSkill.VaalResourcesEnabled` defaults false and emits only wire bit1 for catalog Vaal resource definitions.
+Both catalog lookup paths derive it from raw stored uses, independently of effective cost, capacity or current souls.
+Ordinary partners, attacks and supports keep their existing layout; parent bit0 and third bit2 remain clear.
+The literal primary constructor regression is source evidence; native Vaal acceptance is still pending.
+
 The additional stat sets are the GrantedEffects row's `StatSet2` list (Volcanic Fissure has one). Each needs its
 reference after the first and its stat list after the skill's own: a record without them made the client misread the
 rest and crash when Volcanic Fissure was socketed (live 2026-10-23). `GrantedSkill.ExtraStatSets` carries them
@@ -1899,7 +1913,7 @@ Automated parsed-dispatch coverage does not constitute native verification.
 - Monsters use only their first granted effect; no ranged or spell skills, no monster skill choice.
 - A damage model: armour, evasion, resistances, crits; the player's real life from level and stats.
 - The death screen's bit4 and trailing fields (Sanctum and other modes); exit to character selection (0x153).
-- f0 0x20 (skill update), the second and third lists of f0 0x40, supports (linked support gems), gem levels.
+- Skill record fields +0xc0/+0xc4 still have unproved semantic names.
 - Projectiles: their height above the ground and model orientation (§10), collision, the explosion, the real
   skill → projectile link; damage for ground casts.
 - The meaning of 0x53's two trailing u16.

@@ -140,7 +140,8 @@ The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0
   - **Cooldown:** the cooldown of the gem's level (GrantedEffectsPerLevel `Cooldown`, the auras' 1.2 s) is the one
     the server enforces and sends with the skill ([11](11-skills.md)); the server allows one use per cooldown even when
     `StoredUses` is higher.
-  - **Vaal skills** need their `VaalSouls`; souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill is refused.
+  - **Vaal skills** have a soul collector and native budget payloads; unsupported Vaal executors remain refused.
+    See [27-vaal-souls.md](27-vaal-souls.md); collection does not enable casting.
 - **Not created** (`ItemCatalog.FindGem`, `/gem`): the "[DNT]" placeholder variants, the "[UNUSED] …", "[DNT] …" and
   "WIP …" gem rows, the awakened supports other than Awakened Empower, Enhance and Enlighten, and the Vaal variants
   whose base skill is only a placeholder's (Vaal Fireball has only its normal variant). A Vaal variant's name is "Vaal "
