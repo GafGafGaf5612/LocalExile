@@ -105,7 +105,8 @@ partial class Program
     static GameServer.Core.World.DamagePacket SupportedHit(ClientState conn, ushort skillId)
     {
         var gem = SupportedSkill(conn, skillId);
-        var stats = MergeSkillStats(FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2), gem.Stats);
+        var caster = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
+        var stats = MergeSkillStats(caster, gem.Stats);
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
         bool attack = Skills.IsAttack(gem.Effect);
         var types = Supports.Of(gem.Effect)?.Types.ToHashSet() ?? [];
@@ -118,7 +119,8 @@ partial class Program
         hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: false);
         hit = hit.Convert(DamageStats.Conversion(stats, Stats, attack));
         hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
-        return attack ? RageStats.ApplyAttack(hit, Get) : hit;
+        if (attack) hit = RageStats.ApplyAttack(hit, Get);
+        return new SkillDamageContext(plan.Kind, caster).Hit(hit);
     }
 
     static int SupportedCriticalChance(ClientState conn, ushort skillId)

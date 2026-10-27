@@ -367,28 +367,22 @@ partial class Program
                 Console.WriteLine($"[gateway] Cyclone area: base {baseRadius}, radius {radius}, increased area {increased}%, radius scale {radiusPercent}%");
             }
             var hitPlan = SkillHitPlan.ForSkill(Skills, effect, level, quality);
-            if (hitPlan.Kind == SkillHitKind.Spell)
-            {
-                // Match ConversionFor: character inputs win and level-only skill inputs fill missing keys.
-                // Quality still affects the base hit and modifiers, but not conversion, as in combat today.
-                var conversion = DamageStats.Conversion(characterInputs, Skills.EffectStats(effect, level), Stats, attack: false);
-                var hit = SpellHit.Resolve(hitPlan, Stats, playerStats, own, conversion, AddedEffectiveness(effect, level));
-                foreach (var (stat, value) in SpellPanelStats.Compute(hitPlan, hit, Get("hundred_times_casts_per_second")))
-                    if (Stats.Key(stat) is uint key) stats[key] = value;
-            }
-            var attackPlan = SkillHitPlan.ForSkill(Skills, effect, level, quality);
-            if (attackPlan.Kind == SkillHitKind.Attack)
+            if (hitPlan.Kind == SkillHitKind.Attack)
             {
                 var attackHit = AttackSkillHit.Resolve(mainHand, characterInputs, Skills.EffectStats(effect, level),
                     Stats, Skills.DamageEffectiveness(effect, level));
-                foreach (var (stat, value) in AttackPanelStats.Compute(attackPlan, attackHit, Get("hundred_times_attacks_per_second")))
+                foreach (var (stat, value) in AttackPanelStats.Compute(hitPlan, attackHit, Get("hundred_times_attacks_per_second")))
                     if (Stats.Key(stat) is uint key) stats[key] = value;
             }
             if (Skills.IsAttack(effect) || Skills.IsSpell(effect))
             {
                 var supportedHit = SupportedHit(conn, id);
                 double seconds = Skills.IsAttack(effect) ? SupportedAttackSeconds(conn, id) : Math.Max(.001, (CastMs(conn, effect, id) ?? 0) / 1000.0);
-                foreach (var (key, value) in PanelStats.HandDamage(supportedHit, "main_hand"))
+                var damageRows = hitPlan.Kind == SkillHitKind.Spell
+                    ? SpellPanelStats.Compute(hitPlan, supportedHit, Get("hundred_times_casts_per_second"),
+                        includeMainHand: true)
+                    : PanelStats.HandDamage(supportedHit, "main_hand");
+                foreach (var (key, value) in damageRows)
                     if (Stats.Key(key) is uint statKey) stats[statKey] = value;
                 var display = SpellDamage.Display((supportedHit.MinTotal, supportedHit.MaxTotal), 1 / seconds);
                 stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = display.PerUse;

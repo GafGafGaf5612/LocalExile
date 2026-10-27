@@ -124,6 +124,10 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Mixed monster packets and ES/block/suppression/Fortification have automated coverage; recheck them natively.
   See Status and protocol/20-damage.md section 2e.
   Recent-hit armour doubling/history, partial armour percentages and whole-class Incorruptible remain separate.
+  Rampager's raw spell restriction has hit/panel and RF regressions; eleven native controls are historical (#293).
+  See [status](../status/skills-and-combat.md) for the verified consumer scope.
+  Fresh ordered joint hit controls pass at `c9cd1864`; original RF, Ice Nova and relog checks remain historical.
+  Rampager's other mechanics and class admission remain separate work.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
   Unconditional penetration is integrated with base/mod resistance, fractional totals and target damage taken.
@@ -164,6 +168,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Focus/curse lifecycles and statistical RNG validation remain separate from the deterministic policy tests.
   Added-base and other conditional/more crit remain separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
+  When owned-actor execution is implemented, supply actual-caster stats to `SkillDamageContext` explicitly.
+  Do not inherit an owner's spell-damage restriction onto independent minions or daemons without a skill rule.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
 ### Rage extensions

@@ -257,6 +257,23 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native grey-icon prediction and persistent restricting equipment remain unverified.
   The suspend/restore lifecycle is explicit LocalExile policy, not proven GGG behavior; Phrecia play stays gated.
   See [11](../docs/protocol/11-skills.md) section 10c.
+- **Spell skills deal no damage (#293):** raw caster key 5341 suppresses supported Spell hit packets and RF enemy burn.
+  Physical, elemental and chaos spell damage, supported projectiles and areas share the final packet restriction.
+  Selected native record ranges, average damage and DPS use that packet, including inherited main-hand zero rows.
+  Casting, costs, timing, visuals, zero-hit callbacks, attacks and aura-granted attack bonuses retain their scope.
+  RF self-burn continues independently; source changes follow existing impact/tick resolution without pool rebuilds.
+  Automated supported constructors, dispatch/Life, in-flight changes, aura controls and RF tick checks pass.
+  Current-main controls cover Rage/charge contacts, quality, Mana sources, Mageblood, chaos armour
+  and cosmetic identity.
+  Unpaid release guards, utility reservation/cooldowns and RF fractional carry keep their existing behavior.
+  Eleven historical native checks at original head `e80a81c` cover Fireball/Ice Nova, paid casts and attacks.
+  Native Fireball action rows clear ranges and DPS; RF keeps its self-burn while its enemy damage stops/resumes.
+  Those controls cover source changes and relog at the historical head.
+  Fresh ordered joint controls at `c9cd1864` verify Fireball 200 / zero, attack 100 and restored Fireball 200.
+  Final attributes and converted pools remain active in that same unascended Marauder session.
+  Rampager 49937 supplies the source, but class admission, owner execution and the node's other mechanics are separate.
+  Code: `SkillDamageContext`, `SupportedHit`, `SpellHit`, `BurnAround`, `GemSkills`.
+  Docs: [20](../docs/protocol/20-damage.md) section 2f.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
   every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
@@ -447,8 +464,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Selected spell hit damage panel (#188).** Spell total/per-type ranges and pre-crit average damage/DPS
   now use the same converted packet as projectile and area combat.
   All range fields are explicit, including zeros for absent types; hitless spells clear inherited weapon DPS/per-use.
-  Initial player creation and later skill refresh both pass separate character conversion inputs.
-  Attack displays, modifier precedence and the existing level-only conversion rule are preserved.
+  Final selected spell records use the supported combat packet for spell and inherited main-hand ranges.
+  This includes explicit zero ranges after spell damage suppression, without changing attack displays.
   Automated mixed conversion/gain, added-damage effectiveness, hitless, attack and native row-format checks pass.
   Native selection/getter checks show Fireball 10-15 fire and Freezing Pulse 10-15 cold with a +12% spell-damage wand.
   A conversion/gain control split Fireball into fire and chaos rows and dealt a noncritical 14-damage server hit.

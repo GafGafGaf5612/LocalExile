@@ -255,6 +255,79 @@ The test records the exact embedded Git versions, DLL hash and process working d
 Recent-hit armour doubling/history, partial armour percentages, other class mechanics and local item defences
 remain separate work.
 
+## 2f. Spell skills deal no damage (#293)
+
+The extracted 3.29.3b `Stats.dat` row 5340 is `spell_skills_deal_no_damage`, client key 5341.
+`PassiveSkills.dat` node 49937, Rampager, supplies value 1.
+This consumer reads the raw stat already carried by the caster's character-stat dictionary.
+It adds no pool field or pool rebuild, class admission, passive allocation exception or graph bypass.
+
+`SkillDamageContext` takes an explicit skill kind and the actual caster's stats, with no implicit owner lookup.
+A nonzero flag suppresses the entire outgoing Spell packet, including physical, elemental and chaos components.
+Attack classification takes precedence for mixed Attack/Spell skills, matching `SkillHitPlan`.
+Default melee/bow attacks and attack gems keep their damage, including bonuses granted by Spell-tagged auras.
+Aura activation, reservation and buffs remain available.
+The rule does not prohibit skill use: casting, mana costs, action timing, cooldowns and visuals retain their paths.
+
+`SupportedHit` suppresses the final supported packet after added damage, conversion and support multipliers.
+Existing projectile and area execution consumes that packet before rolling damage and applying target mitigation.
+The standalone `SpellHit.Resolve` seam applies the same rule with its separate caster dictionary.
+The final `GemSkills` record publishes the supported packet's spell and main-hand ranges, per-use damage and DPS.
+Explicit zeros replace inherited weapon ranges, so server Life loss and native panel inputs agree.
+Removing or zeroing the source restores the next packet without rebuilding pools.
+
+Gem projectiles retain main's impact-time stat resolution, including flag addition or removal during flight.
+Area hits resolve at their existing hit time; ordinary bows retain their existing release snapshots.
+No projectile snapshot, Fireball impact art/shape (#262) or broader projectile execution (#258) is added here.
+Their future spell impact paths can reuse the same explicit context.
+
+RF enemy burn passes its outgoing `DamageOverTime` through the context on every existing monster tick.
+Suppression sets the rate to zero, preserving fractional carry and enemy aura membership.
+The resource-recovery loop's RF self-burn remains an independent self-damage cost, including ES absorption.
+Restoring the source's damage resumes enemy burn without restarting RF.
+This change does not implement a separate RF or other DoT panel; existing hitless-spell hit rows remain zero.
+
+Zero-damage hit policy is preserved deliberately.
+Supported hits still roll block/critical state, accept the hit, update the existing hit timestamp and run callbacks.
+On-hit/noncritical charge events and existing notifications therefore still occur on an accepted zero-damage hit.
+Main's generic on-hit Rage gain also remains eligible on accepted spell contacts, including suppressed hits.
+Attack/melee Rage gains and Fortification still require their own attack/melee eligibility.
+No primary evidence in this slice establishes a different callback rule; no damage-based hit-admission gate is added.
+RF remains a DoT tick and does not create hit callbacks.
+
+Main has no full owned-actor executor.
+Independent minions or daemons must supply their own actual-caster stats to this seam when that executor is built.
+An owner's suppression is not inherited merely because it owns the actor.
+Future owner-derived integration needs explicit per-skill ownership rules and separate production-route coverage.
+No archived actor executor, Rampage, Vaal or new resource cost is imported.
+
+Automated checks cover actual supported spell constructors, selected native records and encrypted dispatch to Life.
+They include physical/elemental/chaos hits, source default/on/off/removal, supported added chaos and charge callbacks.
+Released Fireball tests witness the glide before adding or removing the source, then check impact Life.
+Default melee/bow, attack gems, Anger/Wrath/Hatred attacks and RF enemy/self ticks are covered.
+Current-main regressions compose local weapon quality, supported additions, charges, conversion and Rage.
+Parsed source replacements preserve Strength-derived Mana, chaos-hit armour and Mageblood flask deduplication.
+Maximum-Mana added lightning remains attack-only, and restoring a source does not refill current Mana.
+Unpaid casts keep main's action-intent ordering without releasing damage or granting hit resources.
+Utility reservation/cooldowns, cosmetic target identity and RF fractional carry retain combined regression coverage.
+Historical native checks at original head `e80a81c` used an unascended Witch and raw development inputs.
+The eleven controls used a synthetic level-one Plate Vest; they do not verify the rebased candidate.
+Fireball dealt a fixed 200 chaos and Ice Nova 130 to actual native target Life; the flag reduced both to zero.
+Native Fireball mouse actions exposed matching selected ranges and DPS, including explicit zeros with the flag.
+Paid casts still corrected native Mana, signed nonzero flags suppressed damage, and removing the flag restored it.
+A default attack still dealt 100 with the spell flag active.
+With RF installed, enemy Life stayed at 4516 while actual player Life fell from 259 to 209.
+Removing the flag resumed enemy burn to 4455; reapplying it stopped that existing burn without restarting RF.
+Relog cleared the development source.
+In-flight source changes, conversion/gain, supported additions and aura attack bonuses have automated coverage.
+The ordered #290 / #294 / #296 / #300 integration at `c9cd1864` passes 28 fresh native controls.
+On its new level-one unascended Marauder, a level-one Fireball deals fixed 200 chaos, then zero with the flag.
+An attack still removes 100 native target Life while flagged; removing the flag restores Fireball's 200.
+The same owner retains converted mana 29 and Armour 251; two existing synthetic accuracy mods ensure a 100% attack roll.
+The real native Life reads and accepted-hit logs agree, with Gateway/Core/Storage/Host revisions and hashes pinned.
+RF, Ice Nova, relog and selected-panel controls above remain attributed to the original head.
+No native allocation of Rampager, owned-actor execution or whole-class acceptance is claimed.
+
 ## 3. Damage over time and ailments
 
 DoT is one damage type, has no hit, cannot critically strike and uses that type's resistance. `DamageOverTime` carries
