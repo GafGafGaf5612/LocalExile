@@ -25,21 +25,34 @@ partial class Program
     }
 
     static partial void RegisterProjectileSkillDefinitions(Dictionary<string, ProjectileSkillDefinition> definitions,
-        ref bool adoptProjectileGems);
+        ref bool requireExplicitProfiles);
 
-    static readonly (IReadOnlyDictionary<string, ProjectileSkillDefinition> Definitions, bool AdoptGems) ProjectileDefinitions
+    static readonly (IReadOnlyDictionary<string, ProjectileSkillDefinition> Definitions, bool RequireExplicitProfiles) ProjectileDefinitions
         = BuildProjectileDefinitions();
 
     static (IReadOnlyDictionary<string, ProjectileSkillDefinition>, bool) BuildProjectileDefinitions()
     {
         var definitions = new Dictionary<string, ProjectileSkillDefinition>(StringComparer.Ordinal);
-        bool adopt = false;
-        RegisterProjectileSkillDefinitions(definitions, ref adopt);
-        return (definitions, adopt);
+        bool requireExplicit = false;
+        RegisterProjectileSkillDefinitions(definitions, ref requireExplicit);
+        return (definitions, requireExplicit);
     }
 
     internal static ProjectileSkillDefinition? ProjectileDefinition(string effect) =>
         ProjectileDefinitions.Definitions.GetValueOrDefault(effect);
+
+    // Catalog metadata permits only the basic approximation. Providers can require explicit recipes;
+    // that is an admission policy, never a choice of simulator or production entry point.
+    internal static ProjectileSkillDefinition? CatalogProjectileDefinition(int effect)
+    {
+        if (!Skills.IsProjectile(effect) || Skills.ProjectileFor(effect) is not { } projectile) return null;
+        return new(projectile.Id, (get, speed) =>
+            GatewayProjectileDefaults.Resolve(projectile.Id, get, speed, Skills.IsAttack(effect)));
+    }
+
+    static ProjectileSkillDefinition? ResolveProjectileDefinition(int effect) =>
+        ProjectileDefinition(Skills.EffectId(effect) ?? "")
+        ?? (ProjectileDefinitions.RequireExplicitProfiles ? null : CatalogProjectileDefinition(effect));
 
     static ProjectilePresentation PresentationFor(ProjectileEntity p) =>
         (p.Use.Payload as ProjectileOffense)?.Presentation

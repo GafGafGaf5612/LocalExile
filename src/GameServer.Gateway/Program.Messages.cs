@@ -37,6 +37,7 @@ partial class Program
                 if (InTown(conn) && Skills.ActionName(use.SkillId) != "Move") continue;
                 bool cast = Skills.IsGemSkill(use.SkillId);
                 var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
+                if (cast && gem.Name is not null && !ProjectilePathAvailable(remote, conn, use.SkillId, gem.Effect)) continue;
                 // A disabled gem's skill is not confirmed: the client animates the cast and sends the use anyway (it only reds
                 // the gem), so without the 0x1ab the action does not run. No projectile, mana or cooldown either.
                 if (cast && gem.Name is not null
@@ -72,7 +73,8 @@ partial class Program
                 // A ranged weapon (a bow) fires at the point instead: arrows flew nowhere while this branch walked the
                 // player, since the projectile is launched by the cast below (live 2026-10-25).
                 bool attack = cast && gem.Name is not null && Skills.IsAttack(gem.Effect);
-                if (attack && (use.Flags & 0x1) == 0 && !Skills.IsMovement(gem.Effect) && WeaponProfileFor(conn).Melee)
+                if (attack && (use.Flags & 0x1) == 0 && !Skills.IsMovement(gem.Effect)
+                    && !Skills.IsProjectile(gem.Effect) && WeaponProfileFor(conn).Melee)
                 {
                     var here = conn.Walk.Position(at);
                     if (!MonsterAtAim(conn, gem, use.X, use.Y, at) || Dist(here, (use.X, use.Y)) > WeaponFor(conn).Range)
@@ -127,17 +129,22 @@ partial class Program
                         StartAction();
                     }
                 }
+                bool projectileRuntime = cast && gem.Name is not null && UsesProjectileRuntime(gem.Effect);
+                if (projectileRuntime) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId,
+                    (px, py), (use.X, use.Y), sequence: use.Slot, actionToken: cooldownUse?.ActionToken ?? action, cooldownUse: cooldownUse);
                 bool acknowledged = false;
-                await Send(remote, stream, ciphers,
+                Func<Task> echo = () => Send(remote, stream, ciphers,
                     InstanceProtocol.ActionStarted(PlayerId, px, py, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                     $"0x01ab action started {use} at ({px}, {py}){(cast ? " (gem skill cast)" : $", walk ends at {conn.Walk.Destination} in {conn.Walk.ArrivesAt - at:0.00} s")} (t={at:0.000})",
                     still: () => acknowledged = OwnAuraAcknowledgementAllowed(conn, gem.Effect, use.SkillId,
                         () => cooldownUse?.CommitNativeUse(conn, use.SkillId) ?? PlayerActionCurrent(conn, action)));
-                if (!acknowledged) continue;
+                if (projectileRuntime) ProjectilesFor(remote, stream, ciphers, conn).Enqueue(echo);
+                else await echo();
+                if (!projectileRuntime && !acknowledged) continue;
                 if (cooldownUse?.Current(conn) == false) continue;
-                if (cast) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y), sequence: use.Slot,
+                if (cast && !projectileRuntime) _ = CastGemSkill(remote, stream, ciphers, conn, use.SkillId, (px, py), (use.X, use.Y), sequence: use.Slot,
                     actionToken: cooldownUse?.ActionToken ?? action, cooldownUse: cooldownUse);
-                else await FollowRighteousFire(remote, stream, ciphers, conn);
+                else if (!cast) await FollowRighteousFire(remote, stream, ciphers, conn);
                 if (!PlayerActionCurrent(conn, action)) continue;
                 string mode = Environment.GetEnvironmentVariable("Game_MOVE_MODE") ?? "echo";
                 if (mode == "teleport")

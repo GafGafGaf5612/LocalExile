@@ -6,12 +6,16 @@ The generic implementation is in `src/GameServer.Core/Projectiles/` and
 
 `feat/projectile-framework` is based on upstream main. It supplies integer-time simulation,
 30 Hz hosting, continuation and hit-admission primitives, resolved-stat binding, synchronous
-combat/reward mutations and ordered native presentation. Without the provider the registry is
-empty and upstream skill execution remains active. Synthetic tests drive the host directly.
+combat/reward mutations and ordered native presentation. It owns the production gem/bow entry points.
+Without the provider, catalog-recognized projectile gems use a basic straight-flight recipe with
+resolved counts and continuations; ordinary bows use the same runtime. This approximation does not
+implement a special skill's explosions, pulses, children, forms or resource rules. Missing metadata
+or an unsupported damage plan is refused before costs, without falling through to an area hit.
 
 `feat/projectile-skill-coverage` is stacked on that framework. It registers exact effects and
-activates adopted gem and ordinary-bow routes, with the current rejection policy for unadopted
-gem projectiles. Skill recipes, numeric calibration, native art and resource rules belong there.
+replaces basic recipes for adopted gems and requires explicit recipes for gem projectiles.
+Skill recipes, numeric calibration, native art and resource rules belong there. It does not
+replace the production entrance or install a flight simulator.
 The split preserves the previous behavior; it does not establish official visual parity.
 
 ## Extension contract
@@ -30,12 +34,15 @@ The split preserves the previous behavior; it does not establish official visual
   output under that lock; pause, transfer, retirement and output overflow retain existing guards.
 
 This is an in-process typed boundary, with no dynamic plugin loader or new assembly.
+`ProjectileRuntime` is the only flight/collision engine. The old callback flight, collision
+estimator and spread/return policy engines have been removed; tests use the same Core runtime
+and Gateway session as production.
 Core actor/team contracts are source-neutral. The current Gateway damage adapter targets monsters;
 live hostile projectile adapters are still future work.
 
 ## Local branch transition
 
 The old `feat/projectile-runtime` ref stays available. Existing CI already includes that history.
-A one-time equal-tree ancestry bridge joins the refactored old branch to the clean stack, so CI
-can merge only the structural delta while retaining unrelated enabled features. Merge that bridge
-before subsequent framework/coverage work; do not reset CI or merge CI history into the clean stack.
+A one-time equal-tree ancestry bridge already joined the refactored old branch to the clean stack.
+Subsequent corrections use normal merges and retain unrelated enabled features; do not reset CI
+or merge CI history into the clean stack.

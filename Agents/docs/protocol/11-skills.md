@@ -970,6 +970,14 @@ u32 BE y, the player's cell) every few frames while the button is held, and **Câ
 
 ## 10. Projectiles (experimental)
 
+**Current implementation:** the [framework](../game/projectile-framework.md) owns gem/bow production routing and
+the sole 30 Hz Core simulator. Without skill coverage, catalog-recognized projectiles use basic straight-flight
+recipes; missing metadata is refused before costs. Coverage replaces recipes and presentation, never the engine.
+The old callback flight, observed-motion estimator, fixed-gap spread and named return-policy helpers are removed.
+The older native evidence below records packet discoveries and the replaced implementation: its 16 ms polling,
+send-gate damage commits, return overshoot/debug flags and fixed-gap controls are not current runtime behavior.
+Revalidate native gameplay against the current runtime; packet-layout evidence remains applicable.
+
 The server creates and moves the projectile. The client's Projectile component (vtable `0x1435a0d10`, 0x20 bytes) does
 nothing by itself: its slot 17 reads nothing and almost every other slot is a bare `ret`.
 

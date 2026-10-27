@@ -166,18 +166,6 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         lock (Monsters) return !Closed && !LeavingArea && !RageRetired && ProjectileEpoch == epoch;
     }
 
-    // Called inside the send gate. A queued terminal visual must survive pause and retry after resume;
-    // its registry removal cannot commit until that packet is accepted.
-    public bool TryCommitProjectileVisual(int epoch, Action? commit = null)
-    {
-        lock (Monsters)
-        {
-            if (!ProjectileActive(epoch) || Paused) return false;
-            commit?.Invoke();
-            return true;
-        }
-    }
-
     public bool TryBeginAreaChange(PendingTransfer transfer, out uint[] projectiles)
     {
         using (Program.ProjectileMutation(this, advance: false))

@@ -5,7 +5,8 @@
 **Goal:** Deliver a standalone generic framework and a dependent skill-coverage branch without losing existing fixes.
 
 **Architecture:** Keep Core source-neutral, extract generic Gateway hosting contracts, and register skill-specific
-release/presentation behavior through an optional partial-class provider. Coverage activates production skill routing.
+release/presentation behavior through an optional partial-class provider. Framework owns production skill routing.
+The [single-runtime correction](projectile-single-runtime-plan.md) supersedes the earlier dormant-host steps below.
 
 **Tech stack:** C# / .NET 10, existing partial classes, typed records/delegates, xUnit and local Git branches.
 
@@ -69,8 +70,9 @@ release/presentation behavior through an optional partial-class provider. Covera
 
 ## Decisions and progress
 
-Ruling: the standalone Gateway host may remain dormant until coverage activation, retaining upstream routes.
-This avoids restoring an artificial subset of skill behavior just to demonstrate the framework's dependency step.
+Superseded ruling: the standalone Gateway host originally remained dormant until coverage activation.
+The user's correction rejects the duplicate-engine outcome; framework now owns the sole production runtime,
+including generic catalog recipes and ordinary bows. Coverage supplies recipes and admission policy only.
 
 Ruling: use an equal-tree local ancestry bridge for the one-time CI transition. The clean stack stays upstream-based;
 CI already contains the old feature, so direct independent re-addition would risk avoidable add/add conflicts.

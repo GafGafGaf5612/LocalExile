@@ -4,7 +4,8 @@
 
 Split the existing implementation into separately reviewable code responsibilities and stacked development branches.
 The user selected both code and branch separation. The preserved behavioral baseline is `9fe3262`.
-This is a structural change: existing adopted skills retain their counts, timing, hit policies, damage and visuals.
+Existing adopted skills retain their counts, timing, hit policies, damage and visuals.
+The user's correction requires the framework alone to own actual production execution and removes the old engine.
 Unresolved native height, appearance and official-parity questions remain unresolved.
 
 ## Dependency boundary
@@ -12,7 +13,7 @@ Unresolved native height, appearance and official-parity questions remain unreso
 1. `feat/projectile-framework`, based on the current upstream `main`, supplies the source-neutral Core simulator
    and generic Gateway hosting contracts, lifecycle, combat mutation and presentation machinery.
 2. `feat/projectile-skill-coverage`, based on the framework branch, registers exact supported skills, their profiles,
-   resource rules, display bindings and presentation choices, and activates the corresponding production routes.
+   resource rules, display bindings and presentation choices, with explicit-recipe admission for gem projectiles.
 
 The original `feat/projectile-runtime` and existing `dev/ci` history are preserved.
 No force push, branch deletion, CI reset or unrelated feature import is part of the split.
@@ -31,10 +32,11 @@ Branch names and stacked delivery are implementation choices following the user'
 - Generic damage/offense and presentation payloads; the host must not branch on named skills or their art paths.
 - Framework tests use synthetic profiles and actor adapters. They do not need the 142-skill inventory or live client.
 
-Framework-only delivery must compile, pass its Core/Data/Gateway suites and retain the upstream game's existing
-skill routes until a coverage registration explicitly adopts/rejects them. A dormant host is acceptable during this
-dependency step; silently replacing an unregistered skill with area damage or rejecting all upstream skills is not.
-The generic bridge may expose a minimal ordinary-arrow specimen where it can preserve this boundary safely.
+Framework-only delivery must compile, pass its Core/Data/Gateway suites and execute ordinary bows and catalog-known
+projectile gems through the new runtime. A generic catalog recipe provides basic straight flight and resolved modifiers;
+it does not establish special-skill parity. Unknown projectile metadata/damage plans are refused before costs.
+Coverage replaces recipes and may require explicit registrations, but cannot replace production routing or flight.
+There is no dormant-host mode, legacy flight engine or test-only callback collision implementation.
 
 ## Coverage responsibilities
 
@@ -53,7 +55,7 @@ Monster sources can reuse the generic Core/host contracts, but live hostile adap
 ## Code separation rules
 
 `Core/Projectiles` keeps general primitives. Skill-specific constants and exact-ID conditionals belong to the
-coverage registry/adapters. Existing unrelated upstream legacy routines may remain in their existing files.
+coverage registry/adapters. Non-projectile melee/area behavior remains separate; no old projectile engine remains.
 
 `ProjectileSession` owns simulation/output lifecycle and generic visual rendering. A definition/presentation payload
 chooses birth/form clips and event effects, replacing its current Ice Spear/Spark/Frostbolt/LA/TS/EoW/bottle branches.

@@ -5,20 +5,23 @@ using GameServer.Core.World;
 
 partial class Program
 {
-    static bool HasProjectileRecipe(int effect) => ProjectileDefinition(Skills.EffectId(effect) ?? "") is not null;
+    static bool UsesProjectileRuntime(int effect) => Skills.IsProjectile(effect)
+        || ProjectileDefinition(Skills.EffectId(effect) ?? "") is not null;
 
     // Validate adopted paths before accepting an action, spending mana or reserving a cooldown.
     // Release still resolves again: equipment/stats may change during the ordinary cancellable windup.
     static bool ProjectilePathAvailable(string remote, ClientState conn, ushort skillId, int effect)
     {
-        if (!Skills.IsProjectile(effect) || !ProjectileDefinitions.AdoptGems) return true;
+        if (!UsesProjectileRuntime(effect)) return true;
         try
         {
-            if (!HasProjectileRecipe(effect)) throw new InvalidOperationException("no adopted projectile recipe");
+            var definition = ResolveProjectileDefinition(effect)
+                ?? throw new InvalidOperationException("no available projectile recipe/metadata");
+            var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+            if (gem.Name is null || !SkillHitPlan.ForSkill(Skills, effect, gem.Level, gem.Quality).CanHit)
+                throw new InvalidOperationException("no supported projectile damage plan");
             var resolved = MergeSkillStats(CharacterPlayerStats(conn), SupportedSkill(conn, skillId).Stats);
             int Get(string name) => Stats.Key(name) is uint key ? resolved.GetValueOrDefault(key) : 0;
-            string name = Skills.EffectId(effect)!;
-            var definition = ProjectileDefinition(name)!;
             _ = definition.Resolve(Get, 1);
             var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
             if (definition.RequiresTerrain && ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, at.X, at.Y) is null)
@@ -46,7 +49,11 @@ partial class Program
             : cast.Value / 1000d * Animations.SpellRelease(Skills.ClassFor(conn.ClassRow).AnimatedObject);
         int epoch = conn.ProjectileEpoch;
         session.Schedule(ProjectileRuntime.Time(acceptedAt + delay),
-            () => conn.ProjectileActive(epoch) && (ticket?.Current(conn) ?? PlayerActionCurrent(conn, action))
+            // A paid attack survives subsequent Move input; spells and cooldown tickets retain action cancellation.
+            // Epoch, death and hit recovery still cancel unreleased attacks.
+            () => conn.ProjectileActive(epoch) && (ticket?.Current(conn) ?? (attack
+                ? conn.PlayerLife > 0 && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds)
+                : PlayerActionCurrent(conn, action)))
                 && GemSkillInstanceDisabled(conn, gem.Effect, skillId) is null,
             () => CaptureGemProjectile(conn, session, skillId, gem, aim));
         return Task.CompletedTask;
@@ -55,14 +62,14 @@ partial class Program
     static ProjectileUse CaptureGemProjectile(ClientState conn, ProjectileSession session, ushort skillId,
         (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) aim)
     {
-        string effect = Skills.EffectId(gem.Effect)!;
         var player = CharacterPlayerStats(conn);
         var own = SupportedSkill(conn, skillId).Stats;
         var merged = MergeSkillStats(player, own);
         int Get(string key) => Stats.Key(key) is uint k ? merged.GetValueOrDefault(k) : 0;
         int Player(string key) => Stats.Key(key) is uint k ? player.GetValueOrDefault(k) : 0;
         int Own(string key) => Stats.Key(key) is uint k ? own.GetValueOrDefault(k) : 0;
-        var definition = ProjectileDefinition(effect) ?? throw new InvalidOperationException("No projectile definition at release.");
+        var definition = ResolveProjectileDefinition(gem.Effect)
+            ?? throw new InvalidOperationException("No projectile definition at release.");
         string metadata = definition.Metadata;
         int baseSpeed = Skills.Projectile(metadata)?.Speed ?? 1000;
         double speed = ProjectileSpeed.CellsPerSecond(baseSpeed, Player, Own, Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));
