@@ -94,6 +94,11 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Shield exclusions also remove ordinary shield bases from the player pools.
   Determination/Grace integer aura scaling and exact aura/flask more-factor composition now feed those pools.
   Body-specific ES increases, doubled Armour and no-Armour operators now retain their slot scope, including IR.
+  Item ES per ten final Strength and Evasion per ten final Intelligence now use ordinary global INC, including IR.
+  Complete native vectors, source removal, qualification, active sets and explicit zero have automated coverage;
+  actual command packets cover ES clamping without refill. Verify native publication and persisted reload separately.
+  Other Shaper's Touch effects and legal unique acquisition remain separate; neither defence row is complete.
+  Preserve the separate unresolved inherent Intelligence ES `/5` versus pinned PoB `/10` baseline discrepancy.
   Full-ES suppression chance now follows the effective resource state and shares the panel/combat consumer.
   Ordinary typed/all-attribute increases now share one whole-source calculation for pools, equipment and gems.
   Automated real-source/removal, zero, derived-pool and active-set checks pass in both modes. Thirty-four native
@@ -108,7 +113,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Strength-based Mana and reservation paths. All 71 new cases (45 pure/native-source and 26 Gateway) plus 82 existing
   regressions pass: 153 focused with no skips. Full Gateway passes 3874/3874 without skips; earlier unchanged
   Core 648/Data 37 from this session remain applicable (4559 applicable; only Gateway rerun after these changes).
-  The current hook records seven actual unobserved disposed-NetworkStream faults: six `MonsterKilled` → `Send`
+  That run's hook records seven actual unobserved disposed-NetworkStream faults: six `MonsterKilled` → `Send`
   and one `NotifyMonsterHit` through the projectile-hit path; 390 first-chance records are separate.
   No diagnostic errors/truncation/cap hit or new pool-source path is captured; new native checks remain pending.
   The retained final pool floor differs from pinned PoB's final round, so official fractional parity remains open.

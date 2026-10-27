@@ -44,6 +44,8 @@ partial class Program
             string sourceName = Stats.Name(stat) ?? args[0];
             bool rebuildLife = LifeManaPoolSources.IsLifeInput(sourceName);
             bool rebuildMana = LifeManaPoolSources.IsManaInput(sourceName) || stat == Stats.Key(StrengthMana.PerFourStrength);
+            bool rebuildDefences = AttributeDefenceSources.IsInput(sourceName);
+            bool rebuildEnergyShield = sourceName == AttributeDefenceSources.EnergyShieldPerTenStrength;
             bool lifeClamped = false, manaClamped = false;
             lock (conn.Monsters)
             {
@@ -53,7 +55,7 @@ partial class Program
             // Keep each supported raw consumer and source restoration when another mechanic changes this gate.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
                 || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
-                || rebuildLife || rebuildMana || rawAttribute
+                || rebuildLife || rebuildMana || rebuildDefences || rawAttribute
                 || Stats.Name(stat) == PlayerHitMitigation.ArmourAppliesToChaos)
             {
                 while (true)
@@ -113,6 +115,8 @@ partial class Program
             // Reservation can change with maximum mana even when recovery leaves current mana unchanged.
             if (!rawAttribute && (rebuildMana || manaClamped))
                 await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
+            if (rebuildEnergyShield)
+                await SendPlayerEnergyShield(remote, stream, ciphers, conn);
         })
         .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
         {

@@ -473,15 +473,24 @@ Part of [Status](../Status.md); what to build next in this area is in
   affected resource at the send gate, retaining Mana reservation.
   All 71 new cases (45 pure/native-source and 26 Gateway) plus 82 existing regressions pass: 153 focused, no skips.
   Full Gateway passes 3874/3874 with no skips; earlier unchanged Core 648/Data 37 from this session remain applicable
-  (4559 applicable cases; only Gateway rerun after these changes). The current hook records seven actual unobserved
+  (4559 applicable cases; only Gateway rerun after these changes). That run's hook records seven actual unobserved
   disposed-NetworkStream faults: six `MonsterKilled` → `Send` and one `NotifyMonsterHit` through the projectile-hit
   path to `Send`. Its 390 first-chance records are separate; no diagnostic errors/truncation/cap hit or new pool-source
   path appears. Passing tests do not imply fault-free background execution; new native checks remain pending.
   The existing final pool floor differs from pinned PoB's final rounding; official fractional parity is unverified.
   Real modifier/isolated passive fixtures do not prove acquisition, event-passive admission or full conversion nodes,
   and these six inputs do not complete the Life/Mana rows or conditional/more pool operators.
+  Item ES per ten final Strength and Evasion per ten final Intelligence now join their ordinary INC buckets once.
+  Native coefficients 1/2, completed attribute groups, slot/shield exclusions, IR and signed wide cancellation have
+  33 pure and 14 both-mode Gateway cases; actual commands cover whole-source zero, ES clamping and no refill.
+  Native sources give ES 126/137/148 and EV 18/22/26 in the controlled recipe, with qualification/removal checks.
+  These are automated supplied-source controls; native publication, acquisition and full Shaper's Touch remain open.
+  Inherent Intelligence ES stays `/5`; pinned PoB uses `/10`, and exact official parity is unresolved.
+  The combined 54 focused cases and fresh Gateway 3928/Core 648/Data 37 pass without skips; retained diagnostic faults
+  and native/persistence limits are qualified in the defence reference below.
   Code: `CharacterStats.cs`, `ItemModStats.cs`, Gateway (`CharacterStatSources`, `PassiveBonus`, `ClassAttributes`).
-  Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2d.
+  Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2d,
+  [attribute-scaled defences](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
 
 - Weapon-local damage and timing: active weapons supply a typed packet with multiplicative physical quality,
   local flat/increased damage, no-physical/quality-prohibition flags and local attack speed applied once.

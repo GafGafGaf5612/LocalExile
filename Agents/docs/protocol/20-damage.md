@@ -628,6 +628,34 @@ The percentage calculation truncates separately per item; the full-conversion fl
 All converted item ES is removed from the character's ES inputs, including with a fractional conversion percentage.
 Global ES increases and Intelligence do not scale the converted Life; global Life increases apply afterward.
 Independent flat global ES continues to supply ES, and shield exclusions also exclude that shield's converted Life.
+
+`energy_shield_+%_per_10_strength` adds its signed coefficient times `floor(final Strength / 10)` to global ES INC.
+`evasion_+%_per_10_intelligence` likewise adds its coefficient times `floor(final Intelligence / 10)` to Evasion INC.
+Completed production attributes supply the groups, after flat and typed/all-attribute increases.
+These are ordinary additive increases before slot-specific increases, MORE factors and the final rating round.
+Wide intermediates retain signed cancellation before rating bounds; published percentage fields remain signed ints.
+Iron Reflexes keeps the Intelligence-derived item term, while excluding the inherent Dexterity Evasion increase.
+Its converted bucket still counts shared global defences once and retains shield/body scope and exclusions.
+The Strength-derived increase scales remaining independent ES, including Discipline, without changing local ES-to-Life.
+Native Mods rows 13590/13594 (HASH16 34083/5007) supply complete vectors 1/2 in both modes.
+Rows 39699/39701 supply independent additive sources with their actual effective level 52 requirement.
+`/set_stat` replaces each complete coefficient, including zero, rebuilds pools and publishes the final stats.
+The ES input also publishes current ES; lowering capacity clamps it, while raising capacity does not refill it.
+Final attribute presentation overrides do not become a second production attribute source.
+Thirty-three pure and fourteen both-mode Gateway cases cover groups, slot/IR composition, qualification, active sets,
+source removal, actual command packets and unchanged serialized item payloads.
+Persisted reload is not established here.
+Those 47 cases and seven ES publication regressions pass together.
+Fresh full Gateway 3928/Core 648/Data 37 pass with no skips.
+The final diagnostic hook retains seven actual disposed-NetworkStream task faults: six `MonsterKilled` through `Send`
+and one projectile-hit `NotifyMonsterHit` path through `Send`; its 391 first-chance records are a separate count.
+No new coefficient/publisher path, diagnostic errors, truncation or cap hit is captured.
+Passing tests do not establish fault-free execution.
+The native vectors and pinned PoB `16de4b8` grouping rule support these operators as a labelled 3.29.x projection.
+Native publication, complete Shaper's Touch, acquisition and full ES/Evasion rows remain unverified.
+The existing inherent Intelligence ES rule remains `floor(Intelligence / 5)`; pinned PoB CalcPerform uses `/10`.
+That separate baseline discrepancy is unresolved against exact official 3.29.3b evidence and is not changed by this job.
+
 Discipline supplies another global flat ES source after equipment conversion, including with no ES equipment worn.
 Its 60/217 flat ES at gem levels 1/20 receives Intelligence and global ES increases, without shield-only modifiers.
 Aura effect scales and truncates its integer ES/recharge stats first, following pinned PoB's ordinary aura rule.

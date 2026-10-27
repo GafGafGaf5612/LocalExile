@@ -197,6 +197,10 @@ partial class Program
             LifePerTenIntelligence = PoolSource(LifeManaPoolSources.LifePerTenIntelligence, bonus.LifePerTenIntelligence),
             LifePerFourDexterity = PoolSource(LifeManaPoolSources.LifePerFourDexterity, bonus.LifePerFourDexterity),
             LifePerTwoIntelligence = PoolSource(LifeManaPoolSources.LifePerTwoIntelligence, bonus.LifePerTwoIntelligence),
+            EnergyShieldPctPerTenStrength = PoolSource(AttributeDefenceSources.EnergyShieldPerTenStrength,
+                bonus.EnergyShieldPctPerTenStrength),
+            EvasionPctPerTenIntelligence = PoolSource(AttributeDefenceSources.EvasionPerTenIntelligence,
+                bonus.EvasionPctPerTenIntelligence),
         };
         if (Stats.Key(StrengthMana.PerFourStrength) is uint manaPerStrength
             && devStats.TryGetValue(manaPerStrength, out int perFourStrength))
@@ -437,10 +441,12 @@ partial class Program
             LifePerTwoIntelligence: Get(LifeManaPoolSources.LifePerTwoIntelligence),
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
+            EvasionPctPerTenIntelligence: Get(AttributeDefenceSources.EvasionPerTenIntelligence),
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
             ChaosInoculation: Get("keystone_chaos_inoculation") != 0,
             ArmourAppliesToChaosDamage: Get(PlayerHitMitigation.ArmourAppliesToChaos) != 0,
             EnergyShield: Get("base_maximum_energy_shield"),
+            EnergyShieldPctPerTenStrength: Get(AttributeDefenceSources.EnergyShieldPerTenStrength),
             EnergyShieldPct: Get("maximum_energy_shield_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             ShieldArmourPct: Get("shield_physical_damage_reduction_rating_+%"),
             ShieldEvasionPct: Get("shield_evasion_rating_+%"),

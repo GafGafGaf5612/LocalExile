@@ -95,7 +95,8 @@ static class CharacterStats
         int StrengthPct = 0, int DexterityPct = 0, int IntelligencePct = 0, int AllAttributesPct = 0,
         int LifePerLevel = 0, int ManaPerLevel = 0,
         int LifePerTenDexterity = 0, int LifePerTenIntelligence = 0,
-        int LifePerFourDexterity = 0, int LifePerTwoIntelligence = 0)
+        int LifePerFourDexterity = 0, int LifePerTwoIntelligence = 0,
+        int EnergyShieldPctPerTenStrength = 0, int EvasionPctPerTenIntelligence = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -194,27 +195,34 @@ static class CharacterStats
         int Rating(decimal value) => (int)Math.Clamp(Math.Round(value, MidpointRounding.AwayFromZero), 0m, int.MaxValue);
         decimal armourValue = More(Increased(b.Armour, b.ShieldArmour, b.BodyArmour, armourPct,
             (long)b.ShieldArmourPct + b.SharedShieldDefencesPct, bodyAsArmour: true), b.ArmourMorePct);
-        long evasionPct = (long)dex / 5 + b.EvasionPct + b.ColdOvercapEvasionPct;
+        // These item coefficients use complete groups of final production attributes. They join ordinary INC,
+        // before slot increases/MORE; Iron Reflexes retains this item term while excluding inherent Dexterity.
+        long ordinaryEvasionPct = (long)b.EvasionPct + b.ColdOvercapEvasionPct
+            + (long)b.EvasionPctPerTenIntelligence * (intel / 10);
+        long totalEvasionPct = dex / 5L + ordinaryEvasionPct;
+        int evasionPct = (int)Math.Clamp(totalEvasionPct, int.MinValue, int.MaxValue);
         long evasionBase = BaseEvasion + (long)b.Evasion;
-        decimal evasionValue = More(Increased(evasionBase, b.ShieldEvasion, b.BodyEvasion, evasionPct,
+        decimal evasionValue = More(Increased(evasionBase, b.ShieldEvasion, b.BodyEvasion, totalEvasionPct,
             (long)b.ShieldEvasionPct + b.SharedShieldDefencesPct), b.EvasionMorePct);
         if (b.IronReflexes)
         {
             // Iron Reflexes converts all evasion rating to armour and removes dexterity's evasion bonus. The converted
             // evasion keeps the armour, evasion and shared defence increases (each once), but not dexterity.
-            long convertedPct = (long)armourPct + b.EvasionPct + b.ColdOvercapEvasionPct - b.SharedDefencesPct;
+            long convertedPct = armourPct + ordinaryEvasionPct - b.SharedDefencesPct;
             // Native 0x142731a7b also doubles converted body EV, or suppresses it with the no-body-AR flag.
             decimal converted = More(More(Increased(evasionBase, b.ShieldEvasion, b.BodyEvasion, convertedPct,
                 (long)b.ShieldArmourPct + b.ShieldEvasionPct + b.SharedShieldDefencesPct, bodyAsArmour: true),
                 b.EvasionMorePct), b.ArmourMorePct);
             armourValue = armourValue > decimal.MaxValue - converted ? decimal.MaxValue : armourValue + converted;
-            evasionPct = (long)b.EvasionPct + b.ColdOvercapEvasionPct;
+            evasionPct = (int)Math.Clamp(ordinaryEvasionPct, int.MinValue, int.MaxValue);
             evasionValue = 0;
         }
         int armour = Rating(armourValue), evasion = Rating(evasionValue);
-        long energyShieldPct = (long)intel / 5 + b.EnergyShieldPct;
+        long totalEnergyShieldPct = intel / 5L + b.EnergyShieldPct
+            + (long)b.EnergyShieldPctPerTenStrength * (str / 10);
+        int energyShieldPct = (int)Math.Clamp(totalEnergyShieldPct, int.MinValue, int.MaxValue);
         uint energyShield = (uint)Rating(Increased(b.EnergyShield, b.ShieldEnergyShield, b.BodyEnergyShield,
-            energyShieldPct, (long)b.ShieldEnergyShieldPct + b.SharedShieldDefencesPct, b.BodyEnergyShieldPct));
+            totalEnergyShieldPct, (long)b.ShieldEnergyShieldPct + b.SharedShieldDefencesPct, b.BodyEnergyShieldPct));
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
         int maxBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxBlockChance + b.BlockChanceMax);
         int maxSpellBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxSpellBlockChance + b.SpellBlockChanceMax);
