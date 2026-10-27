@@ -50,8 +50,8 @@ partial class Program
             var character = CharacterPlayerStats(conn);
             from = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
             int effect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } id ? Skills.EffectRow(id) : -1;
-            // Freeze all offensive inputs after the contact wait, before enqueueing creation. No in-flight weapon swap
-            // or stat change rewrites this arrow; target evasion and existing impales are resolved at actual contact.
+            // Freeze damage, chance and multiplier after the contact wait. Conditional critical luck and prohibitions
+            // read the live owner at impact; target evasion and existing impales also resolve at actual contact.
             shot = OrdinaryBowShot.Capture(WeaponFor(conn), character, Skills.EffectStats(effect, 1), Stats,
                 conn.Pools.Accuracy, conn.Pools.AttackCriticalStrikeChance, conn.Pools.CriticalStrikeMultiplier);
             int Get(string name) => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;

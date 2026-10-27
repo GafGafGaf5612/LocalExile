@@ -97,7 +97,12 @@ partial class Program
 
     static async Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label)
     {
-        lock (conn.Monsters) FortificationOf(conn).Clear();
+        lock (conn.Monsters)
+        {
+            FortificationOf(conn).Clear();
+            ClearRageOnDeath(conn);
+        }
+        await SendRage(remote, stream, ciphers, conn);
         await EndAurasOnDeath(remote, stream, ciphers, conn);
         ChargesOnDeath(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), label);
@@ -114,7 +119,12 @@ partial class Program
     static async Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         string? log = null)
     {
-        await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool), log);
+        await Send(remote, stream, ciphers, [], log, atGate: () =>
+        {
+            // Sample both values together after earlier sends, including a queued pool/reservation rebuild.
+            lock (conn.Monsters)
+                return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana, (uint)ReservedMana(conn), pool: ManaPool);
+        });
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }
 
@@ -293,6 +303,7 @@ partial class Program
     {
         double last = conn.Clock.Elapsed.TotalSeconds;
         int suppression = Suppression(conn).Chance;
+        var criticalContext = CriticalContext(conn);
         while (!conn.Closed)
         {
             await Task.Delay(PlayerTickMs);
@@ -301,6 +312,13 @@ partial class Program
             double seconds = tickNow - last;
             last = tickNow;
             if (conn.Paused || seconds <= 0) continue;
+            // Keep the selected skill's conditional luck virtuals current across live Life/Focus boundaries too.
+            // Combat still samples the owner at the accepted contact, independently of this panel refresh cadence.
+            if (CriticalContext(conn) is var currentCritical && currentCritical != criticalContext)
+            {
+                criticalContext = currentCritical;
+                await SendCharacterStats(remote, stream, ciphers, conn, "critical strike conditions changed");
+            }
             await PushOutOfCollision(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             if (conn.PlayerLife == 0)
@@ -622,6 +640,8 @@ partial class Program
         PrepareHideoutWaypoint(conn);
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
+        // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
+        RestoreRage(conn);
         var stats = CharacterPlayerStats(conn);
         var characterInputs = new Dictionary<uint, int>(stats);
         // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:

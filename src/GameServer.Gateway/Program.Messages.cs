@@ -548,6 +548,7 @@ partial class Program
                     _ = RunResourceRecovery(remote, stream, ciphers, conn);
                     _ = RunCharges(remote, stream, ciphers, conn);
                     _ = RunFortification(remote, stream, ciphers, conn);
+                    _ = RunRage(remote, stream, ciphers, conn);
                     _ = RunFlaskChargeRegen(remote, stream, ciphers, conn);
                 }
             }

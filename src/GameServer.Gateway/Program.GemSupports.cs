@@ -114,7 +114,8 @@ partial class Program
         var modifiers = gem.Supports.SelectMany(s => s.Stats).Select(s => (Stats.Name(s.Key) ?? "", s.Value)).ToList();
         hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: false);
         hit = hit.Convert(DamageStats.Conversion(stats, Stats, attack));
-        return GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
+        hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
+        return attack ? RageStats.ApplyAttack(hit, Get) : hit;
     }
 
     static int SupportedCriticalChance(ClientState conn, ushort skillId)
@@ -128,7 +129,8 @@ partial class Program
             if (new[] { "global_cannot_crit", "virtual_global_cannot_crit", "cannot_critical_strike_with_attacks" }
                 .Any(name => Player(name) != 0 || Own(name) != 0)) return 0;
             var weapon = WeaponProfileFor(conn, activeSet: true);
-            int basis = AttackBaseCriticalStrike.OfMainHand(!weapon.Unarmed, weapon.Critical, Player);
+            int basis = weapon.Unarmed && (!Skills.IsMelee(gem.Effect) || Skills.IsSpell(gem.Effect)) ? 0
+                : AttackBaseCriticalStrike.OfMainHand(!weapon.Unarmed, weapon.Critical, Player);
             int totalBase = (int)Math.Clamp((long)basis + Own("additional_base_critical_strike_chance"), int.MinValue, int.MaxValue);
             long increased = conn.Pools.CriticalStrikeChancePct
                 + AttackBaseCriticalStrike.IncreasedSum(weapon, name => Own(name));
@@ -150,6 +152,8 @@ partial class Program
     {
         var gem = SupportedSkill(conn, skillId);
         int extra = Stats.Key("base_critical_strike_multiplier_+") is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
-        return (Skills.IsAttack(gem.Effect) ? conn.Pools.CriticalStrikeMultiplier : conn.Pools.SpellCriticalStrikeMultiplier) + extra;
+        return (int)Math.Clamp((long)(Skills.IsAttack(gem.Effect)
+            ? AttackCriticalMultiplier(conn, CharacterPlayerStats(conn), gem.Effect, gem.Stats)
+            : conn.Pools.SpellCriticalStrikeMultiplier) + extra, int.MinValue, int.MaxValue);
     }
 }

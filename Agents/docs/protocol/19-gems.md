@@ -200,6 +200,30 @@ sets the offer's `QuestFlag` (the "taken" flag) in one save. The Gateway now off
 (level-8 magic armours, magic belts) are skipped, as are offers with no buildable choice. Checked live 2026-10-26 on
 offer 3 after `/quest_flag a1q4-PlacedGlyphs`: the six Witch gems, claim, flag and repeat refusal.
 
+**Local Nessa shop.** This checkout restores Nessa's full testing assortment independently of character class and
+quest completion (`NpcShops.Tabs`, `fullGemStock`). Every writable gem with a positive drop level and a creatable
+variant is included, including transfigured, Trarthan and creatable Vaal variants. Red/green/blue skill and support
+tabs stay separate; White Skills contains both white active and support gems. Full 12-by-12 pages continue as
+numbered tabs instead of dropping overflow. These colour tabs are permanent development tools: they must always
+contain the complete creatable assortment without quest or class gates, so command and mechanic development
+does not depend on completing the campaign.
+The separate Skills tab is the future gameplay shop: only ordinary gems unlocked by the character's quest flags
+and class through GemVendorStock.Stock, at the existing vendor prices. Without progression input it is empty;
+alternative variants are not unlocked implicitly. Active gems precede supports; each kind groups red, green, blue
+and white gems, then orders by drop level and name within each colour. Supports start at column zero of the next
+row, leaving the active row's remaining cells empty; if necessary they continue on the next page. It also paginates
+if needed. The distinction is documented in NpcShops.cs; opening the shop sends no development explanation to
+the player's chat. Keep progression restrictions confined to Skills when changing this shop.
+Gems on every Nessa tab, including Skills and Goods, have unlimited stock. Each successful purchase pays the normal
+price and receives a fresh player inventory ID; the shop template retains its ID, cell, price, quality and variant.
+A manager-1 remove/add refresh keeps it visible and available for another purchase without reopening the shop.
+An unpaid or failed purchase leaves the template available and grants nothing; payment and delivery remain atomic.
+Other vendors and Nessa's non-gem goods remain finite.
+Variant indices survive purchase and save/reload. Existing catalog exclusions still apply to placeholders and
+unsupported awakened rows. The client data does not provide the former Anomalous/Divergent/Phantasmal quality
+variants; those names are not fabricated. Automated stock/serialization tests cover this local assortment;
+its updated client display still needs a live check. Other vendors retain quest progression below.
+
 **Vendors.** The currency/flask/jewellery vendors that also sell gems (`GemVendorStock.Sells`: Nessa, Yeena,
 Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) give seven tabs - Red/Green/Blue Skills and Support, White
 Skills - of level-1 gems, each at the price of its level-1 requirement tier: 1–7 Scroll of Wisdom, 8–15 Orb of

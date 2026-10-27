@@ -173,6 +173,34 @@ with level), the bases and attributes from Characters.dat:
 | `maximum_energy_shield_+%` | intelligence / 5 |
 | `melee_physical_damage_+%` | strength / 5 |
 
+Maximum mana also includes the ordinary flat and increased mana sources from passives and active equipment.
+`X_mana_per_4_strength` (Stats row 4992, client key 4993) contributes
+`floor(max(0, final Strength) / 4) * signed raw value` to that same flat mana bucket.
+`CharacterStats.For` uses its existing final `str`; the existing intelligence `/ 2` and final truncation are unchanged.
+Mana increases apply once to the combined flat total.
+The active consumer uses wide signed arithmetic, clamps nonpositive totals or multipliers to zero, and saturates at
+`int.MaxValue` for the native maximum and existing reservation/damage consumers.
+A missing or zero source keeps the original mana calculation byte-for-byte, including its signed edge behavior.
+`PassiveBonus` reads the generic source; `/set_stat X_mana_per_4_strength <value>` replaces it and rebuilds pools.
+The rebuild clamps current mana to the new unreserved cap without filling it when maximum mana increases.
+It explicitly sends the mana pool's `0x1b1`, including reservation, even when current mana is unchanged.
+`SendPlayerMana` snapshots current mana and reservation together under the combat lock after acquiring the send gate.
+Decrypted command-wire tests cover a 50% aura with regeneration disabled, unchanged current mana and a lowered cap.
+An explicit zero suppresses the source; repeated builds cannot compound it, and fresh connections clear dev inputs.
+Final native `strength` overrides remain presentation/requirement inputs and do not change this pool calculation.
+Reservation, native `maximum_mana` and maximum-mana attack lightning all read the resulting pool.
+Mental Conditioning (graph node 38080) supplies raw value 8, but its keys 9548 and 21159 are separate, unimplemented
+mechanics; this consumer does not enable Phrecia selection or claim the full node/class.
+Automated arithmetic, production-source and actual command/reload checks pass.
+Thirteen native checks use a fresh unascended Witch, raw key 4993 and synthetic Plate Vest modifiers.
+Fourteen and fifteen Strength grant three groups: maximum mana rises from 56 to 80 at raw value 8.
+Sixteen Strength grants four groups and 88 mana; 25% increased mana scales the whole bucket to 110.
+The maximum-mana attack-lightning panel follows those final values.
+Signed input, explicit zero, removal/reapplication and relog are verified.
+A final display-only Strength override does not become a raw input during a later rebuild.
+These controls do not select Mental Conditioning or verify idle aura reservation in the native client;
+that reservation path has the decrypted command-wire coverage above.
+
 Accuracy's flat and increased passives are summed from `accuracy_rating` and `accuracy_rating_+%`, the weapon-specific
 stats according to the equipped weapon shape (`sword_accuracy_rating`, `wand_accuracy_rating_+%`, ...), and the Accuracy
 Mastery (`accuracy_rating_per_level`, `dexterity_accuracy_bonus_grants_accuracy_rating_+3_per_dexterity_instead`,
@@ -313,6 +341,75 @@ The shared half-up midpoint and resolved stack need a new native check; automate
 Signed increases stay in 64 bits through the pool and player-plus-skill sum; only final native values are bounded.
 Pool refresh uses exact supported stat names; unsupported conditional or minion stats do not rebuild pools.
 Pool rebuilding runs outside the monster lock and retries if another rebuild changes the pools before assignment.
+
+**Conditional critical policy (#242).**
+The supplied 3.29.3b static evidence identifies `0x1427e5480` as the virtual critical-extra-roll getter.
+It adds `extra_critical_rolls`, `extra_critical_rolls_while_on_low_life` when virtual stat 7751 holds,
+`extra_critical_rolls_during_focus` while `has_focus` holds, and one for `keystone_sharp_and_brittle`.
+Its final signed clamp at `0x1427e59f9` is -1..1, after the addition; two lucky sources still mean two total rolls.
+There is no Attack or Melee restriction on the low-life term, so supported spell hits qualify too.
+`CriticalStrikePolicy` and `Program.CriticalStrikes` consume those raw inputs independently of any class choice.
+Low life is derived from current living owner Life and maximum Life with an inclusive 50% default threshold.
+`low_life_threshold_%_override` takes precedence over `low_life_threshold_%` when positive.
+The not-full-Life and Vulnerability count-as-low-life flags use current Life and current curse-state stats.
+The Focus skill and curse application lifecycles are not implemented by this critical policy.
+
+The existing positive-chance `Next(10000)` stays after the damage packet's original per-type draws.
+A nonzero signed extra adds exactly one following `Next(10000)` even if the first draw decides the result.
+Positive luck combines with OR, negative luck with AND, and zero luck uses only the original draw.
+This ordering is LocalExile's local RNG policy, not an established official-server RNG sequence.
+Cannot-crit flags take precedence and consume no critical draws, including under lucky conditions.
+The default attack, supported attack/spell projectiles and area hits share this policy at accepted contact.
+Ordinary bow arrows keep their existing released damage/chance/multiplier snapshot and sample conditional luck
+and cannot-crit flags from the live owner at impact.
+No additional packet, accuracy or impale draw is introduced by the policy.
+
+`unarmed_melee_attack_critical_strike_multiplier_+` adds points to the ordinary multiplier only for an active
+empty-hand melee Attack context without Spell; an inactive-set weapon cannot arm that context.
+A selected ranged attack and every spell exclude it, including when their owner is unarmed.
+The unarmed melee base also stays out of a selected ranged attack's chance.
+Final Blow's raw graph node 10135 grants 1000 base permyriad, one low-life extra roll and 50 multiplier points.
+The generic consumer uses the raw stats; it adds no ascendancy choice, class or node-allocation behavior.
+Default and selected supported panel multipliers use the same context and add linked support bonuses once.
+The panel retains the ordinary permyriad chance; `virtual_extra_critical_rolls` carries the separate lucky policy.
+`virtual_on_low_life` and the selected skill's extra-roll virtual follow current owner state.
+The player tick refreshes player/skill stats when Life, Focus or the effective extra-roll condition changes.
+Combat samples contact state directly and does not wait for that panel refresh cadence.
+Full player-stat and Actor refreshes use the shared `SendPlayerStatSnapshot` factory inside the connection's send gate.
+The factory locks `Monsters`, rejects closed/leaving connections and samples current stats at send time.
+A queued character or charge refresh cannot replay old low-life virtuals or an earlier active-weapon multiplier.
+Held-gate wire regressions cover both directions across the 50% boundary and active-set swaps in both packet kinds.
+
+Automated tests parse `0x24` into the actual object-use route and check Life losses and deterministic critical draws.
+Controls cover default contact, ordinary bows, linked melee/ranged attacks, spell projectiles and spell areas,
+the 50% boundary, signed cancellation/clamping, live state changes, active sets and cannot-crit precedence.
+The existing module initializer supplies the checkout root once; production catalogs retain relative `data/` paths.
+The tests consume node 10135's raw stats without allocating an ascendancy node or selecting a Phrecia class.
+An unselected ascendancy refund is refused without spending points; removing the raw inputs clears the policy.
+Upstream's separate ascendancy lifecycle and `AscendancyClientCompatibility` play gate remain unchanged.
+A successful paid Final Blow refund is not established by these raw-source controls or the native checks below.
+Fifteen native checks used a new unascended Marauder with raw inputs.
+The active empty hand dealt a 200-damage critical hit; an active wand dealt 150, and an inactive wand did not suppress
+its empty alternate hand's 200 multiplier.
+Removing the raw bonus restored 150.
+A 66-Life owner at 34 Life was above low life, at exactly 33 was low life, and remained low at 32.
+Native received virtuals confirmed signed cancellation, the one-extra-roll clamp, unlucky state and condition clearing.
+Cannot-crit forced an actual noncritical 100-damage hit despite a capped base chance and positive luck.
+Healing, death and relog cleared the conditional state.
+The spell multiplier stayed 150 while the unarmed melee multiplier was 200.
+The hit checks exercise the default attack; supported spell/projectile contacts and exact RNG draw order are covered
+by deterministic automated tests, not a native statistical-distribution claim.
+The fifteen controls were also repeated on the resolved `effb797` composition.
+The Fortification combination below has automated coverage; the native controls do not allocate Final Blow.
+The merged Fortification path uses the same resolved critical multiplier as target damage.
+Its source is the direct rolled packet before target mitigation and excludes stored Impale damage.
+A parsed default-attack control with raw stats deals 200 damage to a 400-Life target and grants 14 Fortification.
+Removing the unarmed bonus gives 150 damage and 12 stacks; cannot-crit gives 100 damage and 10 stacks.
+These are automated checks of LocalExile's explicit Fortification generation model, not new native evidence.
+Once Phrecia play is compatible, allocate/refund node 10135.
+Verify that base, multiplier and conditional luck clear together.
+
+**Existing base-chance native checks (historical).**
 Twelve real-client checks used a fresh synthetic character and read the client's received stat values.
 A Driftwood Wand's 830 became 800 and 900; 100% increased chance raised 900 to 1800, then cannot-crit set it to zero.
 Switching to an empty second set gave zero despite the inactive wand; the unarmed base gave 1000.
@@ -1100,6 +1197,45 @@ That first field is the equipment record's first u8 (13-items.md "What the model
 for every item: every skill with a weapon restriction was greyed out (Ground Slam with a two-handed axe, live
 2026-10-23, found with a Frida trace of `FUN_142199200`). The Gateway now sends ClassRow + 1 (`VisibleItem.Type`).
 
+## 10b. Actor restriction: warcry skills disabled
+
+`your_warcry_skills_are_disabled` is Stats row 5408, wire key 5409 in 3.29.3b.
+Rampager, PassiveSkills graph node 49937, supplies value 1.
+`SkillCatalog.IsWarcry` follows GrantedEffects.ActiveSkill and ActiveSkills.ActiveSkillTypes to the Warcry type.
+The extracted ActiveSkillType row is 62; classification resolves its Id instead of hardcoding names or spell status.
+Enduring Cry is a Warcry and is not a Spell in these tables.
+
+`ActorSkillDisabled` reads the actual caster through `CharacterPlayerStats`, before any skill stat overlay.
+Passive and active equipment sources use the existing raw stat assembly; a raw dev value replaces their total.
+Any signed nonzero value disables new warcry uses.
+Explicit zero or source removal restores admission on the same connection without rebuilding resource pools.
+The restriction leaves the Actor skill list and ordinary attacks, spells and auras available.
+The caster stat builder does not call `GemDisabled` or build `PlayerSkills`, avoiding recursive admission checks.
+
+`GemDisabled` shares the restriction with ground 0x25 and the `CastGemSkill` backstop.
+`TryBeginCooldownUse` also checks it before creating or spending cooldown state or invoking action side effects.
+This covers monster/self object 0x24 and eligible instant paths before a new action echo, cost or effect.
+Instant aliases retain their existing supported subset; this does not add instant warcry executors.
+
+The existing `CastGemSkill` check remains the cast admission boundary.
+A queued action echo can pass preflight and then fail that check before payment.
+After cast admission, a source change behind a queued paid mana packet does not add a late cancellation or refund.
+An accepted Enduring Cry still schedules its existing non-cancellable charge release in `UseChargeSkill`.
+Later source or action changes do not cancel that release.
+Enduring Cry remains partial: this change adds no healing engine or other warcry mechanics.
+
+Automated coverage checks parsed 0x24/0x25 requests, payment, cooldown retry, source precedence and queued sends.
+It also checks unsupported instant aliases and admitted instant Righteous Fire with the restriction present.
+Seven native checks used a fresh unascended Witch, the real level-one gems and five normal nearby enemies.
+Ground and self/object requests with positive or negative flags emitted no new action or cry effect and spent no Mana.
+Clearing the source admitted a 13-Mana Enduring Cry, granting one actual native Endurance Charge from five power.
+Reapplying the flag after payment did not cancel that accepted release; an ordinary Fireball still dealt 200 damage.
+A refused request after the original eight-second cooldown spent no use; clearing the source allowed a paid retry.
+The retry granted a second charge; an explicit warcry speed input kept it clear of the first charge's expiry.
+Relog cleared the transient developer flag.
+These controls verify the shared restriction, not Rampager allocation or complete Enduring Cry behavior.
+Future composition with outgoing Spell or incoming armour changes must retain this caster-only admission check.
+
 ## 11. The skill bar
 
 - **C→S 0x4e** (5 bytes, class `0x1435bfc58`): `u8 slot, u16 skill id` (big-endian). Slot 2 is the right mouse button.
@@ -1586,6 +1722,12 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   low life, devotion, "count as having maximum", a maximum equal to another type's); per-charge stats whose target the
   server does not calculate (ailments, leech, damage taken, damage over time increases, wand-only or attack-only damage,
   mana cost, buff duration, Frenzy's and Flicker Strike's own per-charge attack speed and damage).
+
+## 16. Rage
+
+Generic Rage generation, loss, attack damage, transient ownership and native count/buff packets are implemented.
+See [26-rage.md](26-rage.md) for inputs, primary evidence, versioned policies and the scoped native controls.
+Automated parsed-dispatch coverage does not constitute native verification.
 
 ## Open
 

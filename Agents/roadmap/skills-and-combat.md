@@ -32,6 +32,10 @@ validate town/combat/character-switch round trips in the real client (protocol/1
 - **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
+  Mana per complete group of final Strength now has native raw-source/gear controls and automated pool coverage.
+  Raw-source reservation refresh and clamping have decrypted wire coverage; recheck active auras natively.
+  See [Status](../status/skills-and-combat.md) and [11](../docs/protocol/11-skills.md) section 4.
+  Mental Conditioning's other flags, mana-to-armour conversion and Phrecia selection remain separate work.
   Ordinary one-use cooldown recovery now shares the native base/rate and a server base-time budget, with atomic
   preflight before action side effects.
   Initial Dash recovery, early raw rejection, pause and native mid-cooldown rate changes pass live alongside
@@ -54,6 +58,9 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.
   Equipment UI refresh remains to be checked separately.
   Off-hand alternation, conditional damage, supports and modifier-scope corrections remain separate work.
+- **Warcry restriction (#297):** shared actor admission has regression and seven real-client controls in Status.
+  Blocked input, source clearing, paid retries and an accepted cry's release are verified.
+  See [11](../docs/protocol/11-skills.md) section 10b; broader warcry engines and Phrecia enablement remain separate.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.
@@ -132,11 +139,24 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   protocol/11-skills.md §critical strikes).
   Recheck the resolved stack's shared half-up midpoint natively; the original head's native checks remain historical.
   Recheck development generic/spell increases and rounding live after the input-consistency review fixes.
-  Deliver their nodes through the separate ascendancy lifecycle; Slayer's per-nearby-enemy crit multiplier and
-  Final Blow's remaining unarmed bonuses are separate work.
-  Added-base, lucky/more and conditional crit remain separate work.
+  Deliver their nodes through the separate ascendancy lifecycle; Slayer's per-nearby-enemy crit multiplier is separate.
+  Generic conditional rolls and the unarmed melee multiplier are implemented and native-verified separately.
+  Continue native spell/projectile checks and the resolved critical-hit/Fortification composition on `effb797`.
+  Verify successful paid Final Blow refunds once Phrecia play has an agreed client-compatible graph.
+  Focus/curse lifecycles and statistical RNG validation remain separate from the deterministic policy tests.
+  Added-base and other conditional/more crit remain separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
+
+### Rage extensions
+
+- Generic Rage generation, limits, installed buff/count, actual damage, decay, pause and lifecycle are native-verified.
+  Remaining native composition includes supported projectiles, area sweeps, linked/active equipment sources,
+  notification delays beyond the shared interval and slow destination loading.
+  Recheck charge, equipment and command refreshes queued across expiry and separate decay-speed modifiers.
+  The 140-damage/11-Fortification composition has automated accepted-contact coverage; verify it natively.
+  Measure official capped-attempt refresh behavior and area-loading timer parity before replacing policy v1.
+  See [26-rage.md](../docs/protocol/26-rage.md); Vaal costs and whole-class selection remain separate mechanics.
 
 ### Death screen variants
 

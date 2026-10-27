@@ -10,6 +10,35 @@ Part of [Status](../Status.md); what to build next in this area is in
   Elapsed Life regeneration, stopping at expiry, area carry, death and relog were also verified.
   The evidence uses a new unascended character with raw inputs; it does not establish Behemoth selection.
   See [Fortification](../docs/game/fortification.md) for the formula, source coverage and remaining extensions.
+- Conditional critical policy (#242): ordinary, low-life, Focus and Sharp and Brittle sources share a signed clamp.
+  Opposing luck cancels, and multiple lucky sources still add at most one critical draw.
+  The unarmed multiplier applies only to the active empty-hand melee attack, with matching panel values.
+  Fifteen native checks verified real 200/150 critical hits, active-set switching and bonus removal.
+  A 66-Life Marauder verified above, exactly at and below the inclusive 50% boundary.
+  Native virtuals confirmed cancellation, clamping, unlucky state, cannot-crit, healing, death and relog.
+  Native evidence targets `ea24316`; the resolved `effb797` composition has automated coverage and awaits native reruns.
+  The checks use raw inputs on an unascended character; spell/bow contact rules and RNG order have automated coverage.
+  A parsed 200-damage critical hit against 400 Life generates 14 Fortification from the same resolved multiplier.
+  Removing the unarmed bonus gives 150 damage and 12 stacks; cannot-crit gives 100 damage and 10 stacks.
+  Successful paid ascendancy refunds and Focus/curse lifecycles remain separate integration work.
+  See [11-skills.md](../docs/protocol/11-skills.md), conditional critical policy.
+
+- Generic Rage (#281): source-qualified attack/melee/critical and incoming gains share a half-second interval.
+  Maximum, effect, separate delay recovery/loss speed, prevention and final attack multipliers are consumed.
+  Seventeen native checks verify raw-source generation, installed buff/count, actual damage and unchanged speed.
+  Fixed 100 damage at 15 Rage displays and deals 115; prevention, decay, pause, travel, death and relog pass.
+  The checks use an unascended Witch; Behemoth selection and Vaal consumers remain separate.
+  Supported contacts, area-sweep deduplication, queued refreshes and the 140-damage/11-Fortification composition
+  have automated coverage; further native composition checks remain in [26-rage.md](../docs/protocol/26-rage.md).
+  Capped attempted gains and frozen destination-loading time use explicit LocalExile policy v1.
+
+- Mana per final Strength (#287): `X_mana_per_4_strength` joins the ordinary flat mana bucket before increases.
+  Thirteen native controls verify complete four-Strength groups, signed inputs, source removal and relog.
+  A fresh Witch's 56 mana becomes 80 at 14/15 Strength, 88 at 16 Strength and 110 with 25% increased mana.
+  Maximum-mana attack lightning follows the final pool; display-only Strength overrides cannot feed it back.
+  Idle aura reservation and current-mana clamps have decrypted command-wire coverage, including the send gate.
+  Native controls use raw inputs and synthetic gear; the other Mental Conditioning flags and class remain separate.
+  See [11](../docs/protocol/11-skills.md) section 4.
 
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
@@ -161,13 +190,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   ms; server-side mana (cost, regeneration); `/god` (also 200% increased area of effect), `/set_aoe`.
   Code: Gateway (`ActivateRighteousFire`, `RunPlayerTick`), `SkillArea.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §12.
+- Warcry admission restriction (#297): any signed nonzero `your_warcry_skills_are_disabled` blocks new typed warcries.
+  Actual caster passive/equipment/raw dev sources are read before skill overlays, action echoes, costs and cooldowns.
+  Explicit zero and source removal restore admission without rebuilding pools or removing Actor skills.
+  Parsed ground/object, paid Enduring Cry, source, instant safety and queued-send regressions pass.
+  Accepted non-cancellable cry releases retain their existing behavior; Enduring Cry's charge executor stays partial.
+  Seven native checks verify refusal without Mana loss or release, source clearing and paid 13-Mana retries.
+  Native Endurance Charges confirm accepted releases; Fireball remains usable and relog clears the developer flag.
+  Phrecia play stays gated; source precedence, aliases and queued boundaries have additional automated coverage.
+  See [11](../docs/protocol/11-skills.md) section 10b.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
   every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
   Docs: [11](../docs/protocol/11-skills.md) §9.
 
 ## Partly working
-
 
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
@@ -260,8 +297,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   the two target-conditional effects at the roll), and the final rating value is
   sent as `main_hand_accuracy_rating` / `off_hand_accuracy_rating` for the Offence panel;
   armour and evasion also take their flat/increased passives and the base equipped armour pieces (body, helmet,
-  gloves, boots), while life and mana still ignore passives and items (attack speed is handled below)
-  ([11](../docs/protocol/11-skills.md) §4).
+  gloves, boots); life and mana take their existing flat/increased passive and active item sources.
+  See [11](../docs/protocol/11-skills.md) §4.
 - **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack
   speed is summed into the client's `main_hand_attack_speed_+%`;
   dual wielding adds PoB's 10% more and the server's unarmed attack uses the same final value.
@@ -349,7 +386,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Combined generic/spell bonuses add once; the no-crit flag clears the native chance and hides its row.
   A hitless Scorching Ray cast dealt no weapon damage, while the same connection's Fireball dealt a critical hit.
   Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
-  Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
+  Focus skill and curse lifecycles, other enemy-state/more and added-base crit mechanics remain separate work.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
 - **Overcapped-resistance modifiers.** While the flag stat is set, the uncapped resistance above its maximum is a
   generic increased modifier, exactly PoB's `ResistOverCap` (the maximum capped at 90): +1% increased evasion per 1%

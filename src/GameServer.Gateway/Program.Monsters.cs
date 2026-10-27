@@ -275,6 +275,7 @@ partial class Program
             conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
             life = conn.PlayerLife;
             mana = conn.PlayerMana;
+            RageWhenHitLocked(conn);
         }
         ChargesWhenHit(conn, blocked);
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
