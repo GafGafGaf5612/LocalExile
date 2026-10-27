@@ -94,7 +94,7 @@ partial class Program
         if (Stats.Key("attack_speed_+%") is uint raw && Stats.Key("main_hand_attack_speed_+%") is uint final)
         {
             var profile = WeaponProfileFor(conn);
-            double factor = (1 + profile.LocalAttackSpeedPct / 100.0) * (profile.DualWield || profile.Unarmed ? 1.1 : 1);
+            double factor = profile.DualWield || profile.Unarmed ? 1.1 : 1;
             stats[final] = stats.GetValueOrDefault(final) + (int)Math.Round(gem.Stats.GetValueOrDefault(raw) * factor);
         }
         double more = Supports.AttackSpeedMultiplier(gem.Effect, gem.Level) * Math.Max(.01, 1 + Get("support_melee_physical_damage_attack_speed_+%_final") / 100.0)

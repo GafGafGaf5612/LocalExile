@@ -13,7 +13,8 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         var conversion = new Dictionary<uint, int>(character);
         var own = skillConversion.ToDictionary(kv => kv.Item1, kv => kv.Item2);
         foreach (var (key, value) in own) conversion.TryAdd(key, value);
-        var hit = RageStats.ApplyAttack(DamageStats.Added(weapon.HitDamage(character), Get, spell: false, melee: false)
+        var hit = RageStats.ApplyAttack(DamageStats.Added(weapon.HitDamage(character, melee: false, projectile: true),
+                Get, spell: false, melee: false, projectile: true)
             .Convert(DamageStats.Conversion(conversion, catalog, attack: true)), Get);
         return new(hit, accuracy, criticalChance, criticalMultiplier, Get("impale_on_hit_%_chance"))
         { Penetration = global::Penetration.Of(character, catalog, attack: true, own),

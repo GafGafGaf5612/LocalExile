@@ -21,13 +21,13 @@ public class OrdinaryBowShotTests
                 [StatKeys.MeleePhysicalDamagePct] = 20 };
             var weapon = new SkillCatalog.Unarmed(714, 5, 13, 120);
             var shot = OrdinaryBowShot.Capture(weapon, raw, [(3, 100), (5, 10), (7, 3)], catalog, 321, 1234, 175);
-            // Retain the existing ordinary attack's melee-physical treatment, and the player's conversion wins
+            // Ranged weapon damage excludes melee-only increases, and the player's conversion wins
             // a colliding default-skill key. Added fire is added before conversion, exactly once.
-            Assert.Equal(new DamageRange(3, 7.8), shot.Hit[DamageType.Physical]);
-            Assert.Equal(new DamageRange(6, 14.8), shot.Hit[DamageType.Fire]);
+            Assert.Equal(new DamageRange(2.5, 6.5), shot.Hit[DamageType.Physical]);
+            Assert.Equal(new DamageRange(5.5, 13.5), shot.Hit[DamageType.Fire]);
             raw.Clear();
             weapon = weapon with { MinDamage = 1000, MaxDamage = 2000 };
-            Assert.Equal(new DamageRange(3, 7.8), shot.Hit[DamageType.Physical]);
+            Assert.Equal(new DamageRange(2.5, 6.5), shot.Hit[DamageType.Physical]);
             Assert.Equal((321, 1234, 175, 25), (shot.Accuracy, shot.CriticalChance, shot.CriticalMultiplier, shot.ImpaleChance));
             Assert.Equal(30, shot.Penetration.Fire);
             Assert.Equal(1, shot.ResistanceMods.CriticalIgnoreElemental);

@@ -4,12 +4,14 @@ using GameServer.Core.World;
 static class AttackSkillHit
 {
     public static DamagePacket Resolve(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
-        IEnumerable<(uint, int)> levelConversionInputs, StatCatalog catalog, int effectiveness, bool melee = false)
+        IEnumerable<(uint, int)> levelConversionInputs, StatCatalog catalog, int effectiveness, bool melee = false,
+        bool projectile = false)
     {
         // Damage modifiers and added attack damage keep the existing character-only inputs. Skill-owned damage
         // modifiers are not implemented in combat and must not become panel-only effects here.
         int Get(string name) => catalog.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
-        var hit = DamageStats.Added(weapon.HitDamage(character), Get, spell: false, melee);
+        var hit = DamageStats.Added(weapon.HitDamage(character, melee, projectile), Get,
+            spell: false, melee, projectile: projectile);
         // Match ConversionFor exactly: player keys win; level-only skill keys fill gaps, without quality conversion.
         var conversionInputs = new Dictionary<uint, int>(character);
         foreach (var (key, value) in levelConversionInputs) conversionInputs.TryAdd(key, value);

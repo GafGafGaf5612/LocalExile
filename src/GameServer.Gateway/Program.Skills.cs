@@ -57,35 +57,30 @@ partial class Program
     // had no attack time, damage or reach on the client; the off-hand animation of a Holy Strike on the ground then ran
     // with a null animation set and the next action crashed (0x141c988c1, AnimationController+0x180 = 0). Frida 2026-10-25:
     // while it creates the attack action the client reads off_hand_minimum/maximum_attack_distance.
-    // The off hand's attack speed is the main hand's final value without the main weapon's own local attack speed (which
-    // CharacterStats folds into it): the off-hand weapon's local attack speed is already in its attack time (WeaponIn).
+    // Each hand's local speed is already in its own duration; both receive only the character's shared speed bucket.
     static List<(uint, int)> WeaponStats(ClientState conn, SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats)
     {
         var conversion = DamageStats.Conversion(stats, Stats, attack: true);
-        var list = weapon.Stats(stats, AttackHitConverted(weapon, stats, MeleeAttack(conn), conversion)).ToList();
+        var mainHit = AttackHitConverted(weapon, stats, MeleeAttack(conn), conversion);
+        var list = weapon.Stats(stats, mainHit).ToList();
+        AddHand(mainHit, "main_hand");
         if (OffhandWeaponFor(conn) is { } off)
-            list.AddRange(off.OffStats(stats, AttackHitConverted(off, stats, MeleeAttack(conn), conversion), WeaponProfileFor(conn).LocalAttackSpeedPct));
-        // Unarmed.Stats emits its physical bounds separately from the supplied final total. Rage must also reach
-        // those native bounds, without multiplying the already-final total or added elemental damage a second time.
-        int Get(string name) => RageStat(stats, name);
-        if (Get("attack_damage_+%_final_from_rage") != 0)
         {
-            var main = RageStats.ApplyAttack(weapon.HitDamage(stats), Get)[GameServer.Core.World.DamageType.Physical];
-            Replace(StatKeys.MainHandMinPhysical, (int)Math.Floor(main.Min));
-            Replace(StatKeys.MainHandMaxPhysical, (int)Math.Floor(main.Max));
-            if (OffhandWeaponFor(conn) is { } offhand)
-            {
-                var other = RageStats.ApplyAttack(offhand.HitDamage(stats), Get)[GameServer.Core.World.DamageType.Physical];
-                Replace(StatKeys.OffHandMinPhysical, (int)Math.Floor(other.Min));
-                Replace(StatKeys.OffHandMaxPhysical, (int)Math.Floor(other.Max));
-            }
+            var offHit = AttackHitConverted(off, stats, MeleeAttack(conn), conversion);
+            list.AddRange(off.OffStats(stats, offHit));
+            AddHand(offHit, "off_hand");
         }
         return list;
 
-        void Replace(uint key, int value)
+        void AddHand(GameServer.Core.World.DamagePacket hit, string hand)
         {
-            int index = list.FindIndex(s => s.Item1 == key);
-            if (index >= 0) list[index] = (key, value);
+            foreach (var (stat, value) in PanelStats.HandDamage(hit, hand))
+                if (Stats.Key(stat) is uint key)
+                {
+                    int index = list.FindIndex(s => s.Item1 == key);
+                    if (index >= 0) list[index] = (key, value);
+                    else list.Add((key, value));
+                }
         }
     }
 
@@ -160,7 +155,8 @@ partial class Program
         // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
         // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
         if (Stats.Key("skill_uses_main_hand") is uint usesMainHand && !devSet.Contains(usesMainHand)) stats[usesMainHand] = 1;
-        var attack = AttackHit(WeaponFor(conn), stats, MeleeAttack(conn));
+        var attack = AttackHitConverted(WeaponFor(conn), stats, MeleeAttack(conn),
+            DamageStats.Conversion(stats, Stats, attack: true));
         foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         // The conditions as they are now; the player tick sends the chance again when they change.
@@ -195,7 +191,8 @@ partial class Program
         bool melee, GameServer.Core.World.DamageConversion? conversion)
     {
         int Get(string name) => RageStat(stats, name);
-        var hit = DamageStats.Added(weapon.HitDamage(stats), Get, spell: false, melee).Scale(ChargeDamageMore(stats));
+        var hit = DamageStats.Added(weapon.HitDamage(stats, melee, projectile: !melee), Get,
+            spell: false, melee, projectile: !melee).Scale(ChargeDamageMore(stats));
         if (conversion is not null) hit = hit.Convert(conversion);
         return RageStats.ApplyAttack(hit, Get);
     }
@@ -376,7 +373,8 @@ partial class Program
             if (hitPlan.Kind == SkillHitKind.Attack)
             {
                 var attackHit = AttackSkillHit.Resolve(mainHand, characterInputs, Skills.EffectStats(effect, level),
-                    Stats, Skills.DamageEffectiveness(effect, level));
+                    Stats, Skills.DamageEffectiveness(effect, level), melee: Skills.IsMelee(effect),
+                    projectile: Supports.Of(effect)?.Types.Contains(2) == true);
                 foreach (var (stat, value) in AttackPanelStats.Compute(hitPlan, attackHit, Get("hundred_times_attacks_per_second")))
                     if (Stats.Key(stat) is uint key) stats[key] = value;
             }
@@ -384,11 +382,12 @@ partial class Program
             {
                 var supportedHit = SupportedHit(conn, id);
                 double seconds = Skills.IsAttack(effect) ? SupportedAttackSeconds(conn, id) : Math.Max(.001, (CastMs(conn, effect, id) ?? 0) / 1000.0);
-                var damageRows = hitPlan.Kind == SkillHitKind.Spell
-                    ? SpellPanelStats.Compute(hitPlan, supportedHit, Get("hundred_times_casts_per_second"),
-                        includeMainHand: true)
-                    : PanelStats.HandDamage(supportedHit, "main_hand");
-                foreach (var (key, value) in damageRows)
+                var finalPlan = SkillHitPlan.ForSkill(Skills, effect, supported.Level, supported.Quality);
+                var ranges = Skills.IsAttack(effect)
+                    ? AttackPanelStats.Compute(finalPlan, supportedHit, (int)Math.Round(100 / seconds))
+                    : SpellPanelStats.Compute(finalPlan, supportedHit, Get("hundred_times_casts_per_second"),
+                        includeMainHand: true);
+                foreach (var (key, value) in ranges)
                     if (Stats.Key(key) is uint statKey) stats[statKey] = value;
                 var display = SpellDamage.Display((supportedHit.MinTotal, supportedHit.MaxTotal), 1 / seconds);
                 stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = display.PerUse;

@@ -14,7 +14,8 @@ public class AttackPanelStatsTests
     {
         int row = Skills.Value.EffectRow(effect);
         return AttackSkillHit.Resolve(weapon ?? Weapon(), character, Skills.Value.EffectStats(row, 1),
-            Stats.Value, Skills.Value.DamageEffectiveness(row, 1));
+            Stats.Value, Skills.Value.DamageEffectiveness(row, 1), melee: Skills.Value.IsMelee(row),
+            projectile: Program.Supports.Of(row)?.Types.Contains(2) == true);
     }
     static Dictionary<string, int> Rows(string effect, DamagePacket hit, int aps = 140) =>
         AttackPanelStats.Compute(SkillHitPlan.ForSkill(Skills.Value, Skills.Value.EffectRow(effect), 1), hit, aps)
@@ -59,18 +60,19 @@ public class AttackPanelStatsTests
     {
         var character = Values(("melee_physical_damage_+%", 2));
         var weapon = Weapon(5, 13);
-        var ordinary = weapon.Stats(character, weapon.HitDamage(character)).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        Assert.Equal(918, ordinary[StatKeys.DisplayHundredTimesDamagePerSkillUse]);
+        var ordinary = weapon.Stats(character, weapon.HitDamage(character, melee: false, projectile: true))
+            .ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        Assert.Equal(900, ordinary[StatKeys.DisplayHundredTimesDamagePerSkillUse]);
         var hit = Resolve("BurningArrow", character, weapon);
-        Assert.Equal(9.18, hit.MinTotal, 6);
-        Assert.Equal(23.868, hit.MaxTotal, 6);
-        Assert.Equal(16.524, hit.AverageTotal, 6);
+        Assert.Equal(9, hit.MinTotal, 6); // Ranged attacks do not receive the 2% melee-physical increase.
+        Assert.Equal(23.4, hit.MaxTotal, 6);
+        Assert.Equal(16.2, hit.AverageTotal, 6);
         var rows = Rows("BurningArrow", hit, 98);
         Assert.Equal(9, rows["main_hand_minimum_total_damage"]);
         Assert.Equal(23, rows["main_hand_maximum_fire_damage"]);
         Assert.Equal(0, rows["main_hand_maximum_physical_damage"]);
-        Assert.Equal(1652, rows["display_hundred_times_damage_per_skill_use"]);
-        Assert.Equal(1619, rows["hundred_times_damage_per_second"]);
+        Assert.Equal(1620, rows["display_hundred_times_damage_per_skill_use"]);
+        Assert.Equal(1588, rows["hundred_times_damage_per_second"]);
     }
 
     [Fact]
@@ -122,7 +124,8 @@ public class AttackPanelStatsTests
         var rawBefore = new Dictionary<uint, int>(character);
         var weapon = Weapon(5, 9);
         // WeaponStats supplies the unrounded packet to the ordinary attack; its legacy fallback floors first.
-        var ordinary = weapon.Stats(character, weapon.HitDamage(character)).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var ordinary = weapon.Stats(character, weapon.HitDamage(character, melee: false, projectile: true))
+            .ToDictionary(kv => kv.Item1, kv => kv.Item2);
         Dictionary<uint, int> Panel(int staleDamage)
         {
             var final = new Dictionary<uint, int>(ordinary);
@@ -138,10 +141,10 @@ public class AttackPanelStatsTests
         Assert.Equal(created.OrderBy(kv => kv.Key), refreshed.OrderBy(kv => kv.Key));
         Assert.Equal(9, created[StatKeys.MainHandMinTotal]);
         Assert.Equal(16, created[StatKeys.MainHandMaxTotal]);
-        Assert.Equal(1285, created[StatKeys.DisplayHundredTimesDamagePerSkillUse]);
-        Assert.Equal(1259, created[StatKeys.HundredTimesDamagePerSecond]);
+        Assert.Equal(1260, created[StatKeys.DisplayHundredTimesDamagePerSkillUse]);
+        Assert.Equal(1235, created[StatKeys.HundredTimesDamagePerSecond]);
         Assert.Equal(rawBefore.OrderBy(kv => kv.Key), character.OrderBy(kv => kv.Key));
-        Assert.Equal(714, ordinary[StatKeys.DisplayHundredTimesDamagePerSkillUse]); // Existing pre-crit 7 * 1.02.
+        Assert.Equal(700, ordinary[StatKeys.DisplayHundredTimesDamagePerSkillUse]); // Ranged pre-crit average 7.
     }
 
     [Fact]

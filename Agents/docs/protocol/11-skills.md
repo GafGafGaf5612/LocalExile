@@ -349,7 +349,9 @@ Local before/after captures are `logs/skill-timing-{before,after}-default-bow-re
 `logs/skill-timing-{before,after}-burning-arrow-real.json` in the integration checkout.
 Catalog, native-field, modifier-order, pacing/contact and spell-exclusion tests pass.
 This excludes support/conditional/per-charge speed, skill-specific attack-time overrides and off-hand alternation rules.
-Selected attack-gem damage ranges/DPS still inherit the existing weapon display; correcting those is separate work.
+Selected supported attacks publish their completed typed packet, clearing removed damage types and sharing the
+weapon-local packet with contact/release calculations. Pre-critical average/DPS remains the existing local convention;
+critical weighting and special skill mechanics remain separate work. See [20](20-damage.md) §2a for local item damage.
 No generator output changes are needed: the multiplier is already extracted.
 
 ## 5. Combat timing (Gateway `Attack`)
@@ -1777,7 +1779,7 @@ Clearing the sources and relog both restored zero.
 See [20-damage.md](20-damage.md#player-energy-shield-2026-10-25) for supported ES mechanics and prediction limits.
 
 **Main hand / off hand rows** (`main_hand_…` / `off_hand_…`, `virtual_total_main_hand_…`) add the global stats and that
-hand's item's own local stats (`HandLocalStats`: the active item in the first weapon set, else the second):
+hand's item's own local stats (`HandLocalStats`: active rows 2/3 only; inactive rows 14/15 contribute none):
 `local_chance_to_bleed_on_hit_%`, `local_poison_on_hit_%`, `local_attacks_impale_on_hit_%_chance`,
 `local_chance_to_blind_on_hit_%`, `local_fire/cold/lightning/chaos/elemental_penetration_%`,
 `local_stun_threshold_reduction_+%`, `local_life/mana_gain_per_target`, `local_life/mana_leech_from_physical_damage_permyriad`

@@ -501,6 +501,8 @@ sealed class SkillCatalog(string folder = "data")
     /// <summary>A class's unarmed "weapon" (Characters.dat WeaponSpeed, MinDamage, MaxDamage, MaxAttackDistance).</summary>
     public sealed record Unarmed(int AttackMs, int MinDamage, int MaxDamage, int Range)
     {
+        /// <summary>The equipped item's local typed ranges. Class unarmed records retain their physical fallback.</summary>
+        public DamagePacket? LocalDamage { get; init; }
         public static readonly Unarmed Witch = new(833, 2, 5, 8);
 
         /// <summary>The weapon's own added elemental/chaos damage (its local added damage mods, ItemWeapons), added to
@@ -522,7 +524,8 @@ sealed class SkillCatalog(string folder = "data")
         public IReadOnlyList<(uint, int)> OffStats(IReadOnlyDictionary<uint, int>? player, DamagePacket? totalHit = null,
             int mainHandLocalAttackSpeedPct = 0)
         {
-            var (min, max) = Damage(player);
+            var physical = (totalHit ?? HitDamage(player))[DamageType.Physical];
+            var (min, max) = ((int)Math.Floor(physical.Min), (int)Math.Floor(physical.Max));
             return
             [
                 (StatKeys.OffHandMinPhysical, min), (StatKeys.OffHandMaxPhysical, max),
@@ -565,13 +568,12 @@ sealed class SkillCatalog(string folder = "data")
             return increased;
         }
 
-        /// <summary>The physical hit packet: Characters.dat MinDamage..MaxDamage × (1 + increased / 100).</summary>
-        public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player)
+        /// <summary>Local typed weapon damage (or class physical damage), with the actual attack's increase buckets.</summary>
+        public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player, bool melee = true, bool projectile = false)
         {
-            double increased = IncreasedDamage(player) + DamageStats.SpellAttackIncrease(player);
-            var hit = DamagePacket.Of(DamageType.Physical,
-                DamageStats.IncreaseAttackRange(new(MinDamage, MaxDamage), increased));
-            return hit.Add(LocalAdded);
+            int Get(string name) => Program.Stats.Key(name) is uint key ? player?.GetValueOrDefault(key) ?? 0 : 0;
+            return (LocalDamage ?? DamagePacket.Of(DamageType.Physical, new(MinDamage, MaxDamage)).Add(LocalAdded)).Select((type, range) =>
+                DamageStats.IncreaseAttackRange(range, DamageStats.AttackIncrease(Get, type, melee, projectile: projectile)));
         }
 
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,
@@ -597,7 +599,8 @@ sealed class SkillCatalog(string folder = "data")
         /// </summary>
         public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null, DamagePacket? totalHit = null)
         {
-            var (min, max) = Damage(player);
+            var physical = (totalHit ?? HitDamage(player))[DamageType.Physical];
+            var (min, max) = ((int)Math.Floor(physical.Min), (int)Math.Floor(physical.Max));
             double attacksPerSecond = 1 / AttackSeconds(player);
             double averageHit = totalHit?.AverageTotal ?? (min + max) / 2.0;
             return

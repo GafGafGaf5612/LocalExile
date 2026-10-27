@@ -382,6 +382,18 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Weapon-local damage and timing: active weapons supply a typed packet with multiplicative physical quality,
+  local flat/increased damage, no-physical/quality-prohibition flags and local attack speed applied once.
+  Ordinary melee/ranged and supported attacks share the actual context; final per-type rows clear removed types.
+  Automated controls cover weapon swaps, inactive hand-local exclusion and shared conversion/Rage composition.
+  Pool/charge/timing conditions and shield base block also exclude inactive or disabled equipment.
+  Twenty-four native publication controls pass in Standard/Ruthless; the independent local-mod/quality tooltip
+  matches 36-70 physical damage and 1.80 attacks per second. Source/DLL hashes and inventories held.
+  Authoritative offhand alternation, alternative quality and local base-critical modifiers remain separate.
+  Supported-contact composition retains automated coverage and needs its own native check.
+  Code: `ItemWeaponStats.cs`, `DamageStats.cs`, `SkillCatalog.cs`, `SupportedAttackDamage.cs`.
+  Docs: [20](../docs/protocol/20-damage.md) §2a.
+
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;

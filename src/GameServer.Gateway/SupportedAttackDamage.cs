@@ -4,7 +4,7 @@ static class SupportedAttackDamage
 {
     public static DamagePacket Hit(SkillCatalog.Unarmed weapon, Func<string, int> get, IReadOnlySet<int> types)
     {
-        var hit = DamagePacket.Of(DamageType.Physical, new(weapon.MinDamage, weapon.MaxDamage));
+        var hit = weapon.LocalDamage ?? DamagePacket.Of(DamageType.Physical, new(weapon.MinDamage, weapon.MaxDamage));
         foreach (var type in DamageTypes.ConversionOrder)
         {
             string slug = type.ToString().ToLowerInvariant();
@@ -14,14 +14,7 @@ static class SupportedAttackDamage
         hit = hit.Add(DamageType.Lightning, new(manaLightning, manaLightning));
         return hit.Select((type, range) =>
         {
-            string slug = type.ToString().ToLowerInvariant();
-            double increased = (double)get("damage_+%") + get("attack_damage_+%") + get($"{slug}_damage_+%")
-                + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0)
-                + (types.Contains(19) ? get("melee_damage_+%") : 0)
-                + (types.Contains(19) && type == DamageType.Physical ? get("melee_physical_damage_+%") : 0)
-                + (types.Contains(7) ? get("area_damage_+%") : 0)
-                + (types.Contains(2) ? get("projectile_damage_+%") : 0)
-                + DamageStats.SpellAttackIncrease(get);
+            double increased = DamageStats.AttackIncrease(get, type, types.Contains(19), types.Contains(7), types.Contains(2));
             return DamageStats.IncreaseAttackRange(range, increased);
         });
     }

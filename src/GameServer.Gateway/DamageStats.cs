@@ -31,6 +31,16 @@ static class DamageStats
         return new(range.Min * percent / 100.0, range.Max * percent / 100.0);
     }
 
+    /// <summary>The additive increase bucket for an attack damage type in its actual skill context.</summary>
+    public static double AttackIncrease(Func<string, int> get, DamageType type, bool melee,
+        bool area = false, bool projectile = false) =>
+        (double)get("damage_+%") + get("attack_damage_+%") + get($"{type.ToString().ToLowerInvariant()}_damage_+%")
+        + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0)
+        + (melee ? get("melee_damage_+%") : 0)
+        + (melee && type == DamageType.Physical ? get("melee_physical_damage_+%") : 0)
+        + (area ? get("area_damage_+%") : 0) + (projectile ? get("projectile_damage_+%") : 0)
+        + SpellAttackIncrease(get);
+
     /// <summary>"Attack skills have added lightning damage equal to % of maximum mana" (Stats.dat row 11881, client key
     /// 11882): PassiveSkills.dat graph id 22720, Whisperer "we know all", grants row 11881 with the value 6.</summary>
     public const string MaxManaAddedLightning = "attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana";
@@ -41,7 +51,7 @@ static class DamageStats
         get("maximum_mana") is > 0 and var mana ? mana * (get(MaxManaAddedLightning) / 100.0) : 0;
 
     public static DamagePacket Added(DamagePacket hit, Func<string, int> get, bool spell, bool melee,
-        double effectiveness = 1)
+        double effectiveness = 1, bool projectile = false)
     {
         foreach (var type in Types)
         {
@@ -61,10 +71,7 @@ static class DamageStats
                 // so the caller passes whether this swing is actually melee: the default attack and the panel's
                 // main-hand rows by their weapon profile (an inactive weapon is not there; unarmed is melee) and an
                 // attack gem by its own ActiveSkillType Melee classification.
-                double increased = (double)get("damage_+%") + get("attack_damage_+%") + (melee ? get("melee_damage_+%") : 0)
-                    + get($"{slug}_damage_+%")
-                    + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0)
-                    + SpellAttackIncrease(get);
+                double increased = AttackIncrease(get, type, melee, projectile: projectile);
                 range = IncreaseAttackRange(range, increased);
             }
             hit = hit.Add(type, range.Scale(effectiveness));

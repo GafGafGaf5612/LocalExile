@@ -343,9 +343,9 @@ partial class Program
             + (weapons.Wand ? Get("wand_attack_speed_+%") : 0)
             + (weapons.Bow ? Get("bow_attack_speed_+%") : 0)
             + (weapons.Staff ? Get("staff_attack_speed_+%") : 0);
-        // PoB Misc.lua: 10% more attack speed while dual wielding; unarmed attacks count as dual wielding. The main hand's
-        // local attack speed scales the weapon's own rate before the global increases, so it multiplies like a more.
-        int attackSpeedMore = (int)Math.Round(((weapons.DualWield || weapons.Unarmed ? 1.10 : 1.0) * (1 + weapons.LocalAttackSpeedPct / 100.0) - 1) * 100);
+        // PoB Misc.lua: 10% more attack speed while dual wielding; unarmed attacks count as dual wielding.
+        // ItemWeaponStats already applies the weapon's local speed to its duration, before character increases.
+        int attackSpeedMore = weapons.DualWield || weapons.Unarmed ? 10 : 0;
         // Unconditional critical strike chance and multiplier passives: generic, attack/melee/weapon-shape and spell.
         // Timed or enemy-state conditions are not modelled.
         long criticalChance = AttackBaseCriticalStrike.IncreasedSum(weapons, name => Get(name));

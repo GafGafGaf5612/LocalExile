@@ -50,9 +50,6 @@ partial class Program
         return ((int)Math.Min(int.MaxValue, life), 0);
     }
 
-    // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
-    // The local stats of the active main hand and off hand items (the first weapon set, else the second), for the panel's
-    // hand rows (PanelStats).
     // The item in the main hand (row 2, the active set) and its base type, unless its requirements are not met.
     static (Item Item, ItemCatalog.BaseType? Type)? ActiveMainHand(ClientState conn) => ActiveHand(conn, PlayerInventories.Weapon1);
 
@@ -64,9 +61,7 @@ partial class Program
         ItemsOf(conn).Items(row).Where(i => !IsInactive(conn, i.Id))
             .Select(i => ((Item, ItemCatalog.BaseType?)?)(i.Item, Items.ByHash(i.Item.TypeHash))).FirstOrDefault();
 
-    // The main hand's attack (2026-10-23): the weapon in the hand (row 2, the active set) by its WeaponTypes row, with the
-    // item's local stats (ItemWeapons: physical damage and quality, attack speed, local added elemental/chaos damage); no
-    // weapon, the class's unarmed attack.
+    // The active weapon's local typed damage, quality and duration; no weapon uses the class's unarmed attack.
     static SkillCatalog.Unarmed WeaponFor(ClientState conn) => WeaponOf(conn, ActiveMainHand(conn));
 
     static SkillCatalog.Unarmed WeaponOf(ClientState conn, (Item Item, ItemCatalog.BaseType? Type)? mainHand) =>
@@ -77,7 +72,10 @@ partial class Program
     {
         var unarmed = Skills.UnarmedFor(conn.ClassRow);
         if (hand is not var (item, type) || type is null || Skills.WeaponBase(type.Row) is not var (ms, min, max, range)) return null;
-        return ItemWeapons.Of(ms, min, max, Math.Max(range, unarmed.Range), ItemModStats.Local(item, Items.Mods), item.Quality);
+        var local = ItemWeaponStats.Calculate(item, (ms, min, max, range), Items.Mods);
+        var physical = local.Damage[GameServer.Core.World.DamageType.Physical];
+        return new SkillCatalog.Unarmed(local.AttackMs, (int)physical.Min, (int)physical.Max, Math.Max(range, unarmed.Range))
+            { LocalDamage = local.Damage };
     }
 
     // The off-hand weapon of a dual-wielded attack (the active set's Offhand1), with the same values WeaponIn gives the main
@@ -87,16 +85,15 @@ partial class Program
 
     static (Dictionary<string, int> Main, Dictionary<string, int> Off) HandLocalStats(ClientState conn)
     {
-        var items = ItemsOf(conn);
-        Dictionary<string, int> Local(byte row, byte swap) =>
-            items.Items(row).Concat(items.Items(swap)).Where(i => !IsInactive(conn, i.Id)).Select(i => i.Item).FirstOrDefault() is { } item
-                ? ItemModStats.Local(item, Items.Mods) : [];
-        return (Local(2, 14), Local(3, 15));
+        Dictionary<string, int> Local((Item Item, ItemCatalog.BaseType? Type)? hand) => hand is { } active
+            ? ItemModStats.Local(active.Item, Items.Mods) : [];
+        // Weapon swaps exchange the equipment rows; rows 14/15 remain inactive even when an active hand is empty.
+        return (Local(ActiveMainHand(conn)), Local(ActiveOffHand(conn)));
     }
 
-    // activeSet: only the hands' rows (the active weapon set), for what the player swings now (the attack animation);
-    // otherwise both sets, as the passive conditions read them.
-    internal static WeaponProfile WeaponProfileFor(ClientState conn, bool activeSet = false)
+    // Current actions and passive weapon conditions use only the hands' active rows. A normal weapon swap trades
+    // these rows with 14/15 before recomputing pools; an explicit false is reserved for inspecting both stored sets.
+    internal static WeaponProfile WeaponProfileFor(ClientState conn, bool activeSet = true)
     {
         var items = ItemsOf(conn);
         // An inactive weapon (requirements not met) is not there at all: the class is unarmed, as the default attack's
@@ -138,18 +135,19 @@ partial class Program
             Claw: all.Any(t => t.Class == "Claw"),
             Dagger: all.Any(t => t.Class is "Dagger" or "Rune Dagger"),
             Wand: all.Any(t => t.Class == "Wand"),
-            // The main hand's local mods: increased critical strike chance scales its base, attack speed and accuracy go
-            // into PassiveBonus.
+            // The main hand's local critical chance and accuracy feed its character calculations. Local attack speed
+            // is item metadata here; ItemWeaponStats already includes it in that hand's duration.
             Critical: (main1 ?? main2) is { } main ? Items.WeaponCritical(main) * (100 + local.GetValueOrDefault("local_critical_strike_chance_+%")) / 100 : 0,
             LocalAttackSpeedPct: local.GetValueOrDefault("local_attack_speed_+%"),
             LocalAccuracy: local.GetValueOrDefault("local_accuracy_rating"));
     }
 
-    // The equipped off hand(s): Weapon1's off hand is row 3, Weapon2's is row 15.
+    // Both stored offhands, used only by the explicit inventory-wide profile inspection above.
     static bool HasShield(ClientState conn) => OffhandTypes(conn).Any(t => t.Class == "Shield");
 
-    static int ShieldBaseBlock(ClientState conn) => OffhandTypes(conn).Where(t => t.Class == "Shield")
-        .Select(Items.ShieldBlock).DefaultIfEmpty(0).Max();
+    // Base block comes from the active, requirement-enabled shield, like its local defences and global modifiers.
+    static int ShieldBaseBlock(ClientState conn) => ActiveOffHand(conn)?.Type is { Class: "Shield" } shield
+        ? Items.ShieldBlock(shield) : 0;
 
     static IEnumerable<ItemCatalog.BaseType> OffhandTypes(ClientState conn)
     {
