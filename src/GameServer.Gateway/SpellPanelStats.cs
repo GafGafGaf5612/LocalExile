@@ -5,20 +5,22 @@ static class SpellPanelStats
 {
     static readonly string[] Types = ["total", "physical", "fire", "cold", "lightning", "chaos"];
 
-    public static List<(string Stat, int Value)> Compute(SkillHitPlan plan, DamagePacket packet, int hundredTimesCastsPerSecond)
+    public static List<(string Stat, int Value)> Compute(SkillHitPlan plan, DamagePacket packet,
+        int hundredTimesCastsPerSecond, bool includeMainHand = false)
     {
         // Attack and unsupported action rows retain their existing weapon display path.
         if (plan.Kind != SkillHitKind.Spell) return [];
         if (!plan.CanHit) packet = DamagePacket.Empty;
         var ranges = PanelStats.HandDamage(packet, "spell").ToDictionary(r => r.Stat, r => r.Value);
         var result = new List<(string, int)>();
-        foreach (string type in Types)
-            foreach (string bound in new[] { "minimum", "maximum" })
-            {
-                string stat = $"spell_{bound}_{type}_damage";
-                // Explicit zeros also replace inherited rows, including damage types absent from this packet.
-                result.Add((stat, ranges.GetValueOrDefault(stat)));
-            }
+        foreach (string hand in includeMainHand ? new[] { "spell", "main_hand" } : ["spell"])
+            foreach (string type in Types)
+                foreach (string bound in new[] { "minimum", "maximum" })
+                {
+                    // Clear inherited weapon rows too when publishing a selected spell's final packet.
+                    int value = ranges.GetValueOrDefault($"spell_{bound}_{type}_damage");
+                    result.Add(($"{hand}_{bound}_{type}_damage", value));
+                }
         var (perUse, perSecond) = SpellDamage.Display((packet.MinTotal, packet.MaxTotal),
             Math.Max(0, hundredTimesCastsPerSecond) / 100.0);
         result.Add(("display_hundred_times_damage_per_skill_use", perUse));

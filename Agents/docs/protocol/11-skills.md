@@ -922,11 +922,12 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `double_holy_strike_animated_weapons_limit`: 0x1400c37d1 registers 0x14279ee30), and the Templar rig's missing
   mace/sceptre stances (`Art/Models/CHARACTERS/Templar/rig.amd`).
 - **Damage** (`SpellHit.cs`, `SpellDamage.cs`). Projectile hits, area hits and the selected spell's panel
-  share the same typed packet: the catalog base hit, flat added spell damage scaled by damage effectiveness,
-  applicable generic/spell/elemental/type/projectile increases, supported aura more multipliers, then conversion
-  and gain-as-extra. The skill's own level/quality modifiers replace a player's value on the same key, preserving
-  the existing combat rule. Conversion uses separate character inputs: player keys win, and level-only skill inputs
-  fill missing keys. Quality conversion is still excluded, as it was before this panel change.
+  share `SupportedHit`'s final typed packet: catalog base damage, effective added damage, applicable increases,
+  aura/support multipliers, conversion and gain-as-extra, then the actual caster's spell-damage restriction.
+  Selected spell and inherited main-hand ranges now use this same supported packet, including explicit zeros.
+  Its existing player/skill stat merge and support conversion order are unchanged.
+  `SpellHit.Resolve` retains its standalone separate-input contract for callers of that seam.
+  See [20](20-damage.md) section 2f for key 5341, zero-hit callbacks, RF and native verification boundaries.
   Damage ranges are floored only for display/rolls; the packet keeps fractions through conversion.
   The displayed per-use average and DPS retain the unrounded packet average, before critical strikes and target
   mitigation. DPS uses the skill's emitted casts-per-second value, not the weapon's attacks per second.
