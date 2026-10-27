@@ -456,6 +456,17 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
                     n.Exist = 0;
                     n.Descriptions.Clear();
                 }
+        // 0x141f29730, the Betrayal plugin (generator plugin vtable +0x40) for a record after the first: the
+        // "targetroom2" nodes take a Next(count) draw and a shuffle, "targetroom1" goes in front, and each takes the
+        // server's next Betrayal target (BetrayalTargets.dat +0x59, its room) or exist 0 when none is left. The server
+        // sends no targets, so all of them drop (the Betrayal safe houses).
+        if (!primary && graph.Nodes.Any(n => n.Tag is "targetroom1" or "targetroom2"))
+        {
+            var targets = graph.Nodes.Where(n => n.Tag == "targetroom2").ToList();
+            rng.Next((uint)targets.Count);
+            rng.Shuffle(targets);
+            foreach (var n in graph.Nodes.Where(n => n.Tag == "targetroom1").Take(1).Concat(targets)) n.Exist = 0;
+        }
         // 0x142031390: exist rolls, nodes then edges; failed edges go first, then failed nodes.
         var nodesOut = new List<GraphNode>();
         foreach (var n in graph.Nodes)
