@@ -220,6 +220,19 @@ static class AuraCatalog
                     break;
             }
 
+            // Only size inputs compose here; this does not activate or add any aura.
+            var effectStats = skills.EffectStats(aura.Effect, aura.Level, aura.Quality);
+            foreach (string name in ActorScale.Inputs)
+            {
+                if (stats.Key(name) is not uint key) continue;
+                var source = effectStats.FirstOrDefault(s => s.Item1 == key);
+                if (source.Item1 != key) continue; // Preserve present zero limits as well as nonzero size sources.
+                int raw = source.Item2;
+                int value = (int)Math.Clamp(Math.Round(raw * Math.Max(0L, 100L + auraEffectPct) / 100.0,
+                    MidpointRounding.AwayFromZero), int.MinValue, int.MaxValue);
+                result[key] = ActorScale.Add(key, result.GetValueOrDefault(key), value);
+            }
+
             void Add(string name, string? source = null)
             {
                 if (stats.Key(name) is not uint key) return;

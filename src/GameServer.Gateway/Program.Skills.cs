@@ -31,6 +31,7 @@ partial class Program
         {
             stats.AddRange(conn.SentStatKeys.Where(k => !now.Contains(k)).Select(k => (k, 0)));
             conn.SentStatKeys = now;
+            RefreshPeerScale(conn, stats.Single(s => s.Item1 == ActorScale.Final).Item2);
         }
         return stats;
     }
@@ -47,7 +48,7 @@ partial class Program
         // Both hands' weapon stats. A dual-wielded attack swings the off hand as well, and the client sets that strike's
         // weapon up from the off hand's own final stats (it derives nothing itself, 11-skills.md §4).
         foreach (var (k, v) in WeaponStats(conn, WeaponOf(conn, mainHand), stats)) stats[k] = v;
-        foreach (var (k, v) in CosmeticStats(conn)) stats.TryAdd(k, v);
+        foreach (var (k, v) in CosmeticStats(conn).Where(s => !ActorScale.IsInput(s.Stat))) stats.TryAdd(k, v);
         return stats.Select(kv => (kv.Key, kv.Value));
     }
 
@@ -115,8 +116,10 @@ partial class Program
         UtilityFlasks.AddRawStats(stats, conn.UtilityFlaskEffects.Stats().Concat(conn.FlaskGrounds.PlayerStats()), Stats);
         WithRage(conn, stats);
         // The character panel's sums of base forms (PanelStats); a stat /set_stat set keeps its value.
-        HashSet<uint> devSet;
-        lock (conn.Monsters) devSet = [.. conn.PlayerStats.Keys];
+        Dictionary<uint, int> dev;
+        lock (conn.Monsters) dev = new(conn.PlayerStats);
+        var devSet = dev.Keys.ToHashSet();
+        ActorScale.Project(stats, dev, CosmeticScaleSources(conn));
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
         // Capture the unmodified recovery baseline from this same snapshot, before the temporary contribution.
         // The resource writer integrates Fortification separately across exact expiry boundaries.
@@ -215,7 +218,7 @@ partial class Program
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         foreach (var (k, v) in AuraCatalog.RawStats(auras, conn.Pools.AuraEffectPct, Skills, Stats))
-            extra[k] = extra.GetValueOrDefault(k) + v;
+            extra[k] = ActorScale.Add(k, extra.GetValueOrDefault(k), v);
         foreach (var (k, v) in extra) if (seen.Add(k)) yield return (k, v);
     }
 
