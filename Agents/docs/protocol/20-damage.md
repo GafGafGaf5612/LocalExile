@@ -320,7 +320,12 @@ With RF installed, enemy Life stayed at 4516 while actual player Life fell from 
 Removing the flag resumed enemy burn to 4455; reapplying it stopped that existing burn without restarting RF.
 Relog cleared the development source.
 In-flight source changes, conversion/gain, supported additions and aura attack bonuses have automated coverage.
-Native verification of the rebased head and the exact proposed PR composition remains pending.
+The ordered #290 / #294 / #296 / #300 integration at `c9cd1864` passes 28 fresh native controls.
+On its new level-one unascended Marauder, a level-one Fireball deals fixed 200 chaos, then zero with the flag.
+An attack still removes 100 native target Life while flagged; removing the flag restores Fireball's 200.
+The same owner retains converted mana 29 and Armour 251; two existing synthetic accuracy mods ensure a 100% attack roll.
+The real native Life reads and accepted-hit logs agree, with Gateway/Core/Storage/Host revisions and hashes pinned.
+RF, Ice Nova, relog and selected-panel controls above remain attributed to the original head.
 No native allocation of Rampager, owned-actor execution or whole-class acceptance is claimed.
 
 ## 3. Damage over time and ailments

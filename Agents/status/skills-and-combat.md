@@ -251,7 +251,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Unpaid release guards, utility reservation/cooldowns and RF fractional carry keep their existing behavior.
   Eleven historical native checks at original head `e80a81c` cover Fireball/Ice Nova, paid casts and attacks.
   Native Fireball action rows clear ranges and DPS; RF keeps its self-burn while its enemy damage stops/resumes.
-  Those controls cover source changes and relog; native checks of the rebased head/composed PRs remain pending.
+  Those controls cover source changes and relog at the historical head.
+  Fresh ordered joint controls at `c9cd1864` verify Fireball 200 / zero, attack 100 and restored Fireball 200.
+  Final attributes and converted pools remain active in that same unascended Marauder session.
   Rampager 49937 supplies the source, but class admission, owner execution and the node's other mechanics are separate.
   Code: `SkillDamageContext`, `SupportedHit`, `SpellHit`, `BurnAround`, `GemSkills`.
   Docs: [20](../docs/protocol/20-damage.md) section 2f.

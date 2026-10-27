@@ -118,7 +118,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Recent-hit armour doubling/history, partial armour percentages and whole-class Incorruptible remain separate.
   Rampager's raw spell restriction has hit/panel and RF regressions; eleven native controls are historical (#293).
   See [status](../status/skills-and-combat.md) for the verified consumer scope.
-  Recheck the rebased spell restriction and exact proposed PR composition natively.
+  Fresh ordered joint hit controls pass at `c9cd1864`; original RF, Ice Nova and relog checks remain historical.
   Rampager's other mechanics and class admission remain separate work.
   Fresh composed default-attack mana, penetration and critical-ignore checks pass at source `1366f48`.
   Verify the remaining supported-gem, modifier and bow combinations natively; retain their automated regressions.
