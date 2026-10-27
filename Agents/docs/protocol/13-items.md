@@ -884,24 +884,23 @@ Otherwise:
 
 1. The charges are spent and saved, and the flask goes to the client again (Sâ†’C 0xbf: the item removed and added with
    its new Charges, same id).
-2. Its recovery (`FlaskRecovery.For`, as Path of Building's Item.lua and CalcPerform calcFlaskRecovery and poewiki's
-   "Recovery from flasks"): base Ã— (1 + quality) Ã— (1 + increased amount recovered: `local_flask_amount_to_recover_+%`
-   and the life / mana ones) Ã— (1 + the character's `flask_life_to_recover_+%` / `flask_mana_to_recover_+%` and
-   `flask_life_and_mana_to_recover_+%`) Ã— (1 + increased flask effect duration, which recovers for longer at the same
-   rate) Ã— (increased flask effect + the low-life more multiplier âˆ’ 1: `â€¦_when_on_low_life`, at half life or less, is
-   not scaled by flask effect, PoB CalcPerform "verified ingame"). Its
-   time is calculated independently for Life and Mana: base Ã— (1 + increased duration) divided by the local recovery
-   rate, generic character `flask_recovery_speed_+%` factor and the matching
-   `flask_life_recovery_rate_+%` / `flask_mana_recovery_rate_+%` factor. These rate factors multiply rather than add.
-   A hybrid retains both amounts and separate durations; accelerating Mana does not accelerate Life.
+2. Its recovery (`FlaskRecovery.For`, as the pinned Path of Building `Item.lua` and `CalcPerform` do) starts with
+   base amount times quality, local amount modifiers, the matching character amount modifiers and flask effect.
+   The low-life more factor is separate from flask effect: their contribution is the effect factor plus the low-life
+   factor minus one, at half life or less. The instant fraction is applied to that amount before global duration.
+   Only the remaining over-time amount receives the character duration factor described below; longer global
+   duration recovers for longer at the same rate and does not increase the instant part.
+   Life and Mana periods are calculated independently: base seconds times the local duration factor times the
+   global duration factor, divided by the local recovery-speed factor, generic character
+   `flask_recovery_speed_+%` factor and matching `flask_life_recovery_rate_+%` / `flask_mana_recovery_rate_+%` factor.
+   Those rate factors multiply. A hybrid retains both amounts and separate durations; accelerating Mana does not
+   accelerate Life. Recovery quality affects amount; utility quality affects duration (§8a).
    The partial-instant mods (50%), "Instant Recovery" and "Instant Recovery when on Low Life" give that part
-   at once; the mods that "remove #% of â€¦ recovered from â€¦" take it from the other pool on use (never below 1 life);
-   "Mana Recovery occurs instantly at the end of Effect" gives the mana when the effect runs out; "Effect is not removed
-   when Unreserved Mana is Filled" (and the character's "Life / Mana Flask Effects are not removed when â€¦ is Filled")
-   keeps it at a full pool and out of the queue; the life suffix "Recover an additional #% of Flask's Life Recovery
-   Amount over 10 seconds if used while not on Full Life" adds that share of the flask's own life (instant and over
-   time) as its own effect. A flask used while a monster's hit kills the player (during the charges' send) recovers
-   nothing (`FlaskRecovery.Instant`): it must not bring the player back to 1 life.
+   at once. Mods that remove a percentage of recovery from the other pool apply on use, never reducing Life below 1.
+   "Mana Recovery occurs instantly at the end of Effect" gives the Mana when its effect ends; effects not removed at
+   a full pool stay out of the queue. The extra-Life suffix adds its own ten-second effect based on the flask's total
+   Life recovery. A flask whose asynchronous charge send ends with the player dead recovers nothing
+   (`FlaskRecovery.Instant`); it must not restore the player to 1 Life.
 3. Each recovery component's buff goes on the player (Sâ†’C 0x1c1): BuffDefinitions row 5 `flask_effect_life` ("Healing")
    and/or row 9 `flask_effect_mana` ("Regenerating Mana"). A hybrid installs both with their independent rates,
    durations, queues and end/full-pool lifetimes. Both are invisible, cancelled on death and removed once their pool is full.
@@ -921,6 +920,41 @@ Otherwise:
    (`Flasks.Effects`); a second use of the same flask queues another effect. Enduring ("Effect does not Queue"), the
    character's "â€¦ Flask Effects do not Queue" for its kind of flask, and the suffix's extra life run on their own. The
    buff comes off (Sâ†’C 0x1c2) when the time is up, the pool is full (unless it stays), or the player dies.
+
+Character duration is resolved once from raw inputs by `PanelStats.FlaskDurationIncrease`:
+`G = flask_duration_+% + flask_duration_+%_per_level * actual player level`, with global factor `1 + G / 100`.
+Both actual use handlers capture the character stats and level together before the asynchronous charge-spend send.
+They use the actual character level, not a gem level or an arbitrary `level` stat. The displayed
+`virtual_flask_duration_+%` seed or developer replacement does not feed back into recovery or utility duration.
+The panel's signed coefficient uses the same raw sum; its source rules are in
+[11-skills.md](11-skills.md#14-character-panel-sums). Existing nonpositive-duration policy is unchanged and unproved;
+these controls cover positive runtime factors. The separate `flask_effect_+%_per_level` source is not implemented by
+this duration change, so the complete Nevalius unique is not claimed.
+
+The integrated panel/duration batch passes 55 new and 80 existing focused cases and full Gateway 3657/3657.
+Prior Core 648/Data 37 runs remain applicable because those sources are unchanged (4342 applicable cases).
+The combined native assessment has 40 completed controls: 22 complete PASS (12 positive source cases, six utility
+uses and four Life uses), while 18 complete zero controls remain UNPROVED. The six panel fields total 138 VERIFIED
+and 42 UNPROVED verdicts, including retained observations and clearing/restoration/relog transitions. Missing or
+contradictory zero witnesses remain failures of proof; they are not counted as hidden-zero rendering.
+
+Six actual utility uses match their fixed duration fields, including the native +30% local-duration modifier at 100:
+
+| Mode | Level 10 white Quicksilver | Level 100 white Granite | Level 100 local-duration Granite |
+|---|---|---|---|
+| Standard | 13.8 seconds | 3 seconds | 3.9 seconds |
+| Ruthless | 4.6 seconds | 2 seconds | 2.6 seconds |
+
+Four actual Life uses also match their original prospective observation bounds. At level 10 the fixed amount is
+161 over 6.9 seconds: Standard observed +160 and Ruthless +161. At level 100 it is 35 over 1.5 seconds: both modes
+observed +34. These satisfy the original one-integer publication boundary; the discrepancy is retained and is not
+an official rounding claim. The separate ordinary heal/hit/use bootstrap was captured once per control.
+
+The final recovery3 session logged out/detached cleanly with 769 frozen inputs unchanged, preserved original saves
+and all six canonical full inventories, and was followed by parent-verified client closure and normal
+`data/saves.db` restoration. Earlier recovery1 binding failures, recovery2 Life-readiness failure and its vendor
+response failure remain recorded separately. These results do not prove every zero row, legal acquisition of the
+controlled modifier carriers, a complete on-kill engine or the full native matrix.
 
 Raw `charges_gained_+%` sources resolve into `flask_charges_gained_+%` once before charge awards.
 An explicit developer virtual replacement, including zero, keeps precedence. The resolved character factor then
@@ -943,9 +977,9 @@ Queued native timer/predictor presentation and exact official-server arithmetic/
 A flask key (0x70) on a utility flask goes to `UseUtilityFlask` (`Program.UtilityFlasks.cs`, `UtilityFlasks.cs`).
 Everything comes from the tables (`ItemCatalog.UtilityFlaskOf`): the Flasks.dat row names the flask's BuffDefinitions
 row, its BuffStatValues (one value per StatsKeys entry of that row) and its duration (RecoveryTime, tenths of a second);
-ComponentCharges gives its charges. The second duration column, RecoveryTime2, is shorter for every utility flask
-(Quicksilver 20 against 60; life flasks have both equal) and is not the one the game uses: Path of Building's bases and
-RePoE 3.29.3.3 `base_items.json` give Quicksilver 6 s (duration 60), Ruby 8 s, Iron 4 s, the RecoveryTime values.
+ComponentCharges gives its charges. Ordinary mode uses RecoveryTime, matching the pinned normal-mode bases;
+Ruthless selects RecoveryTime2. Quicksilver is 6 seconds in ordinary mode and 2 in Ruthless, while Granite is 6 and 4.
+The table below lists ordinary-mode bases; duration modifiers are applied after the mode-aware catalog selection.
 
 | Flask | Buff (row) | What it does here | Duration, charges |
 |---|---|---|---|
@@ -1006,12 +1040,16 @@ A use:
    (poewiki, the Fandom mirror, Path of Building and the forum don't say): `UtilityFlasks.EndsWhenFlaskLeavesItsCell`;
    flip it if the real game keeps the effect running.
 
-Duration and effect follow Path of Building (`Item.lua`, `CalcPerform.lua`): duration = base Ã— (1 + increased) Ã— (1 +
-quality) Ã— (1 + `local_flask_duration_+%_final`), where increased is the flask's `local_flask_duration_+%` plus the
-character's `flask_duration_+%` (passives and gear: "increased Flask Effect Duration") and quality multiplies it (20%
-quality: Quicksilver 7.2 s); the stats are scaled by 1 + the flask's `local_flask_effect_+%`, the character's
-`flask_effect_+%` and, on a magic flask, `magic_utility_flask_effect_+%` (not Onslaught's, which has its own effect
-stat), each value rounded down (PoB ModStore.ScaleAddMod: to two decimals, then the fraction dropped).
+Duration and effect follow the pinned Path of Building `Item.lua`/`CalcPerform` model. Utility duration is base
+seconds times the item-local duration factor, the character global duration factor from §8, quality, and the
+`local_flask_duration_+%_final` factor. Item-local and global increases multiply; they are not one additive bucket.
+For example, a 6-second base with 30% local and 20% global duration lasts `6 * 1.3 * 1.2 = 9.36` seconds before
+quality or local more modifiers. Quicksilver with only 20% quality remains 7.2 seconds in ordinary mode.
+The raw global sum includes the per-player-level source once and ignores the virtual display seed.
+Effect remains the sum of local and character `flask_effect_+%`, plus `magic_utility_flask_effect_+%` on a magic flask;
+Onslaught keeps its own separate effect stat. Values use the existing PoB `ScaleAddMod` rounding projection.
+Global duration, local duration and effect are distinct operations; this change does not resolve the separate
+per-level Flask Effect operator or establish official fractional duration rounding.
 
 The "during effect" suffixes (`UtilityFlasks.DuringEffect`) count while the flask runs, scaled by its effect: increased
 armour (`local_flask_armour_+%_while_healing` â†’ `physical_damage_reduction_rating_+%`), increased evasion, movement
@@ -1113,8 +1151,9 @@ hit and every 3 seconds (tests only).
 ## Open
 
 - Flasks: fewer kill charges in acts 6 to 10 and maps (the amount is not in the tables), single monsters' own flask
-  charge stats, partial charges across connections (not saved), hybrid flasks' buffs (a hybrid flask recovers both pools
-  but shows only the life buff), the effects across an area change (they end), the "during any flask effect" passives.
+  charge stats, partial charges across connections (not saved), queued native timer/predictor presentation,
+  the effects across an area change (they end), the "during any flask effect" passives, per-level Flask Effect and
+  nonpositive-duration policy. Hybrid Life/Mana buffs and independent lifetimes are implemented; see §8.
   Utility flasks: Ward (Iron Flask, the Ward suffix) until PR #206 is in; ailments, stun and curses on the player
   (Aquamarine's freeze effect, Corundum, the ailment suffixes: panel only); Aquamarine's chilled ground; the smoke
   cloud's art; which objects phasing lets the player through besides monsters; how long the grounds last; whether taking

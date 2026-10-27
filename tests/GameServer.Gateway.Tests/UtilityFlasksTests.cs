@@ -237,9 +237,9 @@ public class UtilityFlasksTests
         int Get(string name) => character.GetValueOrDefault(name);
         var local = new Dictionary<string, int> { ["local_flask_duration_+%"] = 10, ["local_flask_effect_+%"] = 15 };
 
-        // Increased duration from the tree adds to the flask's own; increased effect likewise.
+        // Global duration multiplies item-local duration; increased effect remains additive.
         var normal = UtilityFlasks.For(u, Flask(), local, Get);
-        Assert.Equal(6 * 1.3, normal.Seconds, 6);
+        Assert.Equal(6 * 1.1 * 1.2, normal.Seconds, 6);
         Assert.Equal([("base_movement_velocity_+%", 50)], Plain(normal.Stats));   // 40 × 1.25
         // Magic utility flasks also get magic_utility_flask_effect_+%.
         Assert.Equal([("base_movement_velocity_+%", 56)], Plain(UtilityFlasks.For(u, Flask(rarity: ItemRarity.Magic), local, Get).Stats));   // 40 × 1.4

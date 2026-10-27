@@ -169,7 +169,14 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot}: {(flask is null ? "no flask there" : "not a flask (not handled)")}");
             return;
         }
-        var character = CharacterPlayerStats(conn);
+        Dictionary<uint, int> character;
+        int playerLevel;
+        // Keep level and coefficient sources in one use snapshot, including across the asynchronous charge spend.
+        lock (conn.Monsters)
+        {
+            playerLevel = conn.Pools.Level;
+            character = CharacterPlayerStats(conn);
+        }
         int Get(string name) => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
         var local = ItemModStats.Local(flask.Item, Items.Mods);
         var charges = FlaskCharges.Of(use, local, Get);
@@ -179,7 +186,7 @@ partial class Program
             return;
         }
         if (await SpendFlask(remote, stream, ciphers, conn, flask, charges, slot) is null) return;
-        var r = FlaskRecovery.For(use, flask.Item, local, Get, conn.PlayerLife, conn.PlayerMaxLife);
+        var r = FlaskRecovery.For(use, flask.Item, local, Get, conn.PlayerLife, conn.PlayerMaxLife, playerLevel);
         Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {r.Life:0.#} life, {r.Mana:0.#} mana over {r.Seconds:0.##} s, " +
             $"instantly {r.InstantLife:0.#} life, {r.InstantMana:0.#} mana{(r.ManaAtEnd > 0 ? $", {r.ManaAtEnd:0.#} mana at the end" : "")}" +
             $"{(r.RemovesLife + r.RemovesMana > 0 ? $", removes {r.RemovesLife:0.#} life, {r.RemovesMana:0.#} mana" : "")}" +

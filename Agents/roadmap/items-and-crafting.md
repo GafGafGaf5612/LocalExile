@@ -50,9 +50,19 @@ features.
   probabilities from live captures (the current curve is an approximation).
 - **Done when:** items' damage and defences count, and flasks and currency can be used.
 - **Flask modifiers (#75):** character charge-gain source resolution and independent hybrid recovery components
-  have automated handler/lifecycle coverage in both modes. Twenty-four native controls verify actual buffs,
+  have automated handler/lifecycle coverage in both modes. Twenty-four earlier native controls verify actual buffs,
   recovery and charge awards, including Ruthless utility prevention and ordinary vendor refill.
-  Conditional gain sources and queued native timer/predictor presentation remain open.
+  Flat and per-player-level duration now share one raw resolver for the panel and actual uses; level and inputs are
+  captured before the charge send. Utility local/global duration factors multiply rather than add, with quality and
+  local more kept separate. The integrated panel/duration batch passes 55 new plus 80 existing focused cases,
+  full Gateway 3657/3657 and applicable prior Core 648/Data 37 checks. Of 40 completed native controls, 22 complete
+  controls pass (12 positive source, six utility and four Life); 18 complete zero controls remain UNPROVED, with
+  138 VERIFIED/42 UNPROVED panel-field verdicts. Utility durations match Standard13.8/3/3.9 and Ruthless4.6/2/2.6
+  seconds for level-10 white, level-100 white and level-100 local uses. Life observed Standard160/34 and Ruthless161/34
+  against fixed161/35 at levels10/100 under the original one-integer boundary. Clean recovery3 cleanup,769 held
+  hashes and preserved saves/canonical inventories do not turn the unproved zeros into passes.
+  Conditional gain sources, per-level Flask Effect/full Nevalius, nonpositive-duration policy, official fractional
+  rounding and queued native timer/predictor presentation remain open. See protocol 13 §8 and the items status.
 
 ## 5. Project
 

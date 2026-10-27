@@ -31,7 +31,21 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Flask modifier composition (#75): raw character charge-gain sources resolve into the native virtual once,
   then multiply local flask charge recovery with fractional carry. Generic and resource-specific recovery-rate
   factors multiply; hybrid Life/Mana keep independent rates, native buff rows 5/9, queues and lifetimes.
-  Twenty-eight automated controls cover real handlers and both modes. Twenty-four native controls verify
+  Global duration now resolves `flask_duration_+%` plus the actual-player-level source once for both panel and use.
+  Each use snapshots level/stat inputs before its charge send; a virtual display replacement does not change the
+  actual duration. Item-local and global utility-duration factors multiply, followed by quality and local more.
+  Recovery periods use the same global factor independently for Life/Mana; only over-time amount scales with it.
+  The integrated panel/duration batch passes 55 new plus 80 existing focused checks and Gateway 3657/3657;
+  unchanged prior Core 648/Data 37 runs remain applicable (4342 total). Combined native results cover 40 completed
+  controls: 22 complete PASS (12 positive source, six utility and four Life), with 18 complete zero controls UNPROVED;
+  panel-field verdicts total 138 VERIFIED/42 UNPROVED. Standard utility durations match 13.8/3/3.9 seconds and
+  Ruthless 4.6/2/2.6 for level-10 white, level-100 white and level-100 local-duration uses respectively.
+  Life gains are Standard160/34 and Ruthless161/34 at levels10/100 against fixed161/35, within the original
+  one-integer publication boundary; this does not prove official rounding. Final recovery3 cleanup is clean,
+  all769 frozen inputs held, canonical inventories/original saves were preserved and normal storage was restored.
+  Earlier failed observations and all UNPROVED fields remain recorded. Full Nevalius per-level effect,
+  nonpositive-duration policy and official fractional rounding remain open.
+  Earlier twenty-eight automated controls cover real handlers and both modes. Twenty-four native controls verify
   installed buffs, separate hybrid expiry, full/end/queue/death, actual recovery, charge gains and overrides.
   Ruthless spent charges persist in town; ordinary Nessa interaction refills them before further controls.
   Original saves and inventories held, apart from flask charges and native move IDs. Conditional acquisition

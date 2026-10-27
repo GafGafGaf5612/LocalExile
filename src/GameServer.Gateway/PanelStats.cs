@@ -215,6 +215,11 @@ static class PanelStats
         return result;
     }
 
+    /// <summary>The global duration coefficient shared by the panel and actual flask uses. The display's virtual
+    /// seed does not modify gameplay; item-local duration, quality and more modifiers remain separate.</summary>
+    public static long FlaskDurationIncrease(Func<string, int> get, int playerLevel = 1) =>
+        Total(GlobalFlaskDurationSources, get, Math.Clamp(playerLevel, 1, Progression.MaxLevel));
+
     // Sum one raw snapshot. The level is the player level supplied by the caller, never a native stat/gem level.
     static long Total(IEnumerable<Src>? sources, Func<string, int>? get, int playerLevel) =>
         get is null || sources is null ? 0 : sources.Sum(s =>

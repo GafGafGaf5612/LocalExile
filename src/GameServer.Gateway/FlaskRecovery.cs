@@ -41,7 +41,7 @@ static class FlaskRecovery
     /// / (1 + increased recovery rate), the character's flask recovery rate dividing it again.
     /// </remarks>
     public static Use For(Flasks.Flask type, Item flask, IReadOnlyDictionary<string, int> local, Func<string, int> character,
-        uint life, uint maxLife)
+        uint life, uint maxLife, int playerLevel = 1)
     {
         int L(string name) => local.GetValueOrDefault(name);
         bool lowLife = LowLife(life, maxLife);
@@ -50,7 +50,7 @@ static class FlaskRecovery
         int instant = Math.Min(100, L("local_flask_recovery_amount_%_to_recover_instantly")
             + (L("local_flask_recovers_instantly") > 0 ? 100 : 0)
             + (lowLife && L("local_flask_recover_instantly_when_on_low_life") > 0 ? 100 : 0));
-        int durationInc = character("flask_duration_+%");
+        double durationInc = PanelStats.FlaskDurationIncrease(character, playerLevel);
         double effect = Math.Max(0, 100 + L("local_flask_effect_+%") + character("flask_effect_+%")) / 100.0;
         // The low-life more multiplier is not scaled by flask effect (Path of Building CalcPerform: "More life recovery
         // while on low life is not affected by flask effect (verified ingame)"): × (effect + more − 1), not × more × effect.

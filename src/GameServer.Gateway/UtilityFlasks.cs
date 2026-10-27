@@ -163,14 +163,17 @@ static class UtilityFlasks
     /// quality. <paramref name="local"/>: the flask's own mods (ItemModStats.Local, by Stats.dat Id);
     /// <paramref name="character"/>: the character's stats (passives and gear: flask_duration_+%, flask_effect_+%,
     /// magic_utility_flask_effect_+% for a magic flask). As Path of Building's Item.lua and CalcPerform.lua: duration =
-    /// base × (1 + increased) × (1 + quality) × (1 + local more), quality multiplying the other increases; effect
+    /// base × (1 + local increased) × (1 + global increased) × (1 + quality) × (1 + local more), quality multiplying the other increases; effect
     /// = 1 + the local and the character's increased effect.</summary>
     public static (IReadOnlyList<Source> Stats, double Seconds) For(Utility u, Item flask,
-        IReadOnlyDictionary<string, int> local, Func<string, int> character)
+        IReadOnlyDictionary<string, int> local, Func<string, int> character, int playerLevel = 1)
     {
         int Get(string name) => local.GetValueOrDefault(name);
-        double seconds = u.Seconds * (100 + Get("local_flask_duration_+%") + character("flask_duration_+%")) / 100.0
-            * (100 + flask.Quality) / 100.0 * (100 + Get("local_flask_duration_+%_final")) / 100.0;
+        double durationInc = PanelStats.FlaskDurationIncrease(character, playerLevel);
+        // PoB Item.lua2421-2447 applies local duration/quality first; global FlaskDuration multiplies that result.
+        double seconds = u.Seconds * (100.0 + Get("local_flask_duration_+%")) / 100.0
+            * (100.0 + durationInc) / 100.0 * (100.0 + flask.Quality) / 100.0
+            * (100.0 + Get("local_flask_duration_+%_final")) / 100.0;
         int increasedEffect = Get("local_flask_effect_+%") + character("flask_effect_+%")
             + (flask.Rarity == ItemRarity.Magic ? character("magic_utility_flask_effect_+%") : 0);
         double effect = Math.Max(0, 100 + increasedEffect) / 100.0;
