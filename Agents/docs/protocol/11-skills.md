@@ -1656,6 +1656,12 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   server does not calculate (ailments, leech, damage taken, damage over time increases, wand-only or attack-only damage,
   mana cost, buff duration, Frenzy's and Flicker Strike's own per-charge attack speed and damage).
 
+## 16. Rage
+
+Generic Rage generation, loss, attack damage, transient ownership and native count/buff packets are implemented.
+See [26-rage.md](26-rage.md) for inputs, primary evidence, versioned policies and the scoped native controls.
+Automated parsed-dispatch coverage does not constitute native verification.
+
 ## Open
 
 - Monster attacks still land at half the attack time (the player's use the contact keyframe); "more" multipliers; energy shield (Righteous Fire's ES parts are ignored).

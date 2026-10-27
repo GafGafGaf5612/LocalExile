@@ -23,6 +23,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Successful paid ascendancy refunds and Focus/curse lifecycles remain separate integration work.
   See [11-skills.md](../docs/protocol/11-skills.md), conditional critical policy.
 
+- Generic Rage (#281): source-qualified attack/melee/critical and incoming gains share a half-second interval.
+  Maximum, effect, separate delay recovery/loss speed, prevention and final attack multipliers are consumed.
+  Seventeen native checks verify raw-source generation, installed buff/count, actual damage and unchanged speed.
+  Fixed 100 damage at 15 Rage displays and deals 115; prevention, decay, pause, travel, death and relog pass.
+  The checks use an unascended Witch; Behemoth selection and Vaal consumers remain separate.
+  Supported contacts, area-sweep deduplication, queued refreshes and the 140-damage/11-Fortification composition
+  have automated coverage; further native composition checks remain in [26-rage.md](../docs/protocol/26-rage.md).
+  Capped attempted gains and frozen destination-loading time use explicit LocalExile policy v1.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks
@@ -179,7 +188,6 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [11](../docs/protocol/11-skills.md) §9.
 
 ## Partly working
-
 
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.

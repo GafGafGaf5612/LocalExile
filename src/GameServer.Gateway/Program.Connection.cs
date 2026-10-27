@@ -143,7 +143,11 @@ partial class Program
                 finally
                 {
                     conn.Closed = true;
-                    lock (conn.Monsters) FortificationOf(conn).Clear();
+                    lock (conn.Monsters)
+                    {
+                        FortificationOf(conn).Clear();
+                        conn.Rage.Clear();
+                    }
                     inbox.Complete();
                     await handlers;
                 }
@@ -229,7 +233,11 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
         }
         conn.Closed = true;
-        lock (conn.Monsters) FortificationOf(conn).Clear();
+        lock (conn.Monsters)
+        {
+            FortificationOf(conn).Clear();
+            conn.Rage.Clear();
+        }
         reading.Cancel();
     }
 

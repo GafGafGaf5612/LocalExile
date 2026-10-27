@@ -97,7 +97,12 @@ partial class Program
 
     static async Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label)
     {
-        lock (conn.Monsters) FortificationOf(conn).Clear();
+        lock (conn.Monsters)
+        {
+            FortificationOf(conn).Clear();
+            ClearRageOnDeath(conn);
+        }
+        await SendRage(remote, stream, ciphers, conn);
         await EndAurasOnDeath(remote, stream, ciphers, conn);
         ChargesOnDeath(conn);
         await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), label);
@@ -630,6 +635,8 @@ partial class Program
         PrepareHideoutWaypoint(conn);
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
         var cls = Skills.ClassFor(classRow);
+        // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
+        RestoreRage(conn);
         var stats = CharacterPlayerStats(conn);
         var characterInputs = new Dictionary<uint, int>(stats);
         // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:

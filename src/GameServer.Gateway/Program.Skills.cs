@@ -61,10 +61,31 @@ partial class Program
     static List<(uint, int)> WeaponStats(ClientState conn, SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats)
     {
         var conversion = DamageStats.Conversion(stats, Stats, attack: true);
-        var list = weapon.Stats(stats, AttackHit(weapon, stats, MeleeAttack(conn)).Convert(conversion)).ToList();
+        var list = weapon.Stats(stats, AttackHitConverted(weapon, stats, MeleeAttack(conn), conversion)).ToList();
         if (OffhandWeaponFor(conn) is { } off)
-            list.AddRange(off.OffStats(stats, AttackHit(off, stats, MeleeAttack(conn)).Convert(conversion), WeaponProfileFor(conn).LocalAttackSpeedPct));
+            list.AddRange(off.OffStats(stats, AttackHitConverted(off, stats, MeleeAttack(conn), conversion), WeaponProfileFor(conn).LocalAttackSpeedPct));
+        // Unarmed.Stats emits its physical bounds separately from the supplied final total. Rage must also reach
+        // those native bounds, without multiplying the already-final total or added elemental damage a second time.
+        int Get(string name) => RageStat(stats, name);
+        if (Get("attack_damage_+%_final_from_rage") != 0)
+        {
+            var main = RageStats.ApplyAttack(weapon.HitDamage(stats), Get)[GameServer.Core.World.DamageType.Physical];
+            Replace(StatKeys.MainHandMinPhysical, (int)Math.Floor(main.Min));
+            Replace(StatKeys.MainHandMaxPhysical, (int)Math.Floor(main.Max));
+            if (OffhandWeaponFor(conn) is { } offhand)
+            {
+                var other = RageStats.ApplyAttack(offhand.HitDamage(stats), Get)[GameServer.Core.World.DamageType.Physical];
+                Replace(StatKeys.OffHandMinPhysical, (int)Math.Floor(other.Min));
+                Replace(StatKeys.OffHandMaxPhysical, (int)Math.Floor(other.Max));
+            }
+        }
         return list;
+
+        void Replace(uint key, int value)
+        {
+            int index = list.FindIndex(s => s.Item1 == key);
+            if (index >= 0) list[index] = (key, value);
+        }
     }
 
     // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
@@ -92,6 +113,7 @@ partial class Program
         stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
         // The running utility flasks' plain stats (UtilityFlasks.RawStats: maximum resistances, crit, damage, cast speed).
         UtilityFlasks.AddRawStats(stats, conn.UtilityFlaskEffects.Stats().Concat(conn.FlaskGrounds.PlayerStats()), Stats);
+        WithRage(conn, stats);
         // The character panel's sums of base forms (PanelStats); a stat /set_stat set keeps its value.
         HashSet<uint> devSet;
         lock (conn.Monsters) devSet = [.. conn.PlayerStats.Keys];
@@ -152,9 +174,18 @@ partial class Program
     // Conversion for one hit: the player's stats plus the skill's own stats (base/skill conversion). Player stats win on
     // a key collision; the normal case is that the skill adds stats the player does not have.
     internal static DamagePacket AttackHit(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats, bool melee) =>
-        DamageStats.Added(weapon.HitDamage(stats), name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0,
-            spell: false, melee)
-            .Scale(ChargeDamageMore(stats));
+        AttackHitConverted(weapon, stats, melee, null);
+
+    // Actual converted packets apply Rage last, after the merged main's full increased/added/charge pipeline.
+    // Keep the unconverted entry point for its existing panel/test consumers and exact zero-Rage behavior.
+    internal static DamagePacket AttackHitConverted(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> stats,
+        bool melee, GameServer.Core.World.DamageConversion? conversion)
+    {
+        int Get(string name) => RageStat(stats, name);
+        var hit = DamageStats.Added(weapon.HitDamage(stats), Get, spell: false, melee).Scale(ChargeDamageMore(stats));
+        if (conversion is not null) hit = hit.Convert(conversion);
+        return RageStats.ApplyAttack(hit, Get);
+    }
 
     static double AddedEffectiveness(int effect, int level) => Skills.DamageEffectiveness(effect, level) is int value and > 0 ? value / 10000.0 : 1;
 

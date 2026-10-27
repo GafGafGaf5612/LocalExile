@@ -141,6 +141,16 @@ validate town/combat/character-switch round trips in the real client (protocol/1
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
+### Rage extensions
+
+- Generic Rage generation, limits, installed buff/count, actual damage, decay, pause and lifecycle are native-verified.
+  Remaining native composition includes supported projectiles, area sweeps, linked/active equipment sources,
+  notification delays beyond the shared interval and slow destination loading.
+  Recheck charge, equipment and command refreshes queued across expiry and separate decay-speed modifiers.
+  The 140-damage/11-Fortification composition has automated accepted-contact coverage; verify it natively.
+  Measure official capped-attempt refresh behavior and area-loading timer parity before replacing policy v1.
+  See [26-rage.md](../docs/protocol/26-rage.md); Vaal costs and whole-class selection remain separate mechanics.
+
 ### Death screen variants
 
 - **Known:** S→C 0x55 flags bit0/2/3 are mapped ([11](../docs/protocol/11-skills.md) §7);
