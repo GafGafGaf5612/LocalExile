@@ -237,9 +237,9 @@ static class AuraCatalog
     {
         if (stats.Key(name) is not uint key) return 0;
         int value = skills.EffectStats(aura.Effect, aura.Level, aura.Quality).FirstOrDefault(kv => kv.Item1 == key).Item2;
-        // PoB ModStore.ScaleAddList truncates Discipline's integer aura stats before character-wide scaling.
+        // PoB ModStore.ScaleAddList truncates these integer defence-aura stats before character-wide scaling.
         // Decimal preserves the exact hundredths from the integer aura-effect percentage.
-        if (aura.EffectId == "Discipline")
+        if (Family(aura.EffectId) is "Discipline" or "Determination" or "Grace")
             return (int)Math.Clamp(decimal.Truncate(value * Math.Max(0m, 100m + auraEffectPct) / 100m), int.MinValue, int.MaxValue);
         return (int)Math.Round(value * Math.Max(0, 100 + auraEffectPct) / 100.0, MidpointRounding.AwayFromZero);
     }
