@@ -410,7 +410,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             {
                 if (grid[x, y] is not { IsOrigin: true } e) continue;
                 var tile = e.Tile;
-                var objects = files.TileObjects(tile);
+                var objects = tile.NoMeshObjects ? [] : files.TileObjects(tile);
                 // 0x141d77a90: the last record holding the tile, else the first.
                 int index = 0;
                 for (int k = 0; k < records.Count; k++)

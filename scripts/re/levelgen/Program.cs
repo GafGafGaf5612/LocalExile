@@ -462,12 +462,12 @@ static void Doodads(string areaId, uint seed)
     Console.WriteLine($"  {turned.Count} of them at another angle");
     foreach (var p in turned.Take(6))
         Console.WriteLine($"  angle: {Path.GetFileName(p.Model)} ({p.X}, {p.Y}) port {p.A:0.###} capture {string.Join("/", capturedAngles[(p.Model, p.X, p.Y)].Select(a => a.ToString("0.###")))}");
-    foreach (var p in placed.Where(p => !capturedSet.Contains((p.Model, p.X, p.Y))).OrderBy(p => DoodadHull.Load(files.Text, p.Model)?.IsEmpty ?? true).Take(8))
-        Console.WriteLine($"  port only: {Path.GetFileName(p.Model)} ({p.X}, {p.Y}) {p.A:0.###}");
+    foreach (var p in placed.Where(p => !capturedSet.Contains((p.Model, p.X, p.Y))).OrderBy(p => DoodadHull.Load(files.Text, p.Model)?.IsEmpty ?? true).Take(Environment.GetEnvironmentVariable("LEVELGEN_ALL") is { Length: > 0 } ? int.MaxValue : 8))
+        Console.WriteLine($"  port only: {p.Model} ({p.X}, {p.Y}) {p.A:0.###} tile ({p.X / 23}, {p.Y / 23}) {grid[p.X / 23, p.Y / 23]?.Tile.Path}");
     var placedSet = placed.Select(p => (p.Model, p.X, p.Y)).ToHashSet();
     int shown = Environment.GetEnvironmentVariable("LEVELGEN_ALL") is { Length: > 0 } ? int.MaxValue : 12;
     foreach (var c in captured.Where(c => !placedSet.Contains((c.Model, c.X, c.Y))).Take(shown))
-        Console.WriteLine($"  capture only: {Path.GetFileName(c.Model)} ({c.X}, {c.Y}) {c.A:0.###} tile ({c.X / 23}, {c.Y / 23})");
+        Console.WriteLine($"  capture only: {Path.GetFileName(c.Model)} ({c.X}, {c.Y}) {c.A:0.###} tile ({c.X / 23}, {c.Y / 23}) {grid[c.X / 23, c.Y / 23]?.Tile.Path}");
 }
 
 static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string areaId, uint seed, bool verbose)

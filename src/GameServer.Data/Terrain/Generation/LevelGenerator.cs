@@ -291,6 +291,49 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         return new Subgraph(graphPath, x, y, w + m.Left + m.Right, h + m.Top + m.Bottom, masterPath, master, m, orientation, parent);
     }
 
+    /// <summary><c>0x14204bfa0</c> (each subgraph whose parent is the first, before its share of the pool rows, and the
+    /// top graph with its "graph" nodes when the pool has rows): a graph's master's weight (+0x152), its master resolved as <see cref="Record"/> does
+    /// (<c>0x14203c190</c> with the first record: the area's TSI override, else a FileGroups group's pick); for a .dgr,
+    /// plus the weights of its "graph" nodes' graphs (<c>0x14204c520</c>: a group name stands for the group's first file
+    /// in the graph's own master's FileGroups).</summary>
+    int FeatureWeight(string graphPath, List<Subgraph> records, bool recurse)
+    {
+        graphPath = graphPath.Replace('\\', '/');
+        var graph = GraphFile.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
+        string masterPath = _areaMaster ?? TerrainText.Resolve(graphPath, graph.MasterFile);
+        if (_areaMaster is null && !graph.MasterFile.EndsWith(".tsi", StringComparison.OrdinalIgnoreCase)
+            && records[0].Master.TryGetValue("FileGroups", out var fgp)
+            && FileGroups(TerrainText.Resolve(records[0].MasterPath, fgp)).GetValueOrDefault(graph.MasterFile) is { } group)
+        {
+            var left = group.Where(m => !records.Any(r => r.MasterPath == m)).ToList();
+            if (left.Count == 0) throw new InvalidOperationException("No valid master files available");
+            masterPath = left[(int)rng.Next((uint)left.Count)];
+        }
+        var master = TerrainText.KeyValues(files.Text(masterPath) ?? throw new FileNotFoundException(masterPath));
+        if (master.ContainsKey("ExtraFeatureWeight")) throw new NotSupportedException("ExtraFeatureWeight (master +0x152, 0x14204bfa0) is not ported");
+        int weight = 0;
+        if (!recurse || !graphPath.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase)) return weight;
+        Dictionary<string, IReadOnlyList<string>>? groups = null;
+        foreach (var n in graph.Nodes)
+        {
+            if (n.Tag != "graph" || n.Names.Count == 0) continue;
+            string file = n.Names[0];
+            if (!file.EndsWith(".dgr", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".tgr", StringComparison.OrdinalIgnoreCase))
+            {
+                groups ??= master.TryGetValue("FileGroups", out var own) ? FileGroups(TerrainText.Resolve(masterPath, own))
+                    : throw new InvalidOperationException($"No FileGroups listed in master file: {masterPath}");
+                file = groups.GetValueOrDefault(file) is { Count: > 0 } g ? g[0] : throw new InvalidOperationException($"No files listed for group \"{file}\"");
+            }
+            weight += FeatureWeight(file, records, true);
+        }
+        return weight;
+    }
+
+    /// <summary>The subgraph records so far (generator +0x30), for <see cref="FeatureWeight"/>.</summary>
+    List<Subgraph> _records = [];
+    /// <summary>The area's TSI override, which the walk applies to every graph (<c>0x14203c190</c> given the first record).</summary>
+    string? _areaMaster;
+
     /// <summary>The subgraph records with their placed rooms, once generated.</summary>
     public List<DoodadRecord> Records { get; private set; } = [];
 
@@ -309,15 +352,17 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
     TileGrid Composite(string graphPath, int graphOrientation)
     {
         var records = new List<Subgraph> { Record(graphPath, 0, 0, graphOrientation, -1) };
+        _records = records;
+        _areaMaster = Master;
         var (gw, gh) = PlaceSecondaries(records);
         var grid = new TileGrid(gw, gh) { CheckGrounds = false, GroundFlags = g => files.Ground(g)?.Flags ?? 0, Unmirrored = files.Unmirrored };
         var outers = new List<Action>();
         var roomsOf = new List<IReadOnlyList<PlacedRoom>>();
         // 0x142049d10: with rows in the pool, the weight to share them by is the sum of the subgraphs' masters' +0x152
         // (0x14204bfa0); +0x152 is taken to default to 0 (no trace drew 0x141d8bba0's remainder roll), and a master
-        // that sets ExtraFeatureWeight (the key taken to be +0x152) is not ported.
-        if (pool.Rows.Count != 0 && records[0].Master.ContainsKey("ExtraFeatureWeight"))
-            throw new NotSupportedException("ExtraFeatureWeight (master +0x152, 0x14204bfa0) is not ported");
+        // that sets ExtraFeatureWeight (the key taken to be +0x152) is not ported. The walk resolves every master as a
+        // record would, so a FileGroups master draws its pick here too.
+        if (pool.Rows.Count != 0) FeatureWeight(records[0].Path, records, true);
         for (int i = 0; i < records.Count; i++)
         {
             var r = records[i];
@@ -328,7 +373,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             {
                 // 0x14203f890: a subgraph whose parent is the first (+0x92 = 0) takes its share of the rows. The tile
                 // graph's special nodes do not take them (not ported).
-                if (r.Parent <= 0) pool.Spread(0, rng);
+                if (r.Parent <= 0) pool.Spread(FeatureWeight(r.Path, records, false), rng);
                 if (pool.Share != 0) throw new NotSupportedException($"{r.Path}: extra feature rooms in a tile graph subgraph are not ported");
                 // The rolled Vaal side area goes to the first graph with side area nodes (2_9_4's oasis_foothills_4.tgr).
                 var gen = new TileGraphGenerator(files, rng, notes, VaalSideArea)
@@ -341,7 +386,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             }
             else
             {
-                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout, Labyrinth = Labyrinth, Town = Town };
+                var t = i == 0 ? this : new DungeonTiler(files, rng, notes, pool) { Hideout = Hideout, Labyrinth = Labyrinth, Town = Town, _records = records, _areaMaster = _areaMaster };
                 t.Tilise(r, grid, records, i);
                 store = t._store;
                 roomsOf.Add(t._placed);
@@ -537,7 +582,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         // 0x142031d10: the Vaal side area pick, as on tile graphs; the first graph that keeps an entrance clears it.
         if (TileGraphGenerator.Prepare(graph, rng, VaalSideArea, Hideout, primary, pool, Labyrinth)) VaalSideArea = false;
         // Then a subgraph whose parent is the first (+0x92 = 0) takes its share of the rows, the side area's included.
-        if (share) pool.Spread(0, rng);
+        if (share) pool.Spread(FeatureWeight(graphPath, _records, false), rng);
         string? Ground(string g) => g.Length == 0 ? null : TerrainText.Resolve(graphPath, g);
         _graphGrounds = (Ground(graph.TopGround), Ground(graph.BottomGround), Ground(graph.DefaultGround));
         notes.Add($"dungeon graph {graphPath}: {graph.Nodes.Count} nodes, {graph.Edges.Count} edges after exist rolls");

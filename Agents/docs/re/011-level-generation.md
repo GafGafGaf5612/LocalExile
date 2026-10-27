@@ -135,8 +135,13 @@ linked row is not added either. Row layout (0x66 bytes): id +0, rooms +8 (.arm),
 +0x29, room orientations +0x39 (8 = any), linked row +0x49 (8 bytes), WorldAreas +0x51, oversize flag +0x61 (rooms
 for telepad injectors, `0x142101e50`), an i32 +0x62. Before the records (`0x142049d10`), with rows in the pool,
 +0x140 = `0x14204bfa0` of the top graph: the sum of its subgraphs' masters' +0x152 (taken to be ExtraFeatureWeight,
-default 0: no trace drew the roll below). Each subgraph whose parent is record 0 (`0x14203c900` / `0x14203f890`,
-after its Vaal side area pick, so a VaalSideArea row added there is shared too) takes its share (`0x141d8bba0`, +0x144): all rows when +0x140 is 0, else rows × weight / +0x140 plus one when
+default 0: no trace drew the roll below; its "graph" nodes recurse, `0x14204c520`, a FileGroups group standing for the group's
+first file). The walk resolves each graph's master as a record does (`0x14203c190`, given the first record: the area's TSI
+override for every graph, else a FileGroups group's `Next(count)` pick among the masters no record uses), so it draws.
+Each subgraph whose parent is record 0 (`0x14203c900` / `0x14203f890`,
+after its Vaal side area pick, so a VaalSideArea row added there is shared too) takes the walk of its own graph alone
+(that pick again, rows or not: ZanaGauntlet's and the Shaper's Realm's gauntlet records draw `Next(6)` after their own
+`Next(7)`) and then its share (`0x141d8bba0`, +0x144): all rows when +0x140 is 0, else rows × weight / +0x140 plus one when
 `Next(+0x140)` falls below the remainder, and +0x140 drops by the weight. The layout's mission rooms take the rows
 (§3c2 "Mission rooms"); `0x141d8b2c0` removes a row (and counts the share down).
 
@@ -188,7 +193,7 @@ For a one-node graph (towns, hideouts):
    none of them. A subgraph whose MasterFile is no .tsi / .tgr / .dgr names a group of the first record's FileGroups
    (`0x14203c190`): its masters no record uses yet (`0x142050a80`), `Next(count)` picks one; MapWorldsShapersRealm's
    "BossArenas" / "Gauntlets". The same resolution also runs earlier, in `0x14204bfa0`'s walk over the subgraph
-   nodes (its own draws), which is not ported: those areas and ZanaGauntlet stay open. The u16 flags word follows those groups (bit 3: after
+   nodes (its own draws; see the extra room pool above). The u16 flags word follows those groups (bit 3: after
    the key; bit 4 alone: after a 2-byte size), then the walk data as a plain tile's (the restriction byte only with
    bit 5) when bit 4 is set; without bit 4 the tile has the base tile's walk data (MapWorldsCourtyardOfWasting's
    walkability now matches its capture; 2026-10-26) (2026-10-25: `2_8_2_1`'s `sewerwall_thin_entrance_v02_01_nofeature.tdt`, flags 0x0a; MapWorldsCourtyardOfWasting's `stonewall_to_venice_convex_combinationfence_01.tdt`, 0x1a;
@@ -1253,6 +1258,9 @@ y, +0x18 height, +0x1b orientation code). Order:
 3. The deferred list `0x142041d40` (groups shuffled by `Next(count)`, no two within 3 × 3): not ported.
 4. After the stage, generator vtable +0x50 (`0x142041950`, world vtable +0x28) and +0x20 = **`0x142041200`, the
    tiles' own objects**: row by row, every tile origin (+0x34 / +0x35 zero) whose tile data has +0x178 or +0x180;
+   a tile over a base tile that names no .tmd of its own (flags bit 1 clear) places only the base's .tmd, none of its
+   mesh's objects (the Lake causeway slopes of HideoutLake, HideoutLakeEvil and LakePrototype; where the loader drops
+   them was not found);
    the record is the last one holding the tile (`0x141d77a90`, else the first). `0x141d7eda0`: a tile without
    sub-tiles (+0x16d bit 1 clear) → `0x141d7f700`: with the record master's `Reskin` (master +0x80), the file
    `<dir>/alttiles/<reskin>/<reskin>_<name>.tmd` beside the tile (`0x141d88810`) when it exists, else +0x178. The
