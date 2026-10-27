@@ -562,19 +562,21 @@ partial class Program
         return DamageImmunities.From(name => Stats.Key(name) is uint key ? baseStats.GetValueOrDefault(key) : 0);
     }
 
-    // Spell Suppression: chance in 0..100 with the conditional passives that hold now (full life, moving, an enemy hit in the
-    // last 4 s: PoB's "recently"), the damage reduction on a successful suppress (40% by default) and its lucky or unlucky
-    // roll (PoB's suppressRolls).
+    // Spell Suppression: chance in 0..100 with the conditional passives that hold now (full life, full energy shield,
+    // moving, an enemy hit in the last 4 s: PoB's "recently"), the reduction on a successful suppress (40% by default)
+    // and its lucky or unlucky roll (PoB's suppressRolls).
     static (int Chance, int Effect, bool Lucky, bool Unlucky) Suppression(ClientState conn)
     {
         double now = conn.Clock.Elapsed.TotalSeconds;
-        bool fullLife, hitRecently;
+        bool fullLife, fullEnergyShield, hitRecently;
         lock (conn.Monsters)
         {
             fullLife = conn.PlayerLife > 0 && conn.PlayerLife >= conn.PlayerMaxLife;
+            fullEnergyShield = conn.PlayerLife > 0 && conn.EnergyShield.Full;
             hitRecently = now - conn.LastEnemyHitAt <= RecentlySeconds;
         }
-        return (CharacterStats.SuppressionChance(conn.Pools, fullLife, moving: now < conn.Walk.ArrivesAt, hitRecently),
+        return (CharacterStats.SuppressionChance(conn.Pools, fullLife, moving: now < conn.Walk.ArrivesAt, hitRecently,
+                fullEnergyShield),
             Math.Max(0, conn.Pools.SpellSuppressionEffect),
             conn.Pools.SpellSuppressionLucky, conn.Pools.SpellSuppressionUnlucky);
     }

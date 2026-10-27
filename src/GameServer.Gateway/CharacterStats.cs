@@ -43,7 +43,8 @@ static class CharacterStats
         int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
         int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0,
-        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0)
+        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0,
+        int SpellSuppressionWhileFullEnergyShield = 0, int? SpellSuppressionChanceUncapped = null)
     {
         // Identifies the transient source snapshot used by this immutable pool calculation, including with-clones.
         internal long FortificationRevision { get; init; }
@@ -85,7 +86,8 @@ static class CharacterStats
         int SharedShieldDefencesPct = 0, bool NoShieldDefences = false,
         // Body values are likewise local subsets of the flat totals, before slot-specific global operators.
         int BodyArmour = 0, int BodyEvasion = 0, int BodyEnergyShield = 0, int BodyEnergyShieldPct = 0,
-        bool DoubleBodyArmour = false, bool NoBodyArmour = false)
+        bool DoubleBodyArmour = false, bool NoBodyArmour = false,
+        int SpellSuppressionWhileFullEnergyShield = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -111,12 +113,15 @@ static class CharacterStats
     }
 
     /// <summary>Spell Suppression chance with the conditional passives whose condition holds now (on full life, moving,
-    /// hit an enemy recently), capped at 100%. Energy shield is not modelled, so its full-ES stat is not counted.</summary>
-    public static int SuppressionChance(Pools p, bool fullLife, bool moving, bool hitRecently) =>
-        Math.Min(DamageModel.SpellSuppressionChanceCap, p.SpellSuppressionChance
+    /// hit an enemy recently, on full energy shield), bounded to 0..100% after every active source is added.</summary>
+    public static int SuppressionChance(Pools p, bool fullLife, bool moving, bool hitRecently,
+        bool fullEnergyShield = false) =>
+        (int)Math.Clamp((long)(p.SpellSuppressionChanceUncapped ?? p.SpellSuppressionChance)
             + (fullLife ? p.SpellSuppressionWhileFullLife : 0)
             + (moving ? p.SpellSuppressionWhileMoving : 0)
-            + (hitRecently ? p.SpellSuppressionIfHitRecently : 0));
+            + (hitRecently ? p.SpellSuppressionIfHitRecently : 0)
+            + (fullEnergyShield ? p.SpellSuppressionWhileFullEnergyShield : 0),
+            0L, DamageModel.SpellSuppressionChanceCap);
 
     public static Pools For(SkillCatalog.ClassInfo c, int level, Bonus? bonus = null, string folder = "data")
     {
@@ -208,12 +213,14 @@ static class CharacterStats
             LightningResistance: BaseResistance + b.LightningResistance, ChaosResistance: BaseResistance + b.ChaosResistance,
             FireMaxResistance: Max(b.FireMaxResistance), ColdMaxResistance: Max(b.ColdMaxResistance),
             LightningMaxResistance: Max(b.LightningMaxResistance), ChaosMaxResistance: Max(b.ChaosMaxResistance),
-            SpellSuppressionChance: Math.Min(DamageModel.SpellSuppressionChanceCap, b.SpellSuppressionChance),
+            SpellSuppressionChance: Math.Clamp(b.SpellSuppressionChance, 0, DamageModel.SpellSuppressionChanceCap),
+            SpellSuppressionChanceUncapped: b.SpellSuppressionChance,
             SpellSuppressionEffect: Math.Max(0, DamageModel.SpellSuppressionEffect + b.SpellSuppressionEffect),
             SpellSuppressionLucky: b.SpellSuppressionLucky, SpellSuppressionUnlucky: b.SpellSuppressionUnlucky,
             SpellSuppressionWhileFullLife: b.SpellSuppressionWhileFullLife,
             SpellSuppressionWhileMoving: b.SpellSuppressionWhileMoving,
             SpellSuppressionIfHitRecently: b.SpellSuppressionIfHitRecently,
+            SpellSuppressionWhileFullEnergyShield: b.SpellSuppressionWhileFullEnergyShield,
             MovementVelocityPct: b.MovementVelocityPct,
             BlockChance: b.BlockChance, SpellBlockChance: b.SpellBlockChance,
             BlockChanceMax: maxBlock, SpellBlockChanceMax: maxSpellBlock, BlockChanceUncapped: b.BlockChance,

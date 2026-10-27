@@ -413,6 +413,7 @@ partial class Program
             SpellSuppressionWhileFullLife: Get("spell_suppression_chance_%_while_on_full_life"),
             SpellSuppressionWhileMoving: Get("spell_suppression_chance_%_while_moving"),
             SpellSuppressionIfHitRecently: Get("spell_suppression_chance_%_if_enemy_hit_recently"),
+            SpellSuppressionWhileFullEnergyShield: Get("spell_suppression_chance_%_while_on_full_energy_shield"),
             MovementVelocityPct: Get("base_movement_velocity_+%"),
             BlockChance: Get("additional_block_%") + Get("attack_block_%") + Get("monster_base_block_%")
                 + blockWhileDualOrShield + shieldBlock + staffBlock + dualBlock + bowBlock,

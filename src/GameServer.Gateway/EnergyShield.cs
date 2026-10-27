@@ -4,6 +4,7 @@ sealed class EnergyShield
 {
     public uint Current { get; private set; }
     public uint Maximum { get; private set; }
+    public bool Full => Maximum > 0 && Current >= Maximum;
     public bool Recharging { get; private set; }
     double interruptedAt = double.NegativeInfinity, fraction;
     public void SetMaximum(uint maximum, bool refill = false)
