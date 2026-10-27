@@ -451,6 +451,8 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x141ee73d0` | Fn | ActiveSkillInstance ctor (action id from GEPL → GrantedEffect → ActiveSkill → ActionType) |
 | `0x1435b9728` | VT | ActiveSkillInstance |
 | `0x1424cfa40` | Fn | stat getter (stats, key); stored pairs at stats +0xf0 |
+| `0x1424c9920` | Fn | Character-panel formatter: ordered stat keys at +0xd8/+0xe0; returns UTF-16 text. Natural leech-row calls verified ([20](20-damage.md) §5b). |
+| `0x1424c6020` | Fn | Panel argument converter: leech limits use NoFunction, DivideByOneHundred, PerMinuteToPerSecond2dpIfRequired and PermyriadPerMinuteToPercentPerSecond. |
 | `0x141e6a190` | Fn | Life tick: notifies listeners only while life > 0 |
 | `0x140220ab0` | Fn | mini life bar entry: flags from the Life pools (0x20 = dead) |
 | `0x140220c30` | Fn | mini life bar entry: stat listener (`hide_mini_life_bar` 0x2a8b, `virtual_is_hidden_monster` 0x59d0) |

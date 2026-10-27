@@ -79,7 +79,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Body-specific ES increases, doubled Armour and no-Armour operators now retain their slot scope, including IR.
   Full-ES suppression chance now follows the effective resource state and shares the panel/combat consumer.
   Continue auditing the remaining rows against the current implementation before adding formulas.
-  Ward, leech limits and unsupported conditional mechanics still need their own systems and evidence.
+  Leech limits now have native display, modifier, prohibition, pool-conversion, reservation and relog controls.
+  Active leech recovery and unsupported conditional sources remain open; official fractional endpoint rounding is unmeasured.
+  Ward and unsupported conditional mechanics still need their own systems and evidence.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
   (Characters.dat base values, level, items, passives) and are sent in the Stats component.
   The overcapped resistances' derived evasion and critical increases now follow that rule and are native-verified.

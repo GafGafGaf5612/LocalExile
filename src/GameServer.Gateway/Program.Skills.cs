@@ -96,8 +96,12 @@ partial class Program
     static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond)
     {
         EnsureOwnAuraPools(conn);
-        Dictionary<uint, int> stats;
-        lock (conn.Monsters) stats = new(conn.PlayerStats);
+        Dictionary<uint, int> rawOverrides;
+        lock (conn.Monsters) rawOverrides = new(conn.PlayerStats);
+        var stats = new Dictionary<uint, int>(rawOverrides);
+        // Values and membership describe the same snapshot. A new command must not add a replacement key
+        // after values were copied and fault a background recovery/condition-refresh task.
+        var devSet = rawOverrides.Keys.ToHashSet();
         foreach (var (k, v) in BaseStats(conn)) stats.TryAdd(k, v);
         EnsureFortificationPools(conn);
         // The overcapped lightning resistance's increased crit (PoolsFor derived it once into Pools): the spell
@@ -109,9 +113,8 @@ partial class Program
         // The passives' conditional attack speed is already one final value in Pools; /set_stat's raw attack-speed stats
         // stay additive. main_hand_attack_speed_+% is the total the client swings with, so Unarmed reads only it.
         int devAttackSpeed = 0;
-        lock (conn.Monsters)
-            foreach (uint key in StatKeys.AttackSpeedInputs)
-                devAttackSpeed += conn.PlayerStats.GetValueOrDefault(key);
+        foreach (uint key in StatKeys.AttackSpeedInputs)
+            devAttackSpeed += rawOverrides.GetValueOrDefault(key);
         stats[StatKeys.MainHandAttackSpeedPct] = conn.Pools.AttackSpeedPct + devAttackSpeed;
         // The utility flasks' plain stats (UtilityFlasks.RawStats: maximum resistances, crit, damage, cast speed), with
         // Mageblood's permanent flasks deduplicated against the running ones, plus the flask grounds.
@@ -119,10 +122,7 @@ partial class Program
         UtilityFlasks.AddRawStats(stats, UtilityStats(conn, FlaskGet).Concat(conn.FlaskGrounds.PlayerStats()), Stats);
         WithRage(conn, stats);
         // The character panel's sums of base forms (PanelStats); a stat /set_stat set keeps its value.
-        Dictionary<uint, int> dev;
-        lock (conn.Monsters) dev = new(conn.PlayerStats);
-        var devSet = dev.Keys.ToHashSet();
-        ActorScale.Project(stats, dev, CosmeticScaleSources(conn));
+        ActorScale.Project(stats, rawOverrides, CosmeticScaleSources(conn));
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
         ConfigureFortificationRecovery(conn, conn.Pools.Life, Get);
         // Capture the unmodified recovery baseline from this same snapshot, before the temporary contribution.
@@ -141,6 +141,9 @@ partial class Program
         foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n))
             .Concat(PanelStats.FromPools(Get, conn.Pools))
             .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana))
+            .Concat(LeechLimits.Compute(Get, conn.Pools.Life, conn.Pools.Mana, conn.Pools.EnergyShield,
+                name => Stats.Key(name) is uint key && rawOverrides.TryGetValue(key, out int value) ? value : null,
+                CriticalOnLowLife(conn, stats)))
             .Concat(new[] { ("energy_shield_recovery_per_minute", (int)Math.Round(EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield, Get, conn.EnergyShield.Recharging))),
                 ("total_energy_shield_recovery_per_minute_from_regeneration", (int)Math.Round(EnergyShield.RegenPerMinute(conn.Pools.EnergyShield, Get))),
                 ("energy_shield_recharge_rate_per_minute", (int)Math.Round(EnergyShield.RechargePerMinute(conn.Pools.EnergyShield, Get))),

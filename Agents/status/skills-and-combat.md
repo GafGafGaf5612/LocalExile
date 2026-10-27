@@ -297,6 +297,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
+- Character-panel leech limits: full maximum pools supply separate per-instance amounts and total recovery caps.
+  Six absolute rows and their percent companions include supported increases/reductions and prohibition flags.
+  Native controls verify display conversion, Low Life/healing, real item pool conversion, reservation and relog.
+  The periodic stat refresh uses one consistent developer snapshot, with four observed-task regressions.
+  Fractional endpoint truncation is a documented local projection; official-server rounding is unmeasured.
+  Active leech instances/recovery and unsupported conditional sources remain open.
+  Code: `LeechLimits.cs`, Gateway (`CharacterPlayerStatsCore`).
+  Docs: [20](../docs/protocol/20-damage.md) §5b.
 - Ordinary Life/Mana regeneration: flat and maximum-pool percentage sources receive regeneration and recovery increases.
   The matching prohibitions stop recovery, and the panel/native prediction inputs share the actual resource writer.
   Ten native checks verify flat sources, independent increases, prohibition, clearing and relog.

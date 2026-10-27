@@ -458,6 +458,36 @@ matching actual recovery near 55.65/second after reservation was released.
 Both rates stopped under negative-valued prohibition flags and resumed after zeroing them.
 The isolated characters' inventories stayed unchanged; this does not verify every flask/RF visual timing path.
 
+## 5b. Character-panel leech limits
+
+`LeechLimits` calculates limits independently of active leech recovery. Character.ot's defaults are 10% of the
+full maximum pool per instance, 20% per second total for Life/Mana and 10% per second total for Energy Shield.
+Reserved Life/Mana remains part of that maximum. Instance-amount increases and maximum-rate increases have separate
+buckets; leech recovery speed does not increase either cap. Generic, resource-specific and map maximum-rate
+increases/reductions add before their multiplier. The supported ES doubled-instance flag applies afterward.
+The calculation publishes six absolute limits, their six native permyriad companions and the cannot-leech flags.
+Base/global/resource prohibitions gate matching limits; the supported Low Life prohibition gates Life/Mana only.
+Explicit developer replacements, including zero, retain the existing override policy.
+
+The reference library's pinned PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02` supplies the formula and Low Life
+scope, cross-checked with this client's Character.ot, Stats and modifier tables.
+Absolute integer endpoints truncate nonnegative fractions as a local wire projection. Official-server endpoint
+rounding is unmeasured; native display agreement does not establish that rounding rule.
+Reservation/recent-hit/Defiance/party-link conditions, the derived Wicked Ward virtual and an unacquired legacy
+Life-rate doubling source remain unimplemented. Direct resolved flags do not establish an item/passive acquisition path.
+
+Native checks verified baseline values and display conversion, independent instance/rate changes, reductions,
+prohibitions, Low Life/healing, equipment-derived pool conversion, source removal, reservation and relog.
+At 1345 Life / 750 Mana / 175 ES, limits display 134 / 75 / 17 per instance and 269 / 150 / 17.5 per second.
+An actual conversion ring changes the pools to 1465 Life / 0 ES and the limits follow them; independent flat ES
+remains ES and contributes to its own limits. A developer-only conversion override is not a pool source.
+Read-only hooks observed the native formatter and its percent/per-minute converters without calling its getters.
+Evidence is in `artifacts/issue75-completion/leech-native-verified/`, including preserved failed fixture controls.
+
+Character-stat aggregation copies developer values and their key set from one locked snapshot. This prevents a
+concurrent command from adding a key between copies and faulting the periodic refresh task. Four observed-task
+regressions cover tick-only and tick-plus-recovery loops with both native and synthetic stat layouts.
+
 ## 6. Not modelled yet
 
 - Energy shield, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base resistances are
@@ -466,7 +496,7 @@ The isolated characters' inventories stayed unchanged; this does not verify ever
   stats), increased/more modifiers on the base damage, and skill-specific added-damage scaling.
 - Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.
 - Per-monster damage conversion and monster-specific mitigation.
-- Damage reflection, leech, life/mana gain on hit, and recoup.
+- Damage reflection, active leech instances/recovery, life/mana gain on hit, and recoup. Leech limits are in §5b.
 - Party/minion damage and the full support-gem effect set.
 
 The next support-gem work (#64) can add its effects as packet operations: `Add` for added damage, `Scale` for
