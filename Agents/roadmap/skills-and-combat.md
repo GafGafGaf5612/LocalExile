@@ -19,7 +19,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 - **Ordinary aura activation:** nine previously rejected self auras now share reservation, presentation and the
   supported stat/damage paths.
-  Remaining work: Discipline's ES pool, Pride's enemy debuff, conditional consecrated ground, herald/minion/banner
+  Discipline's ordinary ES pool and recharge are implemented with shared character scaling.
+  Remaining work: Pride's enemy debuff, conditional consecrated ground, herald/minion/banner
   mechanics.
   See protocol/11-skills.md section 13.
 - **Aura caster art:** the distinct EPKFiles2 visuals are selected on activation and area restoration;
@@ -69,6 +70,11 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   crafting refresh, unequip and active-shield checks.
   Saved variable bases now feed all three defences before local modifiers; legacy saves retain minimum bases.
   Sacred Orb rerolls and supported special ES rules are implemented; see Items and crafting for scope and validation.
+  Shield-specific increases now compose with global increases, and final fractional defence totals round halfway up.
+  Shield exclusions also remove ordinary shield bases from the player pools.
+  Determination/Grace integer aura scaling and exact aura/flask more-factor composition now feed those pools.
+  Body-specific ES increases, doubled Armour and no-Armour operators now retain their slot scope, including IR.
+  Full-ES suppression chance now follows the effective resource state and shares the panel/combat consumer.
   Continue auditing the remaining rows against the current implementation before adding formulas.
   Ward, leech limits and unsupported conditional mechanics still need their own systems and evidence.
 - **Done when:** life, mana, attributes, resistances and their derived values come from the server's own calculation
@@ -96,7 +102,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Complete Lone Messenger, party auras and unsupported curse/enemy/banner/Vaal executors remain separate.
 - **Start:** the auras' 3D effects (BuffVisuals EPKs of the `IsSkillBuff` rows do not render, unlike Righteous
   Fire's); the combat auras (Anger, Hatred, Wrath, Zealotry, Pride), Heralds, banners, curse auras and
-  Determination/Grace/Discipline's armour/evasion/ES effects.
+  their unsupported conditional effects.
   The skill-bar indicator's buff association is implemented (0x1c1 bit3; live check pending, see Status).
   Support gems come with the gem system ("Gems" below); party and minion auras and life reservation with their own
   systems.

@@ -76,9 +76,35 @@ Part of [Status](../Status.md); what to build next in this area is in
   Sacred Orb rerolls and supported special ES rules are implemented with automated coverage (see Partly working).
   Other uniques and special mods still depend on their individual mechanics (#60).
   Mageblood's supported subset is below.
+  Equipment uses the shared `ItemDefences.Calculate`, including Tabula and explicit no-ES overrides.
   Code: `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`,
   `ItemWeapons.cs`, `ItemDefences.cs`, `ItemCatalog.cs`, `CharacterSaves.cs`).
   Docs: [13](../docs/protocol/13-items.md) §2a-§2c.
+- Sacred Orb: ordinary and Shift currency use reroll the saved shared defence base on eligible armour.
+  Only the base roll changes; mods, quality, sockets, gems, links, rarity and identification remain.
+  Inventory and stash pairings save the target and one-unit payment atomically, including unchanged roll outcomes.
+  Worn-item rerolls refresh the character pools and panel.
+  Native use verified raw 32 becoming ordinary, armour/evasion/ES updates, Shift repeat and same-value consumption.
+  Corrupted, mirrored, non-armour and fixed-range targets refuse use without payment.
+  Ward and the fifth native range count for eligibility; their character-pool mechanics remain separate work.
+  Uniform ordinary roll selection is local policy; the official distribution is unmeasured.
+  Native fixed/zero-base refusal and Ward-only rerolling matched; inventories and stash survived a Gateway restart.
+  See [13](../docs/protocol/13-items.md), "Sacred Orb" for the verified values.
+  Code: `CurrencyEffects.cs`, `ItemCatalog.cs`, Gateway (`UseItemOn`, `ItemMoves.UseAcross`).
+- Special defence overrides and ES-to-Life conversion are implemented.
+  Native full/50% conversion, independent ES, Life scaling, zero-ES controls and shield swaps matched.
+  Both test inventories and their final pools survived a Gateway restart.
+  Tabula's hidden override and explicit no-ES suppress only their item's ES before local scaling.
+  Full and percentage conversion use final local ES per active armour slot, including the eligible active shield.
+  Converted Life receives global Life increases; independent global ES stays ES.
+  PoB imports restore the hidden override only for four recognised unique names with matching native bases.
+  The importer recognises explicit no-ES and full/percentage conversion text and uses the shared local calculator.
+  Conditional corrupted-item ES maps to a global ES increase for that corrupted source, preserving local tooltip ES.
+  Shield-only increases now affect character defences without changing local item values or converted Life.
+  Native application, clearing, weapon swaps and Gateway-restart checks passed with final half-up pool rounding.
+  Ward conversions, ring-slot and jewel-radius mechanics remain separate work.
+  Code: `ItemDefences.cs`, `Program.Equipment.cs`, `Program.Progression.cs`, `PathOfBuildingItems.cs`.
+  Docs: [13](../docs/protocol/13-items.md) §2, [20](../docs/protocol/20-damage.md), "Player energy shield".
 - Gold: shared by the account's characters of one league (S→C 0x2a9), saved with that league's stash, sent on area
   entry; every league has its own stash and gold, Standard keeps the account's stash from before (`AccountStash.Key`);
   monsters drop piles of gold (normal 40%, magic 75%, rare and unique always;

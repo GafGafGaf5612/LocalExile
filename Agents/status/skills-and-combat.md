@@ -180,6 +180,32 @@ Part of [Status](../Status.md); what to build next in this area is in
   are implemented with automated coverage and historical native controls described in Items and crafting.
   Fresh real-client checks of the merged branch remain open.
   See Items and crafting for their scope; other unique/conditional mechanics and Ward calculations remain open.
+  Sacred Orbs reroll the saved base through ordinary and Shift currency use, refreshing worn-item pools and panel.
+  Native armour, evasion and ES rerolls matched the character updates while preserving mods and quality.
+  Shared item defence calculations now include the Tabula and explicit no-ES item overrides.
+  ES-to-Life conversion uses each active item's final local ES before global Life scaling.
+  Independent global ES remains ES.
+  The percentage variant truncates per item, removes all item ES, and yields to the full-conversion flag.
+  Recovery guards read effective ES rather than suppressed or converted bases.
+  Native full/50% conversion, Life scaling, independent ES, shield swaps and Gateway-restart reloads passed.
+  The 69 local ES control converted to 69 Life at 100% or 33 Life at 50%, preserving independent ES.
+  Corrupted-item conditional ES scales global ES only while that source item is corrupted, preserving local tooltip ES.
+  Shield-specific increases add to global increases only on the active shield's local contribution.
+  The native `shield_armour_+%` stat increases all three shield defences; typed increases retain their own scope.
+  Iron Reflexes keeps both shield typed increases and counts the generic shield increase once.
+  Final AR/EV/ES pools round halfway up after summing fractional sources, including converted evasion.
+  Shield defence exclusions remove shield bases from player pools while retaining other equipment and flat sources.
+  Native generic/global increases, the shield ES passive, IR, exclusions, conversion and shield swaps matched.
+  A 99/99/99 local shield retained fractions through final totals of 168 armour / 186 evasion / 176 ES.
+  Both synthetic inventories and expected pools survived a Gateway restart.
+  Body-only ES increases now add only to the body's global increase bucket. Body Armour doubling also covers
+  IR-converted body Evasion; the no-body-Armour flag suppresses those sources, preserving ordinary EV/ES.
+  Twelve native checks covered additive scaling, exclusions, IR, conversion, independent ES and body removal/return.
+  Doubling has real-passive regression and native calculation evidence.
+  The login path used for those checks filtered ascendancy passives, so the disconnected Unbreakable client fixture
+  could not exercise it in-game.
+  Full minion redirection and Devotion-dependent shield scaling remain separate mechanics.
+  Ward conversions, ring-slot and jewel-radius operators remain separate work.
   Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, `ItemDefences.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
 - Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
@@ -208,10 +234,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   40% less spell damage plus `base_spell_damage_%_suppressed` (PoB `SuppressionChanceCap`/`SuppressionEffect`);
   `spell_suppression_chance_is_lucky` rolls twice and keeps the better roll (effective `1-(1-p)^2`), with an unlucky
   `p^2` dev mode; the conditional chance passives count while their condition holds:
-  `spell_suppression_chance_%_while_on_full_life`, `_while_moving` (the walk estimate) and `_if_enemy_hit_recently`
-  (an attack or spell hit in the last 4 s); `/suppression`, `/suppression_luck`, `/spellhit`.
-  Not implemented: the full energy shield stats (no energy shield model), the other conditional effect stats, monster
-  spell hits.
+  `spell_suppression_chance_%_while_on_full_life`, `_while_moving` (the walk estimate), `_if_enemy_hit_recently`
+  (an attack or spell hit in the last 4 s), and `_while_on_full_energy_shield` from the effective ES pool.
+  Full ES requires a living player with positive capacity and whole current ES at maximum; zero ES does not qualify.
+  The raw base and active conditions add before one 0..100 clamp, shared by the panel and spell-hit roll.
+  Sixteen native controls checked damage/refill, actual recharge, cap, conversion, independent ES, no-ES/zero-ES
+  sources and independent full-Life/full-ES conditions. The guaranteed first spell dealt 60 damage to 118 ES,
+  leaving 58 ES and changing suppression from 100% to 90% for the next hit.
+  Checkpoint resurrection publishes restored full-pool conditions explicitly, even if the player tick cached the
+  same chance before death. The encrypted-wire regression fails before the fix and passes afterward; native
+  Clarity/death/checkpoint controls confirm 100% -> 90% -> 100% without another equipment or aura refresh.
+  `/suppression`, `/suppression_luck`, `/spellhit` expose the shared result.
+  Not implemented: conditional suppression effect stats and monster spell hits.
   The character panel gets the chance again within 250 ms of a condition changing (the player tick).
   Code: `CharacterStats.cs`, `DamageModel.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §12.
@@ -263,6 +297,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
+- Determination and Grace truncate their scaled flat/more aura inputs before character-wide defence calculation.
+  Normal and Ruthless native data and quality isolation have regression coverage.
+  Basalt/Stibnite compose more factors without rounding the combined percentage before the final rating.
+  Native ordinary aura/flask, global-increase, IR and clearing checks matched the shared pools.
+  Code: `AuraCatalog.cs`, `UtilityFlasks.cs`, `CharacterStats.cs`.
+  Docs: [11](../docs/protocol/11-skills.md) §13.
+- Discipline supplies its level-based flat ES to the shared pool, panel, absorption and recharge paths.
+  Intelligence and global ES increases apply once; shield-only increases and armour ES-to-Life leave the aura source.
+  Quality affects area of effect only; aura-effect scaling truncates integer ES/recharge stats using pinned PoB.
+  Native activation, clearing, capacity without instant refill, absorption and delayed recharge matched.
+  Native level 20, quality isolation, global scaling, conversion and shield-source controls also matched.
+  Town suppression/return, gem-host removal/return and death clearing were checked with this aura.
+  Both level-1 and level-20 fixtures restored expected ES and identical saved inventories after a Gateway restart.
+  Code: `AuraCatalog.cs`, Gateway (`PoolsFor`, `BaseStats`).
+  Docs: [11](../docs/protocol/11-skills.md) §13, [20](../docs/protocol/20-damage.md), "Player energy shield".
 - Buffs (S→C 0x1c1 add, 0x1c2 remove) and Righteous Fire: cast on oneself, its buffs and the big burning circle (an
   effect object, `Metadata/Effects/PermanentServerEffect` with `rifire.ao`, following the player), 90% of life per
   second nonlethal burn on the player, 70% of life per second to monsters within its radius (18 cells, grown by the
@@ -328,17 +377,19 @@ Part of [Status](../Status.md); what to build next in this area is in
   Exit/relogin/character return restores available remembered auras without rechecking cast affordability;
   manual activation still validates mana.
   Death clears saved/runtime auras; skill refresh resumes temporarily unavailable effects.
-  The shared own-aura restriction has separate native controls above; broader town/character round trips remain partial.
+  The shared own-aura restriction has separate native controls above.
+  Discipline's town, death and gem-host lifecycle also passed historical native checks in LocalExile.
+  Fresh merged-branch and other aura-family round trips remain partial.
   See protocol/11-skills.md.
 - Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art.
   A live check found that source-only buffs hid the top-left icons;
   source and received buff instances now coexist, restore and end together.
   Icon restoration awaits client confirmation.
   See [11](../docs/protocol/11-skills.md) section 13.
-- Ordinary aura expansion (2026-10-25, awaiting client confirmation): Determination, Grace, Discipline, Anger, Hatred,
+- Ordinary aura expansion (2026-10-25, awaiting client confirmation): Determination, Grace, Anger, Hatred,
   Wrath, Zealotry, Malevolence and Envy now activate with reservation and paired visual/HUD buffs.
   Armour/evasion, added hit damage, gain-as-cold, spell damage/crit and RF's more DoT are connected.
-  Discipline's ES pool/recharge and conditional effects remain partial.
+  Discipline's ordinary ES pool and recharge are verified separately above; conditional effects remain partial.
   Reservation overflow is refused.
   See [11](../docs/protocol/11-skills.md) section 13.
 - Saved aura toggles (2026-10-25, awaiting client confirmation): active effects persist per character and restore on
@@ -447,8 +498,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   The skill-bar active frame and rotating circle now receive the buff's skill id/action hash association (0x1c1 bit3),
   including area-entry restoration; automated checks pass, live icon verification pending.
   Not modelled: combat auras (Anger/Hatred/Wrath/Zealotry/Pride), Heralds, banners, curse auras,
-  Determination/Grace/Discipline (the base armour/evasion model exists, but their buffs and energy shield are not
-  applied), Purity ailment immunity, Reservation masteries 1/2/6, supports, party/minion auras and life reservation
+  unsupported conditional effects, Purity ailment immunity, Reservation masteries 1/2/6,
+  supports, party/minion auras and life reservation
   ([11](../docs/protocol/11-skills.md) 13).
 - **Stats.** The client's stat key is the Stats.dat row + 1 with the vendored schema
   ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes stat names or keys.

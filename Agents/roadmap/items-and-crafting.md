@@ -38,6 +38,10 @@ features.
   are implemented with automated coverage and historical native controls (13 §2c, §4; Status).
   Remaining: fresh real-client checks of the merged branch, Ward calculations and unsupported unique/conditional
   defence mechanics.
+  Shield-specific increases and exclusions now feed ordinary defence pools with native final half-up rounding.
+  Remaining special mechanics include Ward conversions, ring-slot and jewel-radius operators.
+  Sacred Orb rerolls use the ordinary/Shift currency path and atomic inventory/stash saves.
+  See Status and 13-items.md, "Sacred Orb" for the native checks and local roll distribution policy.
 - **Socket colours (3.29):** the 3.29 rules are in (white by default with an item-level colour chance, the
   Chromatic and non-white bench crafts, white sockets from Jeweller's/bench socket adds, Vaal colouring one white
   socket; [13](../docs/protocol/13-items.md), "Socket colours (3.29)", Status).
