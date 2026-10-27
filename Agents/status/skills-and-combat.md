@@ -287,7 +287,12 @@ and may require explicit registrations. The old flight engine and its test-only 
   return speed, contact budgets, overshoot and terrain behavior are configurable; named policies live in coverage.
   Skill explosions, pulses, children, forms, native art and specialized resources belong to coverage registrations.
   Missing metadata or unsupported damage plans are refused before costs, without generic area-hit fallback.
-  Code: Core `Projectiles/`, Gateway `Projectiles/`; see the [framework guide](../docs/game/projectile-framework.md).
+  The [upstream migration layer](../docs/game/projectile-upstream-migration.md) adds Fireball and all three KB effect IDs,
+  their contact areas/art and existing named return restrictions.
+  Piercing retains its upstream contact budget/endpoint travel, with no extra terminal area after an actor contact.
+  Extended researched skills remain frozen outside milestone one; local validation of the migrated stack is pending.
+  Code: Core `Projectiles/`, Gateway `Projectiles/` and `Projectiles/Upstream/`; see the
+  [framework guide](../docs/game/projectile-framework.md).
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
   `skill_is_instant`, so the client sends them as C→S 0x191 and keeps walking;
   the server applies them and answers S→C 0x1ce, which starts the skill bar's cooldown.

@@ -178,7 +178,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 - **Known:** the [framework](../docs/game/projectile-framework.md) owns production projectile routing and the
   only Core simulator. Framework-only catalog-known gems and ordinary bows have basic straight flight and resolved
-  modifiers. The first milestone migrates upstream recipes; researched additional coverage remains deferred.
+  modifiers. The first milestone [migrates upstream recipes](../docs/game/projectile-upstream-migration.md);
+  researched additional coverage remains deferred.
   Chronological contacts, hit quotas, pause/transfer, release snapshots and held-output independence have automated
   production-input coverage. Old projectile engines and their test-only paths are removed.
   Basic catalog flight does not implement all special skill behavior; unknown metadata is refused before costs.

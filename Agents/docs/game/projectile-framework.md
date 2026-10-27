@@ -14,6 +14,7 @@ or an unsupported damage plan is refused before costs, without falling through t
 
 `feat/projectile-upstream-coverage` is stacked on the framework and migrates existing upstream Fireball,
 Kinetic Blast and named return policies while keeping catalog fallback. It contains no researched skill expansion.
+See the [migration policies, differences and native checklist](projectile-upstream-migration.md).
 `feat/projectile-skill-coverage` is preserved at its tested full delivery; porting those recipes onto the minimal
 layer is deferred. Only framework and upstream migration form the first local milestone.
 See the [milestone boundary and plan](../design/projectile-milestone-one.md).

@@ -65,10 +65,10 @@ Update the excluded local handbook to enable only framework and upstream coverag
 - [x] Audit upstream named behavior and document migration assertions, including direct/excluded-target damage.
 - [x] Add narrowly required generic recipe controls and meaningful synthetic tests; run RED before implementation.
 - [x] Build and test standalone framework; commit it without any named-skill provider.
-- [ ] Create minimal upstream coverage, registration extension hook, recipe/real-input/wire tests and a native checklist.
+- [x] Create minimal upstream coverage, registration extension hook, recipe/real-input/wire tests and a native checklist.
       Verify Fireball/KB, all KB variants, multiple projectiles, pierce/return, held output and absence of extended recipes.
-- [ ] Verify the complete full-coverage ref is unchanged; record the future extension-hook migration instead of doing it now.
-- [ ] Validate framework and the minimal upstream stack with Release solution builds and Core/Data/Gateway suites,
+- [x] Verify the complete full-coverage ref is unchanged; record the future extension-hook migration instead of doing it now.
+- [x] Validate framework and the minimal upstream stack with Release solution builds and Core/Data/Gateway suites,
       documentation and diff checks.
 - [ ] Create and validate the ordinary milestone transition, then ask the authorized CI chat to integrate layers 1+2,
       check all enabled features/data, update services with `live.ps1 -NoClient`, and report the deployed revision.
