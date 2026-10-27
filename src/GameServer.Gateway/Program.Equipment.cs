@@ -17,29 +17,41 @@ partial class Program
 
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
-    // The flat armour and evasion of the equipped body armour, helmet, gloves and boots. Only the base type's ArmourTypes
-    // row is used (its minimum roll, matching the item's default base percentile); local/global mods and quality are not
-    // modelled. Shields are excluded for now. Inactive items (requirements not met) give none.
+    // Each active armour piece/shield's local defences become flat inputs to the character-wide pool calculation.
+    // Each native minimum base is combined with item-local modifiers and quality.
     static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
     {
         var items = ItemsOf(conn);
-        int armour = 0, evasion = 0, energyShield = 0;
+        long armour = 0, evasion = 0, energyShield = 0;
         foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots, PlayerInventories.Offhand1 })
             if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
                 && Items.ByHash(equipped.Item.TypeHash) is { } type && Items.Defences(type) is { } d)
             {
-                armour += d.ArmourMin;
-                evasion += d.EvasionMin;
                 var local = ItemModStats.Local(equipped.Item, Items.Mods);
-                int flat = d.EnergyShieldMin + local.GetValueOrDefault("local_energy_shield")
-                    + local.GetValueOrDefault("local_evasion_rating_and_energy_shield");
-                int increase = local.GetValueOrDefault("local_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_energy_shield_+%")
-                    + local.GetValueOrDefault("local_evasion_and_energy_shield_+%") + local.GetValueOrDefault("local_armour_and_evasion_and_energy_shield_+%");
-                // Armour quality is a separate multiplier since 3.25. Item's base percentile is currently zero (minimum).
-                if (local.GetValueOrDefault("local_no_energy_shield") == 0)
-                    energyShield += (int)(EnergyShield.Max(flat, increase) * (100L + equipped.Item.Quality) / 100);
+                var basis = (Armour: d.ArmourMin, Evasion: d.EvasionMin, EnergyShield: d.EnergyShieldMin);
+                long Get(string name) => local.GetValueOrDefault(name);
+                long quality = Get("local_quality_does_not_increase_defences") != 0 ? 0
+                    : Math.Max(0L, equipped.Item.Quality + Get("local_item_quality_+"));
+                // PoB 16de4b82, src/Classes/Item.lua:2389-2391 and src/Modules/Common.lua:709-716:
+                // local flat -> summed local increases -> multiplicative quality -> one final half-up round.
+                // Round each item before summing; global increases and Iron Reflexes are applied by CharacterStats.
+                int Rating(int basis, long added, long increased)
+                {
+                    decimal value = Math.Max(0L, basis + added) * Math.Max(0m, 1 + increased / 100m)
+                        * (1 + quality / 100m);
+                    return (int)Math.Min(int.MaxValue, Math.Round(value, 0, MidpointRounding.AwayFromZero));
+                }
+                long shared = Get("local_armour_and_evasion_+%") + Get("local_armour_and_evasion_and_energy_shield_+%");
+                armour += Rating(basis.Armour, Get("local_base_physical_damage_reduction_rating"),
+                    Get("local_physical_damage_reduction_rating_+%") + Get("local_armour_and_energy_shield_+%") + shared);
+                evasion += Rating(basis.Evasion, Get("local_base_evasion_rating") + Get("local_evasion_rating_and_energy_shield"),
+                    Get("local_evasion_rating_+%") + Get("local_evasion_and_energy_shield_+%") + shared);
+                if (Get("local_no_energy_shield") == 0)
+                    energyShield += Rating(basis.EnergyShield, Get("local_energy_shield") + Get("local_evasion_rating_and_energy_shield"),
+                        Get("local_energy_shield_+%") + Get("local_armour_and_energy_shield_+%")
+                        + Get("local_evasion_and_energy_shield_+%") + Get("local_armour_and_evasion_and_energy_shield_+%"));
             }
-        return (armour, evasion, energyShield);
+        return ((int)Math.Min(int.MaxValue, armour), (int)Math.Min(int.MaxValue, evasion), (int)Math.Min(int.MaxValue, energyShield));
     }
 
     // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
