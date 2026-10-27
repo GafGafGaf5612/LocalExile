@@ -36,8 +36,11 @@ the turnaround victim, a wall-free path and 150-cell overshoot beyond the live c
 budget suppresses further contacts while completing the flight. Upstream piercing uses this rule outbound too:
 a finite piercing shot spends at most `1 + pierce` actor attempts, then travels to its endpoint; after any piercing
 actor contact it suppresses the later wall/range area. A no-hit piercing shot retains its usual terminal policy.
-The migration removes the generic ten-second lifetime cap so slow, range-bounded flights can finish. Returned direct-hit quota is shared across the
-volley, including KB; outbound KB direct quota remains per projectile. A shared-quota-denied contact is skipped
+The migration removes the generic ten-second lifetime cap so slow, range-bounded flights can finish.
+Returned direct-hit quota is shared across the
+volley, including KB; all migrated outbound direct quotas are per projectile, including Fireball.
+Upstream creates that dictionary inside each `angles.Select` call; it does not enforce batch-wide outbound
+shotgun prevention. A shared-return-quota-denied contact is skipped
 without consuming budget or generating an explosion.
 
 Cannot-return policies: Spark and its two variants, RainOfArrows, BlastRain, SplittingSteel, VenomGyre, WinterOrb,
@@ -47,10 +50,14 @@ These restrictions do not claim that the rest of each skill is implemented.
 ## Intentional boundaries and remaining differences
 
 The framework replaces callback timing with integer simulation time and a 30 Hz host. Collision follows moving
-actors, and offense is captured at release rather than re-reading mutable gear at each contact. Attack gems use the shared adapter's accuracy/evasion check;
-the old callback omitted this check for gem attacks. Thus KB can now evade, like ordinary bow attacks. Ordered presentation
+actors, and offense is captured at release rather than re-reading mutable gear at each contact.
+Attack gems use the shared adapter's accuracy/evasion check;
+the old callback omitted this check for gem attacks. Thus KB can now evade, like ordinary bow attacks.
+The shared adapter also consumes/applies Impale on gem attack hits; the old gem callback omitted that path.
+Ordered presentation
 never blocks combat on the send gate. Generic continuation primitives can express more than the old callback code;
-this milestone does not promise new skill-specific behavior from them. Floating geometry replaces integer-rounded origins and aims, with a different close-aim muzzle rule; the default
+this milestone does not promise new skill-specific behavior from them.
+Floating geometry replaces integer-rounded origins and aims, with a different close-aim muzzle rule; the default
 120-cell flight starts at the muzzle (about 1.5 cells beyond the old endpoint), and a zero-length aim uses the
 common direction fallback. These are explicit migration differences to check locally, not exact upstream claims.
 Old development-only overrides for spread, muzzle, range, hit radius, forced return, impact art and return distance

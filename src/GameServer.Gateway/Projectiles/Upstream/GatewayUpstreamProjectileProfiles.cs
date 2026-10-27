@@ -39,6 +39,8 @@ static class GatewayUpstreamProjectileProfiles
             ReturnOvershoot = 150, IgnoreTerrainOnReturn = true, ExcludeTurnaroundTarget = true, SkipDeniedReturnContacts = true,
             ReturnHitLimit = unlimited || get("returning_projectiles_always_pierce") != 0 ? null : 1 + pierce,
             ReturnSpeedMultiplier = Math.Max(1d, p.Speed * (1 + get("returned_projectile_speed_+%") / 100d)) / p.Speed,
+            // Upstream allocates outbound admission inside the fan, but return admission outside it.
+            HitRule = new(ProjectileHitScope.Projectile),
             ReturnHitRule = new(ProjectileHitScope.Emission),
             SkipDeniedContacts = !IsKineticBlast(effect)
         };
@@ -51,8 +53,7 @@ static class GatewayUpstreamProjectileProfiles
         {
             DirectDamage = true, ContactArea = area, ContactAreaOnReturn = IsKineticBlast(effect),
             EndArea = IsKineticBlast(effect) ? area : null,
-            EndAreaReasons = IsKineticBlast(effect) ? EmptyFlightEnds : null,
-            HitRule = new(IsKineticBlast(effect) ? ProjectileHitScope.Projectile : ProjectileHitScope.Emission)
+            EndAreaReasons = IsKineticBlast(effect) ? EmptyFlightEnds : null
         };
     }
 }

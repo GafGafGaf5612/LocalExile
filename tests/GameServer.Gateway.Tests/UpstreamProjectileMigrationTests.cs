@@ -48,15 +48,46 @@ public class UpstreamProjectileProfileTests
     }
 
     [Fact]
-    public void Fireball_same_line_sibling_skips_shared_near_victim_and_reaches_far_victim()
+    public void Fireball_same_line_siblings_each_hit_and_explode_on_the_near_victim()
     {
         var world = new ProjectileRuntimeProbe(); world.Target(1, 40, 10); world.Target(2, 80, 10);
         world.Release(Profile("Fireball", Stats(("number_of_additional_projectiles", 1))) with
             { SpreadRadians = 0, Radius = 1 }); world.Advance(1);
-        Assert.Equal(new uint[] { 1, 2 }, world.Attempts.Where(h => h.Stage == "direct").Select(h => h.Target.Id));
+        Assert.Equal(new uint[] { 1, 1 }, world.Attempts.Where(h => h.Stage == "direct").Select(h => h.Target.Id));
+        Assert.DoesNotContain(world.Attempts, h => h.Target.Id == 2);
         Assert.Equal(2, world.Events.Count(e => e.Kind == ProjectileEventKind.Area));
         var ends = world.Events.Where(e => e.Kind == ProjectileEventKind.End).Select(e => e.Position.X).Order().ToArray();
-        Assert.Equal(2, ends.Length); Assert.InRange(ends[0], 39, 39.001); Assert.InRange(ends[1], 79, 79.001);
+        Assert.Equal(2, ends.Length); Assert.All(ends, x => Assert.InRange(x, 39, 39.001));
+    }
+
+    [Theory]
+    [InlineData("Spark")]
+    [InlineData("BurningArrow")]
+    public void Unnamed_catalog_projectiles_admit_each_outbound_sibling_independently(string effect)
+    {
+        Assert.Null(Program.ProjectileDefinition(effect));
+        var definition = Program.CatalogProjectileDefinition(Program.Skills.EffectRow(effect));
+        Assert.NotNull(definition);
+        var profile = definition.Resolve(Stats(("number_of_additional_projectiles", 1)), 100)
+            with { SpreadRadians = 0, Radius = 1 };
+        var world = new ProjectileRuntimeProbe(); world.Target(1, 40, 10); world.Target(2, 80, 10);
+        world.Release(profile); world.Advance(1);
+        Assert.Equal(new uint[] { 1, 1 }, world.Attempts.Where(h => h.Stage == "direct").Select(h => h.Target.Id));
+        Assert.DoesNotContain(world.Attempts, h => h.Target.Id == 2);
+    }
+
+    [Fact]
+    public void Fireball_outbound_siblings_hit_independently_but_share_one_returned_salvo_ledger()
+    {
+        var world = new ProjectileRuntimeProbe(); world.Target(1, 40, 10); world.Target(2, 0, 10);
+        ReleaseReturning(world, Profile("Fireball", Stats(("projectiles_return", 1), ("number_of_additional_projectiles", 1)))
+            with { SpreadRadians = 0, Radius = 1 });
+        world.Advance(4);
+        Assert.Equal(2, world.Attempts.Count(h => h.Phase == 0 && h.Stage == "direct" && h.Target.Id == 1));
+        var returned = Assert.Single(world.Attempts, h => h.Phase == 1);
+        Assert.Equal("direct", returned.Stage); Assert.Equal(2u, returned.Target.Id);
+        Assert.Equal(2, world.Events.Count(e => e.Kind == ProjectileEventKind.Area));
+        Assert.Equal(2, world.Events.Count(e => e.Kind == ProjectileEventKind.End && e.Reason == ProjectileEndReason.Returned));
     }
 
     [Theory]
