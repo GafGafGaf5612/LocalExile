@@ -35,7 +35,15 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
-Nothing yet.
+- Cosmetics skill target lifetime and request validation (issue [#306](https://github.com/Wrathen/LocalExile/issues/306)).
+  Key reuse across gem replacements and acceptance of stale/incompatible picks are reproduced in Gateway tests.
+  Targets now retain keys only while unchanged; replacements and reappearances get fresh connection-local keys.
+  Queued 0x1f3 refreshes sample current targets inside the send gate, with matching binding logs.
+  0x1fa validates the current target and effect eligibility before changing the per-gem, per-slot saved choice.
+  Automated coverage includes configured/cleared A → B → A, removal/reappearance, queueing, multiple skills,
+  primary/totem slots, and preservation of Righteous Fire's saved art input.
+  The reported native picker mismatch still needs user verification; packet tests do not establish a UI fix.
+  Protocol evidence, limits and client acceptance steps: [23](../docs/protocol/23-microtransactions.md) §4.
 
 ## Not working yet
 
