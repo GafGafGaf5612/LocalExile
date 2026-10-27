@@ -668,6 +668,9 @@ Letters R, G, B, W are linked within a word and unlinked between words: `/socket
 a 3-link and a single (dashes are ignored, so `R-R-G-B` works too); without colours it shows the layout.
 It allows up to the base's `CurrencyEffects.SocketCapacity`, whatever the item level; rings, amulets and other classes
 without one are refused.
+`Game_SOCKET_CAPACITY=1..6` (dev, read by `/sockets`) replaces that capacity for socketable bases, ignoring class and
+dimensions: a 6-link wand (a wand's own capacity is 3) is possible with the flag, and a base without a Sockets
+component is still refused.
 Socketed gems stay in their sockets and take the new colour; a layout that would remove a socket holding a gem is
 refused.
 The cursor item is replaced through 0xbf like `/mod`.
