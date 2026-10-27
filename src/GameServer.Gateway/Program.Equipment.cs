@@ -33,6 +33,22 @@ partial class Program
         return ((int)Math.Min(int.MaxValue, armour), (int)Math.Min(int.MaxValue, evasion), (int)Math.Min(int.MaxValue, energyShield));
     }
 
+    // Native 0x142523ab0: flag selects 100%, otherwise use the percentage; truncate each item's local ES separately.
+    // The conversion removes all armour-item ES, even when the Life gained is only 50% of its value.
+    static (int Life, int EnergyShield) ConvertEquipmentEnergyShield(ClientState conn, Func<string, int> get, int energyShield)
+    {
+        int percent = get("gain_maximum_life_instead_of_maximum_es_from_armour") != 0 ? 100
+            : Math.Max(0, get("gain_maximum_life_instead_of_maximum_es_from_armour_at_x%_of_the_value"));
+        if (percent == 0) return (0, energyShield);
+        bool shieldExcluded = get("minions_get_shield_stats_instead_of_you") != 0
+            || get("gain_no_defences_from_equipped_shield") != 0;
+        long life = 0;
+        foreach (var (row, defence) in EquippedArmourDefences(conn))
+            if (row != PlayerInventories.Offhand1 || !shieldExcluded)
+                life += (long)defence.EnergyShield * percent / 100;
+        return ((int)Math.Min(int.MaxValue, life), 0);
+    }
+
     // The equipped main/off hands in both weapon sets. Rows 2/3 are Weapon1 and rows 14/15 Weapon2.
     // The local stats of the active main hand and off hand items (the first weapon set, else the second), for the panel's
     // hand rows (PanelStats).

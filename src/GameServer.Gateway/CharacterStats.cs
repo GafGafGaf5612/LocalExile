@@ -115,7 +115,9 @@ static class CharacterStats
         var b = bonus ?? Bonus.None;
         level = Math.Clamp(level, 1, Progression.MaxLevel);
         int str = c.Strength + b.Strength, dex = c.Dexterity + b.Dexterity, intel = c.Intelligence + b.Intelligence;
-        uint life = (uint)Math.Max(1, (c.BaseMaxLife + 12 * level + str / 2 + b.Life) * (100 + b.LifePct) / 100);
+        // Equipment ES-to-Life conversion can supply a large flat value. Keep the signed panel stat representable.
+        uint life = (uint)Math.Clamp(decimal.Floor((c.BaseMaxLife + 12m * level + str / 2 + b.Life)
+            * (100m + b.LifePct) / 100m), 1m, int.MaxValue);
         uint mana = b.ManaPerFourStrength == 0
             ? (uint)Math.Max(0, (c.BaseMaxMana + 6 * level + intel / 2 + b.Mana) * (100 + b.ManaPct) / 100)
             : StrengthMana.Maximum(c.BaseMaxMana + 6L * level + intel / 2 + b.Mana,

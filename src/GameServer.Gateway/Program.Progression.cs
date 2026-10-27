@@ -128,8 +128,14 @@ partial class Program
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons);
         var gear = EquippedBaseDefences(conn);
-        bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion,
-            EnergyShield = bonus.EnergyShield + gear.EnergyShield };
+        int EquipmentStat(string name) => Stats.Key(name) is uint key ? sources.GetValueOrDefault(key) : 0;
+        var converted = ConvertEquipmentEnergyShield(conn, EquipmentStat, gear.EnergyShield);
+        bonus = bonus with
+        {
+            Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion,
+            Life = (int)Math.Min(int.MaxValue, (long)bonus.Life + converted.Life),
+            EnergyShield = (int)Math.Min(int.MaxValue, (long)bonus.EnergyShield + converted.EnergyShield),
+        };
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
