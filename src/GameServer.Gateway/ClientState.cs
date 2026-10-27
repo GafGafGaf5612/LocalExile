@@ -250,7 +250,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
                 }
             foreach (var peer in Instance?.PlayersExcept(PeerId) ?? [])
                 if (peer.Life > 0) (all ??= [.. fixedOnes]).Add(new(peer.X, peer.Y, LivingCollision.PlayerSize));
-            return all ?? fixedOnes;
+            return all is null ? fixedOnes : new GameServer.Core.World.BlockerSet(all);
         }
     }
 
@@ -264,12 +264,12 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     public void SetBlocker(uint id, int x, int y, int size, double? collisionRadius = null)
     {
-        lock (_blockers) { _blockers[id] = new(x, y, size) { CollisionRadius = collisionRadius }; _blockerList = [.. _blockers.Values]; }
+        lock (_blockers) { _blockers[id] = new(x, y, size) { CollisionRadius = collisionRadius }; _blockerList = new GameServer.Core.World.BlockerSet(_blockers.Values); }
     }
 
     public void RemoveBlocker(uint id)
     {
-        lock (_blockers) if (_blockers.Remove(id)) _blockerList = [.. _blockers.Values];
+        lock (_blockers) if (_blockers.Remove(id)) _blockerList = new GameServer.Core.World.BlockerSet(_blockers.Values);
     }
 
     /// <summary>Applies the passive movement speed to the server's walk estimate; /set_speed is a dev override.</summary>
@@ -286,7 +286,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         var l = Layout;
         Func<int, int, bool>? walkable = l.Walkable is { } w ? (cx, cy) => w(cx, cy) && !Barrier.Contains((cx, cy)) : null;
         return new(l.SpawnX, l.SpawnY, Program.WalkSpeed, walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096,
-            () => Blockers);
+            () => Blockers, stationary: () => StationaryBlockers);
     }
     public bool PlayerSent;
     // Server frames ended so far (0x2b5).
@@ -495,6 +495,8 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public (uint Id, int X, int Y)? BackPortal;
     /// <summary>The gem skill being channelled (Cyclone: C→S 0x197 until 0x199), 0 for none, and when it next hits.</summary>
     public ushort ChannelSkill;
+    /// <summary>The last passive and equipment stat sum and its inputs (CharacterStatSources).</summary>
+    public volatile Program.StatSourcesResult? StatSourcesCache;
     /// <summary>The channelled skill's action sequence, so its 0x1af hit result names the action it belongs to.</summary>
     public ushort ChannelSkillSequence;
     public double NextChannelHitAt;

@@ -127,6 +127,10 @@ partial class Program
             $"; unique: {string.Join(", ", spawns.Where(s => s.Rarity == MonsterRarity.Unique).Select(s => $"{Monsters.Find(s.Variety.ToString())!.Name} at ({s.X}, {s.Y})").DefaultIfEmpty("none"))}");
     }
 
+    /// <summary>The monster AI's decision period: a monster that arrives or finishes a swing acts again within one tick, so
+    /// a long tick showed as monsters standing still between steps and attacks.</summary>
+    internal const int MonsterAiTickMs = 100;
+
     static async Task RunMonsterAi(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         const ushort Move = 0x2909;
@@ -134,11 +138,12 @@ partial class Program
         {
             while (!conn.Closed)
             {
-                await Task.Delay(500);
+                await Task.Delay(MonsterAiTickMs);
                 if (!conn.AiEnabled || conn.Paused) continue;
                 var orders = new List<(uint Id, (int X, int Y) From, (int X, int Y) To, string Why)>();
                 var swings = new List<(uint Id, SpawnedMonster M, (int X, int Y) From, int Epoch)>();
                 var bossBars = new List<(uint Id, SpawnedMonster M)>();
+                var askers = new List<(MonsterSurround.Asker Asker, SpawnedMonster M, double D)>();
                 double now;
                 int px, py;
                 lock (conn.Monsters)
@@ -173,14 +178,26 @@ partial class Program
                             swings.Add((id, m, (mx, my), conn.IncomingHitEpoch));
                             continue;
                         }
-                        if (d <= m.StopRange) continue;
-                        // The cell StopRange - 1 from the player on the line toward the monster (the player's cell if blocked).
-                        double f = (m.StopRange - 1) / d;
-                        (int X, int Y) to = ((int)Math.Round(px + (mx - px) * f), (int)Math.Round(py + (my - py) * f));
-                        if (conn.Layout.Walkable is { } w && !w(to.X, to.Y)) to = (px, py);
+                        // Chasing: it asks for a cell around the player below (MonsterSurround).
+                        if (LivingCollision.Blocks(m)) askers.Add((new(id, mx, my, LivingCollision.Size(m), m.LastTarget), m, d));
+                    }
+                    // Every other living body near the player keeps its place: the chasers' cells go around it.
+                    var asking = askers.Select(a => a.Asker.Id).ToHashSet();
+                    var occupied = conn.Monsters.Where(e => !asking.Contains(e.Key) && LivingCollision.Blocks(e.Value))
+                        .Select(e => (P: e.Value.Walk.Position(now), Size: LivingCollision.Size(e.Value)))
+                        .Where(e => Math.Max(Math.Abs(e.P.X - px), Math.Abs(e.P.Y - py)) < 64)
+                        .Select(e => (e.P.X, e.P.Y, e.Size)).ToList();
+                    var slots = MonsterSurround.Assign(askers.Select(a => a.Asker), (px, py), occupied,
+                        (x, y, size) => conn.Layout.WalkableFor(x, y, size) && !conn.Barrier.Contains((x, y)));
+                    foreach (var (asker, m, d) in askers)
+                    {
+                        // A full surround (every ring taken): aim at the player and queue behind the others, as before.
+                        (int X, int Y) to = slots.TryGetValue(asker.Id, out var slot) ? slot : (px, py);
+                        // Standing in its cell already: it waits there for the swing (no order, no new path).
+                        if (Math.Max(Math.Abs(asker.X - to.X), Math.Abs(asker.Y - to.Y)) <= 1) { m.LastTarget = to; continue; }
                         if (m.LastTarget is { } last && Math.Abs(last.X - to.X) + Math.Abs(last.Y - to.Y) < 3) continue;
                         m.LastTarget = to;
-                        orders.Add((id, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
+                        orders.Add((asker.Id, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
                     }
                 }
                 foreach (var (id, from, to, why) in orders)

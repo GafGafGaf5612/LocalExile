@@ -90,8 +90,7 @@ partial class Program
     // target id) and, at the contact point (AttackContactDelay: the attack animation's contact keyframe), lowers the monster's life (0x1b1) by the unarmed damage
     // (Characters.dat MinDamage..MaxDamage raised by the increased melee physical damage stats). Any later action (a move, another click) cancels both.
     // One attack per attack time (WeaponSpeed ms scaled by the player's attack speed stats, a quarter early allowed for
-    // jitter); earlier repeats of 0x24 are ignored. At 0 the client's Life component runs its death; the corpse is
-    // removed 10 s later.
+    // jitter); earlier repeats of 0x24 are ignored. At 0 the client's Life component runs its death; the corpse stays.
     internal static async Task Attack(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, SpawnedMonster m, double requestedAt)
     {
@@ -433,7 +432,10 @@ partial class Program
             }
         }
         if (gem.Name is not null && Supports.Of(gem.Effect)?.Types.Contains(47) == true)
+        {
             conn.NextChannelHitAt = conn.Clock.Elapsed.TotalSeconds + SupportedAttackSeconds(conn, skillId);
+            _ = RunChannel(remote, stream, ciphers, conn, skillId, gem, action);
+        }
         if (gem.Name is not null && SupportedReservation(conn, skillId) is { } reservation)
         {
             if (!Current()) return false;
@@ -658,8 +660,11 @@ partial class Program
         if (!attackGem && cooldownUse?.Instant != true && !PlayerActionCurrent(conn, action)) return;
         if (Skills.ProjectileFor(gem.Effect) is not { } projectile)
         {
-            // Not a projectile skill (strikes, slams, areas): its hit lands on the monsters around the aimed point.
-            await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence,
+            // Not a projectile skill (strikes, slams, areas): its hit lands on the monsters around the aimed point. A
+            // channelled skill (Cyclone, ActiveSkillType 47) hits as it starts: its spin is already in motion, and the
+            // later sweeps follow on the attack timer (RunChannel).
+            bool channelled = Supports.Of(gem.Effect)?.Types.Contains(47) == true;
+            await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, immediate: channelled, sequence: sequence,
                 actionToken: actionToken, cooldownUse: cooldownUse);
             return;
         }
@@ -891,6 +896,11 @@ partial class Program
         // These contacts belong to one resolved sweep. Notification awaits may outlast the shared hit interval,
         // but cannot create a second positive Rage gain from the same sweep. Rejected gains do not take this latch.
         bool rageGranted = false;
+        // One sweep, one hit: its damage and multiplier are the skill's at the moment it lands, rolled per monster. They
+        // were computed again for every monster (a whole stat calculation each), which spread one sweep's hits over a second.
+        DamagePacket hit = SupportedHit(conn, skillId);
+        int sweepCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
+        var deaths = new List<(uint Id, SpawnedMonster M)>();
         foreach (var (id, m) in targets)
         {
             if (MonsterBlocks(m, Random.Shared, spell))
@@ -898,17 +908,16 @@ partial class Program
                 Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x} ({m.Label}) blocked");
                 continue;
             }
-            DamagePacket hit = SupportedHit(conn, skillId);
             var rolled = hit.Roll(Random.Shared);
             bool critical = RollCriticalStrike(conn, criticalChance, skillStats, attack: !spell);
-            int criticalMultiplier = CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId));
+            int criticalMultiplier = CriticalMultiplierOn(m, sweepCriticalMultiplier);
             var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
             if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
             if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
             if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
             if (await HitMonster(remote, stream, ciphers, conn, id, m, damage,
                     $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
-                    melee: melee ?? !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse,
+                    melee: melee ?? !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse, deaths: deaths,
                     accepted: () =>
                     {
                         if (!fortificationGranted)
@@ -920,7 +929,47 @@ partial class Program
                     }))
                 ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
         }
+        foreach (var (deadId, dead) in deaths) await MonsterKilled(remote, stream, ciphers, conn, deadId, dead);
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
+    }
+
+    // A channelled skill's hits (Cyclone): one sweep around the player every attack time (SupportedAttackSeconds: the
+    // skill's own speed, its supports and the player's attack speed, as the tooltip shows) for as long as the channel
+    // runs. The hits used to wait for the client's position updates (C→S 0x197), which do not come at that rate, so a
+    // short channel landed one late sweep. The channel ends with C→S 0x199, any other action, mana, death or travel.
+    static async Task RunChannel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+        ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, int action)
+    {
+        bool Running() => !conn.Closed && !conn.LeavingArea && conn.PlayerLife > 0 && conn.ChannelSkill == skillId
+            && conn.ActionCount == action;
+        try
+        {
+            while (true)
+            {
+                double wait = conn.NextChannelHitAt - conn.Clock.Elapsed.TotalSeconds;
+                if (wait > 0) await Task.Delay(TimeSpan.FromSeconds(wait));
+                await WhilePaused(conn);
+                if (!Running()) return;
+                double now = conn.Clock.Elapsed.TotalSeconds;
+                (int X, int Y) at;
+                lock (conn.Monsters)
+                {
+                    if (!Running() || now < conn.NextChannelHitAt) continue;
+                    conn.NextChannelHitAt = Math.Max(conn.NextChannelHitAt, now - 0.05) + SupportedAttackSeconds(conn, skillId);
+                    at = conn.Walk.Position(now);
+                }
+                if (!PayMana(conn, skillId, out uint cost))
+                {
+                    conn.ChannelSkill = 0;
+                    await SendPlayerMana(remote, stream, ciphers, conn, "channel stopped: insufficient mana");
+                    return;
+                }
+                if (cost > 0) await SendPlayerMana(remote, stream, ciphers, conn, $"channel cost {cost}");
+                await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
+                    immediate: true, sequence: conn.ChannelSkillSequence, actionToken: action);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
     }
 
     // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
@@ -1410,7 +1459,7 @@ partial class Program
     // the monster was dead already or the action was replaced (the hit did not land).
     static async Task<bool> HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
         int damage, string by, bool log = true, bool melee = false, ushort sequence = 0, int? actionToken = null,
-        CooldownUseTicket? cooldownUse = null, Action? accepted = null)
+        CooldownUseTicket? cooldownUse = null, Action? accepted = null, List<(uint Id, SpawnedMonster M)>? deaths = null)
     {
         MonsterHit? hit;
         lock (conn.Monsters)
@@ -1420,7 +1469,7 @@ partial class Program
             hit = ApplyMonsterHitLocked(conn, m, damage);
             if (hit is not null) accepted?.Invoke();
         }
-        if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);
+        if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence, deaths);
         return hit is not null;
     }
 
@@ -1467,7 +1516,8 @@ partial class Program
     }
 
     static async Task NotifyMonsterHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
-        MonsterHit hit, int damage, string by, bool log = true, bool melee = false, ushort sequence = 0)
+        MonsterHit hit, int damage, string by, bool log = true, bool melee = false, ushort sequence = 0,
+        List<(uint Id, SpawnedMonster M)>? deaths = null)
     {
         var (life, stageStarts) = hit;
         if (life == 0)
@@ -1488,7 +1538,8 @@ partial class Program
         await SendFlinch(remote, stream, ciphers, conn, id, m, damage, log);
         await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life),
             !log && life > 0 ? null : $"0x01b1 monster 0x{id:x} hit by {by} for {damage}, life {life}/{m.MaxLife}{(life == 0 ? " (dies)" : "")}");
-        if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
+        // One sweep's deaths (loot, experience, quests) wait until every monster of the sweep has its hit (AreaSkillHit).
+        if (life == 0) { if (deaths is not null) deaths.Add((id, m)); else await MonsterKilled(remote, stream, ciphers, conn, id, m); }
         if (stageStarts) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
     }
 
@@ -1610,20 +1661,14 @@ partial class Program
     }
 
     // A monster died (its life reached 0 from the player's attack or skill): the player gains its experience when near
-    // enough, it drops its items around where it fell (ItemDrops), and its corpse is removed 10 s later.
+    // enough and it drops its items around where it fell (ItemDrops). Its corpse stays where it fell for as long as the
+    // player is in the area (it stays in Monsters as Dead: no AI, no body collision); leaving does not save it.
     static async Task MonsterKilled(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m)
     {
         double now = conn.Clock.Elapsed.TotalSeconds;
         (int X, int Y) at, player;
         bool alive;
         lock (conn.Monsters) { at = m.Walk.Position(now); player = conn.Walk.Position(now); alive = conn.PlayerLife > 0; }
-        _ = Task.Delay(10_000).ContinueWith(async _ =>
-        {
-            bool removed;
-            lock (conn.Monsters) removed = conn.Monsters.Remove(id);
-            if (removed && !conn.Closed)
-                await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"0x02bb remove dead monster 0x{id:x}");
-        });
         if (m.Variety is not { } variety || !m.Hostile) return;
         ChargesOnKill(conn, m);
         if (conn.Layout.Id == TutorialObjects.Strand && variety.Id == TutorialObjects.Zombie
