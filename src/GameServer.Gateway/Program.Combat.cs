@@ -698,6 +698,10 @@ partial class Program
         // the explosion hits every monster in the skill's radius around that cell (live check pending). Its action is not
         // required to be current any more: the shot was paid for when it was released.
         bool kineticBlast = effectId is "KineticBlast" or "KineticBlastAltX" or "KineticBlastAltY";
+        // Fireball explodes on the enemy or wall it hits: full spell damage to every enemy in its area radius. The
+        // direct target already took the projectile hit, so it is excluded from the explosion (no double hit), and the
+        // explosion only bursts on contact (not at maximum range), as the skill does.
+        bool fireball = projectile.Id.Contains("Fireball");
         Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo = m =>
         {
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
@@ -727,9 +731,16 @@ partial class Program
             if (resistance is not null) Console.WriteLine($"[gateway] {remote} {gem.Name} resistance: {resistance}");
             return (damage, critical);
         };
-        Func<(int X, int Y), uint, Task>? explosion = kineticBlast ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
-            immediate: true, melee: false, excludeMonster: exclude) : null;
-        string? impactObject = kineticBlast ? KineticBlastImpactAo : null;
+        Func<(int X, int Y), uint, Task>? explosion = kineticBlast
+            ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
+                immediate: true, melee: false, excludeMonster: exclude)
+            : fireball
+                ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
+                    immediate: true, melee: false, excludeMonster: exclude)
+                : null;
+        // Fireball's explosion art is a standalone effect object: replacing the projectile's Animated component did not
+        // draw it. Kinetic Blast's cluster_burst is the same case.
+        string? impactObject = kineticBlast ? KineticBlastImpactAo : fireball ? impact : null;
         // "While returning": Returning Projectiles Support's less Damage and the game's returning-projectile finals.
         double returnMore = ProjectileReturn.DamageMore(SumStat);
         bool returnPierce = SumStat("returning_projectiles_always_pierce") != 0;
@@ -783,7 +794,7 @@ partial class Program
             epoch: epoch, acceptedHit: (_, critical) =>
                 RageOnHitLocked(conn, attack, melee: false, critical, SupportedSkill(conn, skillId).Stats),
             onImpact: explosion, impactObjectAo: impactObject, keepThroughActions: attack, returning: returning,
-            impactObjectSeconds: kineticBlast ? 0.35 : 1.5,
+            impactObjectSeconds: kineticBlast ? 0.35 : 1.5, impactOnLanding: !fireball,
             returnSpeedPercent: SumStat("returned_projectile_speed_+%"),
             returnOnLanding: !ProjectileReturn.CannotReturnFromDistance(effectId),
             delayedImpact: delayedImpact,
@@ -910,7 +921,7 @@ partial class Program
         Action<SpawnedMonster, bool>? acceptedHit = null,
         Func<(int X, int Y), uint, Task>? onImpact = null, string? impactObjectAo = null, bool keepThroughActions = false,
         bool returning = false, double impactObjectSeconds = 0.35, double returnSpeedPercent = 0, bool returnOnLanding = true,
-        bool delayedImpact = false, ConcurrentDictionary<uint, byte>? shotgunned = null,
+        bool delayedImpact = false, bool impactOnLanding = true, ConcurrentDictionary<uint, byte>? shotgunned = null,
         Func<SpawnedMonster, (int Damage, bool Critical)>? returnDamageTo = null,
         Func<(int X, int Y), uint, Task>? returnExplosion = null, bool returnPierce = false,
         ConcurrentDictionary<uint, byte>? returnShotgunned = null, int pierceHits = 1)
@@ -970,6 +981,12 @@ partial class Program
         var height = new ProjectileHeight(startHeight);
         var obj = new ProjectileObject(projectile.Id, from.X, from.Y, (float)Math.Atan2(dx, -dy), Height: height.ObjectHeight);
         uint type = InstanceEntities.ObjectTypeHash(projectile.Id);
+        // A standalone impact effect (Kinetic Blast, Fireball) honours the impact-art debug override; "none" disables
+        // the object, while the projectile itself is removed as usual.
+        string? artAo = impactObjectAo is null ? null
+            : Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") is { } artOverride
+                ? (artOverride == "none" ? null : artOverride)
+                : impactObjectAo;
         // All observations below are taken with the monster lock held, including the initial observation when the
         // glide reaches the send gate. The game clock, not time spent waiting for the gate, starts the flight.
         // Filtration is per projectile, not per launch: a target that leaves the route before contact is not hit and
@@ -1020,12 +1037,12 @@ partial class Program
             int lineHits = 0;
             async Task ImpactEffect((int X, int Y) at)
             {
-                if (impactObjectAo is null) return;
+                if (artAo is null) return;
                 uint effect;
                 lock (conn.Monsters) effect = conn.NextObjectId++;
-                var art = new EffectObject(at.X, at.Y, impactObjectAo);
+                var art = new EffectObject(at.X, at.Y, artAo);
                 if (!await SendVisual(InstanceEntities.CreateObject(effect, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), art.Blob()),
-                    $"0x02b9 create effect 0x{effect:x} {impactObjectAo} at ({at.X}, {at.Y}) (pierced target)")) return;
+                    $"0x02b9 create effect 0x{effect:x} {artAo} at ({at.X}, {at.Y}) (pierced target)")) return;
                 if (!await SendVisual(InstanceProtocol.EnterWakeZone(effect), $"0x01a9 effect 0x{effect:x} enters wake zone")) return;
                 if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + impactObjectSeconds, epoch)) return;
                 await SendVisual(InstanceProtocol.RemoveObject(effect), $"0x02bb remove effect 0x{effect:x}");
@@ -1203,7 +1220,7 @@ partial class Program
                     await NotifyMonsterHit(remote, stream, ciphers, conn, step.TargetId, target, applied, damage,
                         $"{projectile.Id}{(critical ? " (critical)" : "")}", log);
             }
-            else if (onImpact is not null)
+            else if (onImpact is not null && impactOnLanding)
             {
                 Console.WriteLine($"[gateway] {remote} => {projectile.Id} lands at ({hitX}, {hitY}) (t={step.At:0.000})");
                 // Stop the glide at the landing cell: the explosion art is attached to this object, so it must stand
@@ -1217,7 +1234,7 @@ partial class Program
             bool projectileRemoved = false;
             Task<bool>? effectLifetime = null;
             uint effectId = 0;
-            if (contact || onImpact is not null)
+            if (contact || (onImpact is not null && impactOnLanding))
             {
                 impact = Environment.GetEnvironmentVariable("Game_PROJECTILE_IMPACT_AO") ?? impact ?? DefaultProjectileImpactAo;
                 if (!delayedImpact && impact != "none" && impactObjectAo is null)
@@ -1227,12 +1244,12 @@ partial class Program
                 }
                 // Some effects are not drawn from a projectile's Animated component (Kinetic Blast's cluster_burst):
                 // they are a standalone effect object of their own, as Righteous Fire's ring is (EffectObject).
-                if (impactObjectAo is not null && !delayedImpact && !(lineHits > 0 && onImpact is not null))
+                if (artAo is not null && !delayedImpact && !(lineHits > 0 && onImpact is not null))
                 {
                     lock (conn.Monsters) effectId = conn.NextObjectId++;
-                    var effect = new EffectObject(hitX, hitY, impactObjectAo);
+                    var effect = new EffectObject(hitX, hitY, artAo);
                     if (!await SendVisual(InstanceEntities.CreateObject(effectId, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), effect.Blob()),
-                        $"0x02b9 create effect 0x{effectId:x} {impactObjectAo} at ({hitX}, {hitY})")) return;
+                        $"0x02b9 create effect 0x{effectId:x} {artAo} at ({hitX}, {hitY})")) return;
                     if (!await SendVisual(InstanceProtocol.EnterWakeZone(effectId),
                         $"0x01a9 effect 0x{effectId:x} enters wake zone")) return;
                     // The art runs on its own; its lifetime starts now so the return below is not delayed by it.
@@ -1339,13 +1356,13 @@ partial class Program
             }
             // Fireball (and the other skills that explode only when they cannot move further) bursts after the return,
             // not at the first collision: the wiki's 3.21 return rule.
-            if (delayedImpact && impactObjectAo is not null && Active())
+            if (delayedImpact && artAo is not null && Active())
             {
                 uint delayedId;
                 lock (conn.Monsters) delayedId = conn.NextObjectId++;
-                var delayed = new EffectObject(returnX, returnY, impactObjectAo);
+                var delayed = new EffectObject(returnX, returnY, artAo);
                 if (!await SendVisual(InstanceEntities.CreateObject(delayedId, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), delayed.Blob()),
-                    $"0x02b9 create effect 0x{delayedId:x} {impactObjectAo} at ({returnX}, {returnY}) after the return")) return;
+                    $"0x02b9 create effect 0x{delayedId:x} {artAo} at ({returnX}, {returnY}) after the return")) return;
                 if (!await SendVisual(InstanceProtocol.EnterWakeZone(delayedId),
                     $"0x01a9 effect 0x{delayedId:x} enters wake zone")) return;
                 if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + impactObjectSeconds, epoch)) return;
