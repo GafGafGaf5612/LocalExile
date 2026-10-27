@@ -146,6 +146,82 @@ compact int n, then n × (compact int key `0x141e61010`, value `0x141e490e0` →
 u32 `+0x28`, u32 `+0x2c`, u8 `+0x30`. Compact int: a first byte < 0x80 is the value, 0x80–0xbf is a 2-byte form, and so
 on. The writer counterpart is `0x141fa3c50`.
 
+### 4.1a Player Actor scale (#299)
+
+The network Stats provider stores the supplied key/value pairs without evaluating derived actor scale.
+Raw `base_actor_scale_+%` (720) alone therefore does not drive the inspected network player scale path.
+Creation reader `0x1421c2f40` and update reader `0x141fe1350` reach setter `0x1424cfaf0`.
+Getter `0x1424cfa40` searches its override vector before its upstream fallback.
+The setter changes and notifies only the supplied key through `0x1424cfd00`.
+Actor setup `0x141e9ca20` and change observer `0x141e9cf90` consume final `actor_scale_+%` (1973).
+Applicator `0x141e9ce80` writes Positioned `+0x2b0` from Actor `+0x1a8 * (1 + final1973 / 100)` for players.
+Its optional coefficient lookup `0x14013d9f0` is Monster-specific and defaults to one.
+Positioned `+0x1e6` mask **0x04** (numeric four) locks this scale write.
+Render `0x1415f4710` multiplies type scale by uniform scale, then the independent x/y stretches, and interpolates.
+Player blobs retain their existing Positioned layout; no custom uniform-scale field is added.
+
+The generic native final1973 formula is registered at `0x1400caf90` with evaluator `0x1427ecc30`.
+Its other inputs are capped scale (1974), scale limit (1975) and metamorphosis permyriad scale (10778).
+The native SSE order matters, including its signed-half addition before integer truncation:
+
+```text
+a = float(raw10778) / 100.0f
+a = a + float(raw720)
+a = a + float(clamp(raw1974, -50, 50))
+v = max(-99, truncate(a + (a < 0 ? -0.5f : 0.5f)))
+if raw1975 != 0: v = min(v, raw1975)
+```
+
+`Metadata/Characters/Character.ot` supplies a baseline limit100 that adds to ordinary size-limit sources.
+An ordinary limit1975=-50 therefore yields limit50; an ordinary zero preserves limit100.
+Cosmetic limit inputs also add before development replacements; an explicit development zero disables the upper cap.
+A negative nonzero limit still applies after the lower floor, matching the native operation order.
+The Gateway saturates size-source dictionary additions to signed int at each aggregation boundary.
+It saturates an out-of-range float-to-int conversion before applying the formula bounds.
+These deterministic domain-extreme rules avoid undefined conversion or integer wraparound.
+Ordinary in-range values preserve the native float and rounding order.
+
+`CharacterPlayerStatsCore` projects final1973 after passive, active equipment, aura, flask and cosmetic inputs.
+Only size inputs720/1974/10778/1975 add across cosmetics and ordinary sources, including the metadata limit baseline.
+Unrelated cosmetics retain their existing `TryAdd` precedence.
+Development raw replacements apply to the whole composed input, including explicit zero.
+An explicit development final1973 replaces the result and intentionally bypasses formula bounds.
+Projection uses a fresh dictionary and never feeds derived1973 back into source state.
+Creation, post-activation and full refresh packets share this snapshot and always include one final1973, even zero.
+Their send gate reads current sources and rejects a closed or leaving owner.
+Removing the last source sends final0 to restore baseline through the native observer.
+Peer publication replaces only1973 in an immutable template and sends only its delta/zero to seen peers.
+Peer creation, late joining and revival use the latest published scale at the observer's send gate.
+Closed/leaving source sessions are rejected there without locking their simulation.
+Other peer creation stats, equipment and skills retain their existing replication behavior.
+
+Rampager graph49937 supplies raw720=10 alongside its four other stats; this does not enable Phrecia admission.
+Separate flag9807 conditionally scales native melee range at `0x141c9ba55` and `0x141c9bb0a`.
+Rampager and Character metadata do not grant that flag; this implementation adds no9807 mechanic.
+Native collision `0x141e61540` uses Positioned `+0x1e3`, independently of uniform `+0x2b0`.
+Server AoE, reach/contact, collision/navigation and projectile height/radius remain unchanged.
+RF retains its separate skill-radius effect object and its `(s, 1, 1)` Positioned scale encoding.
+No CharacterPanelStats scale row exists, and no extraction output or manifest version changes are needed.
+
+Primary formula evidence is static 3.29.3b disassembly, not Path of Building.
+The inspected executable SHA256 is `78a0e227189c263658a7f65a02f086428b859bfc114ae8e7ce8aab721ebd48d5`.
+Eighteen native checks on an unascended Witch also measured Positioned uniform and actual Render scale axes.
+The instance-only read probe observes `0x1415f4710` after its tick; its argument is the Render base+0x28 subobject.
+The owner pointer is argument-0x20; published axes are Render base+0x380/+0x384/+0x388 after interpolation.
+An item with raw720=20 plus real amulet/ring cosmetics20/3 gives final43 and scale1.43 on all three axes.
+Removal gives1.23,1.20 and1.0; area recreation, relog and death/revival retain their surviving sources.
+Raw720=10 alone leaves scale1.0; canonical final10 gives1.1, and an explicit final0 restores1.0.
+The native checks also verify capped1974, metadata limit100, explicit limit0 and positive half-away rounding.
+Object size remains1, type scale1 and x/y stretches1 throughout these controls.
+Source `0d7a01f` was built with matching Gateway/Core/Host informational revisions and a checked listener CWD.
+Its Gateway SHA256 is `94e7104156daeddf250fcecea4385b777768251ad76093e95df4fd9d4f16b37b`.
+Local evidence: `logs/phrecia-completion/scale299-20261027-090346/{metadata,results}.json`.
+The probe reads instance stats and render state only; it does not capture credentials or handshake buffers.
+Automated send-gate and loopback-wire tests cover current/late peer creation, change, removal and revival.
+A second-client visual check and native AoE, RF, reach and projectile comparisons were not performed.
+Those authoritative consumers are unchanged and have regression coverage; this is not official-server geometry proof.
+Phrecia class admission and full Rampage remain separate prerequisites.
+
 ### 4.3 Component 3 (`0x141e114d0`), 2 bytes minimal
 
 u16 n, then n × (u16, u8, record `0x141e06bb0`) → `0x141e11dc0`. Probably skills (the record carries a 0x75 default).

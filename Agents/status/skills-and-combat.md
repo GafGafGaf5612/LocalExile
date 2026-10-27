@@ -40,6 +40,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native controls use raw inputs and synthetic gear; the other Mental Conditioning flags and class remain separate.
   See [11](../docs/protocol/11-skills.md) section 4.
 
+- Player Actor scale (#299): passive, active item, aura, flask and cosmetic size inputs share final1973.
+  Metadata limit100 adds before ordinary limits, then explicit development replacements, including zero.
+  Eighteen native checks measured real Positioned and interpolated Render scale on a new unascended Witch.
+  Item20 plus cosmetic20 plus cosmetic3 produces scale1.43; removing sources restores1.0.
+  Area entry, relog, death/revival, the default cap and explicit zero overrides were verified.
+  Raw720 alone leaves the native model unchanged; server-derived final1973 drives its scale observer.
+  Native object size, type scale and stretches remain unchanged; geometry consumers have automated coverage.
+  Current/late peer change, reset, creation and revival have loopback-wire coverage, not a second-client visual check.
+  Phrecia admission, Rampage and the separate native melee-range flag9807 remain separate work.
+  See [04](../docs/protocol/04-player-entity.md#41a-player-actor-scale-299) for formula and evidence limits.
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks

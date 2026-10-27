@@ -212,7 +212,11 @@ partial class Program
     static IEnumerable<(uint Stat, int Value)> CosmeticStats(ClientState conn) =>
         WornCosmetics(conn).Where(w => w.Slot != 49).SelectMany(w => MtxEffects.Of(w.MtxTypeHash) is not { } fx ? [] :
                 fx.Pet != 0 && Stats.Key(w.Slot == 19 ? "pet_slot2" : "pet_slot1") is uint pet ? [.. fx.Stats, (pet, fx.Pet)] : fx.Stats)
-            .GroupBy(s => s.Stat, s => s.Value).Select(g => (g.Key, g.Sum()));
+            .GroupBy(s => s.Stat, s => s.Value).Select(g => (g.Key,
+                ActorScale.IsInput(g.Key) ? ActorScale.Saturate(g.Sum(v => (long)v)) : g.Sum()));
+
+    static IEnumerable<(uint Stat, int Value)> CosmeticScaleSources(ClientState conn) =>
+        CosmeticStats(conn).Where(s => ActorScale.IsInput(s.Stat));
 
     // What the player wears changed (an item went into or out of a visible equipment row): 0x2ba Inventories for the model,
     // then the Actor skill list again, since the gems socketed in the equipment grant skills.
