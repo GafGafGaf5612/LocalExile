@@ -76,7 +76,8 @@ static class CharacterStats
         int AuraEffectPct = 0, int AuraAreaPct = 0, int ArmourMorePct = 0, int EvasionMorePct = 0, int EnergyShield = 0,
         // The overcapped-resistance flags' derived increases (ResistanceOvercap), computed once in PoolsFor from the
         // final raw resistances and maxima: +1% per 1% of cold overcap on evasion, lightning overcap on crit chance.
-        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0)
+        int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0,
+        int ManaPerFourStrength = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -115,7 +116,10 @@ static class CharacterStats
         level = Math.Clamp(level, 1, Progression.MaxLevel);
         int str = c.Strength + b.Strength, dex = c.Dexterity + b.Dexterity, intel = c.Intelligence + b.Intelligence;
         uint life = (uint)Math.Max(1, (c.BaseMaxLife + 12 * level + str / 2 + b.Life) * (100 + b.LifePct) / 100);
-        uint mana = (uint)Math.Max(0, (c.BaseMaxMana + 6 * level + intel / 2 + b.Mana) * (100 + b.ManaPct) / 100);
+        uint mana = b.ManaPerFourStrength == 0
+            ? (uint)Math.Max(0, (c.BaseMaxMana + 6 * level + intel / 2 + b.Mana) * (100 + b.ManaPct) / 100)
+            : StrengthMana.Maximum(c.BaseMaxMana + 6L * level + intel / 2 + b.Mana,
+                str, b.ManaPerFourStrength, b.ManaPct);
         // PoB CalcOffence: accuracy = floor(base * (1 + increased / 100)) with no more multiplier modelled. The
         // Accuracy Mastery can replace the 2 per level and 2 per dexterity, and add Accuracy equal to Intelligence.
         int accuracyPerLevel = 2 + b.AccuracyPerLevel;

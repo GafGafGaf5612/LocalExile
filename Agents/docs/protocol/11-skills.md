@@ -173,6 +173,34 @@ with level), the bases and attributes from Characters.dat:
 | `maximum_energy_shield_+%` | intelligence / 5 |
 | `melee_physical_damage_+%` | strength / 5 |
 
+Maximum mana also includes the ordinary flat and increased mana sources from passives and active equipment.
+`X_mana_per_4_strength` (Stats row 4992, client key 4993) contributes
+`floor(max(0, final Strength) / 4) * signed raw value` to that same flat mana bucket.
+`CharacterStats.For` uses its existing final `str`; the existing intelligence `/ 2` and final truncation are unchanged.
+Mana increases apply once to the combined flat total.
+The active consumer uses wide signed arithmetic, clamps nonpositive totals or multipliers to zero, and saturates at
+`int.MaxValue` for the native maximum and existing reservation/damage consumers.
+A missing or zero source keeps the original mana calculation byte-for-byte, including its signed edge behavior.
+`PassiveBonus` reads the generic source; `/set_stat X_mana_per_4_strength <value>` replaces it and rebuilds pools.
+The rebuild clamps current mana to the new unreserved cap without filling it when maximum mana increases.
+It explicitly sends the mana pool's `0x1b1`, including reservation, even when current mana is unchanged.
+`SendPlayerMana` snapshots current mana and reservation together under the combat lock after acquiring the send gate.
+Decrypted command-wire tests cover a 50% aura with regeneration disabled, unchanged current mana and a lowered cap.
+An explicit zero suppresses the source; repeated builds cannot compound it, and fresh connections clear dev inputs.
+Final native `strength` overrides remain presentation/requirement inputs and do not change this pool calculation.
+Reservation, native `maximum_mana` and maximum-mana attack lightning all read the resulting pool.
+Mental Conditioning (graph node 38080) supplies raw value 8, but its keys 9548 and 21159 are separate, unimplemented
+mechanics; this consumer does not enable Phrecia selection or claim the full node/class.
+Automated arithmetic, production-source and actual command/reload checks pass.
+Thirteen native checks use a fresh unascended Witch, raw key 4993 and synthetic Plate Vest modifiers.
+Fourteen and fifteen Strength grant three groups: maximum mana rises from 56 to 80 at raw value 8.
+Sixteen Strength grants four groups and 88 mana; 25% increased mana scales the whole bucket to 110.
+The maximum-mana attack-lightning panel follows those final values.
+Signed input, explicit zero, removal/reapplication and relog are verified.
+A final display-only Strength override does not become a raw input during a later rebuild.
+These controls do not select Mental Conditioning or verify idle aura reservation in the native client;
+that reservation path has the decrypted command-wire coverage above.
+
 Accuracy's flat and increased passives are summed from `accuracy_rating` and `accuracy_rating_+%`, the weapon-specific
 stats according to the equipped weapon shape (`sword_accuracy_rating`, `wand_accuracy_rating_+%`, ...), and the Accuracy
 Mastery (`accuracy_rating_per_level`, `dexterity_accuracy_bonus_grants_accuracy_rating_+3_per_dexterity_instead`,

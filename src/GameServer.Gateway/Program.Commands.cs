@@ -39,10 +39,12 @@ partial class Program
         {
             uint stat = Stats.Key(args[0]) ?? throw new ArgumentException($"unknown stat {args[0]}");
             int value = int.Parse(args[1]);
+            bool rebuildMana = stat == Stats.Key(StrengthMana.PerFourStrength);
             lock (conn.Monsters) conn.PlayerStats[stat] = value;
-            // Raw critical and overcap inputs rebuild the same pools and respect explicit zero replacements.
+            // Raw critical, overcap and Strength-derived mana inputs rebuild pools, including zero replacements.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
-                || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0]))
+                || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
+                || rebuildMana)
             {
                 while (true)
                 {
@@ -54,6 +56,7 @@ partial class Program
                         // A concurrent level/aura rebuild wins; retry against its current inputs and level.
                         if (!ReferenceEquals(conn.Pools, before)) continue;
                         conn.Pools = pools;
+                        if (rebuildMana) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
                         break;
                     }
                 }
@@ -67,6 +70,8 @@ partial class Program
                 $"0x01b3 stats: {Stats.Name(stat)} (key 0x{stat:x}) = {value}, and the attack's final stats");
             // Skills compute with their own stats (the attack and the character panel read those), so send them again.
             await SendSkills(remote, stream, ciphers, conn);
+            // Reservation can change with maximum mana even when recovery leaves current mana unchanged.
+            if (rebuildMana) await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
         })
         .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
         {
