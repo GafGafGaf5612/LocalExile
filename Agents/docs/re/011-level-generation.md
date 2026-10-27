@@ -1464,6 +1464,13 @@ three arena gates the port places.
   heights and transitions are captured but not yet compared.
 - **Heights:** `lg.ps1 heights <area> <seed>` compares the port's cell heights with `<area>_seed<seed>.heights.bin`,
   by tile.
+- **Client failures (2026-10-27):** the gate also runs every (area, seed) the client failed to generate (the
+  "Terrain generation failed: …" or "Critical Terrain Generation Error in …" line after its "Generating level" line,
+  `Shared.LoggedFailures`) at its level: it matches when the port fails with the same first three words and only
+  cells the client names (`Shared.SameFailure`; the client words grounds and edges by name and adds a tile position).
+  Of 115 logged failures 65 match; 46 stop where the port stops (the Delve cells, the Sanctum floors, AbyssLeague: the
+  extra room pool `0x141d8b750`), 3 are Incursion temples (the server's room hash), and `2_6_12` seed 1 fails earlier
+  in the port, at (16, 51), than in the client, at (22, 57).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client-*-archive.txt`, older log parts kept aside, then `Client/logs/Client.txt`) and reports match /
   mismatch / where the port stops, with a summary. **Only loads of the local client's version count** (since

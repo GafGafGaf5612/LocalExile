@@ -67,6 +67,10 @@ static class Gate
         if (oracle)
             foreach (var ((area, seed), (level, hash)) in Shared.LoggedHashes())
                 if (System.Text.RegularExpressions.Regex.IsMatch(area, only)) tasks.Add($"oracle\t{area}\t{seed}\t{level}\t{hash}");
+        if (oracle)
+            foreach (var ((area, seed), (level, message)) in Shared.LoggedFailures())
+                if (System.Text.RegularExpressions.Regex.IsMatch(area, only))
+                    tasks.Add($"failure\t{area}\t{seed}\t{level}\t{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(message))}");
 
         var clock = Stopwatch.StartNew();
         var results = RunWorkers(tasks, jobs);
@@ -229,7 +233,7 @@ static class Gate
     static string Key(string task)
     {
         var f = task.Split('\t');
-        return f[0] switch { "capture" => $"capture {f[1]}", "survey" => $"survey {f[1]}", "try" => $"try {f[1]} {f[2]}", _ => $"oracle {f[1]} {f[2]}" };
+        return f[0] switch { "capture" => $"capture {f[1]}", "survey" => $"survey {f[1]}", "try" => $"try {f[1]} {f[2]}", "failure" => $"failure {f[1]} {f[2]}", _ => $"oracle {f[1]} {f[2]}" };
     }
 
     /// <summary>`levelgen worker`: one task per stdin line, one JSON result per stdout line.</summary>
@@ -249,6 +253,7 @@ static class Gate
                     "capture" => Capture(f[1]),
                     "survey" => SurveyArea(f[1], int.Parse(f[2])),
                     "try" => TryArea(f[1], uint.Parse(f[2]), int.Parse(f[3])),
+                    "failure" => Failure(f[1], uint.Parse(f[2]), int.Parse(f[3]), System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(f[4]))),
                     _ => Oracle(f[1], uint.Parse(f[2]), int.Parse(f[3]), uint.Parse(f[4])),
                 };
             }
@@ -265,6 +270,24 @@ static class Gate
     /// <summary>A logged load: its tile hash against the log's; with a trace of it (every logged load has one since
     /// the capture tours) and another hash or a stop, also the draws against the trace and the first difference, as for
     /// a capture.</summary>
+    /// <summary>A load the client failed to generate: "match" when the port fails the same way
+    /// (<see cref="Shared.SameFailure"/>), else what the port did instead (generated it, failed otherwise, or stopped).</summary>
+    static Result Failure(string areaId, uint seed, int level, string message)
+    {
+        try
+        {
+            LevelGenerator.Generate(Shared.Files(), AreaInfo.Load(Shared.Read, areaId, level), seed);
+            return new Result($"generated (the client: {message})");
+        }
+        catch (NotSupportedException e) { return new Result("stop: " + Reason(e)); }
+        catch (Exception e) when (e is InvalidOperationException or IndexOutOfRangeException or ArgumentException)
+        {
+            string mine = e.Message.Split('\n')[0];
+            return new Result(Shared.SameFailure(message, mine) ? "match" : $"another failure: {mine} (the client: {message})");
+        }
+        finally { Shared.ResetHooks(); }
+    }
+
     static Result Oracle(string areaId, uint seed, int level, uint hash)
     {
         string stem = Path.Combine(Shared.Root(), "data", "walkability", $"{areaId}_seed{seed}");
@@ -368,6 +391,8 @@ static class Gate
         int orcTotal = now.Keys.Count(k => k.StartsWith("oracle "));
         string D(int a, int b) => before.Count == 0 ? "" : a == b ? "" : $" ({(a > b ? "+" : "")}{a - b})";
         Console.WriteLine($"  oracle loads matching:          {o1} of {orcTotal}{D(o1, o0)}");
+        static int Failed(SortedDictionary<string, Result> r) => r.Count(p => p.Key.StartsWith("failure ") && p.Value.HashOk);
+        Console.WriteLine($"  client failures reproduced:     {Failed(now)} of {now.Keys.Count(k => k.StartsWith("failure "))}{D(Failed(now), Failed(before))}");
         Console.WriteLine($"  seed-1 traces, tile hash:       {h1} of {c1}{D(h1, h0)}");
         Console.WriteLine($"  seed-1 traces, both grids exact: {g1} of {c1}{D(g1, g0)}");
         Console.WriteLine($"  seed-1 traces, every port draw: {r1} of {c1}{D(r1, r0)}");

@@ -74,6 +74,66 @@ static class Shared
     /// (February) and 3.28 (April) sessions of the official game, and 46 of the 78 (area, seed, level) logged by both
     /// 3.27 and 3.29 have another hash (per seed, not per area; 3.29 cannot even generate 1_3_8_1 seed 2339687786, which
     /// 3.27 did).</summary>
+    /// <summary>Every (area, seed) the local client failed to generate, with its level and message: the
+    /// "Terrain generation failed: …" (or "Critical Terrain Generation Error in &lt;area&gt; &lt;graph&gt; &lt;seed&gt;: …") line after
+    /// its "Generating level" line, a leading ": " and "Dungeon generation failed: " left out. A port that fails the
+    /// same way matches the client as much as one that generates the same map.</summary>
+    public static SortedDictionary<(string Area, uint Seed), (int Level, string Message)> LoggedFailures()
+    {
+        string logs = Path.Combine(Root(), "Client", "logs");
+        var paths = Directory.GetFiles(logs, "Client-*-archive.txt").Order().Append(Path.Combine(logs, "Client.txt"));
+        var webRoot = new System.Text.RegularExpressions.Regex(@"\] Web root: (\S*)\s*$");
+        var versioned = new System.Text.RegularExpressions.Regex(@"/([0-9][0-9.]*[0-9])/?$");
+        var failed = new System.Text.RegularExpressions.Regex(@"\] (?:Terrain generation failed: (?:: )?|Critical Terrain Generation Error in \S+ \S+ \d+: )(.*)$");
+        var failures = new SortedDictionary<(string Area, uint Seed), (int Level, string Message)>();
+        foreach (string path in paths.Where(File.Exists))
+        {
+            (string, uint, int)? cur = null;
+            string? session = null;
+            using var log = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            for (string? line; (line = log.ReadLine()) is not null;)
+            {
+                if (webRoot.Match(line) is { Success: true } w)
+                {
+                    string url = w.Groups[1].Value;
+                    session = versioned.Match(url) is { Success: true } v ? v.Groups[1].Value
+                        : url.Contains("127.0.0.1") || url.Contains("localhost") ? LocalVersion : null;
+                    continue;
+                }
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"Generating level (\d+) area ""([^""]+)"" with seed (\d+)");
+                if (m.Success) { cur = session == LocalVersion ? (m.Groups[2].Value, uint.Parse(m.Groups[3].Value), int.Parse(m.Groups[1].Value)) : null; continue; }
+                if (line.Contains("Tile hash: ")) { cur = null; continue; }
+                m = failed.Match(line);
+                if (m.Success && cur is { } c)
+                {
+                    string message = m.Groups[1].Value.Trim();
+                    const string dungeon = "Dungeon generation failed: ";
+                    if (message.StartsWith(dungeon, StringComparison.Ordinal)) message = message[dungeon.Length..];
+                    failures[(c.Item1, c.Item2)] = (c.Item3, message);
+                    cur = null;
+                }
+            }
+        }
+        return failures;
+    }
+
+    /// <summary>The port's failure matches the client's: the same first three words, and every cell coordinate the
+    /// port names is one the client names (the client's often add more: "Could not tilise at tile (46, 64) the special
+    /// node at (861, 1276)" against "Could not tilise the special node at (861, 1276)", a ground clash's tile "@ (30,
+    /// 27)"; and name grounds and edges their own way).</summary>
+    public static bool SameFailure(string client, string port)
+    {
+        const string dungeon = "Dungeon generation failed: ";
+        if (port.StartsWith(dungeon, StringComparison.Ordinal)) port = port[dungeon.Length..];
+        static string[] Words(string s) => s.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(3).ToArray();
+        if (!Words(client).SequenceEqual(Words(port))) return false;
+        static List<string> Cells(string s) => System.Text.RegularExpressions.Regex.Matches(s, @"\(-?\d+, ?-?\d+\)")
+            .Select(m => m.Value.Replace(" ", "")).ToList();
+        var theirs = Cells(client);
+        var mine = Cells(port);
+        return mine.Count == 0 ? theirs.Count == 0 : mine.All(theirs.Contains);
+    }
+
     public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes() => LoggedHashes(out _, out _);
 
     public static SortedDictionary<(string Area, uint Seed), (int Level, uint Hash)> LoggedHashes(out string? version, out int otherVersions, string? only = null)
