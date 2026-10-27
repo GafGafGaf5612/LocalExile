@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Collections.Frozen;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using Progression = GameServer.Core.World.Progression;
@@ -13,8 +14,10 @@ partial class Program
     // refuses that gem's use even when its skill ID remains in the Actor list or the client sends stale input.
     static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
     {
-        var player = FinalPlayerStats(conn).ToList();
-        return [.. Skills.PlayerDefaults(player), .. GemSkills(conn, player, CharacterPlayerStats(conn), WeaponFor(conn))];
+        var character = CharacterPlayerStatsSnapshot(conn, out _, out var panelSources, capturePanelSources: true);
+        var player = FinalPlayerStatsFrom(conn, new(character)).ToList();
+        return [.. Skills.PlayerDefaults(player),
+            .. GemSkills(conn, player, character, WeaponFor(conn), panelSources!)];
     }
 
     // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
@@ -35,9 +38,11 @@ partial class Program
         return stats;
     }
 
-    static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
+    static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn) =>
+        FinalPlayerStatsFrom(conn, CharacterPlayerStats(conn));
+
+    static IEnumerable<(uint, int)> FinalPlayerStatsFrom(ClientState conn, Dictionary<uint, int> stats)
     {
-        var stats = CharacterPlayerStats(conn);
         // Quivers are gated by main_hand_weapon_type on the client, independently of the model's weapon stance. Only the
         // bow's value is known, so other weapons send nothing (a value /set_stat set stays); taking the bow off clears the
         // 9 sent before through PlayerStatsWithCleared.
@@ -87,7 +92,14 @@ partial class Program
     internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn) =>
         CharacterPlayerStatsCore(conn, out _);
 
-    static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond)
+    sealed record PanelSourceSnapshot(IReadOnlyDictionary<uint, int> Raw,
+        IReadOnlySet<uint> Overrides, int PlayerLevel);
+
+    static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond) =>
+        CharacterPlayerStatsSnapshot(conn, out baselineLifePerSecond, out _);
+
+    static Dictionary<uint, int> CharacterPlayerStatsSnapshot(ClientState conn, out double baselineLifePerSecond,
+        out PanelSourceSnapshot? panelSources, bool capturePanelSources = false)
     {
         EnsureOwnAuraPools(conn);
         Dictionary<uint, int> rawOverrides;
@@ -132,6 +144,9 @@ partial class Program
                     + value.LifeRegenerationPerMinutePercent(session.RegenPerStack), int.MinValue, int.MaxValue);
         }
         var (mainLocal, offLocal) = HandLocalStats(conn);
+        // Capture only for a skill publication. Recovery-only callers avoid these extra immutable copies.
+        panelSources = capturePanelSources
+            ? new(stats.ToFrozenDictionary(), devSet.ToFrozenSet(), conn.Pools.Level) : null;
         foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n),
             playerLevel: conn.Pools.Level)
             .Concat(PanelStats.FromPools(Get, conn.Pools))
@@ -314,7 +329,7 @@ partial class Program
     // (SkillCatalog.EffectStats: damage, cast time, mana cost) after the player's, with ids after the default attack's that
     // no basic action uses (SkillCatalog.SkillIds).
     static IEnumerable<GrantedSkill> GemSkills(ClientState conn, IEnumerable<(uint, int)> player,
-        IReadOnlyDictionary<uint, int> characterInputs, SkillCatalog.Unarmed mainHand)
+        IReadOnlyDictionary<uint, int> characterInputs, SkillCatalog.Unarmed mainHand, PanelSourceSnapshot panelSources)
     {
         string? character = conn.Character;
         var playerStats = new Dictionary<uint, int>();
@@ -409,6 +424,13 @@ partial class Program
             }
             stats[OwnAuraRestriction.BaseAura] = own.GetValueOrDefault(OwnAuraRestriction.BaseAura);
             OwnAuraRestriction.PublishSkill(stats, OwnAuraRestrictionValue(conn));
+            // These display aliases use the same raw snapshot as the character derivation. Apply them after
+            // runtime radius calculations so an already-derived selected AoE alias cannot count its base twice.
+            int RawPanel(string stat) => Stats.Key(stat) is uint key ? panelSources.Raw.GetValueOrDefault(key) : 0;
+            int OwnPanel(string stat) => Stats.Key(stat) is uint key ? own.GetValueOrDefault(key) : 0;
+            foreach (var (stat, value) in PanelStats.Selected(RawPanel, OwnPanel, panelSources.PlayerLevel))
+                if (Stats.Key(stat) is uint key)
+                    stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
             if (Skills.FindByRow(id, effect, supported.Level, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
             {
                 Console.WriteLine($"[gateway] gem skill 0x{skill.Id:x4} {name} level {level} quality {quality} (effect {effect}): GEPL {skill.EffectsPerLevelRow}, " +

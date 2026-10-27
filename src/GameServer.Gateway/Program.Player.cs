@@ -666,7 +666,7 @@ partial class Program
         var cls = Skills.ClassFor(classRow);
         // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
         RestoreRage(conn);
-        var stats = CharacterPlayerStats(conn);
+        var stats = CharacterPlayerStatsSnapshot(conn, out _, out var panelSources, capturePanelSources: true);
         var characterInputs = new Dictionary<uint, int>(stats);
         // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:
         // before, every area started with the class's unarmed attack, so a weapon's added damage and attack speed showed only
@@ -682,7 +682,7 @@ partial class Program
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList], characterInputs, weapon)], Stats: [.. weaponStats, .. statList],
+            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList], characterInputs, weapon, panelSources!)], Stats: [.. weaponStats, .. statList],
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));

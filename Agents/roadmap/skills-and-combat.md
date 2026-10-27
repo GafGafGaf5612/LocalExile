@@ -70,12 +70,22 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Native actual-recovery, clearing and relog checks pass; Fortification expiry integration uses the same factors.
   Regeneration conversions, named conditional/more modifiers and other recovery systems remain open.
   Exact native Brand/special-charge defaults now enter actor sources once, with a native selected Brand gate.
-  Real item/passive/support composition gives actor Brand6 and selected8; explicit zero and source removal are covered
-  by automated cases in both modes, with current combined validation and new native checks pending.
+  Real item/passive/support composition gives actor Brand 6 and selected 8; explicit zero and source removal are covered
+  by automated cases in both modes, with new native checks pending.
   Three sourced mirror flags publish special maxima from completed standard maxima, including final zero overrides;
-  real unequal4/5/6 source fixtures preserve each mapping. Pinned-PoB3.29.x remains a labelled fallback.
+  real unequal 4/5/6 source fixtures preserve each mapping. Pinned PoB 3.29.x remains a labelled fallback.
   Brand attachment/cap enforcement, special held counts/gains/expiry, minimum conversions, special combat/recoup
   consumers and Spirit/Abyss-jewel counting remain open; these changes do not certify entire charge rows.
+  Selected area/item-rarity/minion-increased aliases now use one raw actor-plus-own snapshot, with explicit final
+  zero/replacement precedence, source clearing and Cyclone radius preservation. `SendPlayer` initial/transition
+  creation and later skill refreshes share the snapshot path. Real support controls cover both modes, including
+  Ruthless exclusion of unavailable Item Rarity Support.
+  Minion combat/drop execution and native alias checks remain open.
+  Added-base/default-mirror/selected-alias coverage passes 52/19/22 new cases and 95 existing controls: 188 focused
+  cases without skips. Fresh full Gateway 3803/Core 648/Data 37 pass without skips (4488 freshly rerun cases).
+  The current hook records six actual unobserved disposed-NetworkStream faults, all `MonsterKilled` through
+  `Program.Send`, with no captured new operator path or diagnostic errors/truncation/cap hit.
+  Historical G14/full 3710 and earlier native controls do not establish these operators or complete an issue 75 row.
   Armour/evasion now include ordinary item-local flat/increased modifiers and quality, with native tooltip/panel,
   crafting refresh, unequip and active-shield checks.
   Saved variable bases now feed all three defences before local modifiers; legacy saves retain minimum bases.
@@ -247,8 +257,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Ordinary generic/typed added BASE now follows intrinsic-base replacement and precedes increased chance, including
   native weapon-local flat-before-increase ordering and linked Increased Critical Strikes once.
   Mode-specific passive/item, source-removal, zero, prohibition and hitless controls have automated cases;
-  current combined validation and new native checks remain pending. Isolated modifiers do not prove acquisition,
-  the local-flat fixture does not certify its no-extra-critical-damage consumer, and exact official rounding is unproved.
+  combined automated results are in the panel entry; new native checks remain pending.
+  Isolated modifiers do not prove acquisition; the local-flat fixture does not certify its no-extra-critical-damage
+  consumer, and exact official rounding is unproved.
   Other conditional/more crit remains separate work.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
   When owned-actor execution is implemented, supply actual-caster stats to `SkillDamageContext` explicitly.

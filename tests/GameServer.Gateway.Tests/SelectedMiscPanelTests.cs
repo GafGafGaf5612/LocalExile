@@ -1,0 +1,436 @@
+using System.Reflection;
+using GameServer.Core.Protocol.Instance;
+
+namespace GameServer.Gateway.Tests;
+
+public sealed partial class AscendancyGatewayIntegrationTests
+{
+    sealed record SelectedMiscCase(string Active, string Support, string SupportEffect, string ActorSource,
+        string OwnSource, string Alias, int Actor, int Own, int Quality);
+
+    static SelectedMiscCase SelectedMiscSpec(string field) => field switch
+    {
+        "area" => new("SkillGemFireball", "SupportGemIncreasedAreaOfEffect", "SupportIncreasedAreaOfEffect",
+            "base_skill_area_of_effect_+%", "base_skill_area_of_effect_+%", "skill_area_of_effect_+%", 20, 30, 0),
+        "rarity" => new("SkillGemFireball", "SupportGemItemRarity", "SupportItemRarity",
+            "base_item_found_rarity_+%", "base_killed_monster_dropped_item_rarity_+%",
+            "display_skill_increased_item_rarity_+%", 10, 40, 0),
+        "minion" => new("SkillGemRaiseZombie", "SupportGemMinionDamage", "SupportMinionDamage",
+            "minion_damage_+%", "minion_damage_+%", "virtual_minion_damage_+%", 15, 10, 20),
+        _ => throw new ArgumentOutOfRangeException(nameof(field)),
+    };
+
+    static uint SelectedMiscKey(string name) => Program.Stats.Key(name)!.Value;
+
+    [Theory]
+    [InlineData(false, "area")]
+    [InlineData(true, "area")]
+    [InlineData(false, "rarity")]
+    [InlineData(false, "minion")]
+    [InlineData(true, "minion")]
+    public void Selected_misc_real_supports_compose_once_and_follow_link_and_source_removal(bool ruthless, string field)
+    {
+        var spec = SelectedMiscSpec(field);
+        using var game = new SelectedMiscCharacter(ruthless, spec);
+        var baseline = game.Read();
+        Assert.Equal(spec.Actor, baseline.Get(spec.Alias));
+        Assert.Empty(baseline.Applied);
+        game.AssertControls(spec.Actor);
+
+        game.Socket();
+        var linked = game.Read();
+        game.AssertSupported(linked);
+        Assert.Equal(spec.Actor + spec.Own, linked.Get(spec.Alias));
+        Assert.Equal(baseline.Skill.Id, linked.Skill.Id);
+        Assert.Equal(linked.Stats.OrderBy(s => s.Key), game.Read().Stats.OrderBy(s => s.Key));
+        game.AssertControls(spec.Actor);
+
+        game.Socket(linked: false);
+        var unlinked = game.Read();
+        Assert.Empty(unlinked.Applied);
+        Assert.Empty(unlinked.Skill.Supports);
+        Assert.Equal(spec.Actor, unlinked.Get(spec.Alias));
+        Assert.Equal(linked.Skill.Id, unlinked.Skill.Id);
+        game.AssertControls(spec.Actor);
+
+        game.Socket();
+        game.AssertSupported(game.Read());
+        Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
+        game.Socket(support: false);
+        Assert.Empty(game.Read().Applied);
+        Assert.Equal(spec.Actor, game.Read().Get(spec.Alias));
+        game.RemoveActor();
+        // The selected record carries an explicit zero after both sources disappear.
+        Assert.Equal(0, game.Read().Get(spec.Alias));
+        Assert.Equal(0, game.Read().Get(spec.Alias));
+        game.AssertControls(0);
+
+        game.Socket(support: false, active: false);
+        Assert.DoesNotContain(game.Gems(), g => g.Effect == game.ActiveEffect);
+        Assert.DoesNotContain(game.ActorSkills(), s => s.Id == baseline.Skill.Id);
+        Assert.Single(game.Gems());
+        game.AssertControls(0);
+    }
+
+    [Theory]
+    [InlineData(false, "area")]
+    [InlineData(true, "area")]
+    [InlineData(false, "rarity")]
+    [InlineData(false, "minion")]
+    [InlineData(true, "minion")]
+    public void Selected_misc_signed_cancellation_and_final_developer_zero_replace_the_full_selected_sum(bool ruthless, string field)
+    {
+        var spec = SelectedMiscSpec(field);
+        using var game = new SelectedMiscCharacter(ruthless, spec);
+        game.Socket();
+        game.AssertSupported(game.Read());
+        Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
+
+        game.SetActor(-spec.Own);
+        var cancelled = game.Read();
+        game.AssertSupported(cancelled);
+        Assert.Equal(0, cancelled.Get(spec.Alias));
+        Assert.Equal(0, game.Read().Get(spec.Alias));
+        game.AssertControls(-spec.Own);
+
+        game.SetActor(spec.Actor);
+        Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
+        foreach (int replacement in new[] { 0, 7 })
+        {
+            game.State.PlayerStats[SelectedMiscKey(spec.Alias)] = replacement;
+            game.Refresh();
+            var replaced = game.Read();
+            game.AssertSupported(replaced);
+            Assert.Equal(replacement, replaced.Get(spec.Alias));
+            Assert.Equal(replacement, game.Read().Get(spec.Alias));
+            game.AssertControls(replacement);
+        }
+        Assert.True(game.State.PlayerStats.Remove(SelectedMiscKey(spec.Alias)));
+        game.Refresh();
+        Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
+        game.AssertControls(spec.Actor);
+        Assert.Equal(spec.Actor, game.State.PlayerStats[SelectedMiscKey(spec.ActorSource)]);
+    }
+
+    [Fact]
+    public void Selected_misc_Ruthless_denies_Item_Rarity_support_through_link_and_source_removal()
+    {
+        var spec = SelectedMiscSpec("rarity");
+        using var game = new SelectedMiscCharacter(true, spec, supportAllowed: false);
+        var baseline = game.Read();
+        Assert.Equal(10, baseline.Get(spec.Alias));
+        game.AssertControls(10);
+
+        game.Socket();
+        var linked = game.Read();
+        game.AssertUnavailableRarity(linked, 10);
+        Assert.Equal(baseline.Skill.Id, linked.Skill.Id);
+        Assert.Equal(linked.Stats.OrderBy(s => s.Key), game.Read().Stats.OrderBy(s => s.Key));
+        game.AssertControls(10);
+        game.Socket(linked: false);
+        game.AssertUnavailableRarity(game.Read(), 10);
+        game.Socket();
+        game.AssertUnavailableRarity(game.Read(), 10);
+        game.Socket(support: false);
+        game.AssertUnavailableRarity(game.Read(), 10);
+
+        // A denied gem cannot keep a contribution alive after the actual actor source disappears.
+        game.Socket();
+        game.RemoveActor();
+        game.AssertUnavailableRarity(game.Read(), 0);
+        game.AssertUnavailableRarity(game.Read(), 0);
+        game.AssertControls(0);
+        game.Socket(active: false);
+        Assert.DoesNotContain(game.Gems(), g => g.Effect == game.ActiveEffect);
+        Assert.DoesNotContain(game.ActorSkills(), s => s.Id == baseline.Skill.Id);
+        Assert.Single(game.Gems());
+        game.AssertControls(0);
+    }
+
+    [Fact]
+    public void Selected_misc_Ruthless_denied_Item_Rarity_preserves_signed_actor_sources_and_final_overrides()
+    {
+        var spec = SelectedMiscSpec("rarity");
+        using var game = new SelectedMiscCharacter(true, spec, supportAllowed: false);
+        game.Socket();
+        game.AssertUnavailableRarity(game.Read(), 10);
+        game.SetActor(-40);
+        // The unavailable support's native +40 must not cancel this controlled actor reduction.
+        game.AssertUnavailableRarity(game.Read(), -40);
+        game.AssertControls(-40);
+        game.SetActor(10);
+        foreach (int replacement in new[] { 0, 7 })
+        {
+            game.State.PlayerStats[SelectedMiscKey(spec.Alias)] = replacement;
+            game.Refresh();
+            game.AssertUnavailableRarity(game.Read(), replacement);
+            game.AssertUnavailableRarity(game.Read(), replacement);
+            game.AssertControls(replacement);
+        }
+        Assert.True(game.State.PlayerStats.Remove(SelectedMiscKey(spec.Alias)));
+        game.Refresh();
+        game.AssertUnavailableRarity(game.Read(), 10);
+        game.AssertControls(10);
+        Assert.Equal(10, game.State.PlayerStats[SelectedMiscKey(spec.ActorSource)]);
+        game.RemoveActor();
+        game.AssertUnavailableRarity(game.Read(), 0);
+        game.AssertControls(0);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Selected_misc_Cyclone_radius_matches_combat_without_counting_the_selected_area_alias_twice(bool ruthless)
+    {
+        var spec = SelectedMiscSpec("area") with { Active = "SkillGemCyclone" };
+        using var game = new SelectedMiscCharacter(ruthless, spec);
+        void Check(int area, int radius, int radiusPercent, bool supported)
+        {
+            var view = game.Read();
+            Assert.Equal(area, view.Get(spec.Alias));
+            Assert.Equal(16, view.Get("active_skill_base_area_of_effect_radius"));
+            Assert.Equal(radius, view.Get("active_skill_area_of_effect_radius"));
+            Assert.Equal(radiusPercent, view.Get("total_skill_area_of_effect_radius_+%_including_final"));
+            Assert.Equal(radius, ProgramValue<int>("SkillRadius", game.State, view.Own, false, game.ActiveEffect));
+            Assert.Equal(area, game.Read().Get(spec.Alias));
+            if (supported) game.AssertSupported(view);
+            else Assert.Empty(view.Applied);
+            game.AssertControls(spec.Actor);
+        }
+        Check(20, 17, 9, supported: false);
+        game.Socket();
+        Check(50, 19, 22, supported: true);
+        game.Socket(linked: false);
+        Check(20, 17, 9, supported: false);
+        game.Socket();
+        Check(50, 19, 22, supported: true);
+        game.Socket(support: false);
+        Check(20, 17, 9, supported: false);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Selected_misc_incompatible_real_Minion_Damage_does_not_add_quality_or_MORE_to_Fireball(bool ruthless)
+    {
+        var spec = SelectedMiscSpec("minion") with { Active = "SkillGemFireball" };
+        using var game = new SelectedMiscCharacter(ruthless, spec);
+        game.Socket();
+        game.AssertQualified();
+        var view = game.Read();
+        Assert.Empty(view.Applied);
+        Assert.Empty(view.Skill.Supports);
+        Assert.Equal(0, view.Own.GetValueOrDefault(SelectedMiscKey(spec.OwnSource)));
+        Assert.Equal(0, view.Own.GetValueOrDefault(SelectedMiscKey("support_minion_damage_+%_final")));
+        Assert.Equal(15, view.Get(spec.Alias));
+        Assert.Equal(15, game.Read().Get(spec.Alias));
+        game.AssertControls(15);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Selected_misc_support_requirement_failure_and_recovery_leave_the_qualified_host_and_active_gem_available(bool ruthless)
+    {
+        var spec = SelectedMiscSpec("area");
+        using var game = new SelectedMiscCharacter(ruthless, spec);
+        game.Socket();
+        var linked = game.Read();
+        game.AssertSupported(linked);
+        Assert.Equal(50, linked.Get(spec.Alias));
+        game.SetQualifier(false);
+        Assert.Null(ProgramValue<string?>("GemRequirementsUnmet", game.State, game.ActiveGem));
+        Assert.NotNull(ProgramValue<string?>("GemRequirementsUnmet", game.State, game.SupportGem));
+        Assert.DoesNotContain(game.HostId, Program.InactiveItems[game.Character]);
+        var disqualified = game.Read();
+        Assert.Equal(linked.Skill.Id, disqualified.Skill.Id);
+        Assert.Empty(disqualified.Applied);
+        Assert.Empty(disqualified.Skill.Supports);
+        Assert.Equal(20, disqualified.Get(spec.Alias));
+        game.AssertControls(20);
+
+        game.SetQualifier(true);
+        game.AssertQualified();
+        game.AssertSupported(game.Read());
+        Assert.Equal(50, game.Read().Get(spec.Alias));
+        game.AssertControls(20);
+    }
+
+    sealed record SelectedMiscView(GrantedSkill Skill, Dictionary<uint, int> Stats,
+        IReadOnlyDictionary<uint, int> Own, IReadOnlyList<GemSupports.Applied> Applied)
+    {
+        public int Get(string name) => Stats[SelectedMiscKey(name)];
+    }
+
+    sealed class SelectedMiscCharacter : IDisposable
+    {
+        static readonly BindingFlags Flags = BindingFlags.Static | BindingFlags.NonPublic;
+        readonly GatewayCharacter _game;
+        readonly SelectedMiscCase _spec;
+        readonly ItemCatalog _catalog;
+        readonly PlayerInventories _items;
+        readonly Item _qualifier;
+        readonly Item _other;
+        uint? _qualifierId;
+        public ClientState State => _game.State;
+        public string Character => _game.Character;
+        public uint HostId { get; }
+        public Item ActiveGem { get; }
+        public Item SupportGem { get; }
+        public int ActiveEffect { get; }
+        readonly int _otherEffect;
+
+        public SelectedMiscCharacter(bool ruthless, SelectedMiscCase spec, bool supportAllowed = true)
+        {
+            _game = LevelPanelCharacter(ruthless, 100);
+            _spec = spec;
+            _catalog = Program.ItemsFor(State);
+            _items = ProgramValue<PlayerInventories>("ItemsOf", State);
+            // Actual 80..100 native mod on an isolated carrier, without a rarity implicit.
+            // The carrier does not claim this unique modifier can be acquired on this base.
+            var attributes = LevelPanelMod(_catalog, "AllAttributesUniqueAmulet8", "additional_all_attributes", 100);
+            Assert.Equal((ushort)11855, attributes.Hash);
+            _qualifier = LevelPanelCarrier(_catalog, "Coral Amulet", attributes);
+            SetQualifier(true);
+            _items.Add(PlayerInventories.Weapon1, 0, 0, ItemCatalog.Create(_catalog.Find("Rusted Sword")!));
+            ActiveGem = Gem(spec.Active);
+            SupportGem = Gem(spec.Support, spec.Quality);
+            _other = Gem("SkillGemFreezingPulse");
+            ActiveEffect = Assert.Single(_catalog.GemEffects(ActiveGem));
+            _otherEffect = Assert.Single(_catalog.GemEffects(_other));
+            Assert.NotEqual(ActiveEffect, _otherEffect);
+            HostId = _items.Add(PlayerInventories.BodyArmour, 0, 0,
+                ItemCatalog.Create(_catalog.Find("Plate Vest")!, defenceBaseRoll: 0)).Id;
+            SetActor(spec.Actor);
+            Socket(support: false);
+            AssertQualified(supportAllowed);
+        }
+
+        Item Gem(string id, int quality = 0)
+        {
+            var type = _catalog.Find("Metadata/Items/Gems/" + id)!;
+            Assert.NotNull(type);
+            var gem = _catalog.Gem(type)!;
+            Assert.NotNull(gem);
+            Assert.InRange(quality, 0, 20);
+            return ItemCatalog.Create(type) with { GemExperience = gem.ExperienceFor(1), GemFlags = 4, Quality = (byte)quality };
+        }
+
+        public void Socket(bool linked = true, bool support = true, bool active = true)
+        {
+            Assert.NotNull(_items.Change(PlayerInventories.BodyArmour, HostId, host => host with
+            {
+                Sockets = [new(SocketColour.White, active ? ActiveGem : null),
+                    new(SocketColour.White, support ? SupportGem : null), new(SocketColour.White, _other)],
+                Links = linked ? [2, 1] : [1, 1, 1],
+            }));
+            Refresh();
+        }
+
+        public void SetActor(int value)
+        {
+            State.PlayerStats[SelectedMiscKey(_spec.ActorSource)] = value;
+            Refresh();
+        }
+
+        public void RemoveActor()
+        {
+            Assert.True(State.PlayerStats.Remove(SelectedMiscKey(_spec.ActorSource)));
+            Refresh();
+        }
+
+        public void SetQualifier(bool equipped)
+        {
+            if (equipped) _qualifierId = _items.Add(5, 0, 0, _qualifier).Id;
+            else
+            {
+                Assert.NotNull(_items.Remove(5, _qualifierId!.Value));
+                _qualifierId = null;
+            }
+            Refresh();
+        }
+
+        public void Refresh()
+        {
+            State.Pools = Program.PoolsFor(State, 100);
+            State.PlayerLife = State.Pools.Life;
+            State.PlayerMana = State.Pools.Mana;
+        }
+
+        public void AssertQualified(bool supportAllowed = true)
+        {
+            Assert.Null(ProgramValue<string?>("GemRequirementsUnmet", State, ActiveGem));
+            string? supportFailure = ProgramValue<string?>("GemRequirementsUnmet", State, SupportGem);
+            if (supportAllowed) Assert.Null(supportFailure);
+            else
+            {
+                Assert.True(State.Ruthless);
+                Assert.Equal("SupportItemRarity", _spec.SupportEffect);
+                Assert.NotNull(supportFailure);
+                Assert.Contains("unavailable in Ruthless", supportFailure);
+            }
+            Assert.Null(ProgramValue<string?>("GemRequirementsUnmet", State, _other));
+            Assert.DoesNotContain(HostId, Program.InactiveItems[Character]);
+        }
+
+        public (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)[] Gems() =>
+            ((IEnumerable<(ushort, int, string, int, int, uint)>)typeof(Program).GetMethod("GemSkillEffects", Flags,
+                binder: null, types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [State])!).ToArray();
+
+        public IReadOnlyList<GrantedSkill> ActorSkills() => ProgramValue<IReadOnlyList<GrantedSkill>>("PlayerSkills", State);
+
+        public SelectedMiscView Read(bool other = false)
+        {
+            var gem = Assert.Single(Gems(), g => g.Effect == (other ? _otherEffect : ActiveEffect));
+            var skill = Assert.Single(ActorSkills(), s => s.Id == gem.Id);
+            var supported = ProgramValue<object>("SupportedSkill", State, gem.Id);
+            var own = (IReadOnlyDictionary<uint, int>)supported.GetType().GetProperty("Stats")!.GetValue(supported)!;
+            var applied = (IReadOnlyList<GemSupports.Applied>)supported.GetType().GetProperty("Supports")!.GetValue(supported)!;
+            return new(skill, skill.Stats!.ToDictionary(s => s.Key, s => s.Value), own, applied);
+        }
+
+        public void AssertSupported(SelectedMiscView view)
+        {
+            AssertQualified();
+            Assert.Single(view.Skill.Supports);
+            var support = Assert.Single(view.Applied);
+            Assert.Equal(_spec.SupportEffect, support.Effect.Id);
+            Assert.Equal(1, support.Gem.Level);
+            Assert.Equal(_spec.Quality, support.Gem.Quality);
+            Assert.Equal(_spec.Own, support.Stats.Single(s => s.Key == SelectedMiscKey(_spec.OwnSource)).Value);
+            Assert.Equal(_spec.Own, view.Own[SelectedMiscKey(_spec.OwnSource)]);
+            if (_spec.SupportEffect == "SupportMinionDamage")
+            {
+                Assert.Equal(25, view.Own[SelectedMiscKey("support_minion_damage_+%_final")]);
+                Assert.Equal(25, support.Stats.Single(s => s.Key == SelectedMiscKey("support_minion_damage_+%_final")).Value);
+            }
+        }
+
+        public void AssertUnavailableRarity(SelectedMiscView view, int expected)
+        {
+            AssertQualified(supportAllowed: false);
+            Assert.Empty(view.Applied);
+            Assert.Empty(view.Skill.Supports);
+            Assert.Equal(0, view.Own.GetValueOrDefault(SelectedMiscKey(_spec.OwnSource)));
+            Assert.Equal(expected, view.Get(_spec.Alias));
+        }
+
+        public void AssertControls(int expected)
+        {
+            Assert.Equal(expected, Program.CharacterPlayerStats(State).GetValueOrDefault(SelectedMiscKey(_spec.Alias)));
+            var defaults = Assert.Single(ActorSkills(), s => s.Id == SkillCatalog.FirstSkillId);
+            Assert.Equal(expected, defaults.Stats!.ToDictionary(s => s.Key, s => s.Value).GetValueOrDefault(SelectedMiscKey(_spec.Alias)));
+            var other = Read(other: true);
+            Assert.Equal(expected, other.Get(_spec.Alias));
+            Assert.Empty(other.Applied);
+            Assert.Empty(other.Skill.Supports);
+        }
+
+        public void Dispose()
+        {
+            Program.InactiveItems.TryRemove(Character, out _);
+            Program.GemSkillIdsOf.TryRemove(Character, out _);
+            _game.Dispose();
+        }
+    }
+}

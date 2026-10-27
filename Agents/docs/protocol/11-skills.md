@@ -419,7 +419,7 @@ before `local_critical_strike_chance_+%`; that rounded permyriad becomes the int
 Signed BASE and increased sums remain wide through the completed expression, then round halfway up and cap.
 Linked Increased Critical Strikes contributes its own BASE and increased chance once through the shared calculation.
 Real native item modifiers, mode-specific Ascendant Assassin sources, local ordering, source removal, explicit zero
-and selected supports have automated cases; current combined validation and new native checks remain pending.
+and selected supports have automated coverage; combined results are in §14 and new native checks remain pending.
 The local-flat fixture retains its real no-extra-critical-damage flag; its chance checks do not certify multiplier
 behavior. The formulas follow pinned PoB `16de4b8` as a labelled 3.29.x fallback, without exact official rounding proof.
 `/set_stat` replaces its source value and rebuilds the pools for critical-chance inputs and prohibitions.
@@ -427,7 +427,7 @@ The panel's final `main_hand_critical_strike_chance` and the rolls share that re
 Generic and spell increases use the same effective raw inputs as `CharacterPlayerStats`: a development value,
 including zero, replaces that stat's complete passive/equipment/aura sum.
 The attack and pooled spell reference report those effective increased percentages, so `/crit` agrees with the rolls.
-The attack base feeds the shared `DamageModel.CriticalStrikeChancePerMyriad` used by spells, rolls and panels.
+The attack base feeds shared `AddedBaseCriticalStrike` evaluation used by pools, selected panels and hit rolls.
 Nonnegative half permyriad values round up: a 650 base with +1% increased gives 657.
 Generic and applicable typed inputs are summed as signed `long` values before the final cap;
 large positive and negative inputs may cancel before clamping.
@@ -1814,6 +1814,23 @@ recovery, maximum-pool percentage sources, prohibitions or other conditional ope
 sum is a display coefficient; actual flask use and local/global factor composition are documented in
 [13-items.md](13-items.md#8-life-and-mana-flasks).
 
+Three selected aliases now derive from one immutable raw character snapshot plus the qualifying skill/support's own
+raw inputs: `skill_area_of_effect_+%`, `display_skill_increased_item_rarity_+%` and `virtual_minion_damage_+%`.
+The rarity sum includes direct/base item rarity and `base_killed_monster_dropped_item_rarity_+%`; the minion sum
+includes increased `minion_damage_+%`, keeping support MORE separate. Previously derived actor aliases are not fed
+back as source inputs. The completed signed sum clamps once and retains explicit zero after cancellation/removal;
+a final developer alias replacement, including zero, replaces the complete selected sum.
+Both `PlayerSkills` refreshes and `SendPlayer` initial/area-transition object creation pass the same raw values,
+override membership and actual player level into `GemSkills`. The selected overlay runs after Cyclone's radius
+calculation, preserving its separate base/radius inputs: actor area 20 plus real Increased AoE own 30 gives area 50,
+radius 19 from base 16, and radius-percent 22; unlinking restores area 20/radius 17 without counting the alias twice.
+Real linked supports cover AoE 20+30=50 and minion increased 15+quality 10=25 in both modes;
+Standard rarity gives 10+40=50.
+Item Rarity Support is unavailable in Ruthless, so its own40 remains excluded; actor sources and explicit final
+replacements still work. Requirement failure, incompatible supports, unlink/relink/removal, unrelated/default skill
+isolation and repeated builds are covered. This changes selected publication; it does not add minion combat or
+item-drop execution, and native validation of these aliases remains outstanding.
+
 `PanelStatDefaults` adds six exact native `Character.ot` values to the original actor sources before derivation:
 
 | Native stat | Inherent value |
@@ -1834,7 +1851,16 @@ The five special-charge values remain per-charge coefficients, independent of he
 The corresponding special maximum gates are described in §15; defaults do not implement Brand attachment/cap
 enforcement or special-charge gain, expiry, combat effects or resource recoup.
 Automated cases cover native sources, both modes, real support compatibility, explicit zero and source removal;
-current combined validation and new native checks remain pending.
+combined results are below and new native checks remain pending.
+
+The added-base critical, native-default/mirror and selected-alias changes pass 93 new cases (52/19/22 respectively),
+plus 95 existing focused controls, for 188/188 with no skips. Fresh full suites pass Gateway 3803, Core 648 and Data 37:
+4488 freshly rerun cases, all passing without skips. The current diagnostic hook recorded six actual unobserved
+disposed-NetworkStream task faults, all `MonsterKilled` at `Program.Combat.cs:1260` through
+`Program.Send` / `Program.Connection.cs:326`; 385 first-chance records are separate from that fault count.
+No diagnostic errors, text truncation or cap hit occurred, and no captured fault names a new operator path.
+Passing suites therefore do not establish fault-free background execution; new native validation remains outstanding.
+The historical G14/full 3710 and native results below do not validate these new operators or certify all 387 rows.
 
 The four elemental self-duration reduction sums also subtract the unconditional raw
 `base_all_ailment_duration_on_self_+%` source (wire key 17087). Native Harsh Lessons, PassiveSkills row 2598 / graph
@@ -2000,8 +2026,8 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   clears the removed raw flag without retaining a stale native gate. Real modifier fixtures resolve unequal standard
   maxima 4/5/6 and cover independent removal/recovery and zero overrides in both modes.
   The formulas follow pinned PoB `16de4b8` `CalcPerform` with exact native source identities, as a labelled 3.29.x
-  fallback; every official virtual getter has not been independently traced. Current combined validation and new
-  native checks remain pending. This bounded publication leaves standard held state/gains unchanged and does not
+  fallback; every official virtual getter has not been independently traced. Combined automated results are in §14;
+  new native checks remain pending. This bounded publication leaves standard held state/gains unchanged and does not
   implement special current counts, gain/expiry, minimum conversions, Spirit/Abyss-jewel counting or combat effects.
 - **Death and area changes.** Death takes every gained charge at once (`PlayerDied`; BuffDefinitions `CancelOnDeath`
   on the three rows), so a pause or Resurrect in Town cannot keep them; the minimum stays. An area change (`Transfer`)

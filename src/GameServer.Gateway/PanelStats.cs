@@ -155,7 +155,8 @@ static class PanelStats
             new("energy_shield_gained_on_enemy_death_per_level", PerPlayerLevel: true)]),
         new("virtual_minion_damage_+%", ["minion_damage_+%"]),
         new("projectile_speed_+%", ["base_projectile_speed_+%"]),
-        new("display_skill_increased_item_rarity_+%", ["base_item_found_rarity_+%", "item_found_rarity_+%"]),
+        new("display_skill_increased_item_rarity_+%", ["base_item_found_rarity_+%", "item_found_rarity_+%",
+            "base_killed_monster_dropped_item_rarity_+%"]),
         new("display_skill_increased_item_quantity_+%", ["base_item_found_quantity_+%", "item_found_quantity_+%"]),
         new("virtual_trap_throwing_speed_+%", ["trap_throwing_speed_+%", "trap_and_mine_throwing_speed_+%"]),
         new("virtual_mine_throwing_speed_+%", ["mine_laying_speed_+%", "trap_and_mine_throwing_speed_+%"]),
@@ -209,11 +210,30 @@ static class PanelStats
         foreach (var sum in Sums)
         {
             var local = sum.Hand switch { Hand.Main => mainHand, Hand.Off => offHand, _ => null };
-            long value = get(sum.Display) + Total(sum.Sources, get, playerLevel) + Total(sum.Local, local, playerLevel);
-            if (sum.Flag) value = value > 0 ? 1 : 0;
-            if (value != 0) result.Add((sum.Display, (int)Math.Clamp(value, int.MinValue, int.MaxValue)));
+            int value = Project(sum, RawSum(sum, get, local, playerLevel));
+            if (value != 0) result.Add((sum.Display, value));
         }
         return result;
+    }
+
+    static long RawSum(Sum sum, Func<string, int> get, Func<string, int>? local, int level) =>
+        get(sum.Display) + Total(sum.Sources, get, level) + Total(sum.Local, local, level);
+
+    static int Project(Sum sum, long value) => sum.Flag ? value > 0 ? 1 : 0
+        : (int)Math.Clamp(value, int.MinValue, int.MaxValue);
+
+    static readonly Sum[] SelectedSums = [.. Sums.Where(s => s.Display is "skill_area_of_effect_+%"
+        or "display_skill_increased_item_rarity_+%" or "virtual_minion_damage_+%")];
+
+    /// <summary>Selected-skill aliases from original raw character and qualifying skill/support inputs.
+    /// Derive each alias once, clamp the completed sum, and retain zero to clear a removed contribution.
+    /// Published character aliases must not be passed back as raw seeds.</summary>
+    public static List<(string Stat, int Value)> Selected(Func<string, int> character, Func<string, int> own,
+        int playerLevel = 1)
+    {
+        int level = Math.Clamp(playerLevel, 1, Progression.MaxLevel);
+        return [.. SelectedSums.Select(sum => (sum.Display,
+            Project(sum, RawSum(sum, character, null, level) + RawSum(sum, own, null, level))))];
     }
 
     /// <summary>The global duration coefficient shared by the panel and actual flask uses. The display's virtual

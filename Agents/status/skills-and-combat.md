@@ -281,7 +281,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   controlled native counts of 0 and 3 now agree with the held state. Enduring Cry and timed gains are not live-checked.
   Three native mirror modifiers now publish Brutal/Affliction/Absorption maxima from completed Endurance/Frenzy/Power
   maxima, with final standard/special zero overrides and independent source clearing. Real 4/5/6 native-modifier
-  fixtures cover both modes; current combined validation and new native checks remain pending.
+  fixtures cover both modes; combined automated results are recorded with the panel changes below.
   This uses labelled pinned-PoB 3.29.x formulas and native source identities, without certifying every official getter.
   Special held state, gain/expiry, conversions, combat effects and Spirit/Abyss-jewel counts remain separate.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
@@ -301,7 +301,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   Real Brand item +1 and Brand Equity +2 give actor 6; compatible linked Foulgrasp gives selected 8.
   The Brand gate follows native skill type 64 only on selected Brands; explicit replacements/zero and removal retain
   their source precedence in both modes. The special values remain coefficients; Brand attachment/cap enforcement,
-  special-charge gameplay and recoup execution are not added. Current combined validation/native checks are pending.
+  special-charge gameplay and recoup execution are not added; new native checks remain pending.
+  Selected area, item-rarity and minion-increased aliases now combine raw actor and qualified own sources once,
+  retaining signed cancellation/zero and final developer replacement precedence. Initial `SendPlayer` and
+  area-transition object creation share that snapshot with later `PlayerSkills` refreshes; Cyclone's radius inputs
+  are calculated before the selected overlay and keep their existing result.
+  Real supports cover area 20+30=50 and minion 15+quality 10=25 in both modes; Standard Item Rarity gives 10+40=50,
+  while Ruthless excludes the unavailable support's own 40. Link/source removal, incompatible or unqualified supports,
+  unrelated/default skills and repeated builds are covered; minion combat and item-drop execution remain separate.
+  Added-base critical/default-mirror/selected-alias cases pass 52/19/22 new tests plus 95 existing controls:
+  the combined focused batch passes 188/188 without skips. Fresh Gateway 3803/Core 648/Data 37 all pass without skips,
+  for 4488 freshly rerun cases. The current hook records six actual unobserved disposed-NetworkStream task faults,
+  all `MonsterKilled` through `Program.Send`; 385 first-chance records are separate from those six faults.
+  No diagnostic errors/truncation/cap hit or new operator path appears in the captured faults.
+  Passing tests do not mean fault-free background execution; new native checks remain pending.
+  Earlier G14/full 3710 and native observations below do not validate these new operators or certify all 387 rows.
   Energy Shield's row excludes recharge and clears when its sources are removed or regeneration is prohibited.
   Native checks verified the row at 2 per second, modifier totals, zero clearing and relog.
   During recharge its total stayed at 60 per minute while native recovery prediction changed from 60 to 340.
@@ -687,7 +701,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Linked Increased Critical Strikes supplies its own BASE and increase once; known zero intrinsic chance may receive
   added BASE, while missing/negative data, hitless skills and cannot-crit gates still fail closed.
   Native modifier identities, mode-specific Ascendant Assassin sources, active-set isolation, removal, zero and
-  support composition have automated cases; current combined validation and new native checks remain pending.
+  support composition have automated coverage; current combined results are in the panel entry above.
   Isolated carriers do not establish legal unique acquisition, and the local-flat chance fixture retains its real
   no-extra-critical-damage flag without certifying multiplier behavior. Pinned PoB 3.29.x is a labelled fallback.
   `/set_stat` replaces the input and rebuilds the pools, so the panel and the rolls agree.
