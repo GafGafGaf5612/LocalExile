@@ -497,7 +497,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
             int tx = x / 23, ty = y / 23;
             if (!Owns(records, index, tx, ty)) continue;
             if (grid[tx, ty] is not { } e) continue;
-            if ((TileFlags(e.Tile) & 4) == 0) continue;
+            if ((files.WalkFlags(e.Tile.Path) & 4) == 0) continue;
             // The nearest vertex's ground.
             string? groundPath = grid.Corner(tx + (x - tx * 23 > 11 ? 1 : 0), ty + (y - ty * 23 > 11 ? 1 : 0)).Ground;
             string? ground = GroundName(groundPath);

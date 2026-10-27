@@ -208,6 +208,21 @@ public sealed class TerrainCache(Func<string, byte[]?> read)
         return _tileFlags[path] = flags;
     }
 
+    /// <summary>The flags the walk data carries (bit 4: doodads may go on the tile): a tile over a base tile without walk
+    /// data of its own (flags bit 4) has the base tile's, as it has its hull (Leagues/Abyss's forestcave_abyssmulti_hole
+    /// tiles, the Breach tower's wall variants). <see cref="TileFlags"/>' bit 3 stays the file's own: it decides the
+    /// mesh objects as the tile loads (Lake's Causeway_Static_01 keeps its columns).</summary>
+    public int WalkFlags(string path)
+    {
+        if (_walkFlags.TryGetValue(path, out int known)) return known;
+        var data = read(path);
+        int flags = data is not null && TileWalk.FlagsAt(data, out var baseTile, out byte own) > 0 && baseTile is not null && (own & 0x10) == 0
+            ? WalkFlags(baseTile) : TileFlags(path);
+        return _walkFlags[path] = flags;
+    }
+
+    readonly Dictionary<string, int> _walkFlags = new(StringComparer.OrdinalIgnoreCase);
+
     readonly Dictionary<string, bool> _transitionTiles = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, bool> _transitionTypes = new(StringComparer.OrdinalIgnoreCase);
 

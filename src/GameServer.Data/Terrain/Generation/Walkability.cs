@@ -59,7 +59,7 @@ public sealed record TileWalk(byte[] PlaneMasks, SubTileWalk[] SubTiles)
             int end = table.IndexOf('\0', (int)at);
             baseTile = table[(int)at..(end < 0 ? table.Length : end)];
             own = data[p + 4];
-            return p + 5 + ((own & 8) != 0 ? 50 : (own & 0x10) != 0 ? 2 : 0);
+            return p + 5 + ((own & 1) != 0 ? 4 : 0) + ((own & 8) != 0 ? 50 : (own & 0x10) != 0 ? 2 : 0);
         }
         return p + 58;
     }

@@ -195,7 +195,7 @@ For a one-node graph (towns, hideouts):
    "BossArenas" / "Gauntlets". The same resolution also runs earlier, in `0x14204bfa0`'s walk over the subgraph
    nodes (its own draws; see the extra room pool above). The u16 flags word follows those groups (bit 3: after
    the key; bit 4 alone: after a 2-byte size), then the walk data as a plain tile's (the restriction byte only with
-   bit 5) when bit 4 is set; without bit 4 the tile has the base tile's walk data (MapWorldsCourtyardOfWasting's
+   bit 5) when bit 4 is set; without bit 4 the tile has the base tile's walk data, its u16 tile flags included for the doodad stage's flag 4 (Leagues/Abyss's forestcave_abyssmulti_hole tiles, the Breach tower's wall variants: AbyssLeagueBoss, ChayulaLeagueTower; flag 8, no mesh objects, stays the file's own: Lake's Causeway_Static_01; 2026-10-27) (MapWorldsCourtyardOfWasting's
    walkability now matches its capture; 2026-10-26) (2026-10-25: `2_8_2_1`'s `sewerwall_thin_entrance_v02_01_nofeature.tdt`, flags 0x0a; MapWorldsCourtyardOfWasting's `stonewall_to_venice_convex_combinationfence_01.tdt`, 0x1a;
    `2_7_12_1`'s `WallChest_*.tdt` over the Vaal chest tiles) and stops on the others.
 5. **Fill**: the recorded cells plus every still-empty entry (ground "default"), sorted by (x, y), so column by
