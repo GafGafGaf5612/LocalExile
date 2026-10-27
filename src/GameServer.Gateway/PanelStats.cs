@@ -177,7 +177,8 @@ static class PanelStats
     static Sum[] Ailment(string ailment, string past) =>
     [
         new($"avoid_{ailment}_%", [$"base_avoid_{ailment}_%", AvoidElementalAilments]),
-        new($"self_{ailment}_duration_-%", [$"base_self_{ailment}_duration_-%", SelfElementalAilmentDuration]),
+        new($"self_{ailment}_duration_-%", [$"base_self_{ailment}_duration_-%", SelfElementalAilmentDuration,
+            new("base_all_ailment_duration_on_self_+%", Mul: -1)]),
         new($"cannot_be_{past}", [$"base_cannot_be_{past}"], Flag: true),
         new($"immune_to_{ailment}", ailment is "ignite" or "shock"
             ? [$"base_immune_to_{ailment}", "immune_to_ignite_and_shock"] : [$"base_immune_to_{ailment}"], Flag: true),

@@ -88,14 +88,21 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   source-removal and held-count agreement covered in both modes (17 selected tests, 15 new).
   Eight native supplied-source controls verify values, positive formatting, clearing and relog; native unique-gear
   acquisition and zero-row formatter evidence remain outside those controls.
+  The four elemental self-duration reduction rows now subtract the raw all-ailment self-duration source once;
+  Harsh Lessons' real -20 gives +20 reduction in both modes. Its 14 new cases pass within the combined 53 focused
+  cases, followed by full Gateway 3710/3710; unchanged prior Core 648/Data 37 remain applicable (4395 total).
+  Five disposed-stream background faults remain recorded without new-operator references; native verification is
+  outstanding. Left/right ring operators, other ailment families, conditional ES delay and actual
+  ailment execution remain separate; do not sum both slot-local ring coefficients globally.
   Combined Block/Stun Recovery and flat per-player-level on-kill/flask-duration aliases now use one raw snapshot
   and actual character level. Twelve positive source controls at levels 10/20/100 match all six fixed fields in
   Standard/Ruthless. Combined with six utility and four Life controls, 22 of 40 completed native controls pass;
   the 18 complete zero controls remain UNPROVED. Six-field verdicts total 138 VERIFIED/42 UNPROVED across source,
   retained and clearing/restoration/relog evidence; hidden-zero rendering is not established.
   Full on-kill recovery/percentage/prohibition rules and block-animation timing remain separate work.
-  The integrated panel/flask batch passes 55 new plus 80 existing focused checks and Gateway 3657/3657;
-  prior unchanged Core 648/Data 37 results still apply. Runtime details and the original Life boundary are in protocol 13 §8.
+  The preceding panel/flask batch passed 55 new plus 80 existing focused checks and Gateway 3657/3657;
+  prior unchanged Core 648/Data 37 results still apply. These historical native/test results do not validate the new
+  self-duration/flask-effect operators. Runtime details and the original Life boundary are in protocol 13 §8.
   Continue auditing the remaining rows against the current implementation before adding formulas.
   Leech limits now have native display, modifier, prohibition, pool-conversion, reservation and relog controls.
   Active leech recovery and unsupported conditional sources remain open; official fractional endpoint rounding is unmeasured.

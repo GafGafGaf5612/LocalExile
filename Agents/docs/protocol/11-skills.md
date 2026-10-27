@@ -1770,7 +1770,7 @@ it:
 | Display | Also counts |
 |---|---|
 | `avoid_ignite/chill/freeze/shock_%` | `avoid_all_elemental_status_%` (Avoid Elemental Ailments) |
-| `self_*_duration_-%` (elemental ailments) | `self_elemental_status_duration_-%` |
+| `self_*_duration_-%` (ignite, chill, freeze, shock) | `self_elemental_status_duration_-%`, minus `base_all_ailment_duration_on_self_+%` |
 | `virtual_ignite/chill/freeze/shock/scorch/frostburn/sap_duration_+%` | `base_elemental_status_ailment_duration_+%`, `base_all_ailment_duration_+%`, the per-element ailment duration, `chill_and_freeze_duration_+%` |
 | `virtual_chill/shock/scorch/frostburn/sap_effect_+%` | `non_damaging_ailment_effect_+%`, `cold_` / `lightning_ailment_effect_+%` |
 | `chance_to_freeze_%`, `chance_to_shock_%`, the ignite chances | `chance_to_freeze_shock_ignite_%` |
@@ -1800,10 +1800,26 @@ recovery, maximum-pool percentage sources, prohibitions or other conditional ope
 sum is a display coefficient; actual flask use and local/global factor composition are documented in
 [13-items.md](13-items.md#8-life-and-mana-flasks).
 
-Thirty new panel/source regressions cover actual level changes, real modifier identities, source qualification,
-removal, explicit overrides, signed values and repeated builds in both modes. Integrated panel/flask validation has
-55 new and 80 existing focused cases passing, full Gateway 3657/3657, and the unchanged Core 648/Data 37 prior runs
-remain applicable (4342 total applicable cases). These are regression results, not completion of all 387 rows.
+The four elemental self-duration reduction sums also subtract the unconditional raw
+`base_all_ailment_duration_on_self_+%` source (wire key 17087). Native Harsh Lessons, PassiveSkills row 2598 / graph
+27623, gives -20 in both modes and therefore adds +20 to each reduction. Typed, elemental and all-ailment sources
+combine once; an increased self-duration source gives a signed negative reduction. Explicit final developer
+replacements, including zero, still take precedence in the Gateway. This fixes the four declared numeric sums,
+not ailment execution. Ring-slot keys 17088/17089 need actual left/right-slot selection and remain separate;
+adding both as global sources would incorrectly cancel them. Other ailment families and conditional ES delay
+also remain separate work. All 14 new pure/Gateway cases pass within the combined 53/53 focused batch, followed
+by full Gateway 3710/3710 with no skips. Prior unchanged Core 648/Data 37 runs remain applicable (4395 applicable
+cases, not 4395 newly rerun cases). The full-run diagnostics retain five actual unobserved disposed-stream task
+faults: four `MonsterKilled` and one `NotifyMonsterHit` → `AreaSkillHit` → `LaunchProjectile`. No captured fault
+mentions the new self-duration/flask-effect paths; passing tests do not mean fault-free background execution.
+Native verification of these new operators remains outstanding.
+
+The preceding panel/source batch covered actual level changes, real modifier identities, source qualification,
+removal, explicit overrides, signed values and repeated builds in both modes. Its integrated panel/flask validation
+passed 55 new and 80 existing focused cases, full Gateway 3657/3657, and Core 648/Data 37 (4342 applicable cases).
+Those earlier results and native observations below do not validate the newly added self-duration operator or
+subsequent flask-effect resolver. Their new automated results are stated separately above; no complete-387-row
+or new native-coverage claim is made.
 The combined native assessment contains 40 completed controls: 22 complete PASS and 18 complete zero controls
 UNPROVED. The passes comprise 12 positive flat/level-source cases at actual levels 10, 20 and 100 in Standard and
 Ruthless, six utility-duration uses and four Life-recovery uses. All positive source cases match the six fixed fields:

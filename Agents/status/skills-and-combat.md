@@ -299,10 +299,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   (15 new) cover source removal and explicit zero in both modes. Eight native supplied-source controls agree,
   including +4%/+6%/attack-only +5% formatting, zero publication, charge clearing and relog.
   Zero rows are visually suppressed; missing formatter callbacks do not prove zero rendering or gear acquisition.
+  Ignite/Chill/Freeze/Shock duration reductions also subtract raw `base_all_ailment_duration_on_self_+%` once.
+  Real Harsh Lessons gives -20 in both modes, producing +20 reduction; typed and elemental sources remain additive,
+  signed increases remain negative reductions, and final developer zero/overrides keep precedence.
+  All 14 new pure/Gateway cases pass in the combined 53/53 focused batch; full Gateway passes 3710/3710 with no
+  skips. Unchanged prior Core 648/Data 37 results remain applicable (4395 total, not all newly rerun).
+  Five actual unobserved disposed-stream faults remain recorded (four MonsterKilled, one projectile-hit path),
+  with no captured reference to the new operators. No new native evidence is claimed. Ring-slot selection,
+  other ailment families, conditional ES delay and actual ailment execution remain separate.
   Block Recovery now adds base and raw direct Stun Recovery once from the same snapshot, including already expanded
   per-charge recovery. Life/Mana/ES on-kill amounts and the flask-duration coefficient include their real per-player-level
   inputs, using the actual character level and wide arithmetic. Thirty new panel/source cases cover both modes.
-  The integrated panel/flask batch passes 55 new plus 80 existing focused cases and Gateway 3657/3657;
+  The preceding panel/flask batch passed 55 new plus 80 existing focused cases and Gateway 3657/3657;
   unchanged prior Core 648/Data 37 results remain applicable (4342 total). The combined native assessment has
   40 completed controls: 22 complete PASS (12 positive source cases, six utility uses and four Life uses), with
   18 complete zero controls UNPROVED. Positive source cases at actual levels 10/20/100 match all six fields in both
@@ -310,6 +318,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   neither Defence zero field is proved in any zero control, and some Misc zeros also remain UNPROVED.
   No hidden row is counted as a rendered zero. Full on-kill recovery/percentage/prohibition operators and block
   animation timing remain open; exact runtime values and the original one-integer Life boundary are in protocol 13 §8.
+  Those historical native checks do not validate the new self-duration or flask-effect operators.
   The rest of the 387 rows is tracked in issue #75.
   Code: `PanelStats.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
